@@ -156,7 +156,9 @@ todo, y los arreglos que pidió.
 **Cómo se instala** (la cabecera de `c8-contador.sql` lo trae): 1 pegar
 `c8-contador.sql` (tabla final con «0 cuadres rojos»); 2 pegar
 `c8-pruebas.sql` (25 en `true`); 3 llave NUEVA de Anthropic en Supabase →
-Edge Functions → Secrets → `ANTHROPIC_API_KEY`; 4 la función `contador`
+Edge Functions → Secrets → `ANTHROPIC_API_KEY_CONTADOR` (si no existe, la función usa la
+`ANTHROPIC_API_KEY` que ya tiene la app; el gasto se separa igual en
+`asistente_uso`); 4 la función `contador`
 (Verify JWT apagado) y `…/contador?paso=salud`; 5 publicar la app y, en la
 Bandeja, «Proponer con la IA». Para apagarla: `update contador_config set activa =
 false where id = 1`. Recién pegado, la alarma 73 («la llave y la función»)

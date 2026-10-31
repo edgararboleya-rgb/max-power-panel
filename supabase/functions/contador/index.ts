@@ -12,9 +12,13 @@
 //   sin sesión qué falta.
 //
 // ANTES de desplegar, en Edge Functions → Secrets tiene que existir:
-//   ANTHROPIC_API_KEY   una llave NUEVA de console.anthropic.com, solo para
-//                       el contador (aparte de la del asistente: así el gasto
-//                       contable se ve por separado). sk-ant-…
+//   ANTHROPIC_API_KEY_CONTADOR   (si existe, manda) una llave de
+//                       console.anthropic.com solo para el contador: así el
+//                       gasto contable se ve aparte en la consola de Anthropic.
+//   ANTHROPIC_API_KEY   si no hay la anterior, la llave que ya usa el resto
+//                       de la app (el 31-oct existía desde agosto): vale igual;
+//                       el gasto se separa de todos modos en asistente_uso
+//                       por accion = 'contador_categorizar'. sk-ant-…
 //   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY y SUPABASE_DB_URL los pone
 //   Supabase solo. Sin la llave, todo lo que no gasta (estado, aprobar,
 //   clasificar, rechazar, las reglas) sigue funcionando; «proponer» aplica
@@ -221,7 +225,7 @@ const PROPUESTA_SCHEMA = {
 // La configuración se lee en cada llamada (el entorno no cambia en Supabase;
 // en las pruebas sin Deno sí).
 interface Conf {
-  llave: string; base_url: string; db: string; supabase_url: string; service_key: string; banco_pruebas: boolean; banco_mal: string | null;
+  llave: string; llave_nombre: string; base_url: string; db: string; supabase_url: string; service_key: string; banco_pruebas: boolean; banco_mal: string | null;
 }
 // ¿Es el banco de pruebas? TODO a la vez: MXP_BANCO_PRUEBAS=1, la base en
 // 127.0.0.1 (MXP_DB_URL), sin SUPABASE_DB_URL y fuera de Supabase (sin
@@ -241,7 +245,9 @@ function conf(): Conf {
   const b = esBancoDePruebas(); // SOLO el banco de pruebas
   const banco = b.vale;
   return {
-    llave: env("ANTHROPIC_API_KEY").trim(),
+    // La llave: la propia del contador si existe; si no, la de la app.
+    llave: (env("ANTHROPIC_API_KEY_CONTADOR") || env("ANTHROPIC_API_KEY")).trim(),
+    llave_nombre: env("ANTHROPIC_API_KEY_CONTADOR").trim() ? "ANTHROPIC_API_KEY_CONTADOR" : "ANTHROPIC_API_KEY",
     // (ANTHROPIC_BASE_URL: solo el simulador del banco de pruebas; en Supabase se ignora)
     base_url: (banco && env("ANTHROPIC_BASE_URL") ? env("ANTHROPIC_BASE_URL") : "https://api.anthropic.com").replace(/\/$/, ""),
     db: (banco ? env("MXP_DB_URL") : "") || env("SUPABASE_DB_URL"),
@@ -411,7 +417,7 @@ function leerRespuesta(j: Json): RespuestaIA {
 function falloDeAnthropic(estado: number, j: Json): Fallo {
   const err = obj(j.error);
   const msg = sinLlaves(String(err.message ?? `HTTP ${estado}`)).slice(0, 400);
-  if (estado === 401) return new Fallo(502, "La llave de Anthropic no vale (contestó 401): revisa ANTHROPIC_API_KEY en Supabase → Edge Functions → Secrets.", "ANTHROPIC_LLAVE");
+  if (estado === 401) return new Fallo(502, "La llave de Anthropic no vale (contestó 401): revisa la llave (ANTHROPIC_API_KEY_CONTADOR o ANTHROPIC_API_KEY) en Supabase → Edge Functions → Secrets.", "ANTHROPIC_LLAVE");
   if (estado === 403) return new Fallo(502, `La llave de Anthropic no tiene permiso para esto (403): ${msg}`, "ANTHROPIC_PERMISO");
   if (estado === 404) return new Fallo(502, `Anthropic no conoce eso (404: ${msg}): revisa el modelo en contador_config (claude-opus-5-5).`, "ANTHROPIC_MODELO");
   if (estado === 400) return new Fallo(502, `Anthropic rechazó la petición (400): ${msg}`, "ANTHROPIC_PETICION");
@@ -563,7 +569,7 @@ async function proponer(base: Base, c: Conf, dueno: string, cuerpo: Json): Promi
                      tope: k.tope, nota: nReglas ? "todo lo que esperaba salió por regla" : "nada que proponer: ningún cargo espera" });
   }
   if (!c.llave) {
-    throw new Fallo(500, "Falta ANTHROPIC_API_KEY en Supabase → Edge Functions → Secrets: la ráfaga no arranca (las reglas sí se aplicaron).", "CONFIG");
+    throw new Fallo(500, "Falta la llave de Anthropic (ANTHROPIC_API_KEY_CONTADOR o ANTHROPIC_API_KEY) en Supabase → Edge Functions → Secrets: la ráfaga no arranca (las reglas sí se aplicaron).", "CONFIG");
   }
   // 4. el lote y la ráfaga
   const prefijo = armarPrefijo(ctx);
@@ -649,8 +655,8 @@ async function proponer(base: Base, c: Conf, dueno: string, cuerpo: Json): Promi
 async function salud(resumen?: Json): Promise<Json> {
   const c = conf();
   const falta: string[] = [];
-  if (!c.llave) falta.push("ANTHROPIC_API_KEY (la llave del contador, sk-ant-…: console.anthropic.com → API keys → Create key)");
-  else if (!/^sk-ant-/.test(c.llave)) falta.push("ANTHROPIC_API_KEY no parece una llave de Anthropic (empiezan por sk-ant-)");
+  if (!c.llave) falta.push("ANTHROPIC_API_KEY_CONTADOR o ANTHROPIC_API_KEY (la llave del contador, sk-ant-…: console.anthropic.com → API keys → Create key)");
+  else if (!/^sk-ant-/.test(c.llave)) falta.push(`${c.llave_nombre} no parece una llave de Anthropic (empiezan por sk-ant-)`);
   if (!c.db) falta.push("SUPABASE_DB_URL (lo pone Supabase) o MXP_DB_URL");
   if (!c.banco_pruebas && !(c.supabase_url && c.service_key)) falta.push("SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY (los pone Supabase)");
   if (c.banco_mal) falta.push(c.banco_mal);
@@ -666,7 +672,7 @@ async function salud(resumen?: Json): Promise<Json> {
   }
   const cfg = obj(r.config), t = obj(r.tope);
   return {
-    ok: true, llave: Boolean(c.llave), base, sesion: c.banco_pruebas || Boolean(c.supabase_url && c.service_key),
+    ok: true, llave: Boolean(c.llave), llave_nombre: c.llave ? c.llave_nombre : null, base, sesion: c.banco_pruebas || Boolean(c.supabase_url && c.service_key),
     modelo: cfg.modelo ?? null, effort: cfg.effort ?? null, activa: cfg.activa ?? null, max_por_rafaga: cfg.max_por_rafaga ?? null,
     prompt_version: await versionDelPrompt(), prompt_version_base: cfg.prompt_version ?? null, prefijo_hash_base: cfg.prefijo_hash ?? null,
     ultima_rafaga_el: cfg.ultima_rafaga_el ?? null, con_error: Boolean(cfg.ultimo_error),
