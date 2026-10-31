@@ -398,11 +398,11 @@ try {
   // nombre del equipo; una fila con la nota que no debe salir de la base), alrededor de su cargo (hace 6 días: ±3 días) y
   // fuera de los ±3 días del Zelle (hace 2). LAS CUENTAS, para cualquier día en que se corra: el HOME DEPOT suma en
   // OBRA3 24×2 + 24×0,2 = 52,8 puntos; la semilla, con fecha fija, le da a lo sumo 6 + 3,9 a la oficina (el ticket de
-  // Home Depot y sus 19,5 h del mes) y 6 a la casa (30 h): OBRA3 dobla a cualquiera y es la candidata, con el motivo
+  // Home Depot y sus 19,5 h del mes) y 6 a la casa (30 h): OBRA3 pasa de sobra la vez y media de cualquiera y es la candidata, con el motivo
   // «la cuadrilla reportó 24 h en OBRA3 esos días» tal cual. El Zelle solo ve esas 24 h en el mes (4,8 puntos) y la
   // semilla no le da 8 a nadie: sin candidata, pide obra. Y el siguiente HOME DEPOT (hace 1 día, E2E-116): la oficina
   // suma 10 por lo que Edgar elige en E2E-63 más los 6 de su ticket, contra 4,8 de OBRA3 y ≤ 6 de la casa (y cuando
-  // ese ticket salga de sus 180 días, 10 contra 4,8: sigue doblando).
+  // ese ticket salga de sus 180 días, 10 contra 4,8: sigue pasando la vez y media).
   q(`insert into horas (fecha, usuario_id, proyecto_id, horas, notas) values
        (${lit(diaMenos(8))}, ${lit(equipo)}, ${lit(OBRA3)}, 8, ${lit(NOTA_SECRETA)}),
        (${lit(diaMenos(7))}, ${lit(equipo)}, ${lit(OBRA3)}, 8, null),

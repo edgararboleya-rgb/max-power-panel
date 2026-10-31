@@ -121,8 +121,13 @@
 --   · LOS PUNTOS: horas_cerca × 2 + horas_mes × 0,2 + recibos_proveedor × 6
 --     + veces_elegida × 10 + materiales_recientes × 1. Se listan las obras
 --     con alguna pista, de más a menos puntos, como mucho 6.
---   · LA CANDIDATA: la primera, si llega a 8 puntos y dobla a la segunda (o
---     es la única con pistas); confianza = min(0,9, p1 / (p1 + p2 + 4)),
+--   · LA CANDIDATA: la primera, si llega a 8 puntos y suma al menos una vez
+--     y media lo de la segunda (p1 ≥ 1,5 · p2; o es la única con pistas):
+--     la cuadrilla suele repartirse entre dos o tres obras la misma semana
+--     y exigir el doble dejaba sin candidata a compras claras (31-oct: 7
+--     tickets de CES a una obra contra 1 a la otra, 93 contra 57 puntos);
+--     la confianza, más baja en esos casos (0,60), lo dice. Confianza =
+--     min(0,9, p1 / (p1 + p2 + 4)),
 --     a dos decimales (una sola obra con 8 puntos: 0,67; con 24 h cerca y
 --     nada alrededor: 0,9); motivo en llano citando las pistas que suman
 --     («la cuadrilla reportó 24 h en Calla Terrace esos días; 2 compras
@@ -1335,8 +1340,9 @@ comment on function public.fn_contador_mismo_comercio(text, text) is 'c8: si el 
 -- × 0,2 + recibos_proveedor × 6 + veces_elegida × 10 + materiales_recientes.
 -- Devuelve {obras: [las que tienen alguna pista, de más a menos puntos,
 -- hasta 6], candidata: {proyecto_id, nombre, confianza, motivo} | null,
--- resumen}: la candidata es la primera si llega a 8 puntos y dobla a la
--- segunda (o es la única), confianza = min(0,9, p1 / (p1 + p2 + 4)) a dos
+-- resumen}: la candidata es la primera si llega a 8 puntos y suma al menos
+-- una vez y media lo de la segunda (o es la única), confianza = min(0,9,
+-- p1 / (p1 + p2 + 4)) a dos
 -- decimales, y el motivo cita en llano las pistas que suman. Sin pistas:
 -- obras [], candidata null, resumen «sin pistas». Nada personal: ni
 -- usuario_id, ni nombres, ni notas, ni rutas de fotos; solo totales por obra
@@ -1441,7 +1447,7 @@ begin
   v_2 := v_obras->1;
   p1 := coalesce((v_1->>'puntos')::numeric, 0);
   p2 := coalesce((v_2->>'puntos')::numeric, 0);
-  if p1 >= 8 and (p2 = 0 or p1 >= 2 * p2) then
+  if p1 >= 8 and (p2 = 0 or p1 >= 1.5 * p2) then
     -- el motivo, en llano: la obra se nombra en la primera pista; después es «esa obra»
     if (v_1->>'horas_cerca')::numeric > 0 then
       v_partes := v_partes || format('la cuadrilla reportó %s h en %s esos días%s', v_1->>'horas_cerca', v_1->>'nombre',
@@ -1488,7 +1494,7 @@ begin
   return jsonb_build_object('obras', v_obras, 'candidata', v_cand, 'resumen', coalesce(v_res, 'sin pistas'));
 end $$;
 revoke execute on function public.fn_contador_pistas_obra(uuid) from public, anon, authenticated, service_role;
-comment on function public.fn_contador_pistas_obra(uuid) is 'c8: (7b) las pistas de la obra de un cargo, por obra activa (horas cerca y en el mes, tickets del mismo comercio, veces elegida, materiales recientes) con sus puntos; la candidata (≥ 8 puntos y el doble que la segunda) con confianza y motivo; y un resumen. Nada personal. Lee por obra activa (los índices contador_*_idx) y compara el comercio una vez por proveedor distinto.';
+comment on function public.fn_contador_pistas_obra(uuid) is 'c8: (7b) las pistas de la obra de un cargo, por obra activa (horas cerca y en el mes, tickets del mismo comercio, veces elegida, materiales recientes) con sus puntos; la candidata (≥ 8 puntos y al menos una vez y media la segunda) con confianza y motivo; y un resumen. Nada personal. Lee por obra activa (los índices contador_*_idx) y compara el comercio una vez por proveedor distinto.';
 
 -- LO QUE SE LE DA A LA IA: los movimientos que esperan (hasta el límite,
 -- nunca más que max_por_rafaga) y el contexto: las cuentas permitidas, las

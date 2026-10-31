@@ -180,8 +180,9 @@ comercio en 180 días (`fn_contador_mismo_comercio`: «HOME DEPOT» casa con
 «THE HOME DEPOT» y con los alias de c3, no con una palabra suelta), las veces
 que Edgar eligió esa obra para ese comercio y los materiales de su lista
 apuntados esos días. Puntos: horas cerca ×2, horas del mes ×0,2, tickets ×6,
-elecciones ×10, materiales ×1. **Candidata** solo si suma 8 o más y dobla a
-la segunda; confianza `min(0,9, p1/(p1+p2+4))` y un motivo en llano («la
+elecciones ×10, materiales ×1. **Candidata** solo si suma 8 o más y llega a
+una vez y media la segunda (el doble dejaba sin candidata compras claras:
+7 tickets de CES a una obra contra 1 a la otra); confianza `min(0,9, p1/(p1+p2+4))` y un motivo en llano («la
 cuadrilla reportó 24 h en Casa Pérez esos días; 2 compras anteriores de CES
 fueron a esa obra»). A la IA no le llega ninguna persona, nota ni ruta: solo
 el nombre de la obra y cinco totales. Sin pistas claras, «pide obra» como

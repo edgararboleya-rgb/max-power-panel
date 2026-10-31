@@ -95,7 +95,8 @@
 -- de la bandeja; LA OBRA PROPUESTA (7b, 26 a 30): las pistas (sin nada,
 -- «sin pistas»; con horas, la candidata es la obra con más horas y el
 -- motivo las cita; los tickets del comercio y lo elegido antes suman; los
--- materiales suman; si se contradicen no hay candidata; a la IA sin puntos
+-- materiales suman; basta una vez y media la segunda, con menos confianza;
+-- si se contradicen no hay candidata; a la IA sin puntos
 -- y sin nada personal; solo obras activas), la IA que propone obra (válida
 -- → la línea la lleva, pide_obra false, la bandeja y el estado la enseñan;
 -- inactiva o inventada → sin obra, pide_obra y la nota; una forma mala →
@@ -1895,8 +1896,15 @@ begin
     v_p := fn_contador_pistas_obra(v_m);
     v_d := format('materiales: %s %s, puntos %s, conf %s «%s»', v_p->'obras'->0->>'nombre', v_p->'obras'->0->>'materiales_recientes',
                   v_p->'obras'->0->>'puntos', v_p->'candidata'->>'confianza', v_p->'candidata'->>'motivo');
-    -- B con 12 h ese día: las pistas se contradicen (la segunda pasa de la mitad) → sin candidata
-    perform pg_temp.c8_horas(-8260005, v_dia, v_ob, 12);
+    -- B con 4 h ese día (31.4 puntos): A (50.2) ya no la dobla, pero llega a la vez y media → sigue siendo la candidata,
+    -- con la confianza más baja (0.59): la cuadrilla se reparte entre obras la misma semana y exigir el doble dejaba
+    -- sin candidata compras claras
+    perform pg_temp.c8_horas(-8260006, v_dia, v_ob, 4);
+    v_p := fn_contador_pistas_obra(v_m);
+    v_d := v_d || format(' | una vez y media: puntos %s y %s, candidata %s conf %s', v_p->'obras'->0->>'puntos', v_p->'obras'->1->>'puntos',
+                         coalesce(v_p->'candidata'->>'nombre', 'null'), v_p->'candidata'->>'confianza');
+    -- B con 8 h más ese día (49.0 puntos): las pistas se contradicen (la segunda pasa de dos tercios) → sin candidata
+    perform pg_temp.c8_horas(-8260005, v_dia, v_ob, 8);
     v_p := fn_contador_pistas_obra(v_m);
     v_e := format('se contradicen: puntos %s y %s, candidata %s, resumen «%s»', v_p->'obras'->0->>'puntos', v_p->'obras'->1->>'puntos',
                   coalesce(v_p->>'candidata', 'null'), v_p->>'resumen');
@@ -1923,10 +1931,10 @@ begin
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (26, 'las pistas de la obra: sin nada «sin pistas»; con horas la candidata es la obra con más horas; tickets y lo elegido suman; materiales suman; si se contradicen no hay candidata; a la IA sin puntos ni nada personal; solo activas',
-    'sin nada: obras 0, candidata null, resumen «sin pistas» | horas: obras 2, primera <A> (cerca 22, mes 16, puntos 47.2), segunda <B> (mes 3, puntos 0.6), candidata <A> conf 0.90 «la cuadrilla reportó 22 h en <A> esos días» | tickets y elegida: <B> recibos 2, elegida 1, puntos 22.6; candidata <A> conf 0.64 | materiales: <A> 3, puntos 50.2, conf 0.65 «la cuadrilla reportó 22 h en <A> esos días; hay 3 materiales de su lista apuntados estos días» | se contradicen: puntos 50.2 y 49.0, candidata null, resumen «<A>: 22 h esos días, 16 h en 30 días, 3 materiales recientes · <B>: 12 h esos días, 15 h en 30 días, 2 tickets de C8 PRUEBA ZANCUDO ELECTRIC, elegida 1 vez» | a la IA: pistas_obra {candidata,obras,resumen}, obra {horas_cerca,horas_mes,materiales_recientes,nombre,proyecto_id,recibos_proveedor,veces_elegida}, personal: nada | solo activas: obras 1, candidata <A> conf 0.90',
+  insert into _pruebas values (26, 'las pistas de la obra: sin nada «sin pistas»; con horas la candidata es la obra con más horas; tickets y lo elegido suman; materiales suman; basta una vez y media la segunda (con menos confianza); si se contradicen no hay candidata; a la IA sin puntos ni nada personal; solo activas',
+    'sin nada: obras 0, candidata null, resumen «sin pistas» | horas: obras 2, primera <A> (cerca 22, mes 16, puntos 47.2), segunda <B> (mes 3, puntos 0.6), candidata <A> conf 0.90 «la cuadrilla reportó 22 h en <A> esos días» | tickets y elegida: <B> recibos 2, elegida 1, puntos 22.6; candidata <A> conf 0.64 | materiales: <A> 3, puntos 50.2, conf 0.65 «la cuadrilla reportó 22 h en <A> esos días; hay 3 materiales de su lista apuntados estos días» | una vez y media: puntos 50.2 y 31.4, candidata <A> conf 0.59 | se contradicen: puntos 50.2 y 49.0, candidata null, resumen «<A>: 22 h esos días, 16 h en 30 días, 3 materiales recientes · <B>: 12 h esos días, 15 h en 30 días, 2 tickets de C8 PRUEBA ZANCUDO ELECTRIC, elegida 1 vez» | a la IA: pistas_obra {candidata,obras,resumen}, obra {horas_cerca,horas_mes,materiales_recientes,nombre,proyecto_id,recibos_proveedor,veces_elegida}, personal: nada | solo activas: obras 1, candidata <A> conf 0.90',
     v_obt,
-    v_obt = 'sin nada: obras 0, candidata null, resumen «sin pistas» | horas: obras 2, primera <A> (cerca 22, mes 16, puntos 47.2), segunda <B> (mes 3, puntos 0.6), candidata <A> conf 0.90 «la cuadrilla reportó 22 h en <A> esos días» | tickets y elegida: <B> recibos 2, elegida 1, puntos 22.6; candidata <A> conf 0.64 | materiales: <A> 3, puntos 50.2, conf 0.65 «la cuadrilla reportó 22 h en <A> esos días; hay 3 materiales de su lista apuntados estos días» | se contradicen: puntos 50.2 y 49.0, candidata null, resumen «<A>: 22 h esos días, 16 h en 30 días, 3 materiales recientes · <B>: 12 h esos días, 15 h en 30 días, 2 tickets de C8 PRUEBA ZANCUDO ELECTRIC, elegida 1 vez» | a la IA: pistas_obra {candidata,obras,resumen}, obra {horas_cerca,horas_mes,materiales_recientes,nombre,proyecto_id,recibos_proveedor,veces_elegida}, personal: nada | solo activas: obras 1, candidata <A> conf 0.90');
+    v_obt = 'sin nada: obras 0, candidata null, resumen «sin pistas» | horas: obras 2, primera <A> (cerca 22, mes 16, puntos 47.2), segunda <B> (mes 3, puntos 0.6), candidata <A> conf 0.90 «la cuadrilla reportó 22 h en <A> esos días» | tickets y elegida: <B> recibos 2, elegida 1, puntos 22.6; candidata <A> conf 0.64 | materiales: <A> 3, puntos 50.2, conf 0.65 «la cuadrilla reportó 22 h en <A> esos días; hay 3 materiales de su lista apuntados estos días» | una vez y media: puntos 50.2 y 31.4, candidata <A> conf 0.59 | se contradicen: puntos 50.2 y 49.0, candidata null, resumen «<A>: 22 h esos días, 16 h en 30 días, 3 materiales recientes · <B>: 12 h esos días, 15 h en 30 días, 2 tickets de C8 PRUEBA ZANCUDO ELECTRIC, elegida 1 vez» | a la IA: pistas_obra {candidata,obras,resumen}, obra {horas_cerca,horas_mes,materiales_recientes,nombre,proyecto_id,recibos_proveedor,veces_elegida}, personal: nada | solo activas: obras 1, candidata <A> conf 0.90');
 end $$;
 
 -- 27. LA IA PROPONE OBRA (fn_contador_propuesta_guardar): válida → la línea
