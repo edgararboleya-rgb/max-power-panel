@@ -28,6 +28,9 @@
 // v_contador_control, v_contador_cuentas, v_contador_reglas; la función de
 // borde `contador` con la sesión del dueño para proponer, aprobar, clasificar,
 // rechazar y quitar reglas): la IA propone en la bandeja y Edgar decide.
+// Desde la 7b (31-oct) también propone la obra, con las pistas que calcula la
+// base (v_contador_bandeja: obra_propuesta_id, obra_confianza, obra_motivo,
+// pistas_resumen), y Edgar la confirma o la cambia.
 //
 // Cómo está organizada (v290, «que se parezca a un programa de contabilidad»):
 // una portada («Resumen») con las cifras y lo que hay que atender, y una
@@ -230,7 +233,8 @@
   const leerSaldos = async () => { S.saldos = await DB._leer("v_banco_saldos?select=*&order=tipo.asc,cuenta.asc"); return S.saldos; };
   const saldos = () => S.saldos ? Promise.resolve(S.saldos) : leerSaldos();
   const cuentas = async () => S.cuentas || (S.cuentas = await DB._leer("cuentas?select=codigo,nombre,tipo,regla_obra&imputable=eq.true&activa=eq.true&order=codigo.asc"));
-  const proyectos = async () => S.proyectos || (S.proyectos = await DB._leer("proyectos?select=id,nombre,estado&order=nombre.asc"));
+  const leerProyectos = async () => (S.proyectos = await DB._leer("proyectos?select=id,nombre,estado&order=nombre.asc"));
+  const proyectos = async () => S.proyectos || leerProyectos();
   const nombreCuenta = cod => { const c = (S.saldos || []).find(x => x.cuenta === cod) || (S.cuentas || []).find(x => x.codigo === cod); return c ? (c.cuenta_nombre || c.nombre) : cod; };
 
   const pill = (txt, clase) => `<span class="ct-pill${clase ? " " + clase : ""}">${esc(txt)}</span>`;
@@ -309,6 +313,8 @@
     for (const f of Array.isArray(iaCtl) ? iaCtl : []) {
       const a = ALARMA_IA[f.orden];
       if (f.nivel === "alarma" && f.ok === false) atender.push({ txt: a ? a[0] : String(f.control || "").replace(/^ia: /, ""), det: f.detalle, ir: a ? a[1] : "bandeja" });
+      // (7b) una obra propuesta que se cerró después: la Bandeja sigue pintando la IA y la propuesta dice qué hacer
+      else if (f.nivel === "cuadre" && f.ok !== true && CUADRES_IA_A_LA_VISTA.includes(Number(f.orden))) atender.push({ txt: `${plural(nOk(f.filas) || 1, "propuesta de la IA trae una obra que ya no está activa", "propuestas de la IA traen una obra que ya no está activa")}: en la Bandeja, elige otra obra al aprobarla o di «No es eso».`, det: f.detalle, ir: "bandeja" });
       else if (f.nivel === "cuadre" && f.ok !== true) atender.push({ txt: `La IA contable no cuadra (${String(f.control || "").replace(/^(ia|vista): /, "")}): la Bandeja no pinta sus propuestas hasta que cuadre.`, det: f.detalle, ir: "bandeja" });
     }
     main().innerHTML = cabPagina("Resumen", `${plural(vis.length, "cuenta", "cuentas")} · ${pend ? `<b>${plural(pend, "movimiento espera", "movimientos esperan")}</b> en la bandeja` : "la bandeja está al día"} · hoy, ${fechaLarga(hoyMiami())}`) + fichas +
@@ -1362,7 +1368,8 @@
     try {
       const [b] = await Promise.all([
         DB._leer("v_banco_bandeja?select=*&order=alarma.desc,fecha.asc,movimiento_id.asc"),
-        saldos(), cuentas(), proyectos(), leerStripe(), leerMfa()
+        // (las obras, frescas: la IA propone una y la pantalla la preselecciona solo si sigue activa; una nueva sale en el selector)
+        saldos(), cuentas(), leerProyectos(), leerStripe(), leerMfa()
       ]);
       // los depósitos de Stripe ya en el libro y sin casar: el botón «Es el depósito de Stripe del …» (si no contesta, sin botón)
       // (y los que Edgar sacó de la app: esos se llevan aquí como antes)
@@ -1701,6 +1708,21 @@
   // es fn_contador_clasificar → fn_banco_clasificar (c6), con su motivo.
   // Sin c8 pegado (las vistas no existen) la bandeja sigue como antes: sin
   // franja, sin chips y sin columnas, igual que hace con Stripe.
+  //
+  // LA OBRA (7b, 31-oct). La base calcula las pistas de cada cargo (las horas
+  // de la cuadrilla por obra esos días, los tickets del mismo comercio, lo
+  // que Edgar eligió antes para ese comercio, los materiales recientes) y la
+  // IA, con ellas, propone la obra con su confianza y su porqué; sin pistas
+  // claras no la adivina. La pantalla la enseña en «Según la IA» («Obra:
+  // Calla Terrace · 78 %» y el motivo; sin obra, el resumen de las pistas en
+  // gris), en el chip de la fila y elegida en el selector de la obra, que
+  // sale siempre que una cuenta de la propuesta admite obra (obligatoria u
+  // opcional); y en «Según yo» en cuanto la cuenta elegida la admite. «Así
+  // es» manda la obra del selector: la misma, «aprobada»; otra, «editada».
+  // Nada entra al libro sin el toque de Edgar, y las reglas no guardan la
+  // obra (la siguiente vez la dicen otra vez las pistas). Una obra propuesta
+  // que se cerró después (el cuadre 64) no tapa la IA: la propuesta lo dice,
+  // no se preselecciona y «Así es» pide otra (o «No es eso»).
   // ============================================================
   const MOTIVOS_IA = ["sin_ticket", "dudosa"]; // los que mira la IA (los mismos que fn_contador_candidatos)
   // Los flags de la propuesta en llano: la IA señala y Edgar decide (en la v1 nada de esto se postea solo)
@@ -1709,7 +1731,7 @@
     use_tax: ["¿Use tax?", "warn", "Parece una compra sin el impuesto de Florida: puede deber use tax. No se postea nada solo."],
     personal: ["Personal", "cu", "Parece personal: en la S-corp va a 3200 (distribución) o a 1130 (cuenta por cobrar al accionista), nunca a gasto."],
     irs: ["IRS", "cu", "Un pago al IRS: en la S-corp va a 3200 (distribución), nunca a gasto."],
-    pide_obra: ["Pide obra", "warn", "La cuenta pide la obra y la IA no la adivina: elígela tú."]
+    pide_obra: ["Pide obra", "warn", "La cuenta pide la obra y las pistas (las horas de la cuadrilla, los tickets de este comercio, lo que elegiste antes) no apuntan a una sola: elígela tú. La IA no la adivina."]
   };
   // las obras a las que se carga un gasto: las firmadas que siguen vivas (las mismas que c8 le enseña a la IA; = FIRMADO de js/app.js)
   const OBRAS_ACTIVAS = ["aprobado", "ejecucion", "pausa"];
@@ -1726,13 +1748,49 @@
   const cuentaIA = cod => ((S.ia && S.ia.cuentas) || []).find(c => c.codigo === cod) || null;
   const lineasTexto = f => f.resumen || (Array.isArray(f.lineas) ? f.lineas : []).map(l => `${l.cuenta} ${l.cuenta_nombre || ""}`.trim()).join(" + ");
   const obrasActivas = () => (S.proyectos || []).filter(p => OBRAS_ACTIVAS.includes(p.estado));
-  const opcionesObra = (vacio, sel) => `<option value="">${esc(vacio)}</option>${obrasActivas().map(p => `<option value="${esc(p.id)}"${p.id === sel ? " selected" : ""}>${esc(p.nombre)}</option>`).join("")}`;
+  // las opciones del selector de la obra: `vacio` (null: sin opción vacía) y las obras activas; `sel` queda elegida
+  const opcionesObra = (vacio, sel) => `${vacio == null ? "" : `<option value="">${esc(vacio)}</option>`}${obrasActivas().map(p => `<option value="${esc(p.id)}"${p.id === sel ? " selected" : ""}>${esc(p.nombre)}</option>`).join("")}`;
+  // (7b) la obra que trae la propuesta (la de la IA, o la candidata de las pistas en una propuesta por regla), o null:
+  // {id, nombre, confianza, motivo, activa, estado}. «activa», según las obras que la bandeja leyó al pintarse (frescas)
+  const obraPropuesta = f => {
+    if (!f || !f.obra_propuesta_id) return null;
+    const p = (S.proyectos || []).find(x => x.id === f.obra_propuesta_id);
+    return { id: f.obra_propuesta_id, nombre: f.obra_propuesta || (p && p.nombre) || f.obra_propuesta_id, confianza: num(f.obra_confianza), motivo: f.obra_motivo || "",
+      activa: !!p && OBRAS_ACTIVAS.includes(p.estado), estado: p ? p.estado : null };
+  };
+  // la regla de la obra de una cuenta (obligatoria, opcional o prohibida): la de v_contador_cuentas o, si no está ahí, la del plan
+  const reglaObra = cod => ((cuentaIA(cod) || (S.cuentas || []).find(c => c.codigo === cod)) || {}).regla_obra || null;
+  const admiteObra = cod => ["obligatoria", "opcional"].includes(reglaObra(cod));
+  // ¿alguna cuenta de la propuesta admite obra? Entonces «Según la IA» trae el selector: lo que Edgar deja ahí es lo que entra
+  // (fn_contador_aprobar pone la obra que le mandan en toda línea cuya cuenta la admite, nunca en una de obra prohibida)
+  const llevaObra = f => (Array.isArray(f.lineas) ? f.lineas : []).some(l => admiteObra(l.cuenta));
+  // con qué obra sale elegido el selector: la propuesta, si sigue activa; sin ella, la única obra activa que traen las líneas
+  // (una regla con su obra); si no, ninguna. Con una elegida no hay opción vacía: «Así es» con el selector vacío aprobaría la
+  // obra de la propuesta igual (la base no quita una obra); dejarlo sin obra es «Según yo»
+  function obraInicial(f) {
+    const ob = obraPropuesta(f);
+    if (ob) return ob.activa ? ob.id : "";
+    const ids = [...new Set((Array.isArray(f.lineas) ? f.lineas : []).map(l => l.proyecto_id).filter(Boolean))];
+    return ids.length === 1 && obrasActivas().some(p => p.id === ids[0]) ? ids[0] : "";
+  }
+  // ¿«Así es» necesita que se elija la obra? Si la cuenta la pide y no viene, o si la que propuso la IA ya no está activa
+  const obraFalta = f => { const ob = obraPropuesta(f); return pideObraIA(f) || (!!ob && !ob.activa && llevaObra(f)); };
+  // el texto de «Así es»: con la obra elegida, su nombre
+  const textoAsi = (falta, nombre) => nombre ? `✓ Así es · ${nombre}` : falta ? "✓ Así es (elige antes la obra)" : "✓ Así es";
+  // el resumen de las pistas que vio la base (fn_contador_pistas_obra), en llano
+  const pistasTexto = r => r === "sin pistas" ? "Pistas: ninguna obra tiene horas de la cuadrilla, tickets de este comercio ni materiales cerca de esta fecha." : `Pistas: ${r}`;
 
   // FALLA RUIDOSA de la IA: un «cuadre» en false, o una vista que trajo otro número de filas que el que contó el control
   // (10 y 11), y no se pinta nada de la IA (la bandeja sigue con c6). Devuelve lo que no cuadra; vacío = cuadra.
+  // Salvo el 64 (7b: una propuesta pendiente trae una obra que ya no está activa): lo que la vista pinta es verdad y el
+  // remedio está en la propia propuesta (elegir otra obra al aprobarla, o «No es eso»), que lo dice y no deja entrar esa obra
+  // por un toque. Tapar la IA dejaría a Edgar sin el selector que el detalle del cuadre le pide usar.
+  const CUADRES_IA_A_LA_VISTA = [64];
+  const obrasCerradasDe = ctl => (Array.isArray(ctl) ? ctl : []).filter(f => f.nivel === "cuadre" && f.ok !== true && CUADRES_IA_A_LA_VISTA.includes(Number(f.orden)));
+  const nCerradas = ia => ((ia && ia.obrasCerradas) || []).reduce((s, f) => s + (nOk(f.filas) || 1), 0);
   function controlContador(control, conteos) {
     if (!Array.isArray(control) || !control.length) return [{ vista: "v_contador_control", detalle: "la vista contestó vacía" }];
-    const mal = control.filter(f => f.nivel === "cuadre" && f.ok !== true).map(f => ({ vista: f.control, filas: f.filas, esperadas: f.esperadas, detalle: f.detalle }));
+    const mal = control.filter(f => f.nivel === "cuadre" && f.ok !== true && !CUADRES_IA_A_LA_VISTA.includes(Number(f.orden))).map(f => ({ vista: f.control, filas: f.filas, esperadas: f.esperadas, detalle: f.detalle }));
     for (const [vista, n] of Object.entries(conteos)) {
       const f = control.find(x => x.control === "vista: " + vista);
       if (!f) mal.push({ vista, detalle: "el control no revisó esta vista" });
@@ -1764,7 +1822,9 @@
     }
     const rojo = controlContador(ctl, { v_contador_bandeja: bj.length });
     if (!Array.isArray(est) || est.length !== 1) rojo.push({ vista: "v_contador_estado", filas: Array.isArray(est) ? est.length : 0, esperadas: 1, detalle: "no devolvió su fila (¿falta contador_config o la sesión no es la del dueño?)" });
-    const ia = { estado: (est || [])[0] || null, bandeja: new Map(bj.map(f => [f.movimiento_id, f])), control: ctl, cuentas: cts || [], rojo, salud: null, saludErr: null };
+    const ia = { estado: (est || [])[0] || null, bandeja: new Map(bj.map(f => [f.movimiento_id, f])), control: ctl, cuentas: cts || [], rojo, salud: null, saludErr: null,
+      // (7b) el 64 en rojo: la franja lo avisa y cada propuesta con la obra cerrada lo dice
+      obrasCerradas: obrasCerradasDe(ctl) };
     if (!rojo.length && mfaActivo()) Object.assign(ia, await saludContador());
     return ia;
   }
@@ -1795,11 +1855,13 @@
       return `<section class="ct-card ct-ia-franja mal" id="ct-ia-franja" role="alert"><div class="ct-ia-f-txt">${pillIA()}<span><b>La IA contable no cuadra: no se pinta ninguna propuesta</b> hasta que cuadre (pintarlas sería mentir). Mientras tanto, «Otra cosa…» sigue en cada movimiento.</span></div>
         <ul class="ct-datos ct-ia-rojo">${ia.rojo.map(m => `<li><b>${esc(m.vista)}</b>${m.filas != null || m.esperadas != null ? ` (trajo ${esc(m.filas == null ? "—" : m.filas)}, debía ${esc(m.esperadas == null ? "—" : m.esperadas)})` : ""}${m.detalle ? `: ${esc(m.detalle)}` : ""}</li>`).join("")}</ul></section>`;
     }
-    const e = ia.estado, freno = frenoIA(ia), falta = nOk(e.pendientes_sin_propuesta), listas = nOk(e.propuestas_pendientes);
+    const e = ia.estado, freno = frenoIA(ia), falta = nOk(e.pendientes_sin_propuesta), listas = nOk(e.propuestas_pendientes), conObra = nOk(e.propuestas_con_obra);
+    const cerradas = nCerradas(ia);
     return `<section class="ct-card ct-ia-franja" id="ct-ia-franja">
-      <div class="ct-ia-f-txt">${pillIA()}<span id="ct-ia-cifras"><b>${plural(listas, "propuesta lista", "propuestas listas")}</b> · ${falta} por proponer · este mes <span class="ct-num">${usdCent(e.centavos_mes_contador)}</span> de <span class="ct-num">${usdCent(e.tope_mes_centavos)}</span></span>${e.aviso && !e.bloqueado ? pill(`cerca del tope (${nOk(e.aviso_pct)} %)`, "warn") : ""}</div>
+      <div class="ct-ia-f-txt">${pillIA()}<span id="ct-ia-cifras"><b>${plural(listas, "propuesta lista", "propuestas listas")}</b>${conObra ? ` (${conObra} con obra)` : ""} · ${falta} por proponer · este mes <span class="ct-num">${usdCent(e.centavos_mes_contador)}</span> de <span class="ct-num">${usdCent(e.tope_mes_centavos)}</span></span>${e.aviso && !e.bloqueado ? pill(`cerca del tope (${nOk(e.aviso_pct)} %)`, "warn") : ""}</div>
       <div class="ct-ia-f-acc"><button type="button" class="accion" id="ct-ia-proponer" data-proponer${freno ? " disabled" : ""}>Proponer con la IA (${falta})</button></div>
       ${freno ? `<p class="ct-ia-freno${freno.clase ? " " + freno.clase : ""}">${esc(freno.txt)}</p>` : ""}
+      ${cerradas ? `<p class="ct-ia-freno warn" id="ct-ia-cerradas">${esc(plural(cerradas, "propuesta trae una obra que ya no está activa (se cerró después de proponerla)", "propuestas traen una obra que ya no está activa (se cerraron después de proponerlas)"))}: ábrela y elige otra obra al aprobarla, o di «No es eso».</p>` : ""}
       <div class="ct-ia-res"></div>
     </section>`;
   }
@@ -1809,9 +1871,16 @@
     if (!iaMira(m)) return "";
     const f = iaPendiente(m);
     if (!f) return `<span class="ct-pill ct-ia-chip nada">sin propuesta</span>`;
-    if (f.fuente === "regla") return `<span class="ct-pill ct-ia-chip regla" title="${esc(lineasTexto(f))}">Regla · ${esc(f.regla_nombre || "")}</span>`;
-    // (la cuenta se recorta con «…» si no cabe; la confianza siempre se ve)
-    return `<span class="ct-pill ct-ia-chip ia" title="${esc(f.motivo || "")}"><span class="ct-ia-chip-q">IA · ${esc(lineasTexto(f))}</span><span class="ct-ia-chip-p"> · ${pctConf(f.confianza)}</span></span>`;
+    // (7b) la obra propuesta, si sigue activa, va después de la cuenta: «IA · 5100 Material · Calla Terrace · 85 %» (el porcentaje
+    // es el de la propuesta, como siempre; el de la obra va en «Según la IA» y al pasar por encima)
+    const ob = obraPropuesta(f), obra = ob && ob.activa ? ob : null;
+    const tObra = obra ? ` · Obra: ${obra.nombre}${obra.confianza != null ? ` (${pctConf(obra.confianza)})` : ""}${obra.motivo ? `: ${obra.motivo}` : ""}` : "";
+    // (el separador va en su propio span: en la computadora la obra baja a su renglón dentro del chip y el «·» sobra)
+    const chipObra = obra ? `<span class="ct-ia-chip-o"><span class="ct-ia-sep"> · </span>${esc(obra.nombre)}</span>` : "";
+    if (f.fuente === "regla") return obra ? `<span class="ct-pill ct-ia-chip regla con-obra" title="${esc(lineasTexto(f) + tObra)}"><span class="ct-ia-chip-q">Regla · ${esc(f.regla_nombre || "")}</span>${chipObra}</span>`
+      : `<span class="ct-pill ct-ia-chip regla" title="${esc(lineasTexto(f))}">Regla · ${esc(f.regla_nombre || "")}</span>`;
+    // (si no cabe se recorta con «…» la obra; la cuenta, solo si ni así cabe; la confianza siempre se ve)
+    return `<span class="ct-pill ct-ia-chip ia${obra ? " con-obra" : ""}" title="${esc((f.motivo || "") + tObra)}"><span class="ct-ia-chip-q">IA · ${esc(lineasTexto(f))}</span>${chipObra}<span class="ct-ia-chip-p"> · ${pctConf(f.confianza)}</span></span>`;
   }
 
   // El bloque del detalle desplegado: «Según la IA» y «Según yo», en dos columnas (una debajo de otra en el teléfono)
@@ -1831,19 +1900,34 @@
     const ls = Array.isArray(f.lineas) ? f.lineas : [];
     return ls.some(l => typeof l.pide_obra === "boolean") ? ls.some(l => l.pide_obra === true) : !!f.pide_obra;
   }
+  // (7b) «Obra: Calla Terrace · 78 %» y debajo su porqué (las pistas que citó); si la obra se cerró después de proponerla, lo dice
+  const obraIAHTML = ob => `<div class="ct-ia-obra${ob.activa ? "" : " cerrada"}" data-ia-obra-prop>
+      <p class="ct-ia-obra-t">Obra: <b>${esc(ob.nombre)}</b>${ob.confianza != null ? ` · <span class="ct-ia-obra-p ${claseConf(ob.confianza)}">${pctConf(ob.confianza)}</span>` : ""}</p>
+      ${ob.motivo ? `<p class="ct-ia-obra-m">${esc(cap(ob.motivo))}</p>` : ""}
+      ${ob.activa ? "" : `<p class="ct-ia-obra-mal">Ya no está activa (${esc(ob.estado || "no existe")}): elige otra obra para aprobarla, o di «No es eso».</p>`}
+    </div>`;
   function propuestaIAHTML(f) {
     const lineas = Array.isArray(f.lineas) ? f.lineas : [], varias = lineas.length > 1;
     const flags = Object.keys(FLAGS_IA).filter(k => k === "pide_obra" ? pideObraIA(f) : !!(f.flags && f.flags[k] === true));
     const pide = pideObraIA(f), dis = mfaActivo() ? "" : " disabled";
     const alt = Array.isArray(f.alternativas) ? f.alternativas.filter(a => a && a.cuenta) : [];
-    return `<ul class="ct-ia-lineas">${lineas.map(l => `<li><span class="ct-num">${esc(l.cuenta)}</span> ${esc(l.cuenta_nombre || "")}${l.obra ? `<small>obra: ${esc(l.obra)}</small>` : l.pide_obra ? `<small>falta la obra</small>` : ""}${varias && l.monto != null ? `<span class="ct-num ct-ia-m">${fmt(l.monto)}</span>` : ""}</li>`).join("")}</ul>
+    // (7b) la obra: la propuesta con su confianza y su porqué (sin ella, las pistas en gris), y el selector si alguna cuenta la admite
+    const ob = obraPropuesta(f), conObra = llevaObra(f), ini = conObra ? obraInicial(f) : "", falta = obraFalta(f);
+    const nIni = ini ? (obrasActivas().find(p => p.id === ini) || {}).nombre || "" : "";
+    const etiqueta = ob && !ob.activa ? `¿De qué obra? (la que propuso la IA, ${ob.nombre}, ya no está activa)` : ob ? `¿De qué obra? (la IA propone ${ob.nombre})`
+      : pide ? "¿De qué obra? (la cuenta la pide)" : ini ? "¿De qué obra? (la trae la propuesta)" : "¿De qué obra? (opcional)";
+    const vacia = ini ? null : ob ? "Elige otra obra…" : pide ? "Elige la obra…" : "Sin obra";
+    return `<ul class="ct-ia-lineas">${lineas.map(l => `<li><span class="ct-num">${esc(l.cuenta)}</span> ${esc(l.cuenta_nombre || "")}${l.obra && !(ob && l.proyecto_id === ob.id) ? `<small>obra: ${esc(l.obra)}</small>` : l.pide_obra ? `<small>falta la obra</small>` : ""}${varias && l.monto != null ? `<span class="ct-num ct-ia-m">${fmt(l.monto)}</span>` : ""}</li>`).join("")}</ul>
       ${f.motivo ? `<p class="ct-ia-motivo">${esc(f.motivo)}</p>` : ""}
+      ${ob ? obraIAHTML(ob) : conObra && f.pistas_resumen ? `<p class="ct-ia-pistas">${esc(pistasTexto(f.pistas_resumen))}</p>` : ""}
       <div class="ct-ia-pills">${pill(`${pctConf(f.confianza)} de confianza`, "ct-conf " + claseConf(f.confianza))}${flags.map(k => `<span class="ct-pill ${FLAGS_IA[k][1]}" title="${esc(FLAGS_IA[k][2])}" data-flag="${k}">${esc(FLAGS_IA[k][0])}</span>`).join("")}</div>
       ${alt.length ? `<p class="ct-ia-alt">Otras posibilidades: ${alt.map(a => `<span class="ct-num">${esc(a.cuenta)}</span>${a.motivo ? ` (${esc(a.motivo)})` : ""}`).join(" · ")}</p>` : ""}
       <p class="ct-ia-fuente">${f.fuente === "regla" ? `Regla: ${esc(f.regla_nombre || "")}` : f.fuente === "edgar" ? "La dijiste tú" : `Propuso ${esc(f.modelo || "la IA")}`}${f.creado_el ? ` · ${fechaHora(f.creado_el)}` : ""}</p>
-      ${pide ? `<label class="ct-campo">¿De qué obra? (la cuenta la pide)<select data-ia-obra>${opcionesObra("Elige la obra…")}</select></label>` : ""}
-      <div class="ct-acciones"><button type="button" class="accion" data-ia-asi${dis}>${pide ? "✓ Así es (elige antes la obra)" : "✓ Así es"}</button><button type="button" class="accion secundaria" data-ia-no${dis}>No es eso</button></div>
-      <p class="ct-nota ct-ia-pie">«Así es» lo registra en el libro con esas líneas y lo recuerda para este comercio.</p>`;
+      ${conObra ? `<label class="ct-campo ct-ia-obra-sel">${esc(etiqueta)}<select data-ia-obra>${opcionesObra(vacia, ini)}</select></label>
+        <p class="ct-ia-obra-cambio" data-ia-obra-cambio hidden>Con otra obra entra la tuya y la propuesta queda «editada».</p>` : ""}
+      <div class="ct-acciones"><button type="button" class="accion" data-ia-asi${dis}>${esc(textoAsi(falta, nIni))}</button><button type="button" class="accion secundaria" data-ia-no${dis}>No es eso</button></div>
+      <p class="ct-nota ct-ia-pie">${conObra ? "«Así es» lo registra en el libro con esas líneas y la obra del selector, y recuerda la cuenta para este comercio (la obra no: la próxima vez la dicen sus pistas)."
+        : "«Así es» lo registra en el libro con esas líneas y lo recuerda para este comercio."}</p>`;
   }
   function sinPropuestaHTML(f) {
     const freno = frenoIA(S.ia), falta = nOk(S.ia.estado.pendientes_sin_propuesta);
@@ -1892,15 +1976,24 @@
     const viva = iaPendiente(m);
     // «Según la IA»: «Así es» (con la obra si la pide) y «No es eso»
     const asi = bl.querySelector("[data-ia-asi]"), no = bl.querySelector("[data-ia-no]"), obraIA = bl.querySelector("[data-ia-obra]");
+    // (7b) la obra de la propuesta (con la que sale el selector, o la cerrada) y si «Así es» necesita que se elija
+    const ob = viva ? obraPropuesta(viva) : null, falta = viva ? obraFalta(viva) : false;
+    const deLaIA = viva && obraIA ? obraInicial(viva) || (ob ? ob.id : "") : "", cambio = bl.querySelector("[data-ia-obra-cambio]");
     if (obraIA && asi) obraIA.addEventListener("change", () => {
       const p = obrasActivas().find(x => x.id === obraIA.value);
-      asi.textContent = p ? `✓ Así es · ${p.nombre}` : "✓ Así es (elige antes la obra)";
+      asi.textContent = textoAsi(falta, p ? p.nombre : "");
+      // otra obra que la de la propuesta: entra la de Edgar y la base deja la propuesta «editada»
+      if (cambio) cambio.hidden = !deLaIA || !obraIA.value || obraIA.value === deLaIA;
       limpiarErrorIA(bl);
     });
     if (asi && viva) asi.addEventListener("click", () => {
-      if (obraIA && !obraIA.value) { errorIA(bl, "Elige antes la obra: la cuenta de la propuesta la pide."); obraIA.focus(); return; }
+      if (obraIA && !obraIA.value && falta) {
+        errorIA(bl, ob && !ob.activa ? `Elige otra obra: la que propuso la IA (${ob.nombre}) ya no está activa.` : "Elige antes la obra: la cuenta de la propuesta la pide.");
+        obraIA.focus(); return;
+      }
+      // lo que queda en el selector es lo que entra (en toda línea cuya cuenta admite obra); vacío, las líneas como vienen
       const cuerpo = { accion: "aprobar", propuesta: viva.propuesta_id, recordar: true };
-      if (obraIA) cuerpo.proyecto_id = obraIA.value;
+      if (obraIA && obraIA.value) cuerpo.proyecto_id = obraIA.value;
       accionIA(bl, cuerpo, r => resumenClasificado(r, true), { boton: asi, espera: "Registrándolo en el libro…" });
     });
     if (no && viva) no.addEventListener("click", () => accionIA(bl, { accion: "rechazar", propuesta: viva.propuesta_id, motivo: "No es eso (Edgar, desde la bandeja)" },
@@ -1910,16 +2003,20 @@
     const form = bl.querySelector(".ct-ia-yo"); if (!form) return;
     const sel = form.querySelector("[data-ia-cuenta]"), obra = form.querySelector("[data-ia-obra-yo]"), et = form.querySelector("[data-ia-obra-et]");
     const btn = form.querySelector("[data-ia-clasificar]"), buscar = form.querySelector("[data-ia-buscar]");
+    // (7b) la obra que propone la IA queda elegida en cuanto la cuenta elegida la admite, mientras no toques tú la obra
+    const obraYo = viva ? obraInicial(viva) : "";
+    let obraTocada = false;
     const ajustar = () => {
       const c = cuentaIA(sel.value), r = c ? c.regla_obra : null;
       obra.disabled = r === "prohibida";
       if (r === "prohibida") obra.value = "";
+      else if (obraYo && !obraTocada && (r === "obligatoria" || r === "opcional") && [...obra.options].some(o => o.value === obraYo)) obra.value = obraYo;
       obra.required = r === "obligatoria";
       et.textContent = r === "obligatoria" ? "Obra (esta cuenta la pide)" : r === "prohibida" ? "Obra (esta cuenta no lleva obra)" : r === "opcional" ? "Obra (opcional)" : "Obra (si la cuenta la pide)";
       btn.textContent = igualQueIA(viva, sel.value, obra.value) ? "Clasificar (igual que la IA)" : "Clasificar";
     };
     sel.addEventListener("change", () => { ajustar(); limpiarErrorIA(bl); });
-    obra.addEventListener("change", () => { ajustar(); limpiarErrorIA(bl); });
+    obra.addEventListener("change", () => { obraTocada = true; ajustar(); limpiarErrorIA(bl); });
     if (form.ia_motivo) form.ia_motivo.addEventListener("input", () => limpiarErrorIA(bl));
     if (buscar) buscar.addEventListener("input", () => {
       sel.innerHTML = opcionesCuentaIA(buscar.value, sel.value);
@@ -1946,13 +2043,14 @@
   // `porAsi`: vino de «Así es» (si no, de «Clasificar», que la base marca «aprobada» cuando coincide con la propuesta)
   function resumenClasificado(r, porAsi) {
     const x = r || {}, g = x.regla && x.regla.regla ? x.regla : null;
-    const que = porAsi ? "Así es: en el libro" : x.estado === "editada" ? "Clasificado (cambiaste la propuesta)" : x.fuente && x.fuente !== "edgar" ? "Clasificado (igual que la IA)" : "Clasificado";
+    // (7b) «Así es» con otra obra que la propuesta: la base la deja «editada»
+    const que = porAsi ? (x.estado === "editada" ? "Así es, con tu obra: en el libro" : "Así es: en el libro") : x.estado === "editada" ? "Clasificado (cambiaste la propuesta)" : x.fuente && x.fuente !== "edgar" ? "Clasificado (igual que la IA)" : "Clasificado";
     return `${que}${x.asiento ? ` · asiento ${x.asiento}` : ""}${g ? ` · ${g.nueva ? "regla nueva" : g.cambio ? "regla cambiada" : "regla"} «${g.nombre}»` : ""}`;
   }
   const resumenRafaga = r => {
     const x = r || {};
     if (x.bloqueado) return [`La IA no propuso nada: ${x.motivo || "llegó al tope del mes"}`, true];
-    const txt = `${plural(nOk(x.propuestas), "propuesta", "propuestas")} · ${nOk(x.reglas)} por regla · ${nOk(x.sin_respuesta)} sin respuesta${nOk(x.invalidas) ? ` · ${nOk(x.invalidas)} inválida(s)` : ""} · ${usdCent(x.centavos)}`;
+    const txt = `${plural(nOk(x.propuestas), "propuesta", "propuestas")}${nOk(x.con_obra) ? ` (${nOk(x.con_obra)} con obra)` : ""} · ${nOk(x.reglas)} por regla · ${nOk(x.sin_respuesta)} sin respuesta${nOk(x.invalidas) ? ` · ${nOk(x.invalidas)} inválida(s)` : ""} · ${usdCent(x.centavos)}`;
     // (la función dice el porqué de lo que no salió: un 529 dos veces, un rechazo de la IA… se cuenta y no se esconde)
     return x.error ? [`${txt} · ojo: ${String(x.error).slice(0, 140)}`, !nOk(x.propuestas) && !nOk(x.reglas)] : txt;
   };
@@ -1984,7 +2082,7 @@
       ]);
       const rojo = controlContador(ctl, { v_contador_reglas: reglas.length });
       if (!Array.isArray(est) || est.length !== 1) rojo.push({ vista: "v_contador_estado", filas: Array.isArray(est) ? est.length : 0, esperadas: 1, detalle: "no devolvió su fila (¿falta contador_config o la sesión no es la del dueño?)" });
-      S.iaCx = { estado: (est || [])[0] || null, reglas, control: ctl, rojo, salud: null, saludErr: null };
+      S.iaCx = { estado: (est || [])[0] || null, reglas, control: ctl, rojo, salud: null, saludErr: null, obrasCerradas: obrasCerradasDe(ctl) };
       if (mfaActivo()) Object.assign(S.iaCx, await saludContador());
       S.iaCxErr = null;
     } catch (err) { if (esFalloDeRed(err)) throw err; S.iaCx = null; S.iaCxErr = err; }
@@ -2004,7 +2102,8 @@
     }
     const e = ia.estado || {}, mfa = mfaActivo(), s = ia.salud;
     const pills = (!mfa ? pill("sin el código del teléfono", "warn") : !s ? pill("la función no contestó", "warn") : s.llave === false ? pill("falta la llave", "bad") : s.base === false ? pill("sin base", "bad") : pill("conectada", "ok")) +
-      (ia.rojo.length ? pill("no cuadra", "bad") : pill("cuadra", "ok")) + (e.activa === false ? pill("apagada", "warn") : "") +
+      (ia.rojo.length ? pill("no cuadra", "bad") : pill("cuadra", "ok")) + (nCerradas(ia) ? pill(plural(nCerradas(ia), "obra propuesta cerrada", "obras propuestas cerradas"), "warn") : "") +
+      (e.activa === false ? pill("apagada", "warn") : "") +
       (e.bloqueado && e.activa !== false ? pill("en el tope", "warn") : "") + (nOk(e.alarmas) > 0 ? pill(plural(e.alarmas, "alarma", "alarmas"), "warn") : "");
     const activas = (ia.reglas || []).filter(r => r.activa), bajas = (ia.reglas || []).length - activas.length;
     const dis = mfa ? "" : " disabled";
@@ -2017,7 +2116,8 @@
         : `<p class="ct-vacio">Todavía no hay reglas: nacen en la Bandeja, al decir «Así es» o «Clasificar» con «Recordar para este comercio».</p>`}
       ${bajas ? `<p class="ct-nota">${plural(bajas, "regla dada de baja", "reglas dadas de baja")} (quedan escritas con su motivo).</p>` : ""}`;
     return `<section class="ct-card ct-ia-card" id="ct-ia">${cab(pills)}
-      ${ayudaHTML(`<p class="ct-nota">La IA mira cada cargo sin ticket y propone a qué cuenta va, con el motivo de lo que vio: propone, nunca postea. Lo que dice una regla del comercio entra sin gastar IA; nada entra al libro hasta que dices «Así es» o lo clasificas tú. Tiene un tope de gasto al mes, y la llave vive en Supabase, nunca en el teléfono.</p>`)}
+      ${ayudaHTML(`<p class="ct-nota">La IA mira cada cargo sin ticket y propone a qué cuenta va, con el motivo de lo que vio: propone, nunca postea. Lo que dice una regla del comercio entra sin gastar IA; nada entra al libro hasta que dices «Así es» o lo clasificas tú. Tiene un tope de gasto al mes, y la llave vive en Supabase, nunca en el teléfono.</p>
+        <p class="ct-nota">También propone la obra cuando las pistas que calcula la base (las horas de la cuadrilla esos días, los tickets del mismo comercio, lo que elegiste antes, los materiales recientes) apuntan a una sola; sin pistas claras no la adivina. A la IA no le llega ningún nombre de persona ni nota: solo totales por obra. Las reglas recuerdan la cuenta, nunca la obra.</p>`)}
       ${ia.rojo.length ? `<p class="ct-aviso bad">La IA contable no cuadra: ${esc(ia.rojo.map(m => `${m.vista}${m.detalle ? ` (${m.detalle})` : ""}`).join("; "))}.</p>` : ""}
       ${mfa && !s ? `<p class="ct-aviso warn">La función «contador» no contestó: ¿está desplegada en Supabase → Edge Functions (con «Verify JWT» apagado)?</p>`
         : s && (s.llave === false || faltaIA(s)) ? `<p class="ct-aviso bad">Falta en Supabase → Edge Functions → Secrets: ${esc(faltaIA(s) || "la llave de Anthropic (ANTHROPIC_API_KEY)")}.</p>` : ""}
@@ -2027,7 +2127,7 @@
         <li>Este mes: la IA contable lleva <span class="ct-num">${usdCent(e.centavos_mes_contador)}</span> de <span class="ct-num">${usdCent(e.tope_mes_centavos)}</span>; toda la IA de la app, <span class="ct-num">${usdCent(e.centavos_mes_total)}</span> de <span class="ct-num">${usdCent(e.tope_global)}</span></li>
         <li>Última ráfaga: ${e.ultima_rafaga_el ? fechaHora(e.ultima_rafaga_el) : "ninguna todavía"}${e.ultimo_lote_centavos != null ? ` (${usdCent(e.ultimo_lote_centavos)})` : ""}</li>
         ${e.ultimo_error ? `<li class="bad-txt">Último error: ${esc(e.ultimo_error)}${e.ultimo_error_el ? ` (${fechaHora(e.ultimo_error_el)})` : ""}</li>` : ""}
-        <li>Propuestas: ${plural(nOk(e.propuestas_pendientes), "espera", "esperan")} en la bandeja · ${nOk(e.aprobadas_total)} en el libro · ${plural(nOk(e.rechazadas_total), "rechazada", "rechazadas")}</li>
+        <li>Propuestas: ${plural(nOk(e.propuestas_pendientes), "espera", "esperan")} en la bandeja${nOk(e.propuestas_con_obra) ? ` (${nOk(e.propuestas_con_obra)} con obra)` : ""} · ${nOk(e.aprobadas_total)} en el libro · ${plural(nOk(e.rechazadas_total), "rechazada", "rechazadas")}</li>
       </ul>
       <div class="ct-acciones"><button type="button" class="accion secundaria" id="ct-ia-probar"${dis}>Probar</button><button type="button" class="accion secundaria" id="ct-ia-bandeja">Ver la bandeja</button>${mfa ? "" : `<span class="ct-nota" style="margin:0">Primero activa el código del teléfono (arriba).</span>`}</div>
       <div class="ct-ia-res"></div>

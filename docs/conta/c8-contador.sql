@@ -1,6 +1,7 @@
 -- =====================================================================
 -- c8-contador.sql — EL CONTADOR: LA IA QUE PROPONE Y NUNCA POSTEA · c8
--- 31-oct-2026, v1 (fase 7, el motor de reglas y la bandeja de propuestas).
+-- 31-oct-2026, v2 (fase 7, el motor de reglas y la bandeja de propuestas;
+-- 7b, la obra propuesta con las pistas que calcula la base).
 -- Se pega en el SQL Editor DESPUÉS de c1, c2, c3, c4, c6, c7, s1 y p1.
 -- Idempotente: se puede volver a pegar entero (no pisa la configuración,
 -- ni las reglas que Edgar dicte o apruebe, ni una propuesta, ni nada de lo
@@ -34,7 +35,8 @@
 --          «contador»): para lo que ninguna regla alcanza. Se le da el
 --          plan de cuentas PERMITIDO (abajo), las obras activas, las reglas
 --          y los últimos ejemplos de lo que Edgar clasificó, y el movimiento
---          (fecha, monto, descripción, nota, cuenta del banco, tipo). La
+--          (fecha, monto, descripción, nota, cuenta del banco, tipo y, desde
+--          la 7b, las pistas de la obra que calcula la base). La
 --          base guarda lo que se le dio (entrada, congelado y sin datos
 --          personales), lo que contestó tal cual (salida) y la propuesta ya
 --          validada: cada cuenta existe, está activa, es imputable y está
@@ -83,6 +85,100 @@
 --   postea nada automático (ni el 7.5 % a 2300): Edgar lo ve en la
 --   propuesta y lo resuelve con el recibo (e13b ya avisa del tope del
 --   surtax). Lo que llega con su ticket no pasa por aquí.
+--
+-- LA OBRA: LAS PISTAS Y LA CANDIDATA (7b, 31-oct). Edgar, viendo «CES 1040
+-- TAMPA FL · 5100 Material · Pide obra»: «¿no puedes tú vincularlo con una
+-- obra directamente, que tienes esa información?». Sí: la app sabe cosas que
+-- apuntan a la obra, y hasta hoy la IA tenía prohibido adivinarla. Desde
+-- aquí, LAS PISTAS LAS CALCULA POSTGRES (determinista: fn_contador_pistas_
+-- obra), LA IA LAS LEE Y PROPONE LA OBRA con su confianza y su porqué, y
+-- EDGAR CONFIRMA. La obra nunca entra al libro sin su toque, y las reglas
+-- aprendidas siguen sin guardar la obra (la cuenta es del comercio; la
+-- obra, de cada compra).
+--   · QUÉ SE MIRA, por cada obra ACTIVA (proyectos.estado aprobado,
+--     ejecucion o pausa), alrededor de la FECHA DEL CARGO:
+--       horas_cerca          las horas que la cuadrilla reportó en esa obra
+--                            de 3 días antes a 3 después (public.horas);
+--       horas_mes            las de los 30 días anteriores al cargo;
+--       recibos_proveedor    los tickets del mismo comercio con esa obra en
+--                            los últimos 180 días (public.recibos, sin los
+--                            anulados): el proveedor del ticket, normalizado
+--                            como c6 (fn_banco_norm) y reducido a comercio
+--                            como c8 (fn_contador_nombre_comercio), es el
+--                            comercio del banco, lo contiene o está contenido
+--                            en él, palabra por palabra («HOME DEPOT» y «THE
+--                            HOME DEPOT»; «SHELL» y «SHELL OIL»), o los dos
+--                            son alias del mismo proveedor en c3
+--                            (proveedores_alias: «CED» y «Consolidated
+--                            Electrical Distributors»). No vale una palabra
+--                            suelta en común: «Ocala Electric Supply» no es
+--                            todo lo que se compra en Ocala;
+--       veces_elegida        las propuestas aprobadas o editadas del mismo
+--                            comercio cuyas líneas finales llevan esa obra:
+--                            lo que Edgar eligió antes para ese comercio;
+--       materiales_recientes las filas de la lista de materiales de esa
+--                            obra creadas de 14 días antes a 1 después.
+--   · LOS PUNTOS: horas_cerca × 2 + horas_mes × 0,2 + recibos_proveedor × 6
+--     + veces_elegida × 10 + materiales_recientes × 1. Se listan las obras
+--     con alguna pista, de más a menos puntos, como mucho 6.
+--   · LA CANDIDATA: la primera, si llega a 8 puntos y dobla a la segunda (o
+--     es la única con pistas); confianza = min(0,9, p1 / (p1 + p2 + 4)),
+--     a dos decimales (una sola obra con 8 puntos: 0,67; con 24 h cerca y
+--     nada alrededor: 0,9); motivo en llano citando las pistas que suman
+--     («la cuadrilla reportó 24 h en Calla Terrace esos días; 2 compras
+--     anteriores de CES fueron a esa obra»). Sin pistas: obras [], candidata
+--     null y resumen «sin pistas».
+--   · POR QUÉ LA IA NO ADIVINA SIN PISTAS: la obra de un cargo no está en la
+--     descripción del banco, y una obra inventada mete el costo en la obra
+--     equivocada y descuadra las dos. Por eso la IA propone obra solo cuando
+--     las pistas apuntan con claridad a una obra activa, y la base lo
+--     comprueba: una obra que no existe o no está activa se descarta (la
+--     propuesta se guarda sin obra, con pide_obra y una nota que lo dice);
+--     si las pistas se contradicen, obra null y pide_obra, como antes. Las
+--     mismas pistas sirven a las reglas: una propuesta por regla cuya cuenta
+--     pide obra lleva la candidata (la regla dice la cuenta; las pistas, la
+--     obra).
+--   · QUÉ NO SALE NUNCA A LA IA: usuario_id, nombres de personas, notas de
+--     horas, rutas de fotos, clientes, correos ni teléfonos: solo totales
+--     por obra (horas, tickets, veces, materiales) y el nombre de la obra,
+--     que ya iba en el contexto.
+--   · LO QUE QUEDA ESCRITO: la propuesta gana «obra» ({proyecto_id,
+--     confianza, motivo}); la obra se copia a las líneas cuya cuenta la
+--     admite (obligatoria u opcional, nunca prohibida) y no la traen;
+--     flags.obra_propuesta = true y pide_obra = false; contador_propuestas.
+--     pistas guarda lo que la base vio al proponer (la bandeja enseña su
+--     resumen). Al aprobar, la obra que Edgar manda (p_proyecto_id) manda
+--     sobre la propuesta: si difiere, la propuesta queda «editada», como ya
+--     pasa con una cuenta; sin ella, se aprueba con la obra propuesta; sin
+--     ninguna y la cuenta la pide, MX008 «elige la obra» como siempre.
+--   · LA OBRA QUE SE CIERRA DESPUÉS DE PROPONERLA (lo que destapó la
+--     verificación del 31-oct): la bandeja se pinta con la obra activa y
+--     preseleccionada, alguien completa la obra en la app y Edgar toca «Así
+--     es». La pantalla sola no lo cubre (manda el proyecto_id que tenía), así
+--     que lo frena LA BASE: fn_contador_aprobar y fn_contador_clasificar no
+--     dejan entrar una obra que ya no está activa —ni la de las líneas (la
+--     que propuso la IA, la candidata de una regla o la que la IA puso por la
+--     descripción) ni la que Edgar manda— y contestan MX008 «la obra X ya no
+--     está activa: elige otra o di No es eso», con la pista «elige la obra»
+--     que la pantalla enseña en ámbar junto al selector
+--     (fn_contador_lineas_validar exige la obra activa, no solo existente).
+--     El cuadre 64 vigila las dos, la obra propuesta y la de cada línea, en
+--     toda propuesta pendiente; la pantalla NO apaga la franja de la IA por
+--     el 64, a propósito (la propia propuesta lo resuelve con su selector), y
+--     con la guarda de la base eso ya no es un riesgo. Y una obra que la IA
+--     pone DIRECTO en una línea sin estar activa (la copió de un ejemplo
+--     viejo —los ejemplos traen obras ya cerradas— o se cerró entre la
+--     ráfaga y la respuesta) se quita de la línea al guardar, con su nota: la
+--     propuesta no se pierde y la cuenta pide obra como siempre.
+--   · c8 añade tres índices de lectura (contador_*_idx, «if not exists»)
+--     sobre horas, recibos y materiales, por (obra, fecha): es lo único que
+--     pone en tablas de la app, y no las escribe. fn_contador_pistas_obra lee
+--     POR OBRA ACTIVA (una consulta por obra y pista, que entra por ese
+--     índice) y compara el comercio UNA VEZ POR PROVEEDOR DISTINTO de los
+--     tickets de la ventana, no por ticket: así el costo de una ráfaga crece
+--     con lo que hay cerca de la fecha, no con los años de horas, tickets y
+--     materiales que la app acumule (la verificación midió 6 s por ráfaga de
+--     20 con 2.000 tickets y 2.000 materiales haciéndolo por fila).
 --
 -- LAS CUENTAS PERMITIDAS (v_contador_cuentas, una sola fuente para la IA,
 -- la validación, el selector «Según yo» de la pantalla y el cuadre 62):
@@ -201,6 +297,14 @@
 --   · «APROBADA» es también la propuesta que pedía obra y Edgar completó
 --     con ella (las cuentas coinciden y la obra se puso donde faltaba);
 --     «editada» cuando cambia una cuenta o una obra que la IA sí dio.
+--   · LA OBRA PROPUESTA (7b) va en propuesta.obra y se copia a las líneas
+--     que la admiten y no la traen; una línea a la que la IA ya le puso su
+--     proyecto_id se respeta. Si ninguna línea la toma (todas las cuentas
+--     con obra prohibida), la obra se descarta con su nota. Al aprobar, el
+--     p_proyecto_id de Edgar va a TODA línea cuya cuenta admite obra
+--     (antes, solo a las que la pedían y no la traían): la pantalla enseña
+--     un solo selector por propuesta, preseleccionado con la obra propuesta,
+--     y lo que Edgar deja ahí es lo que entra.
 --   · UNA PROPUESTA APROBADA CUYO ASIENTO SE REVERSA A MANO (des-casar en
 --     la bandeja) pone en rojo el cuadre 60 hasta que Edgar la cierra
 --     (fn_contador_caducar, con su motivo) o la base la cierra sola al
@@ -280,7 +384,7 @@
 --      «Qué atender» dice «toca Proponer con la IA») y se apaga sola con
 --      ella. Si algo de lo que da por hecho falta, para con MX000 y no
 --      queda nada.
---   2. SQL Editor → pegar docs/conta/c8-pruebas.sql → 25 filas, todas en
+--   2. SQL Editor → pegar docs/conta/c8-pruebas.sql → 32 filas, todas en
 --      true (cada una siembra sus cargos de prueba y los deshace; no toca
 --      la bandeja real).
 --   3. console.anthropic.com → API keys → «Create key» (una NUEVA, solo
@@ -296,6 +400,20 @@
 --      (fase 7)»: el gasto del mes, la última ráfaga y las reglas.
 --   Para apagarla: update contador_config set activa = false where id = 1; (la
 --   bandeja sigue como siempre, y las reglas también).
+--   7b (31-oct): volver a pegar este archivo entero (idempotente: las
+--   propuestas de hoy siguen como están; las siguientes ganan la obra),
+--   redesplegar la función «contador» (sus instrucciones cambian y con ellas
+--   prompt_version: la base lo guarda en la siguiente ráfaga) y publicar la
+--   app (la Bandeja enseña «Obra: … · 78 %» y el selector preseleccionado).
+--   Después, c8-pruebas.sql otra vez: 32 filas en true.
+--   Y la tarde del 31-oct (los arreglos de la verificación: la obra que se
+--   cierra después de proponerla no entra por un toque, las pistas por obra
+--   activa, la nota de la línea que ya trae su obra): lo mismo, pegar este
+--   archivo entero otra vez (encima del de la mañana: nada se pierde) y
+--   c8-pruebas.sql (32 filas); la función «contador» se redespliega también
+--   (el esquema de «obra» pasa a la forma anyOf que la API documenta;
+--   prompt_version no cambia por eso). Si la primera ráfaga contestara 400
+--   ANTHROPIC_PETICION, lo dice la cabecera de la función: qué mirar.
 --
 -- Lo que llama la función de borde (como postgres): fn_contador_cfg,
 -- fn_contador_tope, fn_contador_reglas_aplicar, fn_contador_pendientes,
@@ -303,8 +421,11 @@
 -- fn_contador_lote_cerrar, fn_contador_aprobar, fn_contador_clasificar,
 -- fn_contador_rechazar, fn_contador_caducar, fn_contador_regla_alta,
 -- fn_contador_regla_baja, fn_contador_control, fn_contador_resumen y
--- fn_contador_dueno_fijar. Montos: en dólares, numeric(14,2); los tokens,
--- enteros; el gasto, en centavos enteros.
+-- fn_contador_dueno_fijar (fn_contador_pistas_obra no la llama: la recibe
+-- dentro de cada movimiento de fn_contador_pendientes, y por dentro la usan
+-- fn_contador_reglas_aplicar y fn_contador_propuesta_guardar). Montos: en
+-- dólares, numeric(14,2); los tokens, enteros; el gasto, en centavos
+-- enteros.
 -- =====================================================================
 
 
@@ -337,14 +458,26 @@ declare
   v_k     char;
 begin
   foreach v_x in array array['fn_desde_editor()', 'es_dueno()', 'fn_fecha_miami(timestamptz)', 'fn_banco_clasificar(uuid,jsonb,text)',
-                             'fn_banco_casar(uuid)', 'fn_banco_descasar(uuid,text)', 'fn_banco_norm(text)'] loop
+                             'fn_banco_casar(uuid)', 'fn_banco_descasar(uuid,text)', 'fn_banco_norm(text)', 'fn_puente_normalizar(text)'] loop
     if to_regprocedure('public.' || v_x) is null then
       v_falta := v_falta || v_x;
     end if;
   end loop;
-  foreach v_x in array array['cuentas', 'proyectos', 'perfiles', 'asientos', 'asiento_lineas', 'movimientos_banco', 'banco_casados'] loop
+  foreach v_x in array array['cuentas', 'proyectos', 'perfiles', 'asientos', 'asiento_lineas', 'movimientos_banco', 'banco_casados',
+                             'horas', 'recibos', 'materiales', 'proveedores_alias'] loop
     if to_regclass('public.' || v_x) is null then
       v_falta := v_falta || v_x;
+    end if;
+  end loop;
+  -- (7b) las pistas de la obra se leen de horas, recibos, materiales y
+  -- proyectos por estas columnas
+  foreach v_x in array array['horas:proyecto_id', 'horas:fecha', 'horas:horas', 'recibos:proyecto_id', 'recibos:proveedor', 'recibos:fecha',
+                             'recibos:estado', 'recibos:creado', 'materiales:proyecto_id', 'materiales:creado', 'proyectos:estado',
+                             'proyectos:nombre'] loop
+    if to_regclass('public.' || split_part(v_x, ':', 1)) is not null
+       and not exists (select 1 from information_schema.columns
+                        where table_schema = 'public' and table_name = split_part(v_x, ':', 1) and column_name = split_part(v_x, ':', 2)) then
+      v_falta := v_falta || format('%s.%s (las pistas de la obra, 7b)', split_part(v_x, ':', 1), split_part(v_x, ':', 2));
     end if;
   end loop;
   if to_regclass('public.v_banco_bandeja') is null then
@@ -583,7 +716,8 @@ comment on table public.contador_lotes is 'c8: cada ráfaga a la IA: modelo, esf
 -- Edgar), con qué se le preguntó a la IA (entrada: lo variable congelado
 -- tal cual, sin datos personales) y qué contestó tal cual (salida), la
 -- propuesta validada ({"lineas":[{"cuenta","monto"?,"proyecto_id"?}],
--- "motivo","confianza","flags":{…},"alternativas"?:[…]}), su estado y, si
+-- "motivo","confianza","flags":{…},"alternativas"?:[…],"obra"?:{"proyecto_id",
+-- "confianza","motivo"}}: la obra desde la 7b), su estado y, si
 -- Edgar la aprobó o la editó, las líneas que entraron, quién, cuándo, su
 -- motivo y el asiento de c6. Una sola «pendiente» por movimiento.
 create table if not exists public.contador_propuestas (
@@ -617,12 +751,23 @@ create table if not exists public.contador_propuestas (
 -- (la nota de la base cuando cierra una propuesta sin Edgar: la IA propuso
 -- otra vez, la regla se dio de baja, su asiento se reversó)
 alter table public.contador_propuestas add column if not exists nota text;
+-- (7b: lo que la base vio al proponer la obra, fn_contador_pistas_obra tal
+-- cual —{obras, candidata, resumen}—; la bandeja enseña su resumen)
+alter table public.contador_propuestas add column if not exists pistas jsonb;
 create unique index if not exists contador_propuestas_una_pendiente on public.contador_propuestas (movimiento_id) where estado = 'pendiente';
 create index if not exists contador_propuestas_mov_idx on public.contador_propuestas (movimiento_id, creado_el desc);
 create index if not exists contador_propuestas_lote_idx on public.contador_propuestas (lote_id) where lote_id is not null;
 create index if not exists contador_propuestas_regla_idx on public.contador_propuestas (regla_id) where regla_id is not null;
 create index if not exists contador_propuestas_asiento_idx on public.contador_propuestas (asiento_id) where asiento_id is not null;
-comment on table public.contador_propuestas is 'c8: cada propuesta de clasificación de un movimiento del banco (de una regla, de la IA o de Edgar): lo que se le dio a la IA, lo que contestó, la propuesta validada, su estado y, aprobada o editada, su asiento de c6.';
+comment on table public.contador_propuestas is 'c8: cada propuesta de clasificación de un movimiento del banco (de una regla, de la IA o de Edgar): lo que se le dio a la IA, lo que contestó, la propuesta validada (con la obra propuesta y sus pistas desde la 7b), su estado y, aprobada o editada, su asiento de c6.';
+
+-- (7b) Las pistas de la obra se leen de horas, recibos y materiales POR OBRA
+-- ACTIVA y fecha (fn_contador_pistas_obra hace una consulta por obra y pista,
+-- que entra por estos índices): tres índices de lectura, lo único que c8
+-- pone en tablas de la app (y no las escribe).
+create index if not exists contador_horas_obra_fecha_idx       on public.horas (proyecto_id, fecha);
+create index if not exists contador_recibos_obra_fecha_idx     on public.recibos (proyecto_id, fecha);
+create index if not exists contador_materiales_obra_creado_idx on public.materiales (proyecto_id, creado);
 
 -- La fila de la configuración: el dueño activo más antiguo. Al volver a
 -- pegar no se pisa nada.
@@ -1141,6 +1286,210 @@ end $$;
 revoke execute on function public.fn_contador_tope() from public, anon, authenticated, service_role;
 comment on function public.fn_contador_tope() is 'c8: el gasto de la IA del mes contra el tope global de la app y el propio del contador: bloqueado (y por qué), aviso y lo que queda.';
 
+-- ¿ES EL MISMO COMERCIO el proveedor de un ticket (recibos.proveedor, como
+-- lo escribió quien subió la foto o la lectura) y el comercio de un cargo
+-- del banco (fn_contador_nombre_comercio de desc_norm)? El proveedor se
+-- normaliza como c6 (fn_banco_norm) y se reduce a comercio como c8 (sin
+-- números ni ciudad), a los dos se les quita el «THE» de delante, y son el
+-- mismo si son iguales o uno contiene al otro palabra por palabra («HOME
+-- DEPOT» y «THE HOME DEPOT»; «SHELL» y «SHELL OIL»; «CES» y «CES»), o si los
+-- dos son alias del mismo proveedor de c3 (proveedores_alias: «CED» y
+-- «Consolidated Electrical Distributors»). Una palabra suelta en común no
+-- basta (c6 sí la acepta en fn_banco_comercio, para otra cosa: un ticket
+-- del mismo monto): «Ocala Electric Supply» no es todo lo que se compra en
+-- Ocala, y aquí cada ticket suma 6 puntos a una obra.
+create or replace function public.fn_contador_mismo_comercio(p_proveedor text, p_comercio text) returns boolean
+language plpgsql stable
+set search_path = public, pg_temp
+as $$
+declare
+  a text;
+  b text;
+begin
+  perform fn_contador_exigir();
+  if nullif(btrim(coalesce(p_proveedor, '')), '') is null or nullif(btrim(coalesce(p_comercio, '')), '') is null then
+    return false;
+  end if;
+  a := regexp_replace(coalesce(fn_contador_nombre_comercio(fn_banco_norm(p_proveedor)), fn_banco_norm(p_proveedor)), '^THE ', '');
+  b := regexp_replace(upper(btrim(p_comercio)), '^THE ', '');
+  if length(a) >= 3 and length(b) >= 3
+     and (a = b or position(' ' || a || ' ' in ' ' || b || ' ') > 0 or position(' ' || b || ' ' in ' ' || a || ' ') > 0) then
+    return true;
+  end if;
+  return exists (select 1 from proveedores_alias x
+                   join proveedores_alias y on y.proveedor_id = x.proveedor_id
+                  where x.alias = fn_puente_normalizar(p_proveedor) and y.alias = fn_puente_normalizar(p_comercio));
+end $$;
+revoke execute on function public.fn_contador_mismo_comercio(text, text) from public, anon, authenticated, service_role;
+comment on function public.fn_contador_mismo_comercio(text, text) is 'c8: si el proveedor de un ticket y el comercio de un cargo del banco son el mismo (iguales o uno dentro del otro palabra por palabra, sin el THE; o alias del mismo proveedor de c3).';
+
+-- LAS PISTAS DE LA OBRA (7b): lo que la app sabe que apunta a la obra de un
+-- cargo, calculado aquí (determinista) para que la IA lo lea y proponga la
+-- obra, y Edgar confirme. Por cada obra ACTIVA, alrededor de la fecha del
+-- cargo: horas_cerca (las horas de la cuadrilla en esa obra de 3 días antes
+-- a 3 después), horas_mes (los 30 días anteriores), recibos_proveedor (los
+-- tickets del mismo comercio con esa obra en 180 días, sin los anulados),
+-- veces_elegida (las propuestas aprobadas o editadas del mismo comercio que
+-- llevan esa obra) y materiales_recientes (la lista de materiales de esa
+-- obra, de 14 días antes a 1 después). Puntos = horas_cerca × 2 + horas_mes
+-- × 0,2 + recibos_proveedor × 6 + veces_elegida × 10 + materiales_recientes.
+-- Devuelve {obras: [las que tienen alguna pista, de más a menos puntos,
+-- hasta 6], candidata: {proyecto_id, nombre, confianza, motivo} | null,
+-- resumen}: la candidata es la primera si llega a 8 puntos y dobla a la
+-- segunda (o es la única), confianza = min(0,9, p1 / (p1 + p2 + 4)) a dos
+-- decimales, y el motivo cita en llano las pistas que suman. Sin pistas:
+-- obras [], candidata null, resumen «sin pistas». Nada personal: ni
+-- usuario_id, ni nombres, ni notas, ni rutas de fotos; solo totales por obra
+-- y el nombre de la obra. Una llamada por movimiento (20 por ráfaga).
+-- CÓMO LEE (la verificación del 31-oct midió la primera versión, que iba
+-- tabla entera y comparaba el comercio por ticket: 6 s por ráfaga con 2.000
+-- tickets y 2.000 materiales): cada pista es una consulta POR OBRA ACTIVA
+-- sobre su ventana, que entra por los índices contador_*_idx (obra, fecha);
+-- y el comercio de los tickets se compara UNA VEZ POR PROVEEDOR DISTINTO de
+-- la ventana (fn_contador_mismo_comercio normaliza, saca el comercio y mira
+-- los alias de c3: cara por fila), no por ticket. Así el costo crece con lo
+-- que hay cerca de la fecha, no con los años que la app acumule.
+create or replace function public.fn_contador_pistas_obra(p_movimiento uuid) returns jsonb
+language plpgsql stable
+set search_path = public, pg_temp
+as $$
+declare
+  m        movimientos_banco;
+  v_com    text;
+  v_provs  text[] := '{}';
+  v_desde  timestamptz;
+  v_hasta  timestamptz;
+  v_obras  jsonb;
+  v_1      jsonb;
+  v_2      jsonb;
+  p1       numeric;
+  p2       numeric;
+  v_cand   jsonb;
+  v_partes text[] := '{}';
+  v_obra   text;
+  v_n      int;
+  v_res    text;
+begin
+  perform fn_contador_exigir();
+  select * into m from movimientos_banco where id = p_movimiento;
+  if not found then
+    raise exception using errcode = '22023', message = 'No existe ese movimiento del banco.';
+  end if;
+  v_com := fn_contador_nombre_comercio(m.desc_norm);
+  -- Los proveedores de los tickets de la ventana (180 días, obras activas, sin
+  -- los anulados) que son este comercio: primero la lista de proveedores
+  -- DISTINTOS y después la comparación, una vez por proveedor. «materialized»
+  -- es la barrera: sin ella el planificador empuja la condición (la función
+  -- es stable, no volátil) dentro del distinct y la evalúa otra vez por fila.
+  if v_com is not null then
+    with pv as materialized (
+      select distinct r.proveedor
+        from proyectos p
+        join recibos r on r.proyecto_id = p.id
+       where p.estado in ('aprobado', 'ejecucion', 'pausa')
+         and r.proveedor is not null and r.estado is distinct from 'anulado'
+         and coalesce(r.fecha, fn_fecha_miami(r.creado)) between m.fecha - 180 and m.fecha)
+    select coalesce(array_agg(pv.proveedor), '{}') into v_provs
+      from pv
+     where fn_contador_mismo_comercio(pv.proveedor, v_com);
+  end if;
+  -- la ventana de los materiales, sobre la columna (creado es un instante; la
+  -- lista se apunta «tal día» en Miami): de 14 días antes a 1 después
+  v_desde := (m.fecha - 14)::timestamp at time zone 'America/New_York';
+  v_hasta := (m.fecha + 2)::timestamp at time zone 'America/New_York';
+  -- (lo que Edgar eligió antes para este comercio: una propuesta cuenta una
+  -- vez por obra aunque lleve dos líneas a la misma; la primera palabra del
+  -- comercio en desc_norm filtra barato antes de sacar el comercio entero de
+  -- cada una)
+  with ve as (select l.pid as proyecto_id, count(*) as n
+                from contador_propuestas q
+                join movimientos_banco mm on mm.id = q.movimiento_id
+               cross join lateral (select distinct x->>'proyecto_id' as pid from jsonb_array_elements(q.lineas_finales) x
+                                    where nullif(x->>'proyecto_id', '') is not null) l
+               where v_com is not null and q.estado in ('aprobada', 'editada') and q.movimiento_id <> m.id
+                 and jsonb_typeof(q.lineas_finales) = 'array'
+                 and position(split_part(v_com, ' ', 1) in coalesce(mm.desc_norm, '')) > 0
+                 and fn_contador_nombre_comercio(mm.desc_norm) = v_com
+               group by 1),
+       -- por obra activa, cada pista con su consulta sobre su ventana (entra
+       -- por el índice (obra, fecha) de cada tabla)
+       o as (select p.id, p.nombre,
+                    trim_scale(coalesce((select sum(h.horas) from horas h
+                                          where h.proyecto_id = p.id and h.fecha between m.fecha - 3 and m.fecha + 3), 0)) as horas_cerca,
+                    trim_scale(coalesce((select sum(h.horas) from horas h
+                                          where h.proyecto_id = p.id and h.fecha between m.fecha - 30 and m.fecha), 0)) as horas_mes,
+                    (select count(*) from recibos r
+                      where r.proyecto_id = p.id and r.estado is distinct from 'anulado' and r.proveedor = any (v_provs)
+                        and coalesce(r.fecha, fn_fecha_miami(r.creado)) between m.fecha - 180 and m.fecha)::int as recibos_proveedor,
+                    coalesce(ve.n, 0)::int as veces_elegida,
+                    (select count(*) from materiales t
+                      where t.proyecto_id = p.id and t.creado >= v_desde and t.creado < v_hasta)::int as materiales_recientes
+               from proyectos p
+               left join ve on ve.proyecto_id = p.id
+              where p.estado in ('aprobado', 'ejecucion', 'pausa')),
+       z as (select o.*, (o.horas_cerca * 2 + o.horas_mes * 0.2 + o.recibos_proveedor * 6 + o.veces_elegida * 10
+                          + o.materiales_recientes)::numeric(10,1) as puntos
+               from o
+              where o.horas_cerca + o.horas_mes + o.recibos_proveedor + o.veces_elegida + o.materiales_recientes > 0)
+  select coalesce(jsonb_agg(jsonb_build_object('proyecto_id', y.id, 'nombre', y.nombre, 'horas_cerca', y.horas_cerca, 'horas_mes', y.horas_mes,
+                                               'recibos_proveedor', y.recibos_proveedor, 'veces_elegida', y.veces_elegida,
+                                               'materiales_recientes', y.materiales_recientes, 'puntos', y.puntos)
+                            order by y.puntos desc, y.nombre, y.id), '[]'::jsonb)
+    into v_obras
+    from (select * from z order by z.puntos desc, z.nombre, z.id limit 6) y;
+  v_1 := v_obras->0;
+  v_2 := v_obras->1;
+  p1 := coalesce((v_1->>'puntos')::numeric, 0);
+  p2 := coalesce((v_2->>'puntos')::numeric, 0);
+  if p1 >= 8 and (p2 = 0 or p1 >= 2 * p2) then
+    -- el motivo, en llano: la obra se nombra en la primera pista; después es «esa obra»
+    if (v_1->>'horas_cerca')::numeric > 0 then
+      v_partes := v_partes || format('la cuadrilla reportó %s h en %s esos días%s', v_1->>'horas_cerca', v_1->>'nombre',
+                                     case when (v_1->>'horas_mes')::numeric > (v_1->>'horas_cerca')::numeric
+                                          then format(' (%s h en los últimos 30 días)', v_1->>'horas_mes') else '' end);
+    elsif (v_1->>'horas_mes')::numeric > 0 then
+      v_partes := v_partes || format('la cuadrilla reportó %s h en %s en los últimos 30 días', v_1->>'horas_mes', v_1->>'nombre');
+    end if;
+    v_n := (v_1->>'recibos_proveedor')::int;
+    if v_n > 0 then
+      v_obra := case when cardinality(v_partes) = 0 then v_1->>'nombre' else 'esa obra' end;
+      v_partes := v_partes || case when v_n = 1 then format('1 compra anterior de %s fue a %s', v_com, v_obra)
+                                   else format('%s compras anteriores de %s fueron a %s', v_n, v_com, v_obra) end;
+    end if;
+    v_n := (v_1->>'veces_elegida')::int;
+    if v_n > 0 then
+      v_obra := case when cardinality(v_partes) = 0 then v_1->>'nombre' else 'esa obra' end;
+      v_partes := v_partes || case when v_n = 1 then format('Edgar eligió %s la última vez con %s', v_obra, v_com)
+                                   else format('Edgar eligió %s %s veces con %s', v_obra, v_n, v_com) end;
+    end if;
+    v_n := (v_1->>'materiales_recientes')::int;
+    if v_n > 0 then
+      v_obra := case when cardinality(v_partes) = 0 then 'la lista de ' || (v_1->>'nombre') else 'su lista' end;
+      v_partes := v_partes || case when v_n = 1 then format('hay 1 material de %s apuntado estos días', v_obra)
+                                   else format('hay %s materiales de %s apuntados estos días', v_n, v_obra) end;
+    end if;
+    v_cand := jsonb_build_object('proyecto_id', v_1->>'proyecto_id', 'nombre', v_1->>'nombre',
+                                 'confianza', round(least(0.9, p1 / (p1 + p2 + 4)), 2),
+                                 'motivo', array_to_string(v_partes, '; '));
+  end if;
+  select string_agg(format('%s: %s', o->>'nombre',
+                           concat_ws(', ',
+                             case when (o->>'horas_cerca')::numeric > 0 then (o->>'horas_cerca') || ' h esos días' end,
+                             case when (o->>'horas_mes')::numeric > 0 then (o->>'horas_mes') || ' h en 30 días' end,
+                             case when (o->>'recibos_proveedor')::int = 1 then '1 ticket de ' || v_com
+                                  when (o->>'recibos_proveedor')::int > 1 then (o->>'recibos_proveedor') || ' tickets de ' || v_com end,
+                             case when (o->>'veces_elegida')::int = 1 then 'elegida 1 vez'
+                                  when (o->>'veces_elegida')::int > 1 then 'elegida ' || (o->>'veces_elegida') || ' veces' end,
+                             case when (o->>'materiales_recientes')::int = 1 then '1 material reciente'
+                                  when (o->>'materiales_recientes')::int > 1 then (o->>'materiales_recientes') || ' materiales recientes' end)),
+                    ' · ' order by n)
+    into v_res
+    from jsonb_array_elements(v_obras) with ordinality t(o, n);
+  return jsonb_build_object('obras', v_obras, 'candidata', v_cand, 'resumen', coalesce(v_res, 'sin pistas'));
+end $$;
+revoke execute on function public.fn_contador_pistas_obra(uuid) from public, anon, authenticated, service_role;
+comment on function public.fn_contador_pistas_obra(uuid) is 'c8: (7b) las pistas de la obra de un cargo, por obra activa (horas cerca y en el mes, tickets del mismo comercio, veces elegida, materiales recientes) con sus puntos; la candidata (≥ 8 puntos y el doble que la segunda) con confianza y motivo; y un resumen. Nada personal. Lee por obra activa (los índices contador_*_idx) y compara el comercio una vez por proveedor distinto.';
+
 -- LO QUE SE LE DA A LA IA: los movimientos que esperan (hasta el límite,
 -- nunca más que max_por_rafaga) y el contexto: las cuentas permitidas, las
 -- obras activas, las reglas activas (y su versión: md5 de todas, para
@@ -1148,7 +1497,10 @@ comment on function public.fn_contador_tope() is 'c8: el gasto de la IA del mes 
 -- clasificó (por comercio distinto: aprende de sus correcciones, también
 -- de las que hizo a mano antes de la IA) y el tope. Todo ordenado y sin
 -- fechas ni ids de lote: así el prefijo es idéntico entre llamadas y
--- cachea. Sin correos, teléfonos ni números de cuenta.
+-- cachea. Sin correos, teléfonos ni números de cuenta. Cada movimiento
+-- lleva pistas_obra (7b): fn_contador_pistas_obra sin los puntos internos
+-- (las obras con sus totales, la candidata y el resumen), para que la IA
+-- proponga la obra solo con lo que la base vio.
 create or replace function public.fn_contador_pendientes(p_limite int default 20) returns jsonb
 language plpgsql stable
 set search_path = public, pg_temp
@@ -1173,6 +1525,12 @@ begin
            'descripcion', fn_contador_sin_datos(c.descripcion), 'memo', fn_contador_sin_datos(c.memo),
            'desc_norm', fn_contador_sin_datos_norm(c.desc_norm, c.descripcion, c.memo), 'tipo_banco', c.tipo_banco, 'dias', c.dias,
            'motivo', c.motivo))
+           -- (7b: las pistas de la obra, sin los puntos internos; fuera del
+           -- strip_nulls para que «candidata: null» se vea tal cual)
+           || jsonb_build_object('pistas_obra',
+                (select jsonb_set(z.p, '{obras}', coalesce((select jsonb_agg(o - 'puntos' order by n)
+                                                              from jsonb_array_elements(z.p->'obras') with ordinality t(o, n)), '[]'::jsonb))
+                   from (select fn_contador_pistas_obra(c.movimiento_id) as p) z))
            order by c.fecha, c.importado_el, c.movimiento_id), '[]'::jsonb)
     into v_movs
     from (select * from fn_contador_candidatos() limit v_lim) c;
@@ -1220,7 +1578,7 @@ begin
                                  'prompt_version', cfg.prompt_version, 'prefijo_hash', cfg.prefijo_hash));
 end $$;
 revoke execute on function public.fn_contador_pendientes(int) from public, anon, authenticated, service_role;
-comment on function public.fn_contador_pendientes(int) is 'c8: los movimientos que esperan propuesta (hasta el límite) y el contexto para la IA: cuentas permitidas, obras activas, reglas y su versión, los últimos 30 ejemplos de Edgar, y el tope.';
+comment on function public.fn_contador_pendientes(int) is 'c8: los movimientos que esperan propuesta (hasta el límite, cada uno con las pistas de su obra) y el contexto para la IA: cuentas permitidas, obras activas, reglas y su versión, los últimos 30 ejemplos de Edgar, y el tope.';
 
 -- LAS REGLAS, ANTES QUE LA IA (Postgres contesta gratis): para cada
 -- movimiento que espera, la regla activa que casa (desc_norm ~* patron, y
@@ -1228,9 +1586,13 @@ comment on function public.fn_contador_pendientes(int) is 'c8: los movimientos q
 -- patrón más largo); un empate no decide y se deja a la IA. Una propuesta
 -- de la regla ya rechazada para ese movimiento no se repite. La propuesta
 -- lleva confianza 1, «Regla: <nombre>», sus líneas (con el monto de cada
--- parte, si son varias) y pide_obra si alguna cuenta pide obra y la regla
--- no la trae. Una regla cuya cuenta ya no se puede proponer no se aplica
--- (y se dice: reglas_rotas; el cuadre 62 la nombra).
+-- parte, si son varias) y, si alguna cuenta pide obra y la regla no la
+-- trae, LA CANDIDATA de fn_contador_pistas_obra (7b: la regla dice la
+-- cuenta; las pistas, la obra), copiada a las líneas que admiten obra, con
+-- su confianza y su motivo en «obra» y flags.obra_propuesta; sin candidata,
+-- pide_obra como siempre. Las pistas quedan con la propuesta. Una regla
+-- cuya cuenta ya no se puede proponer no se aplica (y se dice:
+-- reglas_rotas; el cuadre 62 la nombra).
 create or replace function public.fn_contador_reglas_aplicar(p_dueno uuid) returns jsonb
 language plpgsql
 set search_path = public, pg_temp
@@ -1255,6 +1617,9 @@ declare
   v_parte  numeric;
   v_mal    text;
   v_obra   boolean;
+  v_pistas jsonb;
+  v_cand   jsonb;
+  v_obraj  jsonb;
 begin
   perform fn_contador_exigir();
   perform fn_contador_dueno_fijar(p_dueno);
@@ -1316,13 +1681,37 @@ begin
       if not (v_best.nombre = any (v_rotas)) then v_rotas := v_rotas || v_best.nombre; end if;
       continue;
     end if;
+    -- (7b) LA OBRA, POR LAS PISTAS: la regla dice la cuenta; si alguna línea
+    -- pide obra y no la trae, la candidata de fn_contador_pistas_obra va a
+    -- las líneas que la admiten (obligatoria u opcional) y no la traen, con
+    -- su confianza y su motivo; sin candidata, pide_obra como siempre. Las
+    -- pistas quedan guardadas con la propuesta (la bandeja enseña el
+    -- resumen) y su resumen va también en «entrada», con la regla.
+    v_pistas := fn_contador_pistas_obra(c.movimiento_id);
+    v_cand := case when v_obra and jsonb_typeof(v_pistas->'candidata') = 'object' then v_pistas->'candidata' end;
+    v_obraj := null;
+    if v_cand is not null then
+      select jsonb_agg(case when nullif(x->>'proyecto_id', '') is null
+                             and exists (select 1 from cuentas k where k.codigo = x->>'cuenta' and k.regla_obra in ('obligatoria', 'opcional'))
+                            then x || jsonb_build_object('proyecto_id', v_cand->>'proyecto_id') else x end order by o)
+        into v_lineas
+        from jsonb_array_elements(v_lineas) with ordinality as a(x, o);
+      v_obra := false;
+      v_obraj := jsonb_build_object('proyecto_id', v_cand->>'proyecto_id', 'confianza', (v_cand->>'confianza')::numeric,
+                                    'motivo', v_cand->>'motivo');
+    end if;
     begin
-      insert into contador_propuestas (movimiento_id, fuente, regla_id, propuesta, entrada)
+      insert into contador_propuestas (movimiento_id, fuente, regla_id, propuesta, entrada, pistas)
       values (c.movimiento_id, 'regla', v_best.id,
-              jsonb_build_object('lineas', v_lineas, 'motivo', 'Regla: ' || v_best.nombre, 'confianza', 1,
-                                 'flags', case when v_obra then '{"pide_obra": true}'::jsonb else '{}'::jsonb end),
+              jsonb_strip_nulls(jsonb_build_object('lineas', v_lineas, 'motivo', 'Regla: ' || v_best.nombre, 'confianza', 1,
+                                                   'flags', case when v_obra then '{"pide_obra": true}'::jsonb
+                                                                 when v_obraj is not null then '{"obra_propuesta": true}'::jsonb
+                                                                 else '{}'::jsonb end,
+                                                   'obra', v_obraj)),
               jsonb_build_object('regla', v_best.id, 'nombre', v_best.nombre, 'patron', v_best.patron,
-                                 'desc_norm', fn_contador_sin_datos_norm(c.desc_norm, c.descripcion, c.memo)));
+                                 'desc_norm', fn_contador_sin_datos_norm(c.desc_norm, c.descripcion, c.memo),
+                                 'pistas_resumen', v_pistas->>'resumen'),
+              v_pistas);
     exception when unique_violation then
       continue;   -- (otra ráfaga llegó antes a este movimiento)
     end;
@@ -1332,7 +1721,7 @@ begin
   return jsonb_build_object('propuestas', v_n, 'candidatos', v_nc, 'reglas_rotas', to_jsonb(v_rotas));
 end $$;
 revoke execute on function public.fn_contador_reglas_aplicar(uuid) from public, anon, authenticated, service_role;
-comment on function public.fn_contador_reglas_aplicar(uuid) is 'c8: a cada movimiento que espera, la regla activa más específica que casa deja su propuesta (confianza 1); un empate, ninguna; una rechazada no se repite.';
+comment on function public.fn_contador_reglas_aplicar(uuid) is 'c8: a cada movimiento que espera, la regla activa más específica que casa deja su propuesta (confianza 1; si su cuenta pide obra, con la candidata de las pistas); un empate, ninguna; una rechazada no se repite.';
 
 
 -- ---------------------------------------------------------------------
@@ -1512,10 +1901,12 @@ comment on function public.fn_contador_lote_cerrar(uuid, jsonb, text) is 'c8: ci
 -- 7. Las propuestas: validar, guardar, aprobar, clasificar, rechazar
 -- ---------------------------------------------------------------------
 -- LAS LÍNEAS de una propuesta o de Edgar ([{"cuenta","monto"?,
--- "proyecto_id"?}], de 1 a 5): cada cuenta permitida, la obra existe y la
--- cuenta la admite, con varias líneas cada una dice su monto y suman el
--- movimiento al centavo. Devuelve {lineas (normalizadas), pide_obra} o
--- {error, codigo} (la IA que falla no se guarda; Edgar lo ve en llano).
+-- "proyecto_id"?}], de 1 a 5): cada cuenta permitida, la obra existe, ESTÁ
+-- ACTIVA (la que se cerró después de proponerla no entra al libro: MX008 con
+-- la pista «elige la obra») y la cuenta la admite, con varias líneas cada
+-- una dice su monto y suman el movimiento al centavo. Devuelve {lineas
+-- (normalizadas), pide_obra} o {error, codigo, pista?} (la IA que falla no
+-- se guarda; Edgar lo ve en llano).
 create or replace function public.fn_contador_lineas_validar(p_lineas jsonb, p_monto numeric) returns jsonb
 language plpgsql stable
 set search_path = public, pg_temp
@@ -1528,6 +1919,7 @@ declare
   v_mal   text;
   v_sobra text;
   c       cuentas;
+  pj      proyectos;
   v_obra  text;
   v_txt   text;
   v_m     numeric;
@@ -1566,8 +1958,19 @@ begin
       return jsonb_build_object('error', format('Línea %s: proyecto_id es el id de la obra (un texto)', v_i), 'codigo', '22023');
     end if;
     if v_obra is not null then
-      if not exists (select 1 from proyectos p where p.id = v_obra) then
+      select * into pj from proyectos p where p.id = v_obra;
+      if not found then
         return jsonb_build_object('error', format('Línea %s: la obra «%s» no existe', v_i, v_obra), 'codigo', 'MX006');
+      end if;
+      -- (31-oct) una obra que ya no está activa no entra al libro: se cerró
+      -- después de proponerla, o la pantalla la mandó desde una bandeja
+      -- abierta hace rato. MX008 con la pista «elige la obra», que la
+      -- pantalla enseña en ámbar junto al selector (fn_contador_clasificar la
+      -- pasa como hint); Edgar elige otra o dice «No es eso».
+      if pj.estado not in ('aprobado', 'ejecucion', 'pausa') then
+        return jsonb_build_object('error', format('Línea %s: la obra «%s» ya no está activa (está %s): elige otra o di «No es eso»',
+                                                  v_i, pj.nombre, pj.estado),
+                                  'codigo', 'MX008', 'pista', 'elige la obra');
       end if;
       if c.regla_obra = 'prohibida' then
         return jsonb_build_object('error', format('Línea %s: la cuenta %s (%s) no lleva obra', v_i, c.codigo, c.nombre), 'codigo', 'MX006');
@@ -1604,18 +2007,33 @@ begin
   return jsonb_build_object('lineas', v_out, 'pide_obra', v_pide);
 end $$;
 revoke execute on function public.fn_contador_lineas_validar(jsonb, numeric) from public, anon, authenticated, service_role;
-comment on function public.fn_contador_lineas_validar(jsonb, numeric) is 'c8: valida y normaliza las líneas de una propuesta (cuentas permitidas, obra, montos que suman el movimiento): {lineas, pide_obra} o {error, codigo}.';
+comment on function public.fn_contador_lineas_validar(jsonb, numeric) is 'c8: valida y normaliza las líneas de una propuesta (cuentas permitidas, obra que existe y está activa, montos que suman el movimiento): {lineas, pide_obra} o {error, codigo, pista?}.';
 
 -- GUARDAR LO QUE CONTESTÓ LA IA: la función de borde lo pide por cada
 -- respuesta, ANTES de enseñar nada. Se guarda solo si pasa (si no, {error,
 -- codigo} y nada queda): el movimiento sigue pendiente y «sin_ticket»; la
 -- propuesta trae sus líneas válidas, un motivo (3 a 600 letras) y una
 -- confianza entre 0 y 1; los flags son los conocidos (capitalizable,
--- use_tax, personal, irs, pide_obra), y pide_obra lo decide la base por
--- las cuentas; las alternativas a una cuenta que no se puede proponer se
--- quitan (se dice cuántas). La pendiente anterior del mismo movimiento
--- pasa a «caducada». Lo que se le dio (entrada) se guarda sin correos,
--- teléfonos ni números de cuenta.
+-- use_tax, personal, irs, pide_obra), y pide_obra y obra_propuesta los
+-- decide la base por las cuentas y la obra; las alternativas a una cuenta
+-- que no se puede proponer se quitan (se dice cuántas). LA OBRA (7b):
+-- «obra» = {proyecto_id, confianza, motivo} o null; una forma que no es esa
+-- no se guarda (22023); una obra que no existe o no está activa se descarta
+-- (la propuesta se guarda sin obra, con pide_obra si alguna cuenta la pide,
+-- y la nota lo dice); la que vale se copia a las líneas cuya cuenta admite
+-- obra (obligatoria u opcional, nunca prohibida) y no la traen, y queda en
+-- propuesta.obra con flags.obra_propuesta; si ninguna línea la toma,
+-- también se descarta con su nota: porque ninguna cuenta lleva obra, o
+-- porque la línea que la admite ya trae la suya (la IA la vio en la
+-- descripción) y la línea manda. Y LA OBRA DE LA LÍNEA (31-oct): una que la
+-- IA puso directo en la línea y no está activa —la copió de un ejemplo viejo
+-- (los ejemplos de Edgar traen obras ya cerradas) o se cerró entre la ráfaga
+-- y la respuesta— se quita de la línea con su nota; la propuesta no se
+-- pierde y la cuenta pide obra como siempre. Una que no existe en la línea
+-- sigue sin guardarse (MX006): esa sí es inventada. Las pistas que la base
+-- vio quedan en «pistas». La pendiente anterior del mismo movimiento pasa a
+-- «caducada». Lo que se le dio (entrada) se guarda sin correos, teléfonos ni
+-- números de cuenta.
 create or replace function public.fn_contador_propuesta_guardar(p_movimiento uuid, p_lote uuid, p_entrada jsonb, p_salida jsonb,
                                                                 p_propuesta jsonb, p_modelo text, p_effort text, p_prompt_version text)
 returns jsonb
@@ -1634,6 +2052,14 @@ declare
   v_fuera int := 0;
   v_prev  uuid;
   v_id    uuid;
+  v_lin   jsonb;
+  v_oin   jsonb;
+  v_oid   text;
+  v_oconf numeric;
+  v_omot  text;
+  v_nota  text;
+  v_txt   text;
+  pj      proyectos;
 begin
   perform fn_contador_exigir();
   if p_movimiento is null or p_lote is null then
@@ -1668,7 +2094,7 @@ begin
     return jsonb_build_object('error', 'la propuesta llega como un objeto {lineas, motivo, confianza, flags?, alternativas?}', 'codigo', '22023');
   end if;
   select string_agg(k, ', ' order by k) into v_sobra from jsonb_object_keys(p_propuesta) k
-   where k not in ('lineas', 'motivo', 'confianza', 'flags', 'alternativas');
+   where k not in ('lineas', 'motivo', 'confianza', 'flags', 'alternativas', 'obra');
   if v_sobra is not null then
     return jsonb_build_object('error', format('la propuesta trae claves que no conozco: %s', v_sobra), 'codigo', '22023');
   end if;
@@ -1686,16 +2112,94 @@ begin
   v_flags := coalesce(p_propuesta->'flags', '{}'::jsonb);
   if jsonb_typeof(v_flags) <> 'object'
      or exists (select 1 from jsonb_each(v_flags) f
-                 where f.key not in ('capitalizable', 'use_tax', 'personal', 'irs', 'pide_obra') or jsonb_typeof(f.value) <> 'boolean') then
+                 where f.key not in ('capitalizable', 'use_tax', 'personal', 'irs', 'pide_obra', 'obra_propuesta')
+                    or jsonb_typeof(f.value) <> 'boolean') then
     return jsonb_build_object('error', 'los flags son un objeto con capitalizable, use_tax, personal, irs y pide_obra (true o false)',
                               'codigo', '22023');
   end if;
-  v_val := fn_contador_lineas_validar(p_propuesta->'lineas', m.monto);
+  -- (7b) LA OBRA PROPUESTA: {proyecto_id, confianza, motivo} o null. Una
+  -- forma que no es esa no se guarda (22023). Una obra que no existe o no
+  -- está activa se DESCARTA: la propuesta se guarda sin obra (pide_obra si
+  -- alguna cuenta la pide) y con la nota. La que vale se copia a las líneas
+  -- cuya cuenta admite obra (obligatoria u opcional, nunca prohibida) y no
+  -- la traen (una línea con su propio proyecto_id se respeta); si ninguna la
+  -- toma, también se descarta, con su nota.
+  v_lin := p_propuesta->'lineas';
+  v_oin := p_propuesta->'obra';
+  -- (31-oct) LA OBRA QUE LA IA PUSO EN UNA LÍNEA y no está activa (la copió
+  -- de un ejemplo viejo, o se cerró entre la ráfaga y la respuesta) se quita
+  -- de la línea, con su nota: la cuenta pedirá obra como siempre y la
+  -- propuesta entera no se pierde por eso. Una que no existe sigue sin
+  -- guardarse (fn_contador_lineas_validar, MX006): esa sí es inventada.
+  if jsonb_typeof(v_lin) = 'array' and jsonb_array_length(v_lin) > 0 then
+    select jsonb_agg(case when py.id is not null and py.estado not in ('aprobado', 'ejecucion', 'pausa') then x - 'proyecto_id' else x end
+                     order by o),
+           string_agg(format('la IA puso en la línea %s la obra «%s» (%s), que no está activa (está %s): se guarda sin ella',
+                             coalesce(x->>'cuenta', '?'), py.id, py.nombre, py.estado), '; ' order by o)
+             filter (where py.id is not null and py.estado not in ('aprobado', 'ejecucion', 'pausa'))
+      into v_lin, v_nota
+      from jsonb_array_elements(v_lin) with ordinality as a(x, o)
+      left join proyectos py on jsonb_typeof(x) = 'object' and py.id = nullif(btrim(coalesce(x->>'proyecto_id', '')), '');
+  end if;
+  if v_oin is not null and jsonb_typeof(v_oin) <> 'null' then
+    -- («is distinct from»: jsonb_typeof de una clave que falta es nulo, y un
+    -- «<>» nulo no para nada)
+    if jsonb_typeof(v_oin) <> 'object' or jsonb_typeof(v_oin->'proyecto_id') is distinct from 'string'
+       or jsonb_typeof(v_oin->'confianza') is distinct from 'number' or jsonb_typeof(v_oin->'motivo') is distinct from 'string'
+       or exists (select 1 from jsonb_object_keys(v_oin) k where k not in ('proyecto_id', 'confianza', 'motivo')) then
+      return jsonb_build_object('error', 'la obra propuesta va como {proyecto_id, confianza, motivo}, o null si las pistas no alcanzan',
+                                'codigo', '22023');
+    end if;
+    v_oconf := (v_oin->>'confianza')::numeric;
+    if v_oconf < 0 or v_oconf > 1 then
+      return jsonb_build_object('error', format('la confianza de la obra va entre 0 y 1 (llegó %s)', v_oconf), 'codigo', '22023');
+    end if;
+    v_omot := left(btrim(v_oin->>'motivo'), 300);
+    if length(v_omot) < 3 then
+      return jsonb_build_object('error', 'la obra propuesta no dice por qué (motivo, de 3 a 300 letras): sin motivo no se guarda («cita o se calla»)',
+                                'codigo', '22023');
+    end if;
+    v_oid := nullif(btrim(v_oin->>'proyecto_id'), '');
+    select * into pj from proyectos where id = v_oid;
+    if v_oid is null or not found then
+      v_nota := concat_ws('; ', v_nota, format('la IA propuso la obra «%s», que no existe: la propuesta se guarda sin obra', coalesce(v_oid, '')));
+      v_oid := null;
+    elsif pj.estado not in ('aprobado', 'ejecucion', 'pausa') then
+      v_nota := concat_ws('; ', v_nota, format('la IA propuso la obra «%s» (%s), que no está activa (está %s): la propuesta se guarda sin obra',
+                                               v_oid, pj.nombre, pj.estado));
+      v_oid := null;
+    end if;
+    if v_oid is not null and jsonb_typeof(v_lin) = 'array' and jsonb_array_length(v_lin) > 0 then
+      select jsonb_agg(case when jsonb_typeof(x) = 'object' and nullif(btrim(coalesce(x->>'proyecto_id', '')), '') is null
+                             and exists (select 1 from cuentas k where k.codigo = btrim(coalesce(x->>'cuenta', ''))
+                                                                  and k.regla_obra in ('obligatoria', 'opcional'))
+                            then x || jsonb_build_object('proyecto_id', v_oid) else x end order by o)
+        into v_lin
+        from jsonb_array_elements(v_lin) with ordinality as a(x, o);
+      if not exists (select 1 from jsonb_array_elements(v_lin) x where x->>'proyecto_id' = v_oid) then
+        -- ninguna línea la tomó: o la que admite obra ya traía la suya (la IA
+        -- la vio en la descripción, y la línea manda) o ninguna cuenta de la
+        -- propuesta lleva obra; la nota dice cuál de las dos
+        select string_agg(format('«%s» (%s)', x->>'proyecto_id', coalesce(py.nombre, '?')), ', ' order by o) into v_txt
+          from jsonb_array_elements(v_lin) with ordinality as a(x, o)
+          left join proyectos py on py.id = x->>'proyecto_id'
+         where nullif(x->>'proyecto_id', '') is not null;
+        v_nota := concat_ws('; ', v_nota,
+                    case when v_txt is not null
+                         then format('la IA propuso la obra «%s», pero la línea ya trae su propia obra, %s: se guarda con la de la línea', v_oid, v_txt)
+                         else format('la IA propuso la obra «%s», pero ninguna cuenta de la propuesta lleva obra: se guarda sin obra', v_oid) end);
+        v_oid := null;
+      end if;
+    end if;
+  end if;
+  v_val := fn_contador_lineas_validar(v_lin, m.monto);
   if v_val ? 'error' then
     return jsonb_build_object('error', 'la propuesta no vale: ' || (v_val->>'error'), 'codigo', v_val->>'codigo');
   end if;
-  -- pide_obra lo decide la base (las cuentas), no la IA
-  v_flags := (v_flags - 'pide_obra') || case when (v_val->>'pide_obra')::boolean then '{"pide_obra": true}'::jsonb else '{}'::jsonb end;
+  -- pide_obra y obra_propuesta los decide la base (las cuentas y la obra), no la IA
+  v_flags := (v_flags - 'pide_obra' - 'obra_propuesta')
+             || case when (v_val->>'pide_obra')::boolean then '{"pide_obra": true}'::jsonb else '{}'::jsonb end
+             || case when v_oid is not null then '{"obra_propuesta": true}'::jsonb else '{}'::jsonb end;
   -- las alternativas: solo a cuentas que se pueden proponer
   if p_propuesta ? 'alternativas' and jsonb_typeof(p_propuesta->'alternativas') = 'array' then
     select coalesce(jsonb_agg(jsonb_build_object('cuenta', btrim(x->>'cuenta'), 'motivo', left(btrim(coalesce(x->>'motivo', '')), 300))
@@ -1715,17 +2219,21 @@ begin
      set estado = 'caducada', nota = format('la IA propuso otra vez (ráfaga %s)', l.id)
    where movimiento_id = m.id and estado = 'pendiente'
   returning id into v_prev;
-  insert into contador_propuestas (movimiento_id, fuente, lote_id, modelo, effort, prompt_version, entrada, salida, propuesta)
+  insert into contador_propuestas (movimiento_id, fuente, lote_id, modelo, effort, prompt_version, entrada, salida, propuesta, nota, pistas)
   values (m.id, 'ia', l.id, p_modelo, p_effort, nullif(btrim(p_prompt_version), ''), fn_contador_sin_datos_jsonb(p_entrada), p_salida,
           jsonb_strip_nulls(jsonb_build_object('lineas', v_val->'lineas', 'motivo', btrim(p_propuesta->>'motivo'),
-                                               'confianza', round(v_conf, 3), 'flags', v_flags, 'alternativas', v_alt)))
+                                               'confianza', round(v_conf, 3), 'flags', v_flags, 'alternativas', v_alt,
+                                               'obra', case when v_oid is not null
+                                                            then jsonb_build_object('proyecto_id', v_oid, 'confianza', round(v_oconf, 3), 'motivo', v_omot) end)),
+          v_nota, fn_contador_pistas_obra(m.id))
   returning id into v_id;
   return jsonb_strip_nulls(jsonb_build_object('propuesta', v_id, 'estado', 'pendiente', 'pide_obra', (v_val->>'pide_obra')::boolean,
-                                              'caducada', v_prev, 'alternativas_fuera', nullif(v_fuera, 0)));
+                                              'caducada', v_prev, 'alternativas_fuera', nullif(v_fuera, 0),
+                                              'obra', v_oid, 'obra_nota', v_nota));
 end $$;
 revoke execute on function public.fn_contador_propuesta_guardar(uuid, uuid, jsonb, jsonb, jsonb, text, text, text)
   from public, anon, authenticated, service_role;
-comment on function public.fn_contador_propuesta_guardar(uuid, uuid, jsonb, jsonb, jsonb, text, text, text) is 'c8: guarda lo que contestó la IA para un movimiento, validado (cuentas permitidas, obra, montos, motivo, confianza, flags); si no vale, {error, codigo} y no se guarda. La pendiente anterior caduca.';
+comment on function public.fn_contador_propuesta_guardar(uuid, uuid, jsonb, jsonb, jsonb, text, text, text) is 'c8: guarda lo que contestó la IA para un movimiento, validado (cuentas permitidas, obra, montos, motivo, confianza, flags; la obra propuesta solo si es una obra activa y alguna línea la toma, si no se descarta con nota; una obra inactiva puesta en una línea se quita con nota); si no vale, {error, codigo} y no se guarda. La pendiente anterior caduca.';
 
 -- LA REGLA QUE NACE DE UNA APROBACIÓN («Recordar para este comercio»):
 -- nombre = el comercio de desc_norm; patrón = «^» + el nombre escapado;
@@ -1846,6 +2354,12 @@ begin
   end if;
   v_val := fn_contador_lineas_validar(p_lineas, m.monto);
   if v_val ? 'error' then
+    -- (la pista —«elige la obra», cuando la obra ya no está activa— va como
+    -- hint: la pantalla la enseña en ámbar junto al selector; un hint nulo no
+    -- se puede dar, por eso las dos formas)
+    if v_val ? 'pista' then
+      raise exception using errcode = coalesce(v_val->>'codigo', '22023'), message = v_val->>'error', hint = v_val->>'pista';
+    end if;
     raise exception using errcode = coalesce(v_val->>'codigo', '22023'), message = v_val->>'error';
   end if;
   v_lineas := v_val->'lineas';
@@ -1934,9 +2448,15 @@ end $$;
 revoke execute on function public.fn_contador_clasificar(uuid, uuid, jsonb, text, boolean, uuid) from public, anon, authenticated, service_role;
 comment on function public.fn_contador_clasificar(uuid, uuid, jsonb, text, boolean, uuid) is 'c8: EL ÚNICO CAMINO AL LIBRO: fn_banco_clasificar (c6) en nombre del dueño con las líneas de Edgar; la propuesta pendiente queda aprobada o editada (o se inserta una de Edgar), y si se pide, se aprende la regla del comercio.';
 
--- «ASÍ ES»: aprobar la propuesta con sus propias líneas. Si pide obra, hay
--- que decirla (p_proyecto_id va a las líneas que la piden y no la traen);
--- sin ella, MX008 «elige la obra».
+-- «ASÍ ES»: aprobar la propuesta con sus propias líneas (con la obra
+-- propuesta, si la trae: 7b). Si Edgar manda p_proyecto_id, su obra manda:
+-- va a toda línea cuya cuenta admite obra, y si difiere de la propuesta la
+-- propuesta queda «editada» (fn_contador_clasificar compara línea a línea).
+-- Si la cuenta pide obra y no hay ninguna, MX008 «elige la obra». Y la obra
+-- que va a entrar —la de Edgar o la de las líneas— tiene que estar ACTIVA:
+-- la que se cerró después de proponerla (el cuadre 64 la señala) no entra
+-- por un toque: MX008 «ya no está activa: elige otra o di No es eso», con la
+-- misma pista «elige la obra» (31-oct).
 create or replace function public.fn_contador_aprobar(p_propuesta uuid, p_dueno uuid, p_proyecto_id text default null,
                                                       p_recordar boolean default true)
 returns jsonb
@@ -1948,6 +2468,7 @@ declare
   v_lineas jsonb;
   v_pide   boolean;
   v_obra   text := nullif(btrim(coalesce(p_proyecto_id, '')), '');
+  py       proyectos;
 begin
   perform fn_contador_exigir();
   perform fn_contador_dueno_fijar(p_dueno);
@@ -1969,22 +2490,49 @@ begin
                          where k.regla_obra = 'obligatoria' and nullif(x->>'proyecto_id', '') is null));
   end if;
   if v_obra is not null then
-    if not exists (select 1 from proyectos p where p.id = v_obra) then
+    select * into py from proyectos p where p.id = v_obra;
+    if not found then
       raise exception using errcode = '22023', message = format('La obra «%s» no existe.', v_obra);
     end if;
-    -- (solo a las líneas que la PIDEN y no la traen: una cuenta con obra
-    -- opcional que la IA dejó sin obra se queda así; si Edgar la quiere con
-    -- obra, lo dice en «Según yo»)
-    select jsonb_agg(case when nullif(x->>'proyecto_id', '') is null and k.regla_obra = 'obligatoria'
+    -- (31-oct) la obra que Edgar manda tiene que estar activa: la pantalla
+    -- solo enseña activas, pero una bandeja abierta hace rato manda la que
+    -- tenía preseleccionada aunque alguien la haya cerrado en medio
+    if py.estado not in ('aprobado', 'ejecucion', 'pausa') then
+      raise exception using errcode = 'MX008', hint = 'elige la obra',
+        message = format('La obra «%s» ya no está activa (está %s): elige otra o di «No es eso».', py.nombre, py.estado);
+    end if;
+    -- (7b) LA OBRA DE EDGAR MANDA: va a toda línea cuya cuenta admite obra
+    -- (obligatoria u opcional), traiga la propuesta la suya o no; la
+    -- pantalla enseña un solo selector por propuesta, preseleccionado con la
+    -- obra propuesta, y lo que Edgar deja ahí es lo que entra. A una cuenta
+    -- con obra prohibida no va nunca. (Antes iba solo a las líneas que la
+    -- pedían y no la traían.)
+    select jsonb_agg(case when k.regla_obra in ('obligatoria', 'opcional')
                           then x || jsonb_build_object('proyecto_id', v_obra) else x end order by o)
       into v_lineas
       from jsonb_array_elements(v_lineas) with ordinality as a(x, o)
       join cuentas k on k.codigo = x->>'cuenta';
+  else
+    -- (31-oct) sin obra de Edgar entra la de las líneas (la que propuso la
+    -- IA o la candidata de las pistas, copiada al guardar; o la que la IA
+    -- puso por la descripción): si esa obra se cerró después de proponerla
+    -- —el cuadre 64 lo dice—, no entra por un toque. MX008 con la pista
+    -- «elige la obra»: la pantalla lo enseña en ámbar junto al selector, y
+    -- Edgar elige otra o dice «No es eso». (fn_contador_clasificar lo vuelve
+    -- a comprobar línea a línea, por si acaso.)
+    select p.* into py from proyectos p
+     where p.id in (select nullif(x->>'proyecto_id', '') from jsonb_array_elements(v_lineas) x)
+       and p.estado not in ('aprobado', 'ejecucion', 'pausa')
+     order by p.nombre, p.id limit 1;
+    if found then
+      raise exception using errcode = 'MX008', hint = 'elige la obra',
+        message = format('La obra propuesta «%s» ya no está activa (está %s): elige otra en el selector o di «No es eso».', py.nombre, py.estado);
+    end if;
   end if;
   return fn_contador_clasificar(pr.movimiento_id, p_dueno, v_lineas, null, p_recordar, pr.id);
 end $$;
 revoke execute on function public.fn_contador_aprobar(uuid, uuid, text, boolean) from public, anon, authenticated, service_role;
-comment on function public.fn_contador_aprobar(uuid, uuid, text, boolean) is 'c8: «Así es»: aprueba una propuesta pendiente con sus líneas (con la obra que Edgar elige si la pide); va por fn_contador_clasificar.';
+comment on function public.fn_contador_aprobar(uuid, uuid, text, boolean) is 'c8: «Así es»: aprueba una propuesta pendiente con sus líneas y su obra propuesta; la obra que Edgar manda (p_proyecto_id) va a toda línea que admite obra y, si difiere, la deja editada; una obra que ya no está activa (la de Edgar o la propuesta) no entra: MX008 «elige la obra»; va por fn_contador_clasificar.';
 
 -- «NO ES ESO»: la propuesta pendiente queda rechazada, con el motivo de
 -- Edgar (o uno de fábrica). Una regla rechazada no se vuelve a proponer
@@ -2237,8 +2785,10 @@ comment on view public.v_contador_reglas is 'c8: las reglas del contador (activa
 
 -- La bandeja de la IA: por movimiento, su propuesta viva (la pendiente) o
 -- la última, con las líneas resueltas (cuenta, obra, monto), el motivo, la
--- confianza, los flags, de dónde salió y, si ya entró, su asiento. Los
--- movimientos pendientes siempre; los demás, 120 días.
+-- confianza, los flags, de dónde salió y, si ya entró, su asiento; y (7b)
+-- la obra propuesta (id, nombre, confianza, motivo) y el resumen de las
+-- pistas que la base vio. Los movimientos pendientes siempre; los demás,
+-- 120 días.
 create view public.v_contador_bandeja with (security_invoker = true) as
 with p as (select q.*, row_number() over (partition by q.movimiento_id order by (q.estado = 'pendiente') desc, q.creado_el desc) as rn
              from public.contador_propuestas q)
@@ -2260,6 +2810,12 @@ select p.movimiento_id, m.cuenta, m.fecha, m.monto, m.descripcion, m.estado as m
        coalesce(p.propuesta->'flags', '{}'::jsonb) as flags,
        coalesce((p.propuesta->'flags'->>'pide_obra')::boolean, false) as pide_obra,
        p.propuesta->'alternativas' as alternativas,
+       -- (7b) la obra propuesta y las pistas
+       p.propuesta->'obra'->>'proyecto_id' as obra_propuesta_id,
+       po.nombre as obra_propuesta,
+       (p.propuesta->'obra'->>'confianza')::numeric as obra_confianza,
+       p.propuesta->'obra'->>'motivo' as obra_motivo,
+       p.pistas->>'resumen' as pistas_resumen,
        p.modelo, p.effort, p.prompt_version, p.regla_id, r.nombre as regla_nombre, p.lote_id,
        p.creado_el, p.aprobado_por, p.aprobado_el, p.lineas_finales, p.motivo_edgar, p.nota,
        p.asiento_id, a.numero as asiento,
@@ -2271,13 +2827,19 @@ select p.movimiento_id, m.cuenta, m.fecha, m.monto, m.descripcion, m.estado as m
   join public.movimientos_banco m on m.id = p.movimiento_id
   left join public.contador_reglas r on r.id = p.regla_id
   left join public.asientos a on a.id = p.asiento_id
+  left join public.proyectos po on po.id = p.propuesta->'obra'->>'proyecto_id'
  where p.rn = 1
    and (m.estado = 'pendiente' or p.creado_el > now() - interval '120 days');
-comment on view public.v_contador_bandeja is 'c8: por movimiento, su propuesta viva (la pendiente) o la última: líneas resueltas, motivo, confianza, flags, fuente (regla, IA o Edgar), estado y, si entró, su asiento.';
+comment on view public.v_contador_bandeja is 'c8: por movimiento, su propuesta viva (la pendiente) o la última: líneas resueltas, motivo, confianza, flags, la obra propuesta con su confianza y motivo, el resumen de las pistas, fuente (regla, IA o Edgar), estado y, si entró, su asiento.';
 
 -- EL CONTROL del contador (orden, control, nivel, ok, filas, esperadas,
--- detalle). Un «cuadre» en rojo: la pantalla no pinta la franja. Una
--- «alarma» en rojo: «Qué atender» en el Resumen.
+-- detalle). Un «cuadre» en rojo: la pantalla no pinta la franja de la IA,
+-- salvo el 64 (una obra propuesta que ya no está activa), que la propia
+-- propuesta resuelve: la pantalla lo deja pasar a propósito —si tapara la
+-- franja, Edgar no tendría el selector que el detalle del 64 le manda usar—
+-- y la base no deja entrar esa obra por un toque (fn_contador_aprobar y
+-- fn_contador_clasificar, MX008). Una «alarma» en rojo: «Qué atender» en el
+-- Resumen.
 create view public.v_contador_control with (security_invoker = true) as
 with cfg as (select * from public.contador_config where id = 1),
      hoy as (select (now() at time zone 'America/New_York')::date as d,
@@ -2401,6 +2963,32 @@ select z.orden, z.control, z.nivel, z.ok, z.filas, z.esperadas, z.detalle
                     where not t.tgisinternal and c.relnamespace = 'public'::regnamespace
                       and c.relname in ('contador_config', 'contador_reglas', 'contador_lotes', 'contador_propuestas')) y) t
    union all
+   -- 64 (7b): toda obra de una propuesta pendiente es una obra activa: la obra propuesta (propuesta.obra) y la que trae cada
+   --     línea (la que la IA puso por la descripción, la candidata copiada, la de una regla con su obra). La que se completó
+   --     o se canceló después de proponerla NO entra al libro por un toque: la base la frena (fn_contador_aprobar y
+   --     fn_contador_clasificar, MX008 «ya no está activa») y Edgar la rechaza o elige otra. La pantalla no apaga la
+   --     franja de la IA por este cuadre, a propósito: la propia propuesta lo resuelve con su selector.
+   select 64, 'ia: toda obra propuesta pendiente es una obra activa', 'cuadre', t.n = 0, t.n, 0,
+          case when t.n > 0 then t.d || ' → recházala (fn_contador_rechazar) o apruébala eligiendo otra obra en el selector' end
+     from (select count(*) as n,
+                  left(string_agg(format('#%s (%s %s «%s»): %s «%s» %s', p.id, m.fecha, m.monto, coalesce(m.descripcion, ''), ob.de,
+                                         coalesce(pr.nombre, ob.pid),
+                                         case when pr.id is null then 'no existe' else 'está ' || pr.estado end), '; '), 1500) as d
+             from public.contador_propuestas p
+             join public.movimientos_banco m on m.id = p.movimiento_id
+             -- (cada obra de la propuesta una vez: si está en propuesta.obra y en una línea, se nombra como «la obra propuesta»)
+             cross join lateral (select distinct on (y.pid) y.pid, y.de
+                                   from (select p.propuesta->'obra'->>'proyecto_id' as pid, 'la obra propuesta'::text as de, 0 as orden
+                                          where jsonb_typeof(p.propuesta->'obra') = 'object'
+                                         union all
+                                         select l->>'proyecto_id', 'la obra de la línea ' || coalesce(l->>'cuenta', '?'), 1
+                                           from jsonb_array_elements(case when jsonb_typeof(p.propuesta->'lineas') = 'array'
+                                                                          then p.propuesta->'lineas' else '[]'::jsonb end) l) y
+                                  where nullif(y.pid, '') is not null
+                                  order by y.pid, y.orden) ob
+             left join public.proyectos pr on pr.id = ob.pid
+            where p.estado = 'pendiente' and (pr.id is null or pr.estado not in ('aprobado', 'ejecucion', 'pausa'))) t
+   union all
    -- 70: el gasto del mes, bajo los dos topes
    select 70, 'ia: el gasto del mes bajo el tope', 'alarma',
           not (gasto.total >= aj.tope_global or gasto.contador >= cfg.tope_mes_centavos), null, null,
@@ -2440,7 +3028,7 @@ select z.orden, z.control, z.nivel, z.ok, z.filas, z.esperadas, z.detalle
                when not cfg.activa then 'el contador está apagado (contador_config.activa = false)'
                else format('%s cargo(s) esperan propuesta', cand.n) end
  ) z;
-comment on view public.v_contador_control is 'c8: el control del contador: cuadres (si uno sale en rojo, la pantalla no pinta la franja de la IA) y alarmas (el gasto, lo pendiente de más de 7 días, la última ráfaga, la llave y la función).';
+comment on view public.v_contador_control is 'c8: el control del contador: cuadres (si uno sale en rojo, la pantalla no pinta la franja de la IA; salvo el 64 —que toda obra de una propuesta pendiente, la propuesta o la de la línea, siga activa—, que la propia propuesta resuelve con su selector y la base frena al aprobar) y alarmas (el gasto, lo pendiente de más de 7 días, la última ráfaga, la llave y la función).';
 
 -- El estado del contador, en una fila (la franja de la Bandeja y la
 -- tarjeta de Conexiones).
@@ -2470,6 +3058,9 @@ select true as instalado, c.modelo, c.effort, c.activa, c.max_por_rafaga, c.tope
        (select count(*) from public.contador_propuestas p where p.estado = 'pendiente') as propuestas_pendientes,
        (select count(*) from public.contador_propuestas p where p.estado = 'pendiente' and p.fuente = 'regla') as propuestas_por_regla,
        (select count(*) from public.contador_propuestas p where p.estado = 'pendiente' and p.fuente = 'ia') as propuestas_por_ia,
+       -- (7b) cuántas pendientes traen obra propuesta
+       (select count(*) from public.contador_propuestas p where p.estado = 'pendiente' and jsonb_typeof(p.propuesta->'obra') = 'object')
+         as propuestas_con_obra,
        (select count(*) from public.contador_reglas r where r.activa) as reglas_activas,
        hoy.mes, gasto.total as centavos_mes_total, aj.tope_global, gasto.contador as centavos_mes_contador, aj.aviso_pct,
        (not c.activa or gasto.total >= aj.tope_global or gasto.contador >= c.tope_mes_centavos) as bloqueado,
@@ -2491,7 +3082,7 @@ select true as instalado, c.modelo, c.effort, c.activa, c.max_por_rafaga, c.tope
  cross join cand
  cross join ctl
  where c.id = 1;
-comment on view public.v_contador_estado is 'c8: el estado del contador en una fila: configuración, lo que espera, las propuestas pendientes, las reglas, el gasto del mes y sus topes, la última ráfaga y el control.';
+comment on view public.v_contador_estado is 'c8: el estado del contador en una fila: configuración, lo que espera, las propuestas pendientes (y cuántas traen obra propuesta), las reglas, el gasto del mes y sus topes, la última ráfaga y el control.';
 
 do $$
 declare
@@ -2559,9 +3150,10 @@ begin
                              fn_contador_usd(c.tope_mes_centavos / 100.0), fn_contador_usd((v_t->>'tope_global')::numeric / 100));
   return query select 'dueño'::text, coalesce((select p.nombre || ' · ' || p.id from perfiles p where p.id = c.dueno), c.dueno::text);
   return query select 'tablas'::text,
-                      format('contador_config, contador_reglas (%s activas), contador_lotes (%s), contador_propuestas (%s pendientes, %s aprobadas o editadas)',
+                      format('contador_config, contador_reglas (%s activas), contador_lotes (%s), contador_propuestas (%s pendientes, %s de ellas con obra propuesta, %s aprobadas o editadas)',
                              (select count(*) from contador_reglas r where r.activa), (select count(*) from contador_lotes),
                              (select count(*) from contador_propuestas p where p.estado = 'pendiente'),
+                             (select count(*) from contador_propuestas p where p.estado = 'pendiente' and jsonb_typeof(p.propuesta->'obra') = 'object'),
                              (select count(*) from contador_propuestas p where p.estado in ('aprobada', 'editada')));
   return query select 'el gasto se anota en'::text,
                       case when v_k = 'r' then 'asistente_costo_mes (tabla)' else 'asistente_uso (asistente_costo_mes es la vista de la app)' end

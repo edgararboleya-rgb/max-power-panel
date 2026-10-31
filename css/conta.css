@@ -525,3 +525,46 @@ body[data-vista="conta"] .fab { display: none; }
 #conta-raiz .ct-ia-regla-txt { flex: 1; min-width: 0; font-size: .9rem; line-height: 1.4; overflow-wrap: anywhere; }
 #conta-raiz .ct-ia-regla-txt small { display: block; margin-top: .1rem; font-size: .78rem; color: var(--mp-ink-3); }
 #conta-raiz .ct-ia-regla .accion.chica { flex: none; min-height: 36px; padding: .3rem .7rem; font-size: .82rem; }
+
+/* ===========================================================================
+   Fase 7b · la obra que propone la IA (31-oct): «Obra: Calla Terrace · 78 %»
+   con su porqué debajo (la tarjeta clara del azul de la IA), las pistas en
+   gris cuando no hay obra, el aviso de una obra que se cerró después de
+   proponerla (ámbar) y la nota de «otra obra = editada» (cobre: lo dices tú).
+   En el chip de la fila la obra va entre la cuenta y el porcentaje y es lo
+   que se recorta con «…»; el porcentaje nunca.
+   =========================================================================== */
+/* el chip con la obra, en una línea (teléfono e iPad): la cuenta no encoge (salvo que no quepa ni dejándole a la obra unas
+   letras: su tope deja sitio a la obra y al porcentaje) y la obra se recorta con «…». Repartir el encogido con pesos no
+   basta: la cuenta perdía igual una fracción de píxel y salía «5100 Materi…» */
+#conta-raiz .ct-ia-chip.con-obra { display: inline-flex; }
+#conta-raiz .ct-ia-chip.con-obra .ct-ia-chip-q { flex: 0 0 auto; max-width: calc(100% - 7em); }
+#conta-raiz .ct-ia-chip.regla.con-obra .ct-ia-chip-q { max-width: calc(100% - 3em); }
+#conta-raiz .ct-ia-chip-o { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#conta-raiz .ct-ia-sep { white-space: pre; }
+/* la computadora: la columna «Motivo» (11rem) no da para las tres cosas en una línea; la obra baja a su renglón dentro del
+   chip (la cuenta y la confianza arriba, como siempre) en vez de quedar «IA · 5100 … · Calla … · 85 %» */
+@media (min-width: 1024px) {
+  #conta-raiz .ct-ia-chip.con-obra { flex-wrap: wrap; border-radius: 10px; }
+  /* (base 0 y tope en lo que mide: la cuenta nunca empuja el porcentaje al renglón de abajo y toma todo lo que le queda; la de
+     una regla, sin porcentaje, va sola arriba con su medida: con base 0 cabría con la obra en el mismo renglón y quedaría en 0) */
+  #conta-raiz .ct-ia-chip.con-obra .ct-ia-chip-q { flex: 1 1 0; max-width: max-content; }
+  #conta-raiz .ct-ia-chip.regla.con-obra .ct-ia-chip-q { flex: 0 1 auto; max-width: 100%; }
+  #conta-raiz .ct-ia-chip.con-obra .ct-ia-chip-o { order: 3; flex: 1 1 100%; }
+  #conta-raiz .ct-ia-chip.con-obra .ct-ia-sep { display: none; }
+}
+/* para que el chip pueda encoger, su caja de motivos (un elemento flexible de la fila) tiene que poder bajar de lo que mide su
+   texto entero: sin esto, una obra de nombre largo empujaba el chip fuera de la fila del teléfono en vez de recortarse */
+#conta-raiz .ct-f-motivo { min-width: 0; max-width: 100%; }
+#conta-raiz .ct-ia-obra { margin: .45rem 0; padding: .45rem .65rem .5rem; border-radius: 10px; border: 1px solid var(--mp-line); border-left: 3px solid var(--mp-blue); background: var(--mp-sky-1); }
+#conta-raiz .ct-ia-obra-t { margin: 0; font-size: .95rem; font-weight: 600; line-height: 1.4; color: var(--mp-ink-2); overflow-wrap: anywhere; }
+#conta-raiz .ct-ia-obra-t b { font-weight: 800; color: var(--mp-ink); }
+#conta-raiz .ct-ia-obra-p { font-weight: 800; white-space: nowrap; color: var(--mp-ink-2); }
+#conta-raiz .ct-ia-obra-p.ok { color: var(--ok-ink); }
+#conta-raiz .ct-ia-obra-p.warn { color: var(--warn-ink); }
+#conta-raiz .ct-ia-obra-m { margin: .2rem 0 0; font-size: .86rem; line-height: 1.45; color: var(--mp-ink-2); overflow-wrap: anywhere; }
+#conta-raiz .ct-ia-obra.cerrada { border-left-color: var(--warn-ink); background: var(--warn-bg); }
+#conta-raiz .ct-ia-obra-mal { margin: .25rem 0 0; font-size: .86rem; font-weight: 700; line-height: 1.45; color: var(--warn-ink); }
+#conta-raiz .ct-ia-pistas { margin: .35rem 0; font-size: .82rem; line-height: 1.45; color: var(--mp-ink-3); overflow-wrap: anywhere; }
+#conta-raiz .ct-ia-obra-cambio { margin: .3rem 0 0; font-size: .82rem; font-weight: 700; line-height: 1.4; color: var(--cu-dark); }
+#conta-raiz .ct-ia-obra-cambio[hidden] { display: none; }

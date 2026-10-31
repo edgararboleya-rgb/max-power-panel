@@ -163,3 +163,70 @@ Edge Functions → Secrets → `ANTHROPIC_API_KEY_CONTADOR` (si no existe, la fu
 Bandeja, «Proponer con la IA». Para apagarla: `update contador_config set activa =
 false where id = 1`. Recién pegado, la alarma 73 («la llave y la función»)
 sale en rojo hasta la primera ráfaga: es la esperada.
+
+## La obra (7b, 31-oct)
+
+Pedido de Edgar, al ver «Pide obra» en un cargo de CES: «¿no puedes tú
+vincularlo con una obra directamente, que tienes esa información?». Sí: la
+app ya sabe dónde estuvo la cuadrilla, de qué comercio son los tickets de
+cada obra y qué eligió Edgar antes. Hecho con el mismo reparto (Fable con
+esfuerzo máximo en la base, la función, la verificación y los arreglos; Opus
+5.5 en la pantalla y el e2e).
+
+**Las pistas (`fn_contador_pistas_obra`).** Por cada obra activa (aprobado,
+ejecución o pausa), alrededor de la fecha del cargo: las horas de la
+cuadrilla esos días (±3) y en el mes (30 días), los tickets del mismo
+comercio en 180 días (`fn_contador_mismo_comercio`: «HOME DEPOT» casa con
+«THE HOME DEPOT» y con los alias de c3, no con una palabra suelta), las veces
+que Edgar eligió esa obra para ese comercio y los materiales de su lista
+apuntados esos días. Puntos: horas cerca ×2, horas del mes ×0,2, tickets ×6,
+elecciones ×10, materiales ×1. **Candidata** solo si suma 8 o más y dobla a
+la segunda; confianza `min(0,9, p1/(p1+p2+4))` y un motivo en llano («la
+cuadrilla reportó 24 h en Casa Pérez esos días; 2 compras anteriores de CES
+fueron a esa obra»). A la IA no le llega ninguna persona, nota ni ruta: solo
+el nombre de la obra y cinco totales. Sin pistas claras, «pide obra» como
+antes: la IA no adivina.
+
+**Qué cambia.** La IA recibe `pistas_obra` con el cargo y contesta `obra =
+{proyecto_id, confianza, motivo} | null` (esquema `anyOf` objeto/nulo); la
+base lo comprueba (obra activa, forma válida, cuenta que admite obra) y lo
+copia a las líneas; una obra cerrada o inventada se descarta con nota y la
+propuesta sigue sin obra. Las reglas por comercio **siguen sin guardar la
+obra**, pero al aplicarse toman la candidata de las pistas (la de la última
+vez pesa 10 puntos). «Así es» aprueba con la obra del selector: la propuesta
+→ `aprobada`; otra → `editada` con la de Edgar. Una obra que se cierra
+después de proponerla: el cuadre **64** la nombra (en la propuesta y en las
+líneas), la Bandeja no la preselecciona, y `fn_contador_aprobar` la frena con
+MX008 «elige otra o di No es eso» aunque se mande a propósito; es el único
+cuadre que no tapa la franja de la IA, porque el remedio está en la propia
+propuesta. Columnas nuevas en `v_contador_bandeja` (`obra_propuesta_id`,
+`obra_propuesta`, `obra_confianza`, `obra_motivo`, `pistas_resumen`),
+`propuestas_con_obra` en `v_contador_estado`, la columna
+`contador_propuestas.pistas`, y tres índices de lectura `contador_*_idx` en
+`horas`, `recibos` y `materiales` (lo único que c8 toca de la app; con 10.000
+horas y 2.000 tickets las 20 llamadas de una ráfaga tardan 0,3 s).
+
+**La pantalla.** El chip dice «IA · 5100 Material · Calla Terrace · 85 %»
+(«Regla · LOWE S · Casa Pérez»); en «Según la IA», «Obra: Calla Terrace ·
+78 %» con su porqué, o las pistas en gris si no apuntan a una sola; el
+selector sale siempre que una cuenta de la propuesta admite obra, ya
+elegido, y el botón dice «✓ Así es · Calla Terrace»; en «Según yo» la obra
+propuesta queda elegida en cuanto la cuenta la admite. La franja: «9
+propuestas listas (3 con obra)».
+
+**Pruebas.** `c8-pruebas.sql` **32/32** (la 23 ya pasa también con las reglas
+reales de producción: cada prueba que aplica reglas aparca antes las
+anteriores a la transacción); `contador-e2e.mjs` **130/130** en Node y en
+Deno (E2E-110 a E2E-128, incluida la obra que se cierra después); c6
+163/163 con c8 encima y la bandeja cargada; `pantalla.js` **321** (la base
+de mentira copia las reglas de obra de c1: 6300 y 6400 prohibidas, 5300
+obligatoria, 1420 opcional); `e0`, `e13`. Verificación desde cero (Fable)
+y sus hallazgos corregidos y probados.
+
+**Cómo se instala la 7b**: 1 volver a pegar `c8-contador.sql` (idempotente,
+encima del de la mañana; «0 cuadres rojos»); 2 pegar `c8-pruebas.sql` (32 en
+`true`); 3 redesplegar la función `contador` con el `index.ts` nuevo (Verify
+JWT apagado) y mirar `?paso=salud`; 4 publicar (v294). La versión del prompt
+cambia, así que la primera ráfaga vuelve a escribir el caché (centavos de
+más, una vez). Si esa primera ráfaga contestara `ANTHROPIC_PETICION` (400),
+la cabecera de `index.ts` dice qué mirar: el esquema de `obra`.

@@ -10,6 +10,10 @@
 //   stripe, plaid y notificar: la función comprueba la sesión ella misma
 //   (dueño activo y código del teléfono, aal2) y así ?paso=salud contesta
 //   sin sesión qué falta.
+//   7b (31-oct, la obra propuesta con las pistas): volver a pegar
+//   docs/conta/c8-contador.sql, pegar esta función otra vez (redesplegar) y
+//   publicar. El prompt_version cambia (las instrucciones hablan de las
+//   pistas): la base lo guarda en cada propuesta y en contador_config.
 //
 // ANTES de desplegar, en Edge Functions → Secrets tiene que existir:
 //   ANTHROPIC_API_KEY_CONTADOR   (si existe, manda) una llave de
@@ -37,7 +41,15 @@
 //       3. fn_contador_pendientes: los cargos que esperan (hasta el límite,
 //          nunca más que max_por_rafaga) y el contexto: las cuentas
 //          permitidas, las obras activas, las reglas y los últimos ejemplos
-//          de Edgar.
+//          de Edgar. Y (7b) por cada cargo sus PISTAS DE LA OBRA
+//          (pistas_obra, que calcula Postgres, determinista): por obra
+//          activa, las horas que la cuadrilla reportó esos días y en el
+//          mes, los tickets del mismo comercio que fueron a esa obra, las
+//          veces que Edgar eligió esa obra para ese comercio y los
+//          materiales recientes de su lista; y la candidata que sale de
+//          los puntos, con su confianza y su motivo. Solo totales por obra
+//          y el nombre de la obra: ningún usuario_id, nombre de persona,
+//          nota ni ruta de foto.
 //       4. fn_contador_lote_abrir, y la ráfaga a Anthropic: la PRIMERA
 //          llamada sola (crea el caché del prefijo) y las demás de tres en
 //          tres (leen el caché). Cada respuesta válida →
@@ -51,8 +63,19 @@
 //     todo ordenado, sin fechas ni ids de ráfaga) con cache_control, y el
 //     movimiento en el mensaje (fecha, monto, descripción, nota, cuenta del
 //     banco, tipo: la base ya lo deja sin correos, teléfonos ni números de
-//     cuenta). La respuesta viene forzada al esquema PROPUESTA_SCHEMA
-//     (structured outputs). Modelo y esfuerzo los dice contador_config
+//     cuenta; y sus pistas_obra tal cual se las da la base). La respuesta
+//     viene forzada al esquema PROPUESTA_SCHEMA (structured outputs), que
+//     desde la 7b lleva «obra» ({proyecto_id, confianza, motivo} o null):
+//     LA IA PROPONE LA OBRA SOLO CUANDO LA CUENTA LA LLEVA Y LAS PISTAS
+//     APUNTAN CON CLARIDAD A UNA OBRA ACTIVA, y Edgar confirma; la base la
+//     comprueba al guardar (fn_contador_propuesta_guardar: una obra que no
+//     existe o no está activa se descarta con su nota y pide_obra como
+//     antes; la que vale se copia a las líneas cuya cuenta admite obra y
+//     queda en propuesta.obra con flags.obra_propuesta). Esta función no
+//     reinterpreta nada de eso: pasa «obra» dentro de p_propuesta y cuenta
+//     con_obra (las propuestas de la IA que quedaron con obra en esta
+//     ráfaga) en la respuesta, y por cargo en el detalle (obra, obra_nota).
+//     Modelo y esfuerzo los dice contador_config
 //     (claude-opus-5-5, effort low): solo Opus y Fable, nunca Haiku ni
 //     Sonnet, y NUNCA se cambia de modelo por una negativa (stop_reason
 //     «refusal» = sin respuesta: se cuenta y no se guarda; sin fallbacks).
@@ -61,11 +84,17 @@
 //     después es «sin respuesta». Un 401 (la llave no vale) o un 400 (la
 //     petición) corta la ráfaga, cierra el lote con su error y contesta 502
 //     diciéndolo en llano. Si la primera ráfaga real contestara 400
-//     (ANTHROPIC_PETICION), lo primero a mirar es la petición misma: el
-//     esquema (tipos ["number", "null"] y description, que structured
-//     outputs admite) y la versión de la API (abajo): el simulador del banco
-//     de pruebas exige la forma del contrato, pero no valida el esquema como
-//     la API de verdad.
+//     (ANTHROPIC_PETICION), lo primero a mirar es la petición misma, en este
+//     orden: (1) «obra» en PROPUESTA_SCHEMA, que desde la tarde del 31-oct va
+//     como anyOf [{el objeto}, {type: "null"}], la forma que la referencia de
+//     structured outputs documenta para «un objeto o null» (admite los tipos
+//     básicos, null incluido, enum, const, anyOf y allOf); si la API la
+//     rechazara, la otra forma es type: ["object", "null"] sobre el objeto
+//     entero (la lista de tipos que monto y proyecto_id ya usan en producción
+//     con tipos simples): el simulador y E2E-30 aceptan las dos, y
+//     prompt_version no cambia por eso (depende solo de INSTRUCCIONES); (2) la
+//     versión de la API (abajo). El simulador del banco de pruebas exige la
+//     forma del contrato, pero no valida el esquema como la API de verdad.
 //     max_tokens va en 4096: con Opus 5.5 el pensamiento adaptativo está
 //     siempre encendido y CUENTA contra max_tokens aunque no se devuelva (el
 //     skill claude-api lo documenta como la trampa de la migración); con
@@ -88,6 +117,17 @@
 //     directo a su fn_contador_*: el ÚNICO camino al libro es
 //     fn_contador_clasificar → fn_banco_clasificar (c6), EN NOMBRE DEL
 //     DUEÑO (la base lo hace, como p1). Esta función no toca el libro.
+//     Aprobar sigue siendo {propuesta, proyecto_id?, recordar?}: con la 7b,
+//     si viene proyecto_id manda sobre la obra propuesta (y si difiere, la
+//     propuesta queda «editada», como ya pasa con una cuenta); sin él, se
+//     aprueba con la obra propuesta; sin ninguna y la cuenta la pide, 409
+//     MX008 «elige la obra», como siempre. Y una obra que YA NO ESTÁ ACTIVA
+//     (se cerró después de proponerla: la propuesta, la de la línea o la que
+//     Edgar manda) no entra: la base contesta MX008 «ya no está activa: elige
+//     otra o di No es eso» —aquí 409, con la pista «elige la obra» que la
+//     pantalla enseña en ámbar junto al selector— y el cuadre 64 lo señala
+//     antes (31-oct). La regla aprendida sigue sin guardar la obra (la cuenta
+//     es del comercio; la obra, de cada compra).
 //   · ESTADO: v_contador_estado, el tope y lo que el control tiene en rojo
 //     (fn_contador_resumen). SALUD (sin sesión): qué falta, sin enseñar
 //     nada; y el modelo, el esfuerzo, la versión del prompt y el tope. Se
@@ -156,11 +196,11 @@ const CORS = {
 // es idéntico entre llamadas y cachea).
 const INSTRUCCIONES = `Eres el contador de Max Power Electrical Solutions, Inc., un contratista eléctrico de Florida (una S-corp que trabaja por obras). Edgar, el dueño, te da UN movimiento de una cuenta del banco o de una tarjeta de la empresa —un cargo que la bandeja no supo explicar— y tú propones a qué cuenta o cuentas del plan va. Tú propones; Edgar aprueba con un toque. Nunca posteas nada.
 
-Cómo contestas: solo con el JSON del esquema que se te pide (lineas, motivo, confianza, flags, alternativas), sin texto alrededor.
+Cómo contestas: solo con el JSON del esquema que se te pide (lineas, motivo, confianza, flags, alternativas, obra), sin texto alrededor.
 
 Las reglas:
 1. LAS CUENTAS. Clasifica el movimiento en UNA línea (lo normal) o en varias (de 2 a 5, cada una con su monto en dólares, en positivo, que sumen el importe del movimiento al centavo; con una sola línea el monto va null). Usa solo los códigos del PLAN DE CUENTAS PERMITIDO de abajo, tal cual están escritos. Nunca inventes una cuenta ni uses una que no esté en la lista: si ninguna encaja, propón 7900 (Otros gastos) con confianza baja y dilo en el motivo.
-2. LA OBRA. Si el comercio vende material, herramienta, equipo o consumibles de obra (un supply eléctrico, Home Depot, Lowe's, CES, Graybar, una ferretería) la cuenta es de costo (5xxx) y pide obra. No adivines la obra: deja proyecto_id en null y marca pide_obra. Pon un proyecto_id solo si la descripción o la nota del movimiento nombran sin duda una de las OBRAS ACTIVAS de abajo (usa su id, no su nombre). Una cuenta con «obra prohibida» nunca lleva proyecto_id.
+2. LA OBRA. Si el comercio vende material, herramienta, equipo o consumibles de obra (un supply eléctrico, Home Depot, Lowe's, CES, Graybar, una ferretería) la cuenta es de costo (5xxx) y pide obra. En la línea, pon proyecto_id solo si la descripción o la nota del movimiento nombran sin duda una de las OBRAS ACTIVAS de abajo (usa su id, no su nombre); si no, déjalo en null. Cada movimiento puede traer pistas_obra, que la app calculó con sus propios datos, no con la descripción: por obra activa, las horas que la cuadrilla reportó en esa obra esos días (horas_cerca) y en los últimos 30 días (horas_mes), las compras anteriores del mismo comercio que fueron a esa obra (recibos_proveedor), las veces que Edgar eligió esa obra para este comercio (veces_elegida) y los materiales recientes de su lista (materiales_recientes); y una candidata, si las pistas apuntan a una sola obra, con su confianza y su motivo. Si la cuenta que propones lleva obra (obligatoria u opcional) y las pistas apuntan con claridad a UNA obra activa, propón «obra»: su proyecto_id (de la lista de OBRAS ACTIVAS), una confianza entre 0 y 1 y un motivo de UNA frase que cite la pista («la cuadrilla reportó 24 h en esa obra esos días; 2 compras anteriores de este comercio fueron a esa obra»). Si no hay pistas, se contradicen (dos obras con pistas parecidas) o la cuenta no lleva obra, obra = null y, si la cuenta la pide, marca pide_obra. Nunca adivines la obra: una obra equivocada mete el costo en la obra que no es y descuadra las dos. Una cuenta con «obra prohibida» nunca lleva proyecto_id ni obra.
 3. LAS REGLAS FIJAS DE LA S-CORP, que no reinterpretas: (a) un pago al IRS por el impuesto sobre la renta de Edgar (IRS, USATAXPYMT) va a 3200 (distribuciones al accionista) con el flag irs: no es gasto de la empresa; el DOR de Florida (sales tax, RT-6) sí es de la empresa. (b) Un cargo personal en una cuenta de la empresa (streaming, supermercado, ropa, un restaurante en fin de semana, una transferencia a Edgar) va a 3200 con el flag personal, y 1130 (cuenta por cobrar al accionista) como alternativa si Edgar lo va a devolver. (c) El sueldo de Edgar y el de la cuadrilla entran solo por la nómina: nunca propongas un pago a una persona como sueldo (las cuentas de nómina no están en la lista); un Zelle o un cheque a una persona que trabaja en obras suele ser un subcontrato (5200, pide obra) y, si no se sabe, dilo con confianza baja.
 4. LA CAPITALIZACIÓN. Una compra de 2,500.00 o más por unidad con vida de más de un año (un vehículo, una herramienta grande, equipo de cómputo, mejoras al local) es un activo fijo (15xx), no un gasto: propón la cuenta 15xx que corresponda y marca capitalizable. Edgar decide.
 5. EL USE TAX. Una compra fuera de Florida o a un comercio que no cobra el impuesto de Florida (compras por internet, un proveedor de otro estado) y sin impuesto visible marca use_tax. No propongas ninguna línea por el impuesto: Edgar lo resuelve con el recibo.
@@ -169,17 +209,18 @@ Las reglas:
 8. LAS REGLAS Y LOS EJEMPLOS DE EDGAR mandan sobre tu criterio: si ese comercio ya fue a una cuenta, propón esa (y dilo en el motivo).
 9. Los flags son solo estos cinco: capitalizable, use_tax, personal, irs y pide_obra; cada uno true o false.
 
-El movimiento llega como JSON: fecha, monto (negativo = un cargo, lo que salió de la cuenta), descripcion (lo que escribió el banco), memo (la nota, si la hay), cuenta_banco (el código de la cuenta de la empresa: 1010 es el banco, 2100-… una tarjeta), cuenta_banco_nombre, tipo_banco (DEBIT, CHECK, FEE…) y desc_norm (la descripción normalizada).`;
+El movimiento llega como JSON: fecha, monto (negativo = un cargo, lo que salió de la cuenta), descripcion (lo que escribió el banco), memo (la nota, si la hay), cuenta_banco (el código de la cuenta de la empresa: 1010 es el banco, 2100-… una tarjeta), cuenta_banco_nombre, tipo_banco (DEBIT, CHECK, FEE…), desc_norm (la descripción normalizada) y pistas_obra (lo de la regla 2: {obras: [{proyecto_id, nombre, horas_cerca, horas_mes, recibos_proveedor, veces_elegida, materiales_recientes}], candidata: {proyecto_id, nombre, confianza, motivo} o null, resumen}; con «sin pistas» en resumen no hay nada que mirar).`;
 
 // La forma exacta de la respuesta (structured outputs: output_config.format
 // json_schema). Todo required y additionalProperties false, como pide la
 // API; lo opcional va null (monto con una sola línea, proyecto_id sin
-// obra) y se quita antes de dárselo a la base. Sin minimum/maximum ni
-// minLength: la API no los admite; la base valida lo que importa.
+// obra, obra sin pistas) y se quita antes de dárselo a la base. Sin
+// minimum/maximum ni minLength: la API no los admite; la base valida lo
+// que importa.
 const PROPUESTA_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["lineas", "motivo", "confianza", "flags", "alternativas"],
+  required: ["lineas", "motivo", "confianza", "flags", "alternativas", "obra"],
   properties: {
     lineas: {
       type: "array",
@@ -218,6 +259,30 @@ const PROPUESTA_SCHEMA = {
         required: ["cuenta", "motivo"],
         properties: { cuenta: { type: "string" }, motivo: { type: "string" } },
       },
+    },
+    // (7b) la obra que proponen las pistas; null cuando no hay. Va como anyOf
+    // [{el objeto}, {type: "null"}]: la forma que la referencia de structured
+    // outputs documenta para «un objeto o null» (tipos básicos con null, enum,
+    // const, anyOf y allOf); la lista de tipos ["object", "null"] sobre un
+    // objeto con properties no está documentada, aunque monto y proyecto_id la
+    // usan con tipos simples y la API la acepta. Si la API rechazara esta con
+    // 400 (ANTHROPIC_PETICION), la cabecera dice qué probar; el simulador y
+    // E2E-30 aceptan las dos formas y prompt_version no cambia por esto.
+    obra: {
+      anyOf: [
+        {
+          type: "object",
+          description: "La obra, solo si la cuenta que propones lleva obra y pistas_obra apunta con claridad a UNA obra activa: su id (de la lista de OBRAS ACTIVAS), la confianza y una frase que cite la pista.",
+          additionalProperties: false,
+          required: ["proyecto_id", "confianza", "motivo"],
+          properties: {
+            proyecto_id: { type: "string", description: "El id de la obra activa, tal cual está en la lista." },
+            confianza: { type: "number", description: "Entre 0 y 1." },
+            motivo: { type: "string", description: "Una frase en español que cita la pista (las horas de la cuadrilla, las compras anteriores, lo que Edgar eligió)." },
+          },
+        },
+        { type: "null", description: "Sin obra: no hay pistas, se contradicen o la cuenta no lleva obra (y si la cuenta la pide, pide_obra)." },
+      ],
     },
   },
 };
@@ -351,11 +416,14 @@ function armarPrefijo(ctx: Json): string {
   ].join("\n\n");
 }
 // El movimiento tal cual se le da a la IA (y se congela en «entrada»): la
-// base ya lo trae sin correos, teléfonos ni números de cuenta.
+// base ya lo trae sin correos, teléfonos ni números de cuenta. (7b)
+// pistas_obra va tal cual la da la base: solo totales por obra activa y la
+// candidata; ningún usuario_id, nombre, nota ni ruta sale de la base.
 function armarEntrada(m: Json): Json {
   return {
     fecha: m.fecha ?? null, monto: m.monto ?? null, descripcion: m.descripcion ?? null, memo: m.memo ?? null,
     cuenta_banco: m.cuenta ?? null, cuenta_banco_nombre: m.cuenta_nombre ?? null, tipo_banco: m.tipo_banco ?? null, desc_norm: m.desc_norm ?? null,
+    pistas_obra: m.pistas_obra ?? null,
   };
 }
 
@@ -377,9 +445,10 @@ interface RespuestaIA {
   intentos: number;
 }
 // La propuesta como la quiere la base: sin los null del esquema (monto con
-// una sola línea, proyecto_id sin obra), los flags solo los que son true
-// (pide_obra lo decide la base por las cuentas) y las alternativas solo si
-// hay. No se reinterpreta nada: lo que no valga lo rechaza la base.
+// una sola línea, proyecto_id sin obra, obra sin pistas), los flags solo
+// los que son true (pide_obra lo decide la base por las cuentas) y las
+// alternativas solo si hay. No se reinterpreta nada: lo que no valga lo
+// rechaza la base.
 function normalizarPropuesta(p: Json): Json {
   const lineas = arr(p.lineas).map((l) => limpiar({
     cuenta: typeof l.cuenta === "string" ? l.cuenta.trim() : l.cuenta,
@@ -391,6 +460,13 @@ function normalizarPropuesta(p: Json): Json {
     .map((a) => ({ cuenta: (a.cuenta as string).trim(), motivo: typeof a.motivo === "string" ? a.motivo : "" }));
   const out: Json = { lineas, motivo: p.motivo, confianza: p.confianza, flags };
   if (alternativas.length) out.alternativas = alternativas;
+  // (7b) la obra que proponen las pistas: null fuera; un objeto pasa entero
+  // (proyecto_id recortado) y la base dice si vale: una forma rara es 22023
+  // (inválida); una obra que no existe o no está activa se descarta con nota
+  if (p.obra && typeof p.obra === "object" && !Array.isArray(p.obra)) {
+    const o = p.obra as Json;
+    out.obra = { ...o, proyecto_id: typeof o.proyecto_id === "string" ? o.proyecto_id.trim() : o.proyecto_id };
+  }
   return out;
 }
 // Lo que contestó Anthropic, leído por tipo de bloque (la respuesta puede
@@ -537,7 +613,8 @@ export function usarBaseDePruebas(b: Base): void {
 }
 
 // ---- La ráfaga: proponer ---------------------------------------------------------
-interface Conteo { ok: number; sin: number; inv: number; fatal: Fallo | null }
+// (obra: cuántas de las guardadas quedaron con obra propuesta, 7b)
+interface Conteo { ok: number; sin: number; inv: number; obra: number; fatal: Fallo | null }
 async function proponer(base: Base, c: Conf, dueno: string, cuerpo: Json): Promise<Json> {
   const t0 = Date.now();
   const presupuesto = presupuestoRafaga(c);
@@ -549,7 +626,7 @@ async function proponer(base: Base, c: Conf, dueno: string, cuerpo: Json): Promi
   // 2. el tope (la tercera regla de la IA): bloqueado = ni un token
   const tope = obj(await base.rpc("fn_contador_tope", {}));
   if (tope.bloqueado === true) {
-    return limpiar({ ok: true, bloqueado: true, motivo: tope.motivo, ...comun, movimientos: 0, propuestas: 0, sin_respuesta: 0, invalidas: 0, centavos: 0, tope });
+    return limpiar({ ok: true, bloqueado: true, motivo: tope.motivo, ...comun, movimientos: 0, propuestas: 0, con_obra: 0, sin_respuesta: 0, invalidas: 0, centavos: 0, tope });
   }
   // 3. lo que espera y el contexto (la base recorta el límite a max_por_rafaga)
   const lim = typeof cuerpo.limite === "number" && Number.isInteger(cuerpo.limite) && cuerpo.limite > 0 ? cuerpo.limite
@@ -565,7 +642,7 @@ async function proponer(base: Base, c: Conf, dueno: string, cuerpo: Json): Promi
   const movs = arr(k.movimientos);
   const ctx = obj(k.contexto);
   if (!movs.length) {
-    return limpiar({ ok: true, bloqueado: false, ...comun, movimientos: 0, total: num(k.total) ?? 0, propuestas: 0, sin_respuesta: 0, invalidas: 0, centavos: 0,
+    return limpiar({ ok: true, bloqueado: false, ...comun, movimientos: 0, total: num(k.total) ?? 0, propuestas: 0, con_obra: 0, sin_respuesta: 0, invalidas: 0, centavos: 0,
                      tope: k.tope, nota: nReglas ? "todo lo que esperaba salió por regla" : "nada que proponer: ningún cargo espera" });
   }
   if (!c.llave) {
@@ -578,7 +655,7 @@ async function proponer(base: Base, c: Conf, dueno: string, cuerpo: Json): Promi
     p_por: dueno, p_modelo: modelo, p_effort: effort, p_prompt_version: prompt_version, p_prefijo_hash: prefijo_hash, p_n: movs.length,
   }));
   const uso: Uso = { ...USO_CERO };
-  const n: Conteo = { ok: 0, sin: 0, inv: 0, fatal: null };
+  const n: Conteo = { ok: 0, sin: 0, inv: 0, obra: 0, fatal: null };
   const detalle: Json[] = [];
   const errores: string[] = [];
   const notas: string[] = [];
@@ -613,8 +690,11 @@ async function proponer(base: Base, c: Conf, dueno: string, cuerpo: Json): Promi
         detalle.push(limpiar({ movimiento_id: mid, estado: "invalida", motivo: g.error, codigo: g.codigo, intentos: r.intentos > 1 ? r.intentos : undefined }));
       } else {
         n.ok++;
+        // (7b) obra = la que la base dejó en la propuesta (proyecto_id); obra_nota = por qué descartó la que la IA propuso
+        if (typeof g.obra === "string" && g.obra) n.obra++;
         detalle.push(limpiar({ movimiento_id: mid, estado: "pendiente", propuesta: g.propuesta, pide_obra: g.pide_obra === true,
-                               confianza: num(r.propuesta.confianza), caducada: g.caducada, intentos: r.intentos > 1 ? r.intentos : undefined }));
+                               confianza: num(r.propuesta.confianza), obra: g.obra, obra_nota: g.obra_nota,
+                               caducada: g.caducada, intentos: r.intentos > 1 ? r.intentos : undefined }));
       }
     } catch (e) {
       n.inv++;
@@ -639,7 +719,7 @@ async function proponer(base: Base, c: Conf, dueno: string, cuerpo: Json): Promi
   if (n.fatal && n.ok === 0) throw n.fatal;
   return limpiar({
     ok: true, bloqueado: false, lote, modelo, effort, prompt_version, prefijo_hash, ...comun,
-    movimientos: movs.length, total: num(k.total) ?? movs.length, propuestas: n.ok, sin_respuesta: n.sin, invalidas: n.inv,
+    movimientos: movs.length, total: num(k.total) ?? movs.length, propuestas: n.ok, con_obra: n.obra, sin_respuesta: n.sin, invalidas: n.inv,
     sin_intentar: sinIntentar || undefined, centavos: num(cierre.centavos) ?? 0, usage: uso,
     cache: { creacion: uso.cache_creacion, lectura: uso.cache_lectura }, tope: cierre.tope ?? k.tope, detalle,
     errores: errores.length ? errores.slice(0, 20) : undefined, error: error ?? undefined, nota: notas.length ? notas.join(" · ") : undefined,

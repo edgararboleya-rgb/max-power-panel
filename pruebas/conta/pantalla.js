@@ -39,6 +39,17 @@
    ruidosa de su control (un cuadre o un conteo en rojo y no se pinta nada de
    la IA), la tarjeta de Conexiones con «Probar» y las reglas con «Quitar»,
    sus alarmas en «Qué atender», y el teléfono y el iPad.
+   Y la obra que propone la IA (c8, fase 7b): la base de mentira trae las
+   columnas nuevas de v_contador_bandeja (obra_propuesta_id, obra_propuesta,
+   obra_confianza, obra_motivo, pistas_resumen) y propuestas_con_obra de
+   v_contador_estado, el cuadre 64 y «con_obra» en la respuesta de proponer;
+   se comprueba la franja «n propuestas listas (m con obra)», el chip con la
+   obra (recortada con «…» en el teléfono, nunca el porcentaje), «Obra: … ·
+   78 %» con su porqué, las pistas en gris sin obra, el selector siempre que
+   una cuenta admite obra y elegido con la propuesta, «Así es» mandando la
+   obra propuesta (aprobada) o la que eligió Edgar (editada), «Según yo» con
+   la obra propuesta elegida, una propuesta por regla con la obra de sus
+   pistas, y una obra que se cerró después (el 64: no tapa la IA, pide otra).
    Los datos son inventados (la forma es la de las vistas de c4, c6 y p1).
    Uso: NODE_PATH=/opt/node22/lib/node_modules node pruebas/conta/pantalla.js
    (con --fotos guarda capturas en el temporal del sistema, o en FOTOS_DIR:
@@ -247,7 +258,7 @@ const T = {
   cuentas: [
     ['1010', 'Banco operativo', 'activo', 'prohibida'], ['1050', 'Efectivo (caja chica)', 'activo', 'prohibida'], ['2100-2013', 'Amex Business Gold', 'pasivo', 'prohibida'],
     ['3200', 'Distribuciones al accionista', 'capital', 'prohibida'], ['5100', 'Material', 'costo', 'obligatoria'], ['6130', 'Cargos bancarios', 'gasto', 'prohibida'],
-    ['6300', 'Vehículos', 'gasto', 'opcional'], ['7100', 'Intereses', 'otro_gasto', 'prohibida']
+    ['6300', 'Vehículos', 'gasto', 'prohibida'], ['7100', 'Intereses', 'otro_gasto', 'prohibida']
   ].map(([codigo, nombre, tipo, regla_obra]) => ({ codigo, nombre, tipo, regla_obra, imputable: true, activa: true })),
   proyectos: [{ id: 'casa-perez-k3m9', nombre: 'Casa Pérez', estado: 'ejecucion' }, { id: 'oficina-nch-7xq2', nombre: 'Oficina NCH', estado: 'ejecucion' }, { id: 'taller-ruiz-5b2n', nombre: 'Taller Ruiz', estado: 'completado' }],
   v_conciliacion: [
@@ -355,11 +366,17 @@ const MI = { hd: '77777777-0000-4000-8000-000000000001', wawa: '77777777-0000-40
 const PR = { hd: 'bbbbbbbb-0000-4000-8000-000000000001', wawa: 'bbbbbbbb-0000-4000-8000-000000000002', amz: 'bbbbbbbb-0000-4000-8000-000000000003',
   irs: 'bbbbbbbb-0000-4000-8000-000000000004', nfx: 'bbbbbbbb-0000-4000-8000-000000000005', fe: 'bbbbbbbb-0000-4000-8000-000000000006' };
 const RG = { wawa: 'dddddddd-0000-4000-8000-000000000001', shell: 'dddddddd-0000-4000-8000-000000000002' };
+// (7b) cuatro cargos más con la obra: CES (la IA propone Calla Terrace), Floor & Decor (una obra de nombre largo: el corte del chip),
+// CED (pide obra y las pistas no apuntan a una sola) y Lowe's (por regla, con la obra que dicen sus pistas); y dos obras activas más
+Object.assign(MI, { ces: '77777777-0000-4000-8000-000000000006', fyd: '77777777-0000-4000-8000-000000000007', ced: '77777777-0000-4000-8000-000000000008', low: '77777777-0000-4000-8000-000000000009' });
+Object.assign(PR, { ces: 'bbbbbbbb-0000-4000-8000-000000000007', fyd: 'bbbbbbbb-0000-4000-8000-000000000008', ced: 'bbbbbbbb-0000-4000-8000-000000000009', low: 'bbbbbbbb-0000-4000-8000-00000000000a' });
+RG.low = 'dddddddd-0000-4000-8000-000000000003';
+const OBRAS_7B = [{ id: 'calla-terrace-8h2v', nombre: 'Calla Terrace', estado: 'ejecucion' }, { id: 'villanueva-amp-4r7t', nombre: 'Ampliación Residencia Villanueva-Echeverría', estado: 'aprobado' }];
 const CUENTAS_IA = [
-  ['1130', 'Cuenta por cobrar al accionista', 'activo', 'prohibida'], ['1510', 'Vehículos', 'activo', 'prohibida'], ['2900', 'Préstamo del accionista', 'pasivo', 'prohibida'],
+  ['1130', 'Cuenta por cobrar al accionista', 'activo', 'prohibida'], ['1420', 'Fianzas', 'activo', 'opcional'], ['1510', 'Vehículos', 'activo', 'prohibida'], ['2900', 'Préstamo del accionista', 'pasivo', 'prohibida'],
   ['3200', 'Distribuciones al accionista', 'capital', 'prohibida'], ['5100', 'Material', 'costo', 'obligatoria'], ['5200', 'Subcontratos', 'costo', 'obligatoria'],
-  ['5300', 'Equipo y renta', 'costo', 'opcional'], ['6130', 'Cargos bancarios y comisiones de tarjeta', 'gasto', 'prohibida'], ['6300', 'Vehículos — combustible y mantenimiento', 'gasto', 'opcional'],
-  ['6400', 'Herramienta menor y uniformes', 'gasto', 'opcional'], ['6500', 'Oficina y software', 'gasto', 'prohibida'], ['6600', 'Profesionales — CPA y legal', 'gasto', 'prohibida'],
+  ['5300', 'Equipo y renta', 'costo', 'obligatoria'], ['6130', 'Cargos bancarios y comisiones de tarjeta', 'gasto', 'prohibida'], ['6300', 'Vehículos — combustible y mantenimiento', 'gasto', 'prohibida'],
+  ['6400', 'Herramienta menor y uniformes', 'gasto', 'prohibida'], ['6500', 'Oficina y software', 'gasto', 'prohibida'], ['6600', 'Profesionales — CPA y legal', 'gasto', 'prohibida'],
   ['7100', 'Intereses', 'otro_gasto', 'prohibida'], ['7900', 'Otros gastos', 'otro_gasto', 'prohibida']
 ].map(([codigo, nombre, tipo, regla_obra]) => ({ codigo, nombre, tipo, regla_obra, saldo_normal: 'debe', etiqueta_fiscal: null, pide_obra: regla_obra === 'obligatoria' }));
 const TEXTO_SIN_TICKET = 'Sin ticket ni asiento que lo explique. Si tienes la foto del recibo, súbela: entra por su puente y casa sola. Si no, di de qué es.';
@@ -368,20 +385,26 @@ const movIA = (id, fecha, monto, descripcion, dias) => ({ movimiento_id: id, cue
   dias, alarma: false, origen: 'plaid', archivo_id: null, importado_el: '2026-10-29T11:00:00+00:00' });
 // una línea como la resuelve v_contador_bandeja: cuenta, su nombre, su tipo, la obra si la trae y pide_obra (obligatoria y sin obra)
 const linIA = (cuenta, extra) => { const c = CUENTAS_IA.find(x => x.codigo === cuenta) || {}; const l = { cuenta, cuenta_nombre: c.nombre || '?', tipo: c.tipo || null, ...(extra || {}) };
-  l.pide_obra = c.regla_obra === 'obligatoria' && !l.proyecto_id; if (l.proyecto_id) l.obra = (T.proyectos.find(p => p.id === l.proyecto_id) || {}).nombre; return l; };
+  l.pide_obra = c.regla_obra === 'obligatoria' && !l.proyecto_id; if (l.proyecto_id) l.obra = (T.proyectos.concat(OBRAS_7B).find(p => p.id === l.proyecto_id) || {}).nombre; return l; };
 const propIA = (id, mov, fuente, lineas, motivo, confianza, flags, extra) => ({ movimiento_id: mov.movimiento_id, cuenta: mov.cuenta, fecha: mov.fecha, monto: mov.monto, descripcion: mov.descripcion, movimiento_estado: 'pendiente',
   propuesta_id: id, fuente, estado: 'pendiente', accion: 'categorizar', lineas, resumen: lineas.map(l => `${l.cuenta} ${l.cuenta_nombre}`).join(' + '), motivo, confianza, flags: flags || {}, pide_obra: !!(flags && flags.pide_obra),
   alternativas: null, modelo: fuente === 'ia' ? 'claude-opus-5-5' : null, effort: fuente === 'ia' ? 'low' : null, prompt_version: fuente === 'ia' ? 'pv-prueba' : null, regla_id: null, regla_nombre: null,
   lote_id: fuente === 'ia' ? 'lote-prueba-1' : null, creado_el: '2026-10-30T18:05:00+00:00', aprobado_por: null, aprobado_el: null, lineas_finales: null, motivo_edgar: null, nota: null,
-  asiento_id: null, asiento: null, asiento_vivo: false, dias: 1, ...(extra || {}) });
+  asiento_id: null, asiento: null, asiento_vivo: false, dias: 1,
+  obra_propuesta_id: null, obra_propuesta: null, obra_confianza: null, obra_motivo: null, pistas_resumen: null, ...(extra || {}) });
+// (7b) la obra que propone la IA (o la candidata de las pistas en una propuesta por regla), como la resuelve v_contador_bandeja
+const obraIA = (id, confianza, motivo, resumen) => ({ obra_propuesta_id: id, obra_propuesta: (T.proyectos.concat(OBRAS_7B).find(p => p.id === id) || {}).nombre || null,
+  obra_confianza: confianza, obra_motivo: motivo, pistas_resumen: resumen });
 const reglaIA = (id, nombre, lineas, veces, ultima, extra) => ({ id, nombre, patron: '^' + nombre, cuenta_banco: null, cuenta_banco_nombre: null, lineas,
   cuentas_texto: lineas.map(l => `${l.cuenta} ${(CUENTAS_IA.find(c => c.codigo === l.cuenta) || {}).nombre || '?'}`).join(' + '),
   pide_obra: lineas.some(l => (CUENTAS_IA.find(c => c.codigo === l.cuenta) || {}).regla_obra === 'obligatoria' && !l.proyecto_id), activa: true, origen: 'aprobacion', creada_por: UID, creada_por_nombre: 'Edgar Prueba',
   creada_el: '2026-10-20T12:00:00+00:00', veces, ultima_vez: ultima, notas: null, pendientes: 0, aprobadas: veces, ...(extra || {}) });
 // el comercio de cada descripción, como lo saca fn_contador_nombre_comercio
-const COMERCIO_IA = { [MI.hd]: 'THE HOME DEPOT', [MI.wawa]: 'WAWA', [MI.amz]: 'AMAZON MKTPLACE PMTS', [MI.irs]: 'IRS USATAXPYMT', [MI.nfx]: 'NETFLIX.COM', [MOV.a]: 'FERRETERIA EJEMPLO' };
+const COMERCIO_IA = { [MI.hd]: 'THE HOME DEPOT', [MI.wawa]: 'WAWA', [MI.amz]: 'AMAZON MKTPLACE PMTS', [MI.irs]: 'IRS USATAXPYMT', [MI.nfx]: 'NETFLIX.COM', [MOV.a]: 'FERRETERIA EJEMPLO',
+  [MI.ces]: 'CES', [MI.fyd]: 'FLOOR & DECOR', [MI.ced]: 'CED', [MI.low]: 'LOWE S' };
 const IA = {};
-function iaReset() {
+// con7b: la bandeja de la 7b (los cuatro cargos con la obra, las dos obras más, la regla de Lowe's y las pistas de Home Depot)
+function iaReset(con7b) {
   const m = { hd: movIA(MI.hd, '2026-10-27', -245.18, 'THE HOME DEPOT 6341 OCALA FL', 4), wawa: movIA(MI.wawa, '2026-10-28', -48.10, 'WAWA 5123 OCALA FL', 3),
     amz: movIA(MI.amz, '2026-10-24', -2890.00, 'AMAZON MKTPLACE PMTS AMZN.COM/BILL WA', 7), irs: movIA(MI.irs, '2026-10-21', -1500.00, 'IRS USATAXPYMT', 10),
     nfx: movIA(MI.nfx, '2026-10-26', -22.99, 'NETFLIX.COM LOS GATOS CA', 5) };
@@ -396,10 +419,30 @@ function iaReset() {
       propIA(PR.nfx, m.nfx, 'ia', [linIA('3200')], 'Netflix es una suscripción personal: va a distribuciones (3200), no a gasto de la empresa.', 0.35, { personal: true })
     ],
     reglas: [reglaIA(RG.wawa, 'WAWA', [{ cuenta: '6300' }], 12, '2026-10-28T12:00:00+00:00'), reglaIA(RG.shell, 'SHELL OIL', [{ cuenta: '6300' }], 4, '2026-10-12T12:00:00+00:00')],
-    gasto: 420, gastoTotal: 1230, ultimaRafaga: '2026-10-30T18:05:00+00:00'
+    gasto: 420, gastoTotal: 1230, ultimaRafaga: '2026-10-30T18:05:00+00:00', con7b: !!con7b
   });
+  if (!con7b) return;
+  const n = { ces: movIA(MI.ces, '2026-10-29', -612.40, 'CES 1040 TAMPA FL', 2), fyd: movIA(MI.fyd, '2026-10-28', -389.00, 'FLOOR & DECOR 225 OCALA FL', 3),
+    ced: movIA(MI.ced, '2026-10-27', -151.30, 'CED OCALA 0412', 4), low: movIA(MI.low, '2026-10-29', -96.55, "LOWE'S #1234 OCALA FL", 2) };
+  IA.movs.push(...Object.values(n));
+  // Home Depot (pide obra, sin pistas): la base lo dice en el resumen
+  Object.assign(IA.props.find(p => p.propuesta_id === PR.hd), { pistas_resumen: 'sin pistas' });
+  IA.props.push(
+    propIA(PR.ces, n.ces, 'ia', [linIA('5100', { proyecto_id: 'calla-terrace-8h2v' })], 'CES (Consolidated Electrical Supply) vende material eléctrico: $612.40 es material de obra.', 0.85, { obra_propuesta: true },
+      obraIA('calla-terrace-8h2v', 0.78, 'La cuadrilla reportó 24 h en Calla Terrace esos días; 2 compras anteriores de CES fueron a esa obra.', 'Calla Terrace: 24 h esos días, 61 h en 30 días, 2 tickets de CES · Casa Pérez: 6 h en 30 días')),
+    propIA(PR.fyd, n.fyd, 'ia', [linIA('5100', { proyecto_id: 'villanueva-amp-4r7t' })], 'Floor & Decor vende piso y azulejo: material de obra.', 0.74, { obra_propuesta: true },
+      obraIA('villanueva-amp-4r7t', 0.66, 'Hay 6 materiales de la lista de Ampliación Residencia Villanueva-Echeverría apuntados estos días.', 'Ampliación Residencia Villanueva-Echeverría: 6 materiales recientes · Oficina NCH: 1 material reciente')),
+    propIA(PR.ced, n.ced, 'ia', [linIA('5100')], 'CED vende material eléctrico; las pistas no apuntan a una sola obra y no la adivino.', 0.70, { pide_obra: true },
+      { pistas_resumen: 'Calla Terrace: 12 h esos días, 12 h en 30 días · Casa Pérez: 10 h esos días, 10 h en 30 días' }),
+    // por regla: la regla dice la cuenta; las pistas, la obra (la base la copia con su confianza y su motivo, en minúscula como la escribe)
+    propIA(PR.low, n.low, 'regla', [linIA('5100', { proyecto_id: 'casa-perez-k3m9' })], 'Regla: LOWE S', 1, { obra_propuesta: true },
+      { regla_id: RG.low, regla_nombre: 'LOWE S', ...obraIA('casa-perez-k3m9', 0.71, 'la cuadrilla reportó 16 h en Casa Pérez esos días; Edgar eligió esa obra la última vez con LOWE S', 'Casa Pérez: 16 h esos días, 16 h en 30 días, elegida 1 vez') }));
+  IA.reglas.push(reglaIA(RG.low, 'LOWE S', [{ cuenta: '5100' }], 3, '2026-10-22T12:00:00+00:00'));
 }
 iaReset();
+// las obras que ve la base: con la 7b, las dos de más
+const obrasBase = () => IA.con7b ? T.proyectos.concat(OBRAS_7B) : T.proyectos;
+const OBRA_ACTIVA = ['aprobado', 'ejecucion', 'pausa'];
 const iaMovs = () => T.v_banco_bandeja.concat(IA.movs).filter(f => !IA.fuera.has(f.movimiento_id));
 // v_contador_bandeja: por movimiento, la propuesta pendiente o la última
 function iaUltima() {
@@ -411,12 +454,16 @@ const iaCandidatos = () => iaMovs().filter(m => ['sin_ticket', 'dudosa'].include
 // v_contador_control: 10 y 11 cuentan sus vistas; un cuadre (61) y una alarma (71) que la prueba pone en rojo; 70 sale del gasto
 function iaControl() {
   const bj = iaUltima().length, rg = IA.reglas.length, tope = IA.gasto >= 3000 || IA.gastoTotal >= 10000;
+  const obrasMal = IA.props.filter(p => p.estado === 'pendiente' && p.obra_propuesta_id && !obrasBase().some(o => o.id === p.obra_propuesta_id && OBRA_ACTIVA.includes(o.estado)));
   const c = (orden, control, nivel, ok, detalle, filas, esperadas) => ({ orden, control, nivel, ok, filas: filas === undefined ? (nivel === 'cuadre' ? 0 : null) : filas, esperadas: esperadas === undefined ? (nivel === 'cuadre' ? 0 : null) : esperadas, detalle: detalle || null });
   return [
     c(10, 'vista: v_contador_bandeja', 'cuadre', true, null, estado.iaConteo ? 99 : bj, estado.iaConteo ? 99 : bj), c(11, 'vista: v_contador_reglas', 'cuadre', true, null, rg, rg),
     c(12, 'ia: hay cuentas que proponer', 'cuadre', true, null, CUENTAS_IA.length, 1), c(60, 'ia: cada propuesta aprobada o editada tiene su asiento vivo', 'cuadre', true),
     c(61, 'ia: ningún asiento con «Propuesta de la IA #» en su motivo sin su propuesta aprobada', 'cuadre', !estado.iaCuadreMal, estado.iaCuadreMal ? '2026-000777 (Propuesta de la IA #bbbbbbbb-… aprobada por Edgar) (prueba)' : null, estado.iaCuadreMal ? 1 : 0, 0),
     c(62, 'ia: las reglas activas van a cuentas activas e imputables', 'cuadre', true), c(63, 'ia: protecciones de la fase 7', 'cuadre', true),
+    c(64, 'ia: toda obra propuesta pendiente es una obra activa', 'cuadre', !obrasMal.length,
+      obrasMal.length ? obrasMal.map(p => `#${p.propuesta_id} (${p.fecha} ${p.monto} «${p.descripcion}»): la obra propuesta «${p.obra_propuesta}» está ${(obrasBase().find(o => o.id === p.obra_propuesta_id) || {}).estado || 'perdida'}`).join('; ') + ' → recházala (fn_contador_rechazar) o apruébala eligiendo otra obra en el selector' : null,
+      obrasMal.length, 0),
     c(70, 'ia: el gasto del mes bajo el tope', 'alarma', !tope, `${HOY.slice(0, 7)}: la IA lleva $${(IA.gastoTotal / 100).toFixed(2)} en total (el tope de la app es $100.00) y el contador $${(IA.gasto / 100).toFixed(2)} (su tope, $30.00)`),
     c(71, 'ia: ninguna propuesta pendiente de más de 7 días', 'alarma', !estado.iaVieja, estado.iaVieja ? '2026-10-21 -1500.00 «IRS USATAXPYMT» (desde el 2026-10-22) (prueba)' : null, estado.iaVieja ? 1 : 0, 0),
     c(72, 'ia: la última ráfaga sin error', 'alarma', true, 'la última fue el 30/10/2026 14:05 (hora de Miami)'),
@@ -431,6 +478,7 @@ function iaEstado() {
     ultima_rafaga_el: IA.ultimaRafaga, ultimo_error: null, ultimo_error_el: null, actualizado: IA.ultimaRafaga,
     pendientes_sin_propuesta: cand.length, pendientes_desde: cand.length ? cand.map(m => m.fecha).sort()[0] : null,
     propuestas_pendientes: pend.length, propuestas_por_regla: pend.filter(p => p.fuente === 'regla').length, propuestas_por_ia: pend.filter(p => p.fuente === 'ia').length,
+    propuestas_con_obra: pend.filter(p => !!p.obra_propuesta_id).length,
     reglas_activas: IA.reglas.filter(r => r.activa).length, mes: HOY.slice(0, 7), centavos_mes_total: IA.gastoTotal, tope_global: 10000, centavos_mes_contador: IA.gasto, aviso_pct: 80,
     bloqueado: !!motivo, bloqueado_motivo: motivo, aviso: IA.gasto * 100 >= 3000 * 80 || IA.gastoTotal * 100 >= 10000 * 80, lotes_abiertos: 0, ultimo_lote_el: IA.ultimaRafaga, ultimo_lote_centavos: 42,
     aprobadas_total: IA.props.filter(p => ['aprobada', 'editada'].includes(p.estado)).length, rechazadas_total: IA.props.filter(p => p.estado === 'rechazada').length, cuentas_permitidas: CUENTAS_IA.length,
@@ -463,20 +511,27 @@ function funcionContador(b, auth) {
   if (b.accion === 'proponer') {
     const e = iaEstado();
     if (e.bloqueado || estado.iaBloqueaFuncion) return { cuerpo: { ok: true, bloqueado: true, motivo: estado.iaBloqueaFuncion ? 'tope del contador (prueba)' : e.bloqueado_motivo } };
-    let k = 0, sin = 0;
+    let k = 0, sin = 0, conObra = 0;
     for (const m of iaCandidatos()) {
-      if (m.movimiento_id === MOV.a) { IA.props.push(propIA(PR.fe, m, 'ia', [linIA('5100')], 'Ferretería en Tampa: material de obra. La 5100 pide la obra y no la adivino.', 0.81, { pide_obra: true }, { creado_el: new Date().toISOString() })); k += 1; }
+      // (7b) con las pistas de la cuadrilla, la ferretería sale con su obra
+      if (m.movimiento_id === MOV.a && IA.con7b) { IA.props.push(propIA(PR.fe, m, 'ia', [linIA('5100', { proyecto_id: 'casa-perez-k3m9' })], 'Ferretería en Tampa: material de obra.', 0.81, { obra_propuesta: true },
+        { creado_el: new Date().toISOString(), ...obraIA('casa-perez-k3m9', 0.8, 'La cuadrilla reportó 16 h en Casa Pérez esos días.', 'Casa Pérez: 16 h esos días, 40 h en 30 días') })); k += 1; conObra += 1; }
+      else if (m.movimiento_id === MOV.a) { IA.props.push(propIA(PR.fe, m, 'ia', [linIA('5100')], 'Ferretería en Tampa: material de obra. La 5100 pide la obra y no la adivino.', 0.81, { pide_obra: true }, { creado_el: new Date().toISOString() })); k += 1; }
       else sin += 1;
     }
     IA.gasto += 12; IA.gastoTotal += 12; IA.ultimaRafaga = new Date().toISOString();
-    return { cuerpo: { ok: true, propuestas: k, reglas: 0, sin_respuesta: sin, invalidas: 0, centavos: 12, cache: { creacion: 1830, lectura: 0 } } };
+    return { cuerpo: { ok: true, propuestas: k, con_obra: conObra, reglas: 0, sin_respuesta: sin, invalidas: 0, centavos: 12, cache: { creacion: 1830, lectura: 0 } } };
   }
   if (b.accion === 'aprobar') {
     const p = IA.props.find(x => x.propuesta_id === b.propuesta);
     if (!p || p.estado !== 'pendiente') return { estado: 409, cuerpo: { ok: false, codigo: 'MX008', error: `Esa propuesta ya está ${p ? p.estado : 'perdida'}: no se aprueba dos veces.` } };
     if (p.lineas.some(l => l.pide_obra) && !b.proyecto_id) return { estado: 409, cuerpo: { ok: false, codigo: 'MX008', pista: 'elige la obra', error: 'Elige la obra: la propuesta va a 5100 (Material), que pide obra. Elígela en el selector y vuelve a aprobar.' } };
-    const lineas = p.lineas.map(l => ({ cuenta: l.cuenta, ...(l.pide_obra ? { proyecto_id: b.proyecto_id } : l.proyecto_id ? { proyecto_id: l.proyecto_id } : {}) }));
-    return { cuerpo: clasificar(p, movDe(p.movimiento_id), lineas, 'aprobada', b.recordar) };
+    // (7b) como fn_contador_aprobar: la obra que manda Edgar va a toda línea cuya cuenta admite obra (nunca a una prohibida); sin ella,
+    // las líneas como vienen (con la obra propuesta); si la de Edgar no es la que traía la línea, la propuesta queda «editada»
+    const admite = cod => ['obligatoria', 'opcional'].includes((CUENTAS_IA.find(c => c.codigo === cod) || {}).regla_obra);
+    const lineas = p.lineas.map(l => ({ cuenta: l.cuenta, ...(b.proyecto_id && admite(l.cuenta) ? { proyecto_id: b.proyecto_id } : l.proyecto_id ? { proyecto_id: l.proyecto_id } : {}) }));
+    const editada = p.lineas.some((l, i) => !!l.proyecto_id && l.proyecto_id !== lineas[i].proyecto_id);
+    return { cuerpo: clasificar(p, movDe(p.movimiento_id), lineas, editada ? 'editada' : 'aprobada', b.recordar) };
   }
   if (b.accion === 'clasificar') {
     const mov = movDe(b.movimiento);
@@ -518,6 +573,7 @@ const llamadas = [], lecturas = []; // lecturas: cada GET a /rest/v1/<vista>?…
 function tabla(nombre, q) {
   let filas = T[nombre] || [];
   if (nombre.startsWith('v_contador_')) filas = estado.c8 && VISTAS_IA[nombre] ? VISTAS_IA[nombre]() : [];
+  if (nombre === 'proyectos' && estado.c8) filas = obrasBase();
   // con c8 la bandeja trae además los cinco cargos sin ticket de la IA; lo que ya se clasificó por la función sale
   if (nombre === 'v_banco_bandeja' && estado.c8) filas = filas.concat(IA.movs).filter(f => !IA.fuera.has(f.movimiento_id));
   if (nombre === 'v_conciliacion' && estado.concNueva) filas = filas.concat([{
@@ -1817,8 +1873,8 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     const yo = movQ(MI.amz).locator('.ct-ia-mia');
     const grupos = await yo.locator('[data-ia-cuenta] optgroup').evaluateAll(gs => gs.map(g => g.label));
     const codigos = await yo.locator('[data-ia-cuenta] option').evaluateAll(os => os.map(o => o.value).filter(Boolean));
-    ok('IA · «Según yo» ofrece SOLO las cuentas de v_contador_cuentas (14), agrupadas por tipo con <optgroup> (costo, gastos, otros gastos, activo, pasivo, capital), sin bancos, tarjetas ni sueldos',
-      JSON.stringify(grupos) === '["Costo de obra","Gastos","Otros gastos","Activo","Pasivo","Capital"]' && codigos.length === 14 && codigos.every(c => CUENTAS_IA.some(x => x.codigo === c)) && !codigos.some(c => /^10|^2100|^6000$/.test(c)), JSON.stringify(grupos) + ' ' + codigos.join(','));
+    ok('IA · «Según yo» ofrece SOLO las cuentas de v_contador_cuentas (15), agrupadas por tipo con <optgroup> (costo, gastos, otros gastos, activo, pasivo, capital), sin bancos, tarjetas ni sueldos',
+      JSON.stringify(grupos) === '["Costo de obra","Gastos","Otros gastos","Activo","Pasivo","Capital"]' && codigos.length === 15 && codigos.every(c => CUENTAS_IA.some(x => x.codigo === c)) && !codigos.some(c => /^10|^2100|^6000$/.test(c)), JSON.stringify(grupos) + ' ' + codigos.join(','));
     await yo.locator('[data-ia-cuenta]').selectOption('5100');
     ok('IA · con una cuenta que pide obra (5100) la obra se vuelve obligatoria y lo dice', (await yo.locator('[data-ia-obra-et]').textContent()) === 'Obra (esta cuenta la pide)' && !(await yo.locator('[data-ia-obra-yo]').isDisabled()));
     n0 = llamadas.length;
@@ -1859,7 +1915,9 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     ok('IA · con líneas distintas de la propuesta la base la deja «editada» y el aviso lo dice', /^Clasificado \(cambiaste la propuesta\) · asiento 2026-000804/.test(tn.trim()) && IA.props.find(x => x.propuesta_id === PR.nfx).estado === 'editada', tn);
     // un error de la función (409 MX008) sale en ámbar en la tarjeta y los botones vuelven
     const ww = await fila(q, MI.wawa);
-    ok('IA · la propuesta de una regla dice «Regla: WAWA» y «100 % de confianza», sin selector de obra', /Regla: WAWA/.test(await ww.locator('.ct-ia-fuente').textContent()) && (await ww.locator('.ct-conf').textContent()) === '100 % de confianza' && (await ww.locator('[data-ia-obra]').count()) === 0);
+    ok('IA · la propuesta de una regla dice «Regla: WAWA» y «100 % de confianza»; su cuenta (6300) es de obra prohibida en el plan, así que no trae selector de obra ni pistas, y «✓ Así es» tal cual',
+      /Regla: WAWA/.test(await ww.locator('.ct-ia-fuente').textContent()) && (await ww.locator('.ct-conf').textContent()) === '100 % de confianza' && (await ww.locator('[data-ia-obra]').count()) === 0 &&
+      (await ww.locator('.ct-ia-obra-sel').count()) === 0 && (await ww.locator('.ct-ia-pistas').count()) === 0 && (await ww.locator('[data-ia-asi]').textContent()) === '✓ Así es');
     estado.iaFalla = { estado: 409, cuerpo: { codigo: 'MX008', error: 'Ese movimiento ya está casado con otro asiento: deshazlo antes con fn_banco_descasar (prueba).' } };
     await ww.locator('[data-ia-asi]').click();
     await q.waitForSelector(`.ct-mov[data-id="${MI.wawa}"] .ct-ia-res .ct-aviso.warn`, { timeout: 8000 }).catch(() => {});
@@ -1982,6 +2040,202 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     estado.c8 = false; iaReset();
   }
 
+  // ---- La obra que propone la IA (c8, fase 7b): las pistas las calcula la base, la IA propone la obra y Edgar la confirma o la cambia ----
+  {
+    estado.c8 = true; iaReset(true);
+    estado.mfaFactores = [{ id: 'f-1', friendly_name: 'Teléfono de Edgar', factor_type: 'totp', status: 'verified' }]; estado.sesionAal = 'aal2';
+    const abrir = async (w, alto) => {
+      const cx = await b.newContext({ viewport: { width: w, height: alto }, deviceScaleFactor: w < 1024 ? 2 : 1, isMobile: w < 1024, hasTouch: w < 1024, serviceWorkers: 'block' });
+      await simular(cx, 'dueno');
+      const q = await cx.newPage(); q.on('pageerror', e => errs.push(`IA 7b ${w}: ` + String(e).slice(0, 160)));
+      await q.goto('http://localhost:8873/index.html'); await q.waitForSelector('#vista-app:not([hidden])', { timeout: 15000 }); await q.waitForTimeout(800);
+      await q.evaluate(() => document.querySelectorAll('dialog[open]').forEach(d => d.close()));
+      await q.locator('#btn-conta').evaluate(x => x.click()); await q.waitForSelector('#conta-raiz .ct-ficha', { timeout: 8000 });
+      await q.evaluate(() => window.MXP_CONTA.ir('bandeja')); await pintado(q);
+      return [cx, q];
+    };
+    const [cx, q] = await abrir(1280, 900);
+    const sinToast = () => q.evaluate(() => { const t = document.getElementById('toast'); if (t) t.textContent = ''; });
+    const tostada = async re => { await q.waitForFunction(r => { const t = document.getElementById('toast'); return t && !t.hidden && new RegExp(r).test(t.textContent); }, re.source, { timeout: 8000 }).catch(() => {}); return (await q.locator('#toast').textContent()) || ''; };
+    const movQ = id => q.locator(`.ct-mov[data-id="${id}"]`);
+    const ultima = (n0, fn) => desde(n0).filter(l => l.fn === fn).slice(-1)[0];
+    const chip = async id => (await movQ(id).locator('.ct-f-motivo .ct-ia-chip').count()) ? (await movQ(id).locator('.ct-f-motivo .ct-ia-chip').textContent()).trim() : null;
+    const cifras = async () => (await q.locator('#ct-ia-cifras').textContent()).trim();
+    const valores = async (c, sel) => c.locator(`${sel} option`).evaluateAll(os => os.map(o => o.value));
+    let n0 = llamadas.length;
+    // la franja y los chips
+    ok('IA 7b · la franja dice «9 propuestas listas (3 con obra) · 1 por proponer · …» (propuestas_con_obra de v_contador_estado)', /^9 propuestas listas \(3 con obra\) · 1 por proponer · este mes \$4\.20 de \$30\.00$/.test(await cifras()), await cifras());
+    const chips = { ces: await chip(MI.ces), fyd: await chip(MI.fyd), ced: await chip(MI.ced), low: await chip(MI.low), hd: await chip(MI.hd) };
+    ok('IA 7b · el chip lleva la obra entre la cuenta y la confianza: «IA · 5100 Material · Calla Terrace · 85 %»; por regla, «Regla · LOWE S · Casa Pérez»; sin obra propuesta, como antes',
+      chips.ces === 'IA · 5100 Material · Calla Terrace · 85 %' && chips.fyd === 'IA · 5100 Material · Ampliación Residencia Villanueva-Echeverría · 74 %' && chips.low === 'Regla · LOWE S · Casa Pérez' &&
+      chips.ced === 'IA · 5100 Material · 70 %' && chips.hd === 'IA · 5100 Material · 92 %', JSON.stringify(chips));
+    const chipPc = await q.evaluate(([ia, regla]) => {
+      const r = e => e.getBoundingClientRect();
+      const nat = el => { const s = el.cloneNode(true); s.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;max-width:none;min-width:0;width:auto;flex:none;overflow:visible'; el.parentNode.appendChild(s); const x = s.getBoundingClientRect().width; s.remove(); return x; };
+      const medir = id => {
+        const ch = document.querySelector(`.ct-mov[data-id="${id}"] .ct-ia-chip.con-obra`), [c, o, p] = ['.ct-ia-chip-q', '.ct-ia-chip-o', '.ct-ia-chip-p'].map(s => ch.querySelector(s));
+        return { obraAbajo: r(o).top >= r(c).bottom - 1, pArriba: !p || Math.abs(r(p).top - r(c).top) < 2, enteros: [c, o, p].filter(Boolean).map(el => r(el).width + 0.25 >= nat(el)),
+          sep: getComputedStyle(o.querySelector('.ct-ia-sep')).display, dentro: r(ch).right <= r(ch.closest('.ct-f-motivo')).right + 1 };
+      };
+      return { ia: medir(ia), regla: medir(regla) };
+    }, [MI.ces, MI.low]);
+    const bienPc = m => m.obraAbajo && m.pArriba && m.enteros.every(Boolean) && m.sep === 'none' && m.dentro;
+    ok('IA 7b · computadora: en la columna «Motivo» la obra baja a su renglón dentro del chip («IA · 5100 Material · 85 %» arriba, «Calla Terrace» debajo, sin el «·»; y «Regla · LOWE S» sobre «Casa Pérez»), todo entero y dentro de la columna',
+      bienPc(chipPc.ia) && bienPc(chipPc.regla), JSON.stringify(chipPc));
+    ok('IA 7b · el chip dice al pasar por encima la obra con su confianza y su porqué', /Obra: Calla Terrace \(78 %\): La cuadrilla reportó 24 h/.test(await movQ(MI.ces).locator('.ct-ia-chip').getAttribute('title')));
+    // CES: «Según la IA» con la obra
+    const ces = await fila(q, MI.ces), suya = ces.locator('.ct-ia-suya');
+    const tSuya = (await suya.textContent()).replace(/\s+/g, ' ');
+    ok('IA 7b · «Según la IA» trae «Obra: Calla Terrace · 78 %» y debajo su porqué en llano (las pistas que citó), sin «falta la obra» ni «Pide obra» y sin repetir la obra en la línea',
+      (await suya.locator('.ct-ia-obra-t').textContent()).replace(/\s+/g, ' ').trim() === 'Obra: Calla Terrace · 78 %' &&
+      (await suya.locator('.ct-ia-obra-m').textContent()).trim() === 'La cuadrilla reportó 24 h en Calla Terrace esos días; 2 compras anteriores de CES fueron a esa obra.' &&
+      !/falta la obra|obra: Calla/.test(await suya.locator('.ct-ia-lineas').textContent()) && (await suya.locator('[data-flag="pide_obra"]').count()) === 0 && (await suya.locator('.ct-ia-pistas').count()) === 0 &&
+      (await suya.locator('.ct-ia-obra-p').getAttribute('class')).includes(' warn'), tSuya.slice(0, 400));
+    ok('IA 7b · el selector de la obra sale elegido con la propuesta, con la etiqueta «¿De qué obra? (la IA propone Calla Terrace)», sin opción vacía, y «✓ Así es · Calla Terrace»; la nota de «editada», escondida',
+      (await ces.locator('[data-ia-obra]').inputValue()) === 'calla-terrace-8h2v' && /^¿De qué obra\? \(la IA propone Calla Terrace\)/.test(await ces.locator('.ct-ia-obra-sel').textContent()) &&
+      JSON.stringify(await valores(ces, '[data-ia-obra]')) === JSON.stringify(['villanueva-amp-4r7t', 'calla-terrace-8h2v', 'casa-perez-k3m9', 'oficina-nch-7xq2']) &&
+      (await ces.locator('[data-ia-asi]').textContent()) === '✓ Así es · Calla Terrace' && await ces.locator('[data-ia-obra-cambio]').isHidden() && /la obra no/.test(await ces.locator('.ct-ia-pie').textContent()),
+      JSON.stringify(await valores(ces, '[data-ia-obra]')));
+    // «Según yo»: la obra propuesta queda elegida en cuanto la cuenta la admite (y no si es de obra prohibida), mientras Edgar no la toque
+    const yo = ces.locator('.ct-ia-mia'), cuentaYo = yo.locator('[data-ia-cuenta]'), obraYo = yo.locator('[data-ia-obra-yo]');
+    const antes = await obraYo.inputValue();
+    await cuentaYo.selectOption('5100');
+    const con5100 = { obra: await obraYo.inputValue(), btn: (await yo.locator('[data-ia-clasificar]').textContent()).trim() };
+    await cuentaYo.selectOption('6500');
+    const con6500 = { obra: await obraYo.inputValue(), apagada: await obraYo.isDisabled() };
+    await cuentaYo.selectOption('1420');
+    const con1420 = await obraYo.inputValue();
+    await obraYo.selectOption('oficina-nch-7xq2'); await cuentaYo.selectOption('5100');
+    const tocada = await obraYo.inputValue();
+    ok('IA 7b · «Según yo»: sin cuenta, sin obra; con 5100 la obra de la IA queda elegida («Clasificar (igual que la IA)»); con 6500 (prohibida) se apaga; con 1420 (opcional) vuelve; si Edgar la cambia, se respeta',
+      antes === '' && con5100.obra === 'calla-terrace-8h2v' && con5100.btn === 'Clasificar (igual que la IA)' && con6500.obra === '' && con6500.apagada && con1420 === 'calla-terrace-8h2v' && tocada === 'oficina-nch-7xq2',
+      JSON.stringify({ antes, con5100, con6500, con1420, tocada }));
+    await foto(q, 'ia7b-1-1280-obra-propuesta');
+    // «Así es» con la obra propuesta → aprobada
+    n0 = llamadas.length;
+    await sinToast(); await ces.locator('[data-ia-asi]').click();
+    const tCes = await tostada(/Así es/); await pintado(q);
+    const aCes = ultima(n0, 'contador:aprobar');
+    ok('IA 7b · «✓ Así es · Calla Terrace» manda aprobar con el proyecto_id propuesto {accion, propuesta, recordar, proyecto_id: calla-terrace} y la base la deja «aprobada»',
+      !!aCes && JSON.stringify(aCes.args) === JSON.stringify({ accion: 'aprobar', propuesta: PR.ces, recordar: true, proyecto_id: 'calla-terrace-8h2v' }) && /^Bearer /.test(aCes.auth) &&
+      /^Así es: en el libro · asiento 2026-000801 · regla nueva «CES»$/.test(tCes.trim()) && IA.props.find(x => x.propuesta_id === PR.ces).estado === 'aprobada' && (await movQ(MI.ces).count()) === 0, JSON.stringify(aCes && aCes.args) + ' | ' + tCes);
+    ok('IA 7b · …la regla que aprende es de la cuenta, sin la obra (la próxima vez la dicen las pistas)', JSON.stringify((IA.reglas.find(r => r.nombre === 'CES') || {}).lineas) === '[{"cuenta":"5100"}]');
+    // Floor & Decor: Edgar cambia la obra → manda la suya y queda «editada»
+    const fyd = await fila(q, MI.fyd);
+    await fyd.locator('[data-ia-obra]').selectOption('casa-perez-k3m9');
+    ok('IA 7b · cambiar la obra cambia el botón («✓ Así es · Casa Pérez») y enseña «Con otra obra entra la tuya y la propuesta queda «editada»»',
+      (await fyd.locator('[data-ia-asi]').textContent()) === '✓ Así es · Casa Pérez' && await fyd.locator('[data-ia-obra-cambio]').isVisible() && /queda «editada»/.test(await fyd.locator('[data-ia-obra-cambio]').textContent()));
+    await fyd.locator('[data-ia-obra]').selectOption('villanueva-amp-4r7t');
+    const devuelta = { btn: await fyd.locator('[data-ia-asi]').textContent(), nota: await fyd.locator('[data-ia-obra-cambio]').isHidden() };
+    await fyd.locator('[data-ia-obra]').selectOption('casa-perez-k3m9');
+    n0 = llamadas.length;
+    await sinToast(); await fyd.locator('[data-ia-asi]').click();
+    const tFyd = await tostada(/Así es/); await pintado(q);
+    const aFyd = ultima(n0, 'contador:aprobar');
+    ok('IA 7b · …volver a la propuesta esconde la nota; con otra obra «Así es» manda la de Edgar (proyecto_id: casa-perez), la base la deja «editada» y el aviso dice «Así es, con tu obra»',
+      devuelta.btn === '✓ Así es · Ampliación Residencia Villanueva-Echeverría' && devuelta.nota && !!aFyd && JSON.stringify(aFyd.args) === JSON.stringify({ accion: 'aprobar', propuesta: PR.fyd, recordar: true, proyecto_id: 'casa-perez-k3m9' }) &&
+      /^Así es, con tu obra: en el libro · asiento 2026-000802/.test(tFyd.trim()) && IA.props.find(x => x.propuesta_id === PR.fyd).estado === 'editada', JSON.stringify(aFyd && aFyd.args) + ' | ' + tFyd);
+    // CED: pide obra y las pistas no apuntan a una sola → el resumen de las pistas en gris; Home Depot: «sin pistas»
+    const ced = await fila(q, MI.ced);
+    ok('IA 7b · sin obra propuesta y con pistas: «Pistas: Calla Terrace: 12 h esos días… · Casa Pérez: 10 h…» en gris, «Pide obra», el selector vacío «Elige la obra…» con «(la cuenta la pide)» y «✓ Así es (elige antes la obra)»',
+      /^Pistas: Calla Terrace: 12 h esos días, 12 h en 30 días · Casa Pérez: 10 h esos días, 10 h en 30 días$/.test((await ced.locator('.ct-ia-pistas').textContent()).trim()) && (await ced.locator('.ct-ia-obra').count()) === 0 &&
+      (await ced.locator('[data-flag="pide_obra"]').count()) === 1 && (await ced.locator('[data-ia-obra]').inputValue()) === '' && (await ced.locator('[data-ia-obra] option').first().textContent()) === 'Elige la obra…' &&
+      /^¿De qué obra\? \(la cuenta la pide\)/.test(await ced.locator('.ct-ia-obra-sel').textContent()) && (await ced.locator('[data-ia-asi]').textContent()) === '✓ Así es (elige antes la obra)');
+    n0 = llamadas.length;
+    await ced.locator('[data-ia-asi]').click(); await q.waitForTimeout(150);
+    ok('IA 7b · …y «Así es» sin obra no llama: pide la obra', !desde(n0).some(l => l.fn === 'contador:aprobar') && /Elige antes la obra/.test(await texto(q, `.ct-mov[data-id="${MI.ced}"] .ct-ia-res`)));
+    const hd = await fila(q, MI.hd);
+    ok('IA 7b · y si la base no vio pistas, lo dice en llano: «Pistas: ninguna obra tiene horas de la cuadrilla, tickets de este comercio ni materiales…»', /^Pistas: ninguna obra tiene horas de la cuadrilla/.test((await hd.locator('.ct-ia-pistas').textContent()).trim()));
+    // Lowe's: por regla, con la obra de sus pistas
+    const low = await fila(q, MI.low);
+    ok('IA 7b · una propuesta por regla trae la obra de sus pistas: «Regla: LOWE S», «Obra: Casa Pérez · 71 %» con el porqué en mayúscula, el selector en Casa Pérez y «✓ Así es · Casa Pérez»',
+      /Regla: LOWE S/.test(await low.locator('.ct-ia-fuente').textContent()) && (await low.locator('.ct-ia-obra-t').textContent()).replace(/\s+/g, ' ').trim() === 'Obra: Casa Pérez · 71 %' &&
+      /^La cuadrilla reportó 16 h en Casa Pérez esos días; Edgar eligió esa obra/.test((await low.locator('.ct-ia-obra-m').textContent()).trim()) && (await low.locator('[data-ia-obra]').inputValue()) === 'casa-perez-k3m9' &&
+      (await low.locator('[data-ia-asi]').textContent()) === '✓ Así es · Casa Pérez');
+    n0 = llamadas.length;
+    await sinToast(); await low.locator('[data-ia-asi]').click();
+    const tLow = await tostada(/Así es/); await pintado(q);
+    const aLow = ultima(n0, 'contador:aprobar');
+    ok('IA 7b · …«Así es» manda la obra de la regla y queda «aprobada»', !!aLow && aLow.args.proyecto_id === 'casa-perez-k3m9' && /^Así es: en el libro/.test(tLow.trim()) && IA.props.find(x => x.propuesta_id === PR.low).estado === 'aprobada', tLow);
+    // «Proponer con la IA»: la ráfaga dice cuántas traen obra
+    n0 = llamadas.length;
+    await sinToast(); await q.locator('#ct-ia-proponer').click();
+    const tPro = await tostada(/propuesta/); await pintado(q);
+    ok('IA 7b · la ráfaga avisa «1 propuesta (1 con obra) · …» (con_obra de la función) y la ferretería sale con «IA · 5100 Material · Casa Pérez · 81 %»; la franja, «7 propuestas listas (1 con obra)»',
+      /^1 propuesta \(1 con obra\) · 0 por regla · 0 sin respuesta · \$0\.12$/.test(tPro.trim()) && (await chip(MOV.a)) === 'IA · 5100 Material · Casa Pérez · 81 %' && /^7 propuestas listas \(1 con obra\) · 0 por proponer/.test(await cifras()), tPro + ' | ' + await cifras());
+    // una obra que se cerró después de proponerla (el cuadre 64): la IA se sigue viendo, la propuesta lo dice y «Así es» pide otra
+    const pfe = IA.props.find(x => x.propuesta_id === PR.fe);
+    Object.assign(pfe, { lineas: [linIA('5100', { proyecto_id: 'taller-ruiz-5b2n' })], ...obraIA('taller-ruiz-5b2n', 0.8, 'La cuadrilla reportó 16 h en Taller Ruiz esos días.', 'Taller Ruiz: 16 h esos días') });
+    await q.evaluate(() => window.MXP_CONTA.ir('bandeja')); await pintado(q);
+    const fe = await fila(q, MOV.a);
+    ok('IA 7b · cuadre 64 en rojo: la IA NO se tapa (chips y columnas siguen), la franja avisa «1 propuesta trae una obra que ya no está activa…» y el chip va sin la obra',
+      (await q.locator('#ct-ia-franja.mal').count()) === 0 && (await q.locator('.ct-ia').count()) > 0 && /^1 propuesta trae una obra que ya no está activa/.test(await texto(q, '#ct-ia-cerradas')) && (await chip(MOV.a)) === 'IA · 5100 Material · 81 %',
+      await texto(q, '#ct-ia-franja'));
+    ok('IA 7b · …la propuesta dice «Ya no está activa (completado)», el selector sale vacío «Elige otra obra…» con su porqué en la etiqueta, y «Según yo» no la preselecciona',
+      /Ya no está activa \(completado\)/.test(await fe.locator('.ct-ia-obra.cerrada').textContent()) && (await fe.locator('[data-ia-obra]').inputValue()) === '' && (await fe.locator('[data-ia-obra] option').first().textContent()) === 'Elige otra obra…' &&
+      !(await valores(fe, '[data-ia-obra]')).includes('taller-ruiz-5b2n') && /la que propuso la IA, Taller Ruiz, ya no está activa/.test(await fe.locator('.ct-ia-obra-sel').textContent()) &&
+      (await fe.locator('[data-ia-asi]').textContent()) === '✓ Así es (elige antes la obra)' && await (async () => { await fe.locator('.ct-ia-mia [data-ia-cuenta]').selectOption('5100'); return (await fe.locator('.ct-ia-mia [data-ia-obra-yo]').inputValue()) === ''; })());
+    n0 = llamadas.length;
+    await fe.locator('[data-ia-asi]').click(); await q.waitForTimeout(150);
+    ok('IA 7b · …«Así es» sin elegir otra no llama y lo dice («Elige otra obra: la que propuso la IA (Taller Ruiz) ya no está activa»)', !desde(n0).some(l => l.fn === 'contador:aprobar') && /Elige otra obra: la que propuso la IA \(Taller Ruiz\) ya no está activa/.test(await texto(q, `.ct-mov[data-id="${MOV.a}"] .ct-ia-res`)));
+    await foto(q, 'ia7b-2-1280-obra-cerrada');
+    await fe.locator('[data-ia-obra]').selectOption('oficina-nch-7xq2');
+    await sinToast(); await fe.locator('[data-ia-asi]').click();
+    const tFe = await tostada(/Así es/); await pintado(q);
+    ok('IA 7b · …eligiendo otra, manda la de Edgar (proyecto_id: oficina-nch) y queda «editada»; el aviso de la franja se va', (ultima(n0, 'contador:aprobar') || { args: {} }).args.proyecto_id === 'oficina-nch-7xq2' && pfe.estado === 'editada' &&
+      /^Así es, con tu obra/.test(tFe.trim()) && (await q.locator('#ct-ia-cerradas').count()) === 0, tFe);
+    // «Qué atender» con el 64 en rojo: va a la Bandeja y dice qué hacer (no «no cuadra»)
+    const pced = IA.props.find(x => x.propuesta_id === PR.ced);
+    Object.assign(pced, { lineas: [linIA('5100', { proyecto_id: 'taller-ruiz-5b2n' })], pide_obra: false, flags: { obra_propuesta: true }, ...obraIA('taller-ruiz-5b2n', 0.7, 'La cuadrilla reportó 12 h en Taller Ruiz esos días.', 'Taller Ruiz: 12 h esos días') });
+    await q.evaluate(() => window.MXP_CONTA.ir('resumen')); await pintado(q);
+    const atn = await q.locator('#ct-atender .ct-atn').allTextContents();
+    ok('IA 7b · «Qué atender»: «1 propuesta de la IA trae una obra que ya no está activa: en la Bandeja, elige otra obra al aprobarla…» con su detalle y el botón a la Bandeja (no «no cuadra»)',
+      atn.some(x => /^1 propuesta de la IA trae una obra que ya no está activa: en la Bandeja, elige otra obra al aprobarla o di «No es eso»\..*Taller Ruiz/.test(x)) && !atn.some(x => /La IA contable no cuadra/.test(x)) &&
+      (await q.locator('#ct-atender .ct-atn', { hasText: 'ya no está activa' }).locator('button[data-ir="bandeja"]').count()) === 1, atn.join(' | '));
+    // Conexiones: cuántas esperan con obra
+    await q.evaluate(() => window.MXP_CONTA.ir('conexiones')); await pintado(q);
+    ok('IA 7b · Conexiones dice cuántas propuestas esperan con obra, explica las pistas (las reglas no guardan la obra) y, con el 64 en rojo, «cuadra» con la pastilla «1 obra propuesta cerrada»',
+      /Propuestas: \d+ esperan en la bandeja \(\d+ con obra\)/.test(await texto(q, '#ct-ia .ct-datos')) && /Las reglas recuerdan la cuenta, nunca la obra/.test(await texto(q, '#ct-ia .ct-ayuda')) &&
+      /conectada.*cuadra/.test(await texto(q, '#ct-ia .ct-cab')) && !/no cuadra/.test(await texto(q, '#ct-ia .ct-cab')) && /1 obra propuesta cerrada/.test(await texto(q, '#ct-ia .ct-cab')), await texto(q, '#ct-ia .ct-cab'));
+    await cx.close();
+
+    // el teléfono (390) y el iPad (820): el corte del chip (la obra con «…», nunca el porcentaje) y la propuesta con obra desplegada
+    iaReset(true);
+    for (const w of [390, 820]) {
+      const [tcx, t] = await abrir(w, w < 700 ? 844 : 1100);
+      const med = await t.evaluate(ids => {
+        const r = e => e.getBoundingClientRect(), dentro = (a, b) => r(a).right <= r(b).right + 1 && r(a).left >= r(b).left - 1;
+        const chipDe = id => document.querySelector(`.ct-mov[data-id="${id}"] .ct-ia-chip.ia`);
+        const largo = chipDe(ids.fyd), corto = chipDe(ids.ces);
+        const o = largo.querySelector('.ct-ia-chip-o'), p = largo.querySelector('.ct-ia-chip-p'), c = largo.querySelector('.ct-ia-chip-q');
+        // «entero»: la caja le da al menos lo que mide su texto entero (una copia sin tope en el mismo chip); scrollWidth redondea
+        // y no ve un recorte de una fracción de píxel, que ya pinta «…»
+        const nat = el => { const s = el.cloneNode(true); s.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;max-width:none;min-width:0;width:auto;flex:none;overflow:visible'; el.parentNode.appendChild(s); const x = s.getBoundingClientRect().width; s.remove(); return x; };
+        const entero = el => r(el).width + 0.25 >= nat(el);
+        return { sw: document.documentElement.scrollWidth, iw: window.innerWidth,
+          chipDentro: dentro(largo, largo.closest('.ct-mov')) && dentro(corto, corto.closest('.ct-mov')),
+          obraCortada: !entero(o), elipsis: getComputedStyle(o).textOverflow, pEntera: entero(p) && dentro(p, largo) && p.textContent === ' · 74 %',
+          cuentaEntera: entero(c), cortoEntero: [...corto.children].every(entero) };
+      }, { fyd: MI.fyd, ces: MI.ces });
+      const ces2 = await fila(t, MI.ces); await t.waitForTimeout(300);
+      const det = await t.evaluate(() => {
+        const c = document.querySelector('.ct-mov.abierta'), a = c.querySelector('.ct-ia-suya').getBoundingClientRect(), y = c.querySelector('.ct-ia-mia').getBoundingClientRect();
+        const fuera = [...document.querySelectorAll('#conta-raiz *')].filter(e => e.getBoundingClientRect().right > window.innerWidth + 1 && getComputedStyle(e).position !== 'fixed' && !e.closest('.ct-tabs')).map(e => e.className || e.tagName).slice(0, 5);
+        const ob = c.querySelector('.ct-ia-obra').getBoundingClientRect();
+        return { sw: document.documentElement.scrollWidth, iw: window.innerWidth, debajo: y.top >= a.bottom - 1, lado: Math.abs(a.top - y.top) < 2 && a.right <= y.left, fuera, obraDentro: ob.right <= a.right + 1 && ob.left >= a.left - 1 };
+      });
+      if (w === 390) {
+        ok('IA 7b · teléfono (390 px): en el chip largo la obra se corta con «…» y el porcentaje se ve entero («· 74 %»); la cuenta no se corta; el chip corto (CES) entero; nada se sale de su fila',
+          med.sw <= med.iw + 1 && med.chipDentro && med.obraCortada && med.elipsis === 'ellipsis' && med.pEntera && med.cuentaEntera && med.cortoEntero, JSON.stringify(med));
+        ok('IA 7b · teléfono: la propuesta con obra desplegada cabe («Según yo» debajo, la línea de la obra dentro de su columna) y la página no desplaza de lado',
+          det.sw <= det.iw + 1 && det.debajo && det.fuera.length === 0 && det.obraDentro && (await ces2.locator('[data-ia-obra]').inputValue()) === 'calla-terrace-8h2v', JSON.stringify(det));
+      } else ok('IA 7b · iPad (820 px): las dos columnas lado a lado con la obra dentro, el chip dentro de su fila y nada se sale de la pantalla', det.sw <= det.iw + 1 && det.lado && det.fuera.length === 0 && det.obraDentro && med.chipDentro && med.pEntera, JSON.stringify({ det, med }));
+      await foto(t, `ia7b-3-${w}-obra-propuesta`);
+      await tcx.close();
+    }
+    estado.c8 = false; estado.mfaFactores = []; estado.sesionAal = undefined; iaReset();
+  }
+
   // ---- Sin señal ----
   await ctx.setOffline(true);
   await tab(p, 'bancos'); await p.waitForSelector('.ct-rojo', { timeout: 8000 });
@@ -1992,9 +2246,9 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
 
   if (FOTOS) {
     // cada página a 390, 820 y 1280 px (<ancho>-<pagina>.png), con el código del teléfono activo, Plaid conectado, la bandeja con el depósito de Stripe
-    // y la IA contable (c8) pegada: la bandeja con la propuesta de Home Depot desplegada y Conexiones con su tarjeta y sus reglas
+    // y la IA contable (c8 con la 7b) pegada: la bandeja con la propuesta de CES (la obra que propone la IA) desplegada y Conexiones con su tarjeta y sus reglas
     estado.mfaFactores = [{ id: 'f-1', friendly_name: 'Teléfono de Edgar', factor_type: 'totp', status: 'verified' }]; estado.sesionAal = 'aal2'; estado.stripeDeposito = true;
-    estado.c8 = true; iaReset();
+    estado.c8 = true; iaReset(true);
     for (const w of [390, 820, 1280]) {
       const cx = await b.newContext({ viewport: { width: w, height: w < 700 ? 844 : 1000 }, deviceScaleFactor: w < 1024 ? 2 : 1, isMobile: w < 1024, hasTouch: w < 1024, serviceWorkers: 'block' });
       await simular(cx, 'dueno');
@@ -2005,7 +2259,7 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
       for (const k of PAGS) {
         await q.evaluate(k => window.MXP_CONTA.ir(k), k); await pintado(q); await q.waitForTimeout(300);
         if (k === 'bancos') await q.locator('#ct-imp-abrir').click().catch(() => {});
-        if (k === 'bandeja') await fila(q, MI.hd).catch(() => {});
+        if (k === 'bandeja') await fila(q, MI.ces).catch(() => {});
         if (k === 'movimientos') { await q.selectOption('#ct-mov-cuenta', '2100-2013').catch(() => {}); await pintado(q); }
         if (k === 'estados') { await q.locator('[data-periodo="2026-10"]').click().catch(() => {}); await pintado(q); }
         await q.waitForTimeout(200);

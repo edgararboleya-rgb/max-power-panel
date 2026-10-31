@@ -35,7 +35,31 @@
        toca), fn_verificar_cadena, fn_banco_control, fn_puentes_verificar y
        fn_estados_control en verde (salvo la apertura de fábrica), ninguna
        fn_contador_* en la API ni SECURITY DEFINER, y la llave de prueba en
-       ninguna respuesta, salida, petición ni tabla.
+       ninguna respuesta, salida, petición ni tabla;
+     · LA OBRA (7b, E2E-110 a E2E-128): las pistas de la obra que calcula la
+       base (fn_contador_pistas_obra: las horas de la cuadrilla, los tickets
+       del mismo comercio, lo que Edgar eligió, la lista de materiales)
+       viajan a la IA en cada petición con la forma del contrato y sin nada
+       personal (ningún usuario_id, nombre del equipo, nota de las horas ni
+       ruta de foto); la IA propone la obra (el simulador copia la
+       candidata) y la base la deja en la línea, con su confianza y su
+       motivo en la bandeja y con_obra en la respuesta; una obra que no
+       existe se descarta con su nota; la IA que no se atreve deja pide_obra
+       y las pistas a la vista; Edgar aprueba sin elegir (entra la obra
+       propuesta) o con otra (editada, entra la suya); una regla que pide
+       obra lleva la candidata; la regla aprendida nunca guarda la obra; el
+       cuadre 64; y (E2E-128, lo que destapó la verificación del 31-oct) la
+       obra que se cierra DESPUÉS de proponerla no entra por un toque: el 64
+       la nombra y «Así es» sin elegir, con esa misma obra y «Según yo» con
+       ella en la línea contestan 409 MX008 «ya no está activa» con la pista
+       «elige la obra». LAS PISTAS LAS SIEMBRA LA PRUEBA (horas a nombre del
+       equipo, un ticket «por leer» y una fila de materiales, en obras y
+       fechas escogidas) para que lo esperado no dependa del día en que se
+       corre: las horas y los tickets de la semilla tienen fecha fija, y
+       cada candidata se escoge con margen sobre lo que la semilla pueda
+       sumar (las cuentas, junto a cada siembra). Las comprobaciones de la
+       7b llevan número desde la 110 (las de antes no se renumeran) y van
+       donde pasa lo que miden: el cierre (E2E-100 a E2E-109) las cubre.
 
    DOS MODOS: con Deno (DENO o /opt/node22/bin/deno) la función corre como en
    Supabase, en su puerto (8896; la de otro entorno, 8897), con npm:postgres
@@ -49,7 +73,10 @@
         está como la deja la construcción de aquí (c8 pegado, sin
         propuestas, reglas ni ráfagas: p. ej. una copia hecha con «createdb
         -T c8base»; los cargos que ya esperen en su bandeja entran en la
-        ráfaga y se cuentan); SIN_DENO=1 fuerza el modo node. Necesita el
+        ráfaga y se cuentan: con una bandeja «como en producción», como la
+        de c8b, la primera ráfaga sube max_por_rafaga lo justo para
+        llevárselos todos —hasta 100— y lo devuelve a 20 en cuanto
+        contesta); SIN_DENO=1 fuerza el modo node. Necesita el
         banco levantado (pruebas/conta/pg17.sh). Con Deno fuera de
         /opt/node22/bin: DENO=… (y su DENO_DIR con npm:postgres@3.4.5 en el
         caché). */
@@ -71,6 +98,9 @@ const CON_DENO = !process.env.SIN_DENO && existsSync(DENO);
 const P_SIM = 8895, P_FN = 8896, P_FN2 = 8897, P_MUERTO = '5499';
 // Las llaves de prueba (nunca una de verdad): la buena y una que el simulador rechaza
 const LLAVE = 'sk-ant-prueba', LLAVE_MALA = 'sk-ant-prueba-que-no-vale';
+// (7b) la nota de unas horas de la cuadrilla: vive en la base y no debe salir de ella (ni a la IA, ni en una respuesta, ni en una tabla del contador)
+const NOTA_SECRETA = 'E2E-C8 NOTA SECRETA DE LA CUADRILLA';
+const UUID_NADA = '00000000-0000-4000-8000-000000000000';
 const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 const diaMenos = (n) => new Date(Date.parse(`${HOY}T12:00:00Z`) - n * 86400_000).toISOString().slice(0, 10);
 const RE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -144,8 +174,8 @@ if (!process.env.SIN_CONSTRUIR) {
       '-c', `select format('total=%s ok=%s fallan=%s omitidas=%s', count(*), count(*) filter (where ok), count(*) filter (where not ok), count(*) filter (where ok is null)) || coalesce(' · ' || string_agg(n || ' ' || prueba, '; ') filter (where ok is not true), '') from _pruebas`],
       { env: PG_ENV, stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 << 20 }).toString().trim();
   } catch (e) { pruebasC8 = 'error: ' + String(e.stderr || e.message).slice(-1500); }
-  ok('E2E-02 c8-pruebas.sql en verde (25 de 25) y no deja nada (ni propuestas, ni reglas, ni ráfagas)',
-     /^total=25 ok=25 fallan=0/.test(pruebasC8) && q(`select (select count(*) from contador_propuestas) + (select count(*) from contador_reglas) + (select count(*) from contador_lotes)`) === '0', pruebasC8);
+  ok('E2E-02 c8-pruebas.sql en verde (32 de 32, con las de la 7b y las dos del 31-oct) y no deja nada (ni propuestas, ni reglas, ni ráfagas)',
+     /^total=32 ok=32 fallan=0 omitidas=0/.test(pruebasC8) && q(`select (select count(*) from contador_propuestas) + (select count(*) from contador_reglas) + (select count(*) from contador_lotes)`) === '0', pruebasC8);
   // re-pegar las capas con c8 puesto: nada de c8 cuelga de sus vistas (las de c8 leen solo tablas)
   log('re-pego c1, c3, c4, c6, c7, s1 y p1 con c8 puesto, y c8 otra vez…');
   const repegar = [];
@@ -158,11 +188,20 @@ const dueno = q(`select id from perfiles where rol = 'dueno' and coalesce(activo
 const equipo = q(`select id from perfiles where rol <> 'dueno' and coalesce(activo, true) order by creado limit 1`);
 const OBRAS = q(`select id || '|' || nombre from proyectos where estado in ('aprobado', 'ejecucion', 'pausa') order by nombre, id`).split('\n').filter(Boolean).map((l) => l.split('|'));
 const [OBRA, OBRA_NOMBRE] = OBRAS[0] ?? [];
-const [OBRA2] = OBRAS[1] ?? [];
+const [OBRA2, OBRA2_NOMBRE] = OBRAS[1] ?? [];
+// (7b) OBRA3, la obra de las pistas de la primera ráfaga: una obra activa sin horas, tickets ni materiales de los
+// últimos 60 días (en la semilla de pruebas/conta, Taller Ruiz), para que lo que pese en sus pistas sea solo lo que
+// siembra esta prueba
+const [OBRA3, OBRA3_NOMBRE] = (q(`select p.id || '|' || p.nombre from proyectos p
+    where p.estado in ('aprobado', 'ejecucion', 'pausa') and p.id not in (${lit(OBRA ?? '')}, ${lit(OBRA2 ?? '')})
+      and not exists (select 1 from horas h where h.proyecto_id = p.id and h.fecha > current_date - 60)
+      and not exists (select 1 from recibos r where r.proyecto_id = p.id)
+      and not exists (select 1 from materiales t where t.proyecto_id = p.id and t.creado > now() - interval '60 days')
+    order by p.nombre, p.id limit 1`) || '').split('|');
 const fresca = q(`select (select count(*) from contador_propuestas) || '|' || (select count(*) from contador_reglas) || '|' || (select count(*) from contador_lotes) || '|' || (select count(*) from movimientos_banco where id_externo like 'e2e-c8-%')`);
 const cfg0 = q(`select modelo || '|' || effort || '|' || activa || '|' || max_por_rafaga || '|' || tope_mes_centavos || '|' || dueno || '|' || (ultima_rafaga_el is null) from contador_config where id = 1`);
-ok('E2E-04 la base: dueño, equipo, dos obras activas, c8 pegado (contador_config de fábrica: opus 5.5, low, activa, 20 por ráfaga, $30 al mes, el dueño, ninguna ráfaga) y sin propuestas, reglas ni ráfagas',
-   dueno && equipo && OBRA && OBRA2 && fresca === '0|0|0|0' && cfg0 === `claude-opus-5-5|low|true|20|3000|${dueno}|true`, { dueno, equipo, OBRAS, fresca, cfg0 });
+ok('E2E-04 la base: dueño, equipo, tres obras activas (la tercera sin horas, tickets ni materiales recientes: la de las pistas de la 7b), c8 pegado (contador_config de fábrica: opus 5.5, low, activa, 20 por ráfaga, $30 al mes, el dueño, ninguna ráfaga) y sin propuestas, reglas ni ráfagas',
+   dueno && equipo && OBRA && OBRA2 && OBRA3 && OBRA3_NOMBRE && fresca === '0|0|0|0' && cfg0 === `claude-opus-5-5|low|true|20|3000|${dueno}|true`, { dueno, equipo, OBRAS, OBRA3, fresca, cfg0 });
 if (fresca !== '0|0|0|0') {
   console.error(`La base ${BD} ya se usó (propuestas|reglas|ráfagas|cargos e2e = ${fresca}): vuelve a clonarla (createdb -T c8base) o constrúyela (sin SIN_CONSTRUIR).`);
   process.exit(2);
@@ -313,7 +352,9 @@ const rojos = (nivel) => control().filter((c) => c.nivel === nivel && !c.ok).map
 const gastoContador = () => q(`select coalesce(sum(centavos), 0) || '|' || coalesce(sum(llamadas), 0) from asistente_costo_mes where accion = 'contador_categorizar' and mes = to_char(fn_fecha_miami(now()), 'YYYY-MM')`).split('|').map(Number);
 const contenido = (p) => p?.cuerpo?.messages?.[0]?.content ?? '';
 const msgDe = (p) => { try { return JSON.parse(contenido(p)); } catch { return null; } };
-const claveMsg = (p) => { const m = msgDe(p); return m ? `${m.desc_norm}|${m.monto}` : '?'; };
+// (la clave de un cargo en lo que llega a la IA: su cuenta, su fecha, su desc_norm y su monto; la bandeja «como en
+// producción» repite comercio y monto en días distintos)
+const claveMsg = (p) => { const m = msgDe(p); return m ? `${m.cuenta_banco}|${m.fecha}|${m.desc_norm}|${m.monto}` : '?'; };
 const centavosDe = (u) => Math.round((u.input * 400 + u.cache_creacion * 500 + u.cache_lectura * 20 + u.output * 2000) / 1_000_000);
 const usoSim = (ps) => ps.filter((p) => p.respuesta?.usage).reduce((s, p) => ({ input: s.input + p.respuesta.usage.input_tokens, output: s.output + p.respuesta.usage.output_tokens,
   cache_creacion: s.cache_creacion + p.respuesta.usage.cache_creation_input_tokens, cache_lectura: s.cache_lectura + p.respuesta.usage.cache_read_input_tokens }), { input: 0, output: 0, cache_creacion: 0, cache_lectura: 0 });
@@ -353,6 +394,19 @@ try {
   const sembrados = Object.values(M);
   ok('E2E-05 doce cargos sembrados por Plaid y «Casar»: todos pendientes con motivo «sin_ticket» en la bandeja',
      sembrados.every((m) => RE_UUID.test(m)) && q(`select count(*) from v_banco_bandeja where motivo = 'sin_ticket' and movimiento_id in (${sembrados.map(lit).join(', ')})`) === '12', M);
+  // (7b) LAS PISTAS DEL HOME DEPOT, sembradas aquí: la cuadrilla reportó 24 h en OBRA3 (8 h al día de 8 a 6 días atrás, a
+  // nombre del equipo; una fila con la nota que no debe salir de la base), alrededor de su cargo (hace 6 días: ±3 días) y
+  // fuera de los ±3 días del Zelle (hace 2). LAS CUENTAS, para cualquier día en que se corra: el HOME DEPOT suma en
+  // OBRA3 24×2 + 24×0,2 = 52,8 puntos; la semilla, con fecha fija, le da a lo sumo 6 + 3,9 a la oficina (el ticket de
+  // Home Depot y sus 19,5 h del mes) y 6 a la casa (30 h): OBRA3 dobla a cualquiera y es la candidata, con el motivo
+  // «la cuadrilla reportó 24 h en OBRA3 esos días» tal cual. El Zelle solo ve esas 24 h en el mes (4,8 puntos) y la
+  // semilla no le da 8 a nadie: sin candidata, pide obra. Y el siguiente HOME DEPOT (hace 1 día, E2E-116): la oficina
+  // suma 10 por lo que Edgar elige en E2E-63 más los 6 de su ticket, contra 4,8 de OBRA3 y ≤ 6 de la casa (y cuando
+  // ese ticket salga de sus 180 días, 10 contra 4,8: sigue doblando).
+  q(`insert into horas (fecha, usuario_id, proyecto_id, horas, notas) values
+       (${lit(diaMenos(8))}, ${lit(equipo)}, ${lit(OBRA3)}, 8, ${lit(NOTA_SECRETA)}),
+       (${lit(diaMenos(7))}, ${lit(equipo)}, ${lit(OBRA3)}, 8, null),
+       (${lit(diaMenos(6))}, ${lit(equipo)}, ${lit(OBRA3)}, 8, null)`);
   const cands0 = Number(q(`select count(*) from fn_contador_candidatos()`));
   ok('E2E-06 antes de la primera ráfaga, la alarma 73 («la llave y la función») está en rojo: cargos de hace más de dos días y ninguna ráfaga',
      rojos('alarma').some((x) => /^73 ia: la llave y la función: ninguna ráfaga ha corrido nunca/.test(x)) && rojos('cuadre').length === 0, control());
@@ -363,8 +417,8 @@ try {
   ok('E2E-07 salud (GET, sin sesión): ok, llave, base, banco de pruebas, claude-opus-5-5, effort low, activa, 20 por ráfaga, la versión 2023-06-01, max_tokens 4096, nada falta',
      r.estado === 200 && r.j.ok === true && r.j.llave === true && r.j.base === true && r.j.banco_de_pruebas === true && r.j.modelo === 'claude-opus-5-5' && r.j.effort === 'low'
      && r.j.activa === true && r.j.max_por_rafaga === 20 && r.j.version === '2023-06-01' && r.j.max_tokens === 4096 && PR.MAX_TOKENS === 4096 && Array.isArray(r.j.falta) && r.j.falta.length === 0, r.j);
-  ok('E2E-08 salud: prompt_version = sha256 de las instrucciones (3920 letras); el tope del mes sin bloquear; ninguna ráfaga todavía',
-     r.j.prompt_version === PV && PR.INSTRUCCIONES.length > 3000 && r.j.tope?.bloqueado === false && r.j.tope.tope_contador === 3000 && typeof r.j.tope.centavos_mes_total === 'number'
+  ok(`E2E-08 salud: prompt_version = sha256 de las instrucciones (${PR.INSTRUCCIONES.length} letras, con las pistas de la obra de la 7b); el tope del mes sin bloquear; ninguna ráfaga todavía`,
+     r.j.prompt_version === PV && PR.INSTRUCCIONES.length > 3000 && PR.INSTRUCCIONES.includes('pistas_obra') && r.j.tope?.bloqueado === false && r.j.tope.tope_contador === 3000 && typeof r.j.tope.centavos_mes_total === 'number'
      && r.j.ultima_rafaga_el === null && r.j.con_error === false, r.j);
   ok('E2E-09 salud no enseña la llave ni nada del libro (ninguna descripción del banco) y lleva CORS',
      !JSON.stringify(r.j).includes('sk-ant') && !/HOME DEPOT|WAWA|NETFLIX|ZELLE/.test(JSON.stringify(r.j)) && r.cab.get('access-control-allow-origin') === '*', r.j);
@@ -426,16 +480,22 @@ try {
      malas21.filter(([, x, e, c]) => !(x.estado === e && x.j?.codigo === c)).map(([n, x]) => [n, x.estado, x.j]));
 
   // ---- E2E-22 LA PRIMERA RÁFAGA ---------------------------------------------------------------
-  // (la clave de cada cargo: su desc_norm tal cual se le da a la IA —fn_contador_sin_datos_norm, con la descripción cruda— y su monto)
-  const iaCands = qj(`select coalesce(json_agg(json_build_object('id', movimiento_id, 'clave', fn_contador_sin_datos_norm(desc_norm, descripcion, memo) || '|' || monto::float8, 'cuenta', cuenta) order by fecha, importado_el, movimiento_id), '[]')::text
+  // (la clave de cada cargo: su cuenta, su fecha, su desc_norm tal cual se le da a la IA —fn_contador_sin_datos_norm, con la
+  // descripción cruda— y su monto)
+  const iaCands = qj(`select coalesce(json_agg(json_build_object('id', movimiento_id, 'clave', cuenta || '|' || fecha || '|' || fn_contador_sin_datos_norm(desc_norm, descripcion, memo) || '|' || monto::float8, 'cuenta', cuenta) order by fecha, importado_el, movimiento_id), '[]')::text
                         from fn_contador_candidatos() where not (desc_norm ~* '^NFPA')`);
   const claveDeMov = Object.fromEntries(iaCands.map((c) => [c.id, c.clave]));
   const asientos0 = q(`select count(*) from asientos`);
   const gasto0 = gastoContador();
   await sim('/__reiniciar');
   await sim('/__lento', { ms: 150 });
-  log(`primera ráfaga: ${iaCands.length} a la IA y ${casanNfpa} por regla…`);
+  // (una base clonada con cargos que ya esperaban —c8b: la bandeja «como en producción»— entra entera en la primera
+  // ráfaga: max_por_rafaga sube lo justo solo para ella, hasta 100, y vuelve a 20 en cuanto contesta)
+  const maxPrimera = Math.max(20, iaCands.length);
+  if (maxPrimera > 20) q(`update contador_config set max_por_rafaga = ${maxPrimera} where id = 1`);
+  log(`primera ráfaga: ${iaCands.length} a la IA y ${casanNfpa} por regla${maxPrimera > 20 ? ` (max_por_rafaga ${maxPrimera} solo para ella)` : ''}…`);
   r = await proponer();
+  if (maxPrimera > 20) q(`update contador_config set max_por_rafaga = 20 where id = 1`);
   const P1 = r.j ?? {};
   // (si la ráfaga no abrió lote, las consultas siguen con un uuid que no existe: salen en rojo sin reventar)
   const LOTE1 = RE_UUID.test(P1.lote ?? '') ? P1.lote : '00000000-0000-4000-8000-000000000000';
@@ -473,11 +533,18 @@ try {
      pet1.every((p) => mismoConjunto(Object.keys(p.cuerpo ?? {}), ['model', 'max_tokens', 'system', 'messages', 'output_config']) && p.cuerpo.model === 'claude-opus-5-5' && p.cuerpo.max_tokens === 4096),
      pet1.map((p) => Object.keys(p.cuerpo ?? {})));
   const esquema = pet1[0]?.cuerpo?.output_config?.format?.schema;
-  ok('E2E-30 output_config = {effort: "low", format: {type: "json_schema", schema}}: el esquema de la función, cerrado (additionalProperties false y todo required en cada objeto)',
+  // (7b) «obra»: un objeto cerrado {proyecto_id, confianza, motivo} o null, como lista de tipos —la forma de monto y
+  // proyecto_id— o como anyOf con {type: "null"}, la otra que la función deja escrita por si la API la pidiera
+  const obraEsq = esquema?.properties?.obra;
+  const obraObj = Array.isArray(obraEsq?.anyOf) ? obraEsq.anyOf.find((x) => x?.type === 'object') : obraEsq;
+  const obraNula = Array.isArray(obraEsq?.anyOf) ? obraEsq.anyOf.some((x) => x?.type === 'null') : [].concat(obraEsq?.type ?? []).includes('null');
+  ok('E2E-30 output_config = {effort: "low", format: {type: "json_schema", schema}}: el esquema de la función, cerrado (additionalProperties false y todo required en cada objeto), y desde la 7b «obra» en required: {proyecto_id, confianza, motivo} cerrado, o null',
      pet1.every((p) => mismoConjunto(Object.keys(p.cuerpo.output_config ?? {}), ['effort', 'format']) && p.cuerpo.output_config?.effort === 'low' && p.cuerpo.output_config?.format?.type === 'json_schema'
        && isDeepStrictEqual(p.cuerpo.output_config?.format?.schema, JSON.parse(JSON.stringify(PR.PROPUESTA_SCHEMA))))
-     && esquemaCerrado(esquema) && mismoConjunto(esquema?.required ?? [], ['lineas', 'motivo', 'confianza', 'flags', 'alternativas'])
-     && mismoConjunto(esquema?.properties?.flags?.required ?? [], ['capitalizable', 'use_tax', 'personal', 'irs', 'pide_obra']), pet1[0]?.cuerpo?.output_config);
+     && esquemaCerrado(esquema) && mismoConjunto(esquema?.required ?? [], ['lineas', 'motivo', 'confianza', 'flags', 'alternativas', 'obra'])
+     && mismoConjunto(esquema?.properties?.flags?.required ?? [], ['capitalizable', 'use_tax', 'personal', 'irs', 'pide_obra'])
+     && obraNula && esquemaCerrado(obraObj) && [].concat(obraObj?.type ?? []).includes('object') && mismoConjunto(obraObj?.required ?? [], ['proyecto_id', 'confianza', 'motivo'])
+     && obraObj.properties?.proyecto_id?.type === 'string' && obraObj.properties?.confianza?.type === 'number' && obraObj.properties?.motivo?.type === 'string', pet1[0]?.cuerpo?.output_config);
   const prefijo1 = pet1[0]?.cuerpo?.system?.[0]?.text ?? '';
   const ctx1 = qj(`select (fn_contador_pendientes(1)->'contexto')::text`);
   const ctas = q(`select string_agg(codigo, ' ' order by codigo) from v_contador_cuentas`).split(' ');
@@ -496,16 +563,18 @@ try {
      OBRAS.every(([id, nombre]) => prefijo1.includes(`\n${id} · ${nombre} · `)) && /REGLAS DE EDGAR[^\n]*:\nNFPA: 6800 \(patrón \^NFPA\)/.test(prefijo1) && /EJEMPLOS DE EDGAR/.test(prefijo1),
      prefijo1.slice(prefijo1.lastIndexOf('OBRAS ACTIVAS'), prefijo1.lastIndexOf('OBRAS ACTIVAS') + 600));
   const msgs = pet1.map(msgDe);
-  const CLAVES_MSG = ['fecha', 'monto', 'descripcion', 'memo', 'cuenta_banco', 'cuenta_banco_nombre', 'tipo_banco', 'desc_norm'];
-  ok('E2E-35 messages: UN turno user cuyo contenido es el JSON del movimiento (fecha, monto en negativo, descripción, nota, cuenta del banco y su nombre, tipo, desc_norm)',
+  const CLAVES_MSG = ['fecha', 'monto', 'descripcion', 'memo', 'cuenta_banco', 'cuenta_banco_nombre', 'tipo_banco', 'desc_norm', 'pistas_obra'];
+  ok('E2E-35 messages: UN turno user cuyo contenido es el JSON del movimiento (fecha, monto en negativo, descripción, nota, cuenta del banco y su nombre, tipo, desc_norm y, desde la 7b, pistas_obra: E2E-110)',
      pet1.every((p, i) => p.cuerpo.messages?.length === 1 && p.cuerpo.messages[0].role === 'user' && typeof contenido(p) === 'string' && msgs[i]
        && mismoConjunto(Object.keys(msgs[i]), CLAVES_MSG) && /^\d{4}-\d{2}-\d{2}$/.test(msgs[i].fecha) && msgs[i].monto < 0 && /^(10\d\d|2100-\d+)$/.test(msgs[i].cuenta_banco)),
      msgs.slice(0, 2));
   const todo1 = JSON.stringify(pet1.map((p) => p.cuerpo)).toUpperCase();
   // (también el correo como lo deja c6 al normalizar —«JPEREZ MAIL COM»— y su usuario solo)
   const prohibidos = ['JPEREZ@MAIL.COM', 'JPEREZ MAIL COM', 'JPEREZ', 'MAIL COM', '305-555-1234', '305 555 1234', '1234567890', '800-624-9897', '800 624 9897', '888 865 5352', '21813524', '800 344 3555'];
-  const zelleMsg = msgs.find((m) => /^ZELLE PAYMENT TO JUAN PEREZ/.test(m?.descripcion ?? ''));
-  const dellMsg = msgs.find((m) => /^DELL MARKETING/.test(m?.descripcion ?? ''));
+  // (el Zelle y el Dell de esta prueba, por su clave: la bandeja «como en producción» trae otros Zelle a la misma persona)
+  const msgDeClave = (k) => msgs.find((m, i) => m && claveMsg(pet1[i]) === k);
+  const zelleMsg = msgDeClave(claveDeMov[M.zelle]);
+  const dellMsg = msgDeClave(claveDeMov[M.dell]);
   ok('E2E-36 a la IA nunca le llega un correo, un teléfono ni un número de cuenta (la base los tapa, también en desc_norm, donde c6 ya había deshecho el correo): el Zelle va con su nombre del banco y [correo] [teléfono] [número] en las dos formas; el número de tienda sí va',
      !prohibidos.some((x) => todo1.includes(x)) && /\[correo\].*\[teléfono\].*\[número\]/.test(zelleMsg?.descripcion ?? '')
      && zelleMsg?.desc_norm === 'ZELLE PAYMENT TO JUAN PEREZ [correo] [teléfono] ACCT [número]' && dellMsg?.desc_norm === 'DELL MARKETING L P [teléfono] TX'
@@ -522,9 +591,9 @@ try {
      P1.centavos === centavosDe(uso1) && P1.centavos > 0, [P1.centavos, centavosDe(uso1), uso1]);
   const det = (clave) => (P1.detalle ?? []).find((x) => x.movimiento_id === M[clave]);
   const pHd = propDe(M.hd), pWawa = propDe(M.wawa), pIrs = propDe(M.irs), pAlly = propDe(M.ally), pDell = propDe(M.dell), pAmz = propDe(M.amz), pZelle = propDe(M.zelle);
-  ok('E2E-40 HOME DEPOT → pendiente de la IA: 5100 sin obra (no la adivina), pide_obra (lo decide la base), confianza 0.92, y el detalle lo dice',
-     pHd?.estado === 'pendiente' && pHd.fuente === 'ia' && isDeepStrictEqual(pHd.propuesta.lineas, [{ cuenta: '5100' }]) && pHd.propuesta.flags?.pide_obra === true && pHd.propuesta.confianza === 0.92
-     && det('hd')?.estado === 'pendiente' && det('hd').pide_obra === true && det('hd').propuesta === pHd.id && typeof pHd.propuesta.motivo === 'string' && pHd.propuesta.motivo.length > 10, [pHd?.propuesta, det('hd')]);
+  ok('E2E-40 HOME DEPOT → pendiente de la IA: 5100, confianza 0.92, y el detalle lo dice; la obra no la adivina por la descripción: la trae de las pistas (E2E-112)',
+     pHd?.estado === 'pendiente' && pHd.fuente === 'ia' && pHd.propuesta.lineas?.length === 1 && pHd.propuesta.lineas[0].cuenta === '5100' && pHd.propuesta.confianza === 0.92
+     && det('hd')?.estado === 'pendiente' && det('hd').propuesta === pHd.id && typeof pHd.propuesta.motivo === 'string' && pHd.propuesta.motivo.length > 10, [pHd?.propuesta, det('hd')]);
   ok('E2E-41 WAWA → 6300 (combustible, 0.9); IRS → 3200 con el flag irs (la regla fija de la S-corp, 0.95)',
      pWawa?.estado === 'pendiente' && pWawa.propuesta.lineas[0].cuenta === '6300' && pWawa.propuesta.confianza === 0.9 && isDeepStrictEqual(pWawa.propuesta.flags, {})
      && pIrs?.estado === 'pendiente' && pIrs.propuesta.lineas[0].cuenta === '3200' && pIrs.propuesta.flags?.irs === true, [pWawa?.propuesta, pIrs?.propuesta]);
@@ -535,7 +604,7 @@ try {
      pDell?.propuesta.lineas[0].cuenta === '1530' && pDell.propuesta.flags?.capitalizable === true && pAmz?.propuesta.lineas[0].cuenta === '6500' && pAmz.propuesta.flags?.use_tax === true
      && pAmz.propuesta.alternativas?.[0]?.cuenta === '5500' && pZelle?.propuesta.lineas[0].cuenta === '5200' && pZelle.propuesta.flags?.pide_obra === true && pZelle.propuesta.confianza === 0.45,
      [pDell?.propuesta, pAmz?.propuesta, pZelle?.propuesta]);
-  const caidas = pet1.filter((p) => /AMAZON/.test(contenido(p)));
+  const caidas = pet1.filter((p) => /CAIDO/.test(contenido(p)));
   ok('E2E-44 el 529 (Anthropic saturado) se reintenta UNA vez tras 2 s: dos peticiones iguales, la primera 529 y la segunda 200, y la propuesta entra (intentos: 2)',
      caidas.length === 2 && caidas[0].respuesta.estado === 529 && caidas[1].respuesta.estado === 200 && caidas[1].llegada_ms - caidas[0].terminada_ms >= 1900
      && det('amz')?.intentos === 2 && det('amz').estado === 'pendiente' && pAmz?.estado === 'pendiente', [caidas.map((p) => [p.respuesta.estado, p.llegada_ms, p.terminada_ms]), det('amz')]);
@@ -572,12 +641,72 @@ try {
      q(`select (ultima_rafaga_el > now() - interval '5 minutes') || '|' || prompt_version || '|' || prefijo_hash || '|' || coalesce(ultimo_error, '-') from contador_config`) === `true|${PV}|${P1.prefijo_hash}|-`);
   const est53 = qj(`select row_to_json(e)::text from v_contador_estado e`);
   const band = qj(`select row_to_json(b)::text from v_contador_bandeja b where movimiento_id = ${lit(M.hd)}`);
-  ok('E2E-54 v_contador_estado y v_contador_bandeja: las pendientes (de la IA y de la regla), y por movimiento la propuesta con la cuenta resuelta, la confianza, los flags y el modelo; la alarma 73 en verde',
+  const bandZ = qj(`select row_to_json(b)::text from v_contador_bandeja b where movimiento_id = ${lit(M.zelle)}`);
+  ok('E2E-54 v_contador_estado y v_contador_bandeja: las pendientes (de la IA y de la regla), y por movimiento la propuesta con la cuenta y la obra resueltas, la confianza, los flags y el modelo (el HOME DEPOT con la obra que propuso; el Zelle, que pide obra); la alarma 73 en verde',
      Number(est53?.propuestas_pendientes) === P1.propuestas + casanNfpa && Number(est53.propuestas_por_ia) === P1.propuestas && Number(est53.propuestas_por_regla) === casanNfpa
-     && band?.propuesta_id === pHd.id && band.estado === 'pendiente' && band.fuente === 'ia' && band.lineas?.[0]?.cuenta === '5100' && band.lineas[0].cuenta_nombre && band.lineas[0].pide_obra === true
-     && Number(band.confianza) === 0.92 && band.pide_obra === true && band.modelo === 'claude-opus-5-5' && !rojos('alarma').some((x) => /^73 /.test(x)), { est53, band });
+     && band?.propuesta_id === pHd.id && band.estado === 'pendiente' && band.fuente === 'ia' && band.lineas?.[0]?.cuenta === '5100' && band.lineas[0].cuenta_nombre
+     && band.lineas[0].proyecto_id === OBRA3 && band.lineas[0].obra === OBRA3_NOMBRE && band.lineas[0].pide_obra === false && band.pide_obra === false
+     && Number(band.confianza) === 0.92 && band.modelo === 'claude-opus-5-5'
+     && bandZ?.propuesta_id === pZelle.id && bandZ.lineas?.[0]?.cuenta === '5200' && bandZ.lineas[0].pide_obra === true && bandZ.pide_obra === true
+     && !rojos('alarma').some((x) => /^73 /.test(x)), { est53, band, bandZ });
   ok('E2E-55 PROPONE, NUNCA POSTEA: la ráfaga no tocó el libro (ningún asiento nuevo) y cada cargo sigue pendiente en la bandeja',
      q(`select count(*) from asientos`) === asientos0 && sembrados.every((m) => estadoMov(m) === 'pendiente|-'), q(`select count(*) from asientos`) + ' vs ' + asientos0);
+
+  // ---- E2E-110 LA OBRA (7b) en la primera ráfaga: las pistas viajan, nada personal, la IA propone, la base la deja ------
+  // (numeradas desde la 110: las de antes no se renumeran)
+  const CLAVES_OBRA = ['proyecto_id', 'nombre', 'horas_cerca', 'horas_mes', 'recibos_proveedor', 'veces_elegida', 'materiales_recientes'];
+  const idsObras = new Set(OBRAS.map(([id]) => id));
+  // la forma del contrato de pistas_obra: {obras: hasta 6, de obras activas, con sus cinco totales y sin «puntos»;
+  // candidata {proyecto_id, nombre, confianza (0..0,9), motivo} —la primera obra— o null; resumen («sin pistas» sin obras)}
+  const formaPistas = (po) => !!po && typeof po === 'object' && !Array.isArray(po) && mismoConjunto(Object.keys(po), ['obras', 'candidata', 'resumen'])
+    && Array.isArray(po.obras) && po.obras.length <= 6 && typeof po.resumen === 'string' && (po.obras.length > 0 || po.resumen === 'sin pistas')
+    && po.obras.every((o) => !!o && mismoConjunto(Object.keys(o), CLAVES_OBRA) && idsObras.has(o.proyecto_id) && typeof o.nombre === 'string'
+      && CLAVES_OBRA.slice(2).every((k) => typeof o[k] === 'number' && o[k] >= 0))
+    && (po.candidata === null || (!!po.candidata && mismoConjunto(Object.keys(po.candidata), ['proyecto_id', 'nombre', 'confianza', 'motivo'])
+      && po.candidata.proyecto_id === po.obras[0]?.proyecto_id && po.candidata.confianza > 0 && po.candidata.confianza <= 0.9
+      && typeof po.candidata.motivo === 'string' && po.candidata.motivo.length > 10));
+  // (contador_propuestas.pistas guarda lo que vio la base, con los puntos de cada obra; a la IA va sin ellos)
+  const sinPuntos = (p) => p && typeof p === 'object' ? { ...p, obras: (p.obras ?? []).map(({ puntos: _puntos, ...o }) => o) } : p;
+  const obraP = (po, id) => (po?.obras ?? []).find((o) => o.proyecto_id === id);
+  const escRe = (t) => String(t ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const msgHd = msgDeMov(M.hd), msgZelle = msgDeMov(M.zelle);
+  const MOTIVO_HD = `la cuadrilla reportó 24 h en ${OBRA3_NOMBRE} esos días`;
+  ok('E2E-110 (7b) LAS PISTAS VIAJAN: cada petición a la IA trae pistas_obra con la forma del contrato (obras activas con sus cinco totales, sin «puntos»; la candidata o null; el resumen) y son las que vio la base (contador_propuestas.pistas sin los puntos): el HOME DEPOT con las 24 h de OBRA3 esos días y su candidata («la cuadrilla reportó 24 h en … esos días»); el Zelle con esas 24 h solo en el mes y sin candidata',
+     pet1.length > 0 && pet1.every((p) => p.pistas_obra === true && formaPistas(msgDe(p)?.pistas_obra))
+     && isDeepStrictEqual(msgHd?.pistas_obra, sinPuntos(pHd?.pistas)) && msgHd.pistas_obra.candidata?.proyecto_id === OBRA3 && msgHd.pistas_obra.candidata.motivo === MOTIVO_HD
+     && obraP(msgHd.pistas_obra, OBRA3)?.horas_cerca === 24 && obraP(msgHd.pistas_obra, OBRA3)?.horas_mes === 24
+     && isDeepStrictEqual(msgZelle?.pistas_obra, sinPuntos(pZelle?.pistas)) && msgZelle.pistas_obra.candidata === null
+     && obraP(msgZelle.pistas_obra, OBRA3)?.horas_cerca === 0 && obraP(msgZelle.pistas_obra, OBRA3)?.horas_mes === 24,
+     { hd: msgHd?.pistas_obra, guardadas: pHd?.pistas, zelle: msgZelle?.pistas_obra,
+       malas: pet1.filter((p) => p.pistas_obra !== true || !formaPistas(msgDe(p)?.pistas_obra)).slice(0, 2).map((p) => msgDe(p)?.pistas_obra ?? contenido(p).slice(0, 200)) });
+  // (lo personal que la base sabe de esas horas y de esos tickets: quién —su uuid, su nombre—, su nota, la foto)
+  const perfilesIds = q(`select coalesce(string_agg(id::text, ' '), '') from perfiles`).split(' ').filter(Boolean);
+  const nombresEquipo = q(`select coalesce(string_agg(nombre, '|'), '') from perfiles where rol <> 'dueno'`).split('|').filter((x) => x.length >= 3);
+  const textoMensajes = (ps) => ps.map((p) => contenido(p)).join('\n');
+  const personal = (txt) => [...perfilesIds, ...nombresEquipo, NOTA_SECRETA, 'SECRETA', 'usuario_id', 'autor_id', '"notas"', '"ruta"', 'recibos/'].filter((x) => txt.includes(x));
+  ok('E2E-111 (7b) NADA PERSONAL en las pistas: ningún mensaje a la IA lleva un usuario_id ni un autor_id, el id de nadie de perfiles, el nombre de alguien del equipo, la nota de las horas ni la ruta de una foto: solo totales por obra y el nombre de la obra',
+     perfilesIds.length >= 2 && nombresEquipo.length >= 1 && personal(textoMensajes(pet1)).length === 0, personal(textoMensajes(pet1)));
+  const anotHd = pet1.filter((p) => claveMsg(p) === claveDeMov[M.hd]).pop();
+  ok('E2E-112 (7b) LA IA PROPONE LA OBRA y la base la deja: el HOME DEPOT queda con la línea 5100 en OBRA3 (el proyecto_id en la línea), sin pide_obra, con flags.obra_propuesta, propuesta.obra {OBRA3, 0.8, el motivo de la pista} y sin nota; el detalle dice su obra; la entrada congela las pistas que viajaron y «pistas», las de la base con sus puntos',
+     isDeepStrictEqual(pHd?.propuesta?.lineas, [{ cuenta: '5100', proyecto_id: OBRA3 }]) && isDeepStrictEqual(pHd.propuesta.flags, { obra_propuesta: true })
+     && isDeepStrictEqual(pHd.propuesta.obra, { proyecto_id: OBRA3, confianza: 0.8, motivo: MOTIVO_HD }) && pHd.nota === null
+     && det('hd')?.obra === OBRA3 && det('hd').pide_obra === false && det('hd').obra_nota === undefined && anotHd?.candidata === OBRA3 && anotHd.obra === OBRA3
+     && isDeepStrictEqual(pHd.entrada?.movimiento?.pistas_obra, msgHd?.pistas_obra) && pHd.pistas?.candidata?.proyecto_id === OBRA3 && typeof pHd.pistas?.obras?.[0]?.puntos === 'number',
+     { propuesta: pHd?.propuesta, nota: pHd?.nota, det: det('hd'), anot: [anotHd?.candidata, anotHd?.obra] });
+  const conObraPend = Number(q(`select count(*) from contador_propuestas where estado = 'pendiente' and jsonb_typeof(propuesta->'obra') = 'object'`));
+  ok('E2E-113 (7b) v_contador_bandeja enseña la obra propuesta del HOME DEPOT (obra_propuesta_id, su nombre, obra_confianza 0.8, obra_motivo) y el resumen de sus pistas; el Zelle, sin obra propuesta y con sus pistas a la vista (OBRA3: 24 h en 30 días); v_contador_estado cuenta las pendientes con obra',
+     band?.obra_propuesta_id === OBRA3 && band.obra_propuesta === OBRA3_NOMBRE && Number(band.obra_confianza) === 0.8 && band.obra_motivo === MOTIVO_HD
+     && band.pistas_resumen === pHd.pistas?.resumen && band.pistas_resumen.startsWith(`${OBRA3_NOMBRE}: 24 h esos días`)
+     && bandZ?.obra_propuesta_id === null && bandZ.obra_propuesta === null && bandZ.obra_confianza === null && bandZ.obra_motivo === null
+     && bandZ.pistas_resumen === pZelle.pistas?.resumen && bandZ.pistas_resumen.includes(`${OBRA3_NOMBRE}: 24 h en 30 días`)
+     && conObraPend >= 1 && Number(est53?.propuestas_con_obra) === conObraPend, { band, bandZ, conObraPend, est: est53?.propuestas_con_obra });
+  const detObra = (P1.detalle ?? []).filter((d) => d.obra);
+  const candDe = (mov) => msgDeMov(mov)?.pistas_obra?.candidata?.proyecto_id ?? null;
+  const conObraLote1 = Number(q(`select count(*) from contador_propuestas where lote_id = ${lit(LOTE1)} and estado = 'pendiente' and jsonb_typeof(propuesta->'obra') = 'object'`));
+  ok('E2E-114 (7b) con_obra en la respuesta = las del detalle con obra = las pendientes de la IA del lote con obra, y cada obra es la candidata de sus pistas (la IA no inventó ninguna); sin pistas que alcancen (el Zelle) o en una cuenta sin obra (el WAWA), obra null',
+     typeof P1.con_obra === 'number' && P1.con_obra >= 1 && P1.con_obra === detObra.length && P1.con_obra === conObraLote1 && detObra.some((d) => d.movimiento_id === M.hd)
+     && detObra.every((d) => d.obra === candDe(d.movimiento_id)) && det('zelle')?.obra === undefined && det('zelle').pide_obra === true && det('wawa')?.obra === undefined,
+     { con_obra: P1.con_obra, detalle: detObra.length, lote: conObraLote1, otras: detObra.filter((d) => d.obra !== candDe(d.movimiento_id)) });
 
   // ---- E2E-56 la segunda ráfaga: mismo prefijo, todo del caché ----------------------------------------
   let antes = await llamadasSim();
@@ -616,27 +745,35 @@ try {
 
   // ---- E2E-61 aprobar («Así es») --------------------------------------------------------------------
   const asientosAntes = Number(q(`select count(*) from asientos`));
-  r = await llamar({ accion: 'aprobar', propuesta: pHd.id }, { jwt: D2 });
-  ok('E2E-61 aprobar HOME DEPOT sin elegir la obra → 409 MX008 con la pista «elige la obra» (dice 5100), y nada entra al libro',
-     r.estado === 409 && r.j.codigo === 'MX008' && r.j.pista === 'elige la obra' && /5100/.test(r.j.error) && propDe(M.hd).estado === 'pendiente' && estadoMov(M.hd) === 'pendiente|-'
+  // (desde la 7b el HOME DEPOT trae su obra propuesta: «elige la obra» se prueba con el Zelle, cuyas pistas no alcanzan)
+  r = await llamar({ accion: 'aprobar', propuesta: pZelle.id }, { jwt: D2 });
+  ok('E2E-61 aprobar el Zelle (5200, que pide obra y sin obra propuesta: sus pistas no alcanzan) sin elegir la obra → 409 MX008 con la pista «elige la obra» (dice 5200), y nada entra al libro',
+     r.estado === 409 && r.j.codigo === 'MX008' && r.j.pista === 'elige la obra' && /5200/.test(r.j.error) && propDe(M.zelle).estado === 'pendiente' && estadoMov(M.zelle) === 'pendiente|-'
      && Number(q(`select count(*) from asientos`)) === asientosAntes, r);
   r = await llamar({ accion: 'aprobar', propuesta: pHd.id, proyecto_id: 'no-existe-x' }, { jwt: D2 });
   const r62 = await llamar({ accion: 'aprobar', propuesta: 'no-es-un-uuid' }, { jwt: D2 });
   ok('E2E-62 aprobar con una obra que no existe → 409 22023; con una propuesta que no es un uuid → 400 FORMA', r.estado === 409 && r.j.codigo === '22023' && /no existe/.test(r.j.error) && r62.estado === 400 && r62.j.codigo === 'FORMA', [r, r62]);
-  r = await llamar({ accion: 'aprobar', propuesta: pHd.id, proyecto_id: OBRA }, { jwt: D2 });
+  // (Edgar elige OBRA2, la obra del ticket de Home Depot de la semilla, y no la OBRA3 que propuso la IA: así el siguiente
+  // HOME DEPOT trae candidata OBRA2 sea cual sea el día —E2E-116—)
+  r = await llamar({ accion: 'aprobar', propuesta: pHd.id, proyecto_id: OBRA2 }, { jwt: D2 });
   const aHd = propDe(M.hd);
-  ok('E2E-63 aprobar HOME DEPOT con la obra → 200 «aprobada» (la obra se puso donde faltaba), con su asiento; la propuesta guarda quién, cuándo, las líneas finales y el asiento del movimiento',
-     r.estado === 200 && r.j.ok && r.j.estado === 'aprobada' && r.j.fuente === 'ia' && r.j.propuesta === pHd.id && r.j.movimiento === M.hd && RE_UUID.test(r.j.asiento_id ?? '')
-     && isDeepStrictEqual(r.j.lineas, [{ cuenta: '5100', proyecto_id: OBRA }]) && aHd.estado === 'aprobada' && aHd.aprobado_por === dueno && aHd.aprobado_el
-     && isDeepStrictEqual(aHd.lineas_finales, [{ cuenta: '5100', proyecto_id: OBRA }]) && aHd.asiento_id === r.j.asiento_id && estadoMov(M.hd) === `casado|${r.j.asiento_id}`, [r.j, aHd]);
+  ok('E2E-63 aprobar HOME DEPOT con OTRA obra (OBRA2; la IA propuso OBRA3) → 200 «editada»: la obra de Edgar manda; con su asiento; la propuesta guarda quién, cuándo, las líneas finales (con la obra de Edgar) y el asiento del movimiento',
+     r.estado === 200 && r.j.ok && r.j.estado === 'editada' && r.j.fuente === 'ia' && r.j.propuesta === pHd.id && r.j.movimiento === M.hd && RE_UUID.test(r.j.asiento_id ?? '')
+     && isDeepStrictEqual(r.j.lineas, [{ cuenta: '5100', proyecto_id: OBRA2 }]) && aHd.estado === 'editada' && aHd.aprobado_por === dueno && aHd.aprobado_el
+     && isDeepStrictEqual(aHd.lineas_finales, [{ cuenta: '5100', proyecto_id: OBRA2 }]) && aHd.asiento_id === r.j.asiento_id && estadoMov(M.hd) === `casado|${r.j.asiento_id}`, [r.j, aHd]);
   const asHd = qj(`select row_to_json(a)::text from (select origen_tabla, camino, usuario_id, descripcion, reversa_a from asientos where id = ${lit(r.j.asiento_id)}) a`);
-  ok('E2E-64 el asiento es el de c6 (fn_banco_clasificar, origen movimientos_banco) en nombre del dueño, vivo: 5100 +87.43 con la obra y 1010 −87.43, y dice «Propuesta de la IA #<id> aprobada por Edgar: …»',
+  ok('E2E-64 el asiento es el de c6 (fn_banco_clasificar, origen movimientos_banco) en nombre del dueño, vivo: 5100 +87.43 con la obra de Edgar y 1010 −87.43, y dice «Propuesta de la IA #<id> editada por Edgar: …»',
      asHd?.origen_tabla === 'movimientos_banco' && asHd.usuario_id === dueno && asHd.reversa_a === null && asientoVivo(r.j.asiento_id)
-     && lineasDe(r.j.asiento_id) === `1010 -87.43 | 5100 87.43 @${OBRA}` && new RegExp(`^Propuesta de la IA #${pHd.id} aprobada por Edgar: `).test(asHd.descripcion), [asHd, lineasDe(r.j.asiento_id)]);
+     && lineasDe(r.j.asiento_id) === `1010 -87.43 | 5100 87.43 @${OBRA2}` && new RegExp(`^Propuesta de la IA #${pHd.id} editada por Edgar: `).test(asHd.descripcion), [asHd, lineasDe(r.j.asiento_id)]);
   const rgHd = qj(`select row_to_json(x)::text from (select id, nombre, patron, lineas, pide_obra, origen, activa, creada_por from contador_reglas where nombre = 'THE HOME DEPOT') x`);
   ok('E2E-65 «Recordar» (por defecto): nace la regla del comercio «THE HOME DEPOT» (^THE HOME DEPOT), origen aprobacion, con la cuenta y SIN la obra (v1), pide obra',
      r.j.regla?.nueva === true && r.j.regla.nombre === 'THE HOME DEPOT' && rgHd?.patron === '^THE HOME DEPOT' && rgHd.origen === 'aprobacion' && rgHd.activa === true && rgHd.creada_por === dueno
      && isDeepStrictEqual(rgHd.lineas, [{ cuenta: '5100' }]) && rgHd.pide_obra === true, [r.j.regla, rgHd]);
+  const bHdE = qj(`select row_to_json(b)::text from v_contador_bandeja b where movimiento_id = ${lit(M.hd)}`);
+  ok('E2E-115 (7b) LA OBRA DE EDGAR MANDA y el rastro queda: la propuesta sigue diciendo lo que propuso la IA (propuesta.obra y la línea con OBRA3) y lo que entró es lo de Edgar (lineas_finales y el asiento con OBRA2); la bandeja enseña las dos; la regla aprendida no guarda ninguna',
+     isDeepStrictEqual(aHd.propuesta?.obra, { proyecto_id: OBRA3, confianza: 0.8, motivo: MOTIVO_HD }) && isDeepStrictEqual(aHd.propuesta.lineas, [{ cuenta: '5100', proyecto_id: OBRA3 }])
+     && bHdE?.estado === 'editada' && bHdE.obra_propuesta_id === OBRA3 && isDeepStrictEqual(bHdE.lineas_finales, [{ cuenta: '5100', proyecto_id: OBRA2 }]) && bHdE.asiento_vivo === true
+     && !JSON.stringify(rgHd?.lineas ?? null).includes('proyecto_id'), [aHd?.propuesta, bHdE, rgHd]);
   r = await llamar({ accion: 'aprobar', propuesta: pHd.id, proyecto_id: OBRA }, { jwt: D2 });
   ok('E2E-66 aprobar otra vez la misma → 409 MX008 «no se aprueba dos veces»', r.estado === 409 && r.j.codigo === 'MX008' && /dos veces/.test(r.j.error), r);
   r = await llamar({ accion: 'aprobar', propuesta: pWawa.id }, { jwt: D2 });
@@ -661,25 +798,40 @@ try {
   r = await proponer();
   pet = await peticiones(antes);
   const pW2 = propDe(M3.wawa2), pH2 = propDe(M3.hd2), pW3 = propDe(M3.wawa3);
-  ok('E2E-69 el siguiente WAWA y el siguiente HOME DEPOT salen por REGLA (confianza 1, «Regla: …»; el de Home Depot pide obra) y la IA no los ve',
+  const R69 = r.j ?? {};
+  ok('E2E-69 el siguiente WAWA y el siguiente HOME DEPOT salen por REGLA (confianza 1, «Regla: …»; el de Home Depot con la obra de sus pistas: E2E-116) y la IA no los ve',
      r.estado === 200 && r.j.reglas === 3 && pW2?.fuente === 'regla' && pW2.propuesta.motivo === 'Regla: WAWA' && pW2.propuesta.lineas[0].cuenta === '6300' && pW3?.fuente === 'regla'
-     && pH2?.fuente === 'regla' && pH2.propuesta.motivo === 'Regla: THE HOME DEPOT' && pH2.propuesta.flags?.pide_obra === true && pH2.propuesta.confianza === 1
+     && pH2?.fuente === 'regla' && pH2.propuesta.motivo === 'Regla: THE HOME DEPOT' && pH2.propuesta.lineas?.[0]?.cuenta === '5100' && pH2.propuesta.confianza === 1
      && !pet.some((p) => /WAWA|HOME DEPOT/.test(contenido(p))) && pet.length === r.j.movimientos, { ...r.j, detalle: undefined });
   const prefijo2 = pet[0]?.cuerpo?.system?.[0]?.text ?? '';
   ok('E2E-70 el prefijo cambió con lo aprendido: trae las reglas nuevas y los ejemplos de Edgar (lo aprobado, con su obra), sigue sin fechas ni uuids, y la primera petición crea su caché',
      r.j.prefijo_hash !== P1.prefijo_hash && sha256(prefijo2) === r.j.prefijo_hash && /\nTHE HOME DEPOT: 5100 \(patrón \^THE HOME DEPOT, pide obra\)/.test(prefijo2) && /\nWAWA: 6300 \(patrón \^WAWA\)/.test(prefijo2)
-     && prefijo2.includes(`«THE HOME DEPOT 6341 OCALA FL» → 5100 · obra ${OBRA}`) && prefijo2.includes('«WAWA 5213 TAMPA FL» → 6300') && !pet[0]?.prefijo?.tiene_fecha && !pet[0]?.prefijo?.tiene_uuid
+     && prefijo2.includes(`«THE HOME DEPOT 6341 OCALA FL» → 5100 · obra ${OBRA2}`) && prefijo2.includes('«WAWA 5213 TAMPA FL» → 6300') && !pet[0]?.prefijo?.tiene_fecha && !pet[0]?.prefijo?.tiene_uuid
      && pet[0]?.respuesta?.usage?.cache_creation_input_tokens > 0 && pet.slice(1).every((p) => p.respuesta.estado !== 200 || p.respuesta.usage.cache_read_input_tokens > 0),
      prefijo2.slice(prefijo2.lastIndexOf('REGLAS DE EDGAR'), prefijo2.lastIndexOf('REGLAS DE EDGAR') + 700));
+  const candH2 = pH2?.pistas?.candidata;
+  const bH2 = qj(`select row_to_json(b)::text from v_contador_bandeja b where movimiento_id = ${lit(M3.hd2)}`);
+  ok('E2E-116 (7b) REGLA + CANDIDATA (la regla dice la cuenta; las pistas, la obra): el siguiente HOME DEPOT sale por regla con la línea 5100 en OBRA2 —Edgar la eligió la última vez con THE HOME DEPOT, y el ticket de Home Depot de la semilla—, flags.obra_propuesta y sin pide_obra, propuesta.obra con la confianza y el motivo de la candidata, el resumen de las pistas en la entrada y en la bandeja; con_obra de la respuesta cuenta solo lo de la IA',
+     candH2?.proyecto_id === OBRA2 && isDeepStrictEqual(pH2.propuesta.lineas, [{ cuenta: '5100', proyecto_id: OBRA2 }]) && isDeepStrictEqual(pH2.propuesta.flags, { obra_propuesta: true })
+     && isDeepStrictEqual(pH2.propuesta.obra, { proyecto_id: OBRA2, confianza: candH2.confianza, motivo: candH2.motivo }) && obraP(pH2.pistas, OBRA2)?.veces_elegida === 1
+     && new RegExp(`Edgar eligió (esa obra|${escRe(OBRA2_NOMBRE)}) la última vez con THE HOME DEPOT`).test(candH2.motivo)
+     && pH2.entrada?.pistas_resumen === pH2.pistas.resumen && bH2?.obra_propuesta_id === OBRA2 && Number(bH2.obra_confianza) === candH2.confianza && bH2.obra_motivo === candH2.motivo
+     && bH2.pide_obra === false && bH2.pistas_resumen === pH2.pistas.resumen && R69.con_obra === (R69.detalle ?? []).filter((d) => d.obra).length,
+     { propuesta: pH2?.propuesta, pistas: pH2?.pistas, entrada: pH2?.entrada, con_obra: R69.con_obra });
   r = await llamar({ accion: 'aprobar', propuesta: pW2.id }, { jwt: D2 });
   const asW2 = q(`select descripcion from asientos where id = ${lit(r.j?.asiento_id)}`);
   ok('E2E-71 aprobar la propuesta de la regla → aprobada (la regla no cambia: nueva false), y su asiento también dice «Propuesta de la IA #<id> aprobada por Edgar: Regla: WAWA» (c6 le añade la descripción del banco)',
      r.estado === 200 && r.j.estado === 'aprobada' && r.j.fuente === 'regla' && r.j.regla?.nueva === false && r.j.regla.cambio === false
      && asW2 === `Propuesta de la IA #${pW2.id} aprobada por Edgar: Regla: WAWA: WAWA 5300 OCALA FL`, [r.j, asW2]);
   r = await llamar({ accion: 'aprobar', propuesta: pH2.id }, { jwt: D2 });
-  const r72 = await llamar({ accion: 'aprobar', propuesta: pH2.id, proyecto_id: OBRA2 }, { jwt: D2 });
-  ok('E2E-72 la regla que pide obra: sin obra → 409 MX008 «elige la obra»; con la obra → aprobada, la línea con su proyecto_id',
-     r.estado === 409 && r.j.codigo === 'MX008' && r.j.pista === 'elige la obra' && r72.estado === 200 && r72.j.estado === 'aprobada' && lineasDe(r72.j.asiento_id) === `1010 -230.15 | 5100 230.15 @${OBRA2}`, [r, r72.j]);
+  const aH2 = propDe(M3.hd2);
+  ok('E2E-72 la regla que pide obra, con la candidata de las pistas: aprobar sin elegir la obra → aprobada con la obra propuesta (la línea con su proyecto_id), su asiento, y la regla no cambia (nueva false, cambio false)',
+     r.estado === 200 && r.j.estado === 'aprobada' && r.j.fuente === 'regla' && lineasDe(r.j.asiento_id) === `1010 -230.15 | 5100 230.15 @${OBRA2}`
+     && isDeepStrictEqual(aH2?.lineas_finales, [{ cuenta: '5100', proyecto_id: OBRA2 }]) && r.j.regla?.nueva === false && r.j.regla.cambio === false, [r.j, aH2?.lineas_finales]);
+  const rgHd2 = qj(`select row_to_json(x)::text from (select lineas, pide_obra from contador_reglas where nombre = 'THE HOME DEPOT' and activa) x`);
+  const reglasConObra = q(`select count(*) from contador_reglas r cross join lateral jsonb_array_elements(r.lineas) x where r.origen = 'aprobacion' and x ? 'proyecto_id'`);
+  ok('E2E-117 (7b) la regla aprendida sigue SIN la obra aunque Edgar aprobó dos veces con OBRA2 (la cuenta es del comercio; la obra, de cada compra): THE HOME DEPOT = [{cuenta 5100}] y pide obra; ninguna regla aprendida guarda una obra',
+     isDeepStrictEqual(rgHd2?.lineas, [{ cuenta: '5100' }]) && rgHd2.pide_obra === true && reglasConObra === '0', [rgHd2, reglasConObra]);
 
   // ---- E2E-73 clasificar («Según yo») ----------------------------------------------------------
   r = await llamar({ accion: 'clasificar', movimiento: M.irs, lineas: [{ cuenta: '1130' }], motivo: 'Edgar lo devuelve a la empresa', recordar: false }, { jwt: D2 });
@@ -789,7 +941,7 @@ try {
   const e89 = qj(`select row_to_json(e)::text from v_contador_estado e`);
   const a70 = rojos('alarma').find((x) => /^70 /.test(x)) ?? '';
   ok('E2E-89 con el tope del contador gastado: proponer → bloqueado con su motivo en llano, sin llamar a la IA ni abrir ráfaga; salud y v_contador_estado lo dicen; la alarma 70 en rojo con los dólares',
-     r.estado === 200 && r.j.bloqueado === true && /tope/.test(r.j.motivo) && /contador_config\.tope_mes_centavos/.test(r.j.motivo) && r.j.propuestas === 0 && r.j.centavos === 0
+     r.estado === 200 && r.j.bloqueado === true && /tope/.test(r.j.motivo) && /contador_config\.tope_mes_centavos/.test(r.j.motivo) && r.j.propuestas === 0 && r.j.con_obra === 0 && r.j.centavos === 0
      && (await llamadasSim()) === antes && q(`select count(*) from contador_lotes`) === lotesAntes && s89.j.tope?.bloqueado === true && e89?.bloqueado === true && e89.bloqueado_motivo === 'tope del contador'
      && /^70 ia: el gasto del mes bajo el tope: .*\$[0-9.,]+.*\$[0-9.,]+/.test(a70), [r.j, s89.j?.tope, e89?.bloqueado_motivo, a70]);
   ok('E2E-90 …y la base tampoco abre una ráfaga con el tope gastado (fn_contador_lote_abrir → MX008)',
@@ -909,6 +1061,134 @@ try {
      && q(`select lotes_abiertos from v_contador_estado`) === '0' && !rojos('alarma').some((x) => /^72 /.test(x))
      && Object.values(M8).every((m) => pendienteDe(m) !== ''), { a72, abiertos99c, r: { ...r.j, detalle: undefined }, lPerdida });
 
+  // ---- E2E-118 LA OBRA (7b) de punta a punta: la IA la propone con las pistas, una que no existe, una que no se atreve, ----
+  //      el cuadre 64, «Así es» sin elegir, y el siguiente del comercio por la regla aprendida con la candidata
+  // LAS PISTAS, sembradas aquí: 24 h de la cuadrilla en OBRA de anteayer a hoy (a nombre del equipo; una fila con la nota
+  // que no debe salir), un ticket de CES a OBRA hace 20 días («por leer» y sin total: ni el puente lo postea ni explica el
+  // cargo) y una fila de su lista de materiales hoy. LAS CUENTAS, para cualquier día: las tres compras de hoy suman en OBRA
+  // 24×2 + 24×0,2 + (la semilla: ≤ 6) y el CES además 6 del ticket y 1 del material: 52,8 o más, contra 4,8 de OBRA3 (sus
+  // 24 h de hace una semana, en el mes) y ≤ 3,9 de la oficina: OBRA es la candidata de las tres.
+  q(`insert into horas (fecha, usuario_id, proyecto_id, horas, notas) values
+       (${lit(diaMenos(2))}, ${lit(equipo)}, ${lit(OBRA)}, 8, ${lit(NOTA_SECRETA)}),
+       (${lit(diaMenos(1))}, ${lit(equipo)}, ${lit(OBRA)}, 8, null),
+       (${lit(diaMenos(0))}, ${lit(equipo)}, ${lit(OBRA)}, 8, null);
+     insert into recibos (proyecto_id, ruta, proveedor, estado, autor_id, fecha, creado)
+       values (${lit(OBRA)}, 'recibos/e2e-c8/ces-0001.jpg', 'CES', 'por_leer', ${lit(equipo)}, ${lit(diaMenos(20))}, ${lit(`${diaMenos(20)} 12:00 America/New_York`)}::timestamptz);
+     insert into materiales (proyecto_id, descripcion, estado, autor_id, creado)
+       values (${lit(OBRA)}, 'E2E-C8 BREAKER 20A', 'falta', ${lit(equipo)}, now())`);
+  // (las tres compras de hoy: el CES de Edgar —«CES 1040 TAMPA FL · 5100 Material · Pide obra», el que pidió la 7b—, una
+  // a la que el simulador le inventa la obra «no-existe» y una con la que no se atreve aunque haya candidata)
+  const M9 = sembrar([
+    { clave: 'ces', desc: 'CES 1040 TAMPA FL', monto: 186.40, dias: 0 },
+    { clave: 'lowes-mala', desc: 'LOWES 1077 OCALA FL OBRA MALA', monto: 58.25, dias: 0 },
+    { clave: 'ferre-sin', desc: 'FERRETERIA EL TORNILLO SIN OBRA', monto: 33.10, dias: 0 },
+  ]);
+  const conObra0 = Number(q(`select propuestas_con_obra from v_contador_estado`));
+  antes = await llamadasSim();
+  r = await proponer();
+  pet = await peticiones(antes);
+  const P7 = r.j ?? {};
+  const det7 = (mov) => (P7.detalle ?? []).find((x) => x.movimiento_id === mov);
+  const anot7 = (re) => pet.filter((p) => re.test(contenido(p))).pop();
+  const msg7 = (re) => msgDe(anot7(re) ?? {});
+  const pCes = propDe(M9.ces), pMala = propDe(M9['lowes-mala']), pSin = propDe(M9['ferre-sin']);
+  const mCes = msg7(/CES 1040/), mMala = msg7(/OBRA MALA/), mSin = msg7(/SIN OBRA/);
+  const oCes = obraP(mCes?.pistas_obra, OBRA);
+  ok('E2E-118 (7b) la ráfaga de la obra: las tres compras de hoy llegan a la IA con candidata OBRA (las 24 h de la cuadrilla estos días; el CES suma su ticket anterior y la lista de materiales), las del CES son las de la base sin puntos, y con_obra = 1 (solo el CES: la obra inventada se descarta y la otra no se atrevió) = el detalle con obra = las pendientes del lote con obra; v_contador_estado suma una',
+     r.estado === 200 && P7.ok === true && P7.propuestas === 3 && P7.con_obra === 1 && (P7.detalle ?? []).filter((d) => d.obra).length === 1 && det7(M9.ces)?.obra === OBRA
+     && Number(q(`select count(*) from contador_propuestas where lote_id = ${lit(RE_UUID.test(P7.lote ?? '') ? P7.lote : UUID_NADA)} and estado = 'pendiente' and jsonb_typeof(propuesta->'obra') = 'object'`)) === 1
+     && [mCes, mMala, mSin].every((m) => formaPistas(m?.pistas_obra) && m.pistas_obra.candidata?.proyecto_id === OBRA)
+     && isDeepStrictEqual(mCes.pistas_obra, sinPuntos(pCes?.pistas)) && oCes?.horas_cerca === 24 && oCes.recibos_proveedor === 1 && oCes.materiales_recientes === 1 && oCes.veces_elegida === 0
+     && /^la cuadrilla reportó 24 h en .+ esos días.*; 1 compra anterior de CES fue a esa obra; hay 1 material de su lista apuntado estos días$/.test(mCes.pistas_obra.candidata.motivo)
+     && Number(q(`select propuestas_con_obra from v_contador_estado`)) === conObra0 + 1,
+     { ...P7, detalle: (P7.detalle ?? []).map((d) => [d.estado, d.obra, d.obra_nota]), ces: mCes?.pistas_obra });
+  const bCes = qj(`select row_to_json(b)::text from v_contador_bandeja b where movimiento_id = ${lit(M9.ces)}`);
+  ok('E2E-119 (7b) LA IA PROPONE LA OBRA del CES: la línea 5100 con OBRA, pide_obra false, flags.obra_propuesta, propuesta.obra {OBRA, 0.8, el motivo de la pista}, sin nota; v_contador_bandeja con obra_propuesta_id, su nombre, obra_confianza 0.8, obra_motivo y pistas_resumen (lo que pinta «Según la IA»)',
+     pCes?.fuente === 'ia' && pCes.estado === 'pendiente' && isDeepStrictEqual(pCes.propuesta.lineas, [{ cuenta: '5100', proyecto_id: OBRA }]) && isDeepStrictEqual(pCes.propuesta.flags, { obra_propuesta: true })
+     && isDeepStrictEqual(pCes.propuesta.obra, { proyecto_id: OBRA, confianza: 0.8, motivo: mCes?.pistas_obra?.candidata?.motivo }) && pCes.nota === null && det7(M9.ces)?.pide_obra === false
+     && bCes?.obra_propuesta_id === OBRA && bCes.obra_propuesta === OBRA_NOMBRE && Number(bCes.obra_confianza) === 0.8 && bCes.obra_motivo === pCes.propuesta.obra.motivo
+     && bCes.pistas_resumen === pCes.pistas?.resumen && bCes.pide_obra === false && bCes.lineas?.[0]?.obra === OBRA_NOMBRE && bCes.lineas[0].pide_obra === false, [pCes?.propuesta, bCes]);
+  const NOTA_MALA = 'la IA propuso la obra «no-existe», que no existe: la propuesta se guarda sin obra';
+  const bMala = qj(`select row_to_json(b)::text from v_contador_bandeja b where movimiento_id = ${lit(M9['lowes-mala'])}`);
+  ok('E2E-120 (7b) UNA OBRA QUE NO EXISTE (la IA propone «no-existe») → la propuesta se guarda SIN obra, con pide_obra y la nota que lo dice; el detalle trae obra_nota y no obra; la bandeja, sin obra propuesta y con la nota',
+     anot7(/OBRA MALA/)?.obra === 'no-existe' && pMala?.estado === 'pendiente' && isDeepStrictEqual(pMala.propuesta.lineas, [{ cuenta: '5100' }])
+     && isDeepStrictEqual(pMala.propuesta.flags, { pide_obra: true }) && pMala.propuesta.obra === undefined && pMala.nota === NOTA_MALA
+     && det7(M9['lowes-mala'])?.obra_nota === NOTA_MALA && det7(M9['lowes-mala']).obra === undefined && det7(M9['lowes-mala']).pide_obra === true
+     && bMala?.obra_propuesta_id === null && bMala.pide_obra === true && bMala.nota === NOTA_MALA, [pMala?.propuesta, pMala?.nota, det7(M9['lowes-mala'])]);
+  const bSin = qj(`select row_to_json(b)::text from v_contador_bandeja b where movimiento_id = ${lit(M9['ferre-sin'])}`);
+  ok('E2E-121 (7b) LA IA QUE NO SE ATREVE (obra null aunque las pistas traen candidata OBRA) → sin obra, pide_obra, sin nota; la bandeja enseña las pistas (pistas_resumen: OBRA con sus horas de estos días) para que Edgar elija',
+     anot7(/SIN OBRA/)?.candidata === OBRA && anot7(/SIN OBRA/).obra === null && pSin?.estado === 'pendiente' && isDeepStrictEqual(pSin.propuesta.lineas, [{ cuenta: '5100' }])
+     && isDeepStrictEqual(pSin.propuesta.flags, { pide_obra: true }) && pSin.propuesta.obra === undefined && pSin.nota === null
+     && det7(M9['ferre-sin'])?.obra === undefined && det7(M9['ferre-sin']).obra_nota === undefined && det7(M9['ferre-sin']).pide_obra === true
+     && bSin?.obra_propuesta_id === null && bSin.pide_obra === true && bSin.pistas_resumen === pSin.pistas?.resumen && bSin.pistas_resumen.startsWith(`${OBRA_NOMBRE}: 24 h esos días`),
+     [pSin?.propuesta, bSin?.pistas_resumen, anot7(/SIN OBRA/)?.candidata]);
+  // el cuadre 64: la obra propuesta del CES, por un momento, una que no existe (como si la hubieran borrado o cerrado)
+  const propCes = q(`select propuesta::text from contador_propuestas where id = ${lit(pCes?.id ?? UUID_NADA)}`);
+  q(`update contador_propuestas set propuesta = jsonb_set(propuesta, '{obra,proyecto_id}', '"e2e-obra-cerrada"') where id = ${lit(pCes?.id ?? UUID_NADA)}`);
+  const rojo64 = rojos('cuadre');
+  q(`update contador_propuestas set propuesta = ${lit(propCes)}::jsonb where id = ${lit(pCes?.id ?? UUID_NADA)}`);
+  ok('E2E-122 (7b) el cuadre 64: una obra propuesta pendiente que ya no es una obra activa (aquí, una que no existe) lo pone en rojo, con la propuesta y qué hacer; de vuelta, verde',
+     rojo64.some((x) => /^64 ia: toda obra propuesta pendiente es una obra activa: .*«e2e-obra-cerrada» no existe → recházala/.test(x)) && !rojos('cuadre').some((x) => /^64 /.test(x)), rojo64);
+  // (31-oct) LA OBRA QUE SE CIERRA DESPUÉS DE PROPONERLA: la del CES (OBRA, activa y propuesta) se completa en la app; el 64 la
+  // nombra; y la base no la deja entrar por un toque: «Así es» sin elegir (entraría la propuesta), «Así es» con esa misma obra
+  // (lo que manda una bandeja abierta hace rato) y «Según yo» con ella en la línea contestan 409 MX008 «ya no está activa» con
+  // la pista «elige la obra», que la pantalla enseña en ámbar junto al selector; nada entra; otra vez activa, el 64 en verde
+  const estadoObra = q(`select estado from proyectos where id = ${lit(OBRA)}`);
+  q(`update proyectos set estado = 'completado' where id = ${lit(OBRA)}`);
+  const rojo64b = rojos('cuadre');
+  const asientosCerrada = q(`select count(*) from asientos`);
+  const rC1 = await llamar({ accion: 'aprobar', propuesta: pCes?.id }, { jwt: D2 });
+  const rC2 = await llamar({ accion: 'aprobar', propuesta: pCes?.id, proyecto_id: OBRA }, { jwt: D2 });
+  const rC3 = await llamar({ accion: 'clasificar', movimiento: M9.ces, lineas: [{ cuenta: '5100', proyecto_id: OBRA }], motivo: 'según yo, con la obra que se cerró', recordar: false }, { jwt: D2 });
+  q(`update proyectos set estado = ${lit(estadoObra)} where id = ${lit(OBRA)}`);
+  const frenada64 = (x) => x.estado === 409 && x.j?.codigo === 'MX008' && x.j.pista === 'elige la obra' && /ya no está activa \(está completado\)/.test(x.j.error ?? '');
+  ok('E2E-128 (31-oct) LA OBRA QUE SE CIERRA DESPUÉS DE PROPONERLA no entra por un toque: con OBRA completada el 64 la nombra («la obra propuesta «OBRA» está completado»); «Así es» sin elegir, «Así es» con esa misma obra y «Según yo» con ella en la línea → 409 MX008 «ya no está activa» con la pista «elige la obra»; nada entra al libro y la propuesta sigue pendiente; activa otra vez, el 64 en verde',
+     rojo64b.some((x) => new RegExp(`^64 .*la obra propuesta «${escRe(OBRA_NOMBRE)}» está completado`).test(x)) && frenada64(rC1) && frenada64(rC2) && frenada64(rC3)
+     && /^La obra propuesta «/.test(rC1.j?.error ?? '') && /^La obra «/.test(rC2.j?.error ?? '') && /^Línea 1: la obra «/.test(rC3.j?.error ?? '')
+     && q(`select count(*) from asientos`) === asientosCerrada && propDe(M9.ces)?.estado === 'pendiente' && estadoMov(M9.ces) === 'pendiente|-'
+     && !rojos('cuadre').some((x) => /^64 /.test(x)), { rojo64b, rC1: rC1.j, rC2: rC2.j, rC3: rC3.j });
+  // «Así es» sin elegir: entra la obra propuesta
+  r = await llamar({ accion: 'aprobar', propuesta: pCes?.id }, { jwt: D2 });
+  const aCes = propDe(M9.ces);
+  const rgCes = qj(`select row_to_json(x)::text from (select id, nombre, patron, lineas, pide_obra, origen from contador_reglas where id = ${lit(r.j?.regla?.regla ?? UUID_NADA)}) x`);
+  ok('E2E-123 (7b) «ASÍ ES» SIN ELEGIR LA OBRA → aprobada con la obra propuesta: el asiento 5100 con OBRA, las líneas finales con OBRA; y la regla del comercio («CES») nace SIN la obra y pide obra',
+     r.estado === 200 && r.j.estado === 'aprobada' && r.j.fuente === 'ia' && isDeepStrictEqual(r.j.lineas, [{ cuenta: '5100', proyecto_id: OBRA }])
+     && lineasDe(r.j.asiento_id) === `1010 -186.40 | 5100 186.40 @${OBRA}` && asientoVivo(r.j.asiento_id) && aCes?.estado === 'aprobada'
+     && isDeepStrictEqual(aCes.lineas_finales, [{ cuenta: '5100', proyecto_id: OBRA }]) && r.j.regla?.nueva === true && /^\^CES/.test(rgCes?.patron ?? '')
+     && isDeepStrictEqual(rgCes.lineas, [{ cuenta: '5100' }]) && rgCes.pide_obra === true && rgCes.origen === 'aprobacion', [r.j, rgCes]);
+  r = await llamar({ accion: 'aprobar', propuesta: pMala?.id }, { jwt: D2 });
+  const r124 = await llamar({ accion: 'aprobar', propuesta: pMala?.id, proyecto_id: OBRA2, recordar: false }, { jwt: D2 });
+  ok('E2E-124 (7b) la de la obra descartada: aprobar sin elegir → 409 MX008 «elige la obra» (la IA la propuso, pero no valía: no entra nada); eligiendo OBRA2 → aprobada (no había obra propuesta: la de Edgar), su asiento con OBRA2',
+     r.estado === 409 && r.j.codigo === 'MX008' && r.j.pista === 'elige la obra' && /5100/.test(r.j.error) && r124.estado === 200 && r124.j.estado === 'aprobada'
+     && lineasDe(r124.j.asiento_id) === `1010 -58.25 | 5100 58.25 @${OBRA2}` && r124.j.regla === undefined, [r, r124.j]);
+  // el siguiente CES: por la regla aprendida (la cuenta) con la candidata de las pistas (la obra)
+  const M10 = sembrar([{ clave: 'ces2', desc: 'CES 1040 TAMPA FL', monto: 64.20, dias: 0 }]);
+  antes = await llamadasSim();
+  r = await proponer();
+  pet = await peticiones(antes);
+  const pC2 = propDe(M10.ces2);
+  const candC2 = pC2?.pistas?.candidata;
+  ok('E2E-125 (7b) el siguiente CES sale por la REGLA aprendida (que no guarda obra) CON la candidata de las pistas: OBRA —Edgar la eligió la última vez con CES, y las horas, el ticket y la lista—; la línea 5100 con OBRA, propuesta.obra con su confianza y su motivo; la IA no lo ve (con_obra 0)',
+     r.estado === 200 && r.j.reglas === 1 && r.j.con_obra === 0 && !pet.some((p) => /CES 1040/.test(contenido(p))) && pC2?.fuente === 'regla' && pC2.regla_id === rgCes?.id
+     && pC2.propuesta.motivo === `Regla: ${rgCes?.nombre}` && pC2.propuesta.confianza === 1 && candC2?.proyecto_id === OBRA && obraP(pC2.pistas, OBRA)?.veces_elegida === 1
+     && /Edgar eligió esa obra la última vez con CES/.test(candC2.motivo) && isDeepStrictEqual(pC2.propuesta.lineas, [{ cuenta: '5100', proyecto_id: OBRA }])
+     && isDeepStrictEqual(pC2.propuesta.flags, { obra_propuesta: true }) && isDeepStrictEqual(pC2.propuesta.obra, { proyecto_id: OBRA, confianza: candC2.confianza, motivo: candC2.motivo }),
+     [{ ...r.j, detalle: undefined }, pC2?.propuesta, candC2]);
+  r = await llamar({ accion: 'aprobar', propuesta: pC2?.id, proyecto_id: OBRA2 }, { jwt: D2 });
+  ok('E2E-126 (7b) aprobar la de la regla con OTRA obra (OBRA2; las pistas decían OBRA) → editada, el asiento con OBRA2, y la regla CES sigue igual: sin obra (nueva false, cambio false)',
+     r.estado === 200 && r.j.estado === 'editada' && r.j.fuente === 'regla' && lineasDe(r.j.asiento_id) === `1010 -64.20 | 5100 64.20 @${OBRA2}` && r.j.regla?.nueva === false && r.j.regla.cambio === false
+     && q(`select lineas::text || '|' || pide_obra from contador_reglas where id = ${lit(rgCes?.id ?? UUID_NADA)}`) === '[{"cuenta": "5100"}]|true', r.j);
+  // nada personal, en toda la prueba: lo que llegó a la IA, lo que contestó la función, lo que escribió y lo que guardó c8
+  const todasPet = await peticiones();
+  const conMensaje = todasPet.filter((p) => p.movimiento_json !== undefined);
+  const filasC8 = q(`select coalesce((select string_agg(x::text, '') from contador_propuestas x), '') || coalesce((select string_agg(x::text, '') from contador_lotes x), '') || coalesce((select string_agg(x::text, '') from contador_reglas x), '')`);
+  const fugas = [['mensajes a la IA', personal(textoMensajes(todasPet))],
+    ['respuestas de la función', [NOTA_SECRETA, equipo].filter((x) => respuestas.join('\n').includes(x))], ['salida de la función', [NOTA_SECRETA, equipo].filter((x) => salidaFn.includes(x))],
+    ['el simulador', [NOTA_SECRETA, equipo].filter((x) => JSON.stringify(todasPet).includes(x))], ['tablas del contador', [NOTA_SECRETA, equipo, 'recibos/'].filter((x) => filasC8.includes(x))]]
+    .filter(([, xs]) => xs.length);
+  ok('E2E-127 (7b) NADA PERSONAL en toda la prueba: todas las peticiones con mensaje trajeron sus pistas, y ni la nota de las horas, ni el id ni el nombre de quien las reportó, ni la ruta del ticket salen a la IA, en una respuesta, en la salida de la función ni en las tablas del contador',
+     conMensaje.length >= 30 && conMensaje.every((p) => p.pistas_obra === true) && fugas.length === 0, fugas);
+
   // ---- E2E-100 el control y sus alarmas ----------------------------------------------------------
   const pend = pendienteDe(M7.shell);
   q(`update contador_propuestas set creado_el = creado_el - interval '8 days' where id = ${lit(pend)}`);
@@ -917,9 +1197,10 @@ try {
   ok('E2E-100 una propuesta pendiente de más de 7 días pone en rojo la alarma 71 (con el cargo); al día, verde', /^71 ia: ninguna propuesta pendiente de más de 7 días: .*SHELL OIL/.test(a71) && !rojos('alarma').some((x) => /^71 /.test(x)), a71);
   const ctl = control();
   const nombres = Object.fromEntries(ctl.map((c) => [c.orden, `${c.nivel}|${c.control}`]));
-  ok('E2E-101 v_contador_control trae los cuadres 60–63 y las alarmas 70–73 del contrato',
+  ok('E2E-101 v_contador_control trae los cuadres 60–64 (el 64, de la 7b) y las alarmas 70–73 del contrato',
      nombres[60] === 'cuadre|ia: cada propuesta aprobada o editada tiene su asiento vivo' && nombres[61] === 'cuadre|ia: ningún asiento con «Propuesta de la IA #» en su motivo sin su propuesta aprobada'
      && nombres[62] === 'cuadre|ia: las reglas activas van a cuentas activas e imputables' && nombres[63] === 'cuadre|ia: protecciones de la fase 7'
+     && nombres[64] === 'cuadre|ia: toda obra propuesta pendiente es una obra activa'
      && nombres[70] === 'alarma|ia: el gasto del mes bajo el tope' && nombres[71] === 'alarma|ia: ninguna propuesta pendiente de más de 7 días'
      && nombres[72] === 'alarma|ia: la última ráfaga sin error' && nombres[73] === 'alarma|ia: la llave y la función', nombres);
   ok('E2E-102 v_contador_control en verde: ningún cuadre ni alarma en rojo', rojos('cuadre').length === 0 && rojos('alarma').length === 0, [rojos('cuadre'), rojos('alarma')]);

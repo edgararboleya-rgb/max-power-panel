@@ -9,10 +9,11 @@
      · model exactamente claude-opus-5-5 (otro → 404 not_found_error: solo
        Opus y Fable, y la función no cambia de modelo).
      · output_config.effort = low; output_config.format = {type: json_schema,
-       schema: objeto}; max_tokens entero y de 4096 como mínimo (con Opus 5.5
-       el pensamiento adaptativo cuenta contra max_tokens aunque no se
-       devuelva: con menos, una propuesta larga se cortaría; el contrato de
-       c8 pide 4096).
+       schema: objeto cerrado, y desde la 7b con «obra» en properties y en
+       required: {proyecto_id, confianza, motivo} o null}; max_tokens entero
+       y de 4096 como mínimo (con Opus 5.5 el pensamiento adaptativo cuenta
+       contra max_tokens aunque no se devuelva: con menos, una propuesta
+       larga se cortaría; el contrato de c8 pide 4096).
      · system es una lista y system[0] lleva cache_control {type: ephemeral}.
      · messages: un turno user cuyo content es un texto (el JSON del
        movimiento).
@@ -54,6 +55,27 @@
    Las cuentas son las de c1-plan-de-cuentas.sql; la base decide si se
    pueden proponer.
 
+   LA OBRA (7b): el movimiento trae pistas_obra (lo que la base sabe por
+   obra activa y su candidata, sin nada personal) y la respuesta lleva
+   «obra», como haría la IA con sus instrucciones:
+     · la propuesta va a una cuenta que lleva obra (aquí, las que marcan
+       pide_obra: 5100 y 5200) Y pistas_obra.candidata trae proyecto_id →
+       obra = {proyecto_id: el de la candidata, confianza 0.8, motivo: el
+       motivo de la pista tal cual («la cuadrilla reportó 24 h en Casa Pérez
+       esos días; …»)}, y pide_obra pasa a false (la IA cree que la
+       resolvió; la base lo vuelve a decidir por las cuentas y la obra);
+     · OBRA MALA en la descripción → obra = {proyecto_id: 'no-existe', 0.8,
+       un motivo} aunque no haya pistas ni la cuenta lleve obra: la base la
+       descarta con su nota («no existe»), pide_obra como siempre;
+     · SIN OBRA en la descripción → obra = null aunque haya candidata (así
+       se prueba «la IA no se atreve» con pistas: pide_obra y pistas_resumen
+       en la bandeja);
+     · sin candidata, o una cuenta sin obra (WAWA, NETFLIX, IRS…) → null.
+   La candidata de las pistas no se mira si la cuenta no lleva obra: la
+   descripción manda la cuenta, las pistas solo la obra. Cada petición
+   anotada dice además pistas_obra (si el mensaje las traía), candidata (el
+   proyecto_id de la pista o null) y obra (lo que contestó, o null).
+
    EL CONTROL (solo 127.0.0.1):
      GET  /__peticiones  cada petición recibida: n, hora, las cabeceras (la
                          llave NUNCA: solo si estaba y si era la buena), el
@@ -87,9 +109,31 @@ const tokens = (s) => Math.ceil(String(s ?? '').length / 4);
 const sha256 = (s) => createHash('sha256').update(String(s)).digest('hex');
 
 // La propuesta de mentira para un movimiento (lo que diría la IA), por las
-// palabras clave de su descripción. p.monto en negativo = cargo.
+// palabras clave de su descripción (la cuenta) y por sus pistas_obra (la
+// obra, 7b). p.monto en negativo = cargo.
 export function proponerDeMentira(mov) {
   const d = `${mov.descripcion ?? ''} ${mov.memo ?? ''} ${mov.desc_norm ?? ''}`.toUpperCase();
+  const p = cuentaDeMentira(mov, d);
+  p.obra = obraDeMentira(mov, d, p);
+  // (la IA que propone obra ya no pide obra; la base lo decide de nuevo por las cuentas y la obra que valió)
+  if (p.obra) p.flags.pide_obra = false;
+  return p;
+}
+// La obra (7b), como haría la IA con sus instrucciones: solo si alguna
+// línea va a una cuenta que lleva obra (aquí, las que marcan pide_obra) y
+// las pistas traen candidata, la copia (confianza 0.8 y el motivo de la
+// pista). OBRA MALA → una obra que no existe (la base la descarta con su
+// nota); SIN OBRA → null aunque haya candidata; sin candidata → null.
+function obraDeMentira(mov, d, p) {
+  if (d.includes('OBRA MALA')) return { proyecto_id: 'no-existe', confianza: 0.8, motivo: 'A propósito, una obra que no existe: la base la descarta y lo dice en la nota.' };
+  if (d.includes('SIN OBRA')) return null;
+  const cand = mov.pistas_obra && typeof mov.pistas_obra === 'object' ? mov.pistas_obra.candidata : null;
+  if (!cand || typeof cand !== 'object' || typeof cand.proyecto_id !== 'string' || !cand.proyecto_id || p.flags.pide_obra !== true) return null;
+  return { proyecto_id: cand.proyecto_id, confianza: 0.8,
+           motivo: typeof cand.motivo === 'string' && cand.motivo.trim() ? cand.motivo.trim() : `las pistas apuntan a ${cand.nombre ?? cand.proyecto_id}` };
+}
+// La cuenta, por las palabras clave de la descripción (d, en mayúsculas).
+function cuentaDeMentira(mov, d) {
   const monto = Math.abs(Number(mov.monto) || 0);
   const tiene = (...k) => k.some((x) => d.includes(x));
   const flags = (f = {}) => ({ capitalizable: false, use_tax: false, personal: false, irs: false, pide_obra: false, ...f });
@@ -154,6 +198,13 @@ export function crearSimulador({ llave = process.env.ANTHROPIC_API_KEY || 'sk-an
     if (oc.effort !== 'low') return mal(`output_config.effort: debe ser "low" (llegó ${JSON.stringify(oc.effort)})`);
     if (!oc.format || oc.format.type !== 'json_schema' || !oc.format.schema || typeof oc.format.schema !== 'object') return mal('output_config.format: {type: "json_schema", schema: {...}} required');
     if (oc.format.schema.additionalProperties !== false) return mal('output_config.format.schema: additionalProperties must be false');
+    // (el contrato de la 7b: la propuesta lleva «obra», objeto o null —type ["object", "null"], o anyOf con el objeto y
+    // {type: "null"} si la API de verdad pidiera esa forma—, y va en required como todo lo demás)
+    const obraEsq = oc.format.schema.properties?.obra;
+    const esObjeto = (s) => !!s && typeof s === 'object' && ((Array.isArray(s.type) ? s.type : [s.type]).includes('object') || (Array.isArray(s.anyOf) && s.anyOf.some((x) => x?.type === 'object')));
+    if (!esObjeto(obraEsq) || !Array.isArray(oc.format.schema.required) || !oc.format.schema.required.includes('obra')) {
+      return mal('output_config.format.schema: el contrato de c8 (7b) pide «obra» ({proyecto_id, confianza, motivo} o null) en properties y en required');
+    }
     if (!Array.isArray(p.system) || !p.system.length) return mal('system: must be an array of text blocks');
     const s0 = p.system[0];
     if (!s0 || s0.type !== 'text' || typeof s0.text !== 'string') return mal('system[0]: {type: "text", text: "..."} required');
@@ -165,6 +216,10 @@ export function crearSimulador({ llave = process.env.ANTHROPIC_API_KEY || 'sk-an
     try { mov = JSON.parse(contenido); } catch { /* no era JSON: se clasifica por palabras igual */ }
     const texto = mov && typeof mov === 'object' ? mov : { descripcion: contenido };
     anot.movimiento_json = !!mov;
+    // (7b) si el mensaje traía las pistas de la obra y qué candidata (el e2e mira que viajen y que no lleven nada personal)
+    anot.pistas_obra = !!(mov && typeof mov === 'object' && mov.pistas_obra && typeof mov.pistas_obra === 'object');
+    anot.candidata = anot.pistas_obra && mov.pistas_obra.candidata && typeof mov.pistas_obra.candidata === 'object' ? mov.pistas_obra.candidata.proyecto_id ?? null : null;
+    anot.obra = null;   // (lo que se contesta como obra; se queda null si no llega a haber propuesta: refusal, JSON roto)
     anot.prefijo = { sha256: sha256(s0.text), tokens: tokens(s0.text), tiene_fecha: /\b20\d\d-\d\d-\d\d\b/.test(s0.text),
                      tiene_uuid: /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(s0.text) };
     const d = contenido.toUpperCase();
@@ -197,6 +252,7 @@ export function crearSimulador({ llave = process.env.ANTHROPIC_API_KEY || 'sk-an
       return { estado: 200, cuerpo: { ...base, content: [pensando, { type: 'text', text: txt }], stop_reason: 'end_turn', stop_details: null, usage: usage(tokens(txt)) } };
     }
     const propuesta = proponerDeMentira(texto);
+    anot.obra = propuesta.obra ? propuesta.obra.proyecto_id : null;
     const txt = JSON.stringify(propuesta);
     if (d.includes('MAXTOKENS')) {
       const corto = txt.slice(0, Math.floor(txt.length / 2));
