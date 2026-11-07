@@ -80,3 +80,56 @@ explicadas por categoría.
 > Este export es la defensa que vale por todas: si mañana desaparecen Supabase
 > y la app, tus libros siguen siendo tuyos y legibles. **Restaurables** lo
 > prueba la Fase 15.
+
+## Lo construido (7-nov)
+
+El entregable se llama `docs/conta/c9-cierre.sql` (c8 ya era el contador de la
+Fase 7), con `c9-pruebas.sql` (36 pruebas) y `docs/conta/OPERACION.md`.
+
+- **La página «Cierre del mes»** en Contabilidad. Dice, para el período que
+  toca (la apertura primero, después octubre), qué lo detiene en una lista en
+  llano con números y a qué página ir. El botón de cerrar se enciende solo
+  cuando no queda nada en rojo, pide el código del teléfono y la frase exacta
+  («CERRAR LA APERTURA», «CERRAR OCTUBRE 2026»). La base vuelve a revisar en el
+  momento de cerrar; si algo entró en medio, no cierra (MX010) y lo dice.
+- **Qué detiene y qué avisa.** Detienen: el orden, el calendario, el asiento de
+  apertura vivo, el cuadre, el banco sin clasificar, la conciliación de cada
+  cuenta al último día, las obras, 1590 contra los activos, la depreciación
+  del mes y los controles del libro, del banco, de los estados y de los
+  puentes. Avisan: las propuestas de la IA sin decidir, el tránsito de más de
+  30 días, 2010 por proveedor, los tickets sin foto o sin impuesto conocido,
+  los cobros en línea, los cambios del mes y el COI (llega con f12a). La
+  apertura avisa además si a una cuenta del banco le falta su conciliación de
+  apertura, que c6 exige antes de confirmar la de octubre.
+- **El cierre** usa el candado de c2 tal cual (`fn_cerrar_periodo`): después
+  nadie escribe en el mes, ni desde la app ni desde el SQL Editor. Se guarda
+  la revisión, la balanza y el hash del mayor, recalculable fuera de la base
+  desde el CSV.
+- **El export** sube el CSV del mayor, el CSV de la balanza, los estados
+  (para imprimir en PDF) y un LÉEME con la huella de cada archivo al bucket
+  privado «cierres». La base comprueba que cada archivo está
+  ahí y mide lo que se declara. Se puede repetir; lo anterior queda en el
+  historial.
+- **La ronda** corre sola a las 11:45 UTC (6:45 en Miami en invierno), después
+  del banco y del contador. Revisa el período que toca y los cierres ya hechos
+  (si la balanza o el hash de un mes cerrado cambian, rojo y al respaldo).
+  Cada rojo nuevo va una vez al teléfono; si el aviso falla, se reintenta al
+  día siguiente.
+- **Activos fijos y depreciación** en línea recta: el alta, la baja, el plan y
+  el asiento del mes (Dr 6950, Cr 1590). La cédula del CPA entra con f12.
+- **La reserva 1030** y el **DR-15**: la reserva espera el % que fije el CPA y
+  el próximo estimado; el DR-15 da lo cargado a use tax (2300) en el mes.
+- **Seguridad:** nada de c9 es SECURITY DEFINER; lo que llama la pantalla es
+  SECURITY INVOKER con `es_dueno()`, y la ronda no tiene API. El control
+  «permisos» de c2 sigue en verde.
+
+Probado desde cero por el camino de producción: c2 83, c3 120, c4 113, c6
+163, c7 21, s1 8, p1 46, c8 38 y c9 36, todas en verde, y c9 dos veces
+seguidas sin rastro. Con un libro de prueba sin conciliación de apertura en la 1010,
+c9 da 32 en verde y 4 «omitida», con el mensaje de c6 que dice qué falta. En
+producción las tres conciliaciones de apertura (1010 y las dos Amex) ya están
+confirmadas.
+
+**Lo que falta para cerrar octubre de verdad:** la Bandeja limpia (los
+movimientos de octubre clasificados), la conciliación de cada cuenta al
+31-oct confirmada, y comparar la utilidad con QuickBooks.

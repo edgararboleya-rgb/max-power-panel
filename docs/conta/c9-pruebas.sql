@@ -29,6 +29,8 @@
 -- cuenta al último día (con el saldo del libro y su motivo, si el archivo
 -- dice otro), y quitan la API a toda función ajena SECURITY DEFINER que el
 -- control «permisos» de c2 marque (hoy, en producción, fn_costos_marcar).
+-- Esa misma función ajena, si ya estaba en rojo ANTES de la suite, la 4 y
+-- la 35 la nombran y no la cuentan, y la 26 le quita la API en su bloque.
 -- Si aun así queda algo en rojo que la prueba no puede aparcar (una
 -- conciliación que c6 no deja confirmar porque falta la de apertura, un
 -- casado que se contradice, una antigüedad que no cuadra con el mayor…), la
@@ -306,7 +308,7 @@ begin
         end if;
       exception when others then
         -- (lo típico: el MX008 de fn_conciliacion_confirmar con «lo que
-        -- falta» —en producción hoy, la conciliación de apertura de la 1010—)
+        -- falta» —por ejemplo, una conciliación de apertura que falte—)
         insert into _c9_aparcado values (p_periodo, 'conciliar ' || r.cuenta || ' al ' || p.hasta, sqlstate || ' ' || sqlerrm);
       end;
     end loop;
@@ -398,6 +400,32 @@ insert into _c9
 select 'rojos_c4', coalesce(string_agg(vista, ', ' order by vista), '') from fn_estados_control('hoy') where not ok;
 insert into _c9
 select 'rojos_c6', coalesce(string_agg(vista, ', ' order by vista), '') from fn_banco_control('hoy') where not ok;
+-- (las funciones AJENAS a c9 que «permisos» de c2 ya marcaba ANTES de las
+-- pruebas —en producción hoy, una función de otra parte de la app—: la 4 y
+-- la 35 las dicen y no las cuentan como fallo de c9; la 26 les quita la API
+-- dentro de su bloque, que se deshace. Una función de c9 nunca entra aquí.)
+create or replace function pg_temp.c9_permisos_fallan() returns setof text language sql as $$
+  select x.t from fn_verificar_cadena() k, jsonb_array_elements_text(coalesce(k.detalle->'fallan', '[]'::jsonb)) x(t)
+   where k.control = 'permisos' and not k.ok
+$$;
+insert into _c9
+select 'ajenas_permisos', coalesce(string_agg(z.f, '; ' order by z.f), '')
+  from (select substring(t from 'la función (.+?) es SECURITY DEFINER') as f from pg_temp.c9_permisos_fallan() t) z
+ where z.f is not null
+   and coalesce(obj_description(coalesce(to_regprocedure(z.f), to_regprocedure('public.' || z.f)), 'pg_proc'), '') not like 'c9: %';
+-- «permisos» de c2 sin contar lo ajeno de antes: 'verde' o 'rojo: …'
+create or replace function pg_temp.c9_permisos() returns text language plpgsql as $$
+declare
+  v_ok boolean; v_det text; v_resto text;
+begin
+  select k.ok, left(k.detalle::text, 300) into v_ok, v_det from fn_verificar_cadena() k where k.control = 'permisos';
+  if v_ok then return 'verde'; end if;
+  select string_agg(t, ' · ') into v_resto from pg_temp.c9_permisos_fallan() t
+   where coalesce(substring(t from 'la función (.+?) es SECURITY DEFINER'), '')
+         <> all (coalesce(string_to_array(nullif(pg_temp.c9('ajenas_permisos'), ''), '; '), '{}'::text[]));
+  if v_resto is null and exists (select 1 from pg_temp.c9_permisos_fallan()) then return 'verde'; end if;
+  return 'rojo: ' || left(coalesce(v_resto, v_det), 300);
+end $$;
 
 
 -- =====================================================================
@@ -582,7 +610,7 @@ begin
      where c.relnamespace = 'public'::regnamespace and c.relkind = 'v'
        and c.relname in ('v_cierre_estado', 'v_cierres', 'v_ronda_ultima', 'v_activos_fijos', 'v_reserva_impuestos', 'v_dr15_mes')
        and not coalesce((select o.option_value::boolean from pg_options_to_table(c.reloptions) o where o.option_name = 'security_invoker'), false);
-    select case when ok then 'verde' else 'rojo: ' || left(detalle::text, 300) end into v_c2 from fn_verificar_cadena() where control = 'permisos';
+    v_c2 := pg_temp.c9_permisos();
     select case when ok then 'verde' else 'rojo: ' || left(detalle, 300) end into v_c6
       from fn_banco_control('hoy', array['cuadre: el otro lado de cada casado']) where vista = 'cuadre: protecciones del banco';
     select case when ok then 'verde' else 'rojo: ' || left(detalle, 300) end into v_c4
@@ -593,7 +621,7 @@ begin
   end;
   insert into _pruebas values (4, 'el catálogo: nada SECURITY DEFINER, ningún prefijo sellado, RLS y policy en cada tabla, vistas security_invoker; c2 «permisos», c6 y c4 «protecciones» en verde con c9 pegado',
     'definer: ninguna | prefijos sellados: ninguna | sin rls o policy: ninguna | sin security_invoker: ninguna | c2 permisos verde | c6 protecciones verde | c4 protecciones verde',
-    v_obt,
+    v_obt || case when pg_temp.c9('ajenas_permisos') <> '' then ' (c2 permisos ya en rojo antes, por una función ajena a c9: ' || pg_temp.c9('ajenas_permisos') || ')' else '' end,
     v_obt = 'definer: ninguna | prefijos sellados: ninguna | sin rls o policy: ninguna | sin security_invoker: ninguna | c2 permisos verde | c6 protecciones verde | c4 protecciones verde');
 end $$;
 
@@ -1508,10 +1536,19 @@ end $$;
 --     si fn_cartero falla, la corrida siguiente lo reintenta (una vez).
 do $$
 declare
-  v_obt text; v_n1 int; v_n2 int; v_n3 int; v_n4 int; v_n5 int; v_n6 int; v_n7 int; v_t text; v_t2 text; v_f boolean;
+  v_obt text; v_n1 int; v_n2 int; v_n3 int; v_n4 int; v_n5 int; v_n6 int; v_n7 int; v_t text; v_t2 text; v_f boolean; v_aj text;
 begin
   begin
     perform pg_temp.c9_ser('editor');
+    -- lo ajeno que ya tenía «permisos» en rojo, sin API mientras dura la prueba (se deshace con ella)
+    for v_aj in select unnest(string_to_array(nullif(pg_temp.c9('ajenas_permisos'), ''), '; ')) loop
+      begin
+        execute format('revoke execute on function %s from public, anon, authenticated, service_role', v_aj);
+      exception when others then
+        v_obt := format('omitida: «libro: permisos» ya estaba en rojo por %s (ajena a c9) y no se le pudo quitar la API para la prueba: %s %s', v_aj, sqlstate, sqlerrm);
+        raise exception using errcode = 'MXT00';
+      end;
+    end loop;
     create temp table _c9_push (cuerpo jsonb) on commit drop;
     perform set_config('mxp.cierre_sin_push', '1', true);
     perform fn_ronda();   -- la corrida de referencia (lo rojo de hoy ya no es nuevo)
@@ -1576,8 +1613,10 @@ begin
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
   insert into _pruebas values (26, 'los avisos de la ronda: un rojo nuevo manda UN aviso al teléfono (fn_cartero) con su título; repetido, ninguno; con mxp.cierre_sin_push = 1, ninguno; con aviso_push apagado, ninguno; si el cartero falla, se reintenta una vez en la corrida siguiente',
-    'rojo nuevo: 1 aviso (Contabilidad: libro: permisos) | repetido: 0 | con sin_push: 0 | con aviso_push apagado: 0 | cartero que falla: 0 (aviso_fallo true), reintento: 1, después: 0', v_obt,
-    v_obt = 'rojo nuevo: 1 aviso (Contabilidad: libro: permisos) | repetido: 0 | con sin_push: 0 | con aviso_push apagado: 0 | cartero que falla: 0 (aviso_fallo true), reintento: 1, después: 0');
+    'rojo nuevo: 1 aviso (Contabilidad: libro: permisos) | repetido: 0 | con sin_push: 0 | con aviso_push apagado: 0 | cartero que falla: 0 (aviso_fallo true), reintento: 1, después: 0',
+    v_obt || case when v_obt not like 'omitida:%' and pg_temp.c9('ajenas_permisos') <> '' then ' (lo ajeno que ya estaba en rojo, sin API durante la prueba: ' || pg_temp.c9('ajenas_permisos') || ')' else '' end,
+    case when v_obt like 'omitida:%' then null
+         else v_obt = 'rojo nuevo: 1 aviso (Contabilidad: libro: permisos) | repetido: 0 | con sin_push: 0 | con aviso_push apagado: 0 | cartero que falla: 0 (aviso_fallo true), reintento: 1, después: 0' end);
 end $$;
 
 -- 27. La balanza de un mes cerrado que cambió por debajo de las guardas: la
@@ -1859,7 +1898,8 @@ declare
 begin
   begin
     perform pg_temp.c9_ser('editor');
-    select coalesce(string_agg(control, ', ' order by control), 'verde') into v_c2 from fn_verificar_cadena() where not ok;
+    select coalesce(string_agg(control, ', ' order by control), 'verde') into v_c2 from fn_verificar_cadena()
+     where not ok and not (control = 'permisos' and pg_temp.c9_permisos() = 'verde');
     select coalesce(string_agg(control, ', ' order by control), 'verde') into v_c3 from fn_puentes_verificar() where not ok;
     select coalesce(string_agg(vista, ', ' order by vista), 'verde') into v_c6 from fn_banco_control('hoy')
      where not ok and not (vista = any (string_to_array(pg_temp.c9('rojos_c6'), ', ')));
@@ -1881,7 +1921,8 @@ begin
   insert into _pruebas values (35, 'el cierre de la suite: c2, c3, c6 y c4 en verde con c9 puesto (salvo lo que ya estaba en rojo antes), c8 sin cuadres rojos, nada de c9 para anon o service_role ni SECURITY DEFINER',
     'c2 verde | c3 verde | c6 verde | c4 verde | c8 cuadres rojos: ninguno | c9 anon/service_role o definer: ninguna',
     v_obt || case when pg_temp.c9('rojos_c4') <> '' then ' (ya en rojo antes, en c4: ' || pg_temp.c9('rojos_c4') || ')' else '' end
-          || case when pg_temp.c9('rojos_c6') <> '' then ' (ya en rojo antes, en c6: ' || pg_temp.c9('rojos_c6') || ')' else '' end,
+          || case when pg_temp.c9('rojos_c6') <> '' then ' (ya en rojo antes, en c6: ' || pg_temp.c9('rojos_c6') || ')' else '' end
+          || case when pg_temp.c9('ajenas_permisos') <> '' then ' (c2 permisos ya en rojo antes, por una función ajena a c9: ' || pg_temp.c9('ajenas_permisos') || ')' else '' end,
     v_obt = 'c2 verde | c3 verde | c6 verde | c4 verde | c8 cuadres rojos: ninguno | c9 anon/service_role o definer: ninguna');
 end $$;
 
