@@ -67,6 +67,23 @@
    apagado (localStorage, como lo deja el interruptor): así siguen probando
    «Proponer ahora» a mano tal cual. La 7b, con sus obras ya calibradas: lo
    que probaba elegido de entrada es una obra fuerte (≥ 80 %).
+   Y el cierre del mes (c9, fase 8): la base de mentira trae las vistas y
+   funciones de docs/conta/c9-cierre.sql con la forma EXACTA del contrato
+   (la revisión de la apertura y de octubre como en el banco c9a, el cierre
+   con su huella del mayor calculada como fn_cierre_hash_mayor, el bucket
+   «cierres» que guarda lo que llega, los activos, la reserva, el DR-15, la
+   ronda); se comprueba la ronda en «Qué atender», la revisión con lo que
+   detiene (y su ir_a) y los avisos aparte, el botón apagado (algo detiene,
+   sin el código del teléfono) y encendido, la confirmación mal escrita que
+   no cierra, cerrar → el export subido y registrado con el sha256 de lo que
+   llegó (y la huella recalculada desde el CSV con la receta del README),
+   descargar con URL firmada, imprimir, MX010 explicado, la huella que no
+   coincide (no exporta) y «Volver a exportar», los activos (alta, depreciar,
+   baja), la reserva sin y con %, los estimados, el DR-15, el historial, los
+   ajustes, sin c9, la falla ruidosa de la revisión, y el teléfono, el iPad y
+   la computadora sin desplazamiento lateral. Una prueba de antes cambió: la
+   de «Qué atender», que suponía la bandeja sin nada de más de 30 días y
+   empezó a fallar sola el 2 nov (lo más viejo es del 2 oct).
    Los datos son inventados (la forma es la de las vistas de c4, c6 y p1).
    Uso: NODE_PATH=/opt/node22/lib/node_modules node pruebas/conta/pantalla.js
    (con --fotos guarda capturas en el temporal del sistema, o en FOTOS_DIR:
@@ -182,7 +199,7 @@ const MAY = [
   may(ASI.c, '2026-000420', '2026-10-20', 'Pago Amex', -2300, 26500, '1010', 'Chase Checking', 'debe', 420, { origen_tabla: null, camino: 'mano' }),
   may(ASI.d, '2026-000405', '2026-10-07', 'Recibo 8812 Ferretería Ejemplo', 300, 300, '5100', 'Material de obra', 'debe', 405, { proyecto_id: 'casa-perez-k3m9', memo: 'Recibo 8812' }),
   may(ASI.e, '2026-000418', '2026-10-18', 'Trabajo externo 51 · material', 7700, 8000, '5100', 'Material de obra', 'debe', 418, { origen_tabla: 'trabajos_externos', proyecto_id: 'casa-perez-k3m9' }),
-  may(ASI.d, '2026-000405', '2026-10-07', 'Recibo 8812 Ferretería Ejemplo', -300, -9300, '2100-2013', 'Amex Business Gold', 'haber', 405), may(ASI.c, '2026-000420', '2026-10-20', 'Pago Amex', 2300, -7000, '2100-2013', 'Amex Business Gold', 'haber', 420, { origen_tabla: null, camino: 'mano' }),
+  may(ASI.d, '2026-000405', '2026-10-07', 'Recibo 8812 Ferretería Ejemplo', -300, -9300, '2100-2013', 'Amex Business Gold', 'haber', 405, { orden: 2 }), may(ASI.c, '2026-000420', '2026-10-20', 'Pago Amex', 2300, -7000, '2100-2013', 'Amex Business Gold', 'haber', 420, { origen_tabla: null, camino: 'mano', orden: 2 }),
   may(ASI.h, '2026-000425', '2026-10-22', 'Statement Amex · gastos', -2000, -9000, '2100-2013', 'Amex Business Gold', 'haber', 425, { origen_tabla: 'recibos' }),
   // un ajuste del CPA al cierre de 2026 posteado en enero de 2027: v_mayor lo lista en 2027 pero lo corre con el saldo de 2026, y v_balanza de 2027 no trae la cuenta
   may(ASI.i, '2027-000002', '2027-01-15', 'Ajuste del CPA · depreciación 2026', 400, 1900, '6300', 'Vehículos', 'debe', 2, { periodo: '2027-01', periodo_efectivo: '2026-12', anio: 2027, ejercicio: 2026, tipo: 'ajuste_cpa', camino: 'mano', origen_tabla: null })
@@ -659,6 +676,281 @@ function funcionContador(b, auth) {
   if (b.accion === 'estado') return { cuerpo: { ok: true, ...iaEstado(), tope: { bloqueado: iaEstado().bloqueado } } };
   return { estado: 400, cuerpo: { ok: false, codigo: 'ACCION', error: 'Acción desconocida: «' + b.accion + '».' } };
 }
+// ---- el cierre del mes (c9, fase 8): la forma EXACTA de v_cierre_estado, v_cierres, v_ronda_ultima, v_activos_fijos,
+// v_reserva_impuestos, v_dr15_mes, cierre_config y reserva_estimados, y de fn_cierre_revisar, fn_cierre_cerrar,
+// fn_cierre_export, fn_cierre_balanza, fn_cierre_config, fn_activo_alta/baja, fn_depreciacion_plan/mes y
+// fn_reserva_estimado_marcar/anular (docs/conta/c9-cierre.sql y el contrato del agente de la base, con sus mensajes).
+// La revisión de la apertura y de octubre es la del banco c9a (21 filas en octubre: 4 detienen y 3 avisos con la apertura
+// abierta); los interruptores de C9.rojos los apagan. La huella del mayor la calcula la base de mentira como
+// fn_cierre_hash_mayor, con node:crypto, sobre las mismas filas de v_mayor que lee la pantalla: si la pantalla arma
+// otro texto, no coincide. El bucket «cierres» guarda lo que sube la pantalla (bytes y sha256 de lo que llegó). Sin
+// estado.c9 todo esto contesta 404 (c9 sin pegar: PGRST205 en las vistas, PGRST202 en las funciones).
+const cripto = require('crypto');
+const sha = b => cripto.createHash('sha256').update(b).digest('hex');
+const usd = v => (v < 0 ? '-' : '') + '$' + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const r2 = v => Math.round(v * 100) / 100;
+const C9_PER = [
+  { periodo: '2026-09-APERTURA', tipo: 'apertura', anio: 2026, desde: '2026-09-30', hasta: '2026-09-30', nombre: 'la apertura (30-sep-2026)', confirmacion: 'CERRAR LA APERTURA' },
+  { periodo: '2026-10', tipo: 'mes', anio: 2026, desde: '2026-10-01', hasta: '2026-10-31', nombre: 'octubre de 2026', confirmacion: 'CERRAR OCTUBRE 2026' },
+  { periodo: '2026-11', tipo: 'mes', anio: 2026, desde: '2026-11-01', hasta: '2026-11-30', nombre: 'noviembre de 2026', confirmacion: 'CERRAR NOVIEMBRE 2026' },
+  { periodo: '2026-12', tipo: 'mes', anio: 2026, desde: '2026-12-01', hasta: '2026-12-31', nombre: 'diciembre de 2026', confirmacion: 'CERRAR DICIEMBRE 2026' },
+  { periodo: '2027-01', tipo: 'mes', anio: 2027, desde: '2027-01-01', hasta: '2027-01-31', nombre: 'enero de 2027', confirmacion: 'CERRAR ENERO 2027' }
+];
+// el mayor de la apertura (dos líneas, un memo con coma y comillas para el CSV) y una línea de la IA en octubre (el sello)
+const C9_MAYOR = [
+  { ...may('aaaaaaaa-0000-4000-8000-0000000000a1', '2026-000001', '2026-09-30', 'Apertura: balanza de QuickBooks al 30-sep', 25000, 25000, '1010', 'Chase Checking', 'debe', 1,
+    { periodo: '2026-09-APERTURA', periodo_efectivo: '2026-09-APERTURA', tipo: 'apertura', camino: 'mano', origen_tabla: null, memo: 'Balanza de QuickBooks, 30-sep "apertura"' }), cost_code: null },
+  { ...may('aaaaaaaa-0000-4000-8000-0000000000a1', '2026-000001', '2026-09-30', 'Apertura: balanza de QuickBooks al 30-sep', -25000, -25000, '3000', 'Capital social', 'haber', 1,
+    { periodo: '2026-09-APERTURA', periodo_efectivo: '2026-09-APERTURA', tipo: 'apertura', camino: 'mano', origen_tabla: null, orden: 2 }), cost_code: null },
+  { ...may('aaaaaaaa-0000-4000-8000-0000000000a2', '2026-000430', '2026-10-28', 'Comisión mensual del banco', 35, 535, '6130', 'Cargos bancarios', 'debe', 430,
+    { camino: 'ia', origen_tabla: 'movimientos_banco', origen_id: 'mb-77', proyecto_id: null, memo: 'Comisión, «mensual»' }), cost_code: 'G-01' }
+];
+const C9_ASIENTOS = [{ id: 'aaaaaaaa-0000-4000-8000-0000000000e5', numero: '2026-000005', fecha_contable: HOY, descripcion: 'IRS USATAXPYMT · estimado' }];
+const C9 = {};
+function c9Reset() {
+  Object.assign(C9, {
+    estado: Object.fromEntries(C9_PER.map(p => [p.periodo, 'abierto'])),
+    rev: {}, cierres: {}, objetos: new Map(), exports: [], ronda: [], activos: [], deps: [], estimados: [], n: 0,
+    // lo que la revisión trae en rojo (la apertura sin su asiento; en octubre el banco sin clasificar, sin conciliar y sin archivos al 31)
+    rojos: { aperturaViva: true, banco40: true, conc50: true, archivos111: true },
+    // interruptores: al cerrar, la base encuentra algo nuevo (MX010); la huella guardada no es la del mayor; v_cierre_estado no dice lo que la revisión
+    mx010: false, hashMal: false, estadoMal: false,
+    config: { id: 1, ronda_activa: true, reserva_pct: null, metodo_depreciacion: 'linea_recta', aviso_push: true, actualizado: '2026-11-06T12:00:00+00:00', actualizado_por: UID }
+  });
+}
+c9Reset();
+const c9Per = p => C9_PER.find(x => x.periodo === p);
+const c9Cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+const err9 = (code, message, hint, status) => ({ status: status || 400, error: { code, message, hint: hint || null, details: null } });
+const fila9 = (orden, control, nivel, ok, detalle, que_hacer, ir_a) => ({ ok, ir_a: ir_a || null, nivel, orden, control, detalle, que_hacer: que_hacer || null });
+// la revisión de un período (fn_cierre_revisar), con los textos del banco c9a
+function c9Revisar(periodo) {
+  const p = c9Per(periodo), ap = p.tipo === 'apertura', R = C9.rojos;
+  const antes = C9_PER.filter(x => x.desde < p.desde && C9.estado[x.periodo] !== 'cerrado');
+  const term = p.hasta < HOY;
+  const f = [
+    fila9(10, 'orden: los períodos anteriores cerrados', 'detiene', !antes.length, antes.length ? `Antes de cerrar ${p.nombre} hay que cerrar ${antes[0].nombre}: todo se cierra en orden, la apertura primero (c2).` : `Los períodos anteriores a ${p.nombre} están cerrados.`, antes.length ? `Cierra primero ${antes[0].nombre}, desde esta misma pantalla.` : null, 'cierre'),
+    fila9(15, 'calendario: el período ya terminó', 'detiene', term, `${c9Cap(p.nombre)} ${term ? 'terminó' : 'termina'} el ${p.hasta}; hoy es ${HOY} en Miami.`, term ? null : 'Espera a que termine el período.', 'cierre'),
+    fila9(30, 'cuadre: debe = haber en el período', 'detiene', true, `3 asientos y 6 líneas en ${p.nombre}: debe $1,332.00 = haber $1,332.00.`, null, 'conexiones'),
+    fila9(100, 'libro: cadena, numeración, guardas y permisos', 'detiene', true, 'Los 10 controles de fn_verificar_cadena (c2) están en verde.', null, 'conexiones'),
+    fila9(121, 'estados: apertura en el libro', 'aviso', false, 'No cuadra: no hay apertura en el libro: carga la balanza de QuickBooks (fn_apertura_balanza_cargar), mapea sus cuentas y postéala con fn_apertura.', 'c2 deja cerrar con cualquier asiento de apertura vivo, pero los estados (c4) no se publican hasta que la apertura sea la de la balanza de QuickBooks: cárgala (fn_apertura_balanza_cargar) y postéala con fn_apertura; si hay una hecha a mano, revérsala.', 'estados'),
+    fila9(130, 'puentes: los controles de los puentes (c3)', 'detiene', true, 'Los 13 controles de fn_puentes_verificar están en verde.', null, 'movimientos'),
+    fila9(141, 'cobros en línea: la revisión automática corre', 'aviso', false, 'nunca ha corrido', 'El detalle dice qué (p1): Cobros en línea.', 'cobros'),
+    fila9(146, 'ia: la llave y la función', 'aviso', false, 'ninguna ráfaga ha corrido nunca y hay 5 cargo(s) sin propuesta desde el 2026-10-02: ¿está ANTHROPIC_API_KEY en los secretos de Edge Functions y la función «contador» desplegada? Abre la Bandeja (propone sola) o toca «Proponer ahora»', 'El detalle dice qué (c8): la Bandeja y Conexiones → IA contable.', 'bandeja')
+  ];
+  if (ap) {
+    f.push(fila9(20, 'apertura: su asiento de apertura está vivo', 'detiene', !R.aperturaViva, R.aperturaViva ? 'Falta el asiento de apertura del 2026-09-30 (o se reversó): cerrada vacía, la balanza de QuickBooks ya no tendría dónde entrar (c2).' : 'El asiento de apertura del 2026-09-30 está vivo (2026-000001).', R.aperturaViva ? 'Carga la balanza de QuickBooks al 30-sep (fn_apertura_balanza_cargar), mapea sus cuentas y postéala (fn_apertura, c4); después audítala.' : null, 'estados'));
+    f.push(fila9(110, 'banco: los cuadres del banco (c6)', 'detiene', true, 'Los cuadres de fn_banco_control de la apertura (30-sep-2026) están en verde.', null, 'conciliar'));
+  } else {
+    const falta92 = C9.activos.some(a => a.fecha_servicio <= p.hasta && (a.estado === 'activo' || a.baja_fecha > p.hasta)) && !C9.deps.some(d => d.periodo === periodo);
+    f.push(
+      fila9(40, 'banco: todo lo del mes casado o clasificado', 'detiene', !R.banco40, R.banco40 ? `7 movimiento(s) del banco de ${p.nombre} sin clasificar ni casar: cargos por $787.40 y depósitos por $2,500.00; 1 posible(s) duplicado(s) sin decidir. Lo que no se clasifique no está en los libros de este mes.` : `Todo lo del banco de ${p.nombre} está casado o clasificado.`, R.banco40 ? 'Abre la Bandeja y resuelve cada uno: «Así es» a la propuesta de la IA, «Según yo», «Casar» con su ticket, o ignóralo con su motivo.' : null, 'bandeja'),
+      fila9(42, 'ia: propuestas del mes sin decidir', 'aviso', true, `Ninguna propuesta de la IA de ${p.nombre} espera decisión.`, null, 'bandeja'),
+      fila9(50, 'banco: cada cuenta conciliada al último día del mes', 'detiene', !R.conc50, R.conc50 ? `2 de 2 cuenta(s) sin conciliar al ${p.hasta}: Banco operativo (1010): sin conciliación confirmada al ${p.hasta} (la última confirmada: ninguna); Amex Business Gold (2100-2013): sin conciliación confirmada al ${p.hasta} (la última confirmada: ninguna).` : `Las 2 cuentas están conciliadas y confirmadas al ${p.hasta}.`, R.conc50 ? 'Conciliar: cada cuenta al último día del mes (fn_conciliar) y «Confirmar».' : null, 'conciliar'),
+      fila9(52, 'banco: partidas en tránsito de más de 30 días', 'aviso', true, 'Ninguna partida en tránsito con más de 30 días en las conciliaciones del fin de mes.', null, 'conciliar'),
+      fila9(60, '2010: lo que se le debe a cada proveedor', 'aviso', true, '2010 al 2026-10-31: $320.00. Por proveedor: Luis — ayudante, demolición 2 días $320.00. 0 partida(s) con más de 60 días por $0.00.', 'Compara el saldo de cada proveedor con el statement del supply (como en QuickBooks, a mano).', 'estados'),
+      fila9(70, 'obras: el auxiliar por obra suma lo mismo que el mayor', 'detiene', true, `Todas las líneas de cuentas que exigen obra llevan su obra en ${p.nombre}: 1 obra(s), $320.00 en líneas con obra.`, null, 'movimientos'),
+      fila9(80, 'recibos: los tickets del mes sin foto', 'aviso', true, `Todos los tickets contabilizados en ${p.nombre} tienen su foto.`, null, null),
+      fila9(82, 'recibos: los tickets del mes con impuesto desconocido', 'aviso', true, `Todos los tickets contabilizados en ${p.nombre} dicen su impuesto (o que no llevaban).`, null, null),
+      fila9(90, 'activos: 1590 = la depreciación acumulada de los activos', 'detiene', true, C9.activos.length ? `1590 al ${p.hasta} = la depreciación acumulada de los ${C9.activos.length} activo(s).` : `No hay activos fijos dados de alta todavía (se cargan en f12 con la cédula del CPA); 1590 tiene $0.00 al ${p.hasta}, lo que trajo QuickBooks. Se comprueba cuando estén.`, null, 'cierre'),
+      fila9(92, 'activos: la depreciación del mes posteada', 'detiene', !falta92, falta92 ? `Falta la depreciación de ${p.nombre}: hay activos vivos y su asiento (Dr 6950 / Cr 1590) no está.` : C9.activos.length ? `La depreciación de ${p.nombre} está posteada.` : 'No hay activos fijos: nada que depreciar.', falta92 ? 'Cierre del mes → Activos fijos → «Depreciar» (fn_depreciacion_mes).' : null, 'cierre'),
+      R.archivos111 ? fila9(111, 'banco: cada cuenta hasta el fin del mes', 'detiene', false, `Antes de cerrar el mes, importa lo de cada cuenta hasta su último día: Banco operativo (1010): sus archivos llegan al 2026-10-30 y 2026-10 terminó el 2026-10-31.`, 'Importa lo de esa cuenta hasta el último día del mes (la actividad reciente en QFX, o espera a la sincronización de Plaid) y vuelve a revisar.', 'conciliar')
+        : fila9(110, 'banco: los cuadres del banco (c6)', 'detiene', true, `Los cuadres de fn_banco_control de ${p.nombre} están en verde.`, null, 'conciliar'),
+      fila9(150, 'cambios: reversos y asientos de la IA del período', 'aviso', true, `En ${p.nombre}: 0 reverso(s) por $0.00; 1 asiento(s) de la IA aprobados por Edgar por $35.00; 0 a mano; 3 de los puentes.`, null, 'movimientos'),
+      fila9(160, 'subs: COI vigente de cada sub pagado en el mes', 'aviso', true, 'Todavía no hay datos de COI en proveedores (llegan con f12a: W-9, COI y 1099): no se puede comprobar, y no frena.', 'Pide el certificado de seguro (COI) a cada sub antes de pagarle (f12a).', null)
+    );
+  }
+  return f.sort((a, b) => a.orden - b.orden);
+}
+const rojo9 = x => x.ok !== true;
+// la huella del mayor, como fn_cierre_hash_mayor: las líneas del período en el orden del libro, «numero|fecha|orden|cuenta|monto|proyecto_id|cost_code|memo»
+function c9Huella(periodo) {
+  const ls = tabla('v_mayor', new URLSearchParams(`periodo=eq.${periodo}&order=fecha.asc,cadena_pos.asc,orden.asc`));
+  return { lineas: ls.length, asientos: new Set(ls.map(l => l.asiento_id)).size,
+    hash: sha(Buffer.from(ls.map(l => [l.numero, String(l.fecha).slice(0, 10), l.orden, l.cuenta, Number(l.monto).toFixed(2), l.proyecto_id || '', l.cost_code || '', l.memo || ''].join('|')).join('\n'), 'utf8')) };
+}
+// la balanza que guarda la base al cerrar (fn_cierre_balanza)
+function c9Balanza(periodo) {
+  if (periodo === '2026-09-APERTURA') return [{ cuenta: '1010', inicial: 0, debe: 25000, haber: 0, final: 25000 }, { cuenta: '3000', inicial: 0, debe: 0, haber: 25000, final: -25000 }];
+  if (periodo === '2026-10') return BZA.filter(b => b.nivel === 'cuenta').map(b => ({ cuenta: b.cuenta, inicial: b.saldo_inicial, debe: b.debe, haber: b.haber, final: b.saldo_final }));
+  return [];
+}
+function c9Estado() {
+  const sig = C9_PER.find(p => C9.estado[p.periodo] !== 'cerrado');
+  return C9_PER.map(p => {
+    const c = C9.cierres[p.periodo], rv = C9.rev[p.periodo], cer = C9.estado[p.periodo] === 'cerrado';
+    return { periodo: p.periodo, tipo: p.tipo, anio: p.anio, desde: p.desde, hasta: p.hasta, estado: C9.estado[p.periodo], paralelo: true, terminado: p.hasta < HOY, siguiente: !!sig && sig.periodo === p.periodo,
+      detienen: cer ? 0 : rv ? rv.detienen + (C9.estadoMal ? 1 : 0) : null, avisos: cer ? (c ? c.revision.filter(x => x.nivel === 'aviso' && rojo9(x)).length : 0) : rv ? rv.avisos : null,
+      revisado_el: cer ? (c ? c.cerrado_el : null) : rv ? rv.revisado_el : null, cerrado_el: c ? c.cerrado_el : null, cerrado_por: c ? UID : null, cerrado_por_nombre: c ? 'Edgar Prueba' : null,
+      hash_mayor: c ? c.hash_mayor : null, export_ruta: c ? c.export_ruta : null, exportado: !!(c && c.export_archivos), exportado_el: c ? c.exportado_el : null,
+      confirmacion: p.confirmacion, nombre: p.nombre, export_carpeta: p.periodo + '/' };
+  });
+}
+const c9Cierres = () => Object.values(C9.cierres).map(c => ({ ...c, avisos: c.revision.filter(x => x.nivel === 'aviso' && rojo9(x)).length, exportado: !!c.export_archivos, exports_anteriores: c.historial.length, historial: undefined }));
+// la última corrida de la ronda: cada fila repite el resumen
+function c9Ronda() {
+  const f = C9.ronda; if (!f.length) return [];
+  const rojos = f.filter(rojo9);
+  return f.map(x => ({ fecha: x.fecha || HOY, corrida_el: x.corrida_el || '2026-11-06T11:45:00+00:00', rojos: rojos.length, detienen: rojos.filter(y => y.nivel === 'detiene').length, avisos: rojos.filter(y => y.nivel === 'aviso').length,
+    avisados: f.filter(y => y.avisado).length, filas: f.length, avisado: false, ...x }));
+}
+function c9Activo(a) {
+  const ds = C9.deps.filter(d => d.activo_id === a.id), libro = r2(ds.reduce((s, d) => s + d.monto, 0));
+  const cuota = a.metodo === 'manual' ? a.monto_mensual : r2((a.costo - a.residual) / a.vida_meses);
+  return { ...a, cuenta_nombre: { 1510: 'Vehículos', 1520: 'Herramienta y equipo', 1530: 'Equipo de cómputo', 1540: 'Mejoras' }[a.cuenta] || 'Activo', depreciado_libro: libro, acumulada: r2(a.dep_acumulada_inicial + libro),
+    valor_libros: r2(a.costo - a.dep_acumulada_inicial - libro), meses_posteados: ds.length, ultimo_periodo: ds.length ? ds.map(d => d.periodo).sort().pop() : null, cuota_mensual: cuota,
+    terminado: a.costo - a.residual - a.dep_acumulada_inicial - libro <= 0 };
+}
+function c9Plan(periodo) {
+  const p = c9Per(periodo); if (!p || p.tipo !== 'mes') return [];
+  return C9.activos.filter(a => a.fecha_servicio <= p.hasta && (a.estado === 'activo' || a.baja_fecha > p.hasta)).map(a => {
+    const cuota = a.metodo === 'manual' ? a.monto_mensual : r2((a.costo - a.residual) / a.vida_meses);
+    const acum = r2(a.dep_acumulada_inicial + C9.deps.filter(d => d.activo_id === a.id && c9Per(d.periodo).hasta < p.desde).reduce((s, d) => s + d.monto, 0));
+    return { activo_id: a.id, descripcion: a.descripcion, cuenta: a.cuenta, metodo: a.metodo, cuota, acumulada_antes: acum, monto: r2(Math.max(0, Math.min(cuota, a.costo - a.residual - acum))) };
+  });
+}
+function c9Proximo() {
+  const [a] = HOY.split('-').map(Number);
+  return [0, 1].flatMap(y => [1, 4, 6, 9].map(m => `${a + y}-${String(m).padStart(2, '0')}-15`)).filter(d => d >= HOY).sort()[0];
+}
+function c9Reserva() {
+  const anio = Number(HOY.slice(0, 4)), util = 13100, pct = C9.config.reserva_pct, saldo = 0;
+  const vivos = C9.estimados.filter(e => !e.anulado_el && e.anio_fiscal === anio), pag = r2(vivos.reduce((s, e) => s + e.monto, 0));
+  const objetivo = pct == null ? null : Math.max(r2(util * pct / 100), 0), obj = objetivo == null ? null : Math.max(r2(objetivo - pag), 0), dif = obj == null ? null : r2(obj - saldo);
+  const prox = c9Proximo(), dias = Math.round((Date.parse(prox) - Date.parse(HOY)) / 86400000);
+  const mensaje = pct == null ? 'Falta el % que fije el CPA: cuando lo diga, guárdalo en Cierre → ajustes (fn_cierre_config, reserva_pct) y aquí saldrá cuánto transferir a la reserva (1030).'
+    : dif > 0 ? `Transfiere ${usd(dif)} a la reserva (1030): la utilidad de ${anio} a la fecha es ${usd(util)}, el ${pct.toFixed(2)} % son ${usd(objetivo)}, ya pagaste ${usd(pag)} en estimados y la reserva tiene ${usd(saldo)}.`
+    : dif < 0 ? `Sobra ${usd(-dif)} en la reserva (1030).` : `La reserva (1030) está al día: ${usd(saldo)}, lo que piden la utilidad de ${anio} a la fecha (${usd(util)}) y el ${pct.toFixed(2)} % del CPA, menos ${usd(pag)} ya pagados.`;
+  return { anio, hoy: HOY, utilidad_anio: util, reserva_pct: pct, objetivo, estimados_pagados: pag, estimados_n: vivos.length, objetivo_1030: obj, saldo_1030: saldo, diferencia: dif, mensaje,
+    proximo_estimado: prox, dias_para_estimado: dias, estimado_en_15_dias: dias <= 15, monto_sugerido: obj, nota: 'El monto sugerido es orientativo (lo acumulado y no pagado al % del CPA): el estimado lo fija el CPA.' };
+}
+const NOTA_DR15 = 'La base son las compras que la IA marcó «use_tax» y Edgar aprobó (c8); la tasa la pone el DR-15. Lo cargado a 2300 es el use tax ya devengado; lo pagado, los pagos al DOR. Las ventas gravables y el sales tax cobrado todavía no se saben: las facturas de la app no separan el impuesto (llegan con f10).';
+const c9Dr15 = () => C9_PER.filter(p => p.tipo === 'mes').map(p => ({ periodo: p.periodo, desde: p.desde, hasta: p.hasta, compras_use_tax_n: p.periodo === '2026-10' ? 2 : 0, compras_use_tax_base: p.periodo === '2026-10' ? 840 : 0,
+  use_tax_cargado_2300: p.periodo === '2026-10' ? 50.4 : 0, use_tax_pagado_2300: 0, use_tax_saldo_2300: p.periodo === '2026-10' ? 50.4 : 0, ventas_gravables: null, sales_tax_cobrado: null, nota: NOTA_DR15 }));
+const C9_VISTAS = { v_cierre_estado: c9Estado, v_cierres: c9Cierres, v_ronda_ultima: c9Ronda, v_activos_fijos: () => C9.activos.map(c9Activo), v_reserva_impuestos: () => [c9Reserva()], v_dr15_mes: c9Dr15,
+  cierre_config: () => [{ ...C9.config }], reserva_estimados: () => C9.estimados.map(e => ({ ...e })) };
+// las funciones de c9 (POST /rest/v1/rpc/…): { error } o lo que devuelven
+const C9_FN = {
+  fn_cierre_revisar(a) {
+    const p = c9Per(a.p_periodo);
+    if (!p) return err9('MX002', `No existe el período «${a.p_periodo}»: un mes es AAAA-MM (2026-10), la apertura es 2026-09-APERTURA y un año es AAAA.`);
+    const f = c9Revisar(p.periodo);
+    if (C9.estado[p.periodo] !== 'cerrado') C9.rev[p.periodo] = { revisado_el: new Date().toISOString(), detienen: f.filter(x => x.nivel === 'detiene' && rojo9(x)).length, avisos: f.filter(x => x.nivel === 'aviso' && rojo9(x)).length };
+    return f;
+  },
+  fn_cierre_cerrar(a) {
+    const p = c9Per(a.p_periodo);
+    if (!p) return err9('MX002', `No existe el período «${a.p_periodo}».`);
+    if (C9.estado[p.periodo] === 'cerrado') return err9('MX002', `${c9Cap(p.nombre)} ya está cerrado. Un cierre no se repite ni se deshace.`);
+    if (String(a.p_confirmo || '').trim() !== p.confirmacion) return err9('22023', `Para cerrar ${p.nombre} escribe exactamente «${p.confirmacion}» (llegó «${a.p_confirmo || ''}»). Un cierre no se deshace: por eso se pide escrito.`, p.confirmacion);
+    // al cerrar, la base vuelve a revisar con el candado puesto: si entró algo (el interruptor), MX010 con la lista
+    if (C9.mx010) { C9.mx010 = false; C9.rojos.banco40 = true; }
+    const rev = c9Revisar(p.periodo), rojos = rev.filter(x => x.nivel === 'detiene' && rojo9(x));
+    if (rojos.length) return err9('MX010', `No se cierra ${p.nombre}: ${rojos.length} cosa(s) lo detienen. ${rojos.map(x => `${x.orden}) ${x.control}: ${x.detalle}${x.que_hacer ? ' → ' + x.que_hacer : ''}`).join(' ')}`,
+      `Resuélvelas y vuelve a tocar «Cerrar». La lista entera: select * from fn_cierre_revisar('${p.periodo}') where nivel = 'detiene' and not ok;`);
+    const h = c9Huella(p.periodo), ahora = new Date().toISOString();
+    C9.estado[p.periodo] = 'cerrado'; delete C9.rev[p.periodo];
+    C9.cierres[p.periodo] = { periodo: p.periodo, tipo: p.tipo, anio: p.anio, desde: p.desde, hasta: p.hasta, cerrado_el: ahora, cerrado_por: UID, cerrado_por_nombre: 'Edgar Prueba', cerrado_rol: 'authenticated',
+      cadena_al_cerrar: sha('cadena ' + p.periodo), hash_mayor: C9.hashMal ? sha('otra cosa') : h.hash, asientos: h.asientos, lineas: h.lineas, revision: rev,
+      export_ruta: null, export_archivos: null, exportado_el: null, exportado_por: null, exportado_por_nombre: null, historial: [] };
+    const sig = C9_PER.find(x => C9.estado[x.periodo] !== 'cerrado');
+    return { periodo: p.periodo, nombre: p.nombre, cerrado_el: ahora, cerrado_por: UID, hash_mayor: C9.cierres[p.periodo].hash_mayor, cadena_al_cerrar: C9.cierres[p.periodo].cadena_al_cerrar,
+      asientos: h.asientos, lineas: h.lineas, avisos: rev.filter(x => x.nivel === 'aviso' && rojo9(x)).length, siguiente: sig ? sig.periodo : null, siguiente_confirmacion: sig ? sig.confirmacion : null, export_carpeta: p.periodo + '/' };
+  },
+  fn_cierre_balanza: a => c9Balanza(a.p_periodo),
+  fn_cierre_export(a) {
+    const p = c9Per(a.p_periodo), c = p && C9.cierres[p.periodo];
+    if (!c) return err9('MX002', `${p ? c9Cap(p.nombre) : a.p_periodo} no está cerrado desde la app: solo se exporta un período cerrado (ciérralo primero).`);
+    const L = a.p_archivos;
+    if (!Array.isArray(L) || !L.length) return err9('22023', 'Los archivos llegan como una lista [{ruta, sha256, bytes}], con al menos uno (el CSV del mayor).');
+    const rutas = [], falta = []; let total = 0;
+    for (const [i, f] of L.entries()) {
+      if (!f || typeof f !== 'object' || Array.isArray(f)) return err9('22023', `Archivo ${i + 1}: cada archivo es un objeto {ruta, sha256, bytes}.`);
+      const sobra = Object.keys(f).filter(k => !['ruta', 'sha256', 'bytes', 'tipo'].includes(k));
+      if (sobra.length) return err9('22023', `Archivo ${i + 1}: clave desconocida: ${sobra.join(', ')}.`);
+      if (!String(f.ruta || '').startsWith(p.periodo + '/') || String(f.ruta).length <= p.periodo.length + 1 || /(^|\/)\.\.(\/|$)/.test(f.ruta)) return err9('22023', `Archivo ${i + 1}: la ruta «${f.ruta || ''}» tiene que estar dentro de la carpeta del período en el bucket cierres (${p.periodo}/…).`);
+      if (!/^[0-9a-f]{64}$/.test(String(f.sha256 || ''))) return err9('22023', `Archivo ${i + 1} (${f.ruta}): el sha256 va en 64 caracteres hexadecimales en minúsculas.`);
+      if (!Number.isInteger(Number(f.bytes)) || Number(f.bytes) < 0) return err9('MX005', `Archivo ${i + 1} (${f.ruta}): bytes es su tamaño, un entero de 0 o más.`);
+      if (rutas.includes(f.ruta)) return err9('22023', `Archivo ${i + 1}: la ruta «${f.ruta}» viene dos veces.`);
+      rutas.push(f.ruta); total += Number(f.bytes);
+      if (!C9.objetos.has(f.ruta)) falta.push(f.ruta);
+    }
+    if (falta.length) return err9('22023', `No está(n) en el bucket cierres: ${falta.join(', ')}. Sube los archivos primero y registra después.`);
+    C9.exports.push({ periodo: p.periodo, archivos: L });
+    if (c.export_archivos) c.historial.push({ exportado_el: c.exportado_el, export_ruta: c.export_ruta, archivos: c.export_archivos });
+    Object.assign(c, { export_ruta: p.periodo + '/', export_archivos: L.map(f => ({ ...f })), exportado_el: new Date().toISOString(), exportado_por: UID, exportado_por_nombre: 'Edgar Prueba' });
+    return { periodo: p.periodo, export_ruta: c.export_ruta, archivos: L.length, bytes: total, exportado_el: c.exportado_el, hash_mayor: c.hash_mayor, veces: c.historial.length + 1 };
+  },
+  fn_cierre_config(a) {
+    const q = a.p;
+    if (!q || typeof q !== 'object' || Array.isArray(q)) return err9('22023', 'La configuración llega como un objeto JSON.');
+    const sobra = Object.keys(q).filter(k => !['ronda_activa', 'reserva_pct', 'metodo_depreciacion', 'aviso_push'].includes(k));
+    if (sobra.length) return err9('22023', `Clave desconocida en la configuración: ${sobra.join(', ')}.`);
+    if (q.reserva_pct != null && (typeof q.reserva_pct !== 'number' || q.reserva_pct < 0 || q.reserva_pct > 100)) return err9('MX005', 'reserva_pct va de 0 a 100, con dos decimales como mucho.');
+    if ('metodo_depreciacion' in q && !['linea_recta', 'manual'].includes(q.metodo_depreciacion)) return err9('22023', 'metodo_depreciacion es linea_recta o manual (el método libro lo decide el CPA).');
+    for (const k of ['ronda_activa', 'aviso_push']) if (k in q && typeof q[k] !== 'boolean') return err9('22023', 'ronda_activa y aviso_push son true o false.');
+    Object.assign(C9.config, q, { actualizado: new Date().toISOString(), actualizado_por: UID });
+    return { ...C9.config };
+  },
+  fn_activo_alta(a) {
+    const q = a.p || {};
+    const sobra = Object.keys(q).filter(k => !['descripcion', 'placa_serie', 'cuenta', 'fecha_servicio', 'costo', 'residual', 'vida_meses', 'metodo', 'monto_mensual', 'dep_acumulada_inicial', 'asiento_alta_id', 'notas'].includes(k));
+    if (sobra.length) return err9('22023', `Clave desconocida: ${sobra.join(', ')}.`);
+    if (!String(q.descripcion || '').trim()) return err9('22023', 'Todo activo dice qué es (descripcion): «Camioneta Ford F-150 2024», «Taladro magnético».');
+    if (!/^15\d\d$/.test(String(q.cuenta || '')) || q.cuenta === '1590') return err9('MX004', `La cuenta del activo es una 15xx imputable y activa (1510 vehículos, 1520 herramienta, 1530 cómputo, 1540 mejoras), no «${q.cuenta || ''}».`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(q.fecha_servicio || ''))) return err9('22023', 'La fecha en servicio va como AAAA-MM-DD.');
+    const costo = Number(q.costo), residual = Number(q.residual || 0), metodo = q.metodo || C9.config.metodo_depreciacion;
+    if (!(costo > 0)) return err9('MX005', 'El costo es un monto mayor que cero, en centavos.');
+    if (metodo === 'linea_recta' && !(Number.isInteger(Number(q.vida_meses)) && q.vida_meses >= 1 && q.vida_meses <= 600)) return err9('MX005', 'La vida en meses va de 1 a 600 (en línea recta es obligatoria).');
+    if (metodo === 'manual' && !(Number(q.monto_mensual) > 0)) return err9('MX005', 'El método manual pide el monto de cada mes (monto_mensual), mayor que cero.');
+    const act = { id: 'afafafaf-0000-4000-8000-' + String(++C9.n).padStart(12, '0'), descripcion: q.descripcion, placa_serie: q.placa_serie || null, cuenta: q.cuenta, fecha_servicio: q.fecha_servicio, costo, residual,
+      vida_meses: metodo === 'linea_recta' ? Number(q.vida_meses) : null, metodo, monto_mensual: metodo === 'manual' ? Number(q.monto_mensual) : null, dep_acumulada_inicial: Number(q.dep_acumulada_inicial || 0),
+      asiento_alta_id: q.asiento_alta_id || null, estado: 'activo', baja_fecha: null, baja_motivo: null, baja_asiento_id: null, baja_el: null, notas: q.notas || null, creado: new Date().toISOString(), creado_por: UID };
+    C9.activos.push(act);
+    return c9Activo(act);
+  },
+  fn_activo_baja(a) {
+    const act = C9.activos.find(x => x.id === a.p_id);
+    if (!act) return err9('22023', 'No existe ese activo.');
+    if (act.estado === 'baja') return err9('MX008', `«${act.descripcion}» ya está dado de baja (${act.baja_fecha}).`);
+    if (!a.p_fecha || a.p_fecha < act.fecha_servicio) return err9('22023', 'La fecha de la baja no puede ser anterior a la fecha en servicio.');
+    if (String(a.p_motivo || '').trim().length < 3) return err9('22023', 'Una baja dice por qué (motivo).');
+    Object.assign(act, { estado: 'baja', baja_fecha: a.p_fecha, baja_motivo: String(a.p_motivo).trim(), baja_asiento_id: a.p_asiento_id || null, baja_el: new Date().toISOString() });
+    return { ...c9Activo(act), nota: 'Hasta que apuntes el asiento de la baja (Dr 1590 por lo acumulado, Cr 1510 por el costo, 4920 por la diferencia), 1590 sigue contando este activo.' };
+  },
+  fn_depreciacion_plan: a => c9Plan(a.p_periodo),
+  fn_depreciacion_mes(a) {
+    const p = c9Per(a.p_periodo);
+    if (!p || p.tipo !== 'mes') return err9('MX002', `La depreciación se postea por mes (AAAA-MM), no en ${a.p_periodo}.`);
+    if (C9.estado[p.periodo] === 'cerrado') return err9('MX002', `${c9Cap(p.nombre)} ya está cerrado: la depreciación que faltó entra en el mes abierto (un asiento a mano Dr 6950 / Cr 1590, o como ajuste del CPA).`);
+    const ya = C9.deps.filter(d => d.periodo === p.periodo);
+    if (ya.length) return { periodo: p.periodo, activos: ya.length, monto: r2(ya.reduce((s, d) => s + d.monto, 0)), asiento: { id: ya[0].asiento_id, numero: '2026-000004' }, ya_estaba: true, detalle: [],
+      nota: `La depreciación de ${p.nombre} ya estaba posteada (asiento 2026-000004): no se duplica. Si estaba mal, revérsala (fn_reversar) y vuelve a postear.` };
+    const plan = c9Plan(p.periodo).filter(x => x.monto > 0);
+    const asiento = { id: 'aaaaaaaa-0000-4000-8000-0000000000d4', numero: '2026-000004' }, monto = r2(plan.reduce((s, x) => s + x.monto, 0));
+    for (const x of plan) C9.deps.push({ periodo: p.periodo, activo_id: x.activo_id, monto: x.monto, asiento_id: asiento.id });
+    return { periodo: p.periodo, activos: plan.length, monto, asiento: plan.length ? asiento : null, ya_estaba: false, detalle: plan,
+      nota: `Posteada la depreciación de ${p.nombre}: ${usd(monto)} en ${plan.length} activo(s) (asiento 2026-000004, Dr 6950 / Cr 1590).` };
+  },
+  fn_reserva_estimado_marcar(a) {
+    const as = C9_ASIENTOS.find(x => x.id === a.p_asiento);
+    if (!as) return err9('22023', 'No existe ese asiento.');
+    if (C9.estimados.some(e => e.asiento_id === as.id && !e.anulado_el)) return err9('MX008', `El asiento ${as.numero} ya está marcado como estimado pagado.`);
+    const anio = a.p_anio_fiscal != null ? Number(a.p_anio_fiscal) : (as.fecha_contable.slice(5, 7) === '01' ? Number(as.fecha_contable.slice(0, 4)) - 1 : Number(as.fecha_contable.slice(0, 4)));
+    const e = { id: 'eeeeeeee-0000-4000-8000-' + String(++C9.n).padStart(12, '0'), fecha: as.fecha_contable, monto: 1200, asiento_id: as.id, anio_fiscal: anio, nota: a.p_nota || null,
+      creado: new Date().toISOString(), creado_por: UID, anulado_el: null, anulado_por: null, anulado_motivo: null };
+    C9.estimados.push(e);
+    return { ...e, asiento_numero: as.numero };
+  },
+  fn_reserva_estimado_anular(a) {
+    const e = C9.estimados.find(x => x.id === a.p_id);
+    if (!e) return err9('22023', 'No existe ese estimado.');
+    if (e.anulado_el) return err9('MX008', `Ese estimado ya estaba anulado (${e.anulado_motivo}).`);
+    if (String(a.p_motivo || '').trim().length < 3) return err9('22023', 'Anular un estimado dice por qué (motivo).');
+    Object.assign(e, { anulado_el: new Date().toISOString(), anulado_por: UID, anulado_motivo: String(a.p_motivo).trim() });
+    return { ...e };
+  }
+};
 const estado = { controlMal: false, controlFilas: null, fallar: false, casarRondas: 0, concNueva: false, plaidFijada: false, plaidSinVista: false, plaidSinFijar: false, mfaFactores: [], sesionAal: undefined,
   // los interruptores de los estados: el control en rojo, el conteo distinto para una vista, el «Sigue» del tope por reloj (cuenta llamadas; 90 o más = nunca termina),
   // el equipo (no dueño), la apertura sin postear, el balance descuadrado, una vista que no existe en la base, un mayor que no termina donde dice la balanza
@@ -673,10 +965,18 @@ const estado = { controlMal: false, controlFilas: null, fallar: false, casarRond
   c8: false, iaConteo: false, iaCuadreMal: false, iaVieja: false, iaSinLlave: false, iaSinSecreto: false, iaSinFuncion: false, iaBloqueaFuncion: false, iaFalla: null, iaLento: 0,
   // (7c) la cola de fallos de «proponer» (uno por llamada), cuántas ráfagas van a la vez (y el máximo visto) y la preferencia
   // «Proponer sola al abrir la Bandeja» que cada contexto nuevo deja en localStorage ('0', '1', 'quitar' = sin guardar: encendida)
-  iaFallas: [], iaVuelo: 0, iaVueloMax: 0, iaSolaPref: '0', iaNiega: false };
+  iaFallas: [], iaVuelo: 0, iaVueloMax: 0, iaSolaPref: '0', iaNiega: false,
+  // (fase 8) c9 pegado o no: sin él, sus vistas contestan 404 (PGRST205), sus funciones también (PGRST202) y el bucket «cierres» no existe
+  c9: false };
 const llamadas = [], lecturas = []; // lecturas: cada GET a /rest/v1/<vista>?… tal como lo pidió la pantalla
 function tabla(nombre, q) {
   let filas = T[nombre] || [];
+  // (fase 8) las vistas y tablas de c9; el mayor de la apertura y la línea de la IA de octubre; el asiento del pago al IRS
+  if (C9_VISTAS[nombre]) filas = C9_VISTAS[nombre]();
+  if (nombre === 'v_mayor' && estado.c9) filas = filas.concat(C9_MAYOR);
+  if (nombre === 'asientos' && estado.c9) filas = C9_ASIENTOS;
+  // las cuentas de activo fijo (15xx) y su contra-cuenta 1590, que el alta no ofrece
+  if (nombre === 'cuentas' && estado.c9) filas = filas.concat([['1510', 'Vehículos'], ['1520', 'Herramienta y equipo'], ['1590', 'Depreciación acumulada']].map(([codigo, nombre]) => ({ codigo, nombre, tipo: 'activo', regla_obra: 'prohibida', imputable: true, activa: true })));
   if (nombre.startsWith('v_contador_')) filas = estado.c8 && VISTAS_IA[nombre] ? VISTAS_IA[nombre]() : [];
   if (nombre === 'proyectos' && estado.c8) filas = obrasBase();
   // con c8 la bandeja trae además los cinco cargos sin ticket de la IA; lo que ya se clasificó por la función sale
@@ -717,6 +1017,8 @@ function tabla(nombre, q) {
   return filas;
 }
 function rpc(fn, a) {
+  // (fase 8) las funciones de c9: sin c9 pegado, PostgREST no las encuentra
+  if (C9_FN[fn]) return estado.c9 ? C9_FN[fn](a) : { status: 404, error: { code: 'PGRST202', message: `Could not find the function public.${fn} in the schema cache`, details: null, hint: null } };
   if (estado.fallar && /^fn_banco_(casar_con|clasificar|transferencia|ignorar|duplicado)$/.test(fn)) return { error: { code: 'MX008', message: 'La base dijo que no (prueba)' } };
   if (fn === 'fn_banco_control') {
     const hoy = hoyMiami(), desde = hoy.slice(0, 8) + '01';
@@ -900,6 +1202,25 @@ async function simular(ctx, rol) {
       if (estado.estadosFotoRota) return route.abort('failed'); // Storage no contesta (CORS, filtro, caída) con la REST viva
       return route.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify((b.paths || []).map(ruta => ({ path: ruta, signedURL: '/object/sign/fotos/' + ruta + '?token=prueba' }))) });
     }
+    // (fase 8) Storage, el bucket privado «cierres»: subir (nada se pisa: 409 si ya está) y firmar para bajar
+    if (u.pathname.startsWith('/storage/v1/object/cierres/') && req.method() === 'POST') {
+      const ruta = decodeURIComponent(u.pathname.slice('/storage/v1/object/cierres/'.length)), buf = req.postDataBuffer() || Buffer.alloc(0);
+      llamadas.push({ fn: 'storage:subir-cierre', args: { ruta, bytes: buf.length, tipo: req.headers()['content-type'] || '', upsert: req.headers()['x-upsert'] || '' } });
+      if (!estado.c9) return route.fulfill({ status: 400, headers: CORS, contentType: 'application/json', body: JSON.stringify({ statusCode: '404', error: 'Bucket not found', message: 'Bucket not found' }) });
+      if (C9.objetos.has(ruta)) return route.fulfill({ status: 409, headers: CORS, contentType: 'application/json', body: JSON.stringify({ statusCode: '409', error: 'Duplicate', message: 'The resource already exists' }) });
+      C9.objetos.set(ruta, { bytes: buf.length, sha256: sha(buf), tipo: req.headers()['content-type'] || '', texto: buf.toString('utf8') });
+      return route.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify({ Key: 'cierres/' + ruta, Id: 'obj-' + C9.objetos.size }) });
+    }
+    if (u.pathname === '/storage/v1/object/sign/cierres' && req.method() === 'POST') {
+      let b = {}; try { b = JSON.parse(req.postData() || '{}'); } catch { /* vacío */ }
+      llamadas.push({ fn: 'storage:firmar-cierres', args: b });
+      return route.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify((b.paths || []).map(ruta => C9.objetos.has(ruta) ? { path: ruta, signedURL: '/object/sign/cierres/' + ruta + '?token=prueba', error: null } : { path: ruta, signedURL: null, error: 'Object not found' })) });
+    }
+    if (!estado.c9 && /^\/rest\/v1\/(v_cierre_estado|v_cierres|v_ronda_ultima|v_activos_fijos|v_reserva_impuestos|v_dr15_mes|cierre_config|reserva_estimados)$/.test(u.pathname)) {
+      const v = u.pathname.slice('/rest/v1/'.length);
+      lecturas.push(v + u.search);
+      return route.fulfill({ status: 404, headers: CORS, contentType: 'application/json', body: JSON.stringify({ code: 'PGRST205', message: `Could not find the table 'public.${v}' in the schema cache`, details: null, hint: null }) });
+    }
     if (u.pathname.startsWith('/rest/v1/rpc/')) {
       const fn = u.pathname.slice('/rest/v1/rpc/'.length); let args = {};
       try { args = JSON.parse(req.postData() || '{}'); } catch { /* vacío */ }
@@ -931,7 +1252,9 @@ if (FOTOS) fs.mkdirSync(FOTOS, { recursive: true });
 // animations: 'disabled' porque el fullPage encoge el viewport un instante, la media query del lateral cambia y la transición de .15 s salía a medias en la imagen
 const foto = async (p, nombre) => { if (FOTOS) await p.screenshot({ path: path.join(FOTOS, nombre + '.png'), fullPage: true, animations: 'disabled' }); };
 const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' ');
-const PAGS = ['resumen', 'bancos', 'bandeja', 'conciliar', 'movimientos', 'estados', 'cobros', 'conexiones'];
+const PAGS = ['resumen', 'bancos', 'bandeja', 'conciliar', 'movimientos', 'estados', 'cierre', 'cobros', 'conexiones'];
+// (fase 8) la lista de respaldo de js/app.js (CONTA_PAGINAS_FIJAS, por si conta.js no cargó) trae las mismas nueve, «cierre» incluida
+const PAGS_APP = PAGS;
 // cambiar de página por su pestaña: en la computadora (≥ 1024 px) las pestañas están escondidas (las enseña el lateral de app.js), así que el clic es del DOM
 const tab = async (pg, k) => { await pg.locator(`.ct-tab[data-pag="${k}"]`).evaluate(b => b.click()); };
 // esperar a que la pantalla termine de pintar (ni «Cargando…» ni una acción en curso)
@@ -974,7 +1297,7 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
   const mesRegla = (() => { const meses = CORTES.filter(c => c.tipo === 'mes' && c.desde <= HOY).sort((x, y) => y.desde.localeCompare(x.desde)); return (meses.find(c => c.corte >= HOY) || meses[0]).periodo; })();
   const titulo = async () => (await p.locator('#titulo-vista').textContent()).trim();
   ok('Edgar tiene la loseta (escondida en Hoy, como las demás del dueño)', !(await p.locator('#btn-conta').getAttribute('hidden')) );
-  ok('…y la pestaña «Contabilidad» en el lateral con las 8 páginas como subtítulos (conta-<k>, los que da MXP_CONTA.paginas()), y el botón de la barra de abajo', (await p.locator('#lateral [data-lat="conta"]').count()) === 1 &&
+  ok('…y la pestaña «Contabilidad» en el lateral con las 9 páginas como subtítulos (conta-<k>, los que da MXP_CONTA.paginas(): «Cierre del mes» incluida), y el botón de la barra de abajo', (await p.locator('#lateral [data-lat="conta"]').count()) === 1 &&
     JSON.stringify(await p.locator('#lateral [data-lat^="conta-"]').evaluateAll(bs => bs.map(b => b.dataset.lat))) === JSON.stringify(PAGS.map(k => 'conta-' + k)) && (await p.locator('#nav-abajo button[data-nav="conta"]').getAttribute('hidden')) === null);
 
   // ---- La portada («Resumen»): control antes de pintar, las fichas y «Qué atender» ----
@@ -983,16 +1306,16 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
   await p.waitForSelector('#conta-raiz .ct-ficha', { timeout: 8000 });
   ok('Al entrar, la vista de la contabilidad se ve, la página es «Resumen» (la portada) y la pestaña «resumen» está marcada', await p.locator('#vista-conta').isVisible() && (await p.locator('#titulo-vista').textContent()).trim() === 'Resumen' && (await p.locator('.ct-tab[data-pag="resumen"][aria-current="page"]').count()) === 1, await p.locator('#titulo-vista').textContent());
   const pags = await p.evaluate(() => window.MXP_CONTA.paginas().map(x => [x.k, x.nombre, /^<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"/.test(x.svg) && /<\/svg>$/.test(x.svg)]));
-  ok('MXP_CONTA.paginas() da las 8 páginas en su orden, con su nombre y un svg del estilo del menú', JSON.stringify(pags.map(x => x[0])) === JSON.stringify(PAGS) && pags.every(x => x[2]) && pags.map(x => x[1]).join('|') === 'Resumen|Bancos y tarjetas|Bandeja|Conciliar|Movimientos|Estados financieros|Cobros en línea|Conexiones y seguridad', JSON.stringify(pags));
+  ok('MXP_CONTA.paginas() da las 9 páginas en su orden (Cierre del mes después de Estados), con su nombre y un svg del estilo del menú', JSON.stringify(pags.map(x => x[0])) === JSON.stringify(PAGS) && pags.every(x => x[2]) && pags.map(x => x[1]).join('|') === 'Resumen|Bancos y tarjetas|Bandeja|Conciliar|Movimientos|Estados financieros|Cierre del mes|Cobros en línea|Conexiones y seguridad', JSON.stringify(pags));
   ok('La página no repite el título que ya pone la barra de la app: la cabecera trae la línea de cifras y, como aria-label, el nombre', (await p.locator('.ct-pag-h').count()) === 0 && (await p.locator('.ct-pag-cab').getAttribute('aria-label')) === 'Resumen' && (await p.locator('.ct-pag-sub').count()) === 1);
   {
     // la lista de respaldo de app.js (por si conta.js no cargó) lleva los mismos trazos que ICONOS de conta.js: el lateral y las pestañas nunca enseñan iconos distintos para la misma página
     const appJs = fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8'), contaJs = fs.readFileSync(path.join(ROOT, 'js', 'conta.js'), 'utf8');
     const fijos = Object.fromEntries([...appJs.matchAll(/\{ k: "(\w+)", nombre: "[^"]+", svg: SVG_MENU\('([^']*)'\) \}/g)].map(m => [m[1], m[2]]));
     const iconos = Object.fromEntries([...contaJs.matchAll(/^\s+(\w+): svgMenu\('([^']*)'\),?$/gm)].map(m => [m[1], m[2]]));
-    ok('La lista de respaldo CONTA_PAGINAS_FIJAS de app.js trae los mismos 8 trazos que ICONOS de conta.js', Object.keys(fijos).length === 8 && PAGS.every(k => fijos[k] && fijos[k] === iconos[k]), PAGS.filter(k => fijos[k] !== iconos[k]).join(','));
+    ok('La lista de respaldo CONTA_PAGINAS_FIJAS de app.js trae las 9 páginas en el mismo orden y con los mismos trazos que ICONOS de conta.js («Cierre del mes» incluida)', JSON.stringify(Object.keys(fijos)) === JSON.stringify(PAGS_APP) && PAGS_APP.every(k => fijos[k] && fijos[k] === iconos[k]), PAGS_APP.filter(k => fijos[k] !== iconos[k]).join(',') || Object.keys(fijos).join(','));
   }
-  ok('En la computadora (1280 px) las pestañas de arriba van escondidas (las enseña el lateral), pero siguen en el DOM con sus 8 páginas', (await p.locator('.ct-tabs').evaluate(e => getComputedStyle(e).display)) === 'none' && (await p.locator('.ct-tab').count()) === 8 && JSON.stringify(await p.locator('.ct-tab').evaluateAll(bs => bs.map(b => b.dataset.pag))) === JSON.stringify(PAGS));
+  ok('En la computadora (1280 px) las pestañas de arriba van escondidas (las enseña el lateral), pero siguen en el DOM con sus 9 páginas', (await p.locator('.ct-tabs').evaluate(e => getComputedStyle(e).display)) === 'none' && (await p.locator('.ct-tab').count()) === PAGS.length && JSON.stringify(await p.locator('.ct-tab').evaluateAll(bs => bs.map(b => b.dataset.pag))) === JSON.stringify(PAGS));
   await espiar(p);
   const ctrlR0 = desde(n).find(l => l.fn === 'fn_banco_control');
   ok('La portada pidió fn_banco_control(hoy) con las cuatro vistas del banco (v_banco_saldos manda) y fn_estados_control con v_resultados del mes de hoy', !!ctrlR0 && ctrlR0.args.p_periodo === 'hoy' && JSON.stringify(ctrlR0.args.p_vistas) === '["v_banco_saldos","v_banco_bandeja","v_conciliacion","v_banco_movimientos"]' &&
@@ -1009,7 +1332,10 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
   ok(resMes.length ? `«Este mes» trae ingresos ${fmtUS(ingMes.mes)}, costo y gastos (la suma de las secciones que no son ingresos) y el resultado ${fmtUS(netaMes.mes)} de v_resultados, y lleva a Estados` : '«Este mes» sin asientos lo dice en llano (no pinta ceros)',
     resMes.length ? new RegExp('Ingresos' + fmtUS(ingMes.mes).replace(/[$.]/g, '\\$&') + 'Costo y gastos' + fmtUS(resMes.filter(f => f.nivel === 'seccion' && f.seccion !== 'ingresos').reduce((a, f) => a + f.mes, 0)).replace(/[$.]/g, '\\$&') + 'Resultado' + fmtUS(netaMes.mes).replace(/[$.]/g, '\\$&')).test(mesTxt) : /no tiene asientos de resultados todavía/.test(mesTxt) && !/\$0\.00/.test(mesTxt), mesTxt);
   const atn = await p.locator('#ct-atender .ct-atn').allTextContents();
-  ok('«Qué atender»: el código del teléfono no activo (→ Conexiones) y la cuenta de Plaid sin fijar (→ Conexiones); nada de Stripe (su control está en verde)', atn.length === 2 && /El código del teléfono .*no está activo/.test(atn[0]) && /Platypus Bank: 1 cuenta del banco sin fijar/.test(atn[1]) && (await p.locator('#ct-atender .ct-atn button[data-ir="conexiones"]').count()) === 2, atn.join(' | '));
+  // (fase 8) lo más viejo de la bandeja es del 2 oct: desde el 2 nov pasa de 30 días y «Qué atender» lo dice primero (→ Bandeja). La prueba
+  // lo tenía fijo en dos filas y empezó a fallar sola el 2 nov: ahora cuenta con esa fila cuando toca
+  const atnBandeja = diasViejo > 30 ? 1 : 0;
+  ok('«Qué atender»: (lo de más de 30 días en la bandeja, si toca), el código del teléfono no activo (→ Conexiones) y la cuenta de Plaid sin fijar (→ Conexiones); nada de Stripe (su control está en verde) ni de la ronda (sin c9)', atn.length === 2 + atnBandeja && (!atnBandeja || /más de 30 días en la bandeja/.test(atn[0])) && /El código del teléfono .*no está activo/.test(atn[atnBandeja]) && /Platypus Bank: 1 cuenta del banco sin fijar/.test(atn[atnBandeja + 1]) && (await p.locator('#ct-atender .ct-atn button[data-ir="conexiones"]').count()) === 2, atn.join(' | '));
   await foto(p, '0-resumen');
   await p.locator('.ct-ficha[data-ir="bandeja"]').click(); await p.waitForSelector('.ct-mov', { timeout: 8000 });
   const hooks1 = await p.evaluate(() => ({ pag: window.__pag.slice(), vol: window.__vol.slice() }));
@@ -1234,7 +1560,7 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
   const esperarTexto = (sel, re) => p.waitForFunction(([s, r]) => { const e = document.querySelector(s); return e && new RegExp(r).test(e.textContent); }, [sel, re.source], { timeout: 8000 });
   const nBal = T.v_balance_general.filter(f => f.periodo === '2026-10').length;
   nLect = lecturas.length; n = llamadas.length;
-  ok('Las pestañas van en el orden del menú: Resumen, Bancos, Bandeja, Conciliar, Movimientos, Estados, Cobros, Conexiones (cada una con su icono)', JSON.stringify(await p.locator('.ct-tab').evaluateAll(bs => bs.map(b => b.dataset.pag))) === JSON.stringify(PAGS) && (await p.locator('.ct-tab svg').count()) === 8 && /Estados/.test(await p.locator('.ct-tab').nth(5).textContent()));
+  ok('Las pestañas van en el orden del menú: Resumen, Bancos, Bandeja, Conciliar, Movimientos, Estados, Cierre, Cobros, Conexiones (cada una con su icono)', JSON.stringify(await p.locator('.ct-tab').evaluateAll(bs => bs.map(b => b.dataset.pag))) === JSON.stringify(PAGS) && (await p.locator('.ct-tab svg').count()) === PAGS.length && /Estados/.test(await p.locator('.ct-tab').nth(5).textContent()) && /Cierre/.test(await p.locator('.ct-tab').nth(6).textContent()));
   await tab(p, 'estados'); await p.waitForSelector('#ct-est-resultados', { timeout: 8000 });
   ok('Al tocarla el título es «Estados financieros» y aparece la barra de chips', (await titulo()) === 'Estados financieros' && (await p.locator('#ct-est-barra').count()) === 1, await titulo());
   const est0 = await estEst();
@@ -1432,7 +1758,7 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     await q.evaluate(() => document.querySelectorAll('dialog[open]').forEach(d => d.close()));
     await q.locator('#btn-conta').evaluate(b => b.click()); await q.waitForSelector('.ct-tab', { timeout: 8000 });
     const tabsTel = await q.evaluate(() => { const t = document.querySelector('.ct-tabs'); return { display: getComputedStyle(t).display, snap: getComputedStyle(t).scrollSnapType, desliza: t.scrollWidth > t.clientWidth, n: t.querySelectorAll('.ct-tab').length }; });
-    ok('Teléfono (390 px): las 8 pestañas van arriba, a la vista, deslizan con tope (scroll-snap)', tabsTel.display !== 'none' && tabsTel.n === 8 && tabsTel.desliza && /x/.test(tabsTel.snap), JSON.stringify(tabsTel));
+    ok('Teléfono (390 px): las 9 pestañas van arriba, a la vista, deslizan con tope (scroll-snap)', tabsTel.display !== 'none' && tabsTel.n === PAGS.length && tabsTel.desliza && /x/.test(tabsTel.snap), JSON.stringify(tabsTel));
     await tab(q, 'estados'); await q.waitForSelector('#ct-est-resultados', { timeout: 8000 });
     const tabVis = await q.evaluate(() => { const t = document.querySelector('.ct-tabs'), a = t.querySelector('.ct-tab[aria-current="page"]'), T = t.getBoundingClientRect(), A = a.getBoundingClientRect();
       return { pag: a.dataset.pag, izq: Math.round(A.left - T.left), der: Math.round(T.right - A.right), tira: [Math.round(T.left), Math.round(T.right)], iw: window.innerWidth, sw: document.documentElement.scrollWidth }; });
@@ -2686,6 +3012,315 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     estado.c8 = false; estado.iaSolaPref = '0'; estado.iaLento = 0; estado.iaFallas = []; iaReset();
   }
 
+  // ---- El cierre del mes (c9, fase 8): la ronda en «Qué atender», la revisión con lo que detiene y su ir_a, el botón apagado y
+  // encendido, la confirmación mal escrita que no cierra, cerrar → el export subido y registrado con su sha256 (y la huella
+  // del mayor que el README enseña a comprobar, recalculada aquí desde el CSV), descargar, imprimir, MX010, la huella que no
+  // coincide (no exporta) y «Volver a exportar», los activos (alta, depreciar, baja), la reserva sin y con %, el DR-15, el
+  // historial, los ajustes, sin c9, la falla ruidosa de la revisión, y el teléfono, el iPad y la computadora ----
+  {
+    estado.c9 = true; c9Reset();
+    const MES_C = ['', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+    const fLarga = iso => { const [a, m, d] = iso.split('-').map(Number); return `${d} ${MES_C[m]} ${a}`; };
+    const conCodigo = si => { estado.mfaFactores = si ? [{ id: 'f-1', friendly_name: 'Teléfono de Edgar', factor_type: 'totp', status: 'verified' }] : []; estado.sesionAal = si ? 'aal2' : undefined; };
+    const abrirCtx = async (w, codigo) => {
+      conCodigo(codigo);
+      const cx = await b.newContext({ viewport: { width: w, height: w < 700 ? 844 : 1000 }, deviceScaleFactor: w < 1024 ? 2 : 1, isMobile: w < 1024, hasTouch: w < 1024, serviceWorkers: 'block' });
+      await simular(cx, 'dueno');
+      const q = await cx.newPage(); q.on('pageerror', e => errs.push(`cierre ${w}: ` + String(e).slice(0, 160)));
+      await q.goto('http://localhost:8873/index.html'); await q.waitForSelector('#vista-app:not([hidden])', { timeout: 15000 }); await q.waitForTimeout(800);
+      await q.evaluate(() => document.querySelectorAll('dialog[open]').forEach(d => d.close()));
+      await q.locator('#btn-conta').evaluate(x => x.click()); await q.waitForSelector('#conta-raiz .ct-ficha', { timeout: 8000 }); await pintado(q);
+      return { cx, q };
+    };
+    const cie = async (q, sub, periodo) => { await q.evaluate(([s, pe]) => window.MXP_CONTA.ir('cierre', Object.assign({}, s ? { sub: s } : {}, pe ? { periodo: pe } : {})), [sub || null, periodo || null]); await pintado(q); };
+    // la última ronda: el asiento de apertura falta (detiene) y la reserva sin % (aviso); dos en verde
+    C9.ronda = [
+      { id: 898, periodo: '2026-09-APERTURA', orden: 20, control: 'apertura: su asiento de apertura está vivo', nivel: 'detiene', ok: false, detalle: 'Falta el asiento de apertura del 2026-09-30 (o se reversó): cerrada vacía, la balanza de QuickBooks ya no tendría dónde entrar (c2).', que_hacer: 'Carga la balanza de QuickBooks al 30-sep (fn_apertura_balanza_cargar), mapea sus cuentas y postéala (fn_apertura, c4); después audítala.', ir_a: 'estados' },
+      { id: 899, periodo: '2026-09-APERTURA', orden: 30, control: 'cuadre: debe = haber en el período', nivel: 'detiene', ok: true, detalle: '1 asiento y 2 líneas en la apertura (30-sep-2026): debe $25,000.00 = haber $25,000.00.', que_hacer: null, ir_a: 'conexiones' },
+      { id: 1144, periodo: null, orden: 220, control: 'reserva: 1030', nivel: 'aviso', ok: false, detalle: 'Falta el % que fije el CPA: cuando lo diga, guárdalo en Cierre → ajustes (fn_cierre_config, reserva_pct) y aquí saldrá cuánto transferir a la reserva (1030).', que_hacer: 'Pregunta al CPA el % y guárdalo en Cierre → ajustes.', ir_a: 'cierre' },
+      { id: 1145, periodo: null, orden: 222, control: 'reserva: próximo estimado', nivel: 'aviso', ok: true, detalle: 'El próximo impuesto estimado vence el 2027-01-15.', que_hacer: null, ir_a: 'cierre' }
+    ];
+    // ---- sin el código del teléfono (1280 px) ----
+    let { cx, q } = await abrirCtx(1280, false);
+    let n0 = llamadas.length, l0 = lecturas.length;
+    const atnC = await q.locator('#ct-atender .ct-atn').allTextContents();
+    const atnRonda = atnC.filter(t => /La ronda/.test(t));
+    ok('Cierre · la ronda en «Qué atender»: el Resumen lee v_ronda_ultima y pinta sus 2 rojos (lo que detiene primero, con su período y su detalle), cada uno con un botón «Cierre»',
+      atnRonda.length === 2 && /^La ronda de hoy · la apertura: Apertura: su asiento de apertura está vivo \(detiene el cierre\)\.Falta el asiento de apertura del 2026-09-30/.test(atnRonda[0]) && /^La ronda de hoy: Reserva: 1030\./.test(atnRonda[1]) &&
+      (await q.locator('#ct-atender button[data-ir="cierre"]').count()) === 2 && (await q.locator('#ct-atender button[data-ir="cierre"]').first().textContent()).trim() === 'Cierre', atnC.join(' | '));
+    await foto(q, 'cierre-0-resumen-ronda');
+    n0 = llamadas.length; l0 = lecturas.length;
+    await q.locator('#ct-atender button[data-ir="cierre"]').first().click(); await q.waitForSelector('#ct-cie-rev', { timeout: 12000 }); await pintado(q);
+    ok('…y su botón abre «Cierre del mes» (el título de la app, la pestaña y el subtítulo del lateral encendidos)', (await q.locator('#titulo-vista').textContent()).trim() === 'Cierre del mes' && (await q.locator('.ct-tab[data-pag="cierre"][aria-current="page"]').count()) === 1 && (await q.locator('#lateral [data-lat="conta-cierre"][aria-current="page"]').count()) === 1);
+    const rev0 = desde(n0).filter(l => l.fn === 'fn_cierre_revisar');
+    ok('Cierre · al abrir: lee v_cierre_estado, pide fn_cierre_revisar del período que toca (la apertura) y vuelve a leer v_cierre_estado (la foto que la base acaba de guardar) y la ronda', rev0.length === 1 && rev0[0].args.p_periodo === '2026-09-APERTURA' && Object.keys(rev0[0].args).join() === 'p_periodo' &&
+      lecturas.slice(l0).filter(l => /^v_cierre_estado\?/.test(l)).length === 2 && lecturas.slice(l0).some(l => /^v_ronda_ultima\?/.test(l)), JSON.stringify(rev0.map(x => x.args)));
+    const per = await q.locator('.ct-cie-per').allTextContents();
+    ok('Cierre · los períodos: la apertura «Toca cerrar» (1 cosa lo detiene · 3 avisos), octubre «Abierto» sin revisar, y los meses que aún no empiezan no salen', per.length === C9_PER.filter(p => p.desde <= HOY).length && /La apertura \(30-sep-2026\)\s*Toca cerrar\s*1 cosa lo detiene · 3 avisos/.test(per[0]) && /Octubre de 2026\s*Abierto\s*sin revisar todavía/.test(per[1]), per.join(' | '));
+    ok('Cierre · la cabecera dice qué toca: «Toca cerrar la apertura (30-sep-2026) · 1 cosa lo detiene · 3 avisos»', /Toca cerrar la apertura \(30-sep-2026\) · 1 cosa lo detiene · 3 avisos/.test(await texto(q, '.ct-pag-sub')), await texto(q, '.ct-pag-sub'));
+    const det0 = await q.locator('#ct-cie-rev .ct-cie-item.detiene').allTextContents();
+    ok('Cierre · lo que detiene, arriba y en rojo: el control con su detalle en llano, «Qué hacer» y el botón a la página que lo arregla (ir_a → Estados)', det0.length === 1 && /Apertura: su asiento de apertura está vivo/.test(det0[0]) && /Falta el asiento de apertura del 2026-09-30/.test(det0[0]) && /Qué hacer: Carga la balanza de QuickBooks/.test(det0[0]) &&
+      (await q.locator('#ct-cie-rev .ct-cie-item.detiene button[data-ir="estados"]').textContent()).trim() === 'Estados', det0.join(' | '));
+    const nAv = await q.locator('#ct-cie-avisos > .ct-cie-lista > .ct-cie-item.aviso').count(), nVer = await q.locator('#ct-cie-avisos .ct-cie-verdes .ct-cie-item.ok').count();
+    ok('Cierre · los avisos aparte (3 en ámbar, cada uno con su página: Estados, Cobros, Bandeja) y lo que está en verde plegado (6)', nAv === 3 && nVer === 6 && (await q.locator('#ct-cie-avisos details.ct-cie-verdes').getAttribute('open')) === null &&
+      (await q.locator('#ct-cie-avisos > .ct-cie-lista button[data-ir]').evaluateAll(bs => bs.map(x => x.dataset.ir).join())) === 'estados,cobros,bandeja', `${nAv} avisos · ${nVer} en verde`);
+    ok('Cierre · «Cerrar la apertura» apagado mientras algo detiene, y dice por qué', await q.locator('#ct-cie-cerrar').isDisabled() && (await q.locator('#ct-cie-cerrar').textContent()).trim() === 'Cerrar la apertura' && /Se enciende cuando no quede nada en rojo arriba \(1 cosa\)/.test(await q.locator('#ct-cie-porque').textContent()));
+    ok('Cierre · la ronda en la página: cuándo corrió, qué revisó y sus rojos con su nivel (detiene / aviso)', /Corrió el 6 nov 2026 06:45 · revisó la apertura · 4 controles: 1 detiene y 1 aviso en rojo/.test(await texto(q, '#ct-cie-ronda .ct-nota')) && (await q.locator('#ct-cie-ronda .ct-cie-item').count()) === 2 &&
+      /detiene/.test(await texto(q, '#ct-cie-ronda .ct-cie-item.detiene .ct-pill')) && (await q.locator('#ct-cie-ronda .ct-cie-item.aviso button[data-cie-ir="reserva"]').count()) === 1, await texto(q, '#ct-cie-ronda .ct-nota'));
+    await foto(q, 'cierre-1-revision-apertura');
+    await q.locator('#ct-cie-rev button[data-ir="estados"]').click(); await q.waitForSelector('#ct-est-barra', { timeout: 8000 });
+    ok('Cierre · el botón del control lleva a la página que lo arregla (Estados financieros)', (await q.locator('#titulo-vista').textContent()).trim() === 'Estados financieros');
+    // la apertura ya tiene su asiento: nada detiene, pero sin el código del teléfono el botón sigue apagado
+    C9.rojos.aperturaViva = false;
+    await tab(q, 'cierre'); await q.waitForSelector('#ct-cie-rev', { timeout: 12000 }); await pintado(q);
+    ok('Cierre · nada en rojo pero sin el código del teléfono: «Nada detiene…» y el botón sigue apagado, diciendo que falta el código', (await q.locator('#ct-cie-rev .ct-cie-item.detiene').count()) === 0 && /Nada detiene el cierre de la apertura/.test(await texto(q, '#ct-cie-rev')) &&
+      await q.locator('#ct-cie-cerrar').isDisabled() && /activa el código del teléfono/.test(await q.locator('#ct-cie-porque').textContent()));
+    // falla ruidosa: v_cierre_estado no dice lo mismo que la revisión
+    C9.estadoMal = true; n0 = llamadas.length;
+    await q.locator('#ct-cie-revisar').click(); await q.waitForTimeout(200); await pintado(q);
+    ok('Cierre · falla ruidosa: «Volver a revisar» pide otra revisión; si v_cierre_estado no dice lo que trajo, rojo con el detalle (1 / 3 contra 0 / 3), sin botón de cerrar y con los apartados a mano', desde(n0).some(l => l.fn === 'fn_cierre_revisar') && /La revisión guardada no coincide/.test(await texto(q, '.ct-rojo h2')) &&
+      /1 \/ 3/.test(await texto(q, '.ct-rojo')) && /0 \/ 3/.test(await texto(q, '.ct-rojo')) && (await q.locator('#ct-cie-cerrar').count()) === 0 && (await q.locator('.ct-cie-subs .ct-chip').count()) === 6);
+    C9.estadoMal = false;
+    // sin c9 pegado
+    estado.c9 = false;
+    await cie(q, 'cierre');
+    ok('Cierre · sin c9 pegado: «Falta el cierre en la base» en llano (qué pegar y dónde), sin cifras ni botones de cerrar', /Falta el cierre en la base/.test(await texto(q, '.ct-rojo h2')) && /c9-cierre\.sql/.test(await texto(q, '.ct-rojo')) && (await q.locator('.ct-cie-per, #ct-cie-cerrar').count()) === 0);
+    await cie(q, 'activos');
+    ok('…igual en cualquier apartado (Activos fijos)', /Falta el cierre en la base/.test(await texto(q, '.ct-rojo h2')));
+    estado.c9 = true;
+    await cx.close();
+
+    // ---- con el código del teléfono (aal2), 1280 px: cerrar la apertura y exportarla ----
+    ({ cx, q } = await abrirCtx(1280, true));
+    await cie(q, 'cierre');
+    ok('Cierre · con el código y nada en rojo, «Cerrar la apertura» se enciende y avisa que se pide escribir la frase', !(await q.locator('#ct-cie-cerrar').isDisabled()) && /se pide escribir «CERRAR LA APERTURA»/.test(await q.locator('#ct-cie-porque').textContent()));
+    await q.locator('#ct-cie-cerrar').click(); await q.waitForSelector('.ct-cie-confirma', { timeout: 5000 });
+    ok('Cierre · la confirmación fuerte: «no se deshace», qué pasa después (nadie escribe, lo tardío al mes abierto, el export), la frase exacta resaltada y su botón rojo apagado', /cerrarlo no se deshace/.test(await texto(q, '.ct-cie-confirma .ct-form-t')) && (await q.locator('.ct-cie-conse li').count()) === 3 &&
+      (await q.locator('.ct-cie-frase').textContent()) === 'CERRAR LA APERTURA' && await q.locator('#ct-cie-confirmar').isDisabled() && (await q.locator('#ct-cie-confirmar').evaluate(x => x.classList.contains('ct-cie-peligro'))));
+    await foto(q, 'cierre-2-confirmacion');
+    n0 = llamadas.length;
+    await q.fill('.ct-cie-confirma input[name="confirmo"]', 'cerrar la apertura');
+    const apagadoMal = await q.locator('#ct-cie-confirmar').isDisabled();
+    await q.locator('.ct-cie-confirma').evaluate(f => f.requestSubmit()); await q.waitForTimeout(250);
+    ok('Cierre · la frase mal escrita («cerrar la apertura») no cierra: el botón sigue apagado y, aunque se fuerce el envío, se explica y no se manda nada a la base', apagadoMal && /Escribe exactamente «CERRAR LA APERTURA»/.test(await texto(q, '#ct-cie-rev .ct-error')) &&
+      !desde(n0).some(l => l.fn === 'fn_cierre_cerrar') && C9.estado['2026-09-APERTURA'] === 'abierto');
+    await q.fill('.ct-cie-confirma input[name="confirmo"]', '  CERRAR LA APERTURA ');
+    ok('…escrita exacta (los espacios de los lados no cuentan, como en la base), el botón rojo se enciende: «Cerrar la apertura para siempre»', !(await q.locator('#ct-cie-confirmar').isDisabled()) && (await q.locator('#ct-cie-confirmar').textContent()).trim() === 'Cerrar la apertura para siempre' && (await q.locator('#ct-cie-rev .ct-error').count()) === 0);
+    n0 = llamadas.length;
+    await q.locator('#ct-cie-confirmar').click();
+    await esperarLlamada(q, n0, 'fn_cierre_export'); await q.waitForTimeout(200); await pintado(q);
+    const cer = desde(n0).find(l => l.fn === 'fn_cierre_cerrar');
+    const subidas = desde(n0).filter(l => l.fn === 'storage:subir-cierre'), reg = desde(n0).find(l => l.fn === 'fn_cierre_export');
+    ok('Cierre · cerrar manda fn_cierre_cerrar con el período y la frase exacta, y la base lo cierra', !!cer && JSON.stringify(cer.args) === JSON.stringify({ p_periodo: '2026-09-APERTURA', p_confirmo: 'CERRAR LA APERTURA' }) && C9.estado['2026-09-APERTURA'] === 'cerrado', JSON.stringify(cer && cer.args));
+    const carpeta = subidas.length ? subidas[0].args.ruta.replace(/[^/]+$/, '') : '';
+    ok('Cierre · justo después, el export en el navegador: mayor, balanza, estados y README subidos al bucket «cierres» en <periodo>/<fecha-hora de Miami>/, sin pisar nada (x-upsert false)', subidas.length === 4 && /^2026-09-APERTURA\/\d{4}-\d{2}-\d{2}_\d{6}\/$/.test(carpeta) &&
+      JSON.stringify(subidas.map(x => x.args.ruta.slice(carpeta.length))) === JSON.stringify(['mayor-2026-09-APERTURA.csv', 'balanza-2026-09-APERTURA.csv', 'estados-2026-09-APERTURA.html', 'README-2026-09-APERTURA.txt']) &&
+      subidas.every(x => x.args.upsert === 'false' && /charset=utf-8/.test(x.args.tipo)), JSON.stringify(subidas.map(x => x.args.ruta)));
+    const regArch = reg ? reg.args.p_archivos : [];
+    ok('…y registrado con fn_cierre_export(p_periodo, p_archivos): cada archivo con su ruta, el sha256 de los bytes que llegaron al bucket, su tamaño y su tipo', !!reg && Object.keys(reg.args).join() === 'p_periodo,p_archivos' && reg.args.p_periodo === '2026-09-APERTURA' && regArch.length === 4 &&
+      regArch.every(f => C9.objetos.has(f.ruta) && C9.objetos.get(f.ruta).sha256 === f.sha256 && C9.objetos.get(f.ruta).bytes === f.bytes && Object.keys(f).join() === 'ruta,sha256,bytes,tipo') && C9.cierres['2026-09-APERTURA'].export_archivos.length === 4, JSON.stringify(regArch).slice(0, 300));
+    // el CSV del mayor, leído como lo leería el CPA, y la receta del README sobre él
+    const leerCsv = t => { const filas = []; let f = [], c = '', dentro = false;
+      for (let i = 0; i < t.length; i++) { const ch = t[i];
+        if (dentro) { if (ch === '"') { if (t[i + 1] === '"') { c += '"'; i++; } else dentro = false; } else c += ch; }
+        else if (ch === '"') dentro = true; else if (ch === ',') { f.push(c); c = ''; } else if (ch === '\n') { f.push(c); filas.push(f); f = []; c = ''; } else if (ch !== '\r') c += ch; }
+      if (c || f.length) { f.push(c); filas.push(f); } return filas; };
+    const receta = txt => { const [cab, ...lin] = leerCsv(txt.replace(/^﻿/, '')); const col = k => cab.indexOf(k);
+      return { cab, lin, texto: [...lin].sort((x, y) => x[col('fecha')].localeCompare(y[col('fecha')]) || x[col('cadena_pos')] - y[col('cadena_pos')] || x[col('orden')] - y[col('orden')])
+        .map(r => ['numero', 'fecha', 'orden', 'cuenta', 'monto', 'proyecto_id', 'cost_code', 'memo'].map(k => r[col(k)]).join('|')).join('\n'), col }; };
+    const mAp = C9.objetos.get(carpeta + 'mayor-2026-09-APERTURA.csv'), rAp = mAp ? receta(mAp.texto) : { cab: [], lin: [], texto: '', col: () => -1 };
+    ok('Cierre · el CSV del mayor: por cuenta, con saldo corrido, procedencia, sello de la IA y papel; el memo con coma y comillas bien escapado; y la receta del README sobre el CSV da la huella que la base guardó al cerrar', ['saldo_corrido', 'procedencia', 'sello_ia', 'origen_tabla', 'documento_ruta', 'cadena_pos'].every(k => rAp.cab.includes(k)) && rAp.lin.length === 2 &&
+      rAp.lin.some(r => r[rAp.col('memo')] === 'Balanza de QuickBooks, 30-sep "apertura"') && rAp.lin.every(r => /^-?\d+\.\d{2}$/.test(r[rAp.col('monto')])) && sha(Buffer.from(rAp.texto, 'utf8')) === C9.cierres['2026-09-APERTURA'].hash_mayor, rAp.texto);
+    const leeme = (C9.objetos.get(carpeta + 'README-2026-09-APERTURA.txt') || {}).texto || '';
+    ok('…el README lleva la huella del mayor (de cierres), el sha256 de los otros tres archivos, la receta para comprobarla sin la app y que el correo llega después; la balanza cierra con su TOTAL', leeme.includes(C9.cierres['2026-09-APERTURA'].hash_mayor) && regArch.slice(0, 3).every(f => leeme.includes(f.sha256 + '  ' + f.ruta.split('/').pop())) &&
+      /shasum -a 256/.test(leeme) && /numero\|fecha\|orden\|cuenta\|monto\|proyecto_id\|cost_code\|memo/.test(leeme) && /llega después/.test(leeme) && /TOTAL,debe = haber; los saldos suman 0,0\.00,25000\.00,25000\.00,0\.00/.test((C9.objetos.get(carpeta + 'balanza-2026-09-APERTURA.csv') || {}).texto || ''));
+    const estAp = (C9.objetos.get(carpeta + 'estados-2026-09-APERTURA.html') || {}).texto || '';
+    ok('…y los estados, en una página lista para imprimir a PDF, con el período, la huella y la balanza', /<title>Estados 2026-09-APERTURA · Max Power<\/title>/.test(estAp) && estAp.includes(C9.cierres['2026-09-APERTURA'].hash_mayor) && /Balanza de comprobación/.test(estAp) && !/<script/i.test(estAp));
+    ok('Cierre · tras el export: la apertura «Cerrado» con su huella entera, «Exportado el … · 4 archivos en cierres/2026-09-APERTURA/», «Descargar el cierre», «Imprimir los estados» y el correo dicho en llano', /Cerrado/.test(await texto(q, '#ct-cie-rev .ct-cab .ct-pill')) && (await texto(q, '.ct-cie-huella')).includes(C9.cierres['2026-09-APERTURA'].hash_mayor) &&
+      /Exportado el .* · 4 archivos en cierres\/2026-09-APERTURA\//.test(await texto(q, '#ct-cie-export')) && (await q.locator('#ct-cie-export [data-cie-descargar="2026-09-APERTURA"]').count()) === 1 && /función «correo» todavía no tiene esa acción/.test(await texto(q, '#ct-cie-export')), await texto(q, '#ct-cie-export'));
+    await foto(q, 'cierre-3-exportado');
+    n0 = llamadas.length;
+    await q.locator('[data-cie-descargar="2026-09-APERTURA"]').click(); await q.waitForSelector('.ct-cie-archivo[href]', { timeout: 5000 });
+    const firma = desde(n0).find(l => l.fn === 'storage:firmar-cierres'), hrefs = await q.locator('.ct-cie-archivo').evaluateAll(as => as.map(a => a.getAttribute('href')));
+    ok('Cierre · «Descargar el cierre» firma las 4 rutas del export (una hora, como las fotos) y da un enlace por archivo, con su nombre para guardarlo', !!firma && firma.args.expiresIn === 3600 && JSON.stringify(firma.args.paths) === JSON.stringify(regArch.map(f => f.ruta)) && hrefs.length === 4 &&
+      hrefs.every((h, i) => h.includes('/storage/v1/object/sign/cierres/' + regArch[i].ruta + '?token=prueba&download=' + encodeURIComponent(regArch[i].ruta.split('/').pop()))), JSON.stringify(hrefs).slice(0, 300));
+    const [pop] = await Promise.all([cx.waitForEvent('page', { timeout: 8000 }), q.locator('#ct-cie-export [data-cie-imprimir="2026-09-APERTURA"]').click()]);
+    await pop.waitForFunction(() => /Estados 2026-09-APERTURA/.test(document.title), null, { timeout: 8000 }).catch(() => {});
+    ok('Cierre · «Imprimir los estados (PDF)» abre los estados en una ventana con la ventana de imprimir (el camino de imprimir de la app)', /Estados 2026-09-APERTURA · Max Power/.test(await pop.title()));
+    await pop.close();
+
+    // ---- octubre: lo que detiene, los activos (alta → el 92 en rojo → depreciar → baja), la reserva y el DR-15 ----
+    await q.locator('[data-cie-periodo="2026-10"]').click(); await pintado(q);
+    const detO = await q.locator('#ct-cie-rev .ct-cie-item.detiene').evaluateAll(xs => xs.map(x => x.dataset.orden));
+    ok('Cierre · octubre (ahora el que toca): 3 cosas lo detienen (el banco sin clasificar → Bandeja, sin conciliar y sin archivos al 31 → Conciliar) y «Cerrar octubre 2026» apagado', JSON.stringify(detO) === '["40","50","111"]' && (await q.locator('#ct-cie-rev .ct-cie-item.detiene button[data-ir="bandeja"]').count()) === 1 &&
+      (await q.locator('#ct-cie-rev .ct-cie-item.detiene button[data-ir="conciliar"]').count()) === 2 && await q.locator('#ct-cie-cerrar').isDisabled() && (await q.locator('#ct-cie-cerrar').textContent()).trim() === 'Cerrar octubre 2026', JSON.stringify(detO));
+    await cie(q, 'activos');
+    ok('Activos · sin activos: el vacío dice que se cargan con la cédula del CPA (con lo que traían en QuickBooks), y «Dar de alta un activo»', /Se cargan con la cédula del CPA \(la de 2025 más las altas de 2026\), cada uno con la depreciación que ya traía en QuickBooks/.test(await texto(q, '#ct-cie-activos .ct-af-vacio')) && (await q.locator('#ct-af-alta').count()) === 1 && (await q.locator('#ct-af-depreciar').count()) === 0);
+    await q.locator('#ct-af-alta').click(); await q.waitForSelector('#ct-cie-activos form', { timeout: 5000 });
+    const ops15 = await q.locator('#ct-cie-activos select[name="cuenta"] option').evaluateAll(os => os.map(o => o.value).filter(Boolean));
+    ok('Activos · el alta ofrece solo las cuentas 15xx (nunca 1590, la depreciación acumulada) y el método del CPA ya elegido', JSON.stringify(ops15) === '["1510","1520"]' && (await q.locator('#ct-cie-activos select[name="metodo"]').inputValue()) === 'linea_recta', JSON.stringify(ops15));
+    n0 = llamadas.length;
+    await q.locator('#ct-cie-activos form button[type="submit"]').click(); await q.waitForTimeout(200);
+    ok('Activos · sin descripción no se manda nada y se dice qué falta, con un ejemplo', /Falta qué es el activo/.test(await texto(q, '#ct-cie-activos .ct-error')) && !desde(n0).some(l => l.fn === 'fn_activo_alta'));
+    await q.fill('#ct-cie-activos input[name="descripcion"]', 'Camioneta Ford F-150 2024');
+    await q.fill('#ct-cie-activos input[name="placa_serie"]', '1FTFW1E5XPFA12345');
+    await q.selectOption('#ct-cie-activos select[name="cuenta"]', '1510');
+    await q.fill('#ct-cie-activos input[name="fecha_servicio"]', '2026-09-30');
+    await q.fill('#ct-cie-activos input[name="costo"]', '$48,000');
+    await q.fill('#ct-cie-activos input[name="residual"]', '8,000.00');
+    await q.fill('#ct-cie-activos input[name="vida_meses"]', '60');
+    await q.fill('#ct-cie-activos input[name="notas"]', 'cédula del CPA, f12');
+    n0 = llamadas.length;
+    await q.locator('#ct-cie-activos form button[type="submit"]').click(); await esperarLlamada(q, n0, 'fn_activo_alta'); await pintado(q);
+    const alta = desde(n0).find(l => l.fn === 'fn_activo_alta');
+    const ordenado = o => JSON.stringify(Object.keys(o || {}).sort().reduce((x, k) => (x[k] = o[k], x), {}));
+    ok('Activos · el alta manda fn_activo_alta({p}) con las claves del contrato: los montos limpios ($ y comas fuera), la vida en meses como número y el método', !!alta && Object.keys(alta.args).join() === 'p' &&
+      ordenado(alta.args.p) === ordenado({ descripcion: 'Camioneta Ford F-150 2024', cuenta: '1510', fecha_servicio: '2026-09-30', costo: '48000', metodo: 'linea_recta', placa_serie: '1FTFW1E5XPFA12345', residual: '8000.00', vida_meses: 60, notas: 'cédula del CPA, f12' }), JSON.stringify(alta && alta.args));
+    const filaAf = await texto(q, '#ct-cie-activos tr.ct-af');
+    ok('Activos · la lista (v_activos_fijos): el activo con su serie y cuenta, el costo, lo acumulado, el valor en libros y la cuota al mes', /Camioneta Ford F-150 2024/.test(filaAf) && /1FTFW1E5XPFA12345 · 1510 Vehículos · línea recta, 60 meses/.test(filaAf) && /\$48,000\.00/.test(filaAf) && /\$666\.67/.test(filaAf) && /0 meses en el libro/.test(filaAf), filaAf);
+    ok('Activos · falta el asiento de octubre: «Falta la depreciación de octubre de 2026: $666.67 en 1 activo» con «Depreciar octubre de 2026»', /Falta la depreciación de octubre de 2026: \$666\.67 en 1 activo/.test(await texto(q, '.ct-af-dep')) && (await q.locator('#ct-af-depreciar').textContent()).trim() === 'Depreciar octubre de 2026' &&
+      desde(n0).some(l => l.fn === 'fn_depreciacion_plan' && l.args.p_periodo === '2026-10'));
+    await cie(q, 'cierre');
+    ok('Cierre · con el activo vivo, octubre suma «la depreciación del mes posteada» a lo que detiene, con su botón a Activos fijos', (await q.locator('#ct-cie-rev .ct-cie-item.detiene[data-orden="92"] button[data-cie-ir="activos"]').count()) === 1);
+    await q.locator('#ct-cie-rev .ct-cie-item.detiene[data-orden="92"] button[data-cie-ir="activos"]').click(); await pintado(q);
+    ok('…y ese botón abre el apartado de los activos', (await q.locator('.ct-cie-subs [data-cie-sub="activos"][aria-pressed="true"]').count()) === 1 && (await q.locator('#ct-af-depreciar').count()) === 1);
+    n0 = llamadas.length;
+    await q.locator('#ct-af-depreciar').click(); await esperarLlamada(q, n0, 'fn_depreciacion_mes'); await pintado(q);
+    const dep = desde(n0).find(l => l.fn === 'fn_depreciacion_mes');
+    ok('Activos · «Depreciar octubre de 2026» manda fn_depreciacion_mes(2026-10); la base lo postea y la pantalla enseña su nota, el activo con $666.67 acumulados y $47,333.33 en libros, y ya no pide depreciar', !!dep && JSON.stringify(dep.args) === '{"p_periodo":"2026-10"}' &&
+      /Posteada la depreciación de octubre de 2026: \$666\.67 en 1 activo\(s\) \(asiento 2026-000004/.test(await texto(q, '#ct-cie-activos')) && /\$47,333\.33/.test(await texto(q, '#ct-cie-activos tr.ct-af')) && /1 mes en el libro/.test(await texto(q, '#ct-cie-activos tr.ct-af')) &&
+      (await q.locator('#ct-af-depreciar').count()) === 0 && /La depreciación de octubre de 2026 ya está en el libro/.test(await texto(q, '#ct-cie-activos')));
+    await q.locator('#ct-cie-activos [data-af-baja]').click(); await q.waitForSelector('#ct-cie-activos form textarea[name="motivo"]', { timeout: 5000 });
+    ok('Activos · «Dar de baja» pide la fecha (hoy, de entrada) y el motivo', (await q.locator('#ct-cie-activos input[name="fecha"]').inputValue()) === HOY);
+    await q.fill('#ct-cie-activos textarea[name="motivo"]', 'Se vendió la camioneta');
+    n0 = llamadas.length;
+    await q.locator('#ct-cie-activos form button[type="submit"]').click(); await esperarLlamada(q, n0, 'fn_activo_baja'); await pintado(q);
+    const baja = desde(n0).find(l => l.fn === 'fn_activo_baja');
+    ok('Activos · la baja manda fn_activo_baja(p_id, p_fecha, p_motivo) y la fila lo dice, con lo que la base pide: el asiento de la baja va a mano', !!baja && JSON.stringify(baja.args) === JSON.stringify({ p_id: C9.activos[0].id, p_fecha: HOY, p_motivo: 'Se vendió la camioneta' }) &&
+      new RegExp('Dado de baja el ' + fLarga(HOY) + ': Se vendió la camioneta').test(await texto(q, '#ct-cie-activos tr.ct-af')) && /Hasta que apuntes el asiento de la baja \(Dr 1590/.test(await texto(q, '#ct-cie-activos tr.ct-af')) && (await q.locator('#ct-cie-activos [data-af-baja]').count()) === 0, JSON.stringify(baja && baja.args));
+    await foto(q, 'cierre-4-activos');
+    // la reserva
+    await cie(q, 'reserva');
+    const prox = c9Proximo();
+    ok('Reserva · sin el %: «Falta el % que fije el CPA», el mensaje de la base, ninguna cifra inventada (el % dice «falta», sin objetivo) y el próximo estimado con su fecha', /Falta el % que fije el CPA/.test(await texto(q, '.ct-res-titular')) && /guárdalo en Cierre → ajustes/.test(await texto(q, '#ct-cie-reserva')) &&
+      /falta/.test(await texto(q, '#ct-cie-reserva .ct-kpi >> nth=1')) && /sin objetivo todavía/.test(await texto(q, '#ct-cie-reserva .ct-kpi >> nth=3')) && new RegExp('Próximo estimado: ' + fLarga(prox)).test(await texto(q, '.ct-res-prox')), await texto(q, '.ct-res-titular'));
+    await q.locator('#ct-res-pct').click(); await q.waitForSelector('#ct-cie-reserva form input[name="pct"]', { timeout: 5000 });
+    await q.fill('#ct-cie-reserva form input[name="pct"]', '25 %');
+    n0 = llamadas.length;
+    await q.locator('#ct-cie-reserva form button[type="submit"]').click(); await esperarLlamada(q, n0, 'fn_cierre_config'); await pintado(q);
+    const cfgR = desde(n0).find(l => l.fn === 'fn_cierre_config');
+    ok('Reserva · «Guardar el % del CPA» manda fn_cierre_config({p: {reserva_pct: 25}}) y la reserva dice «Transfiere $3,275.00 a la reserva (1030)» con su porqué', !!cfgR && JSON.stringify(cfgR.args) === '{"p":{"reserva_pct":25}}' && (await texto(q, '.ct-res-titular')) === 'Transfiere $3,275.00 a la reserva (1030)' && /el 25\.00 % son \$3,275\.00/.test(await texto(q, '#ct-cie-reserva')), JSON.stringify(cfgR && cfgR.args));
+    const anio = Number(HOY.slice(0, 4));
+    const marcar = async () => {
+      await q.locator('#ct-res-marcar').click(); await q.waitForSelector('#ct-cie-reserva form input[name="numero"]', { timeout: 5000 });
+      await q.fill('#ct-cie-reserva form input[name="numero"]', '2026-000005'); await q.fill('#ct-cie-reserva form input[name="nota"]', 'Q3 2026, IRS'); await q.fill('#ct-cie-reserva form input[name="anio"]', String(anio));
+      await q.locator('#ct-cie-reserva form button[type="submit"]').click();
+    };
+    n0 = llamadas.length; l0 = lecturas.length;
+    await marcar(); await esperarLlamada(q, n0, 'fn_reserva_estimado_marcar'); await pintado(q);
+    const mar = desde(n0).find(l => l.fn === 'fn_reserva_estimado_marcar');
+    ok('Reserva · «Marcar un pago como estimado» busca el asiento por su número y manda fn_reserva_estimado_marcar(p_asiento, p_nota, p_anio_fiscal); la reserva baja a «Transfiere $2,075.00» y el pago sale en la lista', lecturas.slice(l0).some(l => /^asientos\?.*numero=eq\.2026-000005/.test(l)) && !!mar &&
+      JSON.stringify(mar.args) === JSON.stringify({ p_asiento: C9_ASIENTOS[0].id, p_nota: 'Q3 2026, IRS', p_anio_fiscal: anio }) && (await texto(q, '.ct-res-titular')) === 'Transfiere $2,075.00 a la reserva (1030)' && (await q.locator('#ct-cie-estimados .ct-res-est').count()) === 1, JSON.stringify(mar && mar.args));
+    n0 = llamadas.length;
+    await marcar(); await esperarLlamada(q, n0, 'fn_reserva_estimado_marcar'); await q.waitForTimeout(200);
+    ok('Reserva · marcar dos veces el mismo pago: la base dice que no (MX008) y la pantalla lo enseña en la forma, sin repintar', /El asiento 2026-000005 ya está marcado como estimado pagado/.test(await texto(q, '#ct-cie-reserva .ct-error')) && C9.estimados.length === 1);
+    await q.locator('#ct-cie-estimados [data-res-anular]').click(); await q.waitForSelector('#ct-cie-estimados form textarea[name="motivo"]', { timeout: 5000 });
+    await q.fill('#ct-cie-estimados form textarea[name="motivo"]', 'Era el pago del 1120-S, no un estimado');
+    n0 = llamadas.length;
+    await q.locator('#ct-cie-estimados form button[type="submit"]').click(); await esperarLlamada(q, n0, 'fn_reserva_estimado_anular'); await pintado(q);
+    const anu = desde(n0).find(l => l.fn === 'fn_reserva_estimado_anular');
+    ok('Reserva · «Anular» manda fn_reserva_estimado_anular(p_id, p_motivo): el estimado queda en «Anulados» y la reserva vuelve a «Transfiere $3,275.00»', !!anu && JSON.stringify(anu.args) === JSON.stringify({ p_id: C9.estimados[0].id, p_motivo: 'Era el pago del 1120-S, no un estimado' }) &&
+      (await texto(q, '.ct-res-titular')) === 'Transfiere $3,275.00 a la reserva (1030)' && (await q.locator('#ct-cie-estimados > .ct-cie-lista .ct-res-est').count()) === 0 && (await q.locator('#ct-cie-estimados .ct-cie-verdes .ct-res-est.anulado').count()) === 1);
+    await foto(q, 'cierre-5-reserva');
+    // el DR-15
+    await cie(q, 'dr15');
+    const dr = await q.locator('#ct-cie-dr15 tbody tr').evaluateAll(trs => trs.map(t => t.dataset.periodo));
+    ok('DR-15 · una fila por mes ya empezado (el más reciente arriba): el use tax con su base y lo de 2300, y las ventas gravables y el sales tax cobrado como «aún no se sabe», con la nota en llano', JSON.stringify(dr) === JSON.stringify(C9_PER.filter(p => p.tipo === 'mes' && p.desde <= HOY).map(p => p.periodo).reverse()) &&
+      /\$840\.00\s*2 compras/.test(await texto(q, '#ct-cie-dr15 tr[data-periodo="2026-10"]')) && (await q.locator('#ct-cie-dr15 tr[data-periodo="2026-10"] .ct-cie-nose').count()) === 2 && /llegan con f10/.test(await texto(q, '#ct-cie-dr15')) && /no es un cero/.test(await texto(q, '#ct-cie-dr15')), JSON.stringify(dr));
+    await cx.close();
+
+    // ---- el teléfono (390), el iPad (820) y la computadora (1280): cada apartado sin desplazamiento lateral ----
+    for (const w of [390, 820, 1280]) {
+      ({ cx, q } = await abrirCtx(w, true));
+      const mal = []; let tabla = null;
+      for (const s of ['cierre', 'activos', 'reserva', 'dr15', 'historial', 'ajustes']) {
+        await cie(q, s, s === 'cierre' ? '2026-10' : null); await q.waitForTimeout(150);
+        const m = await q.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth, rojo: !!document.querySelector('#conta-raiz .ct-rojo'), thead: (() => { const t = document.querySelector('.ct-cie-tabla thead'); return t ? getComputedStyle(t).display : null; })() }));
+        if (s === 'dr15') tabla = m.thead;
+        if (m.sw > m.iw + 1 || m.rojo) mal.push(`${s}: ${m.sw} > ${m.iw}${m.rojo ? ' (rojo)' : ''}`);
+        await foto(q, `cierre-${w}-${s}`);
+      }
+      // la apertura cerrada y exportada, con su descarga abierta; y la confirmación abierta (octubre, con lo que detiene apagado de mentira)
+      await cie(q, 'cierre', '2026-09-APERTURA');
+      await q.locator('[data-cie-descargar="2026-09-APERTURA"]').click(); await q.waitForSelector('.ct-cie-archivo[href]', { timeout: 5000 }).catch(() => {});
+      const mc = await q.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth }));
+      if (mc.sw > mc.iw + 1) mal.push(`cerrado: ${mc.sw} > ${mc.iw}`);
+      await foto(q, `cierre-${w}-cerrado`);
+      // (las siete columnas del DR-15 y de los activos no caben en el iPad: se apilan hasta 1023 px, de tres en tres)
+      ok(`Cierre · ${w} px: los seis apartados y el período cerrado con su descarga, sin desplazamiento lateral ni rojos${w < 1024 ? ' (y la tabla del DR-15 apilada: sin cabecera)' : ' (la tabla del DR-15 con su cabecera)'}`, !mal.length && (w < 1024 ? tabla === 'none' : tabla !== 'none' && tabla !== null), mal.join(' | ') || tabla);
+      if (w === 390) {
+        const tv = await q.evaluate(() => { const t = document.querySelector('.ct-tabs'), a = t.querySelector('.ct-tab[aria-current="page"]'), T = t.getBoundingClientRect(), A = a.getBoundingClientRect(); return { pag: a.dataset.pag, izq: Math.round(A.left - T.left), der: Math.round(T.right - A.right) }; });
+        ok('Teléfono · la pestaña «Cierre» se ve entera dentro de la tira de pestañas', tv.pag === 'cierre' && tv.izq >= 14 && tv.der >= 14, JSON.stringify(tv));
+        Object.assign(C9.rojos, { banco40: false, conc50: false, archivos111: false });
+        await cie(q, 'cierre', '2026-10');
+        await q.locator('#ct-cie-cerrar').click(); await q.waitForSelector('.ct-cie-confirma', { timeout: 5000 });
+        await q.fill('.ct-cie-confirma input[name="confirmo"]', 'CERRAR OCTUBRE 2026');
+        const mf = await q.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth, b: Math.round(document.querySelector('#ct-cie-confirmar').getBoundingClientRect().right) }));
+        ok('Teléfono · la confirmación de «Cerrar octubre 2026» cabe en 390 px (la frase, el campo y el botón rojo)', mf.sw <= mf.iw + 1 && mf.b <= mf.iw, JSON.stringify(mf));
+        await foto(q, 'cierre-390-confirmacion');
+        Object.assign(C9.rojos, { banco40: true, conc50: true, archivos111: true });
+      }
+      await cx.close();
+    }
+
+    // ---- 1280 px otra vez: MX010, la huella que no coincide y «Volver a exportar», el historial y los ajustes ----
+    ({ cx, q } = await abrirCtx(1280, true));
+    Object.assign(C9.rojos, { banco40: false, conc50: false, archivos111: false });
+    await cie(q, 'cierre', '2026-10');
+    ok('Cierre · octubre sin nada en rojo: «Cerrar octubre 2026» encendido', !(await q.locator('#ct-cie-cerrar').isDisabled()) && (await q.locator('#ct-cie-rev .ct-cie-item.detiene').count()) === 0);
+    const cerrarOct = async () => {
+      await q.locator('#ct-cie-cerrar').click(); await q.waitForSelector('.ct-cie-confirma', { timeout: 5000 });
+      await q.fill('.ct-cie-confirma input[name="confirmo"]', 'CERRAR OCTUBRE 2026'); await q.locator('#ct-cie-confirmar').click();
+    };
+    C9.mx010 = true; n0 = llamadas.length;
+    await cerrarOct(); await esperarLlamada(q, n0, 'fn_cierre_cerrar'); await q.waitForSelector('#ct-cie-error', { timeout: 8000 }).catch(() => {}); await pintado(q);
+    const e10 = await texto(q, '#ct-cie-error');
+    ok('Cierre · MX010 (la base, al cerrar con el libro quieto, encontró algo nuevo): «No se cerró», la frase de la base, la lista en llano con «Qué hacer», lo que pasó en palabras y sin la consulta SQL de la pista (es para el SQL Editor); octubre sigue abierto y la revisión ya lo trae en rojo',
+      /No se cerró\. No se cierra octubre de 2026: 1 cosa\(s\) lo detienen\./.test(e10) && /40\) banco: todo lo del mes casado o clasificado: 7 movimiento\(s\)/.test(e10) && /Qué hacer: Abre la Bandeja/.test(e10) && /entró o cambió después de la revisión/.test(e10) && !/La base dice|fn_cierre_revisar|select \*/.test(e10) &&
+      C9.estado['2026-10'] === 'abierto' && (await q.locator('#ct-cie-rev .ct-cie-item.detiene[data-orden="40"]').count()) === 1 && await q.locator('#ct-cie-cerrar').isDisabled() && desde(n0).filter(l => l.fn === 'fn_cierre_revisar').length >= 1, e10);
+    await foto(q, 'cierre-6-mx010');
+    C9.rojos.banco40 = false; C9.hashMal = true;
+    await q.locator('#ct-cie-revisar').click(); await q.waitForTimeout(200); await pintado(q);
+    n0 = llamadas.length;
+    await cerrarOct(); await esperarLlamada(q, n0, 'fn_cierre_cerrar'); await q.waitForSelector('.ct-cie-export-err', { timeout: 10000 }).catch(() => {}); await pintado(q);
+    ok('Cierre · la huella que no coincide: octubre se cierra, pero si el mayor que baja no da la huella guardada al cerrar, no sube nada ni registra, lo dice en llano y queda «Volver a exportar»', C9.estado['2026-10'] === 'cerrado' &&
+      !desde(n0).some(l => l.fn === 'storage:subir-cierre' || l.fn === 'fn_cierre_export') && /no da la huella que la base guardó al cerrar/.test(await texto(q, '.ct-cie-export-err')) && (await q.locator('[data-cie-exportar="2026-10"]').count()) === 1, await texto(q, '#ct-cie-export'));
+    C9.hashMal = false; C9.cierres['2026-10'].hash_mayor = c9Huella('2026-10').hash;
+    n0 = llamadas.length;
+    await q.locator('[data-cie-exportar="2026-10"]').click(); await esperarLlamada(q, n0, 'fn_cierre_export'); await q.waitForTimeout(200); await pintado(q);
+    const subOct = desde(n0).filter(l => l.fn === 'storage:subir-cierre'), carpOct = subOct.length ? subOct[0].args.ruta.replace(/[^/]+$/, '') : '';
+    const mOct = C9.objetos.get(carpOct + 'mayor-2026-10.csv'), rOct = mOct ? receta(mOct.texto) : { lin: [], texto: '', col: () => -1 };
+    ok('Cierre · «Volver a exportar» (octubre cerrado sin export): sube sus 4 archivos a su carpeta y los registra; su CSV lleva la línea de la IA con su sello y da la huella del cierre', subOct.length === 4 && /^2026-10\/\d{4}-\d{2}-\d{2}_\d{6}\/$/.test(carpOct) && desde(n0).some(l => l.fn === 'fn_cierre_export' && l.args.p_periodo === '2026-10') &&
+      rOct.lin.length === 9 && rOct.lin.some(r => r[rOct.col('sello_ia')] === 'IA (aprobada por Edgar)' && r[rOct.col('procedencia')] === 'IA aprobada') && sha(Buffer.from(rOct.texto, 'utf8')) === C9.cierres['2026-10'].hash_mayor && /Exportado el/.test(await texto(q, '#ct-cie-export')), `${subOct.length} · ${rOct.lin.length}`);
+    await cie(q, 'historial');
+    const hist = await q.locator('.ct-hist').evaluateAll(xs => xs.map(x => x.dataset.periodo));
+    ok('Historial · los dos cierres, el más reciente arriba: período, quién y cuándo, la huella corta, exportado y «Descargar» (v_cierres)', JSON.stringify(hist) === '["2026-10","2026-09-APERTURA"]' && /Cerrado el .* por Edgar Prueba/.test(await texto(q, '.ct-hist >> nth=0')) &&
+      (await texto(q, '.ct-hist >> nth=0')).includes(C9.cierres['2026-10'].hash_mayor.slice(0, 12)) && (await q.locator('.ct-hist [data-cie-descargar]').count()) === 2 && (await q.locator('.ct-hist .ct-pill.ok', { hasText: 'exportado' }).count()) === 2, JSON.stringify(hist));
+    n0 = llamadas.length;
+    await q.locator('.ct-hist[data-periodo="2026-10"] [data-cie-descargar]').click(); await q.waitForSelector('.ct-hist[data-periodo="2026-10"] .ct-cie-archivo[href]', { timeout: 5000 });
+    ok('Historial · «Descargar» de un cierre firma sus archivos ahí mismo', desde(n0).some(l => l.fn === 'storage:firmar-cierres' && l.args.paths.every(r => r.startsWith('2026-10/'))) && (await q.locator('.ct-hist[data-periodo="2026-10"] .ct-cie-archivo').count()) === 4);
+    await cie(q, 'ajustes');
+    n0 = llamadas.length;
+    await q.locator('#ct-cie-ajustes-form button[type="submit"]').click(); await q.waitForTimeout(200);
+    ok('Ajustes · sin cambios no se manda nada («No cambiaste nada»)', /No cambiaste nada/.test(await texto(q, '#ct-cie-ajustes .ct-error')) && !desde(n0).some(l => l.fn === 'fn_cierre_config'));
+    await q.locator('#ct-cie-ajustes input[name="aviso_push"]').uncheck();
+    await q.locator('#ct-cie-ajustes-form button[type="submit"]').click(); await esperarLlamada(q, n0, 'fn_cierre_config'); await pintado(q);
+    const aj = desde(n0).find(l => l.fn === 'fn_cierre_config');
+    ok('Ajustes · apagar los avisos al teléfono manda solo lo que cambió (fn_cierre_config({p: {aviso_push: false}})) y la cabecera lo dice', !!aj && JSON.stringify(aj.args) === '{"p":{"aviso_push":false}}' && /avisos al teléfono no/.test(await texto(q, '.ct-pag-sub')) && /reserva 25 %/.test(await texto(q, '.ct-pag-sub')), JSON.stringify(aj && aj.args));
+    await cx.close();
+    conCodigo(false); estado.c9 = false;
+  }
+
   // ---- Sin señal ----
   await ctx.setOffline(true);
   await tab(p, 'bancos'); await p.waitForSelector('.ct-rojo', { timeout: 8000 });
@@ -2700,6 +3335,8 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     // tarjeta (la rutina, el marcador, el interruptor) y sus reglas («Proponer sola» apagado: las fotos de la cadena son las de ia7c-1-*)
     estado.mfaFactores = [{ id: 'f-1', friendly_name: 'Teléfono de Edgar', factor_type: 'totp', status: 'verified' }]; estado.sesionAal = 'aal2'; estado.stripeDeposito = true;
     estado.c8 = true; iaReset(true, true);
+    // (fase 8) c9 pegado: «Cierre del mes» con lo que dejaron las escenas del cierre (la apertura y octubre cerrados y exportados, un activo dado de baja)
+    estado.c9 = true;
     for (const w of [390, 820, 1280]) {
       const cx = await b.newContext({ viewport: { width: w, height: w < 700 ? 844 : 1000 }, deviceScaleFactor: w < 1024 ? 2 : 1, isMobile: w < 1024, hasTouch: w < 1024, serviceWorkers: 'block' });
       await simular(cx, 'dueno');
@@ -2718,7 +3355,7 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
       }
       await cx.close();
     }
-    estado.mfaFactores = []; estado.sesionAal = undefined; estado.stripeDeposito = false; estado.c8 = false; iaReset();
+    estado.mfaFactores = []; estado.sesionAal = undefined; estado.stripeDeposito = false; estado.c8 = false; estado.c9 = false; iaReset();
   }
   ok('Sin errores de JavaScript en la página', errs.length === 0, errs.join(' | '));
   await b.close(); srv.close();

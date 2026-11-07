@@ -36,11 +36,19 @@
 // una obra «fuerte» (≥ 80 %) sale elegida, las demás se eligen de un toque
 // entre las de sus pistas (obras_top), y el marcador del mes dice cuánto
 // acierta de verdad.
+// Y el cierre del mes (c9, fase 8: v_cierre_estado, v_cierres, v_ronda_ultima,
+// v_activos_fijos, v_reserva_impuestos, v_dr15_mes; fn_cierre_revisar,
+// fn_cierre_cerrar, fn_cierre_export y las de activos, reserva y ajustes): la
+// revisión de lo que detiene, el cierre con la confirmación escrita, el
+// export al bucket privado «cierres» con su huella, la ronda de cada mañana
+// (sus rojos van a «Qué atender»), los activos fijos, la reserva de
+// impuestos, el DR-15 y el historial. La cabecera de su sección lo cuenta.
 //
 // Cómo está organizada (v290, «que se parezca a un programa de contabilidad»):
 // una portada («Resumen») con las cifras y lo que hay que atender, y una
 // página por tarea: Bancos y tarjetas, Bandeja (el bank feed), Conciliar,
-// Movimientos, Estados financieros, Cobros en línea y Conexiones y seguridad
+// Movimientos, Estados financieros, Cierre del mes (desde la fase 8), Cobros
+// en línea y Conexiones y seguridad
 // (el código del teléfono, Plaid y la conexión con Stripe). En el teléfono y
 // el iPad las pestañas van arriba; en la computadora las enseña el lateral de
 // la app (js/app.js) con MXP_CONTA.paginas() y los hooks pagina() y volver().
@@ -83,12 +91,17 @@
     cadena: null, iaSola: { parada: false, memo: null },
     // Estados financieros: qué estado (sub), qué período, la bajada cuenta → asiento,
     // el método del flujo, la caché de v_cortes (con el día en que se leyó) y la serie contra el doble pintado
-    est: { sub: "resultados", periodo: null, cuenta: null, asiento: null, metodo: "directo", cortes: null, cortesDia: null, todos: false, avisoHoy: false, serie: 0 }
+    est: { sub: "resultados", periodo: null, cuenta: null, asiento: null, metodo: "directo", cortes: null, cortesDia: null, todos: false, avisoHoy: false, serie: 0 },
+    // El cierre del mes (c9): qué apartado (sub), qué período se mira, las filas de v_cierre_estado, la serie contra el doble pintado,
+    // el último error del cierre para explicarlo una vez (MX010), qué período se está exportando, el error de su export,
+    // y las notas que la base devolvió (la baja de un activo, la depreciación del mes) para enseñarlas tras repintar
+    cie: { sub: "cierre", periodo: null, estado: null, serie: 0, error: null, exportando: null, exportErr: {}, notas: {} }
   };
   // Las páginas, en el orden del menú. TITULOS va en el membrete de la app y en el lateral; PESTANAS, corto, en las pestañas del teléfono
-  const ORDEN = ["resumen", "bancos", "bandeja", "conciliar", "movimientos", "estados", "cobros", "conexiones"];
-  const TITULOS = { resumen: "Resumen", bancos: "Bancos y tarjetas", bandeja: "Bandeja", conciliar: "Conciliar", movimientos: "Movimientos", estados: "Estados financieros", cobros: "Cobros en línea", conexiones: "Conexiones y seguridad" };
-  const PESTANAS = { resumen: "Resumen", bancos: "Bancos", bandeja: "Bandeja", conciliar: "Conciliar", movimientos: "Movimientos", estados: "Estados", cobros: "Cobros", conexiones: "Conexiones" };
+  // (fase 8) «Cierre del mes» va después de los estados: es lo último del mes, con lo de arriba ya hecho
+  const ORDEN = ["resumen", "bancos", "bandeja", "conciliar", "movimientos", "estados", "cierre", "cobros", "conexiones"];
+  const TITULOS = { resumen: "Resumen", bancos: "Bancos y tarjetas", bandeja: "Bandeja", conciliar: "Conciliar", movimientos: "Movimientos", estados: "Estados financieros", cierre: "Cierre del mes", cobros: "Cobros en línea", conexiones: "Conexiones y seguridad" };
+  const PESTANAS = { resumen: "Resumen", bancos: "Bancos", bandeja: "Bandeja", conciliar: "Conciliar", movimientos: "Movimientos", estados: "Estados", cierre: "Cierre", cobros: "Cobros", conexiones: "Conexiones" };
   // el icono de cada página, del mismo trazo que los del menú de la app (24 × 24, línea de 1.8)
   const svgMenu = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
   const ICONOS = {
@@ -98,6 +111,7 @@
     conciliar: svgMenu('<path d="M4 7h7M4 12h7M4 17h7"/><path d="M14 12.5l2.5 2.5L21 10"/>'),
     movimientos: svgMenu('<path d="M4 8h14M15 5l3 3-3 3"/><path d="M20 16H6M9 13l-3 3 3 3"/>'),
     estados: svgMenu('<path d="M5 3h9l5 5v13H5z"/><path d="M14 3v5h5"/><path d="M8.5 17v-3M12 17v-6M15.5 17v-4"/>'),
+    cierre: svgMenu('<rect x="4" y="10.5" width="16" height="10.5" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><path d="M12 14.5v2.5"/>'),
     cobros: svgMenu('<circle cx="12" cy="12" r="9"/><path d="M12 6.5v11M9.5 9.5h3.5a1.75 1.75 0 0 1 0 3.5h-2a1.75 1.75 0 0 0 0 3.5H15"/>'),
     conexiones: svgMenu('<path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6z"/><path d="M9.5 12l2 2 3.5-3.5"/>')
   };
@@ -120,7 +134,7 @@
     r.querySelectorAll(".ct-tab").forEach(b => {
       const activa = b.dataset.pag === S.pagina;
       b.setAttribute("aria-current", activa ? "page" : "false");
-      // con ocho pestañas la activa puede quedar fuera del borde del teléfono: se trae al centro de la tira
+      // con nueve pestañas la activa puede quedar fuera del borde del teléfono: se trae al centro de la tira
       // (con «nearest» el tope de la tira volvía a alinear la anterior y dejaba la activa cortada por el borde)
       if (activa && typeof b.scrollIntoView === "function") b.scrollIntoView({ inline: "center", block: "nearest" });
     });
@@ -166,6 +180,8 @@
       if (opciones.sub !== undefined || opciones.periodo !== undefined) { S.est.cuenta = null; S.est.asiento = null; }
       else if (opciones.cuenta !== undefined && opciones.asiento === undefined) S.est.asiento = null;
     }
+    // el cierre: qué apartado y qué período (sin opciones, el último que se miró)
+    if (pag === "cierre") for (const k of ["sub", "periodo"]) if (opciones[k] !== undefined) S.cie[k] = opciones[k];
     marcarPestana();
     S.hooks.titulo(KICKER, TITULOS[pag]);
     S.hooks.pagina(pag);
@@ -261,7 +277,7 @@
   async function pintarResumen() {
     cargando("Controlando con la base…");
     if (!navigator.onLine) return sinSenal(pintarResumen);
-    let lista, suaves, mes, stripeCtl = [], iaCtl = [];
+    let lista, suaves, mes, stripeCtl = [], iaCtl = [], ronda = [];
     try {
       lista = await leerSaldos();
       const vistas = Object.keys(PAGINA_VISTA);
@@ -278,6 +294,8 @@
       if (S.stripe) stripeCtl = await DB._leer("v_stripe_control?select=*&order=orden.asc").catch(e => { if (esFalloDeRed(e)) throw e; return []; });
       // el control de la IA contable (c8); sin c8 (o si no contesta) no hay nada que atender de ella
       iaCtl = await DB._leer("v_contador_control?select=*&order=orden.asc").catch(e => { if (esFalloDeRed(e)) throw e; return []; });
+      // la ronda de cada mañana (c9): sus rojos van a «Qué atender»; sin c9 (o si no contesta) no hay nada que atender de ella
+      ronda = await DB._leer("v_ronda_ultima?select=*&order=periodo.asc,orden.asc").catch(e => { if (esFalloDeRed(e)) throw e; return []; });
       mes = await leerMes();
     } catch (err) { return pintarError(err, pintarResumen); }
     if (S.pagina !== "resumen") return;
@@ -324,12 +342,16 @@
       else if (f.nivel === "cuadre" && f.ok !== true && CUADRES_IA_A_LA_VISTA.includes(Number(f.orden))) atender.push({ txt: `${plural(nOk(f.filas) || 1, "propuesta de la IA trae una obra que ya no está activa", "propuestas de la IA traen una obra que ya no está activa")}: en la Bandeja, elige otra obra al aprobarla o di «No es eso».`, det: f.detalle, ir: "bandeja" });
       else if (f.nivel === "cuadre" && f.ok !== true) atender.push({ txt: `La IA contable no cuadra (${String(f.control || "").replace(/^(ia|vista): /, "")}): la Bandeja no pinta sus propuestas hasta que cuadre.`, det: f.detalle, ir: "bandeja" });
     }
+    // (fase 8) lo que la ronda de la mañana dejó en rojo: lo que detiene el cierre primero; tres a la vista y el resto en Cierre del mes
+    const rojosRonda = rojosDeRonda(ronda);
+    for (const f of rojosRonda.slice(0, 3)) atender.push({ txt: `${rondaDe(f.fecha)}${f.periodo ? ` · ${nombrePer(f.periodo)}` : ""}: ${controlTxt(f.control)}${f.nivel === "detiene" ? " (detiene el cierre)" : ""}.`, det: f.detalle, ir: "cierre", sub: "cierre" });
+    if (rojosRonda.length > 3) atender.push({ txt: `…y ${plural(rojosRonda.length - 3, "rojo más", "rojos más")} de la ronda: la lista entera está en Cierre del mes.`, ir: "cierre", sub: "cierre" });
     main().innerHTML = cabPagina("Resumen", `${plural(vis.length, "cuenta", "cuentas")} · ${pend ? `<b>${plural(pend, "movimiento espera", "movimientos esperan")}</b> en la bandeja` : "la bandeja está al día"} · hoy, ${fechaLarga(hoyMiami())}`) + fichas +
       `<section class="ct-card ct-atender${atender.length ? "" : " ok"}" id="ct-atender"><h2>Qué atender</h2>
-        ${atender.length ? `<ul class="ct-atn-lista">${atender.map(a => `<li class="ct-atn"><div class="ct-atn-txt">${esc(a.txt)}${a.det ? `<small>${esc(a.det)}</small>` : ""}</div><button type="button" class="accion secundaria chica" data-ir="${a.ir}">${esc(PESTANAS[a.ir])}</button></li>`).join("")}</ul>`
+        ${atender.length ? `<ul class="ct-atn-lista">${atender.map(a => `<li class="ct-atn"><div class="ct-atn-txt">${esc(a.txt)}${a.det ? `<small>${esc(a.det)}</small>` : ""}</div><button type="button" class="accion secundaria chica" data-ir="${a.ir}"${a.sub ? ` data-ir-sub="${esc(a.sub)}"` : ""}>${esc(PESTANAS[a.ir])}</button></li>`).join("")}</ul>`
           : `<p class="ct-nota">Nada urgente: lo que espera en la bandeja no pasa de 30 días, las cuentas no tienen alarmas y las conexiones están bien.</p>`}
       </section>`;
-    main().querySelectorAll("[data-ir]").forEach(b => b.addEventListener("click", () => ir(b.dataset.ir)));
+    main().querySelectorAll("[data-ir]").forEach(b => b.addEventListener("click", () => ir(b.dataset.ir, b.dataset.irSub ? { sub: b.dataset.irSub } : {})));
   }
   // El mes en curso para la portada: v_cortes dice qué período es, fn_estados_control lo controla y v_resultados trae las secciones.
   // Devuelve { corte, ingresos, gastos, resultado } o { vacio } en llano, o { err } si el control no cuadra (sin señal, se lanza).
@@ -3310,7 +3332,937 @@
     engancharBotones();
   }
 
-  const PAGINAS = { resumen: pintarResumen, bancos: pintarBancos, bandeja: pintarBandeja, conciliar: pintarConciliar, movimientos: pintarMovimientos, estados: pintarEstados, cobros: pintarCobros, conexiones: pintarConexiones };
+  // ============================================================
+  // EL CIERRE DEL MES (c9, fase 8) — docs/conta/c9-cierre.sql y
+  // docs/conta/OPERACION.md. Una página con seis apartados (chips, como
+  // los de Estados): el cierre, los activos fijos, la reserva de
+  // impuestos, el DR-15, el historial y los ajustes. Manda la base:
+  //   · LA REVISIÓN. Al abrir, la pantalla pide fn_cierre_revisar del
+  //     período que toca (el «siguiente» de v_cierre_estado, o el que Edgar
+  //     eligió en la lista) y pinta su lista fija: lo que DETIENE arriba, en
+  //     rojo, cada uno con su detalle en llano, «qué hacer» y el botón a la
+  //     página que lo arregla (ir_a); los avisos aparte; lo que está en
+  //     verde, plegado. Después vuelve a leer v_cierre_estado, que enseña la
+  //     foto que la base acaba de guardar: si sus «detienen» y «avisos» no
+  //     son los de la lista, rojo (falla ruidosa) y no hay botón de cerrar.
+  //   · CERRAR. El botón («Cerrar octubre 2026») está apagado mientras algo
+  //     detiene, mientras el período no termina y sin el código del teléfono
+  //     (como lo que no se deshace en el resto de la contabilidad). Al
+  //     tocarlo se abre la confirmación fuerte: Edgar escribe la frase exacta
+  //     que dice la base (v_cierre_estado.confirmacion: «CERRAR OCTUBRE
+  //     2026», «CERRAR LA APERTURA»); mal escrita, el botón sigue apagado y
+  //     no se manda nada. fn_cierre_cerrar vuelve a revisar con el libro
+  //     quieto: si algo entró mientras tanto, MX010 con su lista, y la
+  //     pantalla lo explica en llano y vuelve a revisar.
+  //   · EL EXPORT, en el navegador, justo después de cerrar (y «Volver a
+  //     exportar» para un período cerrado sin export): el mayor del período
+  //     en CSV, por cuenta, con su saldo corrido, su procedencia, el sello de
+  //     la IA y el papel (v_mayor); la balanza que la base guardó al cerrar
+  //     (fn_cierre_balanza); los estados (v_resultados, v_balance_general y
+  //     la balanza) en una página lista para imprimir a PDF (el camino de
+  //     imprimir de la app); y un README con la huella del mayor (de
+  //     cierres) y el sha256 de cada archivo (Web Crypto), con la receta
+  //     para comprobarla sin la app. ANTES de subir nada la pantalla
+  //     recalcula la huella del mayor con las líneas que bajó: si no da la
+  //     que la base guardó al cerrar, no exporta (un CSV que no da la huella
+  //     no prueba nada). Todo va al bucket privado «cierres», carpeta
+  //     <periodo>/<fecha-hora de Miami>/ (por la API nada se pisa ni se
+  //     borra: cada export, su carpeta), y se registra con fn_cierre_export.
+  //     «Descargar» firma las rutas (una hora, como las fotos). El correo
+  //     con adjuntos llega después (la función «correo» no vive en este
+  //     repo): la pantalla lo dice.
+  //   · LA RONDA de cada mañana (fn_ronda por pg_cron, sin IA): su última
+  //     corrida (v_ronda_ultima) aquí entera; sus rojos, en «Qué atender»
+  //     del Resumen con un botón a esta página.
+  //   · ACTIVOS (v_activos_fijos; fn_activo_alta, fn_activo_baja,
+  //     fn_depreciacion_plan y fn_depreciacion_mes cuando falta el asiento
+  //     del mes), RESERVA (v_reserva_impuestos y reserva_estimados;
+  //     fn_cierre_config con el %, fn_reserva_estimado_marcar/anular), DR-15
+  //     (v_dr15_mes: lo que aún no se sabe, dicho), HISTORIAL (v_cierres) y
+  //     AJUSTES (cierre_config; fn_cierre_config).
+  // Sin c9 pegado (las vistas no existen) la página lo dice en llano; el
+  // Resumen sigue igual. Ninguna cifra se calcula aquí: vienen listas.
+  // ============================================================
+  // (los chips cortos: en el teléfono deslizan, y «Reserva de impuestos» tapaba los de después)
+  const SUBS_CIE = { cierre: "El cierre", activos: "Activos fijos", reserva: "Reserva", dr15: "DR-15", historial: "Historial", ajustes: "Ajustes" };
+  const enc = encodeURIComponent;
+  const cieCuerpo = () => $("ct-cie-cuerpo");
+  // sigue viva esta pintada (nadie pidió otra cosa después y la página sigue en pantalla)
+  const vivaCie = mia => mia === S.cie.serie && S.pagina === "cierre" && !!cieCuerpo();
+  const cargandoCie = txt => { const c = cieCuerpo(); if (c) c.innerHTML = `<div class="ct-card ct-cargando">${esc(txt || "Cargando…")}</div>`; };
+  // la línea de la cabecera: se escribe cuando el apartado ya leyó lo suyo
+  const subCie = html => { const s = main() && main().querySelector(".ct-pag-sub"); if (s) s.innerHTML = html; };
+  // un período en palabras desde su código (la ronda solo trae el código)
+  function nombrePer(p) {
+    const s = String(p || "");
+    if (/APERTURA$/i.test(s)) return "la apertura";
+    const m = /^(\d{4})-(\d{2})$/.exec(s);
+    if (m) return `${MES_LARGO[Number(m[2])] || m[2]} de ${m[1]}`;
+    return /^\d{4}$/.test(s) ? `el año ${s}` : s;
+  }
+  // el nombre de un control como lo escribe la base («ia: la llave…»), con su mayúscula (y «IA», no «Ia»)
+  const controlTxt = c => cap(String(c || "").replace(/^ia:/i, "IA:"));
+  const rondaDe = f => f && String(f).slice(0, 10) === hoyMiami() ? "La ronda de hoy" : `La ronda del ${fecha(f)}`;
+  // como la base: un control está en rojo si su ok es «distinto de true» (un nulo no es verde)
+  const rojo = x => x.ok !== true;
+  // los rojos de una corrida de la ronda: lo que detiene primero, después por su orden
+  const rojosDeRonda = filas => (Array.isArray(filas) ? filas : []).filter(rojo)
+    .sort((a, b) => (a.nivel === "detiene" ? 0 : 1) - (b.nivel === "detiene" ? 0 : 1) || Number(a.orden) - Number(b.orden));
+  // «CERRAR OCTUBRE 2026» → «Cerrar octubre 2026» (el texto del botón es la misma frase que se pide escribir)
+  const botonCerrarTxt = r => cap(String(r.confirmacion || "").toLowerCase());
+  const montoTxt = s => String(s == null ? "" : s).replace(/[$,%\s]/g, "");
+  const kb = n => { const b = Number(n) || 0; return b < 1024 ? `${b.toLocaleString("en-US")} bytes` : `${(b / 1024).toLocaleString("en-US", { maximumFractionDigits: 1 })} KB`; };
+  // la carpeta de cada export: la fecha y la hora de Miami (2026-11-07_143205)
+  function selloMiami() {
+    const f = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).formatToParts(new Date());
+    const g = k => (f.find(x => x.type === k) || {}).value || "00";
+    return `${g("year")}-${g("month")}-${g("day")}_${g("hour") === "24" ? "00" : g("hour")}${g("minute")}${g("second")}`;
+  }
+
+  // ---------- La base, Storage y la huella ----------
+  // Sin c9 pegado: PostgREST no encuentra la vista o la función
+  const faltaC9 = err => ["PGRST205", "PGRST202", "42P01", "42883"].includes(String((err && err.codigo) || ""));
+  const INGLES = /\b(permission denied|violates|invalid input|does not exist|null value|duplicate key|constraint)\b/i;
+  // Las funciones de c9 por PostgREST (POST /rest/v1/rpc/…) con la sesión del dueño: lo mismo que DB._rpc, pero el error
+  // trae también la pista de la base (hint), que DB._rpc no guarda: fn_cierre_cerrar dice ahí la frase exacta (22023) y cómo
+  // pedir la lista entera (MX010). Sin la configuración de Supabase o sin sesión, el camino de siempre (sin pista).
+  const SBC = () => window.MAXPOWER_SUPABASE || {};
+  const tokenCie = () => (typeof DB.tokenSesion === "function" ? DB.tokenSesion() : null);
+  async function rpcCie(fn, args, reintento = true) {
+    const sb = SBC(), tok = tokenCie();
+    if (!sb.url || !tok) return DB._rpc(fn, args);
+    const r = await fetch(`${sb.url}/rest/v1/rpc/${fn}`, {
+      method: "POST",
+      headers: { apikey: sb.key, Authorization: `Bearer ${tok}`, "Content-Type": "application/json", Prefer: "return=representation" },
+      body: JSON.stringify(args || {})
+    });
+    if (r.status === 401 && reintento && typeof DB.refrescar === "function") { await DB.refrescar(); return rpcCie(fn, args, false); }
+    const txt = await r.text();
+    let j = null; try { j = txt ? JSON.parse(txt) : null; } catch { j = null; }
+    if (!r.ok) {
+      const d = j && typeof j === "object" ? j : {};
+      const codigo = String(d.code || ""), m = String(d.message || "");
+      const e = new Error(faltaC9({ codigo }) ? "A la base le falta el cierre: pega docs/conta/c9-cierre.sql en Supabase (SQL Editor → pegar → Run) y vuelve a intentarlo."
+        : codigo === "MFA" ? "Falta el código del teléfono: sal y vuelve a entrar con él."
+        : codigo === "42501" && (!m || INGLES.test(m)) ? "Esto lo hace solo Edgar (el dueño): la base no se lo deja a esta sesión."
+        : m || `La base contestó ${r.status} a ${fn}.`);
+      Object.assign(e, { codigo: codigo || null, pista: d.hint || null, detalles: d.details || null, status: r.status, crudo: m || null });
+      if (codigo === "MFA") { try { window.dispatchEvent(new CustomEvent("mxp:mfa")); } catch { /* nada */ } }
+      throw e;
+    }
+    return j;
+  }
+  // Storage, el bucket privado «cierres» (c9 lo crea con sus policies: solo el dueño sube y lee; nadie borra ni pisa por la
+  // API). js/db.js solo sabe del bucket «fotos»: aquí, el mismo fetch con la misma sesión
+  const rutaUrl = ruta => String(ruta).split("/").map(enc).join("/");
+  async function subirCierre(ruta, bytes, tipo, reintento = true) {
+    const sb = SBC(), tok = tokenCie();
+    if (!sb.url || !tok) throw new Error("Sin sesión: vuelve a entrar a la app.");
+    const r = await fetch(`${sb.url}/storage/v1/object/cierres/${rutaUrl(ruta)}`, {
+      method: "POST",
+      headers: { apikey: sb.key, Authorization: `Bearer ${tok}`, "Content-Type": tipo, "x-upsert": "false" },
+      body: bytes
+    });
+    if (r.status === 401 && reintento && typeof DB.refrescar === "function") { await DB.refrescar(); return subirCierre(ruta, bytes, tipo, false); }
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      const m = String(d.message || d.error || "");
+      throw new Error(r.status === 409 || /exist|duplicate/i.test(m) ? `«${ruta}» ya estaba en el bucket «cierres» (ahí nada se pisa): vuelve a exportar; cada export usa su carpeta.`
+        : /bucket not found/i.test(m) ? "No existe el bucket «cierres» en Storage: vuelve a pegar docs/conta/c9-cierre.sql (lo crea) o créalo privado en Storage."
+        : r.status === 403 || /row-level|policy|unauthorized/i.test(m) ? "Storage no dejó subir al bucket «cierres»: sus policies (solo el dueño sube) no están, o esta sesión no es la del dueño. Vuelve a pegar c9-cierre.sql."
+        : `No se pudo subir ${ruta} al bucket «cierres» (${r.status}${m ? `: ${m}` : ""}).`);
+    }
+  }
+  // Las rutas firmadas para bajar (una hora, como las fotos): { ruta → URL }
+  async function firmarCierre(rutas, reintento = true) {
+    const sb = SBC(), tok = tokenCie();
+    if (!sb.url || !tok) throw new Error("Sin sesión: vuelve a entrar a la app.");
+    const r = await fetch(`${sb.url}/storage/v1/object/sign/cierres`, {
+      method: "POST",
+      headers: { apikey: sb.key, Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ expiresIn: 3600, paths: rutas })
+    });
+    if (r.status === 401 && reintento && typeof DB.refrescar === "function") { await DB.refrescar(); return firmarCierre(rutas, false); }
+    if (!r.ok) throw new Error(`Storage no firmó los archivos del cierre (${r.status}): vuelve a intentarlo en un rato.`);
+    const lista = await r.json().catch(() => []);
+    const mapa = {};
+    for (const it of Array.isArray(lista) ? lista : []) { const f = it.signedURL || it.signedUrl; if (it.path && f && !it.error) mapa[it.path] = `${sb.url}/storage/v1${f}`; }
+    return mapa;
+  }
+  // La huella: sha256 en hexadecimal minúsculo (Web Crypto; pide https, que la app ya tiene)
+  async function sha256Hex(datos) {
+    if (!(window.crypto && crypto.subtle && typeof crypto.subtle.digest === "function")) throw new Error("Este navegador no deja calcular la huella (sha256): abre la app por https y vuelve a intentarlo. No se exportó nada.");
+    const bytes = typeof datos === "string" ? new TextEncoder().encode(datos) : datos;
+    const h = await crypto.subtle.digest("SHA-256", bytes);
+    return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  // ---------- Los archivos del export ----------
+  const dos = v => { const n = num(v); return n == null || Number.isNaN(n) ? "" : n.toFixed(2); };
+  const csvCampo = v => { const s = v == null ? "" : String(v); return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  // CSV para Excel: UTF-8 con su marca (los acentos salen bien) y fin de línea de Windows
+  const csv = filas => "﻿" + filas.map(f => f.map(csvCampo).join(",")).join("\r\n") + "\r\n";
+  // el orden del libro (fecha, posición en la cadena, línea): el de fn_cierre_hash_mayor
+  const ordenLibro = lineas => [...lineas].sort((x, y) => String(x.fecha).localeCompare(String(y.fecha)) || nOrd(x.cadena_pos) - nOrd(y.cadena_pos) || nOrd(x.orden) - nOrd(y.orden));
+  // El texto de la huella del mayor, el mismo que arma la base al cerrar (fn_cierre_hash_mayor): por línea
+  // «numero|fecha|orden|cuenta|monto|proyecto_id|cost_code|memo» (el monto con sus dos decimales y su signo, como numeric(14,2)
+  // en texto; vacío lo que es nulo), en el orden del libro, unidas por salto de línea (sin uno al final)
+  const textoHashMayor = lineas => ordenLibro(lineas).map(l => [l.numero, String(l.fecha).slice(0, 10), l.orden, l.cuenta, dos(l.monto), l.proyecto_id || "", l.cost_code || "", l.memo || ""].join("|")).join("\n");
+  const CAB_MAYOR = ["cuenta", "cuenta_nombre", "fecha", "numero", "orden", "cadena_pos", "descripcion", "memo", "debe", "haber", "monto", "saldo_corrido",
+    "proyecto_id", "cost_code", "procedencia", "sello_ia", "origen_tabla", "origen_id", "documento_ruta", "tipo", "afecta_periodo", "reversado"];
+  // El mayor: por cuenta y, dentro, en el orden del libro, con el saldo corrido de la cuenta del lado en que crece (v_mayor)
+  function csvMayor(lineas) {
+    const filas = [...lineas].sort((x, y) => String(x.cuenta).localeCompare(String(y.cuenta)) || String(x.fecha).localeCompare(String(y.fecha)) || nOrd(x.cadena_pos) - nOrd(y.cadena_pos) || nOrd(x.orden) - nOrd(y.orden));
+    return csv([CAB_MAYOR].concat(filas.map(l => [l.cuenta, l.cuenta_nombre, String(l.fecha).slice(0, 10), l.numero, l.orden, l.cadena_pos, l.descripcion, l.memo,
+      dos(l.debe), dos(l.haber), dos(l.monto), dos(l.saldo_en_su_lado), l.proyecto_id, l.cost_code, CAMINO[l.camino] || l.camino,
+      l.camino === "ia" ? "IA (aprobada por Edgar)" : "", l.origen_tabla, l.origen_id, l.documento_ruta, TIPO_AS[l.tipo] || l.tipo, l.afecta_periodo, l.reversado ? "sí" : ""])));
+  }
+  // la balanza en centavos (sin errores de coma flotante): lo que se suma para el total y para ver que cuadra
+  function sumasBalanza(bza) {
+    const c = k => bza.reduce((s, b) => s + Math.round((num(b[k]) || 0) * 100), 0);
+    return { inicial: c("inicial"), debe: c("debe"), haber: c("haber"), final: c("final") };
+  }
+  function csvBalanza(bza, nombres) {
+    const t = sumasBalanza(bza), c = v => (v / 100).toFixed(2);
+    return csv([["cuenta", "cuenta_nombre", "saldo_inicial", "debe", "haber", "saldo_final"]]
+      .concat(bza.map(b => [b.cuenta, nombres[b.cuenta] || "", dos(b.inicial), dos(b.debe), dos(b.haber), dos(b.final)]))
+      .concat([["TOTAL", "debe = haber; los saldos suman 0", c(t.inicial), c(t.debe), c(t.haber), c(t.final)]]));
+  }
+  // Los estados del período en una página para imprimir («Guardar como PDF»): resultados, balance y balanza, con la huella.
+  // Un archivo suelto (sin la app): los colores son los de «Cobre y luz» escritos, no sus variables.
+  function estadosDoc(d) {
+    const c = d.cierre || {};
+    const fila = (f, cifras) => `<tr class="n-${esc(f.nivel || "cuenta")}"><td>${esc(f.etiqueta_es || f.cuenta || "")}</td>${cifras.map(v => `<td class="r">${v}</td>`).join("")}</tr>`;
+    const res = d.res.length ? `<table><thead><tr><th>Concepto</th><th class="r">Período</th><th class="r">Acumulado del año</th></tr></thead><tbody>${d.res.map(f => fila(f, [fmtNeg(f.mes), fmtNeg(f.acumulado)])).join("")}</tbody></table>`
+      : `<p>${d.periodo.endsWith("APERTURA") ? "La apertura no tiene estado de resultados: es la foto del 30-sep." : "Sin asientos de resultados en el período."}</p>`;
+    const bal = d.bal.length ? `<table><tbody>${d.bal.map(f => fila(f, [f.nivel === "total" && f.linea === "cuadra" ? (f.cuadra === true ? "cuadra" : fmtNeg(f.cifra)) : fmtNeg(f.cifra)])).join("")}</tbody></table>` : "<p>Sin balance general para el período.</p>";
+    const bza = `<table><thead><tr><th>Cuenta</th><th class="r">Saldo inicial</th><th class="r">Debe</th><th class="r">Haber</th><th class="r">Saldo final</th></tr></thead><tbody>${d.bza.map(b => `<tr><td>${esc(b.cuenta)} ${esc(d.nombres[b.cuenta] || "")}</td><td class="r">${fmtNeg(b.inicial)}</td><td class="r">${fmtNeg(b.debe)}</td><td class="r">${fmtNeg(b.haber)}</td><td class="r">${fmtNeg(b.final)}</td></tr>`).join("")}</tbody></table>`;
+    return `<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Estados ${esc(d.periodo)} · Max Power</title>
+<style>
+body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#0B2036;margin:24px;font-size:13px;line-height:1.45}
+h1{font-size:20px;margin:0 0 4px}h2{font-size:15px;margin:22px 0 6px;color:#8F4F1F}p{margin:2px 0;color:#4D6A83}
+table{border-collapse:collapse;width:100%;max-width:780px}td,th{padding:4px 6px;border-bottom:1px solid #cfe0ee;text-align:left;vertical-align:top}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#8F4F1F}.r{text-align:right;font-family:ui-monospace,Menlo,monospace;white-space:nowrap}
+tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first-child{padding-left:18px}tr.n-componente td:first-child{padding-left:30px;color:#4D6A83}
+.huella{font-family:ui-monospace,Menlo,monospace;word-break:break-all;color:#0B2036}@media print{body{margin:0}h2{break-after:avoid}tr{break-inside:avoid}}
+</style></head><body>
+<h1>Max Power · estados de ${esc(d.nombre)}</h1>
+<p>Cerrado el ${esc(fechaHora(c.cerrado_el))} (hora de Miami)${c.cerrado_por_nombre ? ` por ${esc(c.cerrado_por_nombre)}` : ""} · ${esc(plural(c.asientos || 0, "asiento", "asientos"))} · ${esc(plural(c.lineas || 0, "línea", "líneas"))}</p>
+<p>Huella del mayor (sha256): <span class="huella">${esc(c.hash_mayor || "")}</span></p>
+<h2>Estado de resultados</h2>${res}
+<h2>Balance general</h2>${bal}
+<h2>Balanza de comprobación</h2>${bza}
+<p style="margin-top:18px">Generado el ${esc(d.generado)} desde la app (Contabilidad → Cierre del mes). Las cifras vienen de la base: v_resultados, v_balance_general y la balanza que se guardó al cerrar (fn_cierre_balanza).</p>
+</body></html>
+`;
+  }
+  // El README del export: la huella del mayor, el sha256 de cada archivo y cómo comprobarla sin la app
+  function leemeTxt(d, carpeta, subidos) {
+    const c = d.cierre, p = d.periodo, L = [];
+    L.push(`MAX POWER · CIERRE DE ${d.nombre.toUpperCase()} (${p})`, "");
+    L.push(`Cerrado el ${fechaHora(c.cerrado_el)} (hora de Miami)${c.cerrado_por_nombre ? ` por ${c.cerrado_por_nombre}` : ""}, desde la app (Contabilidad → Cierre del mes).`);
+    L.push(`Exportado el ${d.generado} a la carpeta cierres/${carpeta} del almacén privado de la app (Supabase Storage).`);
+    L.push(`${plural(c.asientos || 0, "asiento", "asientos")} y ${plural(c.lineas || 0, "línea", "líneas")} en el período.`, "");
+    L.push("HUELLA DEL MAYOR (sha256, la que la base guardó al cerrar):", c.hash_mayor, "");
+    if (c.cadena_al_cerrar) L.push("Huella de la cadena del libro al cerrar (c2):", c.cadena_al_cerrar, "");
+    L.push("ARCHIVOS (el sha256 de cada uno, tal como se subió):");
+    for (const s of subidos) L.push(`${s.sha256}  ${s.ruta.split("/").pop()}  (${s.bytes} bytes)`);
+    L.push("(Este README no se lista a sí mismo: su huella queda registrada en la base, en cierres.export_archivos.)", "");
+    L.push("QUÉ ES CADA ARCHIVO:");
+    L.push(`- mayor-${p}.csv: cada línea del libro del período, por cuenta, con el saldo corrido de la cuenta (saldo_corrido, del lado en que crece), su procedencia (puente, a mano, IA aprobada, reverso), el sello de la IA y el papel que la respalda (origen_tabla, origen_id, documento_ruta).`);
+    L.push(`- balanza-${p}.csv: la balanza que la base guardó al cerrar: saldo inicial, debe, haber y saldo final por cuenta. La ronda de cada mañana la vuelve a calcular y la compara.`);
+    L.push(`- estados-${p}.html: el estado de resultados, el balance general y la balanza, listos para imprimir (ábrelo, «Imprimir» y «Guardar como PDF»).`, "");
+    L.push("CÓMO SE COMPRUEBA LA HUELLA DEL MAYOR SIN LA APP:");
+    L.push("1. Abre el CSV del mayor y ordena sus líneas por fecha, cadena_pos y orden (de menor a mayor).");
+    L.push("2. De cada línea escribe numero|fecha|orden|cuenta|monto|proyecto_id|cost_code|memo (el monto con dos decimales y su signo; un campo vacío queda vacío).");
+    L.push("3. Une las líneas con un salto de línea (sin salto al final) y saca el sha256 del texto en UTF-8 (en la Mac: shasum -a 256). Tiene que dar la huella de arriba.");
+    L.push("Si da otra, ese CSV no es el del cierre.", "");
+    L.push("Un período cerrado no se reabre: lo que llegue tarde entra al primer día del mes abierto; un error se corrige con un reverso en el mes abierto; un ajuste del CPA va al mes abierto diciendo qué mes corrige (docs/conta/OPERACION.md).");
+    L.push("El correo con estos archivos adjuntos llega después: la función «correo» todavía no tiene esa acción.");
+    return L.join("\r\n") + "\r\n";
+  }
+  // Lo que el export y la impresión necesitan del cierre (todo de la base): la fila de v_cierres, la balanza guardada, los
+  // estados del período y los nombres de las cuentas; con conMayor, también el mayor del período (v_mayor)
+  async function datosCierre(periodo, conMayor) {
+    const P = enc(periodo);
+    const [cs, bza, res, bal, cu, mayor] = await Promise.all([
+      DB._leer(`v_cierres?select=*&periodo=eq.${P}`),
+      rpcCie("fn_cierre_balanza", { p_periodo: periodo }),
+      DB._leer(`v_resultados?select=nivel,seccion,linea,cuenta,etiqueta_es,mes,acumulado,seccion_orden,linea_orden,orden&periodo=eq.${P}&order=seccion_orden.asc,linea_orden.asc,orden.asc`),
+      DB._leer(`v_balance_general?select=nivel,seccion,linea,cuenta,etiqueta_es,cifra,cuadra,seccion_orden,linea_orden,orden&periodo=eq.${P}&order=seccion_orden.asc,linea_orden.asc,orden.asc`),
+      DB._leer("cuentas?select=codigo,nombre&order=codigo.asc").catch(e => { if (esFalloDeRed(e)) throw e; return []; }),
+      conMayor ? DB._leer(`v_mayor?select=asiento_id,numero,orden,fecha,periodo,tipo,afecta_periodo,camino,descripcion,memo,origen_tabla,origen_id,documento_ruta,cadena_pos,cuenta,cuenta_nombre,monto,debe,haber,saldo_en_su_lado,proyecto_id,cost_code,reversado&periodo=eq.${P}&order=fecha.asc,cadena_pos.asc,orden.asc`) : null
+    ]);
+    const cierre = Array.isArray(cs) ? cs[0] : null;
+    if (!cierre) throw new Error(`${cap(nombrePer(periodo))} no está cerrado desde la app: solo se exporta un período cerrado (ciérralo primero).`);
+    if (!Array.isArray(bza)) throw errorControl("La balanza del cierre no llegó", [{ vista: "fn_cierre_balanza", filas: "—", esperadas: "una lista", detalle: `fn_cierre_balanza('${periodo}') no devolvió la lista de cuentas` }]);
+    const nombres = {};
+    for (const c of Array.isArray(cu) ? cu : []) nombres[c.codigo] = c.nombre;
+    for (const l of Array.isArray(mayor) ? mayor : []) if (l.cuenta_nombre && !nombres[l.cuenta]) nombres[l.cuenta] = l.cuenta_nombre;
+    // el nombre como lo dice la base («la apertura (30-sep-2026)», «octubre de 2026»)
+    const fe = (S.cie.estado || []).find(r => r.periodo === periodo);
+    return { periodo, nombre: (fe && fe.nombre) || nombrePer(periodo), cierre, bza, res: res || [], bal: bal || [], nombres, mayor, generado: fechaHora(new Date().toISOString()) };
+  }
+  const pasosHTML = pasos => `<ul class="ct-cie-pasos">${pasos.map((p, i) => `<li class="${p.clase || (i === pasos.length - 1 ? "ct-espera" : "")}">${esc(p.txt)}</li>`).join("")}</ul>`;
+
+  // EL EXPORT (repetible): baja lo del cierre, comprueba la huella del mayor y que la balanza cuadra, arma los archivos,
+  // los sube a <periodo>/<fecha-hora>/ con su sha256 y los registra (fn_cierre_export). El avance se ve en #ct-cie-export.
+  async function exportar(periodo) {
+    if (S.ocupado) return;
+    if (!navigator.onLine) { S.cie.exportErr[periodo] = "Sin señal: no se exportó nada. Con señal, «Volver a exportar»."; if (S.pagina === "cierre") await pintarCierre(); return; }
+    if (!mfaActivo()) { S.cie.exportErr[periodo] = "Primero activa el código del teléfono (Conexiones y seguridad) y entra con él: el export lo pide."; if (S.pagina === "cierre") await pintarCierre(); return; }
+    S.ocupado = true; S.cie.exportando = periodo; delete S.cie.exportErr[periodo];
+    const pasos = [];
+    const pinta = () => { const c = $("ct-cie-export"); if (c && S.cie.periodo === periodo) c.innerHTML = pasosHTML(pasos); };
+    const paso = (txt, clase) => { pasos.push({ txt, clase }); pinta(); };
+    const listo = (txt) => { pasos.pop(); paso(txt, "ok"); };
+    let r = null, carpeta = "";
+    try {
+      paso("Bajando el mayor, la balanza y los estados del cierre…");
+      const d = await datosCierre(periodo, true);
+      const huella = await sha256Hex(textoHashMayor(d.mayor));
+      if (huella !== d.cierre.hash_mayor) {
+        throw new Error(`El mayor que bajó (${plural(d.mayor.length, "línea", "líneas")}; al cerrar eran ${d.cierre.lineas}) no da la huella que la base guardó al cerrar (${String(d.cierre.hash_mayor).slice(0, 12)}…; aquí sale ${huella.slice(0, 12)}…). No se exportó nada: un CSV que no da la huella no prueba nada. Vuelve a intentarlo; si sigue, avisa (algo cambió en el libro o en la vista v_mayor).`);
+      }
+      listo(`La huella del mayor coincide con la del cierre (${plural(d.mayor.length, "línea", "líneas")})`);
+      const q = sumasBalanza(d.bza);
+      if (q.debe !== q.haber || q.final !== 0) throw new Error(`La balanza del cierre no cuadra (debe ${fmt(q.debe / 100)}, haber ${fmt(q.haber / 100)}, saldos ${fmt(q.final / 100)}): no se exportó nada. Avisa: esto no debería pasar nunca.`);
+      carpeta = `${periodo}/${selloMiami()}/`;
+      const archivos = [
+        { nombre: `mayor-${periodo}.csv`, tipo: "text/csv", texto: csvMayor(d.mayor) },
+        { nombre: `balanza-${periodo}.csv`, tipo: "text/csv", texto: csvBalanza(d.bza, d.nombres) },
+        { nombre: `estados-${periodo}.html`, tipo: "text/html", texto: estadosDoc(d) }
+      ];
+      const subidos = [];
+      const subir = async a => {
+        const bytes = new TextEncoder().encode(a.texto);
+        const sha = await sha256Hex(bytes);
+        paso(`Subiendo ${a.nombre}…`);
+        await subirCierre(carpeta + a.nombre, bytes, `${a.tipo}; charset=utf-8`);
+        subidos.push({ ruta: carpeta + a.nombre, sha256: sha, bytes: bytes.length, tipo: a.tipo });
+        listo(`${a.nombre} · ${kb(bytes.length)} · sha256 ${sha.slice(0, 12)}…`);
+      };
+      for (const a of archivos) await subir(a);
+      // el README va al final: lleva el sha256 de los demás
+      await subir({ nombre: `README-${periodo}.txt`, tipo: "text/plain", texto: leemeTxt(d, carpeta, subidos) });
+      paso("Registrando el export en la base…");
+      r = await rpcCie("fn_cierre_export", { p_periodo: periodo, p_archivos: subidos });
+      listo("Registrado en la base");
+    } catch (err) {
+      S.cie.exportErr[periodo] = esFalloDeRed(err) || !navigator.onLine
+        ? "Se cortó la señal a medias: lo que alcanzó a subir queda en el bucket (no estorba), pero el export no se registró. Con señal, «Volver a exportar»."
+        : err.control ? `${err.message}: ${err.control.map(f => f.detalle).filter(Boolean).join(" · ")}` : err.message;
+    } finally { S.ocupado = false; S.cie.exportando = null; }
+    if (r) S.hooks.avisar(`Exportado: ${plural(r.archivos, "archivo", "archivos")} en el bucket «cierres» (${carpeta})${Number(r.veces) > 1 ? ` · ${r.veces}.ª vez` : ""}`);
+    else S.hooks.avisar("El export no terminó: el detalle está en Cierre del mes", true);
+    if (S.pagina === "cierre") await pintarCierre();
+  }
+  // «Volver a exportar» desde cualquier apartado: el avance se ve en «El cierre», con el período elegido
+  async function exportarDesde(periodo) {
+    if (S.ocupado) return;
+    S.cie.sub = "cierre"; S.cie.periodo = periodo; S.cie.exportando = periodo;
+    await pintarCierre();
+    S.cie.exportando = null;
+    await exportar(periodo);
+  }
+  // «Descargar el cierre»: los archivos del último export, firmados (valen una hora)
+  async function descargar(periodo) {
+    const caja = main() && main().querySelector(`[data-cie-descarga="${periodo}"]`);
+    if (!caja) return;
+    if (!navigator.onLine) { caja.innerHTML = `<p class="ct-aviso bad">Sin señal: no se firmó nada.</p>`; return; }
+    caja.innerHTML = `<p class="ct-aviso ct-espera" role="status">Firmando los archivos (valen una hora)…</p>`;
+    try {
+      const cs = await DB._leer(`v_cierres?select=periodo,export_archivos&periodo=eq.${enc(periodo)}`);
+      const arch = cs[0] && Array.isArray(cs[0].export_archivos) ? cs[0].export_archivos : [];
+      if (!arch.length) throw new Error("Este cierre no tiene ningún export registrado: «Volver a exportar».");
+      const mapa = await firmarCierre(arch.map(a => a.ruta));
+      const faltan = arch.filter(a => !mapa[a.ruta]);
+      caja.innerHTML = `<ul class="ct-cie-archivos">${arch.map(a => {
+        const n = String(a.ruta).split("/").pop(), u = mapa[a.ruta];
+        return `<li>${u ? `<a class="ct-cie-archivo" href="${esc(`${u}${u.includes("?") ? "&" : "?"}download=${enc(n)}`)}" target="_blank" rel="noopener" download="${esc(n)}">${esc(n)}</a>` : `<span class="ct-cie-archivo">${esc(n)}</span>`}<small>${kb(a.bytes)} · sha256 <span class="ct-num">${esc(String(a.sha256 || "").slice(0, 16))}…</span></small></li>`;
+      }).join("")}</ul>
+        ${faltan.length ? `<p class="ct-aviso warn">Storage no firmó ${plural(faltan.length, "archivo", "archivos")} (${esc(faltan.map(a => String(a.ruta).split("/").pop()).join(", "))}): ¿se borró a mano del bucket? El registro sigue en la base; «Volver a exportar» desde el historial lo rehace.</p>` : ""}
+        <p class="ct-nota">Los enlaces valen una hora. La huella completa de cada archivo está en su README.</p>`;
+    } catch (err) { caja.innerHTML = `<p class="ct-aviso bad">${esc(esFalloDeRed(err) ? "Sin señal: no se firmó nada." : err.message)}</p>`; }
+  }
+  // Los estados por el camino de imprimir de la app: una ventana con la página y la ventana de imprimir («Guardar como PDF»).
+  // La ventana se abre en el mismo toque (si no, el navegador la bloquea) y se llena cuando llegan las cifras
+  async function imprimirEstados(periodo) {
+    const w = window.open("", "_blank");
+    if (!w) { S.hooks.avisar("El navegador bloqueó la ventana. Permite ventanas emergentes para la app y vuelve a tocar.", true); return; }
+    try { w.document.write(`<p style="font-family:system-ui,sans-serif">Preparando los estados de ${esc(nombrePer(periodo))}…</p>`); } catch { /* nada */ }
+    try {
+      const d = await datosCierre(periodo, false);
+      w.document.open(); w.document.write(estadosDoc(d)); w.document.close();
+      const imprimir = () => { try { w.focus(); w.print(); } catch { /* nada */ } };
+      if (w.document.readyState === "complete") setTimeout(imprimir, 400);
+      else w.addEventListener("load", () => setTimeout(imprimir, 400));
+      S.hooks.avisar("Elige «Guardar como PDF» y guárdalo con el cierre");
+    } catch (err) {
+      try { w.close(); } catch { /* nada */ }
+      S.hooks.avisar(esFalloDeRed(err) ? "Sin señal: no se armaron los estados." : err.message, true);
+    }
+  }
+
+  // ---------- El marco de la página: la cabecera, los chips y el cuerpo ----------
+  async function pintarCierre() {
+    const mia = ++S.cie.serie;
+    if (!navigator.onLine) return sinSenal(pintarCierre);
+    if (!SUBS_CIE[S.cie.sub]) S.cie.sub = "cierre";
+    S.hooks.titulo(KICKER, TITULOS.cierre);
+    main().innerHTML = cabPagina(TITULOS.cierre, "Leyendo con la base…") +
+      `<section class="ct-card ct-cie-barra"><div class="ct-chips ct-cie-subs" aria-label="Qué parte del cierre">${Object.keys(SUBS_CIE).map(k =>
+        `<button type="button" class="ct-chip" data-cie-sub="${k}" aria-pressed="${k === S.cie.sub ? "true" : "false"}">${esc(SUBS_CIE[k])}</button>`).join("")}</div></section>
+      <div id="ct-cie-cuerpo" class="ct-cie-cuerpo"></div>`;
+    main().querySelectorAll("[data-cie-sub]").forEach(b => b.addEventListener("click", () => { if (!S.ocupado) ir("cierre", { sub: b.dataset.cieSub }); }));
+    const act = main().querySelector('[data-cie-sub][aria-pressed="true"]');
+    if (act && typeof act.scrollIntoView === "function") act.scrollIntoView({ inline: "nearest", block: "nearest" });
+    marcarVolver();
+    const pinta = { cierre: pintarCieCierre, activos: pintarCieActivos, reserva: pintarCieReserva, dr15: pintarCieDr15, historial: pintarCieHistorial, ajustes: pintarCieAjustes }[S.cie.sub];
+    return pinta(mia);
+  }
+  function pintarErrorCie(err, reintentar) {
+    const c = cieCuerpo(); if (!c) return;
+    if (faltaC9(err) && !esFalloDeRed(err)) {
+      c.innerHTML = `<section class="ct-card ct-rojo" role="alert"><h2>Falta el cierre en la base</h2>
+        <p>Esta página lee lo que deja <span class="ct-num">docs/conta/c9-cierre.sql</span>, y la base todavía no lo tiene. Pégalo entero en Supabase (SQL Editor → pegar → Run), después de c1 a c8: al final sale una tabla que dice qué detiene hoy el cierre. Después vuelve aquí.</p>
+        <div class="ct-acciones"><button type="button" class="accion secundaria" id="ct-reintentar">Reintentar</button></div></section>`;
+      $("ct-reintentar").addEventListener("click", reintentar);
+      return;
+    }
+    pintarError(err, reintentar, err.codigo === "42501" ? "Contabilidad es solo del dueño" : undefined, c);
+  }
+  async function leerCieEstado() {
+    const filas = await DB._leer("v_cierre_estado?select=*&order=desde.asc,tipo.asc");
+    if (!Array.isArray(filas) || !filas.length) throw errorControl("La base no devolvió ningún período del cierre", [{ vista: "v_cierre_estado", filas: 0, esperadas: "1 o más", detalle: "La apertura y cada mes salen aquí. Vacía: la sesión no es la del dueño (el equipo ve las vistas vacías) o el libro no tiene períodos." }]);
+    S.cie.estado = filas;
+    return filas;
+  }
+  // a qué página lleva un control (ir_a de la base). «cierre» se queda aquí: los activos, la reserva, el historial; el 10
+  // (los anteriores sin cerrar) lleva al período que toca
+  const PAG_IR = ["bandeja", "conciliar", "movimientos", "estados", "cobros", "conexiones"];
+  function destinoCie(x, sig) {
+    if (PAG_IR.includes(x.ir_a)) return { txt: PESTANAS[x.ir_a], attr: `data-ir="${x.ir_a}"` };
+    if (x.ir_a !== "cierre") return null;
+    const o = Number(x.orden);
+    if (o === 90 || o === 92 || o === 210) return { txt: "Activos fijos", attr: `data-cie-ir="activos"` };
+    if (o === 220 || o === 222) return { txt: "Reserva", attr: `data-cie-ir="reserva"` };
+    if (o >= 200 && o < 210) return { txt: "Historial", attr: `data-cie-ir="historial"` };
+    if (o === 10 && sig && sig.periodo !== S.cie.periodo) return { txt: cap(sig.nombre), attr: `data-cie-per="${esc(sig.periodo)}"` };
+    return null;
+  }
+  // Un control de la revisión (o de la ronda, con su período y su nivel): qué, el detalle en llano, qué hacer y su botón
+  function itemCieHTML(x, sig, opciones = {}) {
+    const d = opciones.solo ? null : destinoCie(x, sig);
+    const clase = !rojo(x) ? "ok" : x.nivel === "detiene" ? "detiene" : "aviso";
+    const etiquetas = opciones.ronda ? `${pill(x.nivel === "detiene" ? "detiene" : "aviso", x.nivel === "detiene" ? "bad" : "warn")}${x.periodo ? ` <span class="ct-cie-item-p">${esc(nombrePer(x.periodo))}</span>` : ""}` : "";
+    return `<li class="ct-cie-item ${clase}" data-orden="${esc(x.orden)}">
+        <div class="ct-cie-item-txt"><p class="ct-cie-item-t">${etiquetas ? `${etiquetas} ` : ""}${esc(controlTxt(x.control))}</p>
+          ${x.detalle ? `<p class="ct-cie-item-d">${esc(x.detalle)}</p>` : ""}
+          ${x.que_hacer ? `<p class="ct-cie-item-h">${rojo(x) ? "<b>Qué hacer:</b> " : ""}${esc(x.que_hacer)}</p>` : ""}</div>
+        ${d && rojo(x) ? `<button type="button" class="accion secundaria chica" ${d.attr}>${esc(d.txt)}</button>` : ""}
+      </li>`;
+  }
+  // los botones de dentro del cuerpo: otra página (ir_a), otro apartado, otro período, exportar, descargar, imprimir
+  function wireCie(c) {
+    c.querySelectorAll("[data-ir]").forEach(b => b.addEventListener("click", () => ir(b.dataset.ir)));
+    c.querySelectorAll("[data-cie-ir]").forEach(b => b.addEventListener("click", () => ir("cierre", { sub: b.dataset.cieIr })));
+    c.querySelectorAll("[data-cie-per]").forEach(b => b.addEventListener("click", () => ir("cierre", { sub: "cierre", periodo: b.dataset.ciePer })));
+    c.querySelectorAll("[data-cie-exportar]").forEach(b => b.addEventListener("click", () => exportarDesde(b.dataset.cieExportar)));
+    c.querySelectorAll("[data-cie-descargar]").forEach(b => b.addEventListener("click", () => descargar(b.dataset.cieDescargar)));
+    c.querySelectorAll("[data-cie-imprimir]").forEach(b => b.addEventListener("click", () => imprimirEstados(b.dataset.cieImprimir)));
+  }
+  // Una acción de la página (RPC con la sesión del dueño): los controles de la tarjeta se apagan, el error va a su forma
+  // y, si salió, el aviso y se vuelve a pintar el apartado
+  async function accionCie(card, fn, args, exito) {
+    if (S.ocupado) return;
+    if (!navigator.onLine) { mostrarErrorForma(card, "Sin señal: no se hizo nada."); return; }
+    S.ocupado = true;
+    const apagados = [...card.querySelectorAll("button, input, select, textarea")].filter(b => !b.disabled);
+    apagados.forEach(b => { b.disabled = true; });
+    let r;
+    try { r = await rpcCie(fn, args); }
+    catch (err) {
+      apagados.forEach(b => { b.disabled = false; });
+      S.ocupado = false;
+      mostrarErrorForma(card, esFalloDeRed(err) ? "Sin señal: no se guardó. Vuelve a intentarlo con señal." : err.message);
+      return;
+    }
+    S.ocupado = false;
+    const aviso = exito(r);
+    if (aviso) S.hooks.avisar(...(Array.isArray(aviso) ? aviso : [aviso]));
+    if (S.pagina === "cierre") await pintarCierre();
+  }
+
+  // ---------- «El cierre»: los períodos, la revisión del que toca, cerrar, el export y la ronda ----------
+  async function pintarCieCierre(mia) {
+    cargandoCie("Revisando con la base: el banco, las conciliaciones, el libro, los estados…");
+    const errPrevio = S.cie.error; S.cie.error = null; // el MX010 se explica una vez, en la pintada que sigue al intento
+    let filas, fila, rev = null, cierre = null, ronda = null;
+    try {
+      filas = await leerCieEstado();
+      if (!vivaCie(mia)) return;
+      const sig0 = filas.find(r => r.siguiente) || null;
+      fila = filas.find(r => r.periodo === S.cie.periodo) || sig0 || filas.filter(r => r.estado === "cerrado").pop() || filas[0];
+      S.cie.periodo = fila.periodo;
+      if (fila.estado === "cerrado") {
+        // un período cerrado por c2 fuera de la app no tiene fila en cierres: se dice
+        const cs = await DB._leer(`v_cierres?select=*&periodo=eq.${enc(fila.periodo)}`);
+        cierre = Array.isArray(cs) && cs.length ? cs[0] : null;
+      } else {
+        rev = await rpcCie("fn_cierre_revisar", { p_periodo: fila.periodo });
+        if (!vivaCie(mia)) return;
+        if (!Array.isArray(rev) || !rev.length) throw errorControl("La revisión no devolvió nada", [{ vista: "fn_cierre_revisar", filas: 0, esperadas: "la lista de controles", detalle: `fn_cierre_revisar('${fila.periodo}') contestó vacío: sin la lista no se sabe qué detiene el cierre.` }]);
+        // FALLA RUIDOSA: la foto que la base acaba de guardar (v_cierre_estado) dice lo mismo que la lista que trajo la pantalla
+        filas = await leerCieEstado();
+        fila = filas.find(r => r.periodo === S.cie.periodo);
+        const det = rev.filter(x => x.nivel === "detiene" && rojo(x)).length, avi = rev.filter(x => x.nivel === "aviso" && rojo(x)).length;
+        if (!fila || Number(fila.detienen) !== det || Number(fila.avisos) !== avi) {
+          throw errorControl("La revisión guardada no coincide con la que acaba de correr", [{ vista: "v_cierre_estado", filas: fila ? `${fila.detienen} / ${fila.avisos}` : "—", esperadas: `${det} / ${avi}`,
+            detalle: "Lo que detiene / los avisos. v_cierre_estado enseña la foto que fn_cierre_revisar acaba de guardar: si no dicen lo mismo, no se pinta el botón de cerrar." }]);
+        }
+      }
+      ronda = await DB._leer("v_ronda_ultima?select=*&order=periodo.asc,orden.asc").catch(e => { if (esFalloDeRed(e)) throw e; return null; });
+      await leerMfa();
+    } catch (err) { if (!vivaCie(mia)) return; return pintarErrorCie(err, pintarCierre); }
+    if (!vivaCie(mia)) return;
+    const sig = filas.find(r => r.siguiente) || null;
+    const hoy = hoyMiami();
+    subCie(!sig ? "No queda ningún período abierto por cerrar."
+      : !sig.terminado ? `El siguiente es <b>${esc(sig.nombre)}</b>: termina el ${fechaLarga(sig.hasta)}`
+      : `Toca cerrar <b>${esc(sig.nombre)}</b> · ${sig.revisado_el == null ? "sin revisar todavía" : Number(sig.detienen) ? `<span class="bad-txt">${plural(sig.detienen, "cosa lo detiene", "cosas lo detienen")}</span>` : "nada lo detiene"}${sig.revisado_el == null ? "" : ` · ${plural(Number(sig.avisos) || 0, "aviso", "avisos")}`}`);
+    // los períodos: los cerrados, los ya empezados y el que toca (los meses de más adelante no)
+    const vis = filas.filter(r => r.estado === "cerrado" || String(r.desde) <= hoy || r.siguiente || r.periodo === fila.periodo);
+    const c = cieCuerpo();
+    c.innerHTML = `<section class="ct-card ct-cie-periodos" id="ct-cie-periodos">
+        <div class="ct-cab"><h2>Los períodos</h2></div>
+        <div class="ct-cie-pers">${vis.map(periodoCieHTML).join("")}</div>
+        ${ayudaHTML(`<p class="ct-nota">Se cierra en orden: primero la apertura (el 30-sep, lo que trajo QuickBooks) y después cada mes, cuando ya terminó. Un período cerrado no se reabre nunca: lo que llegue tarde entra al mes abierto (docs/conta/OPERACION.md, la regla A). Toca un período para ver su revisión o su cierre.</p>`, "¿Cómo va esto?")}
+      </section>` +
+      (fila.estado === "cerrado" ? cerradoHTML(fila, cierre) : revisionHTML(fila, rev, sig, errPrevio) + avisosHTML(rev, sig)) +
+      rondaHTML(ronda);
+    c.querySelectorAll("[data-cie-periodo]").forEach(b => b.addEventListener("click", () => { if (S.ocupado) return; S.cie.periodo = b.dataset.ciePeriodo; pintarCierre(); }));
+    wireCie(c);
+    const cerrar = $("ct-cie-cerrar");
+    if (cerrar) cerrar.addEventListener("click", () => abrirConfirmacion($("ct-cie-rev"), fila));
+    const otra = $("ct-cie-revisar");
+    if (otra) otra.addEventListener("click", () => { if (!S.ocupado) pintarCierre(); });
+  }
+  function periodoCieHTML(r) {
+    const sel = r.periodo === S.cie.periodo;
+    const estado = r.estado === "cerrado" ? pill("Cerrado", "ok") : r.siguiente && r.terminado ? pill("Toca cerrar", "warn") : !r.terminado ? pill("En curso") : pill("Abierto");
+    const det = r.estado === "cerrado"
+      ? (r.cerrado_el ? `cerrado el ${esc(fechaHora(r.cerrado_el))}${r.cerrado_por_nombre ? ` por ${esc(r.cerrado_por_nombre)}` : ""} · ${r.exportado ? "exportado" : `<span class="bad-txt">sin exportar</span>`}` : "cerrado fuera de la app")
+      : !r.terminado ? `termina el ${fechaLarga(r.hasta)}`
+      : r.revisado_el == null ? "sin revisar todavía"
+      : `${Number(r.detienen) ? `<span class="bad-txt">${plural(r.detienen, "cosa lo detiene", "cosas lo detienen")}</span>` : "nada lo detiene"} · ${plural(Number(r.avisos) || 0, "aviso", "avisos")}`;
+    return `<button type="button" class="ct-cie-per${sel ? " sel" : ""}" data-cie-periodo="${esc(r.periodo)}" aria-pressed="${sel ? "true" : "false"}">
+        <span class="ct-cie-per-n">${esc(cap(r.nombre))}</span>${estado}<span class="ct-cie-per-d">${det}</span></button>`;
+  }
+  // MX010: «No se cierra octubre de 2026: 4 cosa(s) lo detienen. 10) orden: …: … → … 40) banco: …» → la frase y su lista
+  function partirMX010(msg) {
+    const s = String(msg || "");
+    const m = /^([\s\S]*?lo detienen\.)\s*([\s\S]*)$/.exec(s);
+    if (!m) return { frase: s, items: [] };
+    const items = m[2].split(/\s+(?=\d{1,3}\) )/).map(t => t.trim()).filter(Boolean).map(t => {
+      const k = /^(\d{1,3})\) ([\s\S]*)$/.exec(t);
+      if (!k) return { orden: null, que: t, hacer: null };
+      const [que, ...resto] = k[2].split(" → ");
+      return { orden: Number(k[1]), que, hacer: resto.join(" → ") || null };
+    });
+    return { frase: m[1], items };
+  }
+  const errorCierreHTML = e => `<div class="ct-aviso bad ct-cie-error" id="ct-cie-error" role="alert">
+      <p><b>No se cerró.</b> ${esc(e.frase)}</p>
+      ${e.items.length ? `<ul class="ct-cie-error-l">${e.items.map(i => `<li>${i.orden != null ? `<span class="ct-num">${esc(i.orden)})</span> ` : ""}${esc(i.que)}${i.hacer ? `<br><b>Qué hacer:</b> ${esc(i.hacer)}` : ""}</li>`).join("")}</ul>` : ""}
+      <p>La base vuelve a revisar en el momento de cerrar, con el libro quieto, y esto entró o cambió después de la revisión que tenías a la vista. No se cerró nada ni cambió nada; la lista de abajo ya está al día.</p>
+    </div>`;
+  function revisionHTML(fila, rev, sig, err) {
+    const det = rev.filter(x => x.nivel === "detiene" && rojo(x));
+    const frenan = rev.filter(x => x.nivel === "detiene").length;
+    const mfa = mfaActivo();
+    const puede = fila.estado === "abierto" && fila.terminado && !det.length && mfa;
+    const porque = !fila.terminado ? `${cap(fila.nombre)} termina el ${fechaLarga(fila.hasta)}: se cierra a partir del día siguiente.`
+      : det.length ? `Se enciende cuando no quede nada en rojo arriba (${plural(det.length, "cosa", "cosas")}).`
+      : !mfa ? "Primero activa el código del teléfono (Conexiones y seguridad) y entra con él: cerrar lo pide, como todo lo que no se deshace."
+      : `Al tocarlo se pide escribir «${fila.confirmacion}»: un cierre no se deshace.`;
+    return `<section class="ct-card ct-cie-rev${det.length ? " rojo" : ""}" id="ct-cie-rev">
+        <div class="ct-cab"><h2>${esc(cap(fila.nombre))} · lo que detiene el cierre</h2>${det.length ? pill(plural(det.length, "cosa", "cosas"), "bad") : pill("nada", "ok")}</div>
+        <p class="ct-nota">Revisado ${esc(fechaHora(fila.revisado_el))}, con ${plural(rev.length, "control", "controles")} de la base: ${plural(frenan, "frena", "frenan")} el cierre si está${frenan === 1 ? "" : "n"} en rojo; los demás solo avisan. <button type="button" class="ct-cie-link" id="ct-cie-revisar">Volver a revisar</button></p>
+        ${err ? errorCierreHTML(err) : ""}
+        ${det.length ? `<ul class="ct-cie-lista">${det.map(x => itemCieHTML(x, sig)).join("")}</ul>`
+          : `<p class="ct-aviso ok">Nada detiene el cierre de ${esc(fila.nombre)}: ${frenan === 1 ? "el control que frena está" : `los ${frenan} controles que frenan están`} en verde.</p>`}
+        <div class="ct-cie-cerrar">
+          <button type="button" class="accion ct-cie-peligro" id="ct-cie-cerrar"${puede ? "" : " disabled"} aria-describedby="ct-cie-porque">${esc(botonCerrarTxt(fila))}</button>
+          <p class="ct-nota" id="ct-cie-porque">${esc(porque)}</p>
+        </div>
+        <div class="ct-form" hidden></div>
+      </section>`;
+  }
+  function avisosHTML(rev, sig) {
+    const av = rev.filter(x => x.nivel === "aviso" && rojo(x)), verdes = rev.filter(x => !rojo(x));
+    return `<section class="ct-card ct-cie-avisos" id="ct-cie-avisos">
+        <div class="ct-cab"><h2>Avisos</h2>${av.length ? pill(String(av.length), "warn") : pill("ninguno", "ok")}</div>
+        <p class="ct-nota">No frenan el cierre, pero conviene mirarlos antes (o decirle al CPA por qué quedan).</p>
+        ${av.length ? `<ul class="ct-cie-lista">${av.map(x => itemCieHTML(x, sig)).join("")}</ul>` : ""}
+        <details class="ct-cie-verdes"><summary>En verde · ${verdes.length}</summary><ul class="ct-cie-lista">${verdes.map(x => itemCieHTML(x, sig)).join("")}</ul></details>
+      </section>`;
+  }
+  function cerradoHTML(fila, c) {
+    if (!c) return `<section class="ct-card ct-cie-rev" id="ct-cie-rev"><div class="ct-cab"><h2>${esc(cap(fila.nombre))}</h2>${pill("Cerrado", "ok")}</div>
+        <p class="ct-nota">Se cerró fuera de la app (con fn_cerrar_periodo, en el SQL Editor): la base no guardó su revisión, ni la huella del mayor, ni su balanza, y no tiene export. Está cerrado igual: nadie escribe ahí.</p></section>`;
+    const avisos = (Array.isArray(c.revision) ? c.revision : []).filter(x => x.nivel === "aviso" && rojo(x));
+    return `<section class="ct-card ct-cie-rev ct-cie-cerrado" id="ct-cie-rev">
+        <div class="ct-cab"><h2>${esc(cap(fila.nombre))}</h2>${pill("Cerrado", "ok")}</div>
+        <p class="ct-nota">Cerrado el ${esc(fechaHora(c.cerrado_el))}${c.cerrado_por_nombre ? ` por ${esc(c.cerrado_por_nombre)}` : ""} · ${plural(c.asientos || 0, "asiento", "asientos")} · ${plural(c.lineas || 0, "línea", "líneas")}. Nadie vuelve a escribir ahí: lo que llegue tarde entra al mes abierto.</p>
+        <p class="ct-cie-huella"><span class="ct-lbl">Huella del mayor (sha256)</span><span class="ct-num">${esc(c.hash_mayor)}</span></p>
+        <div class="ct-cie-export" id="ct-cie-export" role="status">${S.cie.exportando === fila.periodo ? pasosHTML([{ txt: "Exportando…" }]) : exportadoHTML(c, S.cie.exportErr[fila.periodo])}</div>
+        ${avisos.length ? `<details class="ct-cie-verdes"><summary>Se cerró con ${plural(avisos.length, "aviso", "avisos")}</summary><ul class="ct-cie-lista">${avisos.map(x => itemCieHTML(x, null, { solo: true })).join("")}</ul></details>` : ""}
+      </section>`;
+  }
+  // El export de un período cerrado: lo registrado (con «Descargar» e «Imprimir») o «Volver a exportar», y el correo que falta
+  function exportadoHTML(c, err) {
+    const arch = Array.isArray(c.export_archivos) ? c.export_archivos : [];
+    const correo = `<p class="ct-nota">El correo con estos archivos adjuntos llega después: la función «correo» todavía no tiene esa acción. Mientras tanto, «Descargar el cierre» y guárdalos (o mándaselos al CPA).</p>`;
+    if (!c.exportado) {
+      return `${err ? `<p class="ct-aviso bad ct-cie-export-err">${esc(err)}</p>` : `<p class="ct-aviso warn">Sin exportar: el mayor, la balanza y los estados todavía no están en el archivo privado «cierres».</p>`}
+        <div class="ct-acciones"><button type="button" class="accion" data-cie-exportar="${esc(c.periodo)}">Volver a exportar</button><button type="button" class="accion secundaria" data-cie-imprimir="${esc(c.periodo)}">Imprimir los estados (PDF)</button></div>`;
+    }
+    return `<p class="ct-aviso ok">Exportado el ${esc(fechaHora(c.exportado_el))}${c.exportado_por_nombre ? ` por ${esc(c.exportado_por_nombre)}` : ""} · ${plural(arch.length, "archivo", "archivos")} en <span class="ct-num">cierres/${esc(c.export_ruta || "")}</span>${Number(c.exports_anteriores) ? ` · ${plural(c.exports_anteriores, "export anterior", "exports anteriores")} en su historial` : ""}.</p>
+      ${err ? `<p class="ct-aviso bad ct-cie-export-err">${esc(err)}</p>` : ""}
+      <div class="ct-acciones"><button type="button" class="accion" data-cie-descargar="${esc(c.periodo)}">Descargar el cierre</button><button type="button" class="accion secundaria" data-cie-imprimir="${esc(c.periodo)}">Imprimir los estados (PDF)</button></div>
+      <div class="ct-cie-descarga" data-cie-descarga="${esc(c.periodo)}"></div>
+      ${correo}`;
+  }
+  function rondaHTML(ronda) {
+    if (ronda == null) return "";
+    const cab = `<div class="ct-cab"><h2>La ronda de cada mañana</h2>`;
+    if (!ronda.length) return `<section class="ct-card ct-cie-ronda" id="ct-cie-ronda">${cab}${pill("no ha corrido")}</div>
+        <p class="ct-nota">Todavía no ha corrido. La base la corre sola cada mañana a las 6:45 (7:45 en verano), después del banco y del contador, cuando pg_cron está encendido en Supabase (Database → Extensions). Revisa el período que toca cerrar, que los meses cerrados sigan iguales, 1590 y la reserva, y avisa al teléfono de cada rojo nuevo. La IA no corre de noche.</p></section>`;
+    const u = ronda[0], rojos = rojosDeRonda(ronda);
+    const per = (ronda.find(x => x.periodo) || {}).periodo;
+    return `<section class="ct-card ct-cie-ronda${rojos.length ? " rojo" : ""}" id="ct-cie-ronda">${cab}${rojos.length ? pill(plural(rojos.length, "rojo", "rojos"), Number(u.detienen) ? "bad" : "warn") : pill("todo en verde", "ok")}</div>
+        <p class="ct-nota">Corrió el ${esc(fechaHora(u.corrida_el))}${per ? ` · revisó ${esc(nombrePer(per))}` : ""} · ${plural(Number(u.filas) || ronda.length, "control", "controles")}: ${plural(Number(u.detienen) || 0, "detiene", "detienen")} y ${plural(Number(u.avisos) || 0, "aviso", "avisos")} en rojo${Number(u.avisados) ? ` · ${plural(u.avisados, "aviso nuevo", "avisos nuevos")} al teléfono` : ""}.</p>
+        ${rojos.length ? `<ul class="ct-cie-lista">${rojos.map(x => itemCieHTML(x, null, { ronda: true })).join("")}</ul>` : `<p class="ct-aviso ok">La última ronda no encontró nada en rojo.</p>`}
+      </section>`;
+  }
+  // La confirmación fuerte: la frase exacta, escrita; el botón (rojo) se enciende solo cuando coincide
+  function abrirConfirmacion(card, fila) {
+    if (!card || S.ocupado) return;
+    const f = card.querySelector(".ct-form");
+    f.hidden = false;
+    f.innerHTML = `<form class="ct-pide ct-cie-confirma" novalidate>
+        <p class="ct-form-t">${esc(cap(fila.nombre))}: cerrarlo no se deshace</p>
+        <ul class="ct-cie-conse">
+          <li>Nadie vuelve a escribir en ${esc(fila.nombre)}: ni la app ni el SQL Editor. La base lo impide.</li>
+          <li>Lo que llegue tarde entra al primer día del mes abierto; un error se corrige con un reverso en el mes abierto; un ajuste del CPA va al mes abierto diciendo qué mes corrige.</li>
+          <li>Al cerrar, la app exporta el mayor, la balanza y los estados al archivo privado «cierres», con su huella.</li>
+        </ul>
+        <label class="ct-campo">Para confirmarlo, escribe <span class="ct-num ct-cie-frase">${esc(fila.confirmacion)}</span><input name="confirmo" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false"></label>
+        <div class="ct-acciones"><button class="accion ct-cie-peligro" type="submit" id="ct-cie-confirmar" disabled>${esc(botonCerrarTxt(fila))} para siempre</button><button class="accion secundaria" type="button" data-cerrar>Cancelar</button></div>
+      </form>`;
+    const form = f.querySelector("form"), inp = form.querySelector('[name="confirmo"]'), btn = $("ct-cie-confirmar");
+    inp.addEventListener("input", () => { btn.disabled = inp.value.trim() !== fila.confirmacion; const e = f.querySelector(".ct-error"); if (e) e.remove(); });
+    f.querySelector("[data-cerrar]").addEventListener("click", () => { f.hidden = true; f.innerHTML = ""; });
+    form.addEventListener("submit", ev => { ev.preventDefault(); cerrarPeriodo(card, fila, inp.value); });
+    f.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    inp.focus();
+  }
+  // CERRAR: la frase exacta (mal escrita no se manda nada), fn_cierre_cerrar y, si salió, el export
+  async function cerrarPeriodo(card, fila, confirmo) {
+    if (S.ocupado) return;
+    if (!navigator.onLine) { mostrarErrorForma(card, "Sin señal: no se cerró nada."); return; }
+    if (!mfaActivo()) { mostrarErrorForma(card, "Primero activa el código del teléfono (Conexiones y seguridad) y entra con él: cerrar lo pide."); return; }
+    const frase = String(confirmo || "").trim();
+    if (frase !== fila.confirmacion) { mostrarErrorForma(card, `Escribe exactamente «${fila.confirmacion}», en mayúsculas, como está: un cierre no se deshace y por eso se pide escrito. No se mandó nada.`); return; }
+    S.ocupado = true;
+    const apagados = [...card.querySelectorAll("button, input")].filter(b => !b.disabled);
+    apagados.forEach(b => { b.disabled = true; });
+    const btn = $("ct-cie-confirmar");
+    if (btn) { btn.classList.add("ct-girando"); btn.setAttribute("aria-busy", "true"); }
+    let r;
+    try { r = await rpcCie("fn_cierre_cerrar", { p_periodo: fila.periodo, p_confirmo: frase }); }
+    catch (err) {
+      S.ocupado = false;
+      apagados.forEach(b => { b.disabled = false; });
+      if (btn) { btn.classList.remove("ct-girando"); btn.removeAttribute("aria-busy"); }
+      // (la pista de MX010 es la consulta para el SQL Editor: aquí la lista ya va debajo, así que no se enseña)
+      if (err.codigo === "MX010") { S.cie.error = partirMX010(err.message); S.hooks.avisar("No se cerró: algo lo detiene", true); return pintarCierre(); }
+      mostrarErrorForma(card, esFalloDeRed(err) ? "Se cortó la señal: no se sabe si se cerró. Vuelve a abrir el cierre con señal: si salió, el período sale «Cerrado»; si no, sigue abierto."
+        : `${err.message}${err.codigo === "22023" && err.pista && !String(err.message).includes(err.pista) ? ` (Escribe: ${err.pista})` : ""}`);
+      return;
+    }
+    S.ocupado = false;
+    S.hooks.avisar(`${cap(r && r.nombre ? r.nombre : fila.nombre)}: cerrado · huella del mayor ${String((r && r.hash_mayor) || "").slice(0, 12)}…`);
+    S.cie.periodo = (r && r.periodo) || fila.periodo;
+    // el período cambió de estado: los estados y la portada lo vuelven a leer
+    S.est.cortes = null; S.saldos = null;
+    // el export, justo después de cerrar
+    await exportarDesde(S.cie.periodo);
+  }
+
+  // ---------- Activos fijos ----------
+  async function pintarCieActivos(mia) {
+    cargandoCie("Leyendo los activos fijos…");
+    let activos, filas, cfg = null, mesDep = null, plan = [];
+    try {
+      [activos, filas] = await Promise.all([DB._leer("v_activos_fijos?select=*&order=fecha_servicio.asc,creado.asc"), leerCieEstado(), cuentas()]);
+      cfg = (await DB._leer("cierre_config?select=metodo_depreciacion").catch(e => { if (esFalloDeRed(e)) throw e; return []; }))[0] || null;
+      // el mes que toca depreciar: el más viejo abierto que ya terminó (la depreciación se fecha el último día)
+      mesDep = filas.find(r => r.tipo === "mes" && r.estado === "abierto" && r.terminado) || null;
+      if (mesDep && activos.length) plan = await rpcCie("fn_depreciacion_plan", { p_periodo: mesDep.periodo });
+    } catch (err) { if (!vivaCie(mia)) return; return pintarErrorCie(err, pintarCierre); }
+    if (!vivaCie(mia)) return;
+    const vivos = activos.filter(a => a.estado === "activo");
+    const porId = new Map(activos.map(a => [a.id, a]));
+    // lo que falta del mes: lo que el plan depreciaría en activos cuyo último mes posteado es anterior
+    const falta = mesDep ? (Array.isArray(plan) ? plan : []).filter(x => num(x.monto) > 0 && String((porId.get(x.activo_id) || {}).ultimo_periodo || "") < mesDep.periodo) : [];
+    subCie(activos.length && !vivos.length ? `Ningún activo en uso · ${plural(activos.length, "dado de baja", "dados de baja")}`
+      : activos.length ? `${plural(vivos.length, "activo", "activos")} en uso · valor en libros <span class="ct-num">${fmt(suma(vivos, "valor_libros"))}</span> · depreciación al mes <span class="ct-num">${fmt(suma(vivos.filter(a => !a.terminado), "cuota_mensual"))}</span>`
+      : "Todavía no hay activos fijos: se cargan con la cédula del CPA.");
+    const notaDep = S.cie.notas.dep; S.cie.notas.dep = null;
+    const depHTML = !mesDep || !activos.length ? "" : falta.length
+      ? `<div class="ct-aviso warn ct-af-dep"><p>Falta la depreciación de ${esc(mesDep.nombre)}: <b class="ct-num">${fmt(suma(falta, "monto"))}</b> en ${plural(falta.length, "activo", "activos")} (Dr 6950 / Cr 1590, fechada el ${fechaLarga(mesDep.hasta)}). Sin ella el cierre no pasa.</p>
+          <div class="ct-acciones"><button type="button" class="accion" id="ct-af-depreciar">Depreciar ${esc(mesDep.nombre)}</button></div></div>`
+      : vivos.length ? `<p class="ct-aviso ok">La depreciación de ${esc(mesDep.nombre)} ya está en el libro.</p>` : "";
+    const filasHTML = activos.map(a => `<tr class="ct-af${a.estado === "baja" ? " baja" : ""}" data-id="${esc(a.id)}">
+        <td class="ct-cie-c1"><b>${esc(a.descripcion)}</b><small>${[a.placa_serie, `${a.cuenta} ${a.cuenta_nombre || ""}`.trim(), a.metodo === "manual" ? `${fmt(a.monto_mensual)} fijos al mes` : `línea recta, ${plural(a.vida_meses, "mes", "meses")}`].filter(Boolean).map(esc).join(" · ")}</small>
+          ${a.estado === "baja" ? `<small class="bad-txt">Dado de baja el ${fechaLarga(a.baja_fecha)}: ${esc(a.baja_motivo)}</small>${a.baja_asiento_id ? "" : `<small class="ct-af-falta">${esc(S.cie.notas[a.id] || "Hasta que apuntes el asiento de la baja (Dr 1590 por lo acumulado, Cr la cuenta del activo por el costo, 4920 por la diferencia), 1590 sigue contando este activo.")}</small>`}` : ""}</td>
+        <td data-col="En servicio">${fechaLarga(a.fecha_servicio)}</td>
+        <td class="r ct-num" data-col="Costo">${fmt(a.costo)}</td>
+        <td class="r ct-num" data-col="Acumulada">${fmt(a.acumulada)}<small>${plural(Number(a.meses_posteados) || 0, "mes", "meses")} en el libro</small></td>
+        <td class="r ct-num" data-col="Valor en libros"><b>${fmt(a.valor_libros)}</b></td>
+        <td class="r ct-num" data-col="Al mes">${a.terminado ? "terminado" : fmt(a.cuota_mensual)}</td>
+        <td class="ct-af-acc">${a.estado === "activo" ? `<button type="button" class="accion secundaria chica" data-af-baja="${esc(a.id)}">Dar de baja</button>` : pill("baja", "warn")}</td>
+      </tr>`).join("");
+    cieCuerpo().innerHTML = `<section class="ct-card ct-cie-activos" id="ct-cie-activos">
+        <div class="ct-cab"><h2>Activos fijos</h2>${pill(plural(activos.length, "activo", "activos"))}</div>
+        ${ayudaHTML(`<p class="ct-nota">Camionetas, herramienta grande, equipo de cómputo, mejoras: lo que dura más de un año y se deprecia mes a mes (Dr 6950 / Cr 1590). La base postea la depreciación del mes con un toque (aquí) y el cierre no pasa sin ella. Una baja o una venta deja el activo fuera de la depreciación; su asiento (Dr 1590, Cr la cuenta del activo, 4920 la diferencia) va a mano. El método lo decide el CPA (Ajustes).</p>`)}
+        ${notaDep ? `<p class="ct-aviso ok">${esc(notaDep)}</p>` : ""}
+        ${depHTML}
+        ${activos.length ? `<div class="ct-tabla-env"><table class="ct-tabla ct-cie-tabla ct-af-tabla"><thead><tr><th>Activo</th><th>En servicio</th><th class="r">Costo</th><th class="r">Acumulada</th><th class="r">Valor en libros</th><th class="r">Al mes</th><th></th></tr></thead><tbody>${filasHTML}</tbody></table></div>`
+          : `<p class="ct-vacio ct-af-vacio">Todavía no hay activos fijos. Se cargan con la cédula del CPA (la de 2025 más las altas de 2026), cada uno con la depreciación que ya traía en QuickBooks al 30-sep: así 1590 cuadra con ellos. Hasta entonces el cierre lo da en verde: 1590 trae lo de QuickBooks.</p>`}
+        <div class="ct-acciones"><button type="button" class="accion${activos.length ? " secundaria" : ""}" id="ct-af-alta">Dar de alta un activo</button></div>
+        <div class="ct-form" hidden></div>
+      </section>`;
+    const card = $("ct-cie-activos");
+    const dep = $("ct-af-depreciar");
+    if (dep) dep.addEventListener("click", () => accionCie(card, "fn_depreciacion_mes", { p_periodo: mesDep.periodo }, r => {
+      S.cie.notas.dep = r && r.nota ? r.nota : null;
+      return r && r.ya_estaba ? "Ya estaba posteada: no se duplicó" : `Depreciación de ${mesDep.nombre} posteada${r && r.asiento ? ` · asiento ${r.asiento.numero}` : ""}`;
+    }));
+    $("ct-af-alta").addEventListener("click", () => formaAlta(card, cfg));
+    card.querySelectorAll("[data-af-baja]").forEach(b => b.addEventListener("click", () => {
+      const a = porId.get(b.dataset.afBaja); if (!a) return;
+      montarForma(card, formaHTML(esc(`Dar de baja «${a.descripcion}» (venta, robo o ya no sirve)`),
+        `<div class="ct-fila"><label class="ct-campo">Fecha de la baja<input name="fecha" type="date" required value="${esc(hoyMiami())}"></label>
+         ${campoHTML("motivo", "Motivo (queda escrito)", "textarea", 'required data-falta="Falta el motivo de la baja (se vendió, se robó, ya no sirve…)."')}</div>`, "Dar de baja"),
+        v => accionCie(card, "fn_activo_baja", { p_id: a.id, p_fecha: v.fecha, p_motivo: v.motivo }, r => { if (r && r.nota) S.cie.notas[a.id] = r.nota; return `Baja: ${a.descripcion}`; }));
+    }));
+  }
+  function formaAlta(card, cfg) {
+    const de15 = (S.cuentas || []).filter(c => /^15\d\d/.test(c.codigo) && c.codigo !== "1590");
+    const metodo = (cfg && cfg.metodo_depreciacion) || "linea_recta";
+    montarForma(card, formaHTML("Dar de alta un activo fijo (de la cédula del CPA o una compra nueva)",
+      `<div class="ct-fila">
+        ${campoHTML("descripcion", "Qué es", "texto", 'required placeholder="Camioneta Ford F-150 2024" data-falta="Falta qué es el activo: «Camioneta Ford F-150 2024», «Taladro magnético»."')}
+        ${campoHTML("placa_serie", "Placa o serie (opcional)", "texto")}
+        <label class="ct-campo">Cuenta<select name="cuenta" required data-falta="Falta la cuenta del activo (1510 vehículos, 1520 herramienta, 1530 cómputo, 1540 mejoras)."><option value="">Elige la cuenta…</option>${de15.map(c => `<option value="${esc(c.codigo)}">${esc(c.codigo)} · ${esc(c.nombre)}</option>`).join("")}</select></label>
+        <label class="ct-campo">En servicio desde<input name="fecha_servicio" type="date" required data-falta="Falta desde cuándo está en servicio."></label>
+        ${campoHTML("costo", "Costo", "monto", 'required data-falta="Falta el costo del activo."')}
+        ${campoHTML("residual", "Residual (lo que valdrá al final)", "monto")}
+        <label class="ct-campo">Método<select name="metodo"><option value="linea_recta"${metodo === "linea_recta" ? " selected" : ""}>Línea recta (por vida en meses)</option><option value="manual"${metodo === "manual" ? " selected" : ""}>Un monto fijo al mes</option></select></label>
+        ${campoHTML("vida_meses", "Vida en meses (línea recta)", "texto", 'inputmode="numeric" placeholder="60"')}
+        ${campoHTML("monto_mensual", "Monto al mes (monto fijo)", "monto")}
+        ${campoHTML("dep_acumulada_inicial", "Depreciación que ya traía (QuickBooks al 30-sep)", "monto")}
+        ${campoHTML("notas", "Notas (opcional)", "texto")}
+      </div>`, "Dar de alta"), v => {
+      const p = { descripcion: v.descripcion, cuenta: v.cuenta, fecha_servicio: v.fecha_servicio, costo: montoTxt(v.costo), metodo: v.metodo || metodo };
+      if (v.placa_serie) p.placa_serie = v.placa_serie;
+      if (montoTxt(v.residual)) p.residual = montoTxt(v.residual);
+      if (p.metodo === "linea_recta" && v.vida_meses) p.vida_meses = /^\d+$/.test(v.vida_meses) ? Number(v.vida_meses) : v.vida_meses;
+      if (p.metodo === "manual" && montoTxt(v.monto_mensual)) p.monto_mensual = montoTxt(v.monto_mensual);
+      if (montoTxt(v.dep_acumulada_inicial)) p.dep_acumulada_inicial = montoTxt(v.dep_acumulada_inicial);
+      if (v.notas) p.notas = v.notas;
+      accionCie(card, "fn_activo_alta", { p }, r => `Alta: ${r && r.descripcion ? r.descripcion : v.descripcion}${r && r.cuota_mensual != null ? ` · ${fmt(r.cuota_mensual)} al mes` : ""}`);
+    });
+  }
+
+  // ---------- La reserva de impuestos (1030) ----------
+  async function pintarCieReserva(mia) {
+    cargandoCie("Calculando la reserva con la base…");
+    let res, est;
+    try {
+      const [rs, es] = await Promise.all([
+        DB._leer("v_reserva_impuestos?select=*"),
+        DB._leer("reserva_estimados?select=id,fecha,monto,anio_fiscal,nota,asiento_id,anulado_el,anulado_motivo&order=fecha.desc")
+      ]);
+      if (!Array.isArray(rs) || rs.length !== 1) throw errorControl("La reserva no devolvió su fila", [{ vista: "v_reserva_impuestos", filas: Array.isArray(rs) ? rs.length : 0, esperadas: 1, detalle: "La vista es UNA fila, la de hoy. Vacía: la sesión no es la del dueño." }]);
+      res = rs[0]; est = Array.isArray(es) ? es : [];
+      // FALLA RUIDOSA: lo que la vista resta como «ya pagado» es la suma de los estimados vivos del año que trajo la pantalla
+      const vivos = est.filter(e => !e.anulado_el && Number(e.anio_fiscal) === Number(res.anio));
+      const cent = v => Math.round((num(v) || 0) * 100);
+      if (vivos.reduce((s, e) => s + cent(e.monto), 0) !== cent(res.estimados_pagados) || vivos.length !== Number(res.estimados_n || 0)) {
+        throw errorControl("Los estimados no cuadran con la reserva", [{ vista: "v_reserva_impuestos", filas: `${res.estimados_n} · ${fmt(res.estimados_pagados)}`, esperadas: `${vivos.length} · ${fmt(vivos.reduce((s, e) => s + cent(e.monto), 0) / 100)}`, detalle: `Los estimados pagados de ${res.anio}: lo que resta la vista contra la lista de reserva_estimados. No se pinta una cifra que no cuadra.` }]);
+      }
+    } catch (err) { if (!vivaCie(mia)) return; return pintarErrorCie(err, pintarCierre); }
+    if (!vivaCie(mia)) return;
+    const pct = num(res.reserva_pct), dif = num(res.diferencia);
+    const [tit, clase] = pct == null ? ["Falta el % que fije el CPA", "warn"]
+      : dif > 0 ? [`Transfiere ${fmt(dif)} a la reserva (1030)`, "warn"]
+      : dif < 0 ? [`Sobra ${fmt(-dif)} en la reserva (1030)`, "ok"]
+      : ["La reserva (1030) está al día", "ok"];
+    subCie(`${esc(tit)} · próximo estimado el ${fechaLarga(res.proximo_estimado)}`);
+    const vivos = est.filter(e => !e.anulado_el), anulados = est.filter(e => e.anulado_el);
+    const estHTML = e => `<li class="ct-res-est${e.anulado_el ? " anulado" : ""}" data-id="${esc(e.id)}"><div class="ct-cie-item-txt"><p class="ct-cie-item-t"><span class="ct-num">${fechaLarga(e.fecha)}</span> · <b class="ct-num">${fmt(e.monto)}</b> · año fiscal ${esc(e.anio_fiscal)}</p>${e.nota ? `<p class="ct-cie-item-d">${esc(e.nota)}</p>` : ""}${e.anulado_el ? `<p class="ct-cie-item-d">Anulado: ${esc(e.anulado_motivo || "")}</p>` : ""}</div>${e.anulado_el ? pill("anulado") : `<button type="button" class="accion secundaria chica" data-res-anular="${esc(e.id)}">Anular</button>`}</li>`;
+    cieCuerpo().innerHTML = `<section class="ct-card ct-cie-reserva" id="ct-cie-reserva">
+        <div class="ct-cab"><h2>Reserva de impuestos</h2>${pct == null ? pill("falta el %", "warn") : pill(`${pct} % del CPA`)}</div>
+        <p class="ct-res-titular ${clase}">${esc(tit)}</p>
+        <p class="ct-nota">${esc(res.mensaje || "")}</p>
+        <div class="ct-kpis cuatro">
+          ${kpiHTML(`Utilidad de ${res.anio} a la fecha`, fmtNeg(res.utilidad_anio), "del libro, con la regla de ejercicio")}
+          ${kpiHTML("% del CPA", pct == null ? "falta" : `${esc(pct)} %`, pct == null ? "lo fija el CPA" : `objetivo ${fmt(res.objetivo)}`)}
+          ${kpiHTML("Estimados ya pagados", fmt(res.estimados_pagados), plural(Number(res.estimados_n) || 0, "pago marcado", "pagos marcados"))}
+          ${kpiHTML("Reserva (1030)", fmt(res.saldo_1030), res.objetivo_1030 == null ? "sin objetivo todavía" : `debería tener ${fmt(res.objetivo_1030)}`)}
+        </div>
+        <div class="ct-res-prox${res.estimado_en_15_dias ? " cerca" : ""}">
+          <p><b>Próximo estimado:</b> <span class="ct-num">${fechaLarga(res.proximo_estimado)}</span> · ${plural(Number(res.dias_para_estimado) || 0, "día", "días")}</p>
+          ${res.estimado_en_15_dias ? `<p class="ct-aviso warn">Vence en ${plural(Number(res.dias_para_estimado) || 0, "día", "días")}${res.monto_sugerido != null ? `: el monto sugerido es <b class="ct-num">${fmt(res.monto_sugerido)}</b>` : ""}. Confírmalo con el CPA antes de pagar.</p>` : ""}
+          <p class="ct-nota">${esc(res.nota || "")}</p>
+        </div>
+        <div class="ct-acciones"><button type="button" class="accion${pct == null ? "" : " secundaria"}" id="ct-res-pct">${pct == null ? "Guardar el % del CPA" : "Cambiar el %"}</button><button type="button" class="accion secundaria" id="ct-res-marcar">Marcar un pago como estimado</button></div>
+        <div class="ct-form" hidden></div>
+      </section>
+      <section class="ct-card ct-cie-estimados" id="ct-cie-estimados">
+        <div class="ct-cab"><h2>Estimados pagados</h2>${pill(plural(vivos.length, "pago", "pagos"))}</div>
+        ${vivos.length ? `<ul class="ct-cie-lista">${vivos.map(estHTML).join("")}</ul>` : `<p class="ct-nota">Ninguno marcado todavía. Un pago al IRS entra al libro como Dr 3200 / Cr banco (la IA lo propone así); aquí se marca como estimado para que la reserva lo reste y vaya en el paquete del CPA.</p>`}
+        ${anulados.length ? `<details class="ct-cie-verdes"><summary>Anulados · ${anulados.length}</summary><ul class="ct-cie-lista">${anulados.map(estHTML).join("")}</ul></details>` : ""}
+        <div class="ct-form" hidden></div>
+      </section>`;
+    const card = $("ct-cie-reserva"), cardEst = $("ct-cie-estimados");
+    $("ct-res-pct").addEventListener("click", () => montarForma(card, formaHTML("El % de la utilidad que se reserva para impuestos (lo fija el CPA)",
+      campoHTML("pct", "Porcentaje", "texto", `inputmode="decimal" required placeholder="25" value="${pct == null ? "" : esc(pct)}" data-falta="Falta el % (por ejemplo 25)."`), "Guardar"), v => {
+      const n = Number(montoTxt(v.pct));
+      if (!Number.isFinite(n)) { mostrarErrorForma(card, "Escribe el % como número: 25, o 27.5."); return; }
+      accionCie(card, "fn_cierre_config", { p: { reserva_pct: n } }, r => `Guardado: la reserva es el ${r && r.reserva_pct != null ? r.reserva_pct : n} % de la utilidad`);
+    }));
+    $("ct-res-marcar").addEventListener("click", () => montarForma(card, formaHTML("Marcar un pago al IRS como impuesto estimado (su asiento carga a 3200)",
+      `<div class="ct-fila">${campoHTML("numero", "Número del asiento del pago", "texto", 'required placeholder="2026-000005" data-falta="Falta el número del asiento del pago (2026-000005)."')}
+       ${campoHTML("nota", "Nota (opcional)", "texto", 'placeholder="Q3 2026, IRS"')}
+       ${campoHTML("anio", "Año fiscal (si no es el de su fecha)", "texto", 'inputmode="numeric"')}</div>`, "Marcar como estimado"), async v => {
+      if (S.ocupado) return;
+      let as;
+      try { as = await DB._leer(`asientos?select=id,numero&numero=eq.${enc(v.numero)}`); }
+      catch (err) { mostrarErrorForma(card, esFalloDeRed(err) ? "Sin señal: no se marcó nada." : err.message); return; }
+      if (!Array.isArray(as) || !as.length) { mostrarErrorForma(card, `No hay ningún asiento con el número «${v.numero}». Búscalo en el mayor de 3200 (Estados → Balanza → 3200).`); return; }
+      const args = { p_asiento: as[0].id };
+      if (v.nota) args.p_nota = v.nota;
+      if (v.anio) args.p_anio_fiscal = /^\d{4}$/.test(v.anio) ? Number(v.anio) : v.anio;
+      accionCie(card, "fn_reserva_estimado_marcar", args, r => `Estimado marcado: ${r && r.asiento_numero ? r.asiento_numero : v.numero} · ${fmt(r && r.monto)}${r && r.anio_fiscal ? ` (año fiscal ${r.anio_fiscal})` : ""}`);
+    }));
+    cardEst.querySelectorAll("[data-res-anular]").forEach(b => b.addEventListener("click", () => {
+      const e = est.find(x => x.id === b.dataset.resAnular); if (!e) return;
+      montarForma(cardEst, formaHTML(esc(`Anular el estimado del ${fechaLarga(e.fecha)} por ${fmt(e.monto)} (queda, con su motivo)`),
+        campoHTML("motivo", "Motivo", "textarea", 'required data-falta="Falta por qué se anula (por ejemplo: no era un estimado, era el pago del 1120-S)."'), "Anular"),
+        v => accionCie(cardEst, "fn_reserva_estimado_anular", { p_id: e.id, p_motivo: v.motivo }, () => "Estimado anulado"));
+    }));
+  }
+
+  // ---------- DR-15 (Florida): lo que la base ya sabe y lo que no ----------
+  async function pintarCieDr15(mia) {
+    cargandoCie("Leyendo el DR-15…");
+    let filas;
+    try { filas = await DB._leer("v_dr15_mes?select=*&order=desde.desc"); }
+    catch (err) { if (!vivaCie(mia)) return; return pintarErrorCie(err, pintarCierre); }
+    if (!vivaCie(mia)) return;
+    const hoy = hoyMiami();
+    const vis = (Array.isArray(filas) ? filas : []).filter(f => String(f.desde) <= hoy);
+    subCie(`${plural(vis.length, "mes", "meses")} · el use tax de las compras sin el impuesto de Florida; el lado de las ventas llega con las facturas`);
+    const nose = `<span class="ct-cie-nose">aún no se sabe</span>`;
+    const val = v => v == null ? nose : fmt(v);
+    cieCuerpo().innerHTML = `<section class="ct-card ct-cie-dr15" id="ct-cie-dr15">
+        <div class="ct-cab"><h2>DR-15 por mes</h2></div>
+        ${vis.length ? `<div class="ct-tabla-env"><table class="ct-tabla ct-cie-tabla ct-dr15-tabla"><thead><tr><th>Mes</th><th class="r">Compras con use tax</th><th class="r">Use tax cargado (2300)</th><th class="r">Pagado al DOR</th><th class="r">Saldo de 2300</th><th class="r">Ventas gravables</th><th class="r">Sales tax cobrado</th></tr></thead><tbody>
+          ${vis.map(f => `<tr data-periodo="${esc(f.periodo)}"><td class="ct-cie-c1"><b>${esc(cap(nombrePer(f.periodo)))}</b></td>
+            <td class="r ct-num" data-col="Compras con use tax">${f.compras_use_tax_n == null ? nose : `${fmt(f.compras_use_tax_base)}<small>${plural(f.compras_use_tax_n, "compra", "compras")}</small>`}</td>
+            <td class="r ct-num" data-col="Use tax cargado (2300)">${val(f.use_tax_cargado_2300)}</td>
+            <td class="r ct-num" data-col="Pagado al DOR">${val(f.use_tax_pagado_2300)}</td>
+            <td class="r ct-num" data-col="Saldo de 2300">${val(f.use_tax_saldo_2300)}</td>
+            <td class="r" data-col="Ventas gravables">${val(f.ventas_gravables)}</td>
+            <td class="r" data-col="Sales tax cobrado">${val(f.sales_tax_cobrado)}</td></tr>`).join("")}
+        </tbody></table></div>` : `<p class="ct-vacio">Todavía no hay meses en el libro.</p>`}
+        ${vis.length && vis[0].nota ? `<p class="ct-nota">${esc(vis[0].nota)}</p>` : ""}
+        <p class="ct-nota">«Aún no se sabe» no es un cero: es lo que la app todavía no separa. Hasta entonces, las ventas del DR-15 salen de las facturas, a mano.</p>
+      </section>`;
+  }
+
+  // ---------- Historial de cierres ----------
+  async function pintarCieHistorial(mia) {
+    cargandoCie("Leyendo el historial de cierres…");
+    let filas;
+    try { filas = await DB._leer("v_cierres?select=*&order=cerrado_el.desc"); }
+    catch (err) { if (!vivaCie(mia)) return; return pintarErrorCie(err, pintarCierre); }
+    if (!vivaCie(mia)) return;
+    filas = Array.isArray(filas) ? filas : [];
+    subCie(filas.length ? `${plural(filas.length, "período cerrado", "períodos cerrados")} desde la app · ${plural(filas.filter(f => f.exportado).length, "exportado", "exportados")}` : "Todavía no se ha cerrado ningún período desde la app.");
+    cieCuerpo().innerHTML = `<section class="ct-card ct-cie-historial" id="ct-cie-historial">
+        <div class="ct-cab"><h2>Historial de cierres</h2></div>
+        ${filas.length ? `<ul class="ct-hist-lista">${filas.map(c => `<li class="ct-hist" data-periodo="${esc(c.periodo)}">
+            <div class="ct-hist-cab"><b>${esc(cap(nombrePer(c.periodo)))}</b>${pill("Cerrado", "ok")}${c.exportado ? pill("exportado", "ok") : pill("sin exportar", "warn")}</div>
+            <p class="ct-nota">Cerrado el ${esc(fechaHora(c.cerrado_el))}${c.cerrado_por_nombre ? ` por ${esc(c.cerrado_por_nombre)}` : ""} · ${plural(c.asientos || 0, "asiento", "asientos")} · ${plural(Number(c.avisos) || 0, "aviso", "avisos")} al cerrar</p>
+            <p class="ct-nota">Huella del mayor <span class="ct-num" title="${esc(c.hash_mayor)}">${esc(String(c.hash_mayor || "").slice(0, 12))}…</span>${c.exportado ? ` · exportado el ${esc(fechaHora(c.exportado_el))} a <span class="ct-num">cierres/${esc(c.export_ruta || "")}</span> (${plural(Array.isArray(c.export_archivos) ? c.export_archivos.length : 0, "archivo", "archivos")}${Number(c.exports_anteriores) ? `, ${plural(c.exports_anteriores, "export anterior", "exports anteriores")}` : ""})` : ""}</p>
+            <div class="ct-acciones">${c.exportado ? `<button type="button" class="accion secundaria chica" data-cie-descargar="${esc(c.periodo)}">Descargar</button>` : `<button type="button" class="accion chica" data-cie-exportar="${esc(c.periodo)}">Volver a exportar</button>`}<button type="button" class="accion secundaria chica" data-cie-imprimir="${esc(c.periodo)}">Imprimir los estados</button><button type="button" class="accion secundaria chica" data-cie-per="${esc(c.periodo)}">Ver el cierre</button></div>
+            <div class="ct-cie-descarga" data-cie-descarga="${esc(c.periodo)}"></div>
+          </li>`).join("")}</ul>` : `<p class="ct-vacio">Todavía no se ha cerrado ningún período desde la app. El primero es la apertura (el 30-sep), después octubre.</p>`}
+      </section>`;
+    wireCie(cieCuerpo());
+  }
+
+  // ---------- Ajustes del cierre (cierre_config) ----------
+  async function pintarCieAjustes(mia) {
+    cargandoCie("Leyendo los ajustes del cierre…");
+    let cfg;
+    try {
+      const c = await DB._leer("cierre_config?select=*");
+      if (!Array.isArray(c) || !c.length) throw errorControl("Los ajustes del cierre no aparecieron", [{ vista: "cierre_config", filas: 0, esperadas: 1, detalle: "c9 siembra una fila (id = 1) al pegarse. Vacía: la sesión no es la del dueño." }]);
+      cfg = c[0];
+    } catch (err) { if (!vivaCie(mia)) return; return pintarErrorCie(err, pintarCierre); }
+    if (!vivaCie(mia)) return;
+    subCie(`La ronda ${cfg.ronda_activa ? "corre cada mañana" : "<b>está apagada</b>"} · avisos al teléfono ${cfg.aviso_push ? "sí" : "no"} · reserva ${cfg.reserva_pct == null ? "sin %" : `${esc(cfg.reserva_pct)} %`}`);
+    cieCuerpo().innerHTML = `<section class="ct-card ct-cie-ajustes" id="ct-cie-ajustes">
+        <div class="ct-cab"><h2>Ajustes del cierre</h2></div>
+        <form class="ct-pide" id="ct-cie-ajustes-form" novalidate>
+          <label class="ct-casilla"><input type="checkbox" name="ronda_activa"${cfg.ronda_activa ? " checked" : ""}> La ronda revisa el cierre cada mañana (6:45; 7:45 en verano)</label>
+          <label class="ct-casilla"><input type="checkbox" name="aviso_push"${cfg.aviso_push ? " checked" : ""}> Avisarme al teléfono cuando algo nuevo se ponga en rojo</label>
+          <div class="ct-fila">
+            <label class="ct-campo">% de la reserva de impuestos (lo fija el CPA)<input name="reserva_pct" inputmode="decimal" placeholder="25" value="${cfg.reserva_pct == null ? "" : esc(cfg.reserva_pct)}"></label>
+            <label class="ct-campo">Método libro de depreciación (lo decide el CPA)<select name="metodo_depreciacion"><option value="linea_recta"${cfg.metodo_depreciacion === "linea_recta" ? " selected" : ""}>Línea recta</option><option value="manual"${cfg.metodo_depreciacion === "manual" ? " selected" : ""}>Un monto fijo al mes</option></select></label>
+          </div>
+          <div class="ct-acciones"><button type="submit" class="accion">Guardar los ajustes</button></div>
+        </form>
+        <p class="ct-nota">Cambiados el ${esc(fechaHora(cfg.actualizado))}. El % vacío lo quita (la reserva vuelve a decir que falta). El método vale para las altas nuevas: cada activo guarda el suyo.</p>
+        <div class="ct-form" hidden></div>
+      </section>`;
+    const card = $("ct-cie-ajustes"), form = $("ct-cie-ajustes-form");
+    form.addEventListener("submit", ev => {
+      ev.preventDefault();
+      const e0 = card.querySelector(".ct-form .ct-error"); if (e0) e0.remove();
+      const p = {};
+      if (form.ronda_activa.checked !== !!cfg.ronda_activa) p.ronda_activa = form.ronda_activa.checked;
+      if (form.aviso_push.checked !== !!cfg.aviso_push) p.aviso_push = form.aviso_push.checked;
+      const t = montoTxt(form.reserva_pct.value);
+      const pct = t === "" ? null : Number(t);
+      if (t !== "" && !Number.isFinite(pct)) { mostrarErrorForma(card, "Escribe el % como número: 25, o 27.5 (vacío lo quita)."); return; }
+      if ((pct == null ? null : pct) !== (cfg.reserva_pct == null ? null : num(cfg.reserva_pct))) p.reserva_pct = pct;
+      if (form.metodo_depreciacion.value !== cfg.metodo_depreciacion) p.metodo_depreciacion = form.metodo_depreciacion.value;
+      if (!Object.keys(p).length) { mostrarErrorForma(card, "No cambiaste nada."); return; }
+      accionCie(card, "fn_cierre_config", { p }, () => "Ajustes del cierre guardados");
+    });
+  }
+
+  const PAGINAS = { resumen: pintarResumen, bancos: pintarBancos, bandeja: pintarBandeja, conciliar: pintarConciliar, movimientos: pintarMovimientos, estados: pintarEstados, cierre: pintarCierre, cobros: pintarCobros, conexiones: pintarConexiones };
 
   // ---------- Lo que la app llama (el contrato con js/app.js) ----------
   window.MXP_CONTA = {

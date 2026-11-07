@@ -13,7 +13,7 @@
 body[data-vista="conta"] .fab { display: none; }
 #conta-raiz .ct-num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
-/* ---- pestañas: teléfono e iPad (ocho, deslizan con tope); en la computadora las esconde el CSS y las enseña el lateral de la app ----
+/* ---- pestañas: teléfono e iPad (nueve desde la fase 8, deslizan con tope); en la computadora las esconde el CSS y las enseña el lateral de la app ----
    La tira se sale 14 px a cada lado (sobre el margen de la página) y ahí se desvanece: lo que asoma cortado por el borde (una
    pestaña, el contador amarillo) se funde en vez de verse partido. El padding igual al margen deja las pestañas alineadas con las tarjetas */
 #conta-raiz .ct-tabs { display: flex; gap: .4rem; overflow-x: auto; padding: 0 14px .15rem; margin: 0 -14px; scroll-padding-inline: 14px; scrollbar-width: none; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch;
@@ -623,3 +623,116 @@ body[data-vista="conta"] .fab { display: none; }
 /* el interruptor de Conexiones */
 #conta-raiz .ct-ia-sola { margin-top: .3rem; }
 #conta-raiz .ct-ia-sola-nota { margin: .1rem 0 .3rem; font-size: .8rem; }
+
+/* ===========================================================================
+   Fase 8 · el cierre del mes (c9). La página «Cierre del mes»: los chips de
+   sus seis apartados (como los de Estados), los períodos como botones con su
+   estado, la revisión (lo que detiene con su borde rojo, los avisos en ámbar,
+   lo que está en verde plegado y en gris), el botón de cerrar y su
+   confirmación fuerte (el único botón rojo de la contabilidad: un cierre no
+   se deshace, y la frase que se escribe va resaltada), el export con su
+   avance y sus archivos, la ronda, los activos, la reserva, el DR-15 y el
+   historial. Las tablas se apilan en el teléfono y en el iPad (etiqueta arriba
+   de cada cifra), como las de los estados. Solo tokens de styles.css.
+   =========================================================================== */
+#conta-raiz .ct-cie-barra { padding-bottom: .7rem; }
+#conta-raiz .ct-cie-subs { margin-top: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: .15rem; }
+#conta-raiz .ct-cie-subs::-webkit-scrollbar { display: none; }
+#conta-raiz .ct-cie-subs .ct-chip { min-height: var(--tap); font-size: .9rem; flex: none; white-space: nowrap; }
+@media (min-width: 700px) { #conta-raiz .ct-cie-subs { flex-wrap: wrap; overflow-x: visible; } }
+/* el cuerpo es otro grid: min-width 0 para que una tabla ancha se desplace dentro de su tarjeta y no ensanche la página */
+#conta-raiz .ct-cie-cuerpo { display: grid; gap: .8rem; min-width: 0; }
+/* los períodos: un botón por período (el elegido con el borde de cobre) */
+#conta-raiz .ct-cie-pers { display: grid; grid-template-columns: minmax(0, 1fr); gap: .5rem; }
+@media (min-width: 700px) { #conta-raiz .ct-cie-pers { grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); } }
+#conta-raiz .ct-cie-per { font: inherit; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .15rem .5rem; align-items: center; text-align: left; min-width: 0; min-height: var(--tap);
+  padding: .6rem .75rem; border-radius: 12px; border: 1.5px solid var(--mp-line); background: var(--mp-card); color: var(--mp-ink); cursor: pointer; }
+#conta-raiz .ct-cie-per.sel { border-color: var(--cu); background: var(--mp-sky-1); box-shadow: inset 3px 0 0 var(--cu); }
+#conta-raiz .ct-cie-per:focus-visible { outline: 3px solid var(--mp-blue); outline-offset: 1px; }
+#conta-raiz .ct-cie-per-n { font-weight: 800; font-size: .95rem; line-height: 1.3; overflow-wrap: anywhere; }
+#conta-raiz .ct-cie-per-d { grid-column: 1 / -1; font-size: .8rem; line-height: 1.4; color: var(--mp-ink-2); overflow-wrap: anywhere; }
+/* la revisión: cada control con su borde (rojo detiene, ámbar avisa, gris en verde) y su botón a la página que lo arregla */
+#conta-raiz .ct-cie-rev.rojo, #conta-raiz .ct-cie-ronda.rojo { border-left: 4px solid var(--bad); }
+#conta-raiz .ct-cie-lista { list-style: none; margin: .3rem 0 0; padding: 0; display: grid; gap: .45rem; }
+#conta-raiz .ct-cie-item { display: flex; align-items: flex-start; gap: .6rem; padding: .55rem .7rem; border-radius: 10px; border: 1px solid var(--mp-line); border-left-width: 4px; background: var(--mp-card); }
+#conta-raiz .ct-cie-item.detiene { border-left-color: var(--bad); background: var(--mp-danger-bg); }
+#conta-raiz .ct-cie-item.aviso { border-left-color: var(--mp-amber); background: var(--mp-warn-bg-2); }
+#conta-raiz .ct-cie-item.ok { border-left-color: var(--ok); }
+#conta-raiz .ct-cie-item-txt { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-cie-item-t { margin: 0; font-weight: 800; font-size: .92rem; line-height: 1.35; color: var(--mp-ink); }
+#conta-raiz .ct-cie-item.ok .ct-cie-item-t { font-weight: 700; color: var(--mp-ink-2); }
+#conta-raiz .ct-cie-item-d { margin: .2rem 0 0; font-size: .86rem; line-height: 1.45; color: var(--mp-ink); }
+#conta-raiz .ct-cie-item.ok .ct-cie-item-d { color: var(--mp-ink-2); font-size: .82rem; }
+#conta-raiz .ct-cie-item-h { margin: .25rem 0 0; font-size: .84rem; line-height: 1.45; color: var(--mp-ink-2); }
+#conta-raiz .ct-cie-item-h b { color: var(--cu-dark); }
+#conta-raiz .ct-cie-item-p { font-size: .76rem; font-weight: 700; color: var(--mp-ink-2); }
+#conta-raiz .ct-cie-item .accion { flex: none; }
+/* en el teléfono el botón baja debajo del texto: a su lado, el detalle quedaba en una columna de tres palabras */
+@media (max-width: 699px) {
+  #conta-raiz .ct-cie-item { flex-wrap: wrap; }
+  #conta-raiz .ct-cie-item-txt { flex: 1 1 100%; }
+}
+#conta-raiz .ct-cie-verdes { margin-top: .55rem; }
+#conta-raiz .ct-cie-verdes summary { cursor: pointer; font-weight: 700; font-size: .88rem; color: var(--cu-dark); min-height: 36px; display: flex; align-items: center; }
+#conta-raiz .ct-cie-link { font: inherit; font-weight: 700; color: var(--cu-dark); background: none; border: 0; padding: 0 .1rem; min-height: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+#conta-raiz .ct-cie-link:focus-visible { outline: 3px solid var(--mp-blue); outline-offset: 2px; }
+/* cerrar: el botón rojo, apagado hasta que nada detiene; debajo, por qué */
+#conta-raiz .ct-cie-cerrar { display: grid; gap: .3rem; margin-top: .8rem; padding-top: .7rem; border-top: 1px solid var(--mp-line); }
+#conta-raiz .ct-cie-cerrar .accion { justify-self: start; }
+#conta-raiz .ct-cie-cerrar .ct-nota { margin: 0; }
+#conta-raiz .accion.ct-cie-peligro { background: var(--bad); border-color: var(--bad); color: var(--mp-white); }
+#conta-raiz .accion.ct-cie-peligro:disabled { background: var(--mp-sky-2); border-color: var(--mp-line); color: var(--mp-ink-3); box-shadow: none; cursor: not-allowed; }
+#conta-raiz .ct-cie-confirma .ct-form-t { color: var(--bad); }
+#conta-raiz .ct-cie-conse { margin: 0; padding-left: 1.1rem; font-size: .86rem; line-height: 1.5; color: var(--mp-ink); }
+#conta-raiz .ct-cie-frase { justify-self: start; display: inline-block; margin: .1rem 0; padding: .1rem .45rem; border-radius: 6px; background: var(--mp-danger-bg); border: 1px solid var(--mp-danger-bd); color: var(--bad); font-weight: 800; letter-spacing: .04em; }
+#conta-raiz .ct-cie-error { display: grid; gap: .3rem; }
+#conta-raiz .ct-cie-error p { margin: 0; }
+#conta-raiz .ct-cie-error-l { margin: 0; padding-left: 1.1rem; display: grid; gap: .3rem; color: var(--mp-ink); overflow-wrap: anywhere; }
+/* un período cerrado: su huella entera (se parte donde haga falta) y su export */
+#conta-raiz .ct-cie-huella { display: grid; gap: .1rem; margin: .3rem 0 .5rem; padding: .5rem .7rem; border-radius: 10px; background: var(--mp-sky-1); border: 1px solid var(--mp-line); }
+#conta-raiz .ct-cie-huella .ct-num { font-size: .82rem; overflow-wrap: anywhere; word-break: break-all; color: var(--mp-ink); }
+#conta-raiz .ct-cie-export { min-width: 0; }
+#conta-raiz .ct-cie-pasos { list-style: none; margin: .3rem 0; padding: 0; display: grid; gap: .25rem; font-size: .88rem; line-height: 1.4; overflow-wrap: anywhere; }
+#conta-raiz .ct-cie-pasos li.ok { color: var(--ok-ink); font-weight: 700; }
+#conta-raiz .ct-cie-pasos li.ok::before { content: "✓ "; }
+#conta-raiz .ct-cie-archivos { list-style: none; margin: .4rem 0; padding: 0; display: grid; gap: .35rem; }
+#conta-raiz .ct-cie-archivos li { display: grid; gap: .05rem; padding: .45rem .6rem; border-radius: 10px; border: 1px solid var(--mp-line); background: var(--mp-card); min-width: 0; }
+#conta-raiz .ct-cie-archivo { font-weight: 800; color: var(--cu-dark); overflow-wrap: anywhere; min-height: 28px; display: inline-flex; align-items: center; }
+#conta-raiz .ct-cie-archivos small { font-size: .78rem; color: var(--mp-ink-3); overflow-wrap: anywhere; }
+/* las tablas del cierre (activos, DR-15): en el teléfono se apilan, la primera columna arriba y las cifras de dos en dos */
+#conta-raiz .ct-cie-tabla td small { display: block; font-size: .78rem; color: var(--mp-ink-3); }
+#conta-raiz .ct-cie-tabla td.r small { font-family: var(--font); }
+#conta-raiz .ct-af-tabla tr.baja td { color: var(--mp-ink-2); }
+#conta-raiz .ct-af-tabla .ct-af-falta { color: var(--warn-ink); font-weight: 700; }
+#conta-raiz .ct-af-acc { text-align: right; white-space: nowrap; }
+#conta-raiz .ct-af-dep p { margin: 0; }
+#conta-raiz .ct-cie-nose { display: inline-block; font-size: .78rem; font-style: italic; color: var(--mp-ink-3); white-space: nowrap; }
+/* (hasta el iPad: a 820 px el DR-15 y los activos no caben en siete columnas y se cortaban por la derecha; en el iPad, de tres en tres) */
+@media (max-width: 1023px) {
+  #conta-raiz .ct-tabla.ct-cie-tabla { min-width: 0; }
+  #conta-raiz .ct-tabla.ct-cie-tabla thead { display: none; }
+  #conta-raiz .ct-tabla.ct-cie-tabla tbody tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .3rem .6rem; padding: .65rem 0; border-bottom: 1px solid var(--mp-line); }
+  #conta-raiz .ct-tabla.ct-cie-tabla tbody tr td { display: block; border: 0; padding: 0; min-width: 0; overflow-wrap: anywhere; }
+  #conta-raiz .ct-tabla.ct-cie-tabla td.ct-cie-c1 { grid-column: 1 / -1; }
+  #conta-raiz .ct-tabla.ct-cie-tabla td[data-col]::before { content: attr(data-col); display: block; font-size: .7rem; letter-spacing: .06em; text-transform: uppercase; color: var(--mp-ink-2); font-weight: 700; font-family: var(--font); }
+  #conta-raiz .ct-tabla.ct-cie-tabla td.r { text-align: left; }
+  #conta-raiz .ct-tabla.ct-cie-tabla td.ct-af-acc { grid-column: 1 / -1; text-align: left; }
+  #conta-raiz .ct-tabla.ct-cie-tabla td.ct-af-acc:empty { display: none; }
+}
+@media (min-width: 700px) and (max-width: 1023px) { #conta-raiz .ct-tabla.ct-cie-tabla tbody tr { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+/* la reserva: la frase grande (transfiere / sobra / falta el %) y el próximo estimado */
+#conta-raiz .ct-res-titular { margin: .2rem 0 .3rem; font-size: var(--fs-7); font-weight: 800; letter-spacing: -.01em; line-height: 1.25; overflow-wrap: anywhere; }
+#conta-raiz .ct-res-titular.warn { color: var(--cu-dark); }
+#conta-raiz .ct-res-titular.ok { color: var(--ok-ink); }
+#conta-raiz .ct-res-prox { padding: .6rem .75rem; border-radius: 12px; border: 1px solid var(--mp-line); background: var(--mp-sky-1); }
+#conta-raiz .ct-res-prox.cerca { border-color: var(--mp-warn-bd); background: var(--mp-warn-bg-2); }
+#conta-raiz .ct-res-prox p { margin: .15rem 0; }
+#conta-raiz .ct-res-est { display: flex; align-items: center; gap: .6rem; padding: .5rem .7rem; border-radius: 10px; border: 1px solid var(--mp-line); }
+#conta-raiz .ct-res-est.anulado { opacity: .7; }
+#conta-raiz .ct-res-est .accion { flex: none; }
+/* el historial */
+#conta-raiz .ct-hist-lista { list-style: none; margin: 0; padding: 0; display: grid; gap: .6rem; }
+#conta-raiz .ct-hist { padding: .7rem .8rem; border-radius: 12px; border: 1px solid var(--mp-line); background: var(--mp-card); min-width: 0; }
+#conta-raiz .ct-hist-cab { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+#conta-raiz .ct-hist-cab b { font-size: .98rem; margin-right: .2rem; }
+#conta-raiz .ct-hist .ct-nota { margin: .25rem 0 0; overflow-wrap: anywhere; }
