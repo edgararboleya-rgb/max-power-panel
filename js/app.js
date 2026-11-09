@@ -401,6 +401,7 @@
     // Los resúmenes del inicio salen cerrados para el que entre después
     urgentesAbierto = false;
     avisosAbierto = false;
+    dudasAbierto = false; dudaDesplegada = null; // 9-nov: la barra «La IA pregunta»
     // Las tareas que esperaban su «Deshacer» se quedan sin borrar
     tareasBorrando.forEach(reloj => clearTimeout(reloj));
     tareasBorrando.clear();
@@ -447,8 +448,6 @@
     // v280 (pliego §13 E4): lo que toca la IA al apuntar un reporte dictado, y el reparto de horas por fase
     horas_ia: ["horas", "horas_tareas", "pendientes", "recibos", "recibos_equipo"],
     reparto: ["horas_estimadas_fase"],
-    // v281 (pliego §13 E5): lo que puede cambiar al contestar una duda de la bandeja (la obra, sus pendientes y la bandeja)
-    dudas: ["proyectos", "pendientes", "ia_dudas"],
   };
   async function recargar(abrirId, que) {
     const turno = ++recargaTurno;
@@ -842,7 +841,7 @@ function esFalloDeRed(err) {
     etapaActiva = null;
     // Los resúmenes de urgentes y avisos se abren en su sitio; al volver al
     // inicio DESDE OTRA VISTA salen cerrados (un repintado no los cierra)
-    if (lateralVista !== "home") { urgentesAbierto = false; avisosAbierto = false; }
+    if (lateralVista !== "home") { urgentesAbierto = false; avisosAbierto = false; dudasAbierto = false; dudaDesplegada = null; }
     // «Hoy»: la fecha en llano (hora de Florida) y el saludo con el primer nombre
     // «+ Nuevo proyecto» ya no sale en Hoy: vive en Proyectos
     mostrar("home", { kicker: fechaHoyLlana(), titulo: `Hola, ${primerNombreDe(usuario.nombre)}`, volver: false, nuevo: false });
@@ -2057,27 +2056,16 @@ function esFalloDeRed(err) {
   }
 
   // ---------- v281 (pliego §13 E5): la bandeja «La IA pregunta» (solo el dueño) ----------
-  // Las dudas que la revisión diaria del cerebro (de madrugada y a las 9 PM) dejó en ia_propuestas. Cada botón contesta con
-  // ?accion=propuesta y el token del dueño: Sí / No / Todavía no («no» = no te lo vuelvo a preguntar en 30 días; «todavía no»,
-  // en 7). La de cerrar una obra trae sus tres opciones; la de cobro, «Abrir el correo» (un mailto: al cliente con copia a
-  // Edgar) y «Ya lo mandé». El correo NUNCA se manda solo: lo manda Edgar desde su correo. Al equipo no le sale nunca.
-  const CC_EDGAR = "edgararboleya@mxpes.com";
-  let dudaOcupada = null;
-  function mailtoDeCobro(c) {
-    const enc = x => encodeURIComponent(String(x || "")).replace(/%40/g, "@");
-    // la copia a Edgar va siempre (regla de la casa), venga o no en el borrador
-    return `mailto:${enc(c && c.para)}?cc=${enc(CC_EDGAR)}&subject=${enc(c && c.asunto)}&body=${enc(c && c.cuerpo)}`;
-  }
-  function botonesDeDuda(d) {
-    const b = (decision, texto, clase, opcion) =>
-      `<button type="button" class="btn sm ${clase} duda-ia-btn" data-decision="${decision}"${opcion ? ` data-opcion="${esc(opcion)}"` : ""}>${esc(texto)}</button>`;
-    if (d.tipo === "estado") {
-      const ops = d.opciones.length ? d.opciones : [{ id: "cerrar_resolver", texto: "Cerrar y resolver los pendientes" },
-        { id: "cerrar_dejar", texto: "Cerrar y dejarlos" }, { id: "todavia_no", texto: "Todavía no" }];
-      return ops.map(o => o.id === "todavia_no" ? b("luego", o.texto, "btn-white") : b("si", o.texto, o.id === "cerrar_resolver" ? "btn-navy" : "btn-white", o.id)).join("");
-    }
-    const si = d.tipo === "cobro" ? "Ya lo mandé" : d.tipo === "leccion" ? "Guardar la lección" : "Sí";
-    return b("si", si, "btn-navy") + b("no", "No", "btn-white") + b("luego", "Todavía no", "btn-white");
+  // Las dudas que la revisión diaria del cerebro (de madrugada y a las 9 PM) dejó en ia_propuestas (llegan por ?accion=dudas).
+  // 9-nov (lo pidió Edgar): ya no se contestan desde la app. Es una barra cerrada como la de urgentes («N dudas», hasta 3 obras,
+  // «Ver»); al abrirla, cada duda es una fila de dos líneas que se despliega entera para leerla, con «Compartir con Code» (v298).
+  // Se contestan y se arreglan con Claude Code («revisa la duda» y su número). Al equipo no le sale nunca (las dudas llevan montos).
+  let dudasAbierto = false;   // 9-nov: como urgentesAbierto, para que un repintado no la cierre
+  let dudaDesplegada = null;  // 9-nov: el número de la duda abierta entera (si ya no está en la lista, no pasa nada)
+  // 9-nov: la duda de cobro empieza por «<obra>: …»; como la obra ya va en negrita encima, aquí se quita para no repetirla
+  function cuerpoDuda(d) {
+    const t = String((d && d.texto) || ""), o = String((d && d.obra) || "");
+    return o && t.startsWith(o + ":") ? t.slice(o.length + 1).trim() : t;
   }
   // v282 (pliego §13 E6): «QuickBooks: mira esto» (solo el dueño): lo que la revisión de QuickBooks (qb v4, 8 AM y 4 PM)
   // no quiso decidir sola y dejó en cobros_pendientes: la factura que la app no conoce, la que no cuadra con su hito, la
@@ -2123,54 +2111,135 @@ function esFalloDeRed(err) {
     if (!caja) return;
     const dudas = usuario && usuario.finanzas ? ((state && state.dudasIA) || []) : [];
     const deQB = usuario && usuario.finanzas ? ((state && state.qbPendientes) || []) : [];
+    // Sin dudas no hay lista que tener abierta
+    if (!dudas.length) { dudasAbierto = false; dudaDesplegada = null; }
     if (!dudas.length && !deQB.length) { caja.innerHTML = ""; caja.hidden = true; return; }
     caja.hidden = false;
-    caja.innerHTML = (!dudas.length ? "" : `
-      <div class="inicio-card dudas-ia" id="bandeja-ia">
-        <h2 class="inicio-card-titulo">La IA pregunta</h2>
-        <p class="dudas-ia-sub">${dudas.length === 1 ? "1 duda de la revisión diaria" : `${dudas.length} dudas de la revisión diaria`}</p>
-        ${dudas.map(d => `
-          <div class="duda-ia" data-duda="${esc(d.id)}" data-tipo="${esc(d.tipo)}">
-            ${d.obra ? `<p class="duda-ia-obra" data-no-i18n>${esc(d.obra)}</p>` : ""}
-            <p class="duda-ia-texto" data-no-i18n>${esc(d.texto)}</p>
-            ${d.tipo === "cobro" && d.correo ? `
-              <a class="btn sm btn-white duda-ia-correo" href="${esc(mailtoDeCobro(d.correo))}" target="_blank" rel="noopener">Abrir el correo</a>
-              <p class="duda-ia-nota">Revísalo y mándalo tú: va con copia a ti.${d.correo.para ? "" : " Falta el correo del cliente: ponlo al abrirlo."}</p>` : ""}
-            ${d.puedeLeccion ? `<label class="duda-ia-leccion"><input type="checkbox" data-leccion> Guardar como lección</label>` : ""}
-            <div class="duda-ia-botones">${botonesDeDuda(d)}</div>
-            <p class="duda-ia-error" hidden></p>
-          </div>`).join("")}
-      </div>`) + (deQB.length ? tarjetaQB(deQB) : "");
-    caja.querySelectorAll(".duda-ia-btn").forEach(btn => btn.addEventListener("click", () => contestarDuda(btn)));
+    caja.innerHTML = (dudas.length ? htmlBarraDudas(dudas) : "") + (deQB.length ? tarjetaQB(deQB) : "");
+    engancharBarraDudas();
     caja.querySelectorAll(".qb-visto-btn").forEach(btn => btn.addEventListener("click", () => resolverCobroQB(btn)));
   }
-  async function contestarDuda(boton) {
-    const tarjeta = boton.closest("[data-duda]");
-    if (!tarjeta || dudaOcupada !== null) return;
-    const id = Number(tarjeta.dataset.duda);
-    const casilla = tarjeta.querySelector("[data-leccion]");
-    const botones = [...tarjeta.querySelectorAll("button")];
-    dudaOcupada = id;
-    botones.forEach(b => { b.disabled = true; });
-    let r = null;
-    try {
-      r = await DB.pedirAlCerebro("propuesta", { id, decision: boton.dataset.decision,
-        ...(boton.dataset.opcion ? { opcion: boton.dataset.opcion } : {}), guardar_leccion: !!(casilla && casilla.checked) }, { ms: 30000 });
-    } catch (e) { r = { ok: false, error: String((e && e.message) || "") }; }
-    dudaOcupada = null;
-    if (r && r.ok) {
-      // se quita ya de la pantalla y después se recarga lo que la respuesta pudo cambiar (la obra, sus pendientes, la bandeja)
-      if (state) state.dudasIA = (state.dudasIA || []).filter(x => Number(x.id) !== id);
-      pintarInicioDudas();
-      avisar(String(r.respuesta || "Hecho."));
-      try { await recargar(undefined, "dudas"); } catch { /* la pantalla se queda como está */ }
-      return;
+  // 9-nov: la barra «N dudas · La IA pregunta» y, si está abierta, la lista para leer (sin ningún botón de contestar)
+  function htmlBarraDudas(dudas) {
+    const n = dudas.length;
+    const obras = tresObras(dudas.map(d => d.obra));
+    const fila = d => {
+      const abierta = String(d.id) === String(dudaDesplegada);
+      return `
+          <div class="duda-fila${abierta ? " abierta" : ""}" data-duda="${esc(d.id)}" data-tipo="${esc(d.tipo)}">
+            <button type="button" class="duda-fila-btn" aria-expanded="${abierta}"${abierta ? ` aria-controls="duda-entera-${esc(d.id)}"` : ""}>
+              ${d.obra ? `<b class="duda-fila-obra" data-no-i18n>${esc(abierta ? d.obra : obraCorta(d.obra))}</b>` : ""}
+              <span class="duda-fila-texto" data-no-i18n>${esc(cuerpoDuda(d))}</span>
+            </button>
+            ${abierta ? `
+            <div class="duda-entera" id="duda-entera-${esc(d.id)}">
+              ${d.tipo === "cobro" ? `<p class="duda-entera-nota">El borrador del correo lo vemos juntos en Claude Code.</p>` : ""}
+              <span class="duda-entera-num"><span>Duda nº</span> <span data-no-i18n>${esc(d.id)}</span></span>
+              <button type="button" class="btn sm btn-white duda-copiar">Compartir con Code</button>
+            </div>` : ""}
+          </div>`;
+    };
+    return `
+      <div class="dudas-barra" id="bandeja-ia">
+        <button type="button" class="card card-white resumen-btn resumen-dudas" id="dudas-resumen" aria-expanded="${dudasAbierto}" aria-controls="dudas-lista">
+          <span class="resumen-punto cobre" aria-hidden="true"></span>
+          <span class="resumen-cuerpo">
+            <span class="resumen-cifra"><span class="resumen-num" data-no-i18n>${n}</span> <span class="resumen-palabra">${n === 1 ? "duda" : "dudas"}</span></span>
+            <span class="resumen-linea"><span>La IA pregunta</span> · <span data-no-i18n>${esc(sinMontos(obras))}</span></span>
+          </span>
+          <span class="resumen-ver"><span>${dudasAbierto ? "Ocultar" : "Ver"}</span> <span class="resumen-flecha" aria-hidden="true">›</span></span>
+        </button>
+        ${dudasAbierto ? `
+        <div class="inicio-card dudas-ia resumen-lista" id="dudas-lista">
+          ${dudas.map(fila).join("")}
+          <p class="dudas-ia-pie">Son para leer. Toca «Compartir con Code», pégalo en Claude Code y ahí buscamos la respuesta y lo arreglamos juntos.</p>
+          <div class="resumen-botones">
+            <button type="button" class="btn sm btn-navy" id="dudas-compartir-todas">${n === 1 ? "Compartirla con Code" : "Compartir todas con Code"}</button>
+            <button type="button" class="btn sm btn-white" id="dudas-cerrar">Cerrar</button>
+          </div>
+        </div>` : ""}
+      </div>`;
+  }
+  // 9-nov: solo se vuelve a pintar la barra (la tarjeta de QuickBooks de debajo no se toca)
+  function repintarBarraDudas(enfocar) {
+    const barra = $("bandeja-ia");
+    const dudas = usuario && usuario.finanzas ? ((state && state.dudasIA) || []) : [];
+    if (!barra || !dudas.length) { pintarInicioDudas(); return; }
+    barra.outerHTML = htmlBarraDudas(dudas);
+    engancharBarraDudas();
+    const el = enfocar && enfocar();
+    if (el) el.focus();
+  }
+  function engancharBarraDudas() {
+    const barra = $("bandeja-ia");
+    if (!barra) return;
+    $("dudas-resumen").addEventListener("click", () => {
+      dudasAbierto = !dudasAbierto;
+      repintarBarraDudas(() => $("dudas-resumen"));
+    });
+    if (!dudasAbierto) return;
+    $("dudas-cerrar").addEventListener("click", () => {
+      dudasAbierto = false;
+      repintarBarraDudas(() => $("dudas-resumen"));
+    });
+    // tocar una fila la despliega entera; tocarla otra vez la cierra
+    barra.querySelectorAll(".duda-fila-btn").forEach(btn => btn.addEventListener("click", () => {
+      const id = btn.closest("[data-duda]").dataset.duda;
+      dudaDesplegada = String(dudaDesplegada) === id ? null : id;
+      repintarBarraDudas(() => document.querySelector(`#bandeja-ia [data-duda="${CSS.escape(id)}"] .duda-fila-btn`));
+    }));
+    barra.querySelectorAll(".duda-copiar").forEach(btn => btn.addEventListener("click", () => copiarDudaParaClaude(btn.closest("[data-duda]").dataset.duda)));
+    const todas = $("dudas-compartir-todas");
+    if (todas) todas.addEventListener("click", () => compartirTodasConCode());
+  }
+  // 9-nov (v298, lo pidió Edgar): «Compartir con Code» da un resumen en Markdown para pegarlo en Claude Code y trabajarlo allí.
+  // Solo lo ve el dueño (la barra no sale al equipo): lleva los montos de la duda tal cual.
+  const QUE_ES_DUDA = { estado: "cerrar la obra", accionvieja: "próxima acción vieja", sinfacturar: "trabajo sin facturar",
+    descuadre: "el dinero no cuadra", cobro: "un cobro pendiente", leccion: "guardar una lección" };
+  function mdDeDuda(d, nivel) {
+    const lineas = [`${nivel} La IA pregunta — duda ${d.id}${d.obra ? ` · ${d.obra}` : ""}`];
+    if (d.obra) lineas.push(`- **Obra:** ${d.obra}${d.proyecto && d.proyecto !== d.obra ? ` (\`${d.proyecto}\`)` : ""}`);
+    lineas.push(`- **Qué es:** ${QUE_ES_DUDA[d.tipo] || d.tipo}`);
+    if (d.creado) lineas.push(`- **Desde:** ${d.creado}`);
+    lineas.push(`- **La pregunta:** ${cuerpoDuda(d)}`);
+    if (d.opciones && d.opciones.length) lineas.push(`- **Las opciones que daba:** ${d.opciones.map(o => o.texto).join(" · ")}`);
+    if (d.puedeLeccion) lineas.push(`- **Se puede guardar como lección:** sí`);
+    if (d.correo) {
+      lineas.push(`- **Borrador del correo:** para ${d.correo.para || "(falta el correo del cliente)"}${d.correo.asunto ? ` · asunto «${d.correo.asunto}»` : ""}`);
+      if (d.correo.cuerpo) lineas.push(...String(d.correo.cuerpo).split("\n").map(l => `  > ${l}`));
     }
-    botones.forEach(b => { b.disabled = false; });
-    const err = tarjeta.querySelector(".duda-ia-error");
-    // (como en «Que la IA lo apunte») un código suelto («no_autorizado») no se enseña: solo una frase
-    const txt = r && typeof r.error === "string" && /\s/.test(r.error.trim()) ? r.error : "No pude guardar tu respuesta. Vuelve a intentarlo.";
-    if (err) { err.textContent = txt; err.hidden = false; }
+    return lineas.join("\n");
+  }
+  async function copiarAlPortapapeles(texto) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(texto); return true; }
+    } catch { /* se prueba a la antigua */ }
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = texto; ta.setAttribute("readonly", ""); ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      const ok = document.execCommand("copy");
+      ta.remove();
+      return ok;
+    } catch { return false; }
+  }
+  async function compartirTodasConCode() {
+    const dudas = usuario && usuario.finanzas ? ((state && state.dudasIA) || []) : [];
+    if (!dudas.length) return;
+    const texto = [`# La IA pregunta — ${dudas.length === 1 ? "1 duda" : `${dudas.length} dudas`} (${hoyISO()})`, "",
+      "Claude: revísalas conmigo. Busca la respuesta en la app, en QuickBooks y en los correos, y dime qué hacemos con cada una.",
+      "", dudas.map(d => mdDeDuda(d, "##")).join("\n\n")].join("\n");
+    if (await copiarAlPortapapeles(texto)) avisar("Copiado. Pégalo aquí en Claude Code y lo trabajamos.");
+    else avisar("No pude copiarlas. Dime en Claude Code: «revisa las dudas de La IA pregunta».", true);
+  }
+  // 9-nov (v298): «Compartir con Code» deja en el portapapeles la duda entera en Markdown, para pegarla en Claude Code y
+  // trabajarla allí. No llama al cerebro: nada se contesta desde la app.
+  async function copiarDudaParaClaude(id) {
+    const d = ((state && state.dudasIA) || []).find(x => String(x.id) === String(id));
+    if (!d) return;
+    const texto = mdDeDuda(d, "##") + "\n\nClaude: revisa esta duda conmigo. Busca la respuesta y dime qué hacemos.";
+    if (await copiarAlPortapapeles(texto)) avisar("Copiado. Pégalo aquí en Claude Code y lo trabajamos.");
+    else avisar(`No pude copiarla. Dímela tú en Claude Code: «revisa la duda ${d.id}».`, true);
   }
 
   // ¿Quién reportó horas? (solo dueño)
@@ -7706,7 +7775,7 @@ function esFalloDeRed(err) {
   // las que tienen trabajo, se abre sin ella (la de siempre).
   let abrirPendiente = "";
   // v281 (pliego §13 E5): ?abrir=bandeja (el aviso «Edgar, tengo N dudas» de la revisión diaria) lleva al inicio y baja
-  // hasta la bandeja «La IA pregunta».
+  // hasta la bandeja «La IA pregunta». 9-nov: y la deja abierta (la lista de las dudas a la vista).
   function abrirDesdeDireccion(direccion) {
     let u;
     try { u = new URL(direccion, location.href); } catch { return false; }
@@ -7723,9 +7792,11 @@ function esFalloDeRed(err) {
     abrirPendiente = "";
     if (abrir === "bandeja") {
       irHome();
+      // 9-nov: la barra sale abierta (solo el dueño la tiene; al campo no le pinta nada)
+      if (usuario.finanzas) { dudasAbierto = true; pintarInicioDudas(); }
       setTimeout(() => {
         const b = $("inicio-dudas");
-        const dest = b && !b.hidden ? b : $("inicio-hoy");
+        const dest = b && !b.hidden ? ($("bandeja-ia") || b) : $("inicio-hoy");
         if (dest && dest.scrollIntoView) dest.scrollIntoView({ block: "start" });
       }, 300);
       return true;
