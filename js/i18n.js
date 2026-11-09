@@ -5081,7 +5081,15 @@
     "Copiada. Pégamela en Claude Code y la vemos.": "Copied. Paste it to me in Claude Code and we'll go over it.",
     "Son para leer. Para contestarlas o arreglarlas, ábrelas conmigo en Claude Code: dime «revisa la duda» y su número (sale al abrirla).":
       "These are just to read. To answer or fix them, open them with me in Claude Code: tell me “check question” and its number (you'll see it when you open it).",
-    "El borrador del correo lo vemos juntos en Claude Code.": "We'll go over the email draft together in Claude Code."
+    "El borrador del correo lo vemos juntos en Claude Code.": "We'll go over the email draft together in Claude Code.",
+    // v298 (9-nov): «Compartir con Code» da un resumen en Markdown para pegarlo en Claude Code
+    "Compartir con Code": "Share with Code",
+    "Compartirla con Code": "Share it with Code",
+    "Compartir todas con Code": "Share all with Code",
+    "Son para leer. Toca «Compartir con Code», pégalo en Claude Code y ahí buscamos la respuesta y lo arreglamos juntos.":
+      "These are just to read. Tap “Share with Code”, paste it in Claude Code, and we'll find the answer and fix it together there.",
+    "Copiado. Pégalo aquí en Claude Code y lo trabajamos.": "Copied. Paste it here in Claude Code and we'll work on it.",
+    "No pude copiarlas. Dime en Claude Code: «revisa las dudas de La IA pregunta».": "I couldn't copy them. Tell me in Claude Code: “check the AI's questions”."
   });
   REGLAS.push(
     [/^No pude copiarla\. Dímela tú en Claude Code: «revisa la duda (\d+)»\.$/, "I couldn't copy it. Tell me yourself in Claude Code: “check question $1”."]

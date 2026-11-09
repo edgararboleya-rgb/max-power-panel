@@ -2057,7 +2057,7 @@ function esFalloDeRed(err) {
   // ---------- v281 (pliego §13 E5): la bandeja «La IA pregunta» (solo el dueño) ----------
   // Las dudas que la revisión diaria del cerebro (de madrugada y a las 9 PM) dejó en ia_propuestas (llegan por ?accion=dudas).
   // 9-nov (lo pidió Edgar): ya no se contestan desde la app. Es una barra cerrada como la de urgentes («N dudas», hasta 3 obras,
-  // «Ver»); al abrirla, cada duda es una fila de dos líneas que se despliega entera para leerla, con «Copiar para Claude».
+  // «Ver»); al abrirla, cada duda es una fila de dos líneas que se despliega entera para leerla, con «Compartir con Code» (v298).
   // Se contestan y se arreglan con Claude Code («revisa la duda» y su número). Al equipo no le sale nunca (las dudas llevan montos).
   let dudasAbierto = false;   // 9-nov: como urgentesAbierto, para que un repintado no la cierre
   let dudaDesplegada = null;  // 9-nov: el número de la duda abierta entera (si ya no está en la lista, no pasa nada)
@@ -2134,7 +2134,7 @@ function esFalloDeRed(err) {
             <div class="duda-entera" id="duda-entera-${esc(d.id)}">
               ${d.tipo === "cobro" ? `<p class="duda-entera-nota">El borrador del correo lo vemos juntos en Claude Code.</p>` : ""}
               <span class="duda-entera-num"><span>Duda nº</span> <span data-no-i18n>${esc(d.id)}</span></span>
-              <button type="button" class="btn sm btn-white duda-copiar">Copiar para Claude</button>
+              <button type="button" class="btn sm btn-white duda-copiar">Compartir con Code</button>
             </div>` : ""}
           </div>`;
     };
@@ -2151,8 +2151,9 @@ function esFalloDeRed(err) {
         ${dudasAbierto ? `
         <div class="inicio-card dudas-ia resumen-lista" id="dudas-lista">
           ${dudas.map(fila).join("")}
-          <p class="dudas-ia-pie">Son para leer. Para contestarlas o arreglarlas, ábrelas conmigo en Claude Code: dime «revisa la duda» y su número (sale al abrirla).</p>
+          <p class="dudas-ia-pie">Son para leer. Toca «Compartir con Code», pégalo en Claude Code y ahí buscamos la respuesta y lo arreglamos juntos.</p>
           <div class="resumen-botones">
+            <button type="button" class="btn sm btn-navy" id="dudas-compartir-todas">${n === 1 ? "Compartirla con Code" : "Compartir todas con Code"}</button>
             <button type="button" class="btn sm btn-white" id="dudas-cerrar">Cerrar</button>
           </div>
         </div>` : ""}
@@ -2187,26 +2188,56 @@ function esFalloDeRed(err) {
       repintarBarraDudas(() => document.querySelector(`#bandeja-ia [data-duda="${CSS.escape(id)}"] .duda-fila-btn`));
     }));
     barra.querySelectorAll(".duda-copiar").forEach(btn => btn.addEventListener("click", () => copiarDudaParaClaude(btn.closest("[data-duda]").dataset.duda)));
+    const todas = $("dudas-compartir-todas");
+    if (todas) todas.addEventListener("click", () => compartirTodasConCode());
   }
-  // 9-nov: «Copiar para Claude» deja en el portapapeles la duda entera, para pegarla en Claude Code. No llama al cerebro.
+  // 9-nov (v298, lo pidió Edgar): «Compartir con Code» da un resumen en Markdown para pegarlo en Claude Code y trabajarlo allí.
+  // Solo lo ve el dueño (la barra no sale al equipo): lleva los montos de la duda tal cual.
+  const QUE_ES_DUDA = { estado: "cerrar la obra", accionvieja: "próxima acción vieja", sinfacturar: "trabajo sin facturar",
+    descuadre: "el dinero no cuadra", cobro: "un cobro pendiente", leccion: "guardar una lección" };
+  function mdDeDuda(d, nivel) {
+    const lineas = [`${nivel} La IA pregunta — duda ${d.id}${d.obra ? ` · ${d.obra}` : ""}`];
+    if (d.obra) lineas.push(`- **Obra:** ${d.obra}${d.proyecto && d.proyecto !== d.obra ? ` (\`${d.proyecto}\`)` : ""}`);
+    lineas.push(`- **Qué es:** ${QUE_ES_DUDA[d.tipo] || d.tipo}`);
+    if (d.creado) lineas.push(`- **Desde:** ${d.creado}`);
+    lineas.push(`- **La pregunta:** ${cuerpoDuda(d)}`);
+    if (d.opciones && d.opciones.length) lineas.push(`- **Las opciones que daba:** ${d.opciones.map(o => o.texto).join(" · ")}`);
+    if (d.puedeLeccion) lineas.push(`- **Se puede guardar como lección:** sí`);
+    if (d.correo) {
+      lineas.push(`- **Borrador del correo:** para ${d.correo.para || "(falta el correo del cliente)"}${d.correo.asunto ? ` · asunto «${d.correo.asunto}»` : ""}`);
+      if (d.correo.cuerpo) lineas.push(...String(d.correo.cuerpo).split("\n").map(l => `  > ${l}`));
+    }
+    return lineas.join("\n");
+  }
+  async function copiarAlPortapapeles(texto) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(texto); return true; }
+    } catch { /* se prueba a la antigua */ }
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = texto; ta.setAttribute("readonly", ""); ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      const ok = document.execCommand("copy");
+      ta.remove();
+      return ok;
+    } catch { return false; }
+  }
+  async function compartirTodasConCode() {
+    const dudas = usuario && usuario.finanzas ? ((state && state.dudasIA) || []) : [];
+    if (!dudas.length) return;
+    const texto = [`# La IA pregunta — ${dudas.length === 1 ? "1 duda" : `${dudas.length} dudas`} (${hoyISO()})`, "",
+      "Claude: revísalas conmigo. Busca la respuesta en la app, en QuickBooks y en los correos, y dime qué hacemos con cada una.",
+      "", dudas.map(d => mdDeDuda(d, "##")).join("\n\n")].join("\n");
+    if (await copiarAlPortapapeles(texto)) avisar("Copiado. Pégalo aquí en Claude Code y lo trabajamos.");
+    else avisar("No pude copiarlas. Dime en Claude Code: «revisa las dudas de La IA pregunta».", true);
+  }
+  // 9-nov (v298): «Compartir con Code» deja en el portapapeles la duda entera en Markdown, para pegarla en Claude Code y
+  // trabajarla allí. No llama al cerebro: nada se contesta desde la app.
   async function copiarDudaParaClaude(id) {
     const d = ((state && state.dudasIA) || []).find(x => String(x.id) === String(id));
     if (!d) return;
-    const texto = `La IA pregunta — duda ${d.id}${d.obra ? ` (${d.obra})` : ""}: ${cuerpoDuda(d)}`;  // 9-nov: sin la obra dos veces
-    let copiada = false;
-    try {
-      if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(texto); copiada = true; }
-    } catch { /* se prueba a la antigua */ }
-    if (!copiada) {
-      try {
-        const ta = document.createElement("textarea");
-        ta.value = texto; ta.setAttribute("readonly", ""); ta.style.position = "fixed"; ta.style.opacity = "0";
-        document.body.appendChild(ta); ta.select();
-        copiada = document.execCommand("copy");
-        ta.remove();
-      } catch { copiada = false; }
-    }
-    if (copiada) avisar("Copiada. Pégamela en Claude Code y la vemos.");
+    const texto = mdDeDuda(d, "##") + "\n\nClaude: revisa esta duda conmigo. Busca la respuesta y dime qué hacemos.";
+    if (await copiarAlPortapapeles(texto)) avisar("Copiado. Pégalo aquí en Claude Code y lo trabajamos.");
     else avisar(`No pude copiarla. Dímela tú en Claude Code: «revisa la duda ${d.id}».`, true);
   }
 
