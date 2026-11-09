@@ -166,6 +166,22 @@ end $$;
 
 create or replace function pg_temp.c9(k text) returns text language sql as $$ select v from _c9 where k = $1 $$;
 
+-- Las funciones que crea c9-cierre.sql, por su nombre exacto (las 31). No
+-- se buscan por prefijo: en producción hay funciones de otras partes de la
+-- app que empiezan igual (fn_cierre_obra, la foto de cierre de una obra) y
+-- no son del cierre del mes.
+create or replace function pg_temp.c9_es_suya(p_nombre text) returns boolean language sql immutable as $$
+  select p_nombre = any (array[
+    'fn_activo_alta', 'fn_activo_baja', 'fn_cierre_balanza', 'fn_cierre_cerrar', 'fn_cierre_config',
+    'fn_cierre_confirmacion', 'fn_cierre_cuadre', 'fn_cierre_dueno', 'fn_cierre_exigir_dueno', 'fn_cierre_export',
+    'fn_cierre_fila', 'fn_cierre_guarda', 'fn_cierre_hash_mayor', 'fn_cierre_llano', 'fn_cierre_mes_nombre',
+    'fn_cierre_nombre', 'fn_cierre_pegado', 'fn_cierre_periodo', 'fn_cierre_precondiciones', 'fn_cierre_revisar',
+    'fn_cierre_siguiente', 'fn_cierre_sin_api', 'fn_cierre_usd', 'fn_cierre_use_tax_base', 'fn_depreciacion_mes',
+    'fn_depreciacion_plan', 'fn_reserva_estimado_anular', 'fn_reserva_estimado_marcar', 'fn_reserva_proximo_estimado', 'fn_ronda',
+    'fn_ronda_globales'])
+$$;
+
+
 -- Ser: el SQL Editor (editor: sin rol ni sesión), el dueño o el equipo por
 -- la API (authenticated, en aal2), anon o service_role.
 create or replace function pg_temp.c9_ser(quien text) returns void language plpgsql as $$
@@ -461,8 +477,7 @@ begin
             union all
             select p.oid, obj_description(p.oid, 'pg_proc') from pg_proc p
              where p.pronamespace = 'public'::regnamespace
-               and (p.proname like 'fn\_cierre\_%' or p.proname like 'fn\_ronda%' or p.proname like 'fn\_activo\_%'
-                    or p.proname like 'fn\_depreciacion\_%' or p.proname like 'fn\_reserva\_%')) x
+               and pg_temp.c9_es_suya(p.proname)) x
      where coalesce(x.d, '') not like 'c9: %';
     select format('ronda %s · pct %s · metodo %s · push %s', ronda_activa, coalesce(reserva_pct::text, 'sin fijar'), metodo_depreciacion, aviso_push)
       into v_cfg from cierre_config where id = 1;
@@ -593,8 +608,7 @@ begin
     perform pg_temp.c9_ser('editor');
     select coalesce(string_agg(p.proname, ', '), 'ninguna') into v_def
       from pg_proc p where p.pronamespace = 'public'::regnamespace and p.prosecdef
-       and (p.proname like 'fn\_cierre\_%' or p.proname like 'fn\_ronda%' or p.proname like 'fn\_activo\_%'
-            or p.proname like 'fn\_depreciacion\_%' or p.proname like 'fn\_reserva\_%');
+       and pg_temp.c9_es_suya(p.proname);
     select coalesce(string_agg(p.proname, ', '), 'ninguna') into v_pref
       from pg_proc p where p.pronamespace = 'public'::regnamespace
        and (p.proname ~ '^fn_(banco|puente|estados|stripe|plaid|contador)_')
@@ -1913,7 +1927,7 @@ begin
     select coalesce(string_agg(p.proname, ', '), 'ninguna') into v_api
       from pg_proc p
      where p.pronamespace = 'public'::regnamespace
-       and (p.proname like 'fn\_cierre\_%' or p.proname like 'fn\_ronda%' or p.proname like 'fn\_activo\_%' or p.proname like 'fn\_depreciacion\_%' or p.proname like 'fn\_reserva\_%')
+       and pg_temp.c9_es_suya(p.proname)
        and (p.prosecdef or has_function_privilege('anon', p.oid, 'execute') or has_function_privilege('service_role', p.oid, 'execute'));
     v_obt := format('c2 %s | c3 %s | c6 %s | c4 %s | c8 cuadres rojos: %s | c9 anon/service_role o definer: %s', v_c2, v_c3, v_c6, v_c4, v_c8, v_api);
   exception when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
