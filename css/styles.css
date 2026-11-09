@@ -4380,13 +4380,30 @@ body:has(#toast:not([hidden])) .fab, body:has(#sin-senal:not([hidden])) .fab { d
 .duda-ia-obra { margin: 0; font-size: var(--fs-3); font-weight: 700; color: var(--cu-dark); }
 .duda-ia-texto { margin: 0; font-size: var(--fs-5); color: var(--mp-ink); line-height: 1.45; }
 .duda-ia-nota { margin: 0; font-size: var(--fs-3); color: var(--mp-ink-2); line-height: 1.4; }
-.duda-ia-correo { justify-self: start; display: inline-flex; align-items: center; min-height: var(--tap); text-decoration: none; }
-.duda-ia-leccion { display: flex; align-items: center; gap: .5rem; min-height: var(--tap); font-size: var(--fs-4); color: var(--mp-ink); }
-.duda-ia-leccion input { width: 22px; height: 22px; }
 .duda-ia-botones { display: flex; flex-wrap: wrap; gap: .45rem; }
-.duda-ia-btn { min-height: var(--tap); }
-.duda-ia-btn:disabled { opacity: .6; cursor: progress; }
 .duda-ia-error { margin: 0; font-size: var(--fs-4); color: var(--mp-danger); }
+/* 9-nov: las dudas ya no se contestan aquí. Una barra cerrada como la de urgentes, con un punto cobre (no es urgente de obra),
+   y al abrirla una fila de dos líneas por duda que se despliega entera para leerla. */
+/* ?abrir=bandeja baja hasta la barra: que no quede debajo del membrete fijo de arriba */
+.dudas-barra { min-width: 0; scroll-margin-top: calc(var(--membrete-alto) + 12px); }
+.resumen-punto.cobre { background: var(--cu); box-shadow: 0 0 0 3px var(--cu-light); }
+.resumen-dudas .resumen-ver { color: var(--cu-dark); }
+.duda-fila { border-top: 1px solid var(--mp-sky-2); min-width: 0; }
+.duda-fila:first-child { border-top: none; }
+.duda-fila-btn { display: grid; gap: .2rem; width: 100%; min-height: var(--tap); box-sizing: border-box; padding: .65rem 0; border: 0;
+  background: none; font: inherit; text-align: left; color: var(--mp-ink); cursor: pointer; }
+.duda-fila-btn:active { transform: translateY(1px); }
+.duda-fila-obra { font-size: var(--fs-3); font-weight: 700; color: var(--cu-dark); overflow-wrap: anywhere; }
+.duda-fila-texto { font-size: var(--fs-4); line-height: 1.4; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+/* desplegada: el texto entero, y debajo su número y «Copiar para Claude» */
+.duda-fila.abierta .duda-fila-texto { display: block; -webkit-line-clamp: unset; overflow: visible; font-size: var(--fs-5); line-height: 1.45; }
+.duda-entera { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .45rem .75rem; padding: 0 0 .75rem; }
+.duda-entera-num { font-size: var(--fs-3); color: var(--mp-ink-2); }
+/* 9-nov: en la de cobro, que el correo se ve en Claude Code (la app ya no lo abre) */
+.duda-entera-nota { flex-basis: 100%; margin: 0; font-size: var(--fs-3); color: var(--mp-ink-2); line-height: 1.4; }
+.duda-copiar { width: auto; min-height: var(--tap); padding: 0 16px; }
+.dudas-ia-pie { margin: .6rem 0 0; padding-top: .6rem; border-top: 1px solid var(--mp-sky-2); font-size: var(--fs-3); color: var(--mp-ink-2); line-height: 1.45; }
 
 /* 31-oct: la pestaña «Costos» de la obra (solo el dueño). En el teléfono cada línea es una tarjeta apilada; en la
    computadora la pestaña usa el ancho entero (compras arriba, horas debajo) y cada línea va en una fila de cuatro partes. */

@@ -5071,6 +5071,21 @@
     [/^Cerré (.+?) y dejé sus pendientes abiertos\.$/, "I closed $1 and left its to-dos open."],
     [/^(.+?) ya estaba cerrada\.$/, "$1 was already closed."]
   );
+  // 9-nov: la bandeja ya no se contesta en la app: una barra cerrada («N dudas»), filas para leer y «Copiar para Claude».
+  // (Las frases de los botones de contestar de arriba se quedan: la prueba de inglés todavía las lleva en sus muestras.)
+  Object.assign(D, {
+    "duda": "question",
+    "dudas": "questions",
+    "Duda nº": "Question no.",
+    "Copiar para Claude": "Copy for Claude",
+    "Copiada. Pégamela en Claude Code y la vemos.": "Copied. Paste it to me in Claude Code and we'll go over it.",
+    "Son para leer. Para contestarlas o arreglarlas, ábrelas conmigo en Claude Code: dime «revisa la duda» y su número (sale al abrirla).":
+      "These are just to read. To answer or fix them, open them with me in Claude Code: tell me “check question” and its number (you'll see it when you open it).",
+    "El borrador del correo lo vemos juntos en Claude Code.": "We'll go over the email draft together in Claude Code."
+  });
+  REGLAS.push(
+    [/^No pude copiarla\. Dímela tú en Claude Code: «revisa la duda (\d+)»\.$/, "I couldn't copy it. Tell me yourself in Claude Code: “check question $1”."]
+  );
 
   // v282 (pliego §13 E6): la retención del contratista al facturar un hito, y lo que contesta la función qb v4
   Object.assign(D, {
