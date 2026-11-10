@@ -20,6 +20,8 @@
 #      reparto entra con exactamente las horas que Edgar vio (y la nueva
 #      queda fuera, sin aprobar, para el siguiente pago), o para con MX011 y
 #      no cambia nada. Nunca una hora que Edgar no vio aprobada o repartida.
+#      Y la que quedó fuera no pasa callada: es una hora que llegó tarde a
+#      una semana ya repartida, y el aviso 35 del jornal la nombra (v2).
 #   4. DESHACER EL MISMO REPARTO desde dos pestañas a la vez: uno lo deshace;
 #      el otro, MX008. Un solo reverso.
 #   5. DAR DE ALTA A LA MISMA PERSONA desde dos pestañas a la vez (una fila;
@@ -29,8 +31,9 @@
 #      costo por obra, el pegado medio segundo después): el pegado se rinde
 #      con 55P03 («lock timeout») en menos de 3 s, o entra; nadie muere por
 #      40P01; sin nadie leyendo, entra.
-# Y comprueba: v_jornal_control y v_margen_control sin rojos, y
-# fn_verificar_cadena en verde.
+# Y comprueba: ningún cuadre de v_jornal_control en rojo y, de sus avisos,
+# solo el 35 con las horas que llegaron tarde en la parte 3 (una por semana
+# que entró); v_margen_control sin rojos, y fn_verificar_cadena en verde.
 #
 # Cada sesión va como la app por PostgREST: el dueño (o el ayudante), con el
 # rol authenticated, los ajustes de ese rol y el tope de la API (8 s).
@@ -221,7 +224,15 @@ revisa "sin nadie leyendo, entra" "0" "$?"
 
 echo
 echo "== Al final"
-revisa "v_jornal_control sin rojos" "0" "$(ed -c "select count(*) from v_jornal_control where not ok")"
+revisa "v_jornal_control: ningún cuadre en rojo" "0" "$(ed -c "select count(*) from v_jornal_control where not ok and nivel = 'cuadre'")"
+# La hora que el ayudante reportó mientras Edgar aceptaba (parte 3) quedó
+# fuera de su reparto, dentro de sus fechas: llegó tarde a una semana ya
+# repartida. El aviso 35 las nombra —una por cada semana que entró— y es el
+# único en rojo (se arregla deshaciendo y repitiendo ese reparto, o
+# repartiéndolas con el pago que las pague).
+revisa "de los avisos, solo el 35, con las horas que llegaron tarde: una por cada semana que entró en la parte 3" \
+  "$([ "$entro" -gt 0 ] && echo 35)|$entro" \
+  "$(ed -c "select format('%s|%s', coalesce((select string_agg(orden::text, ',' order by orden) from v_jornal_control where not ok), ''), (select count(*) from fn_jornal_tardias()))")"
 revisa "v_margen_control sin rojos" "0" "$(ed -c "select count(*) from v_margen_control where not ok")"
 revisa "la cadena del libro, sin rojos (los permisos también)" "0" "$(ed -c "select count(*) from fn_verificar_cadena() where not ok")"
 revisa "cada reparto aplicado, con las horas que tenía su huella" "0" \

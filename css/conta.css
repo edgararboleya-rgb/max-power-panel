@@ -787,6 +787,10 @@ body[data-vista="conta"] .fab { display: none; }
 #conta-raiz .ct-jr-franja-fila { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .8rem; }
 #conta-raiz .ct-jr-franja-fila p { margin: 0; flex: 1 1 14rem; font-size: .95rem; line-height: 1.45; }
 #conta-raiz .ct-jr-franja .ct-aviso { margin-bottom: 0; }
+/* (v2) los avisos que son solo información (el costo queda en el mes del pago): sin ámbar, para que no parezcan un problema */
+#conta-raiz .ct-aviso.ct-jr-info { background: var(--mp-sky-1); border-color: var(--mp-line); color: var(--mp-ink-2); }
+#conta-raiz .ct-jr-aprueba, #conta-raiz .ct-jr-iaprop { margin: .4rem 0 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-jr-avisos .ct-jr-link { padding-top: .1rem; }
 
 /* ---- Costo por obra ---- */
 #conta-raiz .ct-ob-cuerpo { display: grid; gap: .8rem; min-width: 0; }
@@ -811,6 +815,9 @@ body[data-vista="conta"] .fab { display: none; }
 #conta-raiz .ct-ob-v.r { text-align: left; }
 #conta-raiz .ct-ob-senal { display: grid; justify-items: start; gap: .1rem; min-width: 0; }
 #conta-raiz .ct-ob-senal .ct-pill { white-space: normal; }
+/* (v2) qué le falta al estimado, debajo de la señal; y el margen sin facturar (sin % y sin rojo) */
+#conta-raiz .ct-ob-senal small { font-size: .76rem; line-height: 1.35; color: var(--mp-ink-3); overflow-wrap: anywhere; }
+#conta-raiz .ct-ob-sinfac { font-size: .82rem; font-weight: 600; color: var(--mp-ink-2); line-height: 1.3; }
 @media (min-width: 1024px) {
   #conta-raiz { --ct-ob-cols: minmax(0, 1fr) 8.5rem 9.5rem 7.5rem 13rem; }
   #conta-raiz .ct-ob-cab { display: grid; grid-template-columns: var(--ct-ob-cols); gap: .7rem; padding: .45rem .2rem; margin-top: .5rem; border-bottom: 1px solid var(--mp-line);

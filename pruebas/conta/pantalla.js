@@ -660,6 +660,22 @@ function funcionContador(b, auth) {
     const igual = !!p && p.lineas.length === b.lineas.length && p.lineas.every((l, i) => l.cuenta === b.lineas[i].cuenta && ((l.proyecto_id || '') === (b.lineas[i].proyecto_id || '') || (!l.proyecto_id && p.pide_obra)));
     return { cuerpo: clasificar(p, mov, b.lineas, !p || igual ? 'aprobada' : 'editada', b.recordar) };
   }
+  // (fase 9, v2) lo de la IA de los pagos de la cuadrilla (J.ia): rechazar la pendiente, caducar la aprobada cuyo asiento ya no vive.
+  // J.iaFalla: la función no contesta (como un 502 de la IA) esas veces seguidas
+  if ((b.accion === 'rechazar' || b.accion === 'caducar') && estado.c10 && J.ia && J.ia.some(x => x.propuesta_id === b.propuesta)) {
+    if (J.iaFalla > 0) { J.iaFalla -= 1; return { estado: 502, cuerpo: { ok: false, codigo: 'IA', error: 'La IA contable no contestó (prueba).' } }; }
+    const p = J.ia.find(x => x.propuesta_id === b.propuesta);
+    if (b.accion === 'caducar') {
+      if (String(b.motivo || '').trim().length < 3) return { estado: 400, cuerpo: { ok: false, codigo: '22023', error: 'Cerrar una propuesta aprobada dice por qué (motivo): queda escrito.' } };
+      if (p.estado === 'pendiente') return { estado: 409, cuerpo: { ok: false, codigo: 'MX008', error: 'Esa propuesta está pendiente: se rechaza (fn_contador_rechazar), no se caduca.' } };
+      if (!['aprobada', 'editada'].includes(p.estado)) return { estado: 409, cuerpo: { ok: false, codigo: 'MX008', error: `Esa propuesta ya está ${p.estado}.` } };
+      p.estado = 'caducada'; p.motivo = b.motivo;
+      return { cuerpo: { ok: true, propuesta: p.propuesta_id, movimiento: p.movimiento_id, estado: 'caducada' } };
+    }
+    if (p.estado !== 'pendiente') return { estado: 409, cuerpo: { ok: false, codigo: 'MX008', error: `Esa propuesta ya está ${p.estado}.` } };
+    p.estado = 'rechazada'; p.motivo = b.motivo || 'No es eso (Edgar, desde la bandeja)';
+    return { cuerpo: { ok: true, propuesta: p.propuesta_id, movimiento: p.movimiento_id, estado: 'rechazada', fuente: 'ia', motivo_edgar: p.motivo } };
+  }
   if (b.accion === 'rechazar') {
     const p = IA.props.find(x => x.propuesta_id === b.propuesta);
     if (!p || p.estado !== 'pendiente') return { estado: 409, cuerpo: { ok: false, codigo: 'MX008', error: 'Esa propuesta ya no está pendiente.' } };
@@ -962,9 +978,16 @@ const J_OBRAS = { 'c10-prueba-a': ['C10 PRUEBA Obra A', 'ejecucion'], 'c10-prueb
   'c10-prueba-f': ['C10 PRUEBA Obra F', 'completado'], 'c10-prueba-h': ['C10 PRUEBA Obra H', 'ejecucion'], 'c10-prueba-i': ['C10 PRUEBA Obra I', 'ejecucion'] };
 // los asientos de la obra A que ya están en el libro (el material, el subcontrato de verdad, el equipo, el permiso, la factura) y el del jornal de ejemplo
 const J_AS = { mat: 'c1a00000-0000-4000-8000-000000000001', co: 'c1a00000-0000-4000-8000-000000000002', sub: 'c1a00000-0000-4000-8000-000000000003', perm: 'c1a00000-0000-4000-8000-000000000005', fac: 'c1a00000-0000-4000-8000-000000000006', jornal: '1b0d2ea3-e7a3-4620-8f9b-958ad9a6acaf' };
-const J_IA = 'c1b00000-0000-4000-8000-0000000000aa'; // la propuesta de la IA (c8) que tenía el pago de Zzbeto
+const J_IA = 'c1b00000-0000-4000-8000-0000000000aa'; // la propuesta de la IA (c8) que tenía el pago de Zzbeto (pendiente: se rechaza)
+const J_IA2 = 'c1b00000-0000-4000-8000-0000000000bb'; // (v2) la del pago de Zzana: aprobada y su asiento reversado (sin_asiento: se caduca)
 const MES_J = ['', 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+// los textos de la base: fn_jornal_rango, fn_jornal_dia (2-nov, o 2-nov-2026), fn_jornal_h (37, 4.5) y fn_jornal_mes (noviembre de 2026)
+const MES3_J = ['', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+const jDiaT = (iso, anio) => { const [a, m, d] = iso.split('-').map(Number); return `${d}-${MES3_J[m]}${anio ? '-' + a : ''}`; };
+const jH = v => String(Number(v));
+const jMes = iso => { const [a, m] = iso.split('-').map(Number); return `${MES_J[m]} de ${a}`; };
 const jTexto = (d, h) => { const [a1, m1, d1] = d.split('-').map(Number), [a2, m2, d2] = h.split('-').map(Number);
+  if (d === h) return `el ${d1} de ${MES_J[m1]} de ${a1}`;
   return a1 !== a2 ? `del ${d1} de ${MES_J[m1]} de ${a1} al ${d2} de ${MES_J[m2]} de ${a2}` : m1 !== m2 ? `del ${d1} de ${MES_J[m1]} al ${d2} de ${MES_J[m2]} de ${a2}` : `del ${d1} al ${d2} de ${MES_J[m2]} de ${a2}`; };
 const jDia = (iso, n) => { const [a, m, d] = iso.split('-').map(Number); return new Date(Date.UTC(a, m - 1, d + n)).toISOString().slice(0, 10); };
 // la regla de la base: lunes a miércoles → la semana anterior; jueves a domingo → la semana en curso (de lunes a domingo)
@@ -1000,7 +1023,11 @@ function jReset() {
   J.movs = [jMov(J_MOV.ana, '2026-11-02', -940.00, 'Zelle payment to C10 PRUEBA ZZANA 9001'), jMov(J_MOV.beto, '2026-11-06', -600.00, 'Zelle payment to C10 PRUEBA ZZBETO 9003'),
     jMov(J_MOV.ana2, '2026-11-09', -520.00, 'Zelle payment to C10 PRUEBA ZZANA 9002'), jMov(J_MOV.carla, '2026-11-06', -300.00, 'Zelle payment to C10 PRUEBA ZZCARLA 9004')];
   J.fuera = new Set(); J.repartos = []; J.seq = 3; J.mx011 = false; J.pideMotivo = false; J.ctlRojo = false; J.margenRojo = false;
-  J.propuestaIA = { [J_MOV.beto]: J_IA };
+  // (v2) lo de la IA (c8) en estos pagos: la pendiente del de Zzbeto y, en el de Zzana, una aprobada cuyo asiento se reversó (se
+  // des-casó para repartirlo por horas). J.iaFalla: cuántas veces seguidas la función «contador» no contesta al cerrarlas
+  J.ia = [{ propuesta_id: J_IA, movimiento_id: J_MOV.beto, estado: 'pendiente', sinAsiento: false, resumen: '5200 → C10 PRUEBA Obra A', asiento: null },
+    { propuesta_id: J_IA2, movimiento_id: J_MOV.ana, estado: 'aprobada', sinAsiento: true, resumen: '5100 → C10 PRUEBA Obra B', asiento: '2026-000002' }];
+  J.iaFalla = 0;
   // el libro de la obra A (lo que «bajar» lee de v_libro): material base y del CO, un subcontrato de verdad en 5200, equipo, el permiso, la factura y el jornal
   const lj = (asiento_id, numero, fecha, descripcion, orden, cuenta, cuenta_nombre, monto, proyecto_id, memo) => ({ asiento_id, numero, orden, fecha, periodo: fecha.slice(0, 7), descripcion, memo: memo || null, cuenta, cuenta_nombre, debe: monto > 0 ? monto : 0, haber: monto < 0 ? -monto : 0, monto, proyecto_id, cost_code: null });
   J.libro = [
@@ -1016,7 +1043,22 @@ function jReset() {
 }
 const jPersonaDe = m => J.personas.find(p => p.registrada && p.activa && p.patron && new RegExp(p.patron.replace(/\\m|\\M/g, '\\b'), 'i').test(m.descripcion));
 const jHorasCubiertas = () => new Set(J.repartos.filter(r => r.estado === 'aplicado').flatMap(r => r.horas_ids));
-const jAviso = (codigo, corto, texto) => ({ codigo, corto, texto });
+const jAviso = (codigo, corto, texto, extra) => ({ codigo, corto, ...(extra || {}), texto });
+const jSuma = xs => xs.reduce((s, x) => s + x.horas, 0);
+// (v2) lo de la IA (c8) que un pago tiene abierto, como fn_jornal_ia: la pendiente y la aprobada cuyo asiento ya no vive; sin
+// movimiento, las de los pagos con un reparto aplicado (lo que enseña el control del jornal, el 80)
+const jIA = mid => J.ia.filter(p => (p.estado === 'pendiente' || (['aprobada', 'editada'].includes(p.estado) && p.sinAsiento)) &&
+  (mid ? p.movimiento_id === mid : J.repartos.some(r => r.movimiento_id === p.movimiento_id && r.estado === 'aplicado')))
+  .map(p => ({ movimiento_id: p.movimiento_id, propuesta_id: p.propuesta_id, clase: p.estado === 'pendiente' ? 'pendiente' : 'sin_asiento', estado: p.estado, resumen: p.resumen, asiento: p.asiento }))
+  .sort((a, b) => (a.clase === 'pendiente' ? 0 : 1) - (b.clase === 'pendiente' ? 0 : 1));
+// (v2) las horas tardías, como fn_jornal_tardias: dentro de las fechas de un reparto aplicado de esa persona y fuera de todo reparto
+function jTardias(u) {
+  const cub = jHorasCubiertas(), viv = J.repartos.filter(r => r.estado === 'aplicado');
+  return J.horas.filter(x => (!u || x.u === u) && !cub.has(x.id)).map(x => {
+    const r = viv.find(y => y.usuario_id === x.u && x.fecha >= y.desde && x.fecha <= y.hasta);
+    return r ? { horas_id: x.id, usuario_id: x.u, persona: (J.personas.find(p => p.usuario_id === x.u) || {}).nombre, fecha: x.fecha, proyecto_id: x.p, obra: x.p ? J_OBRAS[x.p][0] : null, horas: x.horas, reparto_id: r.reparto_id, fecha_pago: r.fecha_pago } : null;
+  }).filter(Boolean).sort((a, b) => a.fecha.localeCompare(b.fecha) || a.horas_id - b.horas_id);
+}
 // mayores restos en centavos: a cada parte la entera de C × h / H; lo que sobra, de uno en uno a los restos mayores (a resto igual, más horas, luego el orden)
 function jPartir(cents, partes) {
   const H = partes.reduce((s, x) => s + Math.round(x.horas * 100), 0);
@@ -1025,15 +1067,18 @@ function jPartir(cents, partes) {
   [...base].sort((a, b) => b.resto - a.resto || b.horas - a.horas || a.i - b.i).forEach(x => { if (sobra > 0) { x.ent += 1; sobra -= 1; } });
   return base.map(x => x.ent);
 }
+// fn_jornal_calcular (lo que devuelve fn_jornal_propuesta): la forma y los TEXTOS de la base v2, aviso por aviso y en su orden
 function jCalc(mid, desde, hasta, op) {
   op = op || {};
+  const incl = !!op.incluir_cubiertas;
   const m = J.movs.find(x => x.movimiento_id === mid), per = m && jPersonaDe(m);
-  const movJ = m ? { id: m.movimiento_id, fecha: m.fecha, monto: Math.abs(m.monto), cuenta: m.cuenta, estado: J.fuera.has(mid) ? 'casado' : 'pendiente', periodo: m.periodo, descripcion: m.descripcion, mes_cerrado: false } : null;
-  if (!per) return { reconocido: false, por_que: 'Este pago no es de nadie dado de alta para cobrar por horas.', movimiento: movJ, candidatos: J.personas.filter(p => !p.registrada).map(p => ({ usuario_id: p.usuario_id, nombre: p.nombre, rol: p.rol })) };
+  const movJ = m ? { id: m.movimiento_id, fecha: m.fecha, monto: Math.abs(m.monto), cuenta: m.cuenta, descripcion: m.descripcion, estado: J.fuera.has(mid) ? 'casado' : 'pendiente' } : null;
+  if (!per) return { reconocido: false, movimiento: movJ, por_que: 'No es el pago de nadie dado de alta para repartir por horas. Si es de alguien de la cuadrilla con horas en la app, dalo de alta y sus pagos se reconocerán solos.',
+    candidatos: J.personas.filter(p => !p.registrada).map(p => ({ usuario_id: p.usuario_id, nombre: p.nombre, rol: p.rol })) };
   const rg = jRegla(m.fecha), d = desde || rg.def.desde, h = hasta || rg.def.hasta;
   const regla = d === rg.anterior.desde && h === rg.anterior.hasta ? 'semana_anterior' : d === rg.esta.desde && h === rg.esta.hasta ? 'semana_en_curso' : 'a_mano';
   const cub = jHorasCubiertas(), todas = J.horas.filter(x => x.u === per.usuario_id && x.fecha >= d && x.fecha <= h).sort((a, b) => a.fecha.localeCompare(b.fecha) || b.id - a.id);
-  const cubiertas = todas.filter(x => cub.has(x.id)), entran = todas.filter(x => op.incluir_cubiertas || !cub.has(x.id));
+  const cubiertas = todas.filter(x => cub.has(x.id)), entran = todas.filter(x => incl || !cub.has(x.id));
   const cents = Math.round(Math.abs(m.monto) * 100);
   const grupos = [];
   for (const x of entran) { const k = (x.p || '~') + '|' + (x.co || ''); let g = grupos.find(y => y.k === k); if (!g) grupos.push(g = { k, p: x.p, co: x.co, horas: 0, rep: [] }); g.horas += x.horas; g.rep.push(x); }
@@ -1043,29 +1088,67 @@ function jCalc(mid, desde, hasta, op) {
   grupos.forEach((g, i) => {
     const n = i + 1, monto = montos[i] / 100;
     const reps = jPartir(montos[i], g.rep);
-    g.rep.forEach((x, j) => detalle.push({ horas_id: x.id, fecha: x.fecha, proyecto_id: x.p, obra: x.p ? J_OBRAS[x.p][0] : null, co: x.co, fase: x.fase, horas: x.horas, aprobada: false, entra: true, monto: reps[j] / 100, n, cubierta_por: null }));
+    g.rep.forEach((x, j) => detalle.push({ horas_id: x.id, fecha: x.fecha, proyecto_id: x.p, obra: x.p ? J_OBRAS[x.p][0] : null, co: x.co, fase: x.fase, horas: x.horas, aprobada: cub.has(x.id), entra: true, monto: reps[j] / 100, n, cubierta_por: null }));
     if (g.p) lineas.push({ n, proyecto_id: g.p, obra: J_OBRAS[g.p][0], obra_estado: J_OBRAS[g.p][1], co: g.co, horas: g.horas, monto, cuenta: '5200' });
     else sinObra = { n, horas: g.horas, monto, cuenta: J.config.cuenta_sin_obra, falta_cuenta: !J.config.cuenta_sin_obra };
   });
-  for (const x of todas.filter(y => !entran.includes(y))) detalle.push({ horas_id: x.id, fecha: x.fecha, proyecto_id: x.p, obra: x.p ? J_OBRAS[x.p][0] : null, co: x.co, fase: x.fase, horas: x.horas, aprobada: true, entra: false, monto: 0, n: null, cubierta_por: J.repartos.find(r => r.horas_ids.includes(x.id)).reparto_id });
-  const horas = entran.reduce((s, x) => s + x.horas, 0), texto = jTexto(d, h);
-  const avisos = [];
-  if (!horas) avisos.push(jAviso('sin_horas', 'Sin horas en esas fechas', `${per.nombre} no tiene horas reportadas ${texto}. Elige otras fechas (la semana anterior, esta semana, o a mano); si este pago no es por horas, clasifícalo en la Bandeja como siempre.`));
-  if (cubiertas.length && !op.incluir_cubiertas) avisos.push(jAviso('horas_cubiertas', 'Parte de las horas ya tiene otro pago', `${cubiertas.reduce((s, x) => s + x.horas, 0)} h de esas fechas ya entraron en otro reparto: este pago se reparte solo por las que faltan. Si es otro pago de las mismas horas, márcalo.`));
-  const tarifaSale = horas ? Math.round(cents / horas) / 100 : null, desvio = tarifaSale && per.tarifa ? Math.round((tarifaSale - per.tarifa) / per.tarifa * 1000) / 10 : null;
-  if (desvio != null && Math.abs(desvio) > J.config.aviso_tarifa_pct) avisos.push(jAviso('tarifa_lejos', 'La tarifa que sale se aleja de la suya', `Sale a $${tarifaSale.toFixed(2)} la hora y su tarifa es $${per.tarifa.toFixed(2)} (${desvio > 0 ? '+' : ''}${desvio} %): revisa las fechas (¿dos semanas juntas?, ¿horas sin reportar?).`));
-  const term = lineas.filter(l => l.obra_estado === 'completado');
-  if (term.length) avisos.push(jAviso('obra_terminada', 'Hay una obra terminada', `Hay horas en una obra que ya no está activa: ${term.map(l => l.obra + ' (terminada)').join(', ')}. Su parte va a esa obra igual: el trabajo se hizo ahí.`));
-  if (sinObra && sinObra.falta_cuenta) avisos.push(jAviso('falta_cuenta_sin_obra', 'Falta la cuenta de lo sin obra', `${sinObra.horas} h no tienen obra (les tocan $${sinObra.monto.toFixed(2)}) y no pueden ir a 5200, que exige obra. Di una vez a qué cuenta va la mano de obra sin obra (ajustes del jornal), o ponles su obra en Horas y vuelve a mirar.`));
-  const frena = avisos.find(a => ['sin_horas', 'falta_cuenta_sin_obra'].includes(a.codigo));
-  const visto = sha(Buffer.from(JSON.stringify([mid, d, h, Math.abs(m.monto), J.config.cuenta_sin_obra, !!op.incluir_cubiertas, entran.map(x => [x.id, x.fecha, x.p, x.co, x.fase, x.horas])]))).slice(0, 32);
-  const opciones = [rg.anterior, rg.esta].map(o => { const hs = J.horas.filter(x => x.u === per.usuario_id && x.fecha >= o.desde && x.fecha <= o.hasta); return { regla: o.regla, desde: o.desde, hasta: o.hasta, por_defecto: o.regla === rg.def.regla, horas: hs.reduce((s, x) => s + x.horas, 0), horas_sin_pago: hs.filter(x => !cub.has(x.id)).reduce((s, x) => s + x.horas, 0) }; });
-  return { reconocido: true, movimiento: movJ, persona: { usuario_id: per.usuario_id, nombre: per.nombre, rol: per.rol, tarifa: per.tarifa, cuenta: '5200', patron: per.patron },
+  const repDe = id => J.repartos.find(r => r.estado === 'aplicado' && r.horas_ids.includes(id));
+  for (const x of todas.filter(y => !entran.includes(y))) detalle.push({ horas_id: x.id, fecha: x.fecha, proyecto_id: x.p, obra: x.p ? J_OBRAS[x.p][0] : null, co: x.co, fase: x.fase, horas: x.horas, aprobada: true, entra: false, monto: null, n: null, cubierta_por: [repDe(x.id).reparto_id] });
+  const horas = jSuma(entran), texto = jTexto(d, h);
+  // «el del pago del 2-nov ($940.00, del 26 de octubre al 1 de noviembre de 2026)»
+  const repTxt = rs => rs.map(r => `el del pago del ${jDiaT(r.fecha_pago)} (${usd(r.monto)}, ${jTexto(r.desde, r.hasta)})`).join('; ');
+  const cubReps = [...new Set(cubiertas.map(x => repDe(x.id)))].sort((a, b) => a.fecha_pago.localeCompare(b.fecha_pago)), cubH = jSuma(cubiertas);
+  const avisos = []; let porQue = null;
+  if (!horas) {
+    porQue = !todas.length ? `${per.nombre} no tiene horas reportadas ${texto}. Elige otras fechas (la semana anterior, esta semana, o a mano); si este pago no es por horas, clasifícalo en la Bandeja como siempre.`
+      : `Las ${jH(cubH)} h de ${per.nombre} ${texto} ya entraron en otro reparto: ${repTxt(cubReps)}. Si este es OTRO pago de esas mismas horas (un adelanto y el resto), repártelo también por ellas; si no, elige otras fechas.`;
+    avisos.push(jAviso('sin_horas', 'Sin horas en esas fechas', porQue));
+  } else if (cubiertas.length) avisos.push(jAviso('horas_cubiertas', 'Parte de las horas ya tiene otro pago', incl
+    ? `${jH(cubH)} h de esas fechas ya estaban en otro reparto (${repTxt(cubReps)}) y entran también en este, porque lo pediste: es otro pago de las mismas horas.`
+    : `${jH(cubH)} h de esas fechas ya las cubre otro pago (${repTxt(cubReps)}): no entran en este reparto, que va solo por las ${jH(horas)} h que faltaban.`));
+  const tard = jTardias(per.usuario_id).filter(t => !entran.some(x => x.id === t.horas_id));
+  if (tard.length) avisos.push(jAviso('horas_tardias', 'Tiene horas de una semana ya repartida sin pago',
+    `${per.nombre} tiene ${jH(jSuma(tard))} h de una semana ya repartida que no están en ningún reparto (se reportaron o se movieron después): ${tard.map(t => `${jH(t.horas)} h del ${jDiaT(t.fecha)}${t.obra ? ' en ' + t.obra : ' sin obra'} (semana del pago del ${jDiaT(t.fecha_pago)})`).join('; ')}. Si este pago las cubre, elige fechas que las incluyan (a mano, desde el ${jDiaT(tard[0].fecha, true)}); si no, deshaz aquel reparto y vuelve a repartirlo con las horas de hoy.`,
+    { horas: jSuma(tard), reportes: tard.length, desde: tard[0].fecha, hasta: tard.map(t => t.fecha).sort().pop() }));
+  const pisan = J.repartos.filter(r => r.usuario_id === per.usuario_id && r.estado === 'aplicado' && r.desde <= h && r.hasta >= d).sort((a, b) => a.fecha_pago.localeCompare(b.fecha_pago));
+  if (pisan.length) avisos.push(jAviso('se_pisa', 'Se pisa con otro reparto', `Estas fechas se pisan con otro reparto de ${per.nombre}: ${repTxt(pisan)}. Mira que no sea la misma semana pagada dos veces.`, { repartos: pisan.map(r => r.reparto_id) }));
+  const tarifaSale = horas ? Math.round(cents / horas) / 100 : null, desvio = tarifaSale && per.tarifa ? Math.round((tarifaSale / per.tarifa - 1) * 1000) / 10 : null;
+  if (per.tarifa == null) avisos.push(jAviso('sin_tarifa', 'Sin tarifa para comparar', `${per.nombre} no tiene tarifa en Costos del equipo: no hay con qué comparar lo que sale por hora.`));
+  else if (desvio != null && Math.abs(desvio) > J.config.aviso_tarifa_pct) avisos.push(jAviso('tarifa_lejos', 'La tarifa que sale se aleja de la suya',
+    `Sale a ${usd(tarifaSale)} la hora y su tarifa en Costos del equipo es ${usd(per.tarifa)} (${Math.abs(desvio)} % ${desvio > 0 ? 'más' : 'menos'}). Revisa las fechas (¿el pago es de otra semana, o de dos?) o las horas reportadas; y si el pago lleva además otra cosa (un reembolso de material), aquí iría entero a su mano de obra. Es solo un aviso: se puede repartir igual.`));
+  const T = m.descripcion.toUpperCase();
+  if (!/\b(ZELLE|TRANSFER|TRANSFERENCIA|PAYMENT|PMT|PAGO|CHECK|CHEQUE|ACH|WIRE|VENMO|PAYPAL|CASHAPP|P2P)\b/.test(T) || /\b(POS|PURCHASE|COMPRA|CARD|TARJETA)\b/.test(T))
+    avisos.push(jAviso('no_parece_pago', 'No parece un pago a una persona', `El banco no lo describe como un pago a una persona (un Zelle, una transferencia, un cheque): «${m.descripcion.slice(0, 80)}». Mira que no sea una compra en un comercio con un nombre parecido al de ${per.nombre}: si lo es, no lo repartas, clasifícalo en la Bandeja como siempre.`));
+  const term = lineas.filter(l => ['completado', 'no_aprobado'].includes(l.obra_estado));
+  if (term.length) avisos.push(jAviso('obra_terminada', term.some(l => l.obra_estado === 'completado') ? 'Hay una obra terminada' : 'Hay una obra no aprobada',
+    `Hay horas en una obra que ya no está activa: ${[...new Set(term.map(l => `${l.obra} (${l.obra_estado === 'completado' ? 'terminada' : 'no aprobada'})`))].sort().join('; ')}. Su parte va a esa obra igual: el trabajo se hizo ahí.`));
+  if (sinObra && sinObra.falta_cuenta) {
+    const x = `${jH(sinObra.horas)} h no tienen obra (les tocan ${usd(sinObra.monto)}) y no pueden ir a 5200, que exige obra. Di una vez a qué cuenta va la mano de obra sin obra (ajustes del jornal), o ponles su obra en Horas y vuelve a mirar.`;
+    avisos.push(jAviso('falta_cuenta_sin_obra', 'Falta la cuenta de lo sin obra', x)); if (!porQue) porQue = x;
+  }
+  // el corte de mes y de año: el asiento entra el día del pago (en esta base de mentira ningún mes está cerrado)
+  const fa = m.fecha, fuera = detalle.filter(x => x.entra && x.fecha.slice(0, 7) !== fa.slice(0, 7));
+  const deOtroAnio = fuera.filter(x => x.fecha.slice(0, 4) !== fa.slice(0, 4)), sumM = xs => Math.round(xs.reduce((s, x) => s + x.monto * 100, 0)) / 100;
+  if (deOtroAnio.length) avisos.push(jAviso('otro_anio', 'Horas de otro año',
+    `${jH(jSuma(deOtroAnio))} h de este pago (${usd(sumM(deOtroAnio))}) se trabajaron en ${[...new Set(deOtroAnio.map(x => x.fecha.slice(0, 4)))].sort().join(' y ')} y el asiento entra el ${jDiaT(fa, true)}: su costo queda en el ejercicio ${fa.slice(0, 4)} (el libro va por la fecha del pago, como QuickBooks). Si el CPA quiere ese costo en el año en que se trabajó, es un ajuste suyo de fin de año: díselo. Es solo un aviso.`,
+    { horas: jSuma(deOtroAnio), monto: sumM(deOtroAnio), fecha_asiento: fa }));
+  else if (fuera.length) avisos.push(jAviso('otro_mes', 'Horas de otro mes',
+    `${jH(jSuma(fuera))} h de este pago (${usd(sumM(fuera))}) se trabajaron en ${[...new Set(fuera.map(x => x.fecha.slice(0, 7)))].sort().map(x => jMes(x + '-01')).join(' y ')} y el asiento entra el ${jDiaT(fa, true)}: su costo queda en ${jMes(fa)} (el libro va por la fecha del pago, como QuickBooks). Es solo un aviso.`,
+    { horas: jSuma(fuera), monto: sumM(fuera), fecha_asiento: fa }));
+  if (d > m.fecha) avisos.push(jAviso('periodo_futuro', 'Las fechas son posteriores al pago', `Las fechas (${texto}) empiezan después del día del pago (${jDiaT(m.fecha, true)}): ¿seguro que pagó por adelantado?`));
+  // lo que el «Así es» aprobará: los reportes de esas fechas sin aprobar (aquí, los que no tienen ya un reparto), entren o no
+  const aprueba = todas.filter(x => !cub.has(x.id)).map(x => x.id).sort((a, b) => a - b);
+  const visto = sha(Buffer.from(JSON.stringify([mid, d, h, Math.abs(m.monto), J.config.cuenta_sin_obra, incl, entran.map(x => [x.id, x.fecha, x.p, x.co, x.fase, x.horas]), aprueba]))).slice(0, 32);
+  const opciones = [rg.anterior, rg.esta].map(o => { const hs = J.horas.filter(x => x.u === per.usuario_id && x.fecha >= o.desde && x.fecha <= o.hasta); return { regla: o.regla, desde: o.desde, hasta: o.hasta, por_defecto: o.regla === rg.def.regla, horas: jSuma(hs), horas_sin_pago: jSuma(hs.filter(x => !cub.has(x.id))) }; });
+  const ia = jIA(mid).map(p => ({ propuesta_id: p.propuesta_id, clase: p.clase, estado: p.estado, resumen: p.resumen, asiento: p.asiento, que_hacer: p.clase === 'pendiente' ? 'rechazar' : 'caducar' }));
+  return { reconocido: true, movimiento: { ...movJ, periodo: m.periodo, mes_cerrado: false, fecha_asiento: fa },
+    persona: { usuario_id: per.usuario_id, nombre: per.nombre, rol: per.rol, tarifa: per.tarifa, cuenta: '5200', patron: per.patron },
     periodo: { desde: d, hasta: h, regla, texto, por_defecto: { desde: rg.def.desde, hasta: rg.def.hasta, regla: rg.def.regla }, opciones },
     horas, reportes: entran.length, obras: new Set(lineas.map(l => l.proyecto_id)).size, lineas, sin_obra: sinObra, detalle,
-    cubiertas: cubiertas.length ? { horas: cubiertas.reduce((s, x) => s + x.horas, 0), reportes: cubiertas.length, incluidas: !!op.incluir_cubiertas, repartos: [...new Set(cubiertas.map(x => J.repartos.find(r => r.horas_ids.includes(x.id)).reparto_id))] } : null,
-    tarifa_sale: tarifaSale, tarifa_equipo: per.tarifa, tarifa_desvio_pct: desvio, avisos, puede_aplicar: !frena, por_que: frena ? frena.texto : null, visto,
-    propuesta_ia: J.propuestaIA[mid] || null, opciones: { incluir_cubiertas: !!op.incluir_cubiertas } };
+    cubiertas: cubiertas.length ? { horas: cubH, reportes: cubiertas.length, incluidas: incl, repartos: cubReps.map(r => ({ reparto_id: r.reparto_id, fecha_pago: r.fecha_pago, monto: r.monto, desde: r.desde, hasta: r.hasta, horas: jSuma(cubiertas.filter(x => repDe(x.id) === r)) })) } : null,
+    tarifa_sale: tarifaSale, tarifa_equipo: per.tarifa, tarifa_desvio_pct: desvio, avisos, puede_aplicar: !porQue, por_que: porQue, visto,
+    aprueba: { reportes: aprueba.length, ids: aprueba }, propuesta_ia: (ia.find(p => p.clase === 'pendiente') || {}).propuesta_id || null, propuestas_ia: ia,
+    opciones: { incluir_cubiertas: incl } };
 }
 // v_jornal_pendientes: una fila por pago pendiente reconocido, con la semana de la regla (= fn_jornal_propuesta sin fechas)
 const jPendientes = () => J.movs.filter(m => !J.fuera.has(m.movimiento_id) && jPersonaDe(m)).map(m => {
@@ -1081,45 +1164,122 @@ const jPersonasVista = () => J.personas.map(p => {
     pagos_pendientes: pend.length, pagos_pendientes_monto: pend.reduce((s, f) => s + f.monto, 0), repartos: reps.length, repartido: reps.reduce((s, r) => s + r.monto, 0), ultimo_reparto: reps.length ? reps[reps.length - 1].creado_el : null,
     horas_90_dias: hs.reduce((s, x) => s + x.horas, 0), horas_sin_pago: hs.filter(x => !cub.has(x.id)).reduce((s, x) => s + x.horas, 0) };
 });
-const jCtl = () => [[10, 'jornal: cada reparto aplicado = las líneas de su asiento', 'cuadre'], [20, 'jornal: ningún reparto aplicado con su asiento reversado o su pago suelto', 'cuadre'], [25, 'jornal: ningún reparto deshecho con su asiento todavía vivo', 'cuadre'],
-  [30, 'jornal: las horas de cada reparto aplicado siguen como se repartieron', 'cuadre'], [40, 'jornal: ninguna hora en dos repartos vivos sin que Edgar lo aceptara', 'cuadre'], [50, 'jornal: ningún mes con devengo estándar y jornales a la vez', 'cuadre'],
-  [60, 'jornal: cada persona dada de alta se reconoce sin dudas y va a una cuenta que sirve', 'aviso'], [90, 'jornal: protecciones de la capa', 'cuadre']]
-  .map(([orden, cuadre, nivel]) => ({ orden, cuadre, nivel, ok: !(J.ctlRojo && orden === 20), detalle: J.ctlRojo && orden === 20 ? '1 reparto aplicado con su pago des-casado en la Bandeja (Zzana C10 PRUEBA, 2-nov): ciérralo con «Deshacer». (prueba)' : 'En verde. (prueba)' }));
-const jCtlMargen = () => [[10, 'margen: el costo real por obra sumado = el 5xxx con obra del mayor'], [20, 'margen: el ingreso por obra sumado = el 40xx con obra del mayor'], [30, 'margen: los conceptos de cada obra suman su costo'],
-  [40, 'margen: la mano de obra de jornales en el libro = los repartos aplicados'], [50, 'margen: las horas de cada obra = las de la app'], [60, 'margen: el costo de cada obra = el de Estados (c4)']]
-  .map(([orden, cuadre]) => ({ orden, cuadre, nivel: 'cuadre', ok: !(J.margenRojo && orden === 10), detalle: J.margenRojo && orden === 10 ? 'Las obras suman $2,645.50 y el mayor con obra dice $2,700.00. (prueba)' : 'En verde. (prueba)' }));
-// v_margen_obra: la obra A del ejemplo (F del informe), la F terminada y parcial, y la B sin estimado
-const J_OBRA_A = { proyecto_id: 'c10-prueba-a', obra: 'C10 PRUEBA Obra A', cliente: 'C10 PRUEBA Cliente', tipo: 'comercial', estado: 'ejecucion', completado_el: null, libro_desde: '2026-10-01', parcial: false, parcial_por: null,
-  contrato: 12000.00, ingreso_libro: 5000.00, material_real: 750.25, mano_obra_real: 419.19, mano_obra_jornales: 419.19, mano_obra_nomina: 0.00, subcontratos_real: 500.00, equipo_real: 75.25, otros_costos_real: 60.00, costo_real: 1804.69,
-  horas_reales: 32.5, horas_co: 6.5, horas_base: null, horas_antes_libro: 0, horas_con_pago_real: 16.5, horas_estandar: 16, horas_dueno: 0, horas_sin_aprobar: 16, mano_obra_estandar: 422.40, mano_obra_estandar_falta: null, mano_obra_dueno: null,
-  burden_estandar_pct: 10.00, costo_con_estandar: 2227.09, horas_estimadas: 120, tarifa_estimada: 36.25, escenario: 'B', estimado_id: null, mano_obra_estimada: 4350.00, material_presupuesto: 2500.00, costo_estimado: 6850.00,
-  margen_real: 3195.31, margen_real_pct: 63.9, margen_estimado: 5150.00, margen_estimado_pct: 42.9, diferencia: 4622.91, pagos_sin_repartir: 1, asientos: 3,
-  avisos: ['1 pago(s) de mano de obra de esas semanas siguen sin repartir en la Bandeja: su costo todavía no está en esta obra.', '16 h van a estándar (sin pago real repartido): $422.40, estándar, no real.'] };
-const J_OBRA_F = { ...J_OBRA_A, proyecto_id: 'c10-prueba-f', obra: 'C10 PRUEBA Obra F', cliente: 'C10 PRUEBA Otro cliente', tipo: 'residencial', estado: 'completado', completado_el: '2026-10-31', parcial: true, parcial_por: 'ya andaba antes del libro: tenía saldo en la apertura y horas de septiembre',
+// v_jornal_control (v2): sus 11 filas con los nombres y los textos de la base; 35, 70 y 80 son avisos. El 35 sale de las horas
+// tardías y el 80 de lo de la IA que siguen abiertas en un pago repartido (jIA); J.ctlRojo pone en rojo el 20 (un pago suelto)
+const jCtl = () => {
+  const viv = J.repartos.filter(r => r.estado === 'aplicado'), tard = jTardias(null), ia = jIA(null), f = (orden, cuadre, nivel, ok, detalle) => ({ orden, cuadre, nivel, ok, detalle });
+  const g35 = []; for (const t of tard) { let g = g35.find(x => x.reparto_id === t.reparto_id && x.persona === t.persona); if (!g) g35.push(g = { reparto_id: t.reparto_id, persona: t.persona, fecha_pago: t.fecha_pago, h: 0, n: 0, dias: new Set() }); g.h += t.horas; g.n += 1; g.dias.add(`${jDiaT(t.fecha)}${t.obra ? ' en ' + t.obra : ' sin obra'}`); }
+  return [
+    f(10, 'jornal: cada reparto aplicado = las líneas de su asiento', 'cuadre', true, `${viv.length} reparto(s) aplicado(s): cada parte está en su asiento con su cuenta, su obra, su CO, su monto y su persona, todas suman el pago, y su detalle por reporte de horas suma cada parte.`),
+    f(20, 'jornal: ningún reparto aplicado con su asiento reversado o su pago suelto', 'cuadre', !J.ctlRojo, J.ctlRojo
+      ? 'el reparto del pago del 2026-11-02 a Zzana C10 PRUEBA (940.00): su asiento 2026-000004 se reversó por fuera (des-casado en la Bandeja) → toca «Deshacer» en ese reparto (en Repartos), con su motivo, y, si toca, vuelve a repartir el pago.'
+      : 'Cada reparto aplicado tiene su asiento vivo y su pago casado con él.'),
+    f(25, 'jornal: ningún reparto deshecho con su asiento todavía vivo', 'cuadre', true, 'Cada reparto deshecho tiene su asiento reversado.'),
+    f(30, 'jornal: las horas de cada reparto aplicado siguen como se repartieron', 'cuadre', true, `${viv.reduce((s, r) => s + r.horas_ids.length, 0)} reporte(s) de horas en repartos aplicados: siguen con su obra, su CO, su fase y sus horas, y aprobados.`),
+    f(35, 'jornal: ninguna hora de una semana ya repartida se quedó fuera de su reparto', 'aviso', !g35.length, g35.length
+      ? g35.map(g => `${g.persona}: ${jH(g.h)} h en ${g.n} reporte(s) (${[...g.dias].sort().join(', ')}) dentro del reparto del pago del ${g.fecha_pago}`).join('; ') + ' → se reportaron o se movieron después de repartir esa semana: no recibieron nada de ese pago, que sigue repartido entre las demás obras, y en su obra salen a estándar. Toca «Deshacer» en ese reparto y vuelve a repartirlo con las horas de hoy; o, si las paga otro pago, repártelas con él eligiendo sus fechas a mano.'
+      : 'Ninguna persona tiene horas, dentro de las fechas de un reparto suyo aplicado, fuera de sus repartos.'),
+    f(40, 'jornal: ninguna hora en dos repartos vivos sin que Edgar lo aceptara', 'cuadre', true, 'Ninguna hora está en dos repartos vivos.'),
+    f(50, 'jornal: ninguna hora a la vez en el devengo estándar de un mes y en un jornal pagado ese mes', 'cuadre', true, 'Ninguna hora está a la vez en el devengo estándar de un mes abierto y en un jornal que entró al libro ese mes.'),
+    f(60, 'jornal: cada persona dada de alta se reconoce sin dudas y va a una cuenta que sirve', 'aviso', true, `${J.personas.filter(p => p.registrada && p.activa).length} persona(s) activa(s): patrones válidos, ningún pago casa con dos, y sus cuentas sirven.`),
+    f(70, 'jornal: ningún pago de una persona dada de alta resuelto fuera del jornal', 'aviso', true, 'Ningún pago ya resuelto en la Bandeja por otro camino es de una persona del jornal con horas sin pago en esas semanas.'),
+    f(80, 'jornal: ninguna propuesta de la IA abierta en un pago ya repartido', 'aviso', !ia.length, ia.length
+      ? ia.map(i => { const r = viv.find(x => x.movimiento_id === i.movimiento_id); return `el pago del ${r.fecha_pago} a ${r.persona} (${usd(r.monto)}): su propuesta de la IA ${i.clase === 'pendiente' ? 'sigue pendiente' : `está ${i.estado} y su asiento ${i.asiento || '(no tiene)'} ya no vive`}${i.resumen ? ` (proponía ${i.resumen})` : ''}`; }).join('; ') +
+        ' → ya no se pueden aprobar (ese pago está repartido) y la IA contable las sigue contando como abiertas: pueden frenar el cierre del mes. Hay que cerrarlas: a la pendiente se le dice «No es eso»; la aprobada cuyo asiento se reversó se cierra con su motivo. Si la Bandeja no lo hizo al repartir, vuelve a abrirla; si siguen aquí, avisa.'
+      : 'Ningún pago repartido tiene una propuesta de la IA pendiente, ni una aprobada cuyo asiento ya no vive.'),
+    f(90, 'jornal: protecciones de la capa', 'cuadre', true, 'Ninguna función de c10 es SECURITY DEFINER ni la ejecutan anon o service_role; las tablas con RLS y su guarda; las vistas security_invoker.')
+  ];
+};
+// v_margen_control: sus 6 cuadres con los textos de la base (las sumas, de las obras de abajo); J.margenRojo pone en rojo el 10
+const jCtlMargen = () => {
+  const os = jObras(), suma = k => Math.round(os.reduce((s, o) => s + (o[k] || 0) * 100, 0)) / 100, rep = J.repartos.filter(r => r.estado === 'aplicado');
+  const jor = Math.round(rep.reduce((s, r) => s + r.lineas.filter(l => l.proyecto_id).reduce((t, l) => t + l.monto * 100, 0), 0)) / 100;
+  return [
+    { orden: 10, cuadre: 'margen: el costo real por obra sumado = el 5xxx con obra del mayor', nivel: 'cuadre', ok: !J.margenRojo, detalle: J.margenRojo
+      ? `Las obras suman ${usd(suma('costo_real'))} de costo y el mayor (cuentas de costo con obra) ${usd(suma('costo_real') + 54.5)}: diferencia ${usd(-54.5)}. Avisa: no toques el libro.`
+      : `${os.length} obras: su costo real suma ${usd(suma('costo_real'))}, lo mismo que las cuentas de costo con obra del mayor.` },
+    { orden: 20, cuadre: 'margen: el ingreso por obra sumado = el 40xx con obra del mayor', nivel: 'cuadre', ok: true, detalle: `El ingreso por obra suma ${usd(suma('ingreso_libro'))}, lo mismo que las cuentas de ingreso con obra del mayor.` },
+    { orden: 30, cuadre: 'margen: los conceptos de cada obra suman su costo', nivel: 'cuadre', ok: true, detalle: 'En cada obra, material + mano de obra + subcontratos + equipo + otros = su costo real; y jornales + nómina = su mano de obra real.' },
+    { orden: 40, cuadre: 'margen: la mano de obra de jornales en el libro = los repartos aplicados', nivel: 'cuadre', ok: true, detalle: `${rep.length} reparto(s) aplicado(s) con su asiento vivo: ${usd(jor)} de jornales en las obras, lo mismo en el libro.` },
+    { orden: 50, cuadre: 'margen: las horas de cada obra = las de la app', nivel: 'cuadre', ok: true, detalle: `${jH(J.horas.filter(x => x.p).reduce((s, x) => s + x.horas, 0))} h con obra en la app, las mismas en el margen; y en cada obra, antes del libro + con pago real + a estándar + del dueño = sus horas.` },
+    { orden: 60, cuadre: 'margen: el costo de cada obra = el de Estados (c4)', nivel: 'cuadre', ok: true, detalle: 'Obra por obra, el costo real de aquí es el de «Estados» (su costo por obra, todo el libro, hasta el período 2026-11). Los jornales van a la cuenta de subcontratos: en «Estados» salen dentro de «Subcontratos» y aquí como mano de obra real; el total de cada obra es el mismo.' }
+  ];
+};
+// v_margen_obra (v2): la A del ejemplo (estimado completo), la B sin nada estimado, la F terminada y parcial, y la G con el
+// estimado incompleto (horas estimadas, sin presupuesto de material, y ya con material en el libro: ni «se pasa» ni «dentro»).
+// La mano de obra estándar depende del burden de jornal_config: sin él no se calcula (y la diferencia queda vacía)
+const J_FALTA_BURDEN = 'Falta fijar el burden estándar (0 si no aplica): la mano de obra estándar no se calcula.';
+function jEstandar(o, horasEst, costoHoras) {
+  const b = J.config.burden_estandar_pct;
+  if (!horasEst) return { mano_obra_estandar: 0, mano_obra_estandar_falta: null, burden_estandar_pct: b, costo_con_estandar: o.costo_real };
+  if (b == null) return { mano_obra_estandar: null, mano_obra_estandar_falta: J_FALTA_BURDEN, burden_estandar_pct: null, costo_con_estandar: null };
+  const est = r2(costoHoras * (1 + b / 100));
+  return { mano_obra_estandar: est, mano_obra_estandar_falta: null, burden_estandar_pct: b, costo_con_estandar: r2(o.costo_real + est) };
+}
+// lo que sigue al estimado: completo o no, los márgenes y la diferencia (como fn_margen_obras)
+function jEstimado(o) {
+  const nada = o.horas_estimadas == null && o.material_presupuesto == null, moSinTarifa = o.horas_estimadas != null && o.tarifa_estimada == null;
+  const moFalta = o.mano_obra_estimada == null && (o.mano_obra_real !== 0 || o.horas_estandar > 0), matFalta = o.material_presupuesto == null && o.material_real !== 0;
+  const completo = !(nada || moSinTarifa || moFalta || matFalta), costo = completo ? r2((o.mano_obra_estimada || 0) + (o.material_presupuesto || 0)) : null;
+  const falta = nada ? 'No hay estimado: faltan las horas estimadas y el presupuesto de material.' : completo ? null : 'Estimado incompleto: ' + [
+    moSinTarifa ? `hay ${jH(o.horas_estimadas)} h estimadas y falta el escenario ${o.escenario} del estimador (o sus tarifas) para valorarlas` : moFalta ? `no tiene horas estimadas y ya lleva mano de obra (${[o.mano_obra_real ? usd(o.mano_obra_real) + ' real' : null, o.horas_estandar ? jH(o.horas_estandar) + ' h a estándar' : null].filter(Boolean).join(' y ')})` : null,
+    matFalta ? `no tiene presupuesto de material y ya lleva ${usd(o.material_real)} de material en el libro` : null].filter(Boolean).join('; y ') + '. No da un total que comparar con el costo real: se compara concepto por concepto lo que sí está estimado.';
+  return { costo_estimado: costo, estimado_completo: completo, estimado_falta: falta,
+    margen_real: r2(o.ingreso_libro - o.costo_real), margen_real_pct: o.ingreso_libro ? Math.round(1000 * (o.ingreso_libro - o.costo_real) / o.ingreso_libro) / 10 : null,
+    margen_estimado: o.contrato != null && costo != null ? r2(o.contrato - costo) : null, margen_estimado_pct: o.contrato && costo != null ? Math.round(1000 * (o.contrato - costo) / o.contrato) / 10 : null,
+    diferencia: costo != null && o.costo_con_estandar != null ? r2(costo - o.costo_con_estandar) : null, falta: !completo && !nada ? falta : null };
+}
+// los avisos de una obra, en el orden y con los textos de la base
+function jAvisosObra(o, extra) {
+  return [o.parcial ? `El libro empieza el 1-oct-2026 y esta obra ya tenía de antes: ${o.parcial_por}. Lo de antes está en QuickBooks: aquí el real es parcial.` : null,
+    o.pagos_sin_repartir ? `${o.pagos_sin_repartir} pago(s) de mano de obra de esas semanas siguen sin repartir en la Bandeja: su costo todavía no está en esta obra.` : null,
+    o.horas_estandar ? `${jH(o.horas_estandar)} h van a estándar (sin pago real repartido)${o.mano_obra_estandar != null ? ': ' + usd(o.mano_obra_estandar) + ', estándar, no real' : ''}.` : null,
+    o.mano_obra_estandar_falta, o.contrato == null ? 'Sin contrato en la ficha de la obra.' : null, o.horas_estimadas == null ? 'Sin horas estimadas.' : null,
+    o.horas_estimadas != null && o.tarifa_estimada == null ? `Falta el escenario ${o.escenario} del estimador (o sus tarifas): no hay con qué estimar la mano de obra.` : null,
+    o.material_presupuesto == null ? 'Sin presupuesto de material.' : null, extra].filter(Boolean);
+}
+function jObra(base, horasEst, costoHoras) {
+  const o = { ...base }; Object.assign(o, jEstandar(o, horasEst, costoHoras));
+  const e = jEstimado(o); Object.assign(o, e); delete o.falta; o.avisos = jAvisosObra(o, e.falta);
+  return o;
+}
+const J_BASE = { cliente: 'C10 PRUEBA Cliente', tipo: 'comercial', estado: 'ejecucion', completado_el: null, libro_desde: '2026-10-01', parcial: false, parcial_por: null, mano_obra_nomina: 0.00, horas_base: null, horas_antes_libro: 0, horas_dueno: 0,
+  mano_obra_dueno: null, escenario: 'B', estimado_id: null, asientos: 1 };
+const jObraA = () => jObra({ ...J_BASE, proyecto_id: 'c10-prueba-a', obra: 'C10 PRUEBA Obra A', contrato: 12000.00, ingreso_libro: 5000.00, material_real: 750.25, mano_obra_real: 419.19, mano_obra_jornales: 419.19, subcontratos_real: 500.00,
+  equipo_real: 75.25, otros_costos_real: 60.00, costo_real: 1804.69, horas_reales: 32.5, horas_co: 6.5, horas_con_pago_real: 16.5, horas_estandar: 16, horas_sin_aprobar: 16, horas_estimadas: 120, tarifa_estimada: 36.25,
+  mano_obra_estimada: 4350.00, material_presupuesto: 2500.00, pagos_sin_repartir: 1, asientos: 3 }, 16, 16 * 24);
+const jObraB = () => jObra({ ...J_BASE, proyecto_id: 'c10-prueba-b', obra: 'C10 PRUEBA Obra B', contrato: null, ingreso_libro: 0, material_real: 0, mano_obra_real: 38.11, mano_obra_jornales: 38.11, subcontratos_real: 0, equipo_real: 0,
+  otros_costos_real: 0, costo_real: 38.11, horas_reales: 1.5, horas_co: 0, horas_con_pago_real: 1.5, horas_estandar: 0, horas_sin_aprobar: 0, horas_estimadas: null, tarifa_estimada: null, escenario: null,
+  mano_obra_estimada: null, material_presupuesto: null, pagos_sin_repartir: 0 }, 0, 0);
+const jObraF = () => jObra({ ...J_BASE, proyecto_id: 'c10-prueba-f', obra: 'C10 PRUEBA Obra F', cliente: 'C10 PRUEBA Otro cliente', tipo: 'residencial', estado: 'completado', completado_el: '2026-10-31', parcial: true, parcial_por: 'horas, saldo en la apertura',
   contrato: 3000.00, ingreso_libro: 1500.00, material_real: 1200.00, mano_obra_real: 101.62, mano_obra_jornales: 101.62, subcontratos_real: 0, equipo_real: 0, otros_costos_real: 0, costo_real: 1301.62, horas_reales: 4, horas_co: 0, horas_antes_libro: 30,
-  horas_con_pago_real: 4, horas_estandar: 0, horas_sin_aprobar: 0, mano_obra_estandar: 0, costo_con_estandar: 1301.62, horas_estimadas: 40, tarifa_estimada: 36.25, mano_obra_estimada: 1450.00, material_presupuesto: 800.00, costo_estimado: 2250.00,
-  margen_real: 198.38, margen_real_pct: 13.2, margen_estimado: 750.00, margen_estimado_pct: 25.0, diferencia: 948.38, pagos_sin_repartir: 0, asientos: 2, avisos: ['Parcial: lo de antes del 1-oct-2026 está en QuickBooks.'] };
-const J_OBRA_B = { ...J_OBRA_A, proyecto_id: 'c10-prueba-b', obra: 'C10 PRUEBA Obra B', cliente: 'C10 PRUEBA Cliente', estado: 'ejecucion', contrato: null, ingreso_libro: 0, material_real: 0, mano_obra_real: 38.11, mano_obra_jornales: 38.11, subcontratos_real: 0, equipo_real: 0,
-  otros_costos_real: 0, costo_real: 38.11, horas_reales: 1.5, horas_co: 0, horas_con_pago_real: 1.5, horas_estandar: 0, horas_sin_aprobar: 0, mano_obra_estandar: 0, costo_con_estandar: 38.11, horas_estimadas: null, tarifa_estimada: null, escenario: null,
-  mano_obra_estimada: null, material_presupuesto: null, costo_estimado: null, margen_real: -38.11, margen_real_pct: null, margen_estimado: null, margen_estimado_pct: null, diferencia: null, pagos_sin_repartir: 0, asientos: 1, avisos: [] };
+  horas_con_pago_real: 4, horas_estandar: 0, horas_sin_aprobar: 0, horas_estimadas: 40, tarifa_estimada: 36.25, mano_obra_estimada: 1450.00, material_presupuesto: 800.00, pagos_sin_repartir: 0, asientos: 2 }, 0, 0);
+const jObraG = () => jObra({ ...J_BASE, proyecto_id: 'c10-prueba-g', obra: 'C10 PRUEBA Obra G', contrato: 4000.00, ingreso_libro: 0, material_real: 300.00, mano_obra_real: 0, mano_obra_jornales: 0, subcontratos_real: 0, equipo_real: 0,
+  otros_costos_real: 0, costo_real: 300.00, horas_reales: 6, horas_co: 0, horas_con_pago_real: 0, horas_estandar: 6, horas_sin_aprobar: 6, horas_estimadas: 40, tarifa_estimada: 36.25, mano_obra_estimada: 1450.00,
+  material_presupuesto: null, pagos_sin_repartir: 0 }, 6, 6 * 24);
+const jObras = () => [jObraA(), jObraB(), jObraF(), jObraG()];
 const jBajar = (filtros, signo) => [{ vista: 'v_libro', campo: 'monto', signo: signo || 1, filtros }];
 const J_COSTO = ['5000', '5001', '5010', '5011', '5015', '5019', '5100', '5200', '5300', '5400', '5500', '5600', '5900', '5950'];
+const J_NOTA_EST = 'Horas sin pago real repartido × la tarifa de Costos del equipo × (1 + burden estándar), con la tarifa y el burden de hoy (si cambian, este número cambia). No está en el libro.';
+// el concepto «total» de fn_margen_obra (v2): su estimado y su diferencia, solo con el estimado completo; si no, su nota dice qué falta
+const jTotal = (o, bajar) => ({ concepto: 'total', nivel: 'total', etiqueta: 'Costo de la obra', estimado: o.costo_estimado, real: o.costo_real, estandar: o.mano_obra_estandar, total: o.costo_con_estandar, diferencia: o.diferencia,
+  estimado_completo: o.estimado_completo, nota: o.estimado_falta, ...(bajar ? { bajar } : {}) });
 // fn_margen_obra de la obra A: la del ejemplo G del informe, entera (conceptos con su «bajar», por cuenta, por CO, por fase, el vacío del cost code, la cobertura y el reparto)
 const jMargenA = () => {
-  const A = 'c10-prueba-a', no = [J_AS.jornal];
-  return { obra: { ...J_OBRA_A }, avisos: J_OBRA_A.avisos,
+  const A = 'c10-prueba-a', no = [J_AS.jornal], o = jObraA(), est = o.mano_obra_estandar, mas = (a, b) => b == null ? null : r2(a + b);
+  return { obra: o, avisos: o.avisos,
     conceptos: [
       { concepto: 'material', nivel: 'concepto', etiqueta: 'Material', estimado: 2500.00, real: 750.25, estandar: null, total: 750.25, diferencia: 1749.75, bajar: jBajar({ cuenta: '5100', proyecto_id: A, asiento_id_no: no }) },
-      { concepto: 'mano_obra', nivel: 'concepto', etiqueta: 'Mano de obra', estimado: 4350.00, real: 419.19, estandar: 422.40, total: 841.59, diferencia: 3508.41, horas_reales: 32.5, horas_estimadas: 120, tarifa_estimada: 36.25,
+      { concepto: 'mano_obra', nivel: 'concepto', etiqueta: 'Mano de obra', estimado: 4350.00, real: 419.19, estandar: est, total: mas(419.19, est), diferencia: est == null ? null : r2(4350 - 419.19 - est), horas_reales: 32.5, horas_estimadas: 120, tarifa_estimada: 36.25,
         bajar: [...jBajar({ cuenta: J_COSTO, proyecto_id: A, asiento_id: no }), ...jBajar({ cuenta: J_COSTO.slice(0, 6), proyecto_id: A, asiento_id_no: no })] },
       { concepto: 'mano_obra_real', nivel: 'detalle', etiqueta: 'Mano de obra real (pagada y repartida)', estimado: null, real: 419.19, estandar: null, total: 419.19, diferencia: null, horas: 16.5, jornales: 419.19, nomina: 0.00,
         bajar: [...jBajar({ cuenta: J_COSTO, proyecto_id: A, asiento_id: no }), ...jBajar({ cuenta: J_COSTO.slice(0, 6), proyecto_id: A, asiento_id_no: no })] },
-      { concepto: 'mano_obra_estandar', nivel: 'detalle', etiqueta: 'Mano de obra estándar, no real', estimado: null, real: null, estandar: 422.40, total: 422.40, diferencia: null, horas: 16, burden_estandar_pct: 10.0,
-        nota: 'Horas sin pago real repartido × la tarifa de Costos del equipo × (1 + burden estándar). No está en el libro.' },
+      { concepto: 'mano_obra_estandar', nivel: 'detalle', etiqueta: 'Mano de obra estándar, no real', estimado: null, real: null, estandar: est, total: est, diferencia: null, horas: 16, burden_estandar_pct: o.burden_estandar_pct,
+        nota: o.mano_obra_estandar_falta || J_NOTA_EST },
       { concepto: 'subcontratos', nivel: 'concepto', etiqueta: 'Subcontratos', estimado: null, real: 500.00, estandar: null, total: 500.00, diferencia: null, bajar: jBajar({ cuenta: '5200', proyecto_id: A, asiento_id_no: no }) },
       { concepto: 'equipo', nivel: 'concepto', etiqueta: 'Equipo y renta', estimado: null, real: 75.25, estandar: null, total: 75.25, diferencia: null, bajar: jBajar({ cuenta: '5300', proyecto_id: A, asiento_id_no: no }) },
       { concepto: 'otros', nivel: 'concepto', etiqueta: 'Otros costos de obra', estimado: null, real: 60.00, estandar: null, total: 60.00, diferencia: null, bajar: jBajar({ cuenta: ['5400', '5500', '5600', '5900', '5950'], proyecto_id: A, asiento_id_no: no }) },
-      { concepto: 'total', nivel: 'total', etiqueta: 'Costo de la obra', estimado: 6850.00, real: 1804.69, estandar: 422.40, total: 2227.09, diferencia: 4622.91, bajar: jBajar({ cuenta: J_COSTO, proyecto_id: A }) },
+      jTotal(o, jBajar({ cuenta: J_COSTO, proyecto_id: A })),
       { concepto: 'ingreso', nivel: 'ingreso', etiqueta: 'Facturado (en el libro)', estimado: 12000.00, real: 5000.00, estandar: null, total: 5000.00, diferencia: null, bajar: jBajar({ cuenta: ['4010', '4020', '4030', '4040'], proyecto_id: A }, -1) }
     ],
     por_cuenta: [
@@ -1130,26 +1290,26 @@ const jMargenA = () => {
       { cuenta: '5400', nombre: 'Permisos e inspecciones', concepto: 'otros', jornal: false, real: 60.00, asientos: 1, bajar: jBajar({ cuenta: '5400', proyecto_id: A, asiento_id_no: no }) }
     ],
     por_co: [
-      { co: null, etiqueta: 'Base (sin CO)', horas: 26, horas_con_pago_real: 10, horas_estandar: 16, mano_obra_real: 254.05, mano_obra_estandar: 422.40, material_real: 450.25, subcontratos_real: 500.00, equipo_real: 75.25, otros_costos_real: 60.00, costo_real: 1339.55, ingreso_libro: 5000.00, alcance: null },
+      { co: null, etiqueta: 'Base (sin CO)', horas: 26, horas_con_pago_real: 10, horas_estandar: 16, mano_obra_real: 254.05, mano_obra_estandar: est, material_real: 450.25, subcontratos_real: 500.00, equipo_real: 75.25, otros_costos_real: 60.00, costo_real: 1339.55, ingreso_libro: 5000.00, alcance: null },
       { co: 'CO #1', etiqueta: 'CO #1', horas: 6.5, horas_con_pago_real: 6.5, horas_estandar: 0, mano_obra_real: 165.14, mano_obra_estandar: 0, material_real: 300.00, subcontratos_real: 0, equipo_real: 0, otros_costos_real: 0, costo_real: 465.14, ingreso_libro: 0, alcance: null }
     ],
     por_fase: [
-      { fase: 'rough', etiqueta: 'rough', horas: 30.5, horas_con_pago_real: 14.5, mano_obra_real: 368.38, horas_estandar: 16, mano_obra_estandar: 422.40, horas_dueno: 0, horas_antes_libro: 0, otros_costos_libro: 300.00 },
+      { fase: 'rough', etiqueta: 'rough', horas: 30.5, horas_con_pago_real: 14.5, mano_obra_real: 368.38, horas_estandar: 16, mano_obra_estandar: est, horas_dueno: 0, horas_antes_libro: 0, otros_costos_libro: 300.00 },
       { fase: 'trim', etiqueta: 'trim', horas: 2, horas_con_pago_real: 2, mano_obra_real: 50.81, horas_estandar: 0, mano_obra_estandar: 0, horas_dueno: 0, horas_antes_libro: 0, otros_costos_libro: 0 }
     ],
     por_cost_code: { hay: false, nota: 'Todavía no hay nada capturado con código en esta obra: las líneas del libro no traen cost code (el ticket no lo lleva). Se compara por obra y por cuenta.', filas: [] },
     cobertura: [
       { usuario_id: J_PER.ana, persona: 'Zzana C10 PRUEBA', es_dueno: false, tarifa: 25, horas: 16.5, horas_con_pago_real: 16.5, pagado: 419.19, horas_estandar: 0, estandar: null, horas_dueno: 0, horas_antes_libro: 0, horas_sin_aprobar: 0 },
-      { usuario_id: J_PER.beto, persona: 'Zzbeto C10 PRUEBA', es_dueno: false, tarifa: 24, horas: 16, horas_con_pago_real: 0, pagado: 0.00, horas_estandar: 16, estandar: 422.40, horas_dueno: 0, horas_antes_libro: 0, horas_sin_aprobar: 16 }
+      { usuario_id: J_PER.beto, persona: 'Zzbeto C10 PRUEBA', es_dueno: false, tarifa: 24, horas: 16, horas_con_pago_real: 0, pagado: 0.00, horas_estandar: 16, estandar: est, horas_dueno: 0, horas_antes_libro: 0, horas_sin_aprobar: 16 }
     ],
     repartos: [{ reparto_id: '1b4c2dd2-f106-44c3-a7fc-7ed7bdc1434b', estado: 'aplicado', fecha_pago: '2026-11-02', usuario_id: J_PER.ana, persona: 'Zzana C10 PRUEBA', desde: '2026-10-26', hasta: '2026-11-01', monto: 940.00, horas: 37.00,
       monto_obra: 419.19, horas_obra: 16.5, asiento_id: J_AS.jornal, asiento: '2026-000004', reverso_id: null, deshecho_motivo: null }] };
 };
-const jMargenOtra = o => ({ obra: { ...o }, avisos: o.avisos, conceptos: [{ concepto: 'total', nivel: 'total', etiqueta: 'Costo de la obra', estimado: o.costo_estimado, real: o.costo_real, estandar: null, total: o.costo_con_estandar, diferencia: o.diferencia }],
+const jMargenOtra = o => ({ obra: { ...o }, avisos: o.avisos, conceptos: [jTotal(o)],
   por_cuenta: [], por_co: [], por_fase: [], por_cost_code: { hay: false, nota: 'Todavía no hay nada capturado con código en esta obra. Se compara por obra y por cuenta.', filas: [] }, cobertura: [], repartos: [] });
 const err10 = (code, message, hint, status) => ({ status: status || 400, error: { code, message, hint: hint || null, details: null } });
 const C10_VISTAS = { v_jornal_pendientes: jPendientes, v_jornal_repartos: jRepartosVista, v_jornal_personas: jPersonasVista, v_jornal_control: jCtl, v_margen_control: jCtlMargen,
-  v_margen_obra: () => [J_OBRA_A, J_OBRA_B, J_OBRA_F], jornal_config: () => [J.config] };
+  v_margen_obra: jObras, jornal_config: () => [J.config] };
 const C10_FN = {
   fn_jornal_propuesta: a => {
     if (!a.p_movimiento) return err10('22023', 'Di de qué movimiento del banco (p_movimiento).');
@@ -1159,7 +1319,7 @@ const C10_FN = {
     return jCalc(a.p_movimiento, a.p_desde, a.p_hasta, a.p_opciones);
   },
   fn_jornal_aplicar: a => {
-    if (!a.p_visto) return err10('22023', 'Falta «visto»: la huella de lo que viste (la da fn_jornal_propuesta).');
+    if (!a.p_visto) return err10('22023', 'Falta «visto»: la huella de lo que viste (la trae fn_jornal_propuesta). Sin ella no se aprueba ni se postea nada.');
     const op = a.p_opciones || {};
     if (J.mx011) { J.mx011 = false; J.horas.push({ id: -1010000099, u: J_PER.ana, fecha: '2026-10-31', p: 'c10-prueba-b', co: null, fase: 'trim', horas: 3 }); }
     const c = jCalc(a.p_movimiento, a.p_desde, a.p_hasta, { incluir_cubiertas: !!op.incluir_cubiertas });
@@ -1178,14 +1338,14 @@ const C10_FN = {
       deshecho_el: null, deshecho_por: null, deshecho_por_nombre: null, deshecho_motivo: null, reverso_id: null, reverso: null };
     J.repartos.push(r);
     return { reparto_id: r.reparto_id, movimiento_id: r.movimiento_id, estado: 'aplicado', persona: c.persona, desde: r.desde, hasta: r.hasta, regla_periodo: r.regla_periodo, monto: r.monto, horas: r.horas, tarifa_sale: r.tarifa_sale, asiento, tardio: null,
-      horas_aprobadas: { reportes: r.horas_ids.length, ids: r.horas_ids }, lineas: c.lineas, sin_obra: c.sin_obra, avisos: c.avisos, propuesta_ia: c.propuesta_ia,
-      nota: `Repartido: $${r.monto.toFixed(2)} de ${r.persona} (${r.periodo_texto}, ${r.horas} h) entre ${r.obras} obra(s); asiento ${numero}. Quedaron aprobados ${r.horas_ids.length} reporte(s) de horas.` };
+      horas_aprobadas: c.aprueba, lineas: c.lineas, sin_obra: c.sin_obra, avisos: c.avisos, propuesta_ia: c.propuesta_ia, propuestas_ia: c.propuestas_ia,
+      nota: `Repartido: ${usd(r.monto)} de ${r.persona} (${r.periodo_texto}, ${jH(r.horas)} h) entre ${new Set(c.lineas.filter(l => l.monto > 0).map(l => l.proyecto_id)).size} obra(s)${c.sin_obra && c.sin_obra.monto > 0 ? ' y lo sin obra' : ''}; asiento ${numero} del ${jDiaT(asiento.fecha_contable, true)}.${c.aprueba.reportes ? ` Quedaron aprobados ${c.aprueba.reportes} reporte(s) de horas.` : ''}` };
   },
   fn_jornal_deshacer: a => {
     if (!a.p_reparto) return err10('22023', 'Di qué reparto.');
-    if (String(a.p_motivo || '').trim().length < 3) return err10('22023', 'Deshacer un reparto dice por qué (motivo): queda escrito en el libro.');
+    if (String(a.p_motivo || '').trim().length < 3) return err10('22023', 'Deshacer un reparto dice por qué (motivo): queda escrito en él y en el reverso.');
     const r = J.repartos.find(x => x.reparto_id === a.p_reparto); if (!r) return err10('22023', 'No existe ese reparto.');
-    if (r.estado === 'deshecho') return err10('MX008', `Ese reparto ya estaba deshecho (el ${r.deshecho_el.slice(0, 10)}: ${r.deshecho_motivo}).`);
+    if (r.estado === 'deshecho') return err10('MX008', `Ese reparto ya estaba deshecho (el ${jDiaT(r.deshecho_el.slice(0, 10), true)}: ${r.deshecho_motivo}).`);
     J.seq += 1; J.fuera.delete(r.movimiento_id);
     Object.assign(r, { estado: 'deshecho', deshecho_el: new Date().toISOString(), deshecho_por: UID, deshecho_por_nombre: 'Edgar Prueba', deshecho_motivo: String(a.p_motivo).trim(), reverso_id: 'c1a00000-0000-4000-8000-0000000002' + String(J.seq).padStart(2, '0'), reverso: '2026-00000' + J.seq, asiento_vivo: false });
     return { reparto_id: r.reparto_id, estado: 'deshecho', movimiento_id: r.movimiento_id, movimiento_estado: 'pendiente', asiento: { id: r.asiento_id, numero: r.asiento }, reverso: { id: r.reverso_id, numero: r.reverso, fecha_contable: r.fecha_pago },
@@ -1193,20 +1353,30 @@ const C10_FN = {
   },
   fn_jornal_persona: a => {
     const p = a.p || {}, per = J.personas.find(x => x.usuario_id === p.usuario_id);
-    if (!p.usuario_id) return err10('22023', 'Di qué persona (usuario_id).');
-    if (!per) return err10('22023', 'Esa persona no está en el equipo.');
     const extra = Object.keys(p).filter(k => !['usuario_id', 'patron', 'movimiento_id', 'cuenta', 'activa', 'nota'].includes(k));
-    if (extra.length) return err10('22023', `Clave desconocida: ${extra.join(', ')}.`);
-    let patron = p.patron;
-    if (p.movimiento_id) { const m = J.movs.find(x => x.movimiento_id === p.movimiento_id); const t = m ? (/ to (.+?)\s+\d+$/i.exec(m.descripcion) || [])[1] : null; if (!t) return err10('22023', 'No saqué el patrón de esa descripción: escríbelo tú.'); patron = '\\m' + t.toUpperCase() + '\\M'; }
-    if (patron !== undefined && String(patron).replace(/\\[mM]/g, '').trim().length < 4) return err10('22023', 'El patrón es muy corto: casaría con cualquier pago. Pon el nombre como lo escribe el banco.');
+    if (extra.length) return err10('22023', `Clave desconocida: ${extra.join(', ')}. Las que hay: usuario_id, patron, movimiento_id, cuenta, activa y nota.`);
+    if (!p.usuario_id) return err10('22023', 'Di quién: usuario_id (su perfil en la app).');
+    if (!per) return err10('22023', 'No existe ese perfil en la app.');
+    let patron = p.patron ? String(p.patron).trim() : undefined;
+    if (!patron && p.movimiento_id) { const m = J.movs.find(x => x.movimiento_id === p.movimiento_id); const t = m ? (/ to (.+?)\s+\d+$/i.exec(m.descripcion) || [])[1] : null; if (!t) return err10('22023', 'De la descripción de ese movimiento no sale un nombre: escribe el patrón (su nombre, como lo pone el banco).'); patron = '\\m' + t.toUpperCase() + '\\M'; }
+    if (patron !== undefined && patron.replace(/\\[mM]/g, '').trim().length < 4) return err10('22023', `El patrón no vale: «${patron}» es muy corto: casaría con cualquier pago. Pon el nombre como lo escribe el banco.`);
     const nueva = !per.registrada;
     if (patron !== undefined) per.patron = patron;
     if (nueva) { per.registrada = true; per.activa = true; per.creado_el = new Date().toISOString(); }
     if (p.activa !== undefined) per.activa = !!p.activa;
-    const pend = jPendientes().filter(f => f.usuario_id === per.usuario_id).length;
-    return { ...jPersonasVista().find(x => x.usuario_id === per.usuario_id), nombre: per.nombre, nueva, pagos_pendientes: pend, ambiguos: 0,
-      nota_alta: nueva ? `${per.nombre} cobra por horas desde ahora: ${pend} pago(s) suyo(s) esperan su reparto en la Bandeja.` : null };
+    // cuántos pagos pendientes reconoce ahora, cuántos casan también con otra persona, y los avisos (como fn_jornal_persona v2)
+    const re = x => new RegExp(String(x).replace(/\\m|\\M/g, '\\b'), 'i'), mio = re(per.patron);
+    const pend = per.activa ? J.movs.filter(m => !J.fuera.has(m.movimiento_id) && m.monto < 0 && mio.test(m.descripcion)) : [];
+    const amb = pend.filter(m => J.personas.some(o => o !== per && o.registrada && o.activa && o.patron && re(o.patron).test(m.descripcion))).length;
+    const avisos = [];
+    if (per.activa) {
+      const pila = per.nombre.split(' ')[0].toUpperCase();
+      if (/^[A-Z]{3,}$/.test(pila) && !per.patron.toUpperCase().includes(pila)) avisos.push(`El patrón «${per.patron}» no lleva el nombre de ${per.nombre} («${pila}»): mira que sea el de sus pagos y no el de otra persona.`);
+      const dest = new Map(); for (const m of J.movs.filter(x => x.monto < 0 && mio.test(x.descripcion))) { const d = m.descripcion.toUpperCase().replace(/^ZELLE PAYMENT TO /, '').replace(/\s+\d+$/, ''); dest.set(d, (dest.get(d) || 0) + 1); }
+      if (dest.size > 1) avisos.push(`El patrón casa con pagos que el banco describe de ${dest.size} formas distintas (${[...dest].sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0])).map(([d]) => `«${d}»`).join(', ')}): mira que todos sean suyos; si alguno es de un comercio o de otra persona, afina el patrón.`);
+    }
+    const nota = (!per.activa ? `${per.nombre} queda de baja: sus pagos ya no se reconocen solos.` : amb ? `${amb} de sus ${pend.length} pago(s) pendientes casan también con otra persona: afina el patrón.` : `${per.nombre}: ${pend.length} pago(s) pendientes reconocidos con «${per.patron}».`) + (avisos.length ? ' Ojo: ' + avisos.join(' ') : '');
+    return { usuario_id: per.usuario_id, patron: per.patron, cuenta: null, activa: per.activa, nota: per.nota, creado_el: per.creado_el, nombre: per.nombre, nueva, pagos_pendientes: pend.length, ambiguos: amb, avisos, nota_alta: nota };
   },
   fn_jornal_config: a => {
     const p = a.p || {}, extra = Object.keys(p).filter(k => !['cuenta_defecto', 'cuenta_sin_obra', 'burden_estandar_pct', 'aviso_tarifa_pct'].includes(k));
@@ -1216,10 +1386,11 @@ const C10_FN = {
     Object.assign(J.config, p, { actualizado: new Date().toISOString(), actualizado_por: UID });
     return { ...J.config };
   },
+  fn_jornal_ia: a => jIA(a.p_movimiento || null),
   fn_margen_obra: a => {
     if (!a.p_proyecto) return err10('22023', 'Di qué obra (p_proyecto).');
     if (a.p_proyecto === 'c10-prueba-a') return jMargenA();
-    const o = [J_OBRA_B, J_OBRA_F].find(x => x.proyecto_id === a.p_proyecto);
+    const o = jObras().find(x => x.proyecto_id === a.p_proyecto);
     return o ? jMargenOtra(o) : err10('22023', 'No existe esa obra.');
   }
 };
@@ -3654,6 +3825,9 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
       /del 26 de octubre al 1 de noviembre de 2026/.test(await cA.locator('.ct-jr-que').textContent()) && /2 nov – 8 nov/.test(await cA.locator('[data-jr-per="esta"]').textContent()));
     ok('…«Sale a $25.41 la hora (su tarifa: $25.00)», sin ámbar (no se aleja), y el aviso de la base en llano (la obra F terminada)', /Sale a \$25\.41 la hora \(su tarifa: \$25\.00\)/.test(await cA.locator('.ct-jr-tarifa').textContent()) && !(await cA.locator('.ct-jr-tarifa.lejos').count()) &&
       /C10 PRUEBA Obra F \(terminada\)\. Su parte va a esa obra igual/.test(await cA.locator('[data-aviso="obra_terminada"]').textContent()) && (await cA.locator('.ct-jr-tabla tbody tr', { hasText: 'Obra F' }).locator('.ct-pill', { hasText: 'terminada' }).count()) === 1);
+    ok('v2 · el aviso «Horas de otro mes» sale con el texto de la base y como información (sin ámbar): «37 h de este pago ($940.00) se trabajaron en octubre de 2026 y el asiento entra el 2-nov-2026…»',
+      /^37 h de este pago \(\$940\.00\) se trabajaron en octubre de 2026 y el asiento entra el 2-nov-2026: su costo queda en noviembre de 2026/.test(await cA.locator('[data-aviso="otro_mes"]').textContent()) &&
+      (await cA.locator('[data-aviso="otro_mes"].ct-jr-info').count()) === 1 && (await cA.locator('[data-aviso="otro_mes"].warn').count()) === 0, await cA.locator('.ct-jr-avisos').textContent());
     ok('…y la Bandeja no pidió la propuesta (la tarjeta sale de la lista de pagos reconocidos, con su huella)', !desde(n0).some(l => l.fn === 'fn_jornal_propuesta') && lecturas.some(l => /^v_jornal_pendientes\?select=\*/.test(l)));
     await foto(q, 'c10-1-bandeja-tarjeta');
     // cambiar el período recalcula: esta semana (sin horas), otras fechas (23.25 h en 4 líneas) y otra vez la semana anterior
@@ -3678,6 +3852,8 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     cA = card(J_MOV.ana);
     const vistoA = jCalc(J_MOV.ana, '2026-10-26', '2026-11-01').visto;
     ok('Período · otra vez «Semana anterior»: las 7 líneas y los 37 h', (await cA.locator('.ct-jr-tabla tbody tr').count()) === 7 && /37 h \$940\.00/.test(await tfoot(cA)));
+    ok('v2 · la propuesta dice cuántos reportes aprobará «Así es» (8) y lo que la IA tenía para el pago (proponía 5100 → C10 PRUEBA Obra B): se cierra sola al aceptar',
+      /Al aceptar quedan aprobados 8 reportes de horas/.test(await cA.locator('.ct-jr-aprueba').textContent()) && /5100 → C10 PRUEBA Obra B.*se cierra sola/.test(await cA.locator('.ct-jr-iaprop').textContent()), await cA.locator('.ct-jr-iaprop').textContent());
     // «Así es» con la huella cambiada (alguien reportó 3 h más entre medias): nada se hace, se recalcula y se enseña otra vez
     J.mx011 = true; n0 = llamadas.length;
     await cA.locator('[data-jr-asi]').click(); await esperarLlamada(q, n0, 'fn_jornal_aplicar'); await q.waitForTimeout(200); await pintado(q);
@@ -3700,6 +3876,9 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     ok('…con el motivo: la misma huella y p_opciones.motivo; repartido (1 reparto de $940.00 en 7 líneas), la tarjeta se va y la franja dice 2', !!ap3 && ap3.args.p_visto === vistoA2 && ap3.args.p_opciones.motivo === 'Es su semana: el cheque 1234 es otra cosa' &&
       J.repartos.length === 1 && J.repartos[0].monto === 940 && J.repartos[0].lineas.length === 7 && (await card(J_MOV.ana).count()) === 0 && /2 pagos de mano de obra esperan/.test(await texto(q, '#ct-jr-franja')), JSON.stringify(ap3 && ap3.args.p_opciones));
     J.pideMotivo = false;
+    const cad = ultima(n0, 'contador:caducar');
+    ok('v2 · lo de la IA que el pago tenía abierto (una aprobada cuyo asiento ya no vive) se cierra tras el reparto: «caducar» por la función «contador», con su motivo; nada queda abierto',
+      !!cad && cad.args.propuesta === J_IA2 && /mano de obra/i.test(cad.args.motivo) && J.ia[1].estado === 'caducada' && !desde(n0).some(l => l.fn === 'contador:rechazar') && (await q.locator('#ct-jr-ia').count()) === 0, JSON.stringify(cad && cad.args));
     // Zzbeto: 2 h sin obra y sin cuenta para ellas → se pide UNA vez; luego «Así es» y la propuesta de la IA se rechaza
     let cB = await fila(q, J_MOV.beto);
     ok('Lo sin obra · la tarjeta de Zzbeto (viernes 6-nov: «Esta semana») enseña «Sin obra · 2 h · $50.00 · falta decir a qué cuenta va», pide la cuenta y no deja «Así es»; el total sigue siendo $600.00',
@@ -3714,10 +3893,58 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     const cfg1 = ultima(n0, 'fn_jornal_config');
     ok('…«Guardar la cuenta» manda fn_jornal_config({p: {cuenta_sin_obra: "7900"}}), recalcula y ya deja «Así es» (lo sin obra va a 7900)', !!cfg1 && JSON.stringify(cfg1.args) === '{"p":{"cuenta_sin_obra":"7900"}}' && J.config.cuenta_sin_obra === '7900' &&
       !(await cB.locator('[data-jr-asi]').isDisabled()) && /va a 7900/.test(await cB.locator('.ct-jr-sinobra').textContent()) && (await cB.locator('[data-jr-cuenta]').count()) === 0, JSON.stringify(cfg1 && cfg1.args));
-    n0 = llamadas.length;
+    n0 = llamadas.length; J.iaFalla = 1;
     await cB.locator('[data-jr-asi]').click(); await esperarLlamada(q, n0, 'contador:rechazar'); await q.waitForTimeout(250); await pintado(q);
-    const rej = ultima(n0, 'contador:rechazar');
+    await q.waitForSelector('#ct-jr-ia', { timeout: 5000 });
+    const rej = ultima(n0, 'contador:rechazar'), tIA = await texto(q, '#toast');
     ok('La IA (c8) tenía una propuesta para ese pago: tras repartirlo, la pantalla la rechaza por la función «contador» (con su id y el motivo)', J.repartos.length === 2 && !!rej && rej.args.propuesta === J_IA && /mano de obra/i.test(rej.args.motivo) && (await card(J_MOV.beto).count()) === 0, JSON.stringify(rej && rej.args));
+    ok('v2 · si la función no contesta, NO SE PIERDE: el aviso lo dice en llano («quedó abierta… se vuelve a intentar solo cada vez que abras la Bandeja»), en rojo, y no se reintenta en esa misma pintada',
+      /la propuesta de la IA para este pago quedó abierta \(la IA contable no contestó\)\. Se vuelve a intentar solo cada vez que abras la Bandeja/.test(tIA) && /error/.test(await q.locator('#toast').getAttribute('class')) &&
+      desde(n0).filter(l => l.fn === 'contador:rechazar').length === 1 && J.ia[0].estado === 'pendiente', tIA);
+    ok('v2 · …la franja lo dice («1 propuesta de la IA sigue abierta en pagos ya repartidos por horas (proponía 5200 → C10 PRUEBA Obra A): la IA contable no contestó…», puede frenar el cierre) con «Reintentar ahora»',
+      /1 propuesta de la IA sigue abierta en pagos ya repartidos por horas \(proponía 5200 → C10 PRUEBA Obra A\): la IA contable no contestó al cerrarlas/.test(await texto(q, '#ct-jr-ia')) && /frenar el cierre del mes/.test(await texto(q, '#ct-jr-ia')) &&
+      (await q.locator('#ct-jr-ia-reintentar').count()) === 1 && !/fn_|v_jornal|MX0/.test(await texto(q, '#ct-jr-ia')), await texto(q, '#ct-jr-ia'));
+    n0 = llamadas.length;
+    await q.locator('#ct-jr-ia-reintentar').click(); await esperarLlamada(q, n0, 'contador:rechazar');
+    await q.waitForFunction(() => !document.getElementById('ct-jr-ia'), null, { timeout: 5000 }).catch(() => {});
+    ok('v2 · «Reintentar ahora» la rechaza otra vez por la función y, al cerrarse, la franja ya no la nombra y el aviso dice «cerrada»', J.ia[0].estado === 'rechazada' && (await q.locator('#ct-jr-ia').count()) === 0 && /cerrada/.test(await texto(q, '#toast')), await texto(q, '#toast'));
+    // lo que el control de la base enseña como abierto (el 80) va a «Qué atender» con su botón a la Bandeja; al abrirla, se cierra sola
+    J.ia[0].estado = 'pendiente';
+    await ve(q, 'resumen');
+    atn = await q.locator('#ct-atender .ct-atn').allTextContents();
+    ok('v2 · «Qué atender»: el aviso 80 del jornal (una propuesta de la IA abierta en un pago repartido) con el detalle de la base y su botón «Bandeja»',
+      atn.some(t => /^Mano de obra: ninguna propuesta de la IA abierta en un pago ya repartido\.el pago del 2026-11-06 a Zzbeto C10 PRUEBA \(\$600\.00\): su propuesta de la IA sigue pendiente/.test(t)) &&
+      (await q.locator('#ct-atender .ct-atn', { hasText: 'ninguna propuesta de la IA' }).locator('button[data-ir="bandeja"]').count()) === 1, atn.join(' | '));
+    n0 = llamadas.length;
+    await ve(q, 'bandeja'); await esperarLlamada(q, n0, 'contador:rechazar');
+    await q.waitForFunction(() => !document.getElementById('ct-jr-ia'), null, { timeout: 5000 }).catch(() => {});
+    ok('v2 · al abrir la Bandeja, lo que la base sigue dando por abierto (fn_jornal_ia) se cierra solo: «rechazar» con su motivo, sin tocar nada', desde(n0).some(l => l.fn === 'fn_jornal_ia') &&
+      (ultima(n0, 'contador:rechazar') || { args: {} }).args.propuesta === J_IA && J.ia[0].estado === 'rechazada' && (await q.locator('#ct-jr-ia').count()) === 0);
+    J.ia[0].estado = 'pendiente'; J.iaFalla = 1; n0 = llamadas.length;
+    await ve(q, 'bandeja'); await esperarLlamada(q, n0, 'contador:rechazar');
+    await q.waitForFunction(() => /no contestó/.test((document.getElementById('ct-jr-ia') || {}).textContent || ''), null, { timeout: 5000 }).catch(() => {});
+    ok('v2 · …y si la función sigue sin contestar, la franja lo vuelve a decir y nada se pierde (la próxima vez se reintenta)', J.ia[0].estado === 'pendiente' && /sigue abierta.*no contestó/.test(await texto(q, '#ct-jr-ia')));
+    await foto(q, 'c10-4b-ia-abierta');
+    J.iaFalla = 0; n0 = llamadas.length;
+    await ve(q, 'bandeja'); await esperarLlamada(q, n0, 'contador:rechazar');
+    await q.waitForFunction(() => !document.getElementById('ct-jr-ia'), null, { timeout: 5000 }).catch(() => {});
+    ok('v2 · …y en cuanto contesta, la siguiente vez que se abre la Bandeja queda cerrada', J.ia[0].estado === 'rechazada' && (await q.locator('#ct-jr-ia').count()) === 0);
+    // horas tardías: una hora del 31-oct reportada después de repartir esa semana; el pago siguiente de Zzana la ofrece
+    J.horas.push({ id: -1010000098, u: J_PER.ana, fecha: '2026-10-31', p: 'c10-prueba-h', co: null, fase: 'rough', horas: 2 });
+    await ve(q, 'bandeja');
+    let cT = await fila(q, J_MOV.ana2);
+    const btT = cT.locator('[data-jr-tardias]');
+    ok('v2 · horas tardías: el pago del 9-nov de Zzana trae el aviso de la base (2 h del 31-oct en la obra H, de una semana ya repartida) en ámbar, con «Repartir también esas horas (31 oct – 8 nov)»',
+      /Zzana C10 PRUEBA tiene 2 h de una semana ya repartida que no están en ningún reparto.*2 h del 31-oct en C10 PRUEBA Obra H \(semana del pago del 2-nov\)/.test(await cT.locator('[data-aviso="horas_tardias"]').textContent()) &&
+      (await cT.locator('[data-aviso="horas_tardias"].warn').count()) === 1 && (await btT.getAttribute('data-desde')) === '2026-10-31' && (await btT.getAttribute('data-hasta')) === '2026-11-08' && /31 oct – 8 nov/.test(await btT.textContent()));
+    n0 = llamadas.length;
+    await btT.click(); await esperarLlamada(q, n0, 'fn_jornal_propuesta'); await pintado(q);
+    cT = card(J_MOV.ana2); pr = ultima(n0, 'fn_jornal_propuesta');
+    ok('v2 · …tocarlo pide la propuesta con esas fechas (31-oct a 8-nov): la tarjeta enseña esas 2 h en la obra H por el pago entero, lo dice, y avisa que se pisa con el reparto de esa semana',
+      !!pr && pr.args.p_desde === '2026-10-31' && pr.args.p_hasta === '2026-11-08' && (await cT.locator('.ct-jr-tabla tbody tr').count()) === 1 && /Obra H/.test(await cT.locator('.ct-jr-tabla tbody').textContent()) &&
+      /2 h \$520\.00/.test(await tfoot(cT)) && /quedaron fuera de su semana/.test(await cT.locator('.ct-jr-nota').textContent()) && (await cT.locator('[data-aviso="se_pisa"]').count()) === 1 && (await cT.locator('[data-aviso="horas_tardias"]').count()) === 0,
+      JSON.stringify(pr && pr.args));
+    await foto(q, 'c10-4c-tardias');
     // el lunes 9-nov a Zzana: sin horas esa semana → «No es mano de obra» devuelve la tarjeta de siempre, y se puede volver
     let cN = await fila(q, J_MOV.ana2);
     await cN.locator('[data-jr-no]').click(); await q.waitForTimeout(150);
@@ -3739,6 +3966,7 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     cC = await fila(q, J_MOV.carla);
     ok('…manda fn_jornal_persona({p: {usuario_id, movimiento_id, activa: true}}) (la base saca el patrón del pago) y el pago sale ya como «Mano de obra · Zzcarla»', !!alta && alta.args.p.usuario_id === J_PER.carla && alta.args.p.movimiento_id === J_MOV.carla && alta.args.p.activa === true &&
       (await cC.locator('[data-jr-bloque]').count()) === 1 && /Mano de obra · Zzcarla C10 PRUEBA/.test(await cC.locator('.ct-jr-cab h3').textContent()), JSON.stringify(alta && alta.args));
+    ok('v2 · el aviso del alta es la nota de la base sin las marcas del patrón («…reconocidos con «C10 PRUEBA ZZCARLA»»)', /Zzcarla C10 PRUEBA: 1 pago\(s\) pendientes reconocidos con «C10 PRUEBA ZZCARLA»/.test(await texto(q, '#toast')) && !/\\[mM]/.test(await texto(q, '#toast')), await texto(q, '#toast'));
     ok('Tarifa · a Zzcarla le sale a $25.00 la hora y su tarifa es $18.00: la línea va en ámbar y el aviso de la base lo dice', (await cC.locator('.ct-jr-tarifa.lejos').count()) === 1 && /Sale a \$25\.00 la hora \(su tarifa: \$18\.00\)/.test(await cC.locator('.ct-jr-tarifa').textContent()) &&
       (await cC.locator('[data-aviso="tarifa_lejos"]').count()) === 1 && !(await cC.locator('[data-jr-asi]').isDisabled()));
     await foto(q, 'c10-6-tarifa-lejos');
@@ -3750,9 +3978,15 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     ok('Configurar · «Lo que falta por configurar»: el burden estándar (falta) con su frase, y la cuenta de lo sin obra ya en 7900', /Lo que falta por configurar/.test(await texto(q, '#ct-ob-config h2')) && (await q.locator('#ct-ob-config .ct-campo', { hasText: 'Burden' }).locator('.ct-pill', { hasText: 'falta' }).count()) === 1 &&
       /si no aplica, pon 0/i.test(await texto(q, '#ct-ob-config')) && (await q.locator('#ct-ob-config select[name="cuenta_sin_obra"]').inputValue()) === '7900');
     const filasOb = async () => q.locator('#ct-ob-filas .ct-ob-fila').evaluateAll(xs => xs.map(x => x.dataset.ob));
-    ok('Lista · «Activas» (2): la A y la B; la A con contrato $12,000.00, costo real $1,804.69 (+ $422.40 estándar), margen 63.9 % y «dentro: sobran $4,622.91»; la B «sin estimado»', JSON.stringify(await filasOb()) === '["c10-prueba-a","c10-prueba-b"]' &&
-      /\$12,000\.00/.test(await texto(q, '[data-ob="c10-prueba-a"]')) && /\$1,804\.69\s*\+ \$422\.40 estándar/.test(await texto(q, '[data-ob="c10-prueba-a"]')) && /63\.9 %/.test(await texto(q, '[data-ob="c10-prueba-a"]')) &&
-      /dentro: sobran \$4,622\.91/.test(await texto(q, '[data-ob="c10-prueba-a"] .ct-ob-senal')) && /sin estimado/.test(await texto(q, '[data-ob="c10-prueba-b"] .ct-ob-senal')), await texto(q, '#ct-ob-filas'));
+    const senal = async id => q.locator(`[data-ob="${id}"] .ct-ob-senal`).evaluate(e => [...e.childNodes].map(n => n.textContent.trim()).filter(Boolean).join(' '));
+    ok('Lista · «Activas» (3): la A, la B y la G; la A con contrato $12,000.00, costo real $1,804.69 y margen 63.9 %', JSON.stringify(await filasOb()) === '["c10-prueba-a","c10-prueba-b","c10-prueba-g"]' &&
+      /\$12,000\.00/.test(await texto(q, '[data-ob="c10-prueba-a"]')) && /\$1,804\.69/.test(await texto(q, '[data-ob="c10-prueba-a"]')) && /63\.9 %/.test(await texto(q, '[data-ob="c10-prueba-a"]')), await texto(q, '#ct-ob-filas'));
+    ok('v2 · sin el burden la A no da veredicto: «falta el estándar» y por qué (la base deja la diferencia vacía), nunca «dentro» ni «se pasa»', /^falta el estándar Falta fijar el burden estándar/.test(await senal('c10-prueba-a')) && !/dentro|se pasa/.test(await senal('c10-prueba-a')), await senal('c10-prueba-a'));
+    ok('v2 · la B (nada estimado): «sin estimado» y qué falta («Faltan las horas estimadas y el presupuesto de material.»)', /^sin estimado Faltan las horas estimadas y el presupuesto de material\.$/.test(await senal('c10-prueba-b')), await senal('c10-prueba-b'));
+    ok('v2 · la G (estimado a medias: horas sí, material no, y ya lleva material): «estimado incompleto» con lo que falta, sin «se pasa» ni «dentro»',
+      /^estimado incompleto No tiene presupuesto de material y ya lleva \$300\.00 de material en el libro\.$/.test(await senal('c10-prueba-g')) && (await q.locator('[data-ob="c10-prueba-g"] .ct-ob-senal .ct-pill.warn').count()) === 1, await senal('c10-prueba-g'));
+    ok('v2 · una obra sin nada facturado en el libro dice «sin facturar en el libro» en vez de un «—» rojo, con el margen en dólares debajo', (await q.locator('[data-ob="c10-prueba-b"] .ct-ob-sinfac').count()) === 1 &&
+      /sin facturar en el libro\s*−\$38\.11/.test(await texto(q, '[data-ob="c10-prueba-b"] [data-col="Margen"]')) && (await q.locator('[data-ob="c10-prueba-b"] [data-col="Margen"] .bad-txt').count()) === 0, await texto(q, '[data-ob="c10-prueba-b"] [data-col="Margen"]'));
     await foto(q, 'c10-7-obras-lista');
     await q.locator('[data-ob-filtro="terminadas"]').click();
     ok('Lista · «Terminadas»: la F, con «parcial»', JSON.stringify(await filasOb()) === '["c10-prueba-f"]' && (await q.locator('[data-ob="c10-prueba-f"] .ct-pill', { hasText: 'parcial' }).count()) === 1);
@@ -3764,6 +3998,8 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     const cfg2 = ultima(n0, 'fn_jornal_config');
     ok('Configurar · el burden 10 manda solo lo que cambió (fn_jornal_config({p: {burden_estandar_pct: 10}})) y la tarjeta queda plegada como «Ajustes»', !!cfg2 && JSON.stringify(cfg2.args) === '{"p":{"burden_estandar_pct":10}}' &&
       (await q.locator('#ct-ob-config.falta').count()) === 0 && /burden estándar 10 % · lo sin obra a 7900/.test(await texto(q, '#ct-ob-config summary')), JSON.stringify(cfg2 && cfg2.args));
+    ok('…con el burden, la A ya compara: «+ $422.40 estándar» y «dentro: sobran $4,622.91»; la G sigue sin veredicto («estimado incompleto»)', /\$1,804\.69\s*\+ \$422\.40 estándar/.test(await texto(q, '[data-ob="c10-prueba-a"]')) &&
+      /^dentro: sobran \$4,622\.91$/.test(await senal('c10-prueba-a')) && /^estimado incompleto/.test(await senal('c10-prueba-g')), await senal('c10-prueba-a'));
     // una obra: estimado contra real, lo real y lo estándar separados
     n0 = llamadas.length;
     await q.locator('[data-ob="c10-prueba-a"]').click(); await esperarLlamada(q, n0, 'fn_margen_obra'); await pintado(q);
@@ -3810,13 +4046,21 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     J.libro.pop();
     await q.locator('#ct-ob-bajada .ct-asiento-btn').first().click(); await q.waitForTimeout(400);
     ok('Bajar · tocar un asiento abre Estados en ese asiento', await q.evaluate(() => window.MXP_CONTA._estado.pagina === 'estados' && !!window.MXP_CONTA._estado.est.asiento));
+    // (v2) la G: el estimado incompleto, dicho arriba y en el total; sin margen estimado ni diferencia
+    await ve(q, 'obras', { sel: 'c10-prueba-g' });
+    const ccG = await conc();
+    ok('v2 · obra G: arriba dice qué le falta al estimado (el texto de la base) y el margen real «sin facturar en el libro»', /Estimado incompleto: no tiene presupuesto de material y ya lleva \$300\.00 de material en el libro\. No da un total que comparar/.test(await texto(q, '#ct-ob-det .ct-ob-faltaest')) &&
+      /sin facturar en el libro/.test(await texto(q, '#ct-ob-det .ct-kpi')), await texto(q, '#ct-ob-det .ct-jr-avisos'));
+    ok('v2 · …su total no tiene estimado ni diferencia (con la nota de la base) y el margen estimado sale «—» con «sin estimado completo»', ccG.some(t => /^Costo de la obra Estimado incompleto: .* — \$300\.00 \$158\.40 —$/.test(t)) &&
+      ccG.some(t => /^Margen — ?sin estimado completo/.test(t)), ccG.join(' | '));
+    await foto(q, 'c10-8b-obra-incompleta');
     // la F: terminada y parcial
     await ve(q, 'obras', { sel: 'c10-prueba-f' });
     ok('Obra F · «parcial» con el porqué de la base y que lo de antes del 1 oct 2026 está en QuickBooks', (await q.locator('#ct-ob-det .ct-pill', { hasText: 'parcial' }).count()) === 1 && /Parcial: ya andaba antes del libro.*está en QuickBooks/.test(await texto(q, '#ct-ob-det .ct-aviso.warn')));
     // el margen que no cuadra: la página no pinta cifras
     J.margenRojo = true;
     await ve(q, 'obras');
-    ok('Falla ruidosa · un cuadre del margen en rojo: «El costo por obra no cuadra» con su detalle, y ninguna obra ni cifra pintada', /El costo por obra no cuadra/.test(await texto(q, '#ct-ob-cuerpo .ct-rojo h2')) && /\$2,700\.00/.test(await texto(q, '#ct-ob-cuerpo .ct-rojo')) && (await q.locator('.ct-ob-fila').count()) === 0);
+    ok('Falla ruidosa · un cuadre del margen en rojo: «El costo por obra no cuadra» con su detalle, y ninguna obra ni cifra pintada', /El costo por obra no cuadra/.test(await texto(q, '#ct-ob-cuerpo .ct-rojo h2')) && /Las obras suman \$3,444\.42 de costo y el mayor \(cuentas de costo con obra\) \$3,498\.92: diferencia -\$54\.50/.test(await texto(q, '#ct-ob-cuerpo .ct-rojo')) && (await q.locator('.ct-ob-fila').count()) === 0);
     J.margenRojo = false;
     // ---- Repartos: el historial con «Deshacer» ----
     await ve(q, 'obras', { sub: 'repartos' });
@@ -3849,12 +4093,19 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     await q.locator(`.ct-per[data-usuario="${J_PER.ana}"] .ct-form button[type="submit"]`).click(); await esperarLlamada(q, n0, 'fn_jornal_persona'); await pintado(q);
     const pat = ultima(n0, 'fn_jornal_persona');
     ok('Personas · «Cambiar el patrón» manda el que escribió Edgar', !!pat && pat.args.p.usuario_id === J_PER.ana && pat.args.p.patron === 'C10 PRUEBA ZZANA', JSON.stringify(pat && pat.args));
+    ok('v2 · …y el aviso de la app es la nota de la base («…reconocidos con «C10 PRUEBA ZZANA»»), sin «Ojo»', /Zzana C10 PRUEBA: 2 pago\(s\) pendientes reconocidos con «C10 PRUEBA ZZANA»\.$/.test((await texto(q, '#toast')).trim()), await texto(q, '#toast'));
+    n0 = llamadas.length;
+    await q.locator(`.ct-per[data-usuario="${J_PER.ana}"] [data-per-patron]`).click(); await q.locator(`.ct-per[data-usuario="${J_PER.ana}"] input[name="patron"]`).fill('C10 PRUEBA');
+    await q.locator(`.ct-per[data-usuario="${J_PER.ana}"] .ct-form button[type="submit"]`).click(); await esperarLlamada(q, n0, 'fn_jornal_persona'); await pintado(q);
+    const tPat = await texto(q, '#toast');
+    ok('v2 · un patrón sin su nombre y que casa con pagos a varios: los avisos de la base salen en el aviso de la app, en ámbar/rojo («Ojo: El patrón «C10 PRUEBA» no lleva el nombre de Zzana…», «…de 3 formas distintas…»)',
+      /Ojo: El patrón «C10 PRUEBA» no lleva el nombre de Zzana C10 PRUEBA \(«ZZANA»\)/.test(tPat) && /casa con pagos que el banco describe de 3 formas distintas/.test(tPat) && /error/.test(await q.locator('#toast').getAttribute('class')), tPat);
     J.personas.find(x => x.usuario_id === J_PER.ana).patron = '\\mPRUEBA ZZANA\\M';
     // ---- «Qué atender» con un rojo del jornal ----
     J.ctlRojo = true;
     await ve(q, 'resumen');
     atn = await q.locator('#ct-atender .ct-atn').allTextContents();
-    ok('«Qué atender» · un cuadre del jornal en rojo sale con su detalle y su botón «Obras» (a los repartos)', atn.some(t => /^Mano de obra: ningún reparto aplicado con su asiento reversado o su pago suelto \(no cuadra\)\.1 reparto aplicado/.test(t)) &&
+    ok('«Qué atender» · un cuadre del jornal en rojo sale con su detalle y su botón «Obras» (a los repartos)', atn.some(t => /^Mano de obra: ningún reparto aplicado con su asiento reversado o su pago suelto \(no cuadra\)\.el reparto del pago del 2026-11-02 a Zzana C10 PRUEBA/.test(t)) &&
       (await q.locator('#ct-atender .ct-atn', { hasText: 'Mano de obra: ningún reparto' }).locator('button[data-ir="obras"][data-ir-sub="repartos"]').count()) === 1, atn.join(' | '));
     await ve(q, 'bandeja');
     ok('…y la Bandeja lo dice arriba, en su franja', /Ningún reparto aplicado con su asiento reversado o su pago suelto/.test(await texto(q, '#ct-jr-franja .ct-aviso.bad')));
@@ -3862,12 +4113,16 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     await cx.close();
 
     // ---- sin el código del teléfono: la tarjeta se ve, «Así es» no ----
+    J.ia[0].estado = 'pendiente';
     ({ cx, q } = await abrirCtx(1280, false));
+    const nS = llamadas.length;
     await ve(q, 'bandeja');
     const cS = await fila(q, J_MOV.ana);
     ok('Sin el código del teléfono · la tarjeta se ve entera pero «Así es» va apagado y lo dice («pide entrar con el código del teléfono»)', (await cS.locator('.ct-jr-tabla tbody tr').count()) === 7 && await cS.locator('[data-jr-asi]').isDisabled() && /pide entrar con el código del teléfono/.test(await cS.textContent()));
+    ok('v2 · …y lo de la IA abierto en un pago repartido no se intenta cerrar (la función pide el código): la franja dice que entre con él', /sigue abierta.*entra con el código del teléfono/.test(await texto(q, '#ct-jr-ia')) && !desde(nS).some(l => /^contador:/.test(l.fn)), await texto(q, '#ct-jr-ia'));
     await ve(q, 'obras', { sub: 'repartos' });
     await q.locator('.ct-rep [data-deshacer]').first().click(); await q.waitForTimeout(150);
+    J.ia[0].estado = 'rechazada';
     ok('…y «Deshacer» un reparto tampoco: lo dice y no abre el motivo', /primero activa el código del teléfono/.test(await texto(q, '.ct-rep >> nth=0')) && (await q.locator('.ct-rep textarea[name="motivo"]').count()) === 0);
     await cx.close();
 

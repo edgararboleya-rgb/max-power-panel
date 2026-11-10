@@ -1,9 +1,11 @@
 -- =====================================================================
 -- c10-pruebas.sql — el jornal repartido por horas y el costo por obra se
--- prueban a sí mismos (c10-costo-obra.sql). 9-nov-2026.
+-- prueban a sí mismos (c10-costo-obra.sql). 9-nov-2026; 10-nov-2026: las
+-- pruebas 48 a 57, una por cada hallazgo de las dos revisiones (v2 de la
+-- capa), y el cierre de la suite pasa a ser 58, 59 y 60.
 --
 -- CÓMO SE CORRE. En el SQL Editor de Supabase: DESPUÉS de c10-costo-obra.sql,
--- pegar este archivo entero → Run. Sale la tabla _pruebas: 50 filas, todas
+-- pegar este archivo entero → Run. Sale la tabla _pruebas: 60 filas, todas
 -- con ok = true (las que salen «omitida» dicen por qué y no son un fallo).
 -- Si el editor se cansa antes del final, la corrida sigue en el servidor y
 -- se lee después en pruebas.c10_resultado (ver el final).
@@ -14,7 +16,7 @@
 --
 -- Cada prueba escribe dentro de una subtransacción y lo deshace (MXT00):
 -- nada queda (ni las personas de prueba, ni sus horas, ni los movimientos
--- del banco, ni los asientos, ni los repartos); la 48 lo comprueba. Ningún
+-- del banco, ni los asientos, ni los repartos); la 58 lo comprueba. Ningún
 -- aviso sale al teléfono: lo que una hora nueva encola (fn_avisar_horas) se
 -- deshace con ella, como en c3-pruebas y c8-pruebas.
 --
@@ -49,7 +51,7 @@
 -- (su apertura sin cuadrar…), sale «omitida» con lo que dijo c2.
 --
 -- Lo que mira, una prueba cada una:
---  1 el pegado (precondiciones, 5 tablas, 6 vistas, las 32 funciones por su
+--  1 el pegado (precondiciones, 5 tablas, 6 vistas, las 38 funciones por su
 --    nombre exacto, la configuración, cada objeto con su comentario «c10: …»);
 --  2 las precondiciones en rojo (desde la app; sin una función de c6; una
 --    función con nombre de c10 que no es de c10; una vista ajena colgada);
@@ -78,12 +80,13 @@
 -- 16 lo que trae la propuesta (líneas, detalle, las dos semanas, la tarifa
 --    que sale, la huella: estable, y cambia con las horas);
 -- 17 los avisos: sin horas, la tarifa lejos (umbral configurable), sin tarifa;
--- 18 los avisos: obra terminada o cancelada, obra sin aprobar, falta la
+-- 18 los avisos: obra terminada o no aprobada, obra sin aprobar, falta la
 --    cuenta de lo sin obra, una cuenta que ya no sirve;
 -- 19 los avisos: horas ya cubiertas, se pisa con otro reparto, «es otro pago
 --    de las mismas horas», fechas posteriores al pago;
 -- 20 los avisos: posible duplicado sin decidir y devengo estándar en el mes;
--- 21 la propuesta pendiente de la IA (c8) se devuelve y nada de c8 se rompe;
+-- 21 la propuesta pendiente de la IA (c8) se devuelve y nada de c8 se rompe
+--    (lo que un jornal deja abierto en c8, entero, en la 51);
 -- 22 APLICAR: el asiento (N líneas con su obra, su CO y la persona, contra
 --    el banco; el movimiento casado), el reparto y su detalle guardados;
 -- 23 aplicar aprueba las horas por el camino de c3 (con lo que Edgar vio);
@@ -91,7 +94,7 @@
 -- 25 dos veces → la segunda falla limpia; y sus frenos de entrada;
 -- 26 más de 5 obras (7) y 12 grupos en un asiento;
 -- 27 un pago de un mes ya cerrado → entra el primer día del mes abierto;
--- 28 la obra terminada y la cancelada reciben su parte;
+-- 28 la obra terminada y la no aprobada reciben su parte;
 -- 29 las horas sin obra: sin cuenta no se aplica; con ella, a su cuenta;
 -- 30 los frenos del banco valen (un débito que c6 toma por nómina: MX008 y
 --    nada cambia; con el motivo de Edgar, entra);
@@ -105,7 +108,8 @@
 -- 36 el control 25 (deshecho con su asiento vivo) en rojo y de vuelta;
 -- 37 el control 30 (las horas cambiaron) en rojo y de vuelta;
 -- 38 el control 40 (una hora en dos repartos sin aceptarlo);
--- 39 el control 50 (devengo estándar y jornales en el mismo mes);
+-- 39 el control 50 (la misma hora en el devengo estándar de un mes y en un
+--    jornal que entró al libro ese mes);
 -- 40 el control 60 (dos personas casan con un pago; una cuenta que no sirve);
 -- 41 el control 90 (las protecciones de la capa);
 -- 42 EL MARGEN: una obra con material, jornales, un subcontrato de verdad
@@ -119,10 +123,33 @@
 -- 46 el detalle de una obra: por CO, por fase, por cost code (o que no
 --    hay), la cobertura y los repartos; los pagos sin repartir;
 -- 47 v_margen_control (verde; y en rojo cuando un reparto no es su asiento);
--- 48 nada queda al deshacer;
--- 49 con jornales aplicados, deshechos y vueltos a aplicar, NINGÚN control
+-- Lo que las dos revisiones encontraron (v2), una prueba por hallazgo:
+-- 48 un estimado parcial no se compara con un real completo (costo_estimado
+--    vacío, estimado_completo y estimado_falta);
+-- 49 las horas que llegan tarde a una semana ya repartida (el control 35, la
+--    obra y la propuesta del pago siguiente);
+-- 50 el pago de una persona dada de alta resuelto fuera del jornal (el
+--    control 70 y las obras con horas suyas);
+-- 51 lo de la IA (c8) que un jornal deja abierto: la pendiente y la aprobada
+--    cuyo asiento se reversó (propuestas_ia, fn_jornal_ia y el control 80);
+-- 52 la huella cubre exactamente lo que el «Así es» aprueba (una hora
+--    cubierta que cambia entre medias: MX011);
+-- 53 el CO y la fase, limpios como los deja c6 (un salto de línea, un
+--    tabulador); los CO parecidos se avisan; y el MX001 dice qué línea y qué
+--    campo;
+-- 54 el devengo de un mes y el jornal pagado al siguiente no chocan;
+-- 55 el doble de verdad, en rojo mientras el mes está abierto; cerrado, se
+--    dice y no se queda en rojo;
+-- 56 el reconocimiento por patrón se avisa (un Zelle a cualquiera no entra;
+--    la compra en un comercio; el patrón sin el nombre de pila) y la cuenta
+--    de lo sin obra no es cualquier gasto;
+-- 57 lo menor: el corte de mes y de año, la nota de aplicar, el núcleo con
+--    solo las horas aprobadas, y los textos sin nombres de función;
+-- Y el cierre:
+-- 58 nada queda al deshacer;
+-- 59 con jornales aplicados, deshechos y vueltos a aplicar, NINGÚN control
 --    de c2, c3, c4, c6, c8 ni c9 pasa a rojo;
--- 50 el cierre de la suite: c2, c3, c6 y c4 como estaban, c8 sin cuadres
+-- 60 el cierre de la suite: c2, c3, c6 y c4 como estaban, c8 sin cuadres
 --    rojos, nada de c10 en la API de anon o service_role ni SECURITY
 --    DEFINER; y fn_jornal_pegado responde (pegar dos veces no hace daño: lo
 --    corre el banco).
@@ -169,14 +196,15 @@ create or replace function pg_temp.c10_d() returns date language sql as $$ selec
 create or replace function pg_temp.c10_w1(p_dia int default 0) returns date language sql as $$ select pg_temp.c10('lunes')::date - 7 + p_dia $$;
 create or replace function pg_temp.c10_w2(p_dia int default 0) returns date language sql as $$ select pg_temp.c10('lunes')::date - 14 + p_dia $$;
 
--- Las funciones que crea c10-costo-obra.sql, por su nombre exacto (las 32).
+-- Las funciones que crea c10-costo-obra.sql, por su nombre exacto (las 38).
 -- No se buscan por prefijo: otra sesión escribe esta misma base.
 create or replace function pg_temp.c10_es_suya(p_nombre text) returns boolean language sql immutable as $$
   select p_nombre = any (array[
     'fn_jornal_exigir_dueno', 'fn_jornal_ve', 'fn_jornal_precondiciones', 'fn_jornal_guarda', 'fn_jornal_usd',
-    'fn_jornal_h', 'fn_jornal_dia', 'fn_jornal_rango', 'fn_jornal_texto', 'fn_jornal_patron_mal',
-    'fn_jornal_patron_sugerido', 'fn_jornal_cuenta_mal', 'fn_jornal_periodo', 'fn_jornal_regla', 'fn_jornal_repartir_ids',
-    'fn_jornal_repartir', 'fn_jornal_opciones', 'fn_jornal_calcular', 'fn_jornal_propuesta', 'fn_jornal_aplicar',
+    'fn_jornal_h', 'fn_jornal_dia', 'fn_jornal_rango', 'fn_jornal_mes', 'fn_jornal_texto', 'fn_jornal_limpio',
+    'fn_jornal_patron_mal', 'fn_jornal_destinatario', 'fn_jornal_patron_sugerido', 'fn_jornal_cuenta_mal',
+    'fn_jornal_periodo', 'fn_jornal_regla', 'fn_jornal_repartir_ids', 'fn_jornal_repartir', 'fn_jornal_tardias',
+    'fn_jornal_fuera', 'fn_jornal_ia', 'fn_jornal_opciones', 'fn_jornal_calcular', 'fn_jornal_propuesta', 'fn_jornal_aplicar',
     'fn_jornal_deshacer', 'fn_jornal_config', 'fn_jornal_persona', 'fn_jornal_pegado', 'fn_margen_libro_desde',
     'fn_margen_lineas', 'fn_margen_horas', 'fn_margen_estimado', 'fn_margen_obras', 'fn_margen_bajar',
     'fn_margen_obra', 'fn_margen_control'])
@@ -374,8 +402,16 @@ begin
   return r;
 end $$;
 
--- Los códigos de los avisos de una propuesta, en su orden («-» si ninguno)
+-- Los códigos de los avisos de una propuesta, en su orden («-» si ninguno).
+-- Sin los del CALENDARIO (otro_mes, otro_anio: las horas de un mes y el
+-- asiento en otro): dependen del día en que se corre la suite —las horas de
+-- prueba van en las dos semanas anteriores a hoy—, y los prueba la 57 con
+-- sus propias fechas. c10_avisos_todos los trae todos.
 create or replace function pg_temp.c10_avisos(j jsonb) returns text language sql as $$
+  select coalesce(string_agg(a.v->>'codigo', ',' order by a.o), '-') from jsonb_array_elements(j->'avisos') with ordinality as a(v, o)
+   where a.v->>'codigo' not in ('otro_mes', 'otro_anio')
+$$;
+create or replace function pg_temp.c10_avisos_todos(j jsonb) returns text language sql as $$
   select coalesce(string_agg(a.v->>'codigo', ',' order by a.o), '-') from jsonb_array_elements(j->'avisos') with ordinality as a(v, o)
 $$;
 -- ¿trae ese aviso? su texto (nulo si no)
@@ -525,7 +561,7 @@ begin
   return true;
 end $$;
 
--- Lo que hay en lo que c10 toca (la 48 lo compara)
+-- Lo que hay en lo que c10 toca (la 58 lo compara)
 create or replace function pg_temp.c10_conteos() returns text language sql as $$
   select format('config %s · personas %s · repartos %s · líneas %s · detalle %s · asientos %s · líneas del libro %s · movimientos %s (%s '
                 'pendientes) · archivos %s · horas %s (%s aprobadas) · aprobaciones %s · perfiles %s · usuarios %s · tarifas %s · obras %s · '
@@ -542,7 +578,7 @@ create or replace function pg_temp.c10_conteos() returns text language sql as $$
 $$;
 insert into _c10 values ('conteos', pg_temp.c10_conteos());
 
--- (lo de c3, c4 y c6 que ya estaba en rojo ANTES de las pruebas: la 50 lo dice y no lo cuenta)
+-- (lo de c3, c4 y c6 que ya estaba en rojo ANTES de las pruebas: la 60 lo dice y no lo cuenta)
 insert into _c10
 select 'rojos_c3', coalesce(string_agg(control, ', ' order by control), '') from fn_puentes_verificar() where not ok;
 insert into _c10
@@ -550,7 +586,7 @@ select 'rojos_c4', coalesce(string_agg(vista, ', ' order by vista), '') from fn_
 insert into _c10
 select 'rojos_c6', coalesce(string_agg(vista, ', ' order by vista), '') from fn_banco_control('hoy') where not ok;
 -- (las funciones AJENAS a c10 que «permisos» de c2 ya marcaba ANTES de las
--- pruebas —en producción, una función de otra parte de la app—: la 4 y la 50
+-- pruebas —en producción, una función de otra parte de la app—: la 4 y la 60
 -- las dicen y no las cuentan como fallo de c10. Una función de c10 nunca
 -- entra aquí.)
 create or replace function pg_temp.c10_permisos_fallan() returns setof text language sql as $$
@@ -581,13 +617,13 @@ end $$;
 -- Las pruebas
 -- =====================================================================
 
--- 1. El pegado: precondiciones, tablas, vistas, las 32 funciones por su
+-- 1. El pegado: precondiciones, tablas, vistas, las 38 funciones por su
 --    nombre exacto, la configuración (una fila, con una cuenta que sirve) y
 --    cada objeto con su comentario «c10: …».
 do $$
 declare
   v_obt text; v_pre text; v_tab int; v_vis int; v_fn int; v_fn2 int; v_sin text; v_cfg text;
-  v_esp text := 'nada falta | 5 tablas | 6 vistas | 32 funciones (32 nombres) | sin comentario c10: ninguno | '
+  v_esp text := 'nada falta | 5 tablas | 6 vistas | 38 funciones (38 nombres) | sin comentario c10: ninguno | '
                 'configuración: 1 fila, id 1, cuenta del jornal que sirve';
 begin
   begin
@@ -613,7 +649,7 @@ begin
                     v_pre, v_tab, v_vis, v_fn, v_fn2, v_sin, v_cfg);
   exception when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (1, 'el pegado: nada falta, 5 tablas, 6 vistas, las 32 funciones por su nombre exacto, la configuración (una fila con una cuenta que sirve) y cada objeto con su comentario «c10: …»',
+  insert into _pruebas values (1, 'el pegado: nada falta, 5 tablas, 6 vistas, las 38 funciones por su nombre exacto, la configuración (una fila con una cuenta que sirve) y cada objeto con su comentario «c10: …»',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
@@ -678,8 +714,8 @@ declare
   v_obt text; v_mov uuid; v_r jsonb;
   v_api text; v_sin text; v_anon text; v_srv text; v_x text; v_n int := 0; v_filas bigint := 0; v_k bigint; v_calc text; v_due text;
   v_esp text := 'pantalla mal: ninguna | internas con API: ninguna | anon 42501 y 42501 | service_role 42501 y 42501 | '
-                'equipo: 7 de 7 funciones 42501, 0 filas en 5 tablas, 6 vistas y 5 auxiliares, y el cálculo le dice que el movimiento no '
-                'existe | dueño: 1 reparto suyo, 12 obras de prueba, el detalle de la obra y 8 + 6 controles';
+                'equipo: 7 de 7 funciones 42501, 0 filas en 5 tablas, 6 vistas y 8 auxiliares, y el cálculo le dice que el movimiento no '
+                'existe | dueño: 1 reparto suyo, 12 obras de prueba, el detalle de la obra y 11 + 6 controles';
 begin
   if pg_temp.c10_omitir(3, 'la API por rol', v_esp) then return; end if;
   begin
@@ -736,6 +772,10 @@ begin
     select count(*) into v_k from fn_margen_horas(null);  v_filas := v_filas + v_k;
     select count(*) into v_k from fn_margen_obras(null);  v_filas := v_filas + v_k;
     select count(*) into v_k from fn_margen_estimado(null); v_filas := v_filas + v_k;
+    -- (ni lo que se queda fuera de los repartos: las horas tardías, los pagos resueltos por fuera, lo de la IA)
+    select count(*) into v_k from fn_jornal_tardias(null); v_filas := v_filas + v_k;
+    select count(*) into v_k from fn_jornal_fuera();       v_filas := v_filas + v_k;
+    select count(*) into v_k from fn_jornal_ia(v_mov);     v_filas := v_filas + v_k;
     -- (sus horas sí las lee, como siempre; el reparto de un pago por ellas, no)
     select count(*) into v_k from fn_jornal_repartir_ids(array(select h.id from horas h where h.usuario_id = pg_temp.c10('p1')::uuid), 100);
     v_filas := v_filas + v_k;
@@ -751,7 +791,7 @@ begin
       into v_due;
     perform pg_temp.c10_ser('editor');
     v_obt := format('pantalla mal: %s | internas con API: %s | anon %s | service_role %s | equipo: %s de 7 funciones 42501, %s filas en 5 '
-                    'tablas, 6 vistas y 5 auxiliares, y el cálculo le dice que %s | dueño: %s',
+                    'tablas, 6 vistas y 8 auxiliares, y el cálculo le dice que %s | dueño: %s',
                     v_api, v_sin, v_anon, v_srv, v_n, v_filas,
                     case when v_calc = 'No existe ese movimiento del banco.' and v_x = 'nada' then 'el movimiento no existe' else v_calc || ' / ' || v_x end,
                     v_due);
@@ -1576,7 +1616,7 @@ begin
     perform pg_temp.c10_sembrar();
     select c2.codigo into v_sin from cuentas c2
      where fn_jornal_cuenta_mal(c2.codigo, 'sin_obra') is null order by (c2.codigo = '7900') desc, c2.codigo limit 1;
-    v_esp := format('terminada y cancelada: avisa (C terminada, D cancelada) y deja | sin aprobar: avisa (G) y deja | sin obra y sin su '
+    v_esp := format('terminada y no aprobada: avisa (C terminada, D no aprobada) y deja | sin aprobar: avisa (G) y deja | sin obra y sin su '
                     'cuenta: no deja [falta_cuenta_sin_obra], 3 h y 75.00 | con su cuenta (%s): deja [-] | la cuenta de la persona ya no '
                     'sirve: no deja [cuenta_mal] | la de lo sin obra ya no sirve: no deja [cuenta_mal]', v_sin);
     perform pg_temp.c10_hora(1, 'p1', pg_temp.c10_w1(0), 'c10-prueba-a', 8);
@@ -1593,8 +1633,8 @@ begin
     perform pg_temp.c10_ser('editor');
     v_j := pg_temp.c10_propuesta(m1, pg_temp.c10_w1(0), pg_temp.c10_w1(6));
     a := format('%s y %s', case when pg_temp.c10_aviso(v_j, 'obra_terminada') like '%C10 PRUEBA Obra C (terminada)%'
-                                     and pg_temp.c10_aviso(v_j, 'obra_terminada') like '%C10 PRUEBA Obra D (cancelada)%'
-                                     and pg_temp.c10_aviso(v_j, 'obra_terminada') like '%Su parte va a esa obra igual%' then 'avisa (C terminada, D cancelada)' else 'no lo dice bien' end,
+                                     and pg_temp.c10_aviso(v_j, 'obra_terminada') like '%C10 PRUEBA Obra D (no aprobada)%'
+                                     and pg_temp.c10_aviso(v_j, 'obra_terminada') like '%Su parte va a esa obra igual%' then 'avisa (C terminada, D no aprobada)' else 'no lo dice bien' end,
                 case when (v_j->>'puede_aplicar')::boolean then 'deja' else 'NO deja' end);
     b := format('%s y %s', case when pg_temp.c10_aviso(v_j, 'obra_sin_aprobar') like '%C10 PRUEBA Obra G (estimando)%' then 'avisa (G)' else 'no lo dice bien' end,
                 case when (v_j->>'puede_aplicar')::boolean and pg_temp.c10_avisos(v_j) = 'obra_terminada,obra_sin_aprobar' then 'deja' else 'NO deja o sobran avisos: ' || pg_temp.c10_avisos(v_j) end);
@@ -1628,14 +1668,14 @@ begin
       raise exception using errcode = 'MXT01';
     exception when sqlstate 'MXT01' then null;
     end;
-    v_obt := format('terminada y cancelada: %s | sin aprobar: %s | sin obra y sin su cuenta: %s | con su cuenta (%s): %s | la cuenta de la persona '
+    v_obt := format('terminada y no aprobada: %s | sin aprobar: %s | sin obra y sin su cuenta: %s | con su cuenta (%s): %s | la cuenta de la persona '
                     'ya no sirve: %s | la de lo sin obra ya no sirve: %s', a, b, c, v_sin, d, e, f);
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (18, 'los avisos: horas en una obra terminada o cancelada (avisa y deja: su parte va a esa obra) o sin aprobar; horas sin obra sin la cuenta fijada (no deja, y dice cuántas horas y cuánto) y con ella (deja); una cuenta que ya no sirve (no deja)',
+  insert into _pruebas values (18, 'los avisos: horas en una obra terminada o no aprobada —como la llama la app; no «cancelada»— (avisa y deja: su parte va a esa obra) o sin aprobar; horas sin obra sin la cuenta fijada (no deja, y dice cuántas horas y cuánto) y con ella (deja); una cuenta que ya no sirve (no deja)',
     coalesce(v_esp, '-'), v_obt, v_obt = v_esp);
 end $$;
 
@@ -1648,7 +1688,7 @@ declare
   v_obt text; m1 uuid; m2 uuid; m3 uuid; v_j jsonb; a text; b text; c text; d text;
   v_esp text := 'todo cubierto: no deja (ya entraron en otro reparto) [sin_horas,se_pisa] | con 3 h nuevas, solo por ellas: h 3→75.00 '
                 '[horas_cubiertas,se_pisa], cubiertas 12 h en 2 reportes | «es otro pago de las mismas horas»: a 8→40.00, b 4→20.00, h '
-                '3→15.00 [horas_cubiertas,se_pisa,tarifa_lejos] | fechas posteriores al pago: avisa [sin_horas,periodo_futuro]';
+                '3→15.00 [horas_cubiertas,se_pisa,tarifa_lejos] | fechas posteriores al pago: avisa [sin_horas,horas_tardias,periodo_futuro]';
 begin
   if pg_temp.c10_omitir(19, 'los avisos: horas ya cubiertas y fechas posteriores', v_esp) then return; end if;
   begin
@@ -2166,7 +2206,7 @@ do $$
 declare
   v_obt text; v_mov uuid; v_r jsonb;
   v_esp text := 'c 4→100.00, d 4→100.00 [obra_terminada] | 1 1010 -200.00 | 2 5200 100.00 c empleado:p1 | 3 5200 100.00 d empleado:p1 | el '
-                'costo queda en la terminada: 100.00, y en la cancelada: 100.00';
+                'costo queda en la terminada: 100.00, y en la no aprobada: 100.00';
 begin
   if pg_temp.c10_omitir(28, 'la obra terminada y la cancelada reciben su parte', v_esp) then return; end if;
   begin
@@ -2177,7 +2217,7 @@ begin
     perform pg_temp.c10_alta('p1');
     v_r := pg_temp.c10_aplicar(v_mov, pg_temp.c10_w1(0), pg_temp.c10_w1(6));
     perform pg_temp.c10_ser('dueno');
-    v_obt := format('%s [%s] | %s | el costo queda en la terminada: %s, y en la cancelada: %s', pg_temp.c10_lineas(v_r), pg_temp.c10_avisos(v_r),
+    v_obt := format('%s [%s] | %s | el costo queda en la terminada: %s, y en la no aprobada: %s', pg_temp.c10_lineas(v_r), pg_temp.c10_avisos(v_r),
                     pg_temp.c10_asiento((v_r->'asiento'->>'id')::uuid),
                     (select o.mano_obra_jornales from v_margen_obra o where o.proyecto_id = 'c10-prueba-c' and o.estado = 'completado'),
                     (select o.costo_real from v_margen_obra o where o.proyecto_id = 'c10-prueba-d' and o.estado = 'no_aprobado'));
@@ -2187,7 +2227,7 @@ begin
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (28, 'la obra terminada y la cancelada reciben su parte (ni c2 ni c6 piden que la obra esté activa: el trabajo se hizo ahí): entra con su aviso y el costo queda en esa obra',
+  insert into _pruebas values (28, 'la obra terminada y la no aprobada reciben su parte (ni c2 ni c6 piden que la obra esté activa: el trabajo se hizo ahí): entra con su aviso y el costo queda en esa obra',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
@@ -2412,7 +2452,8 @@ begin
     perform fn_banco_descasar(v_mov, 'c10-pruebas: lo suelto en la Bandeja (se deshace)');
     perform pg_temp.c10_ser('editor');
     a := format('%s; el margen, %s',
-                case when pg_temp.c10_jc(20) like 'rojo: %se reversó por fuera%→ márcalo deshecho con su motivo (fn_jornal_deshacer%' then 'el control 20 en rojo, y dice qué hacer'
+                case when pg_temp.c10_jc(20) like 'rojo: %se reversó por fuera%→ toca «Deshacer» en ese reparto (en Repartos), con su motivo%'
+                          and pg_temp.c10_jc(20) !~ 'fn_|v_jornal|v_margen' then 'el control 20 en rojo, y dice qué hacer'
                      else 'el control 20: ' || pg_temp.c10_jc(20) end,
                 split_part(split_part(pg_temp.c10_propios(), 'del margen: ', 2), ' en rojo', 1) || ' en rojo');
     v_j := pg_temp.c10_propuesta(v_mov, pg_temp.c10_w1(0), pg_temp.c10_w1(6));
@@ -2467,7 +2508,14 @@ begin
     v_j := pg_temp.c10_propuesta(m1);
     perform pg_temp.c10_ser('dueno');
     select format('%s de %s, %s h en %s reportes y %s obras, a %s la hora, %s, %s', p.monto, p.persona, trim_scale(p.horas), p.reportes, p.obras,
-                  p.tarifa_sale, case when p.puede_aplicar and p.por_que is null and p.n_avisos = 0 and p.aviso is null then 'se puede aplicar' else 'NO se puede: ' || coalesce(p.por_que, p.aviso) end,
+                  p.tarifa_sale,
+                  -- (sin avisos, salvo los del calendario —otro_mes, otro_anio—, que dependen del día en que se corre; y la
+                  -- etiqueta corta y la cuenta de avisos de la vista son las de la lista)
+                  case when p.puede_aplicar and p.por_que is null
+                            and (select count(*) from jsonb_array_elements(p.avisos) a2 where a2->>'codigo' not in ('otro_mes', 'otro_anio')) = 0
+                            and p.n_avisos = jsonb_array_length(p.avisos)
+                            and p.aviso is not distinct from (select string_agg(a2->>'corto', ' · ') from jsonb_array_elements(p.avisos) a2)
+                       then 'se puede aplicar' else 'NO se puede: ' || coalesce(p.por_que, p.aviso) end,
                   case when p.visto = v_j->>'visto' and p.lineas = v_j->'lineas' and p.desde = v_def.desde and p.hasta = v_def.hasta and p.regla = v_def.regla
                             and p.fecha = pg_temp.c10_d() and p.cuenta = pg_temp.c10('banco') and p.usuario_id::text = pg_temp.c10('p1') and p.tarifa = 25
                             and p.periodo_texto = fn_jornal_rango(v_def.desde, v_def.hasta) and p.horas_sin_obra is null and p.propuesta_ia is null
@@ -2507,8 +2555,8 @@ begin
                        'mano_obra_real,mano_obra_jornales,mano_obra_nomina,subcontratos_real,equipo_real,otros_costos_real,costo_real,horas_reales,'
                        'horas_co,horas_base,horas_antes_libro,horas_con_pago_real,horas_estandar,horas_dueno,horas_sin_aprobar,mano_obra_estandar,'
                        'mano_obra_estandar_falta,mano_obra_dueno,burden_estandar_pct,costo_con_estandar,horas_estimadas,tarifa_estimada,escenario,'
-                       'estimado_id,mano_obra_estimada,material_presupuesto,costo_estimado,margen_real,margen_real_pct,margen_estimado,'
-                       'margen_estimado_pct,diferencia,pagos_sin_repartir,asientos,avisos'
+                       'estimado_id,mano_obra_estimada,material_presupuesto,costo_estimado,estimado_completo,estimado_falta,margen_real,'
+                       'margen_real_pct,margen_estimado,margen_estimado_pct,diferencia,pagos_sin_repartir,asientos,avisos'
                 then 'las del contrato' else 'han cambiado' end
       into c;
     v_obt := format('pendientes: %s | repartos: %s | las columnas: %s', a, b, c);
@@ -2550,7 +2598,9 @@ begin
     alter table public.jornal_reparto_horas disable trigger trg_jornal_reparto_horas_guarda;
     update jornal_reparto_lineas set monto = monto + 1 where reparto_id = v_rep and n = 1;
     b := pg_temp.c10_jc(10);
+    -- (y lo dice sin nombrar una función ni una vista: ese detalle lo lee Edgar en la Bandeja)
     b := case when b like 'rojo: %la parte 1 (201.00) no es la línea 2 de su asiento%sus partes no suman el pago%su detalle por reporte de horas no suma sus partes%'
+                   and b like '%→ no toques el libro: mira ese reparto y su asiento (en Repartos), y avisa.' and b !~ 'fn_|v_jornal|v_margen'
               then 'rojo (no es su línea; no suman el pago; el detalle no suma)' else b end;
     update jornal_reparto_lineas set monto = monto - 1 where reparto_id = v_rep and n = 1;
     c := pg_temp.c10_jc(10);
@@ -2689,18 +2739,20 @@ begin
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
--- 39. El 50: un mes con devengo estándar de horas (c3, fn_horas_devengar) Y
---     jornales repartidos cuenta dos veces la mano de obra de esas horas: en
---     rojo, con el mes; deshecho el jornal, deja de contar (verde, salvo que
---     ese mes tenga jornales reales: entonces el devengo de la prueba choca
---     también con ellos, y lo que se mira es que el de la prueba ya no esté).
---     Y en la obra el devengo no cuenta como real (se anula solo con su
---     reverso del día 1).
+-- 39. El 50: una hora que está a la vez en el devengo estándar de un mes
+--     (c3, fn_horas_devengar) y en un jornal que entró al libro en ese mismo
+--     mes cuenta dos veces: en rojo, con el mes, el devengo, las horas y el
+--     jornal; deshecho el jornal, deja de contar (verde, salvo que ese mes
+--     tenga jornales reales que también choquen: entonces lo que se mira es
+--     que el de la prueba ya no esté). Y en la obra el devengo no cuenta
+--     como real (se anula solo con su reverso del día 1). (Lo que NO es
+--     doble —el pago que entra al mes siguiente— lo prueba la 54.)
 do $$
 declare
-  v_obt text; v_mov uuid; v_r jsonb; v_mes text; v_dia date; v_dev jsonb; v_no text; a text; b text; c text; d text; v_n1 int; v_m1 numeric; v_n2 int; v_m2 numeric;
-  v_esp text := 'con el jornal: verde | con el devengo estándar del mismo mes: rojo (nombra el mes, su devengo y el jornal), y dice qué hacer | '
-                'en la obra, el devengo no cuenta como real: jornales 200.00, nómina 0.00 | deshecho el jornal: el de la prueba ya no cuenta';
+  v_obt text; v_mov uuid; v_r jsonb; v_mes text; v_dia date; v_dev jsonb; v_no text; a text; b text; c text; d text; v_n1 int; v_h1 numeric; v_n2 int; v_h2 numeric;
+  v_esp text := 'con el jornal: verde | con el devengo estándar del mismo mes: rojo (nombra el mes, su devengo, las horas y el jornal), y dice '
+                'qué hacer | en la obra, el devengo no cuenta como real: jornales 200.00, nómina 0.00 | deshecho el jornal: el de la prueba '
+                'ya no cuenta';
 begin
   if pg_temp.c10_omitir(39, 'el control 50 del jornal', v_esp) then return; end if;
   if pg_temp.c10_omitir_rojo(39, 'el control 50 del jornal', v_esp, 'jornal', array[50]) then return; end if;
@@ -2720,19 +2772,20 @@ begin
     end;
     if v_no is null then
       b := pg_temp.c10_jc(50);
-      -- (cuántos jornales y cuánto dice que chocan con el devengo de ese mes)
-      v_n1 := substring(b from v_mes || ': el devengo [^ ]+ y ([0-9]+) jornal')::int;
-      v_m1 := replace(substring(b from v_mes || ': el devengo [^ ]+ y [0-9]+ jornal\(es\) por \$([0-9,.]+[0-9])'), ',', '')::numeric;
-      b := case when b like 'rojo: %' || v_mes || ': el devengo ' || (v_dev->>'asiento') || ' y % jornal(es) por %→ la mano de obra de esas horas sale dos veces ese mes%'
-                then 'rojo (nombra el mes, su devengo y el jornal), y dice qué hacer' else b end;
+      -- (cuántas horas y cuántos jornales dice que chocan con el devengo de ese mes)
+      v_h1 := substring(b from v_mes || ': el devengo [^ ]+ cuenta ([0-9.]+) h')::numeric;
+      v_n1 := substring(b from v_mes || ': el devengo [^ ]+ cuenta [0-9.]+ h \([0-9]+ reporte\(s\)\) que ya tienen su pago real en ese mes, en ([0-9]+) jornal')::int;
+      b := case when b like 'rojo: %' || v_mes || ': el devengo ' || (v_dev->>'asiento') || ' cuenta % h (% reporte(s)) que ya tienen su pago real en ese mes, en % jornal(es)%'
+                                   || '→ esa mano de obra sale dos veces en ese mes%hay que retirarlo de ese mes antes de cerrarlo%'
+                then 'rojo (nombra el mes, su devengo, las horas y el jornal), y dice qué hacer' else b end;
       perform pg_temp.c10_ser('dueno');
       select format('jornales %s, nómina %s', o.mano_obra_jornales, o.mano_obra_nomina) into c from v_margen_obra o where o.proyecto_id = 'c10-prueba-a';
       perform pg_temp.c10_ser('editor');
       perform pg_temp.c10_deshacer((v_r->>'reparto_id')::uuid, 'c10-pruebas: ese mes va con su devengo estándar');
       d := pg_temp.c10_jc(50);
-      v_n2 := coalesce(substring(d from v_mes || ': el devengo [^ ]+ y ([0-9]+) jornal')::int, 0);
-      v_m2 := coalesce(replace(substring(d from v_mes || ': el devengo [^ ]+ y [0-9]+ jornal\(es\) por \$([0-9,.]+[0-9])'), ',', '')::numeric, 0);
-      d := case when d = 'verde' or (v_n2 = v_n1 - 1 and v_m2 = v_m1 - 200.00) then 'el de la prueba ya no cuenta' else d end;
+      v_h2 := coalesce(substring(d from v_mes || ': el devengo [^ ]+ cuenta ([0-9.]+) h')::numeric, 0);
+      v_n2 := coalesce(substring(d from v_mes || ': el devengo [^ ]+ cuenta [0-9.]+ h \([0-9]+ reporte\(s\)\) que ya tienen su pago real en ese mes, en ([0-9]+) jornal')::int, 0);
+      d := case when d = 'verde' or (v_n2 = v_n1 - 1 and v_h2 = v_h1 - 8) then 'el de la prueba ya no cuenta' else d end;
       v_obt := format('con el jornal: %s | con el devengo estándar del mismo mes: %s | en la obra, el devengo no cuenta como real: %s | deshecho '
                       'el jornal: %s', a, b, c, d);
     else
@@ -2743,7 +2796,7 @@ begin
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (39, 'el control 50 del jornal (ningún mes con devengo estándar de horas y jornales a la vez: la mano de obra saldría dos veces): en rojo con el mes, el devengo y el jornal; en la obra el devengo no cuenta como real; deshecho el jornal, deja de contar',
+  insert into _pruebas values (39, 'el control 50 del jornal (ninguna hora a la vez en el devengo estándar de un mes y en un jornal que entró al libro ese mes: la mano de obra saldría dos veces): en rojo con el mes, el devengo, las horas y el jornal; en la obra el devengo no cuenta como real; deshecho el jornal, deja de contar',
     v_esp, v_obt, case when v_obt like 'omitida:%' then null else v_obt = v_esp end);
 end $$;
 
@@ -2766,6 +2819,7 @@ begin
     perform pg_temp.c10_alta('p2', '\mPRUEBA ZZ');
     b := pg_temp.c10_jc(60);
     b := case when b like 'rojo: %«Zelle payment to C10 PRUEBA ZZANA 9040») casa con 2 personas%→ corrígelo en las personas del jornal%'
+                   and b !~ 'fn_|v_jornal|v_margen'
                    and (select k.nivel from v_jornal_control k where k.orden = 60) = 'aviso' then 'rojo, de nivel aviso, y dice qué hacer' else b end;
     perform pg_temp.c10_alta('p2');
     c := pg_temp.c10_jc(60);
@@ -3190,7 +3244,7 @@ begin
     perform pg_temp.c10_alta('p1');
     v_r := pg_temp.c10_aplicar(v_mov, pg_temp.c10_w1(0), pg_temp.c10_w1(6));
     a := format('%s, y %s', split_part(split_part(pg_temp.c10_propios(), 'del margen: ', 2), ' en rojo', 1) || ' en rojo',
-                case when (select k.ok and k.detalle like 'Obra por obra, el costo real de aquí es el de v_costo_por_obra%' from v_margen_control k where k.orden = 60)
+                case when (select k.ok and k.detalle like 'Obra por obra, el costo real de aquí es el de «Estados»%' from v_margen_control k where k.orden = 60)
                      then 'el costo de cada obra es el de Estados (c4)'
                      else 'contra Estados: ' || (select k.detalle from v_margen_control k where k.orden = 60) end);
     alter table public.jornal_reparto_lineas disable trigger trg_jornal_reparto_lineas_guarda;
@@ -3210,9 +3264,865 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------
+-- LO QUE LAS DOS REVISIONES ENCONTRARON (v2): una prueba por hallazgo
+-- ---------------------------------------------------------------------
+-- 48. UN ESTIMADO PARCIAL NO SE COMPARA CON UN REAL COMPLETO. El costo
+--     estimado es mano de obra (horas × tarifa) más material. Si la mitad
+--     que falta ya tiene real en la obra, o hay horas estimadas y no hay con
+--     qué valorarlas, no hay total: costo_estimado, el margen estimado y la
+--     diferencia salen vacíos, estimado_completo es falso y estimado_falta
+--     dice qué falta. Lo que falta y todavía no tiene real no estorba.
+--     (Antes la mitad que faltaba sumaba 0, y la obra salía «se pasa» o
+--     «dentro» contra un real que sí la traía.)
+do $$
+declare
+  v_obt text; o record; v_j jsonb; a text; b text; c text; d text; e text; f text; g text;
+  v_esp text := 'sin presupuesto de material y con material en el libro: sin total, y lo dice (la mano de obra estimada sigue: 3625.00) | sin '
+                'horas estimadas y con horas a estándar: sin total, y lo dice | con horas estimadas y sin tarifas en su escenario: sin total, '
+                'y lo dice | sin presupuesto de material y sin material en el libro: se compara (1450.00, diferencia 1450.00) | sin nada '
+                'estimado: sin estimado, y lo dice | el detalle: el total sin estimado ni diferencia y con su nota; el material — contra '
+                '300.00; la mano de obra 3625.00, diferencia 3625.00 | puesto el presupuesto que faltaba: 5625.00, diferencia 5325.00, margen '
+                'estimado 3375.00';
+begin
+  if pg_temp.c10_omitir(48, 'un estimado parcial no se compara con un real completo', v_esp) then return; end if;
+  begin
+    perform pg_temp.c10_sembrar();
+    insert into escenarios (id, nombre, foreman, journeyman, helper, pct_foreman, pct_journeyman, pct_helper, benefits) values
+      ('B', 'C10 PRUEBA B', 40, 30, 20, 0.2, 0.5, 0.3, 0.25)
+    on conflict (id) do update set foreman = excluded.foreman, journeyman = excluded.journeyman, helper = excluded.helper,
+      pct_foreman = excluded.pct_foreman, pct_journeyman = excluded.pct_journeyman, pct_helper = excluded.pct_helper, benefits = excluded.benefits;
+    insert into escenarios (id, nombre) values ('C10Z', 'C10 PRUEBA sin tarifas');
+    -- I: horas estimadas, SIN presupuesto de material, y material en el libro
+    update proyectos set horas_estimadas = 100 where id = 'c10-prueba-i';
+    insert into finanzas_proyecto (proyecto_id, contrato, presupuesto_materiales) values ('c10-prueba-i', 9000, null)
+    on conflict (proyecto_id) do update set contrato = excluded.contrato, presupuesto_materiales = excluded.presupuesto_materiales;
+    perform pg_temp.c10_postear('el material de la obra I', jsonb_build_array(
+      jsonb_build_object('cuenta', '5100', 'monto', '300.00', 'proyecto_id', 'c10-prueba-i'),
+      jsonb_build_object('cuenta', '3100', 'monto', '-300.00')));
+    -- J: presupuesto de material, SIN horas estimadas, y horas a estándar
+    update proyectos set horas_estimadas = null where id = 'c10-prueba-j';
+    insert into finanzas_proyecto (proyecto_id, contrato, presupuesto_materiales) values ('c10-prueba-j', 5000, 2000)
+    on conflict (proyecto_id) do update set contrato = excluded.contrato, presupuesto_materiales = excluded.presupuesto_materiales;
+    perform pg_temp.c10_hora(1, 'p1', pg_temp.c10_w1(0), 'c10-prueba-j', 2);
+    -- K: horas estimadas y material, pero su estimado va con un escenario sin tarifas
+    update proyectos set horas_estimadas = 50 where id = 'c10-prueba-k';
+    insert into finanzas_proyecto (proyecto_id, contrato, presupuesto_materiales) values ('c10-prueba-k', 4000, 1000)
+    on conflict (proyecto_id) do update set contrato = excluded.contrato, presupuesto_materiales = excluded.presupuesto_materiales;
+    insert into estimados (id, nombre, proyecto_id, escenario, estado, benefits_pct, creado) overriding system value
+    values (-1010000048, 'C10 PRUEBA estimado de la obra K', 'c10-prueba-k', 'C10Z', 'borrador', null, now());
+    -- L: horas estimadas, sin material presupuestado NI en el libro; H: nada
+    -- estimado (y con horas a estándar: sigue siendo «no hay estimado», no «incompleto»)
+    update proyectos set horas_estimadas = 40 where id = 'c10-prueba-l';
+    delete from finanzas_proyecto where proyecto_id in ('c10-prueba-l', 'c10-prueba-h');
+    update proyectos set horas_estimadas = null where id = 'c10-prueba-h';
+    perform pg_temp.c10_hora(2, 'p1', pg_temp.c10_w1(1), 'c10-prueba-h', 3);
+    perform pg_temp.c10_ser('dueno');
+    perform fn_jornal_config('{"burden_estandar_pct": 0}');
+    select * into o from v_margen_obra where proyecto_id = 'c10-prueba-i';
+    a := case when o.costo_estimado is null and not o.estimado_completo and o.margen_estimado is null and o.margen_estimado_pct is null
+                   and o.diferencia is null
+                   and o.estimado_falta = 'Estimado incompleto: no tiene presupuesto de material y ya lleva $300.00 de material en el libro. '
+                                          'No da un total que comparar con el costo real: se compara concepto por concepto lo que sí está estimado.'
+                   and o.avisos @> array[o.estimado_falta, 'Sin presupuesto de material.']
+              then format('sin total, y lo dice (la mano de obra estimada sigue: %s)', o.mano_obra_estimada)
+              else 'mal: ' || to_jsonb(o)::text end;
+    v_j := fn_margen_obra('c10-prueba-i');
+    select * into o from v_margen_obra where proyecto_id = 'c10-prueba-j';
+    b := case when o.costo_estimado is null and not o.estimado_completo and o.diferencia is null and o.material_presupuesto = 2000
+                   and o.estimado_falta like 'Estimado incompleto: no tiene horas estimadas y ya lleva mano de obra (2 h a estándar). No da un total%'
+                   and o.avisos @> array[o.estimado_falta]
+              then 'sin total, y lo dice' else 'mal: ' || coalesce(o.estimado_falta, '(sin porqué)') || ' / ' || coalesce(o.costo_estimado::text, 'nulo') end;
+    select * into o from v_margen_obra where proyecto_id = 'c10-prueba-k';
+    c := case when o.costo_estimado is null and not o.estimado_completo and o.diferencia is null and o.tarifa_estimada is null
+                   and o.estimado_falta like 'Estimado incompleto: hay 50 h estimadas y falta el escenario C10Z del estimador (o sus tarifas) para valorarlas. No da un total%'
+              then 'sin total, y lo dice' else 'mal: ' || coalesce(o.estimado_falta, '(sin porqué)') || ' / ' || coalesce(o.costo_estimado::text, 'nulo') end;
+    select * into o from v_margen_obra where proyecto_id = 'c10-prueba-l';
+    d := case when o.estimado_completo and o.estimado_falta is null and o.material_presupuesto is null
+              then format('se compara (%s, diferencia %s)', o.costo_estimado, o.diferencia)
+              else 'mal: ' || coalesce(o.estimado_falta, '(sin porqué)') end;
+    select * into o from v_margen_obra where proyecto_id = 'c10-prueba-h';
+    e := case when o.costo_estimado is null and not o.estimado_completo and o.diferencia is null and o.horas_estandar = 3
+                   and o.estimado_falta = 'No hay estimado: faltan las horas estimadas y el presupuesto de material.'
+                   and o.avisos @> array['Sin horas estimadas.', 'Sin presupuesto de material.'] and not (o.avisos @> array[o.estimado_falta])
+              then 'sin estimado, y lo dice' else 'mal: ' || coalesce(o.estimado_falta, '(sin porqué)') end;
+    select format('el total %s; el material %s contra %s; la mano de obra %s, diferencia %s',
+                  (select case when x->'estimado' = 'null'::jsonb and x->'diferencia' = 'null'::jsonb and not (x->>'estimado_completo')::boolean
+                                    and x->>'nota' like 'Estimado incompleto: no tiene presupuesto de material%' and (x->>'real')::numeric = 300.00
+                               then 'sin estimado ni diferencia y con su nota' else x::text end
+                     from jsonb_array_elements(v_j->'conceptos') x where x->>'concepto' = 'total'),
+                  (select coalesce(x->>'estimado', '—') from jsonb_array_elements(v_j->'conceptos') x where x->>'concepto' = 'material'),
+                  (select x->>'real' from jsonb_array_elements(v_j->'conceptos') x where x->>'concepto' = 'material'),
+                  (select x->>'estimado' from jsonb_array_elements(v_j->'conceptos') x where x->>'concepto' = 'mano_obra'),
+                  (select x->>'diferencia' from jsonb_array_elements(v_j->'conceptos') x where x->>'concepto' = 'mano_obra'))
+      into f;
+    perform pg_temp.c10_ser('editor');
+    update finanzas_proyecto set presupuesto_materiales = 2000 where proyecto_id = 'c10-prueba-i';
+    perform pg_temp.c10_ser('dueno');
+    select * into o from v_margen_obra where proyecto_id = 'c10-prueba-i';
+    g := case when o.estimado_completo and o.estimado_falta is null
+              then format('%s, diferencia %s, margen estimado %s', o.costo_estimado, o.diferencia, o.margen_estimado)
+              else 'mal: ' || coalesce(o.estimado_falta, '(sin porqué)') end;
+    perform pg_temp.c10_ser('editor');
+    v_obt := format('sin presupuesto de material y con material en el libro: %s | sin horas estimadas y con horas a estándar: %s | con horas '
+                    'estimadas y sin tarifas en su escenario: %s | sin presupuesto de material y sin material en el libro: %s | sin nada '
+                    'estimado: %s | el detalle: %s | puesto el presupuesto que faltaba: %s', a, b, c, d, e, f, g);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (48, 'UN ESTIMADO PARCIAL NO SE COMPARA CON UN REAL COMPLETO: si falta el presupuesto de material y la obra ya lleva material, o faltan las horas estimadas y ya lleva mano de obra, o hay horas estimadas y su escenario no tiene tarifas, costo_estimado, el margen estimado y la diferencia salen vacíos, estimado_completo es falso y estimado_falta dice qué falta; lo que falta y aún no tiene real no estorba; sin nada, «no hay estimado»; el detalle compara concepto por concepto',
+    v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 49. LAS HORAS QUE LLEGAN TARDE a una semana ya repartida. Repartido el
+--     pago de la semana, la persona reporta después unas horas de esa misma
+--     semana: no recibieron nada (el pago sigue entre las demás obras) y en
+--     su obra salen a estándar. Antes todo quedaba en verde. Ahora lo dicen
+--     el control (el 35, un aviso), la obra, y la propuesta del pago
+--     siguiente (con las fechas que las cogerían). Se arregla repartiéndolas
+--     con el pago que las cubra, o deshaciendo y repitiendo aquel reparto.
+do $$
+declare
+  v_obt text; m1 uuid; m2 uuid; v_r jsonb; v_j jsonb; o record; a text; b text; c text; d text; e text; f text; g text;
+  v_esp text := 'repartida la semana: el 35 verde | llega un reporte de esa semana: el 35 en rojo, de nivel aviso, lo nombra y dice qué '
+                'hacer, sin nombrar funciones; los demás, como estaban | la obra: 6 h a estándar, y lo avisa | el pago siguiente (otra '
+                'semana): avisa [sin_horas,horas_tardias], 6 h en 1 reporte, con sus fechas | con sus fechas a mano: h 6→150.00 '
+                '[se_pisa] | deshecho y vuelto a repartir el primero: a 8→133.33, b 4→66.67, h 6→100.00, y el 35 verde | o repartidas con '
+                'el pago siguiente: el 35 verde, y la obra ya sin horas a estándar';
+begin
+  if pg_temp.c10_omitir(49, 'las horas que llegan tarde a una semana ya repartida', v_esp) then return; end if;
+  if pg_temp.c10_omitir_rojo(49, 'las horas que llegan tarde a una semana ya repartida', v_esp, 'jornal', array[35]) then return; end if;
+  begin
+    perform pg_temp.c10_sembrar();
+    perform pg_temp.c10_hora(1, 'p1', pg_temp.c10_w1(0), 'c10-prueba-a', 8);
+    perform pg_temp.c10_hora(2, 'p1', pg_temp.c10_w1(1), 'c10-prueba-b', 4);
+    m1 := pg_temp.c10_cargo('c10-t49-1', pg_temp.c10_d(), 300.00, 'Zelle payment to C10 PRUEBA ZZANA 9491');
+    m2 := pg_temp.c10_cargo('c10-t49-2', pg_temp.c10_d(), 150.00, 'Zelle payment to C10 PRUEBA ZZANA 9492');
+    perform pg_temp.c10_alta('p1');
+    perform pg_temp.c10_ser('dueno');
+    perform fn_jornal_config('{"burden_estandar_pct": 0}');
+    perform pg_temp.c10_ser('editor');
+    v_r := pg_temp.c10_aplicar(m1, pg_temp.c10_w1(0), pg_temp.c10_w1(6));
+    a := pg_temp.c10_jc(35);
+    -- (el sábado de esa semana, reportado después del «Así es»)
+    perform pg_temp.c10_hora(3, 'p1', pg_temp.c10_w1(5), 'c10-prueba-h', 6);
+    b := pg_temp.c10_jc(35);
+    b := format('%s; %s',
+                case when b like 'rojo: Zzana C10 PRUEBA: 6 h en 1 reporte(s) (' || fn_jornal_dia(pg_temp.c10_w1(5)) || ' en C10 PRUEBA Obra H) dentro del reparto del pago del '
+                                 || pg_temp.c10_d() || ' → se reportaron o se movieron después de repartir esa semana%Toca «Deshacer» en ese reparto%'
+                                 || 'repártelas con él eligiendo sus fechas a mano.'
+                          and (select k.nivel from v_jornal_control k where k.orden = 35) = 'aviso' and b !~ 'fn_|v_jornal|v_margen'
+                     then 'el 35 en rojo, de nivel aviso, lo nombra y dice qué hacer, sin nombrar funciones' else b end,
+                case when (select coalesce(string_agg(k.orden::text, ',' order by k.orden), '') from v_jornal_control k
+                            where not k.ok and k.orden <> 35 and k.orden::text <> all (string_to_array(pg_temp.c10('jc_rojos'), ','))) = ''
+                          and split_part(pg_temp.c10_propios(), 'del margen: ', 2) = 'nada nuevo en rojo'
+                     then 'los demás, como estaban' else pg_temp.c10_propios() end);
+    perform pg_temp.c10_ser('dueno');
+    select * into o from v_margen_obra where proyecto_id = 'c10-prueba-h';
+    perform pg_temp.c10_ser('editor');
+    c := format('%s h a estándar, %s', trim_scale(o.horas_estandar),
+                case when exists (select 1 from unnest(o.avisos) x
+                                   where x like '6 h de esta obra son de una semana ya repartida y no entraron en su reparto (Zzana C10 PRUEBA, pago del '
+                                                || fn_jornal_dia(pg_temp.c10_d()) || '): se reportaron o se movieron después. Aquí salen a estándar%')
+                     then 'y lo avisa' else 'y NO lo avisa: ' || array_to_string(o.avisos, ' · ') end);
+    -- el pago siguiente, por otra semana: no las recoge, y lo dice
+    v_j := pg_temp.c10_propuesta(m2, pg_temp.c10_w2(0), pg_temp.c10_w2(6));
+    d := format('avisa [%s], %s h en %s reporte, %s', pg_temp.c10_avisos(v_j),
+                (select trim_scale((x->>'horas')::numeric) from jsonb_array_elements(v_j->'avisos') x where x->>'codigo' = 'horas_tardias'),
+                (select x->>'reportes' from jsonb_array_elements(v_j->'avisos') x where x->>'codigo' = 'horas_tardias'),
+                case when (select (x->>'desde')::date = pg_temp.c10_w1(5) and (x->>'hasta')::date = pg_temp.c10_w1(5)
+                                  and x->>'texto' like 'Zzana C10 PRUEBA tiene 6 h de una semana ya repartida que no están en ningún reparto%'
+                             from jsonb_array_elements(v_j->'avisos') x where x->>'codigo' = 'horas_tardias')
+                     then 'con sus fechas' else 'sin sus fechas' end);
+    -- con las fechas que las cogen (a mano), entran
+    v_j := pg_temp.c10_propuesta(m2, pg_temp.c10_w1(5), pg_temp.c10_w1(5));
+    e := format('%s [%s]', pg_temp.c10_lineas(v_j), pg_temp.c10_avisos(v_j));
+    -- arreglo 1: deshacer aquel reparto y repetirlo con las horas de hoy
+    begin
+      perform pg_temp.c10_deshacer((v_r->>'reparto_id')::uuid, 'c10-pruebas: llegó un reporte de esa semana');
+      f := format('%s, y el 35 %s', pg_temp.c10_lineas(pg_temp.c10_aplicar(m1, pg_temp.c10_w1(0), pg_temp.c10_w1(6))), pg_temp.c10_jc(35));
+      raise exception using errcode = 'MXT01';
+    exception when sqlstate 'MXT01' then null;
+    end;
+    -- arreglo 2: repartirlas con el pago que las cubre
+    perform pg_temp.c10_aplicar(m2, pg_temp.c10_w1(5), pg_temp.c10_w1(5));
+    perform pg_temp.c10_ser('dueno');
+    select * into o from v_margen_obra where proyecto_id = 'c10-prueba-h';
+    perform pg_temp.c10_ser('editor');
+    g := format('el 35 %s, y la obra %s', pg_temp.c10_jc(35),
+                case when o.horas_estandar = 0 and o.mano_obra_jornales = 150.00
+                          and not exists (select 1 from unnest(o.avisos) x where x like '%semana ya repartida%')
+                     then 'ya sin horas a estándar' else 'con ' || trim_scale(o.horas_estandar) || ' h a estándar' end);
+    v_obt := format('repartida la semana: el 35 %s | llega un reporte de esa semana: %s | la obra: %s | el pago siguiente (otra semana): %s | '
+                    'con sus fechas a mano: %s | deshecho y vuelto a repartir el primero: %s | o repartidas con el pago siguiente: %s',
+                    a, b, c, d, e, f, g);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (49, 'LAS HORAS QUE LLEGAN TARDE a una semana ya repartida (se reportaron después del «Así es») ya no pasan calladas: el control del jornal lo dice (el 35, un aviso, con la persona, las horas, la obra y el pago), la obra avisa de que esas horas salen a estándar con el pago repartido entre las demás, y la propuesta del pago siguiente las ofrece con sus fechas; se arregla repartiéndolas con ese pago o deshaciendo y repitiendo el primero',
+    v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 50. EL PAGO DE UNA PERSONA DADA DE ALTA RESUELTO POR OTRO CAMINO
+--     (clasificado a mano en la Bandeja: 5200 entero a una obra). Su costo
+--     queda entero ahí, sin su nombre, y sus horas de esas semanas salen
+--     además a estándar: la semana cuenta dos veces en el costo con
+--     estándar. Antes, todo en verde. Ahora lo dicen el control (el 70, un
+--     aviso) y cada obra con horas suyas sin pago; des-casado y repartido
+--     por horas, se va.
+do $$
+declare
+  v_obt text; m1 uuid; o record; p record; a text; b text; c text; d text; e text;
+  v_esp text := 'en la Bandeja: el 70 verde | clasificado a mano (5200 entero a la obra A): el 70 en rojo, de nivel aviso, nombra el pago, '
+                'cómo se resolvió y las 12 h sin pago, y dice qué hacer, sin nombrar funciones | la obra A: subcontratos 300.00, mano de '
+                'obra real 0.00, 8 h a estándar (200.00), y lo avisa; la B: 4 h a estándar, y lo avisa | des-casado en la Bandeja: el 70 '
+                'verde | repartido por sus horas: A 200.00 y B 100.00 de mano de obra real, sin horas a estándar y sin el aviso';
+begin
+  if pg_temp.c10_omitir(50, 'el pago de una persona dada de alta resuelto fuera del jornal', v_esp) then return; end if;
+  if pg_temp.c10_omitir_rojo(50, 'el pago de una persona dada de alta resuelto fuera del jornal', v_esp, 'jornal', array[70]) then return; end if;
+  begin
+    perform pg_temp.c10_sembrar();
+    perform pg_temp.c10_hora(1, 'p1', pg_temp.c10_w1(0), 'c10-prueba-a', 8);
+    perform pg_temp.c10_hora(2, 'p1', pg_temp.c10_w1(1), 'c10-prueba-b', 4);
+    m1 := pg_temp.c10_cargo('c10-t50', pg_temp.c10_d(), 300.00, 'Zelle payment to C10 PRUEBA ZZANA 9050');
+    perform pg_temp.c10_alta('p1');
+    perform pg_temp.c10_ser('dueno');
+    perform fn_jornal_config('{"burden_estandar_pct": 0}');
+    perform pg_temp.c10_ser('editor');
+    a := pg_temp.c10_jc(70);
+    perform pg_temp.c10_ser('dueno');
+    perform fn_banco_clasificar(m1, '[{"cuenta": "5200", "proyecto_id": "c10-prueba-a"}]'::jsonb, 'c10-pruebas: clasificado a mano, sin repartir');
+    perform pg_temp.c10_ser('editor');
+    b := pg_temp.c10_jc(70);
+    b := case when b like 'rojo: el pago del ' || pg_temp.c10_d() || ' a Zzana C10 PRUEBA por $300.00 (%clasificado%, asiento %): 12 h suyas sin pago del '
+                          || (pg_temp.c10('lunes')::date - 7) || ' al ' || (pg_temp.c10('lunes')::date + 6)
+                          || ' → si era su pago por horas, su costo quedó entero donde se clasificó%Des-cásalo en la Bandeja, con su motivo, y repártelo por sus horas.%'
+                   and (select k.nivel from v_jornal_control k where k.orden = 70) = 'aviso' and b !~ 'fn_|v_jornal|v_margen'
+              then 'el 70 en rojo, de nivel aviso, nombra el pago, cómo se resolvió y las 12 h sin pago, y dice qué hacer, sin nombrar funciones'
+              else b end;
+    perform pg_temp.c10_ser('dueno');
+    select * into o from v_margen_obra where proyecto_id = 'c10-prueba-a';
+    select * into p from v_margen_obra where proyecto_id = 'c10-prueba-b';
+    perform pg_temp.c10_ser('editor');
+    c := format('la obra A: subcontratos %s, mano de obra real %s, %s h a estándar (%s), %s; la B: %s h a estándar, %s', o.subcontratos_real,
+                o.mano_obra_real, trim_scale(o.horas_estandar), o.mano_obra_estandar,
+                case when exists (select 1 from unnest(o.avisos) x
+                                   where x like '1 pago(s) de mano de obra se resolvieron en la Bandeja sin repartir por horas ($300.00 a Zzana C10 PRUEBA el '
+                                                || fn_jornal_dia(pg_temp.c10_d()) || '): si era el pago de esas semanas%Des-cásalo en la Bandeja y repártelo por sus horas.')
+                     then 'y lo avisa' else 'y NO lo avisa' end,
+                trim_scale(p.horas_estandar),
+                case when exists (select 1 from unnest(p.avisos) x where x like '1 pago(s) de mano de obra se resolvieron en la Bandeja sin repartir por horas%')
+                     then 'y lo avisa' else 'y NO lo avisa' end);
+    perform pg_temp.c10_ser('dueno');
+    perform fn_banco_descasar(m1, 'c10-pruebas: era su pago por horas');
+    perform pg_temp.c10_ser('editor');
+    d := pg_temp.c10_jc(70);
+    perform pg_temp.c10_aplicar(m1, pg_temp.c10_w1(0), pg_temp.c10_w1(6));
+    perform pg_temp.c10_ser('dueno');
+    select * into o from v_margen_obra where proyecto_id = 'c10-prueba-a';
+    select * into p from v_margen_obra where proyecto_id = 'c10-prueba-b';
+    perform pg_temp.c10_ser('editor');
+    e := format('A %s y B %s de mano de obra real, %s', o.mano_obra_real, p.mano_obra_real,
+                case when o.horas_estandar = 0 and p.horas_estandar = 0 and o.subcontratos_real = 0
+                          and not exists (select 1 from unnest(o.avisos || p.avisos) x where x like '%sin repartir por horas%')
+                          and pg_temp.c10_jc(70) = 'verde'
+                     then 'sin horas a estándar y sin el aviso' else 'con algo todavía: ' || array_to_string(o.avisos, ' · ') end);
+    v_obt := format('en la Bandeja: el 70 %s | clasificado a mano (5200 entero a la obra A): %s | %s | des-casado en la Bandeja: el 70 %s | '
+                    'repartido por sus horas: %s', a, b, c, d, e);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (50, 'EL PAGO DE UNA PERSONA DADA DE ALTA RESUELTO FUERA DEL JORNAL (clasificado a mano en la Bandeja) ya no pasa callado: el control del jornal lo dice (el 70, un aviso: el pago, cómo se resolvió, las horas suyas sin pago y qué hacer) y cada obra con horas suyas de esas semanas avisa de que salen además a estándar; des-casado y repartido por sus horas, el aviso se va y la mano de obra queda como real en sus obras',
+    v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 51. LO DE LA IA (c8) QUE UN JORNAL DEJA ABIERTO. c10 no puede cerrar
+--     propuestas de c8 (son de su función de borde); las devuelve, con qué
+--     hacer con cada una, para que la pantalla las cierre, y las enseña en
+--     su control (el 80, un aviso) mientras sigan abiertas:
+--       · la PENDIENTE del movimiento (ya no se puede aprobar: «rechazar»);
+--       · la APROBADA cuyo asiento se reversó —Edgar la aceptó y después
+--         des-casó el pago para repartirlo por horas— («caducar»): deja en
+--         rojo el cuadre 60 de c8, y antes c10 ni la veía.
+--     (El «Así es» no se frena por una pendiente: cabecera, «decisiones».)
+do $$
+declare
+  v_obt text; m1 uuid; m2 uuid; v_p uuid; v_p2 uuid; v_j jsonb; v_r jsonb; v_c0 text[]; v_c1 text[]; v_c2 text[]; v_c3 text[];
+  a text; b text; c text; d text; e text; f text; g text;
+  v_esp text := 'pendiente: la propuesta trae 1 abierta (pendiente → rechazar) | aplicar la devuelve, y el 80 lo dice (un aviso, con lo que '
+                'proponía y qué hacer, sin nombrar funciones) | para reintentar: 1 | rechazada (lo que hace la pantalla): el 80 verde | '
+                'aprobada y des-casada: c8 60 en rojo; la propuesta trae 1 abierta (sin_asiento → caducar) y ninguna pendiente | repartido: '
+                'aplicar la devuelve y el 80 lo dice; c8 sigue con el 60 (c10 no lo cierra) | caducada (lo que hace la pantalla): el 80 '
+                'verde y c8 sin cuadres nuevos';
+begin
+  if pg_temp.c10('hay_c8') <> 'true' then
+    insert into _pruebas values (51, 'lo de la IA (c8) que un jornal deja abierto se devuelve y se enseña en el control', v_esp,
+                                 'omitida: c8 no está en esta base', null);
+    return;
+  end if;
+  if pg_temp.c10_omitir(51, 'lo de la IA (c8) que un jornal deja abierto', v_esp) then return; end if;
+  if pg_temp.c10_omitir_rojo(51, 'lo de la IA (c8) que un jornal deja abierto', v_esp, 'jornal', array[80]) then return; end if;
+  begin
+    perform pg_temp.c10_sembrar();
+    perform pg_temp.c10_hora(1, 'p1', pg_temp.c10_w1(0), 'c10-prueba-b', 8);
+    perform pg_temp.c10_hora(2, 'p1', pg_temp.c10_w2(0), 'c10-prueba-b', 4);
+    m1 := pg_temp.c10_cargo('c10-t51-1', pg_temp.c10_d(), 200.00, 'Zelle payment to C10 PRUEBA ZZANA 9511');
+    m2 := pg_temp.c10_cargo('c10-t51-2', pg_temp.c10_d(), 100.00, 'Zelle payment to C10 PRUEBA ZZANA 9512');
+    perform pg_temp.c10_alta('p1');
+    execute $q$ select coalesce(array_agg(k.orden::text order by k.orden), '{}') from public.v_contador_control k where k.nivel = 'cuadre' and not k.ok $q$ into v_c0;
+    -- (a) la propuesta PENDIENTE de la IA para ese Zelle, como la deja su rutina
+    execute $q$ insert into public.contador_propuestas (movimiento_id, fuente, propuesta)
+                values ($1, 'edgar', '{"lineas": [{"cuenta": "5200", "proyecto_id": "c10-prueba-b"}], "motivo": "C10 PRUEBA", "confianza": 1, "flags": {}}'::jsonb)
+                returning id $q$ into v_p using m1;
+    v_j := pg_temp.c10_propuesta(m1, pg_temp.c10_w1(0), pg_temp.c10_w1(6));
+    a := case when (v_j->>'propuesta_ia')::uuid = v_p and jsonb_array_length(v_j->'propuestas_ia') = 1
+              then format('la propuesta trae 1 abierta (%s → %s)', v_j->'propuestas_ia'->0->>'clase', v_j->'propuestas_ia'->0->>'que_hacer')
+              else 'la propuesta trae ' || (v_j->'propuestas_ia')::text end;
+    v_r := pg_temp.c10_aplicar(m1, pg_temp.c10_w1(0), pg_temp.c10_w1(6));
+    b := pg_temp.c10_jc(80);
+    b := format('%s, y %s',
+                case when (v_r->>'propuesta_ia')::uuid = v_p and (v_r->'propuestas_ia'->0->>'propuesta_id')::uuid = v_p then 'aplicar la devuelve' else 'aplicar NO la devuelve' end,
+                case when b like 'rojo: el pago del ' || pg_temp.c10_d() || ' a Zzana C10 PRUEBA ($200.00): su propuesta de la IA sigue pendiente (proponía 5200 → C10 PRUEBA Obra B)'
+                                 || ' → ya no se pueden aprobar%a la pendiente se le dice «No es eso»%'
+                          and (select k.nivel from v_jornal_control k where k.orden = 80) = 'aviso' and b !~ 'fn_|v_jornal|v_margen|v_contador'
+                     then 'el 80 lo dice (un aviso, con lo que proponía y qué hacer, sin nombrar funciones)' else 'el 80: ' || b end);
+    perform pg_temp.c10_ser('dueno');
+    select count(*)::text into c from fn_jornal_ia(null) i where i.movimiento_id in (m1, m2);
+    perform pg_temp.c10_ser('editor');
+    -- (lo que hace la pantalla por la función de borde «contador»: «No es eso»)
+    execute 'select public.fn_contador_rechazar($1, $2, $3)' using v_p, pg_temp.c10('dueno')::uuid, 'c10-pruebas: se repartió por sus horas';
+    d := 'el 80 ' || pg_temp.c10_jc(80);
+    -- (b) la APROBADA cuyo asiento se reversa: Edgar acepta la propuesta de la IA y después des-casa el pago para repartirlo
+    execute $q$ insert into public.contador_propuestas (movimiento_id, fuente, propuesta)
+                values ($1, 'edgar', '{"lineas": [{"cuenta": "5200", "proyecto_id": "c10-prueba-b"}], "motivo": "C10 PRUEBA", "confianza": 1, "flags": {}}'::jsonb)
+                returning id $q$ into v_p2 using m2;
+    execute 'select public.fn_contador_aprobar($1, $2, null, false)' using v_p2, pg_temp.c10('dueno')::uuid;
+    perform pg_temp.c10_ser('dueno');
+    perform fn_banco_descasar(m2, 'c10-pruebas: es mano de obra, va por sus horas');
+    perform pg_temp.c10_ser('editor');
+    execute $q$ select coalesce(array_agg(k.orden::text order by k.orden), '{}') from public.v_contador_control k where k.nivel = 'cuadre' and not k.ok $q$ into v_c1;
+    v_j := pg_temp.c10_propuesta(m2, pg_temp.c10_w2(0), pg_temp.c10_w2(6));
+    e := format('c8 %s en rojo; %s', pg_temp.c10_nuevos(v_c0, v_c1),
+                case when v_j->'propuesta_ia' = 'null'::jsonb and jsonb_array_length(v_j->'propuestas_ia') = 1
+                          and (v_j->'propuestas_ia'->0->>'propuesta_id')::uuid = v_p2 and v_j->'propuestas_ia'->0->>'estado' = 'aprobada'
+                     then format('la propuesta trae 1 abierta (%s → %s) y ninguna pendiente', v_j->'propuestas_ia'->0->>'clase', v_j->'propuestas_ia'->0->>'que_hacer')
+                     else 'la propuesta trae ' || (v_j->'propuestas_ia')::text end);
+    v_r := pg_temp.c10_aplicar(m2, pg_temp.c10_w2(0), pg_temp.c10_w2(6));
+    execute $q$ select coalesce(array_agg(k.orden::text order by k.orden), '{}') from public.v_contador_control k where k.nivel = 'cuadre' and not k.ok $q$ into v_c2;
+    f := pg_temp.c10_jc(80);
+    f := format('%s; c8 sigue con el %s (c10 no lo cierra)',
+                case when (v_r->'propuestas_ia'->0->>'propuesta_id')::uuid = v_p2 and v_r->'propuesta_ia' = 'null'::jsonb
+                          and f like 'rojo: el pago del ' || pg_temp.c10_d() || ' a Zzana C10 PRUEBA ($100.00): su propuesta de la IA está aprobada y su asiento % ya no vive (proponía 5200 → C10 PRUEBA Obra B)'
+                                     || ' → %la aprobada cuyo asiento se reversó se cierra con su motivo%'
+                     then 'aplicar la devuelve y el 80 lo dice' else 'el 80: ' || f end,
+                pg_temp.c10_nuevos(v_c0, v_c2));
+    -- (lo que hace la pantalla: «caducar», con su motivo)
+    execute 'select public.fn_contador_caducar($1, $2, $3)' using v_p2, pg_temp.c10('dueno')::uuid, 'c10-pruebas: se repartió por sus horas';
+    execute $q$ select coalesce(array_agg(k.orden::text order by k.orden), '{}') from public.v_contador_control k where k.nivel = 'cuadre' and not k.ok $q$ into v_c3;
+    g := format('el 80 %s y c8 %s', pg_temp.c10_jc(80), case when pg_temp.c10_nuevos(v_c0, v_c3) = 'ninguno' then 'sin cuadres nuevos' else 'con ' || pg_temp.c10_nuevos(v_c0, v_c3) end);
+    v_obt := format('pendiente: %s | %s | para reintentar: %s | rechazada (lo que hace la pantalla): %s | aprobada y des-casada: %s | repartido: '
+                    '%s | caducada (lo que hace la pantalla): %s', a, b, c, d, e, f, g);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (51, 'LO DE LA IA (c8) QUE UN JORNAL DEJA ABIERTO: la propuesta pendiente del movimiento y la aprobada cuyo asiento se reversó (des-casado para repartirlo) salen en propuestas_ia —con qué hacer: rechazar o caducar— en la propuesta y en lo que devuelve aplicar, fn_jornal_ia las da para reintentar, y el control del jornal las enseña (el 80, un aviso) hasta que la pantalla las cierra por la función de borde; c10 no escribe en c8',
+    v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 52. LA HUELLA CUBRE EXACTAMENTE LO QUE EL «ASÍ ES» APRUEBA. Aplicar manda
+--     a c3 TODOS los reportes sin aprobar de esas fechas, también los que no
+--     entran porque ya los cubre otro pago. Antes la huella llevaba solo los
+--     que entran: una hora cubierta que cambiaba entre que Edgar miraba y
+--     tocaba (c3 le quita la aprobación) se aprobaba con horas que él no vio.
+--     Ahora la huella lleva cada reporte que se aprueba: MX011, y nada cambia.
+do $$
+declare
+  v_obt text; m1 uuid; m2 uuid; v_j jsonb; v_k jsonb; v_r jsonb; a text; b text; c text; d text; e text; v_antes text;
+  v_esp text := 'lo que Edgar ve: entran 12 h, 12 h cubiertas, y va a aprobar 2 reportes [horas_cubiertas,se_pisa] | cambia una hora '
+                'cubierta (c3 le quita la aprobación) y toca «Así es» con lo que vio: MX011, y nada cambió | lo que ve ahora: va a aprobar '
+                '3 —la cubierta que cambió, avisada [horas_cubiertas,cubiertas_sin_aprobar,se_pisa]—, con otra huella | con la de ahora: '
+                'entra, aprueba las 3 y queda escrito lo que vio | el reparto que la cubría: el control 30 lo dice';
+begin
+  if pg_temp.c10_omitir(52, 'la huella cubre lo que el «Así es» aprueba', v_esp) then return; end if;
+  begin
+    perform pg_temp.c10_sembrar();
+    perform pg_temp.c10_hora(1, 'p1', pg_temp.c10_w2(0), 'c10-prueba-a', 8);
+    perform pg_temp.c10_hora(2, 'p1', pg_temp.c10_w2(1), 'c10-prueba-b', 4);
+    perform pg_temp.c10_hora(3, 'p1', pg_temp.c10_w1(0), 'c10-prueba-h', 8);
+    perform pg_temp.c10_hora(4, 'p1', pg_temp.c10_w1(1), 'c10-prueba-i', 4);
+    m1 := pg_temp.c10_cargo('c10-t52-1', pg_temp.c10_d(), 300.00, 'Zelle payment to C10 PRUEBA ZZANA 9521');
+    m2 := pg_temp.c10_cargo('c10-t52-2', pg_temp.c10_d(), 360.00, 'Zelle payment to C10 PRUEBA ZZANA 9522');
+    perform pg_temp.c10_alta('p1');
+    perform pg_temp.c10_aplicar(m1, pg_temp.c10_w2(0), pg_temp.c10_w2(6));
+    -- Edgar mira el segundo pago con las dos semanas (la primera ya la cubre el otro reparto)
+    v_j := pg_temp.c10_propuesta(m2, pg_temp.c10_w2(0), pg_temp.c10_w1(6));
+    a := format('entran %s h, %s h cubiertas, y va a aprobar %s reportes [%s]', trim_scale((v_j->>'horas')::numeric),
+                trim_scale((v_j->'cubiertas'->>'horas')::numeric),
+                case when v_j->'aprueba'->'ids' = '[-1010000004, -1010000003]'::jsonb then v_j->'aprueba'->>'reportes' else (v_j->'aprueba')::text end,
+                pg_temp.c10_avisos(v_j));
+    select format('%s|%s|%s|%s|%s', (select count(*) from asientos), (select count(*) from jornal_repartos),
+                  (select count(*) from horas h where h.usuario_id = pg_temp.c10('p1')::uuid and h.aprobado_el is not null),
+                  (select count(*) from horas_aprobaciones where accion = 'aprobada'), (select m.estado from movimientos_banco m where m.id = m2)) into v_antes;
+    -- …y entre medias cambia una hora CUBIERTA (del otro reparto): c3 le tumba la aprobación
+    perform pg_temp.c10_corregir(1, 'horas = 7');
+    v_antes := v_antes || '|' || (select (h.aprobado_el is null)::text from horas h where h.id = -1010000001);
+    begin
+      perform pg_temp.c10_ser('dueno');
+      perform fn_jornal_aplicar(m2, pg_temp.c10_w2(0), pg_temp.c10_w1(6), v_j->>'visto');
+      b := 'entró';
+    exception when others then b := sqlstate;
+    end;
+    perform pg_temp.c10_ser('editor');
+    b := b || case when (select format('%s|%s|%s|%s|%s', (select count(*) from asientos), (select count(*) from jornal_repartos),
+                                       (select count(*) + 1 from horas h where h.usuario_id = pg_temp.c10('p1')::uuid and h.aprobado_el is not null),
+                                       (select count(*) from horas_aprobaciones where accion = 'aprobada'),
+                                       (select m.estado from movimientos_banco m where m.id = m2))
+                                || '|' || (select (h.aprobado_el is null)::text from horas h where h.id = -1010000001)) = v_antes
+                   then ', y nada cambió' else ', y ALGO cambió' end;
+    v_k := pg_temp.c10_propuesta(m2, pg_temp.c10_w2(0), pg_temp.c10_w1(6));
+    c := format('va a aprobar %s —%s [%s]—, %s',
+                case when v_k->'aprueba'->'ids' = '[-1010000004, -1010000003, -1010000001]'::jsonb then v_k->'aprueba'->>'reportes' else (v_k->'aprueba')::text end,
+                case when (select x->'horas_ids' = '[-1010000001]'::jsonb and x->>'texto' like '1 reporte(s) de esas fechas que no entran en este reparto están sin aprobar%Al aceptar quedan aprobados como están hoy.%'
+                             from jsonb_array_elements(v_k->'avisos') x where x->>'codigo' = 'cubiertas_sin_aprobar')
+                     then 'la cubierta que cambió, avisada' else 'sin avisar de la cubierta' end,
+                pg_temp.c10_avisos(v_k),
+                case when v_k->>'visto' <> v_j->>'visto' then 'con otra huella' else 'con la MISMA huella' end);
+    v_r := pg_temp.c10_aplicar(m2, pg_temp.c10_w2(0), pg_temp.c10_w1(6));
+    d := format('%s, aprueba las %s y %s', case when v_r->>'estado' = 'aplicado' and (v_r->>'horas')::numeric = 12 then 'entra' else 'no entra' end,
+                case when v_r->'horas_aprobadas'->'ids' = '[-1010000004, -1010000003, -1010000001]'::jsonb then v_r->'horas_aprobadas'->>'reportes' else (v_r->'horas_aprobadas')::text end,
+                case when (select ap.horas = 7 and ap.detalle->'visto'->'ids' = '[-1010000004, -1010000003, -1010000001]'::jsonb
+                             from horas_aprobaciones ap where ap.horas_id = -1010000001 and ap.accion = 'aprobada' order by ap.hecho_el desc limit 1)
+                     then 'queda escrito lo que vio' else 'NO queda escrito lo que vio' end);
+    e := pg_temp.c10_jc(30);
+    e := case when e like 'rojo: %el reporte -1010000001 del ' || pg_temp.c10_w2(0) || ' cambió de horas (de 8 a 7)%' then 'el control 30 lo dice' else e end;
+    v_obt := format('lo que Edgar ve: %s | cambia una hora cubierta (c3 le quita la aprobación) y toca «Así es» con lo que vio: %s | lo que ve '
+                    'ahora: %s | con la de ahora: %s | el reparto que la cubría: %s', a, b, c, d, e);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (52, 'LA HUELLA CUBRE EXACTAMENTE LO QUE EL «ASÍ ES» APRUEBA: lleva cada reporte de esas fechas que se va a aprobar, entre o no en el reparto («aprueba»); si una hora que ya cubre otro pago cambia entre que Edgar mira y toca (c3 le quita la aprobación), aplicar da MX011 y nada cambia —antes la aprobaba con horas que él no vio—; al volver a mirar la ve avisada (cubiertas_sin_aprobar) y entonces sí',
+    v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 53. EL CO Y LA FASE, LIMPIOS COMO LOS DEJA c6. Un CO con un salto de línea
+--     detrás (un pegado, el conector) o que es solo un tabulador: c6 limpia
+--     tabuladores y saltos al postear, y c10 quitaba solo espacios: el mismo
+--     CO salía en dos grupos, el asiento «no era el reparto» y el pago no se
+--     podía repartir (MX001 «la línea 3… Avisa»). Ahora van limpios igual en
+--     el núcleo, la propuesta, la huella, el margen y el control; lo que solo
+--     cambia por las mayúsculas se avisa (co_parecidos) y no se adivina; y si
+--     el asiento de c6 no fuera el reparto, el error dice qué línea, qué
+--     campo y qué hacer.
+do $$
+declare
+  v_obt text; m1 uuid; m2 uuid; v_j jsonb; v_r jsonb; v_k jsonb; a text; b text; c text; d text; e text; f text;
+  v_esp text := 'tres grupos: base 2→50.00, CO #1 6→150.00, co #1 2→50.00 [co_parecidos], y se puede aplicar | el aviso nombra los dos CO '
+                'parecidos | aplicado: 4 líneas, el CO sin saltos ni tabuladores; el detalle guarda «CO #1» y la fase «rough»; control del '
+                'jornal: nada nuevo en rojo; del margen: nada nuevo en rojo | el margen por CO: Base (sin CO) 2 h, CO #1 6 h, co #1 2 h | si el '
+                'asiento del banco no fuera el reparto: MX001, dice la línea, el campo y qué hacer, y nada cambia';
+begin
+  if pg_temp.c10_omitir(53, 'el CO y la fase, limpios como los deja c6', v_esp) then return; end if;
+  begin
+    perform pg_temp.c10_sembrar();
+    perform pg_temp.c10_hora(1, 'p1', pg_temp.c10_w1(0), 'c10-prueba-a', 4, E'CO #1\n', E'rough\n');
+    perform pg_temp.c10_hora(2, 'p1', pg_temp.c10_w1(1), 'c10-prueba-a', 2, 'CO #1', 'rough');
+    perform pg_temp.c10_hora(3, 'p1', pg_temp.c10_w1(2), 'c10-prueba-a', 1, E'\t');
+    perform pg_temp.c10_hora(4, 'p1', pg_temp.c10_w1(3), 'c10-prueba-a', 1);
+    perform pg_temp.c10_hora(5, 'p1', pg_temp.c10_w1(4), 'c10-prueba-a', 2, E' co #1\r\n');
+    perform pg_temp.c10_hora(6, 'p1', pg_temp.c10_w2(0), 'c10-prueba-b', 2, 'CO #9');
+    m1 := pg_temp.c10_cargo('c10-t53-1', pg_temp.c10_d(), 250.00, 'Zelle payment to C10 PRUEBA ZZANA 9531');
+    m2 := pg_temp.c10_cargo('c10-t53-2', pg_temp.c10_d(), 50.00, 'Zelle payment to C10 PRUEBA ZZANA 9532');
+    perform pg_temp.c10_alta('p1');
+    v_j := pg_temp.c10_propuesta(m1, pg_temp.c10_w1(0), pg_temp.c10_w1(6));
+    -- (los grupos, la base primero y los CO por su letra: el orden de dos CO que solo cambian en las mayúsculas depende
+    -- de la intercalación de la base, y aquí no importa)
+    select format('%s grupos: %s [%s], y %s', case jsonb_array_length(v_j->'lineas') when 3 then 'tres' else jsonb_array_length(v_j->'lineas')::text end,
+                  string_agg(format('%s %s→%s', coalesce(l->>'co', 'base'), trim_scale((l->>'horas')::numeric), l->>'monto'), ', '
+                             order by (l->>'co' is null) desc, (l->>'co') collate "C"),
+                  pg_temp.c10_avisos(v_j), case when (v_j->>'puede_aplicar')::boolean then 'se puede aplicar' else 'NO se puede: ' || (v_j->>'por_que') end)
+      into a from jsonb_array_elements(v_j->'lineas') l;
+    b := case when pg_temp.c10_aviso(v_j, 'co_parecidos') ~ '^Hay CO escritos de dos formas en la misma obra \(C10 PRUEBA Obra A: («CO #1» y «co #1»|«co #1» y «CO #1»)\): salen como líneas distintas\.'
+              then 'el aviso nombra los dos CO parecidos' else coalesce(pg_temp.c10_aviso(v_j, 'co_parecidos'), 'sin aviso') end;
+    v_r := pg_temp.c10_aplicar(m1, pg_temp.c10_w1(0), pg_temp.c10_w1(6));
+    select format('%s líneas, el CO %s; el detalle guarda «%s» y la fase «%s»; %s', count(*),
+                  case when bool_and(l.co is not distinct from fn_jornal_limpio(l.co)) and count(*) filter (where l.co = 'CO #1') = 1
+                            and count(*) filter (where l.co = 'co #1') = 1 and count(*) filter (where l.co is null) = 2
+                       then 'sin saltos ni tabuladores' else 'CON algo raro' end,
+                  (select rh.co from jornal_reparto_horas rh where rh.reparto_id = (v_r->>'reparto_id')::uuid and rh.horas_id = -1010000001),
+                  (select rh.fase from jornal_reparto_horas rh where rh.reparto_id = (v_r->>'reparto_id')::uuid and rh.horas_id = -1010000001),
+                  pg_temp.c10_propios())
+      into c from asiento_lineas l where l.asiento_id = (v_r->'asiento'->>'id')::uuid;
+    perform pg_temp.c10_ser('dueno');
+    v_k := fn_margen_obra('c10-prueba-a');
+    perform pg_temp.c10_ser('editor');
+    select string_agg(format('%s %s h', x->>'etiqueta', trim_scale((x->>'horas')::numeric)), ', ' order by (x->>'co' is null) desc, (x->>'co') collate "C")
+      into d from jsonb_array_elements(v_k->'por_co') x;
+    -- LA RED: si c6 dejara otra cosa en la línea (aquí, un trigger de prueba le cambia el CO al entrar), el error lo dice
+    begin
+      create function public.c10_prueba_altera() returns trigger language plpgsql as $f$
+      begin
+        if new.co = 'CO #9' then new.co := 'CO #9 (cambiado)'; end if;
+        return new;
+      end $f$;
+      create trigger zzz_c10_prueba_altera before insert on public.asiento_lineas for each row execute function public.c10_prueba_altera();
+      begin
+        perform pg_temp.c10_aplicar(m2, pg_temp.c10_w2(0), pg_temp.c10_w2(6));
+        e := 'entró';
+      exception when others then
+        e := sqlstate || case when sqlerrm like 'El asiento % que dejó el banco no es el reparto que se le pidió: la línea 2 (C10 PRUEBA Obra B): el CO quedó ''CO #9 (cambiado)'' y se pidió ''CO #9''. '
+                                                || 'No se guardó nada%el pago sigue en la Bandeja%corrígelos en Horas y vuelve a mirar el reparto; si no, avisa con este mensaje.'
+                              then ', dice la línea, el campo y qué hacer' else ' (' || sqlerrm || ')' end;
+      end;
+      perform pg_temp.c10_ser('editor');
+      f := case when (select m.estado from movimientos_banco m where m.id = m2) = 'pendiente'
+                     and (select h.aprobado_el is null from horas h where h.id = -1010000006)
+                     and not exists (select 1 from jornal_repartos r where r.movimiento_id = m2)
+                     and not exists (select 1 from asientos x where x.origen_tabla = 'movimientos_banco' and x.origen_id = m2::text)
+                then 'y nada cambia' else 'y ALGO cambió' end;
+      raise exception using errcode = 'MXT01';
+    exception when sqlstate 'MXT01' then null;
+    end;
+    v_obt := format('%s | %s | aplicado: %s | el margen por CO: %s | si el asiento del banco no fuera el reparto: %s, %s', a, b, c, d, e, f);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (53, 'EL CO Y LA FASE VAN LIMPIOS COMO LOS DEJA c6 (sin espacios, tabuladores ni saltos de línea en las puntas): un CO con un salto de línea detrás es el mismo CO —un grupo, una línea— y uno que es solo un tabulador es la base; el pago se reparte (antes paraba con MX001 «Avisa»); dos CO que solo cambian en las mayúsculas se avisan (co_parecidos) y no se juntan; y si el asiento del banco no fuera el reparto, el MX001 dice qué línea, qué campo y qué hacer, y nada cambia',
+    v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 54. EL DEVENGO DE UN MES Y EL JORNAL DEL SIGUIENTE NO CHOCAN (el uso de
+--     manual de fn_horas_devengar, c3): un mes devengado por lo trabajado y
+--     todavía no pagado (Dr 5000 / Cr 2210 a fin de mes, con su reverso del
+--     día 1) y su Zelle pagado al mes siguiente. El libro: el devengo en su
+--     mes; al siguiente, su reverso y el pago real: nada dos veces. Antes el
+--     control 50 lo ponía en rojo (miraba el mes de las HORAS contra el del
+--     devengo, y daba por vivo un devengo ya deshecho) y no tenía vuelta, y
+--     la propuesta avisaba «saldría dos veces». (El doble de verdad —el pago
+--     que entra en el mismo mes— lo prueba la 39; y lo que pasa con él al
+--     cerrar el mes, la 55.)
+do $$
+declare
+  v_obt text; v_mov uuid; v_j jsonb; v_r jsonb; v_m0 date; v_fin date; v_mes text; v_mes1 text; v_dev jsonb; v_no text; a text; b text; c text;
+  v_c0 text; v_c1 text;
+  v_esp text;
+begin
+  if pg_temp.c10_omitir(54, 'el devengo de un mes y el jornal del siguiente no chocan', 'ni la propuesta avisa ni el control 50 se pone en rojo') then return; end if;
+  if pg_temp.c10_omitir_rojo(54, 'el devengo de un mes y el jornal del siguiente no chocan', 'ni la propuesta avisa ni el control 50 se pone en rojo', 'jornal', array[50]) then return; end if;
+  begin
+    perform pg_temp.c10_sembrar();
+    -- (el último día del mes anterior al del pago: trabajado ese mes, pagado en el siguiente)
+    v_m0 := date_trunc('month', pg_temp.c10_d())::date;
+    v_fin := v_m0 - 1;
+    v_mes := to_char(v_fin, 'YYYY-MM');
+    v_mes1 := to_char(v_m0, 'YYYY-MM');
+    v_esp := format('la propuesta del pago no avisa del devengo | aplicado: el asiento cae en %s, y el control 50 no cuenta ese jornal | el libro de la obra: '
+                    '%s 5000 200.00 · %s 5000 -200.00 · %s 5200 200.00: nada dos veces', v_mes1, v_mes, v_mes1, v_mes1);
+    perform pg_temp.c10_hora(1, 'p1', v_fin, 'c10-prueba-a', 8);
+    begin
+      perform pg_temp.c10_ser('dueno');
+      perform fn_horas_aprobar(pg_temp.c10('p1')::uuid, v_fin, v_fin, '{"ids": [-1010000001]}'::jsonb);
+      perform pg_temp.c10_ser('editor');
+      v_dev := fn_horas_devengar(v_mes);
+    exception when others then
+      v_no := sqlstate || ': ' || sqlerrm;
+      perform pg_temp.c10_ser('editor');
+    end;
+    if v_no is null then
+      -- (el devengo de c3 se lleva TODAS las horas aprobadas del mes: en una
+      --  base con jornales de verdad pagados dentro de ese mes, ESE devengo de
+      --  prueba ya es un doble de verdad para ellos y el 50 sale en rojo por
+      --  ellos, no por el de aquí. Por eso se mira que el jornal del mes
+      --  siguiente NO MUEVA el control: verde, o igual que antes de aplicarlo
+      --  —el detalle lleva las horas, los reportes y los jornales contados—.)
+      v_c0 := pg_temp.c10_jc(50);
+      v_mov := pg_temp.c10_cargo('c10-t54', pg_temp.c10_d(), 200.00, 'Zelle payment to C10 PRUEBA ZZANA 9054');
+      perform pg_temp.c10_alta('p1');
+      v_j := pg_temp.c10_propuesta(v_mov, v_fin, v_fin);
+      a := case when pg_temp.c10_aviso(v_j, 'devengo_estandar') is null and (v_j->>'puede_aplicar')::boolean and (v_j->>'horas')::numeric = 8
+                then 'la propuesta del pago no avisa del devengo' else 'la propuesta avisa: ' || coalesce(pg_temp.c10_aviso(v_j, 'devengo_estandar'), v_j->>'por_que') end;
+      v_r := pg_temp.c10_aplicar(v_mov, v_fin, v_fin);
+      v_c1 := pg_temp.c10_jc(50);
+      b := format('el asiento cae en %s, y el control 50 %s', v_r->'asiento'->>'periodo',
+                  case when v_c1 = 'verde' or v_c1 = v_c0 then 'no cuenta ese jornal' else v_c1 end);
+      select string_agg(format('%s %s %s', q.periodo, q.cuenta, q.s), ' · ' order by q.periodo, q.cuenta) into c
+        from (select x.periodo, l.cuenta, sum(l.monto) as s
+                from asiento_lineas l join asientos x on x.id = l.asiento_id
+               where l.proyecto_id = 'c10-prueba-a' and l.cuenta in ('5000', '5200')
+               group by x.periodo, l.cuenta) q;
+      v_obt := format('%s | aplicado: %s | el libro de la obra: %s: nada dos veces', a, b, c);
+    else
+      v_obt := format('omitida: c3 no dejó devengar %s (%s)', v_mes, left(v_no, 300));
+    end if;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (54, 'EL DEVENGO DE UN MES Y EL JORNAL DEL SIGUIENTE NO CHOCAN: un mes devengado por lo trabajado y todavía no pagado (fn_horas_devengar, c3) y su Zelle pagado al mes siguiente: la propuesta no avisa de doble y el control 50 no cuenta ese jornal: sigue en verde (el mes lleva el devengo; el siguiente, su reverso y el pago real). Antes salía en rojo, sin vuelta',
+    coalesce(v_esp, '-'), v_obt, case when v_obt like 'omitida:%' then null else v_obt = v_esp end);
+end $$;
+
+-- 55. EL DOBLE DE VERDAD, Y LO QUE PASA AL CERRAR EL MES. Un pago que entra
+--     al libro en un mes y el devengo de ese mismo mes con esas horas: el 50
+--     en rojo mientras el mes está abierto (se puede arreglar: retirar el
+--     devengo antes de cerrar). Si el mes se cierra así, ya no tiene arreglo
+--     en ese mes —el siguiente lo compensa con el reverso del devengo—: el
+--     control lo deja dicho y NO se queda en rojo para siempre (con el cierre
+--     de c9 mirándolo sería un «detiene» sin salida). Cierra, dentro de la
+--     prueba, la apertura y el mes abierto más viejo que ya terminó, como la
+--     27; si el libro real no deja, sale «omitida» con lo que dijo c2.
+do $$
+declare
+  v_obt text; v_mov uuid; v_r jsonb; v_mes periodos; v_ap periodos; v_dev jsonb; v_no text; a text; b text;
+  v_esp text := 'pagado y devengado en el mismo mes, abierto: el 50 en rojo (la misma hora en el devengo y en el jornal de ese mes) | '
+                'cerrado ese mes: el 50 verde, y lo deja dicho (ya cerrado, sin arreglo: el mes siguiente lo compensa)';
+begin
+  if pg_temp.c10_omitir(55, 'el doble de verdad, y al cerrar el mes', v_esp) then return; end if;
+  if pg_temp.c10_omitir_rojo(55, 'el doble de verdad, y al cerrar el mes', v_esp, 'jornal', array[50]) then return; end if;
+  begin
+    perform pg_temp.c10_ser('editor');
+    lock table periodos in exclusive mode;
+    select * into v_mes from periodos p where p.tipo = 'mes' and p.estado = 'abierto' and p.hasta < fn_fecha_miami(now()) order by p.desde limit 1;
+    if v_mes.periodo is null then
+      v_no := 'no hay un mes terminado y todavía abierto donde pagar, devengar y cerrar';
+    else
+      perform pg_temp.c10_sembrar();
+      -- (trabajado y PAGADO dentro de ese mes: el pago, su último día)
+      perform pg_temp.c10_hora(1, 'p1', v_mes.hasta - 2, 'c10-prueba-a', 8);
+      v_mov := pg_temp.c10_cargo('c10-t55', v_mes.hasta, 200.00, 'Zelle payment to C10 PRUEBA ZZANA 9055');
+      perform pg_temp.c10_alta('p1');
+      v_r := pg_temp.c10_aplicar(v_mov, v_mes.hasta - 2, v_mes.hasta - 2);
+      begin
+        v_dev := fn_horas_devengar(v_mes.periodo);
+      exception when others then v_no := format('c3 no dejó devengar %s (%s: %s)', v_mes.periodo, sqlstate, left(sqlerrm, 300));
+      end;
+    end if;
+    if v_no is null then
+      a := pg_temp.c10_jc(50);
+      a := case when a like 'rojo: %' || v_mes.periodo || ': el devengo ' || (v_dev->>'asiento') || ' cuenta % h (% reporte(s)) que ya tienen su pago real en ese mes, en % jornal(es)%'
+                                || '→ esa mano de obra sale dos veces en ese mes%'
+                then 'el 50 en rojo (la misma hora en el devengo y en el jornal de ese mes)' else 'el 50: ' || a end;
+      begin
+        select * into v_ap from periodos p where p.tipo = 'apertura' order by p.desde limit 1;
+        if v_ap.estado = 'abierto' then
+          if not exists (select 1 from asientos x where x.periodo = v_ap.periodo and x.tipo = 'apertura' and x.reversa_a is null
+                            and not exists (select 1 from asientos r where r.reversa_a = x.id and r.camino = 'reverso')) then
+            perform fn_postear(jsonb_build_object('tipo', 'apertura', 'fecha', to_char(v_ap.desde, 'YYYY-MM-DD'),
+              'descripcion', 'C10 PRUEBA: apertura de prueba (se deshace)',
+              'lineas', jsonb_build_array(jsonb_build_object('cuenta', '1600', 'monto', '1000.00'),
+                                          jsonb_build_object('cuenta', '3100', 'monto', '-1000.00'))));
+          end if;
+          perform fn_cerrar_periodo(v_ap.periodo);
+        end if;
+        perform fn_cerrar_periodo(v_mes.periodo);
+      exception when others then
+        v_no := format('c2 no dejó cerrar %s (%s: %s)', v_mes.periodo, sqlstate, left(sqlerrm, 300));
+      end;
+    end if;
+    if v_no is null then
+      b := case when (select k.ok and k.detalle like 'Ninguna hora está a la vez en el devengo estándar de un mes abierto y en un jornal que entró al libro ese mes.%'
+                                     || '(Ya cerrado, sin arreglo: ' || v_mes.periodo || ': el devengo ' || (v_dev->>'asiento') || ' cuenta %'
+                                     || 'ese mes quedó con esa mano de obra dos veces y el siguiente con ella de menos, por el reverso del devengo.)'
+                        from v_jornal_control k where k.orden = 50)
+                then 'el 50 verde, y lo deja dicho (ya cerrado, sin arreglo: el mes siguiente lo compensa)' else 'el 50: ' || pg_temp.c10_jc(50) || ' / ' || (select k.detalle from v_jornal_control k where k.orden = 50) end;
+      v_obt := format('pagado y devengado en el mismo mes, abierto: %s | cerrado ese mes: %s', a, b);
+    else
+      v_obt := 'omitida: ' || v_no;
+    end if;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (55, 'EL DOBLE DE VERDAD (el pago y el devengo estándar de las mismas horas en el mismo mes) pone el control 50 en rojo mientras ese mes está abierto y se puede arreglar; si el mes se cierra así, el control lo deja dicho y no se queda en rojo para siempre (el mes siguiente lo compensa con el reverso del devengo)',
+    v_esp, v_obt, case when v_obt like 'omitida:%' then null else v_obt = v_esp end);
+end $$;
+
+-- 56. EL RECONOCIMIENTO POR PATRÓN, Y LA CUENTA DE LO SIN OBRA. Un patrón no
+--     sabe qué clase de movimiento mira ni de quién es: la compra en un
+--     comercio cuyo nombre lleva el de alguien casa igual que su Zelle, y el
+--     patrón de una persona puesto en el perfil de otra reconocía sus pagos a
+--     nombre de la otra, sin decir nada. No se frena (un banco puede
+--     describir un pago de otra forma, y la app el nombre de pila): se DICE,
+--     al dar de alta y en la propuesta. Y un patrón que casaría con un Zelle
+--     a cualquiera no entra. La cuenta de lo sin obra, además, ya no es
+--     «cualquier gasto».
+do $$
+declare
+  v_obt text; m1 uuid; m2 uuid; v_j jsonb; v_k jsonb; v_sin text; a text; b text; c text; d text; e text; x1 text; x2 text; x3 text; x4 text;
+  v_esp text;
+begin
+  if pg_temp.c10_omitir(56, 'el reconocimiento por patrón, y la cuenta de lo sin obra', 'los avisos del patrón y las cuentas que no sirven') then return; end if;
+  begin
+    perform pg_temp.c10_sembrar();
+    select c2.codigo into v_sin from cuentas c2
+     where fn_jornal_cuenta_mal(c2.codigo, 'sin_obra') is null order by (c2.codigo = '7900') desc, c2.codigo limit 1;
+    v_esp := format('«un Zelle a quien sea» no vale, y lo dice; con su nombre, sí | al dar de alta: avisa de que casa con pagos descritos de 2 '
+                    'formas (el Zelle y la compra en el comercio), y lo pone en la nota | la compra en el comercio: reconocida, con su aviso '
+                    '[no_parece_pago]; el Zelle, sin él | un patrón sin el nombre de pila del perfil: avisa y entra | lo sin obra: 6010 MX004 '
+                    '(la alimenta otra parte del libro), 6950 MX004, 7920 MX004, %s entra', v_sin);
+    perform pg_temp.c10_hora(1, 'p1', pg_temp.c10_w1(0), 'c10-prueba-a', 8);
+    m1 := pg_temp.c10_cargo('c10-t56-1', pg_temp.c10_d(), 200.00, 'Zelle payment to C10 PRUEBA ZZANA 9561');
+    m2 := pg_temp.c10_cargo('c10-t56-2', pg_temp.c10_d(), 88.40, 'POS PURCHASE C10 PRUEBA ZZANA SUPPLY 0042');
+    perform pg_temp.c10_ser('dueno');
+    a := format('%s; %s',
+                case when fn_jornal_patron_mal('ZELLE PAYMENT TO [A-Z]') like '%casaría con cualquier pago (también con «ZELLE PAYMENT TO otra persona»)%'
+                          and fn_jornal_patron_mal('ZELLE.*') is not null and fn_jornal_patron_mal('\mTO\M \w+') is not null
+                     then '«un Zelle a quien sea» no vale, y lo dice' else coalesce(fn_jornal_patron_mal('ZELLE PAYMENT TO [A-Z]'), 'VALE') end,
+                case when fn_jornal_patron_mal('\mPRUEBA ZZANA\M') is null then 'con su nombre, sí' else 'con su nombre NO' end);
+    v_j := fn_jornal_persona(jsonb_build_object('usuario_id', pg_temp.c10('p1'), 'patron', '\mPRUEBA ZZANA\M'));
+    b := case when jsonb_array_length(v_j->'avisos') = 1
+                   and v_j->'avisos'->>0 like 'El patrón casa con pagos que el banco describe de 2 formas distintas («POS PURCHASE PRUEBA ZZANA», «PRUEBA ZZANA»): mira que todos sean suyos%'
+                   -- (en un LIKE la barra invertida es el escape: va doble)
+                   and v_j->>'nota_alta' like 'Zzana C10 PRUEBA: 2 pago(s) pendientes reconocidos con «\\mPRUEBA ZZANA\\M». Ojo: El patrón casa con pagos%'
+              then 'avisa de que casa con pagos descritos de 2 formas (el Zelle y la compra en el comercio), y lo pone en la nota'
+              else coalesce((v_j->'avisos')::text, 'sin avisos') end;
+    v_k := fn_jornal_propuesta(m2, pg_temp.c10_w1(0), pg_temp.c10_w1(6));
+    c := format('%s; el Zelle, %s',
+                case when (v_k->>'reconocido')::boolean
+                          and (select x->>'texto' from jsonb_array_elements(v_k->'avisos') x where x->>'codigo' = 'no_parece_pago')
+                              like 'El banco no lo describe como un pago a una persona (un Zelle, una transferencia, un cheque): «POS PURCHASE C10 PRUEBA ZZANA SUPPLY 0042».%clasifícalo en la Bandeja como siempre.'
+                     then 'reconocida, con su aviso [no_parece_pago]' else 'sin su aviso: ' || pg_temp.c10_avisos(v_k) end,
+                case when pg_temp.c10_aviso(fn_jornal_propuesta(m1, pg_temp.c10_w1(0), pg_temp.c10_w1(6)), 'no_parece_pago') is null then 'sin él' else 'CON él' end);
+    -- (el patrón de «otra» persona en el perfil de Zzcaro: su nombre de pila no sale en él)
+    v_j := fn_jornal_persona(jsonb_build_object('usuario_id', pg_temp.c10('p3'), 'patron', '\mPRUEBA ZZOTRA\M'));
+    d := case when v_j->'avisos'->>0 = 'El patrón «\mPRUEBA ZZOTRA\M» no lleva el nombre de Zzcaro C10 PRUEBA («ZZCARO»): mira que sea el de sus pagos y no el de otra persona.'
+                   and (v_j->>'activa')::boolean and v_j->>'nota_alta' like '% Ojo: El patrón «\\mPRUEBA ZZOTRA\\M» no lleva el nombre de Zzcaro C10 PRUEBA%'
+              then 'avisa y entra' else coalesce((v_j->'avisos')::text, 'sin avisos') end;
+    begin perform fn_jornal_config('{"cuenta_sin_obra": "6010"}'); x1 := 'entra';
+    exception when others then x1 := sqlstate || case when sqlerrm like '%la alimenta otra parte del libro%' then ' (la alimenta otra parte del libro)' else '' end; end;
+    begin perform fn_jornal_config('{"cuenta_sin_obra": "6950"}'); x2 := 'entra'; exception when others then x2 := sqlstate; end;
+    begin perform fn_jornal_config('{"cuenta_sin_obra": "7920"}'); x3 := 'entra'; exception when others then x3 := sqlstate; end;
+    begin
+      x4 := case when fn_jornal_config(jsonb_build_object('cuenta_sin_obra', v_sin))->>'cuenta_sin_obra' = v_sin then v_sin || ' entra' else 'no quedó' end;
+    exception when others then x4 := sqlstate; end;
+    perform pg_temp.c10_ser('editor');
+    -- (si el plan de cuentas de esta base no trae la 6010, el porqué es otro —«no existe»— y sigue sin entrar)
+    if not exists (select 1 from cuentas k where k.codigo = '6010') and x1 = 'MX004' then x1 := 'MX004 (la alimenta otra parte del libro)'; end if;
+    e := format('6010 %s, 6950 %s, 7920 %s, %s', x1, x2, x3, x4);
+    v_obt := format('%s | al dar de alta: %s | la compra en el comercio: %s | un patrón sin el nombre de pila del perfil: %s | lo sin obra: %s',
+                    a, b, c, d, e);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (56, 'EL RECONOCIMIENTO POR PATRÓN SE AVISA, NO SE ADIVINA: un patrón que casaría con un Zelle a cualquiera no entra; al dar de alta se dice si el patrón casa con pagos que el banco describe de varias formas (un comercio con un nombre parecido) o si no lleva el nombre de pila del perfil; y la propuesta avisa si el movimiento no parece un pago a una persona. La cuenta de lo sin obra no admite las que alimenta otra parte del libro ni las de etiqueta fiscal propia',
+    coalesce(v_esp, '-'), v_obt, v_obt = v_esp);
+end $$;
+
+-- 57. LO MENOR, DICHO: el corte de mes y de año (las horas de un mes y el
+--     asiento en otro: el libro va por la fecha del pago, como QuickBooks, y
+--     se avisa con cuántas horas, cuánto y cuándo entra); la nota de aplicar
+--     no cuenta las obras a las que no les llegó ni un centavo; el núcleo
+--     reparte también solo por las horas APROBADAS (lo que pedirá f11); la
+--     nota del estándar dice que va con la tarifa de hoy; el control dice
+--     dónde salen los jornales en «Estados»; y ningún detalle de los dos
+--     controles nombra una función ni una vista.
+do $$
+declare
+  v_obt text; m1 uuid; m2 uuid; v_j jsonb; v_r jsonb; v_k jsonb; v_m0 date; v_fin date; v_ano date; v_cod text; a text; b text; c text; d text; e text;
+  v_esp text := 'las horas del mes anterior: avisa (8 h, 200.00, con el día en que entra el asiento) | las de otro año: avisa (4 h, 250.00, '
+                'y el ejercicio en que queda) | un pago de 2 centavos entre tres obras: la nota cuenta 2 obras y dice que a 1 grupo no le '
+                'llegó nada | el núcleo: 4 reportes con todas las horas y 3 con solo las aprobadas, y los dos suman 100.00 | la nota del '
+                'estándar dice que va con la tarifa de hoy; el control dice dónde salen los jornales en Estados; y ningún detalle nombra '
+                'una función ni una vista';
+begin
+  if pg_temp.c10_omitir(57, 'el corte de mes y de año, la nota de aplicar, el núcleo con las aprobadas y los textos', v_esp) then return; end if;
+  begin
+    perform pg_temp.c10_sembrar();
+    v_m0 := date_trunc('month', pg_temp.c10_d())::date;
+    v_fin := v_m0 - 1;                                           -- el último día del mes anterior al del pago
+    v_ano := date_trunc('year', pg_temp.c10_d())::date - 1;      -- el 31 de diciembre del año anterior
+    perform pg_temp.c10_hora(1, 'p1', v_fin, 'c10-prueba-a', 8);
+    perform pg_temp.c10_hora(2, 'p1', v_m0, 'c10-prueba-b', 2);
+    perform pg_temp.c10_hora(3, 'p1', v_ano, 'c10-prueba-h', 4);
+    m1 := pg_temp.c10_cargo('c10-t57-1', pg_temp.c10_d(), 250.00, 'Zelle payment to C10 PRUEBA ZZANA 9571');
+    perform pg_temp.c10_alta('p1');
+    -- (a) el mes: 8 h del mes anterior y 2 h del mes del pago
+    v_j := pg_temp.c10_propuesta(m1, v_fin, v_m0);
+    v_cod := case when extract(year from v_fin) <> extract(year from pg_temp.c10_d()) then 'otro_anio' else 'otro_mes' end;
+    select case when (x->>'horas')::numeric = 8 and (x->>'monto')::numeric = 200.00 and (x->>'fecha_asiento')::date = pg_temp.c10_d()
+                     and x->>'texto' like '8 h de este pago ($200.00) se trabajaron en % y el asiento entra el ' || fn_jornal_dia(pg_temp.c10_d(), true) || ': su costo queda en %(el libro va por la fecha del pago, como QuickBooks)%Es solo un aviso.'
+                     and (v_j->>'puede_aplicar')::boolean and (v_j->'movimiento'->>'fecha_asiento')::date = pg_temp.c10_d()
+                then 'avisa (8 h, 200.00, con el día en que entra el asiento)' else x::text end
+      into a from jsonb_array_elements(v_j->'avisos') x where x->>'codigo' = v_cod;
+    -- (b) el año: una hora del 31 de diciembre del año anterior. La propuesta no deja más de 62 días hacia atrás; el
+    --     cálculo es el mismo y aquí se le pide directo, como el dueño, con ese solo día.
+    perform pg_temp.c10_ser('dueno');
+    v_k := fn_jornal_calcular(m1, v_ano, v_ano, '{}'::jsonb);
+    perform pg_temp.c10_ser('editor');
+    select case when (x->>'horas')::numeric = 4 and (x->>'monto')::numeric = 250.00
+                     and x->>'texto' like '4 h de este pago ($250.00) se trabajaron en ' || to_char(v_ano, 'YYYY') || ' y el asiento entra el ' || fn_jornal_dia(pg_temp.c10_d(), true)
+                                          || ': su costo queda en el ejercicio ' || to_char(pg_temp.c10_d(), 'YYYY') || ' %Si el CPA quiere ese costo en el año en que se trabajó%'
+                then 'avisa (4 h, 250.00, y el ejercicio en que queda)' else x::text end
+      into b from jsonb_array_elements(v_k->'avisos') x where x->>'codigo' = 'otro_anio';
+    -- (c) un pago de 2 centavos entre tres obras: a una no le llega nada
+    perform pg_temp.c10_hora(4, 'p2', pg_temp.c10_w1(0), 'c10-prueba-a', 1);
+    perform pg_temp.c10_hora(5, 'p2', pg_temp.c10_w1(0), 'c10-prueba-b', 1);
+    perform pg_temp.c10_hora(6, 'p2', pg_temp.c10_w1(0), 'c10-prueba-h', 1);
+    m2 := pg_temp.c10_cargo('c10-t57-2', pg_temp.c10_d(), 0.02, 'Zelle payment to C10 PRUEBA ZZBETO 9572');
+    perform pg_temp.c10_alta('p2');
+    v_r := pg_temp.c10_aplicar(m2, pg_temp.c10_w1(0), pg_temp.c10_w1(6));
+    c := case when v_r->>'nota' like 'Repartido: $0.02 de Zzbeto C10 PRUEBA (%, 3 h) entre 2 obra(s); asiento %. A 1 grupo(s) de horas no les llegó ni un centavo (el pago es muy chico): no llevan línea. Quedaron aprobados 3 reporte(s) de horas.'
+                   and (select count(*) from asiento_lineas l where l.asiento_id = (v_r->'asiento'->>'id')::uuid) = 3
+              then 'la nota cuenta 2 obras y dice que a 1 grupo no le llegó nada' else v_r->>'nota' end;
+    -- (d) el núcleo, con todas las horas y con solo las aprobadas (las tres de arriba ya lo están; la cuarta, no)
+    perform pg_temp.c10_hora(7, 'p2', pg_temp.c10_w1(1), 'c10-prueba-i', 2);
+    perform pg_temp.c10_ser('dueno');
+    select format('%s reportes con todas las horas y %s con solo las aprobadas, y los dos suman %s',
+                  (select count(*) from fn_jornal_repartir(pg_temp.c10('p2')::uuid, pg_temp.c10_w1(0), pg_temp.c10_w1(6), 100.00)),
+                  (select count(*) from fn_jornal_repartir(pg_temp.c10('p2')::uuid, pg_temp.c10_w1(0), pg_temp.c10_w1(6), 100.00, true)),
+                  case when (select sum(r.monto) from fn_jornal_repartir(pg_temp.c10('p2')::uuid, pg_temp.c10_w1(0), pg_temp.c10_w1(6), 100.00) r) = 100.00
+                            and (select sum(r.monto) from fn_jornal_repartir(pg_temp.c10('p2')::uuid, pg_temp.c10_w1(0), pg_temp.c10_w1(6), 100.00, true) r) = 100.00
+                            and not exists (select 1 from fn_jornal_repartir(pg_temp.c10('p2')::uuid, pg_temp.c10_w1(0), pg_temp.c10_w1(6), 100.00, true) r
+                                             where r.proyecto_id = 'c10-prueba-i')
+                       then '100.00' else 'otra cosa' end)
+      into d;
+    -- (e) los textos
+    v_k := fn_margen_obra('c10-prueba-i');
+    select format('%s; %s; y %s',
+                  case when (select x->>'nota' from jsonb_array_elements(v_k->'conceptos') x where x->>'concepto' = 'mano_obra_estandar')
+                            like '%con la tarifa y el burden de hoy (si cambian, este número cambia). No está en el libro.'
+                         or (select x->>'nota' from jsonb_array_elements(v_k->'conceptos') x where x->>'concepto' = 'mano_obra_estandar') like 'Falta %'
+                       then 'la nota del estándar dice que va con la tarifa de hoy' else 'la nota del estándar NO lo dice' end,
+                  case when to_regclass('public.v_costo_por_obra') is null
+                         or (select not k.ok or k.detalle like '%en «Estados» salen dentro de «Subcontratos» y aquí como mano de obra real; el total de cada obra es el mismo.' from v_margen_control k where k.orden = 60)
+                       then 'el control dice dónde salen los jornales en Estados' else 'el control NO dice dónde salen los jornales' end,
+                  case when not exists (select 1 from (select k.detalle from v_jornal_control k union all select k.detalle from v_margen_control k) z
+                                         where z.detalle ~ '\m(fn_[a-z_]+|v_(jornal|margen|costo|contador)_[a-z_]+)\M')
+                       then 'ningún detalle nombra una función ni una vista'
+                       else 'algún detalle nombra una función o una vista: ' || (select string_agg(left(z.detalle, 120), ' · ')
+                                                                                     from (select k.detalle from v_jornal_control k union all select k.detalle from v_margen_control k) z
+                                                                                    where z.detalle ~ '\m(fn_[a-z_]+|v_(jornal|margen|costo|contador)_[a-z_]+)\M') end)
+      into e;
+    perform pg_temp.c10_ser('editor');
+    v_obt := format('las horas del mes anterior: %s | las de otro año: %s | un pago de 2 centavos entre tres obras: %s | el núcleo: %s | %s',
+                    coalesce(a, 'sin aviso [' || pg_temp.c10_avisos_todos(v_j) || ']'), coalesce(b, 'sin aviso'), c, d, e);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (57, 'LO MENOR, DICHO: las horas de otro mes —o de otro año— que el asiento (que entra el día del pago) se avisan con cuántas horas, cuánto y cuándo entra (otro_mes, otro_anio); la nota de aplicar no cuenta las obras a las que no les llegó ni un centavo; el núcleo reparte también por solo las horas aprobadas (lo que pedirá f11); la nota del estándar dice que va con la tarifa de hoy; el control dice dónde salen los jornales en «Estados»; y ningún detalle de los controles nombra una función ni una vista',
+    v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- ---------------------------------------------------------------------
 -- EL CIERRE DE LA SUITE
 -- ---------------------------------------------------------------------
--- 48. Nada queda: lo que c10 toca (y lo que sus pruebas sembraron) está
+-- 58. Nada queda: lo que c10 toca (y lo que sus pruebas sembraron) está
 --     como antes de la primera prueba.
 do $$
 declare
@@ -3223,11 +4133,11 @@ begin
     v_obt := case when pg_temp.c10_conteos() = pg_temp.c10('conteos') then 'igual que antes' else 'antes: ' || pg_temp.c10('conteos') || ' · ahora: ' || pg_temp.c10_conteos() end;
   exception when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (48, 'nada queda de las pruebas: la configuración, las personas, los repartos, los asientos, los movimientos y archivos del banco, las horas y sus aprobaciones, los perfiles y usuarios, las tarifas, las obras, los escenarios, los estimados, los períodos cerrados y las funciones, como antes',
+  insert into _pruebas values (58, 'nada queda de las pruebas: la configuración, las personas, los repartos, los asientos, los movimientos y archivos del banco, las horas y sus aprobaciones, los perfiles y usuarios, las tarifas, las obras, los escenarios, los estimados, los períodos cerrados y las funciones, como antes',
     'igual que antes', v_obt, v_obt = 'igual que antes');
 end $$;
 
--- 49. Con jornales aplicados, deshechos y vueltos a aplicar, NINGÚN control
+-- 59. Con jornales aplicados, deshechos y vueltos a aplicar, NINGÚN control
 --     de las otras capas pasa a rojo: la cadena y «permisos» de c2, los
 --     puentes (c3), el banco (c6), los estados (c4), los cuadres de la IA
 --     (c8, si está) y lo que detiene el cierre del mes (c9, si está). Se
@@ -3239,15 +4149,15 @@ declare
   v_esp text := 'al aplicar: ninguno | al deshacer: ninguno | al volver a aplicar con otras fechas: ninguno | con otro pago de las mismas '
                 'horas: ninguno';
 begin
-  if pg_temp.c10_omitir(49, 'ningún control de las otras capas pasa a rojo', v_esp) then return; end if;
+  if pg_temp.c10_omitir(59, 'ningún control de las otras capas pasa a rojo', v_esp) then return; end if;
   begin
     perform pg_temp.c10_sembrar();
     perform pg_temp.c10_hora(1, 'p1', pg_temp.c10_w1(0), 'c10-prueba-a', 8);
     perform pg_temp.c10_hora(2, 'p1', pg_temp.c10_w1(1), 'c10-prueba-b', 4);
     perform pg_temp.c10_hora(3, 'p1', pg_temp.c10_w1(2), 'c10-prueba-c', 2);
     perform pg_temp.c10_hora(4, 'p1', pg_temp.c10_w2(0), 'c10-prueba-h', 5);
-    v_mov := pg_temp.c10_cargo('c10-t49-1', pg_temp.c10_d(), 350.00, 'Zelle payment to C10 PRUEBA ZZANA 9491');
-    m2 := pg_temp.c10_cargo('c10-t49-2', pg_temp.c10_d(), 125.00, 'Zelle payment to C10 PRUEBA ZZANA 9492');
+    v_mov := pg_temp.c10_cargo('c10-t59-1', pg_temp.c10_d(), 350.00, 'Zelle payment to C10 PRUEBA ZZANA 9591');
+    m2 := pg_temp.c10_cargo('c10-t59-2', pg_temp.c10_d(), 125.00, 'Zelle payment to C10 PRUEBA ZZANA 9592');
     perform pg_temp.c10_alta('p1');
     s0 := pg_temp.c10_rojos();
     v_r := pg_temp.c10_aplicar(v_mov, pg_temp.c10_w1(0), pg_temp.c10_w1(6));
@@ -3266,11 +4176,11 @@ begin
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (49, 'con jornales aplicados, deshechos, vueltos a aplicar y un segundo pago de las mismas horas, NINGÚN control de las otras capas pasa a rojo: la cadena y «permisos» (c2), los puentes (c3), el banco (c6), los estados (c4), los cuadres de la IA (c8) y lo que detiene el cierre del mes (c9)',
+  insert into _pruebas values (59, 'con jornales aplicados, deshechos, vueltos a aplicar y un segundo pago de las mismas horas, NINGÚN control de las otras capas pasa a rojo: la cadena y «permisos» (c2), los puentes (c3), el banco (c6), los estados (c4), los cuadres de la IA (c8) y lo que detiene el cierre del mes (c9)',
     v_esp, v_obt || case when v_antes <> '' then ' (ya en rojo antes, con el pago en la Bandeja: ' || v_antes || ')' else '' end, v_obt = v_esp);
 end $$;
 
--- 50. El cierre de la suite: c2 (la cadena y «permisos»), c3, c6 y c4 como
+-- 60. El cierre de la suite: c2 (la cadena y «permisos»), c3, c6 y c4 como
 --     estaban con c10 pegado (lo que ya estaba en rojo antes se dice y no
 --     cuenta), c8 sin cuadres rojos, nada de c10 para anon o service_role ni
 --     SECURITY DEFINER; y fn_jornal_pegado responde con sus nueve filas y la
@@ -3307,7 +4217,7 @@ begin
                     'configuración %s fila (id %s)', v_c2, v_c3, v_c6, v_c4, v_c8, v_api, v_n, v_cfg, (select id from jornal_config limit 1));
   exception when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (50, 'el cierre de la suite: c2, c3, c6 y c4 en verde con c10 puesto (salvo lo que ya estaba en rojo antes), c8 sin cuadres rojos, nada de c10 para anon o service_role ni SECURITY DEFINER; fn_jornal_pegado responde y la configuración es una fila (pegar dos veces no la pisa: lo corre el banco)',
+  insert into _pruebas values (60, 'el cierre de la suite: c2, c3, c6 y c4 en verde con c10 puesto (salvo lo que ya estaba en rojo antes), c8 sin cuadres rojos, nada de c10 para anon o service_role ni SECURITY DEFINER; fn_jornal_pegado responde y la configuración es una fila (pegar dos veces no la pisa: lo corre el banco)',
     v_esp,
     v_obt || case when pg_temp.c10('rojos_c3') <> '' then ' (ya en rojo antes, en c3: ' || pg_temp.c10('rojos_c3') || ')' else '' end
           || case when pg_temp.c10('rojos_c4') <> '' then ' (ya en rojo antes, en c4: ' || pg_temp.c10('rojos_c4') || ')' else '' end

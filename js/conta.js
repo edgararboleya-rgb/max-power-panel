@@ -106,8 +106,11 @@
     cie: { sub: "cierre", periodo: null, estado: null, serie: 0, error: null, exportando: null, exportErr: {}, notas: {} },
     // (fase 9) el jornal en la Bandeja: si c10 está pegado, los pagos que reconoce (movimiento → su reparto normalizado, el
     // de v_jornal_pendientes o el que Edgar pidió con otras fechas), lo que dijo «No es mano de obra» (solo en memoria), las
-    // personas (para el alta desde un movimiento), la configuración, su control y el error si no contestó
-    jr: { instalado: false, pend: new Map(), no: new Set(), personas: null, cfg: null, control: null, err: null },
+    // personas (para el alta desde un movimiento), la configuración, su control y el error si no contestó; y (v2) las
+    // propuestas de la IA que un reparto dejó abiertas: las que dice la base, las que no se pudieron cerrar, si se están
+    // cerrando, si falta el código del teléfono, el error al mirarlas y «no reintentar en esta pintada» (se acaba de intentar)
+    jr: { instalado: false, pend: new Map(), no: new Set(), personas: null, cfg: null, control: null, err: null,
+      ia: { abiertas: [], mal: [], cerrando: false, sinCodigo: false, err: null }, saltarIA: false },
     // «Costo por obra»: qué apartado, qué obra abierta, lo que se baja a sus asientos, el buscador, el filtro y la serie
     obras: { sub: "obras", sel: null, bajar: null, q: "", filtro: "activas", serie: 0, piezas: [] }
   };
@@ -1459,7 +1462,7 @@
     main().innerHTML = cabPagina("Bandeja",
         filas.length ? `<b>${plural(filas.length, "movimiento del banco espera", "movimientos del banco esperan")}</b> tu respuesta por <span class="ct-num">${fmt(sumaMonto(filas))}</span>${viejos ? ` · <span class="bad-txt">${plural(viejos, "lleva", "llevan")} más de 30 días</span>` : ""}. Lo que no contestes no entra al libro; nada se inventa.` : "<b>La bandeja está vacía.</b> Todo lo que trajo el banco tiene su papel en el libro.",
         `<button type="button" class="accion secundaria" id="ct-casar">Casar otra vez</button>`) +
-      (S.ia ? franjaIAHTML(S.ia) : "") + franjaJornalHTML(filas) +
+      (S.ia ? franjaIAHTML(S.ia) : "") + (S.jr.instalado || S.jr.err ? `<div id="ct-jr-franja-env">${franjaJornalHTML(filas)}</div>` : "") +
       (filas.length ? `<section class="ct-card ct-herr" id="ct-bj-herr">
         <div class="ct-herr-fila">
           <label class="ct-campo ct-buscar">Buscar<input id="ct-bj-buscar" type="search" placeholder="Descripción, memo o monto" value="${esc(S.bj.q)}" autocomplete="off"></label>
@@ -1481,9 +1484,8 @@
     });
     // «Proponer ahora» y «Parar» (la franja: la cadena la repinta sola, sin repintar la página)
     wireFranja();
-    // (fase 9) «Ver solo la mano de obra» de su franja
-    const verJr = $("ct-jr-ver"); if (verJr) verJr.addEventListener("click", () => { S.bj.motivo = ""; S.bj.q = ""; S.filtroCuenta = null; S.bj.soloJr = !S.bj.soloJr; pintarBandeja(); });
-    main().querySelectorAll("#ct-jr-franja [data-ir]").forEach(x => x.addEventListener("click", () => ir(x.dataset.ir, x.dataset.irSub ? { sub: x.dataset.irSub } : {})));
+    // (fase 9) «Ver solo la mano de obra», «Ver los repartos» y «Reintentar ahora» de su franja
+    wireFranjaJr();
     // la barra solo filtra lo ya leído: no vuelve a la base y el buscador no pierde el foco
     const herr = (id, ev, f) => { const el = $(id); if (el) el.addEventListener(ev, f); };
     herr("ct-bj-buscar", "input", ev => { S.bj.q = ev.target.value; pintarListaBandeja(); });
@@ -1496,6 +1498,8 @@
       pintarListaBandeja();
     }));
     pintarListaBandeja();
+    // (fase 9, v2) lo de la IA que un reparto dejó abierto se vuelve a cerrar solo, sin esperar (la franja dice cómo va)
+    if ((S.jr.ia.abiertas || []).length) cerrarIAAbiertas(false);
     // (7c) LAS PROPUESTAS SALEN SOLAS: si algo nuevo espera y nada lo frena, la cadena arranca sin que Edgar toque nada
     if (S.ia && puedeSola() && nuevosIA().length) cadenaIA("sola");
   }
@@ -1826,10 +1830,45 @@
   //     movimiento: la base saca el patrón de su descripción).
   // Sin c10 pegado (las vistas no existen) la bandeja sigue como antes. Si
   // contesta con otro error, la franja lo dice en rojo: nunca se calla.
+  //
+  // LO QUE TRAJO LA BASE CORREGIDA (c10 v2), y cómo lo enseña la tarjeta:
+  //   · avisos nuevos, ninguno frena: horas_tardias (horas de una semana ya
+  //     repartida que no entraron en ningún reparto; trae las fechas que las
+  //     cogerían y la tarjeta ofrece «Repartir también esas horas», que vuelve
+  //     a pedir la propuesta con esas fechas), cubiertas_sin_aprobar,
+  //     no_parece_pago y co_parecidos (en ámbar: mírelo antes de aceptar), y
+  //     otro_mes / otro_anio (información: el costo queda en el mes del pago,
+  //     como en QuickBooks; sin ámbar, para que no parezca un problema);
+  //   · «aprueba»: cuántos reportes de horas aprobará el «Así es» (la huella
+  //     los cubre todos), dicho debajo de la tabla;
+  //   · LO DE LA IA QUE EL REPARTO DEJA ABIERTO (propuestas_ia: la pendiente,
+  //     que se rechaza, y la aprobada cuyo asiento ya no vive, que se
+  //     caduca con su motivo): tras el «Así es» se cierra cada una por la
+  //     función de borde «contador». Si la función no contesta, NO SE PIERDE:
+  //     la base las sigue dando (fn_jornal_ia, lo mismo que enseña su control,
+  //     el 80) y cada vez que se abre la Bandeja se vuelven a cerrar solas;
+  //     mientras sigan abiertas, la franja lo dice en llano, con «Reintentar».
+  //     El «Así es» no se frena por ellas (la base tampoco: la rutina de la
+  //     IA propone para casi todo Zelle);
+  //   · el alta de una persona devuelve sus avisos (el patrón no lleva su
+  //     nombre, o casa con pagos a varios destinatarios): salen en el aviso
+  //     de la app, en ámbar, sin los \m \M del patrón.
+  // Nada de lo que se enseña lleva nombres de funciones, de tablas ni códigos
+  // de error: los textos de la base ya vienen en llano, y un error que no es
+  // de sus reglas se dice con una frase nuestra (mensajeJr).
   // ============================================================
   const faltaC10 = err => !!err && (err.status === 404 || ["PGRST205", "PGRST202", "42P01", "42883"].includes(String(err.codigo || "")));
+  // un error de la base en llano: los de sus reglas (MX…, 22023, 42501) ya vienen escritos para Edgar; uno técnico, no se enseña tal cual
+  const mensajeJr = err => /^(MX\d+|22023|42501|MFA)$/.test(String((err && err.codigo) || "")) ? err.message
+    : "La base contestó con un error que no es de las reglas del jornal. Recarga la app; si sigue, avisa.";
+  // el patrón como lo lee una persona: sin las marcas de palabra (\m \M) que lleva la expresión
+  const sinMarcas = t => String(t || "").replace(/\\[mMyb]/g, "");
   // los avisos que no dejan aplicar (los demás son para saber, no frenan)
   const AVISOS_FRENAN = ["sin_horas", "falta_cuenta_sin_obra", "cuenta_mal", "posible_duplicado", "reparto_suelto"];
+  // los que no frenan pero piden mirar antes de aceptar (en ámbar), y los que son solo información (sin color)
+  const AVISOS_MIRAR = ["tarifa_lejos", "horas_tardias", "cubiertas_sin_aprobar", "no_parece_pago", "co_parecidos", "se_pisa", "devengo_estandar", "periodo_futuro", "mes_cerrado"];
+  const AVISOS_INFO = ["otro_mes", "otro_anio"];
+  const claseAviso = c => AVISOS_FRENAN.includes(c) || AVISOS_MIRAR.includes(c) ? "warn" : AVISOS_INFO.includes(c) ? "ct-jr-info" : "";
   const nHoras = v => { const n = num(v); return n == null || Number.isNaN(n) ? "—" : n.toLocaleString("en-US", { maximumFractionDigits: 2 }); };
   const horasTxt = v => `${nHoras(v)} h`;
   const cent2 = v => Math.round((num(v) || 0) * 100);
@@ -1864,19 +1903,42 @@
       horas: num(x.horas), reportes: num(x.reportes), obras: num(x.obras), lineas, sinObra,
       tarifaSale: num(x.tarifa_sale), avisos, puede: x.puede_aplicar === true, porQue: x.por_que || null, visto: x.visto || "",
       propuestaIA: x.propuesta_ia || null, incluir: !!(x.opciones && x.opciones.incluir_cubiertas), cubiertas: deVista ? null : (x.cubiertas || null),
+      // (v2) lo de la IA que el pago tiene abierto (la vista solo trae la pendiente) y cuántos reportes aprobará el «Así es»
+      propuestasIA: iaDelPago(x),
+      aprueba: !deVista && x.aprueba && x.aprueba.reportes != null ? num(x.aprueba.reportes) : null,
       corto: (frena || avisos[0] || {}).corto || null, nota: null
     };
+  }
+  // lo de la IA que un pago tiene abierto, con qué hacer con cada una (la vista y una base anterior a la v2 solo dan la pendiente)
+  function iaDelPago(x) {
+    if (Array.isArray(x.propuestas_ia)) return x.propuestas_ia.filter(p => p && p.propuesta_id);
+    return x.propuesta_ia ? [{ propuesta_id: x.propuesta_ia, clase: "pendiente", estado: "pendiente", resumen: null, que_hacer: "rechazar" }] : [];
+  }
+  // las propuestas de la IA que siguen abiertas en pagos ya repartidos (lo mismo que enseña el control del jornal, el 80).
+  // No frena la Bandeja: sin c8, sin esta lectura (una base anterior) o con un error, se dice en la franja y se sigue
+  async function leerIAAbiertas() {
+    try {
+      const r = await DB._rpc("fn_jornal_ia", {});
+      return { abiertas: Array.isArray(r) ? r.filter(p => p && p.propuesta_id) : [], err: null };
+    } catch (err) {
+      if (esFalloDeRed(err)) throw err;
+      return { abiertas: [], err: faltaC10(err) ? null : err };
+    }
   }
   // los pagos que la base reconoce, su configuración y su control (sin c10: nada; otro error: la franja lo dice en rojo)
   async function leerJornalBandeja() {
     S.jr.err = null;
     try {
-      const [filas, cfg, ctl] = await Promise.all([
+      const [filas, cfg, ctl, ia] = await Promise.all([
         DB._leer("v_jornal_pendientes?select=*&order=fecha.asc,movimiento_id.asc"),
         DB._leer("jornal_config?select=*"),
-        DB._leer("v_jornal_control?select=*&order=orden.asc")
+        DB._leer("v_jornal_control?select=*&order=orden.asc"),
+        leerIAAbiertas()
       ]);
       S.jr.instalado = true; S.jr.cfg = (cfg || [])[0] || null; S.jr.control = Array.isArray(ctl) ? ctl : [];
+      // (las que no se pudieron cerrar en esta sesión siguen marcadas mientras la base las siga dando)
+      const malAntes = new Set((S.jr.ia.mal || []).map(p => p.propuesta_id));
+      S.jr.ia = { abiertas: ia.abiertas, mal: ia.abiertas.filter(p => malAntes.has(p.propuesta_id)), cerrando: false, sinCodigo: false, err: ia.err };
       const antes = S.jr.pend; S.jr.pend = new Map();
       // lo que Edgar pidió con otras fechas se queda mientras el pago siga esperando (su huella la vuelve a mirar la base al aplicar)
       for (const f of filas) { const prev = antes.get(f.movimiento_id); S.jr.pend.set(f.movimiento_id, prev && prev.mano ? prev : normalJr(f, true)); }
@@ -1884,21 +1946,86 @@
     } catch (err) {
       if (esFalloDeRed(err)) throw err;
       S.jr.instalado = false; S.jr.pend = new Map(); S.jr.control = null;
+      S.jr.ia = { abiertas: [], mal: [], cerrando: false, sinCodigo: false, err: null };
       if (!faltaC10(err)) S.jr.err = err;
     }
   }
-  // La franja de la mano de obra, arriba de la bandeja: cuántos pagos esperan su reparto, sus cuadres en rojo, o que no contestó
+  // La franja de la mano de obra, arriba de la bandeja: cuántos pagos esperan su reparto, sus cuadres en rojo, lo de la IA que
+  // quedó abierto en pagos ya repartidos, o que no contestó. Vive en #ct-jr-franja-env para repintarse sola (refrescarFranjaJr)
   function franjaJornalHTML(filas) {
-    if (S.jr.err) return `<section class="ct-card ct-jr-franja" role="alert"><p class="ct-aviso bad">El reparto de la mano de obra no contestó: ${esc(S.jr.err.message)}. Hasta que conteste, los pagos a la cuadrilla salen como movimientos normales: si son por horas, no los clasifiques a mano todavía.</p></section>`;
+    if (S.jr.err) return `<section class="ct-card ct-jr-franja" id="ct-jr-franja" role="alert"><p class="ct-aviso bad">El reparto de la mano de obra no contestó: ${esc(mensajeJr(S.jr.err))} Hasta que conteste, los pagos a la cuadrilla salen como movimientos normales: si son por horas, no los clasifiques a mano todavía.</p></section>`;
     if (!S.jr.instalado) return "";
     const suyos = (filas || []).filter(f => jrDe(f)), rojos = (S.jr.control || []).filter(f => f.nivel === "cuadre" && f.ok !== true);
-    if (!suyos.length && !rojos.length && !S.bj.soloJr) return "";
+    const ia = iaFranjaHTML();
+    if (!suyos.length && !rojos.length && !ia && !S.bj.soloJr) return "";
     const total = suyos.reduce((s, f) => s + Math.abs(num(f.monto) || 0), 0);
     return `<section class="ct-card ct-jr-franja" id="ct-jr-franja">
       <div class="ct-jr-franja-fila"><p>${suyos.length ? `<b>${plural(suyos.length, "pago de mano de obra espera", "pagos de mano de obra esperan")}</b> su reparto por horas · <span class="ct-num">${fmt(total)}</span>` : "Ningún pago de mano de obra espera su reparto."}</p>
         ${suyos.length || S.bj.soloJr ? `<button type="button" class="accion secundaria chica" id="ct-jr-ver" aria-pressed="${S.bj.soloJr ? "true" : "false"}">${S.bj.soloJr ? "Ver todos" : "Ver solo esos"}</button>` : ""}</div>
       ${rojos.map(f => `<p class="ct-aviso bad">${esc(cap(String(f.cuadre || "").replace(/^jornal: /, "")))}: ${esc(f.detalle || "no cuadra")} <button type="button" class="ct-jr-link" data-ir="obras" data-ir-sub="repartos">Ver los repartos</button></p>`).join("")}
+      ${ia}
     </section>`;
+  }
+  // Lo de la IA que quedó abierto en pagos ya repartidos: cerrándose, sin cerrar (con «Reintentar»), sin el código, o sin poder mirarlo
+  function iaFranjaHTML() {
+    const x = S.jr.ia || {};
+    if (x.err) return `<p class="ct-aviso warn" id="ct-jr-ia">No se pudo mirar si quedaron propuestas de la IA abiertas en pagos ya repartidos: ${esc(mensajeJr(x.err))} No frena nada; se vuelve a mirar al abrir la Bandeja.</p>`;
+    const n = (x.abiertas || []).length;
+    if (!n) return "";
+    const cuales = x.abiertas.map(p => p.resumen).filter(Boolean);
+    const prop = cuales.length ? ` (proponía${n === 1 ? "" : "n"} ${esc(cuales.join("; "))})` : "";
+    // (sin intentarlo todavía en esta pintada: se están cerrando solas ahora mismo)
+    if (x.cerrando || (!(x.mal || []).length && !x.sinCodigo)) return `<p class="ct-aviso ct-espera" id="ct-jr-ia" role="status">Cerrando ${plural(n, "propuesta de la IA que quedó abierta", "propuestas de la IA que quedaron abiertas")} en pagos ya repartidos por horas…</p>`;
+    const que = `${plural(n, "propuesta de la IA sigue abierta", "propuestas de la IA siguen abiertas")} en pagos ya repartidos por horas${prop}`;
+    const luego = "No frenan la Bandeja ni el reparto, pero mientras sigan abiertas pueden frenar el cierre del mes.";
+    if (x.sinCodigo) return `<p class="ct-aviso warn" id="ct-jr-ia">${que}. Para cerrarlas, entra con el código del teléfono (Conexiones y seguridad): se cierran solas al abrir la Bandeja. ${luego}</p>`;
+    return `<p class="ct-aviso warn" id="ct-jr-ia">${que}: la IA contable no contestó al cerrarlas. Se vuelve a intentar solo cada vez que abres la Bandeja. ${luego}
+      <button type="button" class="ct-jr-link" id="ct-jr-ia-reintentar">Reintentar ahora</button></p>`;
+  }
+  // los botones de la franja (al pintar la Bandeja y al repintar solo la franja)
+  function wireFranjaJr() {
+    const verJr = $("ct-jr-ver"); if (verJr) verJr.addEventListener("click", () => { S.bj.motivo = ""; S.bj.q = ""; S.filtroCuenta = null; S.bj.soloJr = !S.bj.soloJr; pintarBandeja(); });
+    main().querySelectorAll("#ct-jr-franja [data-ir]").forEach(x => x.addEventListener("click", () => ir(x.dataset.ir, x.dataset.irSub ? { sub: x.dataset.irSub } : {})));
+    const re = $("ct-jr-ia-reintentar"); if (re) re.addEventListener("click", () => cerrarIAAbiertas(true));
+  }
+  function refrescarFranjaJr() {
+    const env = $("ct-jr-franja-env"); if (!env || S.pagina !== "bandeja") return;
+    env.innerHTML = franjaJornalHTML(S.bandeja); wireFranjaJr();
+  }
+  // Cerrar lo de la IA por la función de borde «contador» (c10 no escribe en c8): la pendiente se rechaza («No es eso») y la
+  // aprobada cuyo asiento ya no vive se caduca, las dos con su motivo. «Ya está rechazada» (o caducada) cuenta como cerrada.
+  // Devuelve las que no se pudieron cerrar, con su error
+  const MOTIVO_IA = "Es mano de obra: se repartió por sus horas";
+  async function cerrarIA(lista) {
+    const mal = [];
+    for (const p of lista || []) {
+      if (!p || !p.propuesta_id) continue;
+      const accion = p.que_hacer === "caducar" || p.que_hacer === "rechazar" ? p.que_hacer : p.clase === "pendiente" ? "rechazar" : "caducar";
+      try { await DB._funcion("contador", { accion, propuesta: p.propuesta_id, motivo: MOTIVO_IA }, 30000); }
+      catch (err) {
+        if (err.codigo === "MX008" && /ya está/i.test(String(err.message || ""))) continue;
+        mal.push({ ...p, err });
+      }
+    }
+    return mal;
+  }
+  // AL ABRIR LA BANDEJA: lo que la base dice que sigue abierto se vuelve a cerrar solo (con el código del teléfono, que la función
+  // pide). `forzar`: «Reintentar ahora», también justo después de un «Así es» que no pudo cerrarlas
+  async function cerrarIAAbiertas(forzar) {
+    const x = S.jr.ia;
+    if (!S.jr.instalado || !x || x.cerrando || !(x.abiertas || []).length) return;
+    if (S.jr.saltarIA && !forzar) { S.jr.saltarIA = false; x.mal = x.abiertas.slice(); refrescarFranjaJr(); return; }
+    S.jr.saltarIA = false;
+    if (!mfaActivo()) { x.sinCodigo = true; refrescarFranjaJr(); return; }
+    if (!navigator.onLine) { x.mal = x.abiertas.slice(); refrescarFranjaJr(); return; }
+    x.cerrando = true; x.sinCodigo = false; refrescarFranjaJr();
+    const lista = x.abiertas.map(p => ({ ...p, que_hacer: p.clase === "pendiente" ? "rechazar" : "caducar" }));
+    const mal = await cerrarIA(lista);
+    const cerradas = lista.length - mal.length;
+    S.jr.ia = { abiertas: mal.map(p => { const { err, ...q } = p; return q; }), mal: mal.map(p => { const { err, ...q } = p; return q; }), cerrando: false, sinCodigo: false, err: null };
+    if (cerradas) S.hooks.avisar(`${plural(cerradas, "propuesta de la IA que había quedado abierta", "propuestas de la IA que habían quedado abiertas")} en pagos ya repartidos: ${cerradas === 1 ? "cerrada" : "cerradas"}`);
+    else if (forzar) S.hooks.avisar("La IA contable sigue sin contestar: las propuestas siguen abiertas. Se vuelve a intentar al abrir la Bandeja.", true);
+    refrescarFranjaJr();
   }
 
   // ---------- la tarjeta ----------
@@ -1914,7 +2041,7 @@
     const falta = !!(jr.sinObra && jr.sinObra.falta) || jr.avisos.some(a => a.codigo === "falta_cuenta_sin_obra");
     const total = jr.lineas.reduce((s, l) => s + cent2(l.monto), 0) + (jr.sinObra ? cent2(jr.sinObra.monto) : 0);
     const cuadra = total === Math.round(jr.monto * 100);
-    const filasT = jr.lineas.map(l => `<tr><td class="ct-jr-obra">${esc(l.obra || l.proyecto_id || "")}${l.co ? `<small>${esc(l.co)}</small>` : ""}${["completado", "cancelado"].includes(l.obra_estado) ? ` ${pill(l.obra_estado === "cancelado" ? "cancelada" : "terminada", "warn")}` : ""}</td><td class="r ct-num" data-col="Horas">${horasTxt(l.horas)}</td><td class="r ct-num" data-col="Dólares">${fmt(l.monto)}</td></tr>`).join("") +
+    const filasT = jr.lineas.map(l => `<tr><td class="ct-jr-obra">${esc(l.obra || l.proyecto_id || "")}${l.co ? `<small>${esc(l.co)}</small>` : ""}${["completado", "cancelado", "no_aprobado"].includes(l.obra_estado) ? ` ${pill(l.obra_estado === "completado" ? "terminada" : l.obra_estado === "no_aprobado" ? "no aprobada" : "cancelada", "warn")}` : ""}</td><td class="r ct-num" data-col="Horas">${horasTxt(l.horas)}</td><td class="r ct-num" data-col="Dólares">${fmt(l.monto)}</td></tr>`).join("") +
       (jr.sinObra ? `<tr class="ct-jr-sinobra"><td class="ct-jr-obra">Sin obra<small>${jr.sinObra.cuenta ? `va a ${esc(jr.sinObra.cuenta)} ${esc(nombreCuenta(jr.sinObra.cuenta) === jr.sinObra.cuenta ? "" : nombreCuenta(jr.sinObra.cuenta))}` : "falta decir a qué cuenta va"}</small></td><td class="r ct-num" data-col="Horas">${horasTxt(jr.sinObra.horas)}</td><td class="r ct-num" data-col="Dólares">${fmt(jr.sinObra.monto)}</td></tr>` : "");
     const tabla = jr.lineas.length || jr.sinObra ? `<div class="ct-jr-tabla-env"><table class="ct-jr-tabla"><thead><tr><th>Obra</th><th class="r">Horas</th><th class="r">Dólares</th></tr></thead>
         <tbody>${filasT}</tbody>
@@ -1936,8 +2063,10 @@
       </form>
       ${sinHoras ? `<p class="ct-jr-vacio">Sin horas reportadas ${esc(jr.texto || "en esas fechas")}: elige otras fechas arriba o, si este pago no es por horas, «No es mano de obra».</p>` : tabla}
       ${sinHoras ? "" : tarifa}
-      ${jr.avisos.length ? `<ul class="ct-jr-avisos">${jr.avisos.map(a => `<li class="ct-aviso ${AVISOS_FRENAN.includes(a.codigo) ? "warn" : a.codigo === "tarifa_lejos" ? "warn" : ""}" data-aviso="${esc(a.codigo)}">${esc(a.texto || a.corto)}</li>`).join("")}</ul>` : ""}
+      ${jr.avisos.length ? `<ul class="ct-jr-avisos">${jr.avisos.map(a => `<li class="ct-aviso ${claseAviso(a.codigo)}" data-aviso="${esc(a.codigo)}">${esc(a.texto || a.corto)}${tardiasBtn(a, jr)}</li>`).join("")}</ul>` : ""}
       ${porQue}
+      ${!sinHoras && num(jr.aprueba) > 0 ? `<p class="ct-nota ct-jr-aprueba">Al aceptar quedan aprobados ${plural(jr.aprueba, "reporte de horas", "reportes de horas")} de esas fechas, como están hoy.</p>` : ""}
+      ${jr.propuestasIA.length ? `<p class="ct-nota ct-jr-iaprop">La IA contable tenía ${jr.propuestasIA.length === 1 ? "una propuesta" : `${jr.propuestasIA.length} propuestas`} para este pago${jr.propuestasIA.some(p => p.resumen) ? ` (${esc(jr.propuestasIA.map(p => p.resumen).filter(Boolean).join("; "))})` : ""}: al aceptar el reparto se ${jr.propuestasIA.length === 1 ? "cierra sola" : "cierran solas"}.</p>` : ""}
       ${hayCubiertas ? `<label class="ct-casilla ct-jr-cubiertas"><input type="checkbox" data-jr-cubiertas${jr.incluir ? " checked" : ""}> Es otro pago de las mismas horas: repartirlo también por las que ya tienen pago</label>` : ""}
       ${falta ? `<form class="ct-jr-cuenta" data-jr-cuenta novalidate><p class="ct-form-t">¿A qué cuenta va la mano de obra sin obra?</p>
           <p class="ct-nota">Se dice una vez y vale para todos los pagos. Mientras el CPA no decida una cuenta propia, lo provisional es 7900 Otros gastos; o ponles su obra a esas horas en Horas y vuelve a mirar.</p>
@@ -1953,9 +2082,18 @@
       <div class="ct-jr-res"></div>
     </div>`;
   }
-  // las cuentas que admite lo sin obra (la base vuelve a validar): costo o gasto sin obra obligatoria, nunca nómina (50xx) ni sueldo
+  // «Repartir también esas horas»: el aviso de horas tardías trae las fechas que las cogerían; con las de la tarjeta, un solo rango
+  function tardiasBtn(a, jr) {
+    if (a.codigo !== "horas_tardias" || !a.desde || !a.hasta) return "";
+    const de = [String(a.desde).slice(0, 10), jr.desde].sort()[0], hasta = [String(a.hasta).slice(0, 10), jr.hasta].sort()[1];
+    if (de === jr.desde && hasta === jr.hasta) return "";
+    return ` <button type="button" class="ct-jr-link" data-jr-tardias data-desde="${esc(de)}" data-hasta="${esc(hasta)}">Repartir también esas horas (${esc(rangoCorto(de, hasta))})</button>`;
+  }
+  // las cuentas que admite lo sin obra (la base vuelve a validar): costo o gasto sin obra obligatoria, nunca nómina (50xx) ni
+  // sueldo, ni las que alimenta otra parte del libro (la nómina, el banco, el cierre, los impuestos: las mismas que la base rechaza)
+  const NO_SIN_OBRA = ["6000", "6005", "6010", "6130", "6950", "6980", "7100", "9000"];
   function opcionesSinObra(sel) {
-    return (S.cuentas || []).filter(c => ["costo", "gasto", "otro_gasto"].includes(c.tipo) && c.regla_obra !== "obligatoria" && !/^50/.test(c.codigo) && !["6000", "6005"].includes(c.codigo))
+    return (S.cuentas || []).filter(c => ["costo", "gasto", "otro_gasto"].includes(c.tipo) && c.regla_obra !== "obligatoria" && !/^50/.test(c.codigo) && !NO_SIN_OBRA.includes(c.codigo))
       .map(c => `<option value="${esc(c.codigo)}"${c.codigo === sel ? " selected" : ""}>${esc(c.codigo)} · ${esc(c.nombre)}${c.codigo === "7900" ? " (lo provisional)" : ""}</option>`).join("");
   }
   // repintar solo esta fila (desplegada), con lo que haya ahora en S.jr
@@ -1971,7 +2109,7 @@
     const r = resJr(card);
     if (esFalloDeRed(err) || !navigator.onLine) { r.innerHTML = `<p class="ct-aviso bad">Sin señal: no se hizo nada. Vuelve a intentarlo con señal.</p>`; return; }
     if (err.codigo === "MFA" || err.mfa) { r.innerHTML = `<p class="ct-aviso warn">Falta el código del teléfono: sal y vuelve a entrar con él.</p>`; return; }
-    r.innerHTML = `<p class="ct-aviso ${/^(MX|22023|42501)/.test(String(err.codigo || "")) ? "warn" : "bad"} ct-error">${esc(err.message)}</p>`;
+    r.innerHTML = `<p class="ct-aviso ${/^(MX|22023|42501)/.test(String(err.codigo || "")) ? "warn" : "bad"} ct-error">${esc(mensajeJr(err))}</p>`;
   }
   function wireJornal(card, m) {
     const bl = card.querySelector("[data-jr-bloque]"); if (!bl) return;
@@ -1993,6 +2131,9 @@
     });
     const cub = bl.querySelector("[data-jr-cubiertas]");
     if (cub) cub.addEventListener("change", () => recalcJr(card, m, jr.desde, jr.hasta, cub.checked ? { incluir_cubiertas: true } : {}));
+    // (v2) las horas tardías de una semana ya repartida: la propuesta otra vez, con las fechas que las cogen
+    bl.querySelectorAll("[data-jr-tardias]").forEach(b => b.addEventListener("click", () => recalcJr(card, m, b.dataset.desde, b.dataset.hasta, opc(),
+      "Con las horas que quedaron fuera de su semana: míralo y, si este pago también las cubre, acepta.")));
     const fc = bl.querySelector("[data-jr-cuenta]");
     if (fc) fc.addEventListener("submit", async ev => {
       ev.preventDefault();
@@ -2067,16 +2208,18 @@
       }
       errorJr(card, err); return;
     }
+    // lo de la IA (c8) que este pago tenía abierto (la pendiente se rechaza; la aprobada cuyo asiento ya no vive se caduca), por su
+    // función: c8 no lo cierra sola. Lo que no se pueda cerrar no se pierde: la base lo sigue dando y la Bandeja lo reintenta.
+    // (la tarjeta sigue ocupada mientras tanto: el reparto ya está hecho y no hay nada más que tocar en ella)
+    const iaPago = iaDelPago(r || {});
+    if (iaPago.length) resJr(card).innerHTML = `<p class="ct-aviso ct-espera" role="status">Repartido. Cerrando lo que la IA contable tenía para este pago…</p>`;
+    const mal = await cerrarIA(iaPago);
     S.ocupado = false;
-    // la IA (c8) tenía una propuesta abierta para este pago: se rechaza por su función (c8 no la cierra sola)
-    let iaAbierta = false;
-    if (r && r.propuesta_ia) {
-      try { await DB._funcion("contador", { accion: "rechazar", propuesta: r.propuesta_ia, motivo: "Es mano de obra: se repartió por sus horas" }, 30000); }
-      catch (e) { iaAbierta = true; }
-    }
     const asiento = r && r.asiento ? r.asiento.numero : "";
-    S.hooks.avisar(`${r && r.nota ? r.nota : `Repartido${asiento ? ` · asiento ${asiento}` : ""}`}${r && r.tardio ? ` ${r.tardio}` : ""}${iaAbierta ? " · Ojo: la propuesta de la IA para este pago sigue abierta; recházala en la Bandeja." : ""}`, iaAbierta);
+    S.hooks.avisar(`${r && r.nota ? r.nota : `Repartido${asiento ? ` · asiento ${asiento}` : ""}`}${r && r.tardio ? ` ${r.tardio}` : ""}${mal.length ? ` Ojo: ${mal.length === 1 ? "la propuesta de la IA para este pago quedó abierta" : `${mal.length} propuestas de la IA para este pago quedaron abiertas`} (la IA contable no contestó). Se vuelve a intentar solo cada vez que abras la Bandeja; mientras siga abierta, puede frenar el cierre del mes.` : ""}`, mal.length > 0);
     S.jr.pend.delete(m.movimiento_id); S.saldos = null;
+    // (se acaba de intentar: esta pintada no lo repite sola; la franja lo dice con «Reintentar ahora»)
+    if (mal.length) { S.jr.saltarIA = true; S.jr.ia.mal = mal.map(p => { const { err, ...q } = p; return q; }); }
     await pintarBandeja();
   }
 
@@ -2098,7 +2241,7 @@
       const f = card.querySelector(".ct-form"); f.hidden = false;
       f.innerHTML = `<p class="ct-aviso" role="status">Buscando la cuadrilla…</p>`;
       try { S.jr.personas = await DB._leer("v_jornal_personas?select=*&order=nombre.asc"); }
-      catch (err) { mostrarErrorForma(card, esFalloDeRed(err) ? "Sin señal: no se pudo leer la cuadrilla." : err.message); return; }
+      catch (err) { mostrarErrorForma(card, esFalloDeRed(err) ? "Sin señal: no se pudo leer la cuadrilla." : mensajeJr(err)); return; }
       const sin = S.jr.personas.filter(p => !p.registrada), bajas = S.jr.personas.filter(p => p.registrada && !p.activa);
       if (!sin.length && !bajas.length) {
         f.innerHTML = `<p class="ct-aviso warn">Toda la cuadrilla con horas en los últimos 90 días ya cobra por horas (o no hay nadie más). Si este pago es de alguien de ellos, el banco lo escribe distinto: cambia su patrón en Costo por obra → Personas.</p>
@@ -2115,15 +2258,23 @@
       });
     });
   }
+  // Lo que dice la base al dar de alta o cambiar a alguien, para el aviso de la app: su nota sin las marcas del patrón y, si trae
+  // avisos (el patrón no lleva su nombre, o casa con pagos a varios destinatarios), en ámbar para que se lea
+  function notaPersona(r, otro) {
+    const avisos = r && Array.isArray(r.avisos) ? r.avisos.filter(Boolean) : [];
+    let t = r && r.nota_alta ? sinMarcas(r.nota_alta) : otro;
+    if (avisos.length && !/ Ojo: /.test(t)) t += " Ojo: " + avisos.map(sinMarcas).join(" ");
+    return [t, avisos.length > 0];
+  }
   async function accionAlta(card, p) {
     if (S.ocupado) return;
     if (!navigator.onLine) { mostrarErrorForma(card, "Sin señal: no se dio de alta."); return; }
     S.ocupado = true; card.classList.add("ocupado");
     let r;
     try { r = await DB._rpc("fn_jornal_persona", { p }); }
-    catch (err) { S.ocupado = false; card.classList.remove("ocupado"); mostrarErrorForma(card, esFalloDeRed(err) ? "Sin señal: no se dio de alta." : err.message); return; }
+    catch (err) { S.ocupado = false; card.classList.remove("ocupado"); mostrarErrorForma(card, esFalloDeRed(err) ? "Sin señal: no se dio de alta." : mensajeJr(err)); return; }
     S.ocupado = false;
-    S.hooks.avisar(r && r.nota_alta ? r.nota_alta : `${(r && r.nombre) || "La persona"}: sus pagos se reparten por sus horas`);
+    S.hooks.avisar(...notaPersona(r, `${(r && r.nombre) || "La persona"}: sus pagos se reparten por sus horas`));
     S.jr.no.delete(p.movimiento_id);
     await pintarBandeja();
   }
@@ -2144,10 +2295,12 @@
   }
   function atenderJornal(j) {
     if (!j) return [];
-    if (j.err) return [{ txt: "La mano de obra y el costo por obra no contestaron: los pagos a la cuadrilla no se pueden repartir hasta que contesten.", det: j.err.message, ir: "obras" }];
+    if (j.err) return [{ txt: "La mano de obra y el costo por obra no contestaron: los pagos a la cuadrilla no se pueden repartir hasta que contesten.", det: mensajeJr(j.err), ir: "obras" }];
     const a = [];
     if (j.pend.length) a.push({ txt: `${plural(j.pend.length, "pago de mano de obra espera", "pagos de mano de obra esperan")} su reparto por horas (${fmt(j.pend.reduce((s, f) => s + Math.abs(num(f.monto) || 0), 0))}): en la Bandeja, cada uno con su semana y sus obras.`, ir: "bandeja" });
-    for (const f of j.jc) if (f.ok !== true) a.push({ txt: `Mano de obra: ${String(f.cuadre || "").replace(/^jornal: /, "")}${f.nivel === "cuadre" ? " (no cuadra)" : ""}.`, det: f.detalle, ir: "obras", sub: "repartos" });
+    // (v2) el 80 —lo de la IA abierto en un pago ya repartido— se arregla abriendo la Bandeja, que lo cierra sola; el 70 —un pago de
+    // alguien del jornal resuelto por otro camino— también empieza en la Bandeja; lo demás, en los repartos
+    for (const f of j.jc) if (f.ok !== true) a.push({ txt: `Mano de obra: ${String(f.cuadre || "").replace(/^jornal: /, "")}${f.nivel === "cuadre" ? " (no cuadra)" : ""}.`, det: f.detalle, ...(Number(f.orden) === 80 ? { ir: "bandeja" } : { ir: "obras", sub: "repartos" }) });
     for (const f of j.mc) if (f.ok !== true) a.push({ txt: `Costo por obra: ${String(f.cuadre || "").replace(/^margen: /, "")}${f.nivel === "cuadre" ? " (no cuadra: la página no pinta cifras hasta que cuadre)" : ""}.`, det: f.detalle, ir: "obras", sub: "obras" });
     return a;
   }
@@ -4690,6 +4843,14 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
   // rojo y la página no pinta números (el rojo con el detalle); sus avisos
   // salen arriba. Sin c10 pegado, la página lo dice en llano. Ninguna cifra
   // se calcula aquí: vienen listas de la base.
+  // UN ESTIMADO A MEDIAS NO SE COMPARA (c10 v2): si a la obra le falta una
+  // parte del estimado y ya lleva real de esa parte, la base deja vacíos el
+  // costo estimado, el margen estimado y la diferencia, con estimado_completo
+  // = false y estimado_falta en llano. La lista no da entonces «se pasa» ni
+  // «dentro»: dice «sin estimado» o «estimado incompleto» y qué falta; la obra
+  // lo pone arriba con los avisos. Si lo que falta es el estándar (el burden
+  // o una tarifa), «falta el estándar». Sin nada facturado en el libro, el
+  // margen no tiene % (sería sobre cero): «sin facturar en el libro».
   // ============================================================
   const SUBS_OB = { obras: "Obras", repartos: "Repartos", personas: "Personas" };
   const obCuerpo = () => $("ct-ob-cuerpo");
@@ -4729,7 +4890,7 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
   // FALLA RUIDOSA: los cuadres del margen en verde antes de pintar una cifra (sus avisos se devuelven para enseñarlos)
   async function controlMargen() {
     const ctl = await DB._leer("v_margen_control?select=*&order=orden.asc");
-    if (!Array.isArray(ctl) || !ctl.length) throw errorControl("El control del costo por obra no devolvió nada", [{ vista: "control del margen", filas: 0, esperadas: "6", detalle: "Vacío: la sesión no es la del dueño (el equipo no ve nada de esto) o a la base le falta c10." }]);
+    if (!Array.isArray(ctl) || !ctl.length) throw errorControl("El control del costo por obra no devolvió nada", [{ vista: "control del margen", filas: 0, esperadas: "6", detalle: "Vacío: la sesión no es la del dueño (el equipo no ve nada de esto) o a la base le falta el costo por obra." }]);
     const rojos = ctl.filter(f => f.nivel === "cuadre" && f.ok !== true);
     if (rojos.length) throw errorControl("El costo por obra no cuadra", rojos.map(f => ({ vista: cap(String(f.cuadre || "").replace(/^margen: /, "")), filas: null, esperadas: null, detalle: f.detalle })));
     return ctl.filter(f => f.ok !== true);
@@ -4747,7 +4908,7 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     catch (err) {
       apagados.forEach(b => { b.disabled = false; });
       S.ocupado = false;
-      mostrarErrorForma(card, esFalloDeRed(err) ? "Sin señal: no se guardó. Vuelve a intentarlo con señal." : err.codigo === "MFA" ? "Falta el código del teléfono: sal y vuelve a entrar con él." : err.message);
+      mostrarErrorForma(card, esFalloDeRed(err) ? "Sin señal: no se guardó. Vuelve a intentarlo con señal." : err.codigo === "MFA" ? "Falta el código del teléfono: sal y vuelve a entrar con él." : mensajeJr(err));
       return;
     }
     S.ocupado = false;
@@ -4770,7 +4931,7 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
         cuentas()
       ]);
       if (!vivaOb(mia)) return;
-      if (!cfg) throw errorControl("La configuración del jornal no apareció", [{ vista: "configuración", filas: 0, esperadas: 1, detalle: "c10 siembra su fila al pegarse: si no está, la sesión no es la del dueño o c10 no se pegó entero." }]);
+      if (!cfg) throw errorControl("La configuración del jornal no apareció", [{ vista: "configuración", filas: 0, esperadas: 1, detalle: "La base pone esa fila al instalar el costo por obra: si no está, la sesión no es la del dueño o no se instaló entero." }]);
     } catch (err) { if (!vivaOb(mia)) return; return errorOb(err, pintarObras); }
     S.jr.cfg = cfg;
     const act = filas.filter(o => !terminada(o)), ter = filas.filter(terminada);
@@ -4802,21 +4963,36 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     }));
     pintaFilas();
   }
-  // la señal contra el estimado: lo que sobra o lo que se pasa (costo real + estándar contra el costo estimado)
+  // LA SEÑAL CONTRA EL ESTIMADO (costo real + estándar contra el costo estimado), solo cuando se comparan cosas iguales:
+  //   · estimado_completo = false (la base v2): ningún veredicto. «sin estimado» si no hay nada estimado; si no, «estimado
+  //     incompleto», y debajo QUÉ FALTA (de estimado_falta), en una frase: una parte estimada contra un real completo daba «se
+  //     pasa» o «dentro» falsos;
+  //   · costo_estimado sin diferencia: falta el estándar (el burden o la tarifa de alguien) y no hay con qué comparar;
+  //   · si no, lo que sobra o lo que se pasa.
+  // (una base anterior a la v2 no trae estimado_completo: sin costo_estimado, «sin estimado», como antes)
+  const queFalta = t => { const s = String(t || "").split(/\.\s/)[0].replace(/^(No hay estimado|Estimado incompleto)\s*:\s*/i, "").replace(/\.$/, "").trim(); return s ? s.charAt(0).toUpperCase() + s.slice(1) + "." : ""; };
   function senalOb(o) {
-    if (num(o.costo_estimado) == null) return pill("sin estimado");
-    const d = num(o.diferencia), usado = num(o.costo_estimado) ? (num(o.costo_con_estandar) || 0) / num(o.costo_estimado) : 0;
+    const falta = String(o.estimado_falta || "");
+    if (o.estimado_completo === false || num(o.costo_estimado) == null) {
+      const nada = o.estimado_completo !== false || !falta || /^No hay estimado/i.test(falta);
+      return nada ? `${pill("sin estimado")}${falta ? `<small>${esc(queFalta(falta))}</small>` : ""}` : `${pill("estimado incompleto", "warn")}<small>${esc(queFalta(falta))}</small>`;
+    }
+    const d = num(o.diferencia);
+    if (d == null) return `${pill("falta el estándar", "warn")}<small>${esc(o.mano_obra_estandar_falta || "Sin el estándar de las horas sin pago no hay con qué comparar.")}</small>`;
+    const usado = num(o.costo_estimado) ? (num(o.costo_con_estandar) || 0) / num(o.costo_estimado) : 0;
     if (d < 0) return pill(`se pasa ${fmtAbs(d)}`, "bad");
     if (usado > 0.9) return pill(`cerca: sobran ${fmt(d)}`, "warn");
     return pill(`dentro: sobran ${fmt(d)}`, "ok");
   }
+  // sin nada facturado en el libro no hay % de margen (sería sobre cero): se dice eso, y el margen en dólares debajo
+  const sinFacturar = o => !num(o.ingreso_libro);
   function obraFilaHTML(o) {
     const est = num(o.mano_obra_estandar);
     return `<button type="button" class="ct-ob-fila" data-ob="${esc(o.proyecto_id)}">
       <span class="ct-ob-n"><b>${esc(o.obra || o.proyecto_id)}</b><small>${esc([o.cliente, ESTADO_OBRA[o.estado] || o.estado].filter(Boolean).join(" · "))}</small>${o.parcial ? pill("parcial", "warn") : ""}</span>
       <span class="ct-ob-v r" data-col="Contrato"><span class="ct-num">${fmt(o.contrato)}</span></span>
       <span class="ct-ob-v r" data-col="Costo real"><span class="ct-num">${fmt(o.costo_real)}</span>${est ? `<small>+ <span class="ct-num">${fmt(est)}</span> estándar</small>` : ""}</span>
-      <span class="ct-ob-v r" data-col="Margen"><span class="ct-num ${num(o.margen_real) < 0 ? "bad-txt" : ""}">${pctTxt(o.margen_real_pct)}</span>${o.margen_real != null ? `<small class="ct-num">${fmtNeg(o.margen_real)}</small>` : ""}</span>
+      <span class="ct-ob-v r" data-col="Margen">${sinFacturar(o) ? `<span class="ct-ob-sinfac">sin facturar en el libro</span>` : `<span class="ct-num ${num(o.margen_real) < 0 ? "bad-txt" : ""}">${pctTxt(o.margen_real_pct)}</span>`}${o.margen_real != null ? `<small class="ct-num">${fmtNeg(o.margen_real)}</small>` : ""}</span>
       <span class="ct-ob-senal" data-col="Contra el estimado">${senalOb(o)}</span>
     </button>`;
   }
@@ -4877,13 +5053,19 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
         c.estandar == null ? "—" : `<span class="ct-ob-estnum">${fmtNeg(c.estandar)}</span>`, c.nivel === "detalle" || c.concepto === "ingreso" ? "—" : difTxt(c.diferencia)] };
     });
     // el margen, estimado y real (la base los da; aquí solo se ponen juntos)
-    filasC.push({ clase: "ct-ob-margen", celdas: ["Margen", `${fmtNeg(o.margen_estimado)}<small>${pctTxt(o.margen_estimado_pct)}</small>`, `${fmtNeg(o.margen_real)}<small>${pctTxt(o.margen_real_pct)}</small>`, "—", "—"] });
+    // (sin estimado completo, el margen estimado no sale: «—» con su porqué; sin facturar, el real no tiene %)
+    filasC.push({ clase: "ct-ob-margen", celdas: ["Margen", o.margen_estimado == null ? `—${o.estimado_completo === false ? "<small>sin estimado completo</small>" : ""}` : `${fmtNeg(o.margen_estimado)}<small>${pctTxt(o.margen_estimado_pct)}</small>`,
+      `${fmtNeg(o.margen_real)}<small>${sinFacturar(o) ? "sin facturar" : pctTxt(o.margen_real_pct)}</small>`, "—", "—"] });
     const cob = `<p class="ct-ob-cobertura"><b class="ct-num">${horasTxt(o.horas_con_pago_real)}</b> con pago real · <b class="ct-num">${horasTxt(o.horas_estandar)}</b> a estándar${num(o.horas_dueno) ? ` · ${horasTxt(o.horas_dueno)} del dueño (van aparte)` : ""}${num(o.horas_antes_libro) ? ` · ${horasTxt(o.horas_antes_libro)} de antes del libro (en QuickBooks)` : ""}${num(o.horas_sin_aprobar) ? ` · ${horasTxt(o.horas_sin_aprobar)} sin aprobar` : ""}</p>`;
     const he = num(o.horas_estimadas), hr = num(o.horas_reales) || 0, uso = he ? Math.round(hr / he * 100) : null;
     const horasEst = `<div class="ct-ob-horas"><p><b class="ct-num">${horasTxt(hr)}</b> reales${he ? ` de <b class="ct-num">${horasTxt(he)}</b> estimadas (${uso} %)` : " · sin horas estimadas"}${num(o.horas_co) ? ` · ${horasTxt(o.horas_co)} de CO` : ""}${o.tarifa_estimada != null ? ` · tarifa estimada <span class="ct-num">${fmt(o.tarifa_estimada)}</span>/h (escenario ${esc(o.escenario || "—")})` : ""}</p>
       ${he ? `<div class="ct-ob-barra-h${uso > 100 ? " pasa" : ""}" role="img" aria-label="${uso} % de las horas estimadas"><span style="width:${Math.min(uso, 100)}%"></span></div>` : ""}</div>`;
-    const parcial = o.parcial ? `<p class="ct-aviso warn"><b>Parcial:</b> ${esc(o.parcial_por || "la obra ya andaba antes del libro")}. Lo de antes del ${fechaLarga(o.libro_desde)} está en QuickBooks: este costo no es el de toda la obra.</p>` : "";
-    const avisosO = (Array.isArray(d.avisos) ? d.avisos : Array.isArray(o.avisos) ? o.avisos : []).map(t => `<li class="ct-aviso warn">${esc(t)}</li>`).join("");
+    // (parcial_por es la lista de lo que la obra ya tenía antes del libro: «horas, saldo en la apertura»)
+    const parcial = o.parcial ? `<p class="ct-aviso warn"><b>Parcial:</b> ya andaba antes del libro${o.parcial_por ? ` (tenía ${esc(o.parcial_por)})` : ""}. Lo de antes del ${fechaLarga(o.libro_desde)} está en QuickBooks: este costo no es el de toda la obra.</p>` : "";
+    const listaAv = Array.isArray(d.avisos) ? d.avisos : Array.isArray(o.avisos) ? o.avisos : [];
+    // (v2) el estimado que no da un total que comparar, con qué le falta: arriba, con los avisos (si la base no lo trae ya ahí)
+    const faltaEst = o.estimado_completo === false && o.estimado_falta && !listaAv.includes(o.estimado_falta) ? [o.estimado_falta] : [];
+    const avisosO = faltaEst.concat(listaAv).map(t => `<li class="ct-aviso warn${t === o.estimado_falta ? " ct-ob-faltaest" : ""}">${esc(t)}</li>`).join("");
     const porCuenta = (d.por_cuenta || []).map(c => ({ celdas: [`<span class="ct-num">${esc(c.cuenta)}</span> ${esc(c.nombre || "")}${c.jornal ? ` ${pill("jornales", "cu")}` : ""}`, bajarBtn(c.real, c.bajar, `${c.cuenta} ${c.nombre || ""}${c.jornal ? " · jornales" : ""}`), esc(c.asientos == null ? "—" : c.asientos)] }));
     const porCo = (d.por_co || []).map(c => ({ celdas: [`${esc(c.etiqueta || c.co || "Base")}${c.alcance != null ? `<small>estimado del CO <span class="ct-num">${fmt(typeof c.alcance === "object" ? c.alcance.monto : c.alcance)}</span></small>` : ""}`, horasTxt(c.horas), fmt(c.mano_obra_real),
       num(c.mano_obra_estandar) ? `<span class="ct-ob-estnum">${fmt(c.mano_obra_estandar)}</span>` : fmt(c.mano_obra_estandar), fmt(c.material_real), fmt(c.costo_real), fmt(c.ingreso_libro)] }));
@@ -4905,7 +5087,7 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
           ${kpiHTML("Contrato", fmt(o.contrato))}
           ${kpiHTML("Facturado", fmt(o.ingreso_libro), "en el libro")}
           ${kpiHTML("Costo real", fmt(o.costo_real), num(o.mano_obra_estandar) ? `+ ${fmt(o.mano_obra_estandar)} estándar` : "pagado y en el libro")}
-          ${kpiHTML("Margen real", pctTxt(o.margen_real_pct), o.margen_real == null ? "" : fmtNeg(o.margen_real))}
+          ${sinFacturar(o) ? kpiHTML("Margen real", "—", `sin facturar en el libro${o.margen_real == null ? "" : ` · ${fmtNeg(o.margen_real)}`}`) : kpiHTML("Margen real", pctTxt(o.margen_real_pct), o.margen_real == null ? "" : fmtNeg(o.margen_real))}
         </div>
         ${parcial}${cob}${horasEst}
         ${avisosO ? `<ul class="ct-jr-avisos">${avisosO}</ul>` : ""}
@@ -5025,11 +5207,11 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
       const patron = (titulo, boton) => montarForma(card, formaHTML(titulo,
         `${campoHTML("patron", "Cómo lo escribe el banco (por ejemplo, su nombre y apellido)", "texto", `required value="${esc(patronLlano(p.patron))}"`)}
          <p class="ct-nota">Las palabras que trae la descripción del Zelle. Que no sean tan comunes que casen con cualquier pago.</p>`, boton),
-        v => accionOb(card, "fn_jornal_persona", { p: { usuario_id: p.usuario_id, patron: v.patron, activa: true } }, x => x && x.nota_alta ? x.nota_alta : `${p.nombre}: guardado`));
+        v => accionOb(card, "fn_jornal_persona", { p: { usuario_id: p.usuario_id, patron: v.patron, activa: true } }, x => notaPersona(x, `${p.nombre}: guardado`)));
       const alta = card.querySelector("[data-per-alta]"); if (alta) alta.addEventListener("click", () => patron(`Dar de alta a ${esc(p.nombre)}: sus pagos se reparten por sus horas`, "Dar de alta"));
       const pat = card.querySelector("[data-per-patron]"); if (pat) pat.addEventListener("click", () => patron(`El patrón de ${esc(p.nombre)}`, "Guardar el patrón"));
       const baja = card.querySelector("[data-per-baja]"); if (baja) baja.addEventListener("click", () => accionOb(card, "fn_jornal_persona", { p: { usuario_id: p.usuario_id, activa: false } }, () => `${p.nombre}: dado de baja (lo ya repartido se queda)`));
-      const vuelve = card.querySelector("[data-per-vuelve]"); if (vuelve) vuelve.addEventListener("click", () => accionOb(card, "fn_jornal_persona", { p: { usuario_id: p.usuario_id, activa: true } }, () => `${p.nombre}: otra vez cobra por horas`));
+      const vuelve = card.querySelector("[data-per-vuelve]"); if (vuelve) vuelve.addEventListener("click", () => accionOb(card, "fn_jornal_persona", { p: { usuario_id: p.usuario_id, activa: true } }, x => notaPersona(x, `${p.nombre}: otra vez cobra por horas`)));
     });
   }
   function personaHTML(p) {

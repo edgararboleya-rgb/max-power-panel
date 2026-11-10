@@ -2,7 +2,9 @@
 -- c10-costo-obra.sql — EL JORNAL REPARTIDO POR HORAS Y EL COSTO POR OBRA
 -- (ESTIMADO CONTRA REAL) · c10 (la Fase 9; f09 lo llama «c9-costo-obra.sql»
 -- por un nombre viejo: c9 ya es el cierre).
--- 9-nov-2026, v1. Se pega en el SQL Editor DESPUÉS de c1, c2, c3, c4 y c6
+-- 9-nov-2026; v2 del 10-nov-2026 (los arreglos de las dos revisiones, antes
+-- de pegarlo en producción: al final de esta cabecera, «LO QUE CAMBIÓ EN LA
+-- v2»). Se pega en el SQL Editor DESPUÉS de c1, c2, c3, c4 y c6
 -- (c7, s1, p1, c8 y c9 pueden faltar: lo que no está no se mira, y se
 -- dice). Idempotente: se puede volver a pegar entero (no pisa la
 -- configuración, ni una persona dada de alta, ni un reparto). Después se
@@ -47,17 +49,23 @@
 --           APROBADAS y que el papel del asiento es el reporte de horas
 --           aprobado; en producción ninguna hora está aprobada (c3 trae
 --           fn_horas_aprobar y nunca se usó). fn_jornal_propuesta devuelve
---           «visto»: la huella de EXACTAMENTE las horas que entran (cada
---           reporte con su fecha, obra, CO, fase y horas), con el
---           movimiento, la persona, las fechas, el monto y las cuentas.
---           fn_jornal_aplicar, en UNA transacción: toma las horas de esa
---           persona en esas fechas (nadie las cambia mientras), vuelve a
---           calcular, y si la huella ya no es la que Edgar vio para con
---           MX011 y no cambia NADA; si es la misma, aprueba esas horas por
---           el camino de c3 (fn_horas_aprobar, con los ids que vio: queda en
---           horas_aprobaciones), postea por el camino del banco y guarda el
---           reparto con su detalle. Del estado financiero al asiento, del
---           asiento al reparto, del reparto a cada reporte de horas aprobado.
+--           «visto»: la huella de EXACTAMENTE lo que el «Así es» reparte y
+--           aprueba: cada reporte que entra y cada reporte de esas fechas
+--           que está sin aprobar, entre o no (c3 aprueba por persona y
+--           fechas, y pide esa lista entera: «aprueba»), con su fecha, obra,
+--           CO, fase y horas; y el movimiento, la persona, las fechas, el
+--           monto y las cuentas. fn_jornal_aplicar, en UNA transacción: toma
+--           las horas de esa persona en esas fechas (nadie las cambia
+--           mientras), vuelve a calcular, y si la huella ya no es la que
+--           Edgar vio para con MX011 y no cambia NADA; si es la misma,
+--           aprueba esos reportes por el camino de c3 (fn_horas_aprobar, con
+--           los ids que vio: queda en horas_aprobaciones), postea por el
+--           camino del banco y guarda el reparto con su detalle. Del estado
+--           financiero al asiento, del asiento al reparto, del reparto a
+--           cada reporte de horas aprobado. (Un reporte que no entra —ya lo
+--           cubre otro pago— y que perdió su aprobación porque le cambiaron
+--           las horas se aprueba también, y Edgar lo ve antes: el aviso
+--           cubiertas_sin_aprobar; si cambia entre que mira y toca, MX011.)
 --         · EL CAMINO AL LIBRO ES EL DEL BANCO (c6): fn_banco_clasificar,
 --           la misma puerta por la que Edgar clasifica cualquier cargo de
 --           la Bandeja, llamada por él (fn_jornal_aplicar es SECURITY
@@ -101,6 +109,45 @@
 --           el lunes), Edgar lo pide con p_opciones.incluir_cubiertas y el
 --           pago se reparte también por ellas; queda escrito en el reparto,
 --           y el control distingue lo que Edgar aceptó de lo que no.
+--         · LAS HORAS QUE LLEGAN TARDE a una semana ya repartida (se
+--           reportaron o se les cambió la fecha después del «Así es») no
+--           recibieron nada de ese pago: sigue repartido entre las demás
+--           obras, y ellas salen a estándar. Nadie lo veía (el control solo
+--           miraba las horas que sí entraron). Ahora se dice en tres sitios
+--           (fn_jornal_tardias): el control del jornal (el 35), la obra
+--           (v_margen_obra.avisos) y la propuesta del pago siguiente de esa
+--           persona (aviso horas_tardias, con las fechas que las cogerían).
+--           Se arregla deshaciendo aquel reparto y repitiéndolo, o metiéndolas
+--           en el pago que las cubra (fechas a mano). Siguen a estándar
+--           mientras tanto: no tienen pago real repartido, y si Edgar las
+--           paga con el Zelle siguiente es que de verdad estaban sin pagar.
+--         · EL PAGO DE UNA PERSONA DADA DE ALTA RESUELTO POR OTRO CAMINO
+--           (clasificado a mano en la Bandeja, o aprobada la propuesta de la
+--           IA) no deja rastro en el jornal: su costo queda entero donde se
+--           clasificó —sin su nombre: el 1099 por tercero no lo suma— y sus
+--           horas de esas semanas salen, además, a estándar. Se dice
+--           (fn_jornal_fuera): el control (el 70, un aviso) y las obras con
+--           horas suyas sin pago en la semana del pago o en la anterior. Si
+--           de verdad era otra cosa, el aviso se va cuando esas horas tengan
+--           su pago.
+--         · EL CO Y LA FASE de las horas van LIMPIOS COMO LOS DEJA c6 al
+--           postear (fn_jornal_limpio: sin espacios, tabuladores ni saltos
+--           de línea en las puntas; la regla de fn_banco_limpio) en el
+--           núcleo, la propuesta, la huella, el margen y el control. Con
+--           btrim a secas, un CO con un salto de línea detrás (un pegado, el
+--           conector) era otro grupo, c6 lo limpiaba al postear y el asiento
+--           «no era el reparto»: el pago no se podía repartir. Si aun así el
+--           asiento de c6 no fuera el reparto, el error dice qué línea, qué
+--           campo y qué hacer. El CO sigue siendo texto libre: «co #1» y
+--           «CO #1» son dos líneas, y la propuesta lo avisa (co_parecidos).
+--         · EL RECONOCIMIENTO ES POR PATRÓN, y un patrón no sabe qué clase
+--           de movimiento mira: la compra en un comercio cuyo nombre lleva
+--           el de alguien casa igual que su Zelle. No se frena (un banco
+--           puede describir un pago de otra forma); se dice: el aviso
+--           no_parece_pago en la propuesta, y al dar de alta, si el patrón
+--           no lleva el nombre de pila del perfil o casa con pagos que el
+--           banco describe a nombre de varios (fn_jornal_persona.avisos). Y
+--           un patrón que casaría con un Zelle a cualquiera no entra.
 --         · LA «TARIFA QUE SALE» (pago ÷ horas del período) se enseña junto
 --           a la de costos_equipo; si se aleja más de aviso_tarifa_pct (25 %
 --           de fábrica) es un AVISO en llano («revisa las fechas»), nunca
@@ -148,6 +195,18 @@
 --           coalesce(estimados.benefits_pct, escenarios.benefits); si no,
 --           el escenario B. escenarios.benefits_detalle NUNCA es costo
 --           real: es lo que se le cotiza al cliente, y aquí no se lee.
+--         · UN ESTIMADO PARCIAL NO SE COMPARA CON UN REAL COMPLETO. El
+--           costo estimado es mano de obra (horas × tarifa) más material; a
+--           muchas obras les falta una de las dos mitades (las horas
+--           estimadas o el presupuesto de material). Si la mitad que falta
+--           ya tiene real en la obra —o hay horas estimadas y no hay con qué
+--           valorarlas—, no hay total que comparar: costo_estimado, el
+--           margen estimado y la diferencia salen vacíos, estimado_completo
+--           es falso y estimado_falta dice qué falta, en llano. Lo que
+--           falta y todavía no tiene real no estorba. Concepto por concepto
+--           se sigue comparando lo que sí está estimado. (Antes la mitad que
+--           faltaba sumaba 0, y la obra salía «se pasa» o «dentro» contra un
+--           real que sí la traía.)
 --         · POR CO (la base aparte de cada CO), POR FASE (horas y dólares
 --           de mano de obra) y POR COST CODE: solo lo que las líneas
 --           llevan. Hoy ninguna línea del libro trae cost code: se dice en
@@ -225,6 +284,10 @@
 --          obra al revés
 --   MX005  un monto mal: el del núcleo (nulo, cero, negativo o con más de
 --          dos decimales), el burden o el umbral de la tarifa
+--   MX001  (además del de c2 y c6) el asiento que dejó c6 no es el reparto
+--          que se le pidió: dice qué línea, qué campo —lo que quedó y lo que
+--          se pidió— y qué hacer; no se guarda nada. Es una red: con el CO
+--          y la fase limpios como c6 no debe verse
 --   MX008  no procede: el movimiento no es un pago reconocido, ya está
 --          resuelto, es un posible duplicado sin decidir, no hay horas en
 --          esas fechas, falta la cuenta de lo sin obra, el reparto ya
@@ -268,22 +331,76 @@
 --     aplicado. f11 añadirá ahí las de su journal (fn_margen_horas tiene
 --     el sitio señalado).
 --   · EL DEVENGO ESTÁNDAR DE c3 (fn_horas_devengar, opcional: Dr 5000 / Cr
---     2210, reversible) y los jornales no conviven: en un mes con los dos
---     la mano de obra de esas horas sale dos veces por obra. El control
---     «devengo y jornales» lo pone en rojo y la propuesta lo avisa antes.
---     En v_margen_obra el devengo no cuenta como real: se anula solo con su
---     reverso del día 1.
+--     2210 a fin de mes, por las horas aprobadas × su tarifa; se deshace
+--     solo el día 1 del mes siguiente) es para lo trabajado y TODAVÍA NO
+--     PAGADO. Con jornales, doble es solo esto: una hora que está en el
+--     documento de un devengo vivo y, a la vez, en un jornal que entró al
+--     libro DENTRO del mes de ese devengo (o antes): ese mes la lleva dos
+--     veces, y el siguiente de menos. Un jornal que entra después —el Zelle
+--     del lunes 2-nov por la última semana de octubre, con octubre
+--     devengado— no choca: octubre lleva el devengo, y noviembre su reverso
+--     y el pago real. El control 50 y el aviso devengo_estandar miran eso (la
+--     misma hora, y la fecha del asiento del jornal contra el fin de mes del
+--     devengo); lo que ya no tiene arreglo —un mes cerrado— se dice y no
+--     deja el cuadre en rojo. c3 todavía no aparta del devengo las horas ya
+--     pagadas con jornales (está sellado): por eso, en un mes cuyos jornales
+--     ya entraron, el devengo cuenta de más y hay que retirarlo antes de
+--     cerrar. En v_margen_obra el devengo no cuenta como real: se anula solo
+--     con su reverso del día 1.
+--   · LA FECHA DEL ASIENTO ES LA DEL PAGO (la que trae el banco; con su mes
+--     cerrado, el primer día del mes abierto: la regla de c6 para todo). El
+--     libro de 2026 va, en esto, por lo pagado, como QuickBooks: la semana
+--     del 26-oct pagada el 2-nov deja su costo en noviembre, y la última de
+--     diciembre pagada el 4-ene, en 2027. No se cambia aquí (es cómo c6
+--     fecha todo lo del banco, y un jornal con otra fecha que su movimiento
+--     no casaría con él); se DICE antes de aceptar: los avisos otro_mes y
+--     otro_anio, con cuántas horas, cuánto y dónde cae. Si el CPA quiere el
+--     costo de diciembre en su año, tiene el devengo de c3 (que ya no choca
+--     con el pago de enero) o su ajuste de fin de año.
 --   · LA RUTINA DE LA IA (c8) sigue proponiendo para estos Zelle (no sabe
 --     de c10, y c8 está sellado): la Bandeja pinta la tarjeta de «mano de
---     obra» con v_jornal_pendientes en vez de la propuesta de la IA. Si el
---     movimiento tenía una propuesta de c8 pendiente, c8 no la cierra sola
---     cuando el movimiento se resuelve por fuera (le pasa igual con lo que
---     c6 casa solo): fn_jornal_propuesta y fn_jornal_aplicar la devuelven
---     (propuesta_ia) para que la pantalla la rechace por la función de
---     borde «contador» («No es eso», con su motivo); si no, queda pendiente
---     y a los 7 días enciende la alarma 71 de c8 (un aviso, no un cuadre).
---     Ningún cuadre de c8, c6, c4 ni c9 se pone en rojo por aplicar o
---     deshacer un jornal.
+--     obra» con v_jornal_pendientes en vez de la propuesta de la IA. c8 no
+--     cierra sola la propuesta de un movimiento que se resuelve por fuera, y
+--     c10 no puede escribir en c8 (sus funciones son de la función de borde
+--     «contador»). Lo que un jornal deja abierto en c8:
+--       - la propuesta PENDIENTE del movimiento: ya no se puede aprobar (el
+--         movimiento queda casado); a los 7 días enciende la alarma 71 de c8
+--         (un aviso) y, el día que la obra que proponía se termina, su
+--         cuadre 64, que el cierre de c9 toma por «detiene»;
+--       - la APROBADA O EDITADA cuyo asiento se reversó (Edgar la aceptó y
+--         después des-casó el pago para repartirlo por horas): deja en rojo
+--         el cuadre 60 de c8 («detiene» en c9). Por el camino de c8 se
+--         habría cerrado sola; por este, no.
+--     Lo que hace c10: fn_jornal_propuesta y fn_jornal_aplicar devuelven las
+--     dos clases (propuesta_ia, la pendiente, como siempre; y propuestas_ia,
+--     todas, con qué hacer con cada una: rechazar o caducar) para que la
+--     PANTALLA las cierre por la función de borde; fn_jornal_ia() da en
+--     cualquier momento las que siguen abiertas en pagos ya repartidos (para
+--     reintentarlo); y el control del jornal las enseña (el 80, un aviso)
+--     con qué hacer. No se frena el «Así es» por una propuesta pendiente: la
+--     rutina propone para TODO lo pendiente dos veces al día, así que casi
+--     todo pago la tendría, y repartir dependería de que la función de borde
+--     conteste. Aplicar o deshacer un jornal no pone en rojo ningún cuadre
+--     de c6, c4 ni c9; de c8, los dos de arriba si la pantalla no cierra lo
+--     que se le devuelve.
+--   · EL ESTÁNDAR SE CALCULA CON LA TARIFA Y EL BURDEN DE HOY: costos_equipo
+--     guarda una tarifa por persona, sin historia, y es de la app. Si la
+--     tarifa de alguien cambia, cambia el estándar de todas sus horas sin
+--     pago, también las de obras ya terminadas. Es una estimación para
+--     comparar («estándar, no real»), nunca un asiento; se dice en su nota.
+--     Lo que tiene pago real repartido no se mueve.
+--   · EN «ESTADOS» (c4) LOS JORNALES SALEN COMO «SUBCONTRATOS»: van a la
+--     5200 (contract labor, como en QuickBooks, con su etiqueta 1099), y c4
+--     —sellado— no sabe del jornal. Aquí salen aparte, como mano de obra
+--     real. El total por obra es el mismo (v_margen_control, el 60, lo
+--     comprueba y lo dice); la etiqueta, no.
+--   · UN PAGO SE REPARTE ENTERO POR HORAS. Si un Zelle lleva además otra
+--     cosa (un reembolso de material), hoy va entero por horas —a la cuenta
+--     del jornal, y a la base del 1099— o entero por la Bandeja, a mano. No
+--     hay forma de apartar una parte: queda para cuando haga falta (una
+--     opción «aparte» de fn_jornal_aplicar con sus líneas, que irían detrás
+--     de las del jornal en el mismo asiento). Mientras, lo honesto es que
+--     el reembolso vaya en otro Zelle.
 --   · UN REPARTO QUE QUEDÓ SUELTO. Si Edgar des-casa en la Bandeja (c6) un
 --     pago ya repartido, c6 reversa el asiento y el reparto sigue «aplicado»
 --     sin asiento vivo: c6 no sabe del jornal, y está sellado. El control lo
@@ -295,15 +412,20 @@
 -- EL VOLUMEN Y LA CONCURRENCIA (medido en el banco, PG17, como el dueño por
 -- la API, con RLS):
 --   · Con 200 obras, 5.000 reportes de horas, 7.500 asientos (17.600 líneas)
---     y 20 repartos: fn_jornal_propuesta 10 ms; v_jornal_pendientes 27 ms;
---     v_margen_obra entera 250 ms; fn_margen_obra de una obra 70 ms;
---     v_jornal_control 22 ms; v_margen_control 400 ms (lee v_costo_por_obra
---     de c4). Nada cuadrático: las líneas de los jornales y las horas
---     pagadas se buscan por sus índices (contra un CTE el planificador
---     comparaba cada línea del libro con cada parte), los perfiles y las
---     tarifas se leen una vez (la policy de costos_equipo llama a es_dueno()
---     por cada fila leída), y el cálculo de un pago se hace una vez por fila
---     de v_jornal_pendientes.
+--     y 20 repartos (la v2, con sus avisos nuevos): fn_jornal_propuesta
+--     14 ms; v_jornal_pendientes 45 ms; v_margen_obra entera 280 ms;
+--     fn_margen_obra de una obra 80 ms; v_jornal_control 36 ms;
+--     v_margen_control 450 ms (lee v_costo_por_obra de c4). Y con un año de
+--     banco encima (6.000 cargos ya resueltos, 40 de ellos descritos como
+--     el pago de alguien dado de alta): v_margen_obra 340 ms, fn_margen_obra
+--     125 ms y v_jornal_control 85 ms (fn_jornal_fuera arma el texto de cada
+--     cargo resuelto una vez y lo prueba contra el patrón de cada persona
+--     activa: crece con los cargos del banco, no con el libro). Nada
+--     cuadrático: las líneas de los jornales y las horas pagadas se buscan
+--     por sus índices (contra un CTE el planificador comparaba cada línea
+--     del libro con cada parte), los perfiles y las tarifas se leen una vez
+--     (la policy de costos_equipo llama a es_dueno() por cada fila leída), y
+--     el cálculo de un pago se hace una vez por fila de v_jornal_pendientes.
 --   · Dos «Así es» a la vez sobre el mismo pago, dos pagos de la misma
 --     semana a la vez, un reporte de horas que llega mientras Edgar acepta,
 --     dos «Deshacer» a la vez, dos altas a la vez y volver a pegar con la
@@ -375,11 +497,33 @@
 --   fn_jornal_aplicar(p_movimiento uuid, p_desde date, p_hasta date, p_visto text, p_opciones jsonb)
 --   fn_jornal_deshacer(p_reparto uuid, p_motivo text)
 --   fn_jornal_persona(p jsonb) / fn_jornal_config(p jsonb)
---   fn_jornal_repartir(p_usuario uuid, p_desde date, p_hasta date, p_monto numeric)       el núcleo (f11)
+--   fn_jornal_repartir(p_usuario uuid, p_desde date, p_hasta date, p_monto numeric,
+--                      p_solo_aprobadas boolean)                                          el núcleo (f11)
 --   fn_margen_obra(p_proyecto text)                                                       el detalle de una obra
+--   fn_jornal_ia(p_movimiento uuid)       solo lee: lo de la IA (c8) que un pago repartido deja abierto
 -- Y lee: v_jornal_pendientes, v_jornal_repartos, v_jornal_personas,
 -- v_jornal_control, v_margen_obra, v_margen_control, jornal_config.
 -- Montos en dólares, numeric(14,2); horas, numeric tal cual se reportan.
+--
+-- LO QUE CAMBIÓ EN LA v2 (10-nov-2026; nada renombrado: columnas, claves y
+-- avisos de más):
+--   · v_margen_obra: estimado_completo y estimado_falta; costo_estimado,
+--     margen_estimado, margen_estimado_pct y diferencia salen VACÍOS cuando
+--     el estimado no da un total que comparar (antes sumaban 0 por lo que
+--     faltaba). fn_margen_obra: el concepto «total» trae estimado_completo y
+--     nota.
+--   · fn_jornal_propuesta / fn_jornal_aplicar: «aprueba» {reportes, ids} (lo
+--     que el «Así es» aprueba: la huella lo cubre entero), «propuestas_ia»
+--     (lo de c8 que queda abierto, con que_hacer), movimiento.fecha_asiento;
+--     avisos nuevos: horas_tardias, cubiertas_sin_aprobar, no_parece_pago,
+--     co_parecidos, otro_mes, otro_anio; devengo_estandar solo cuando de
+--     verdad es doble; obra_terminada dice «no aprobada» (no «cancelada»).
+--   · v_jornal_control: tres avisos más (35 horas tardías, 70 pagos resueltos
+--     fuera del jornal, 80 propuestas de la IA abiertas), el 50 con su regla
+--     nueva, y ningún detalle nombra ya una función o una vista.
+--   · fn_jornal_persona devuelve avisos; fn_jornal_config no admite para lo
+--     sin obra una cuenta con etiqueta fiscal propia ni las que alimenta
+--     otra parte del libro; fn_jornal_repartir tiene p_solo_aprobadas.
 -- =====================================================================
 -- (Lo primero, como en c4 y c6: el pegado espera un candado como mucho
 -- medio segundo. Con la app leyendo o repartiendo, para con 55P03 («lock
@@ -407,8 +551,9 @@ declare
   c_vistas constant text[] := array['v_jornal_pendientes', 'v_jornal_repartos', 'v_jornal_personas', 'v_jornal_control',
                                     'v_margen_obra', 'v_margen_control'];
   c_fn     constant text[] := array['fn_jornal_exigir_dueno', 'fn_jornal_ve', 'fn_jornal_precondiciones', 'fn_jornal_guarda',
-                                    'fn_jornal_usd', 'fn_jornal_h', 'fn_jornal_dia', 'fn_jornal_rango', 'fn_jornal_texto',
-                                    'fn_jornal_limpio', 'fn_jornal_patron_mal', 'fn_jornal_patron_sugerido', 'fn_jornal_cuenta_mal',
+                                    'fn_jornal_usd', 'fn_jornal_h', 'fn_jornal_dia', 'fn_jornal_rango', 'fn_jornal_mes', 'fn_jornal_texto',
+                                    'fn_jornal_limpio', 'fn_jornal_patron_mal', 'fn_jornal_destinatario', 'fn_jornal_patron_sugerido',
+                                    'fn_jornal_cuenta_mal',
                                     'fn_jornal_periodo', 'fn_jornal_regla', 'fn_jornal_repartir_ids', 'fn_jornal_repartir',
                                     'fn_jornal_tardias', 'fn_jornal_fuera', 'fn_jornal_ia',
                                     'fn_jornal_opciones', 'fn_jornal_calcular', 'fn_jornal_propuesta', 'fn_jornal_aplicar',
@@ -458,7 +603,8 @@ begin
                  ('alcances', 'proyecto_id'), ('alcances', 'ref'), ('alcances', 'titulo'), ('alcances', 'monto'),
                  ('codigos_partida', 'nombre'), ('facturas', 'fecha'), ('recibos', 'fecha'), ('trabajos_externos', 'fecha'),
                  ('movimientos_banco', 'desc_norm'), ('movimientos_banco', 'memo'), ('movimientos_banco', 'posible_duplicado_de'),
-                 ('asiento_lineas', 'tercero_id'), ('asiento_lineas', 'orden'), ('asientos', 'procedencia')) as x(t, c)
+                 ('asiento_lineas', 'tercero_id'), ('asiento_lineas', 'orden'), ('asientos', 'procedencia'),
+                 ('cuentas', 'tipo'), ('cuentas', 'regla_obra'), ('cuentas', 'imputable'), ('cuentas', 'etiqueta_fiscal')) as x(t, c)
    where not exists (select 1 from information_schema.columns k
                       where k.table_schema = 'public' and k.table_name = x.t and k.column_name = x.c);
   if v_x is not null then
@@ -650,7 +796,7 @@ create index if not exists jornal_repartos_usuario_idx on public.jornal_repartos
 -- (y un asiento, un reparto: cada «Así es» deja su asiento)
 create unique index if not exists jornal_repartos_asiento_unico on public.jornal_repartos (asiento_id);
 comment on table public.jornal_repartos is 'c10: cada pago de una persona repartido por sus horas: el movimiento del banco, la persona, el período (desde, hasta) y la regla que lo eligió (semana_anterior, semana_en_curso o a_mano), el monto repartido, las horas que entraron, la tarifa que sale (monto ÷ horas) y la de costos_equipo ese día, la cuenta de las líneas con obra y la de lo sin obra, el asiento que puso c6 (fn_banco_clasificar), el estado (aplicado o deshecho), la huella de las horas que Edgar vio, los avisos que traía la propuesta, las opciones con que se aplicó (incluir_cubiertas, motivo), los reportes de horas que aprobó (fn_horas_aprobar), quién y cuándo; y, deshecho, por quién, cuándo, por qué y el reverso que puso c6 (fn_banco_descasar). Solo se añade: lo único que cambia es el paso a deshecho.';
-comment on column public.jornal_repartos.huella is 'md5 de lo que Edgar vio al aceptar (el «visto» de fn_jornal_propuesta): el movimiento, la persona, las fechas, el monto, las cuentas y cada reporte de horas que entra (id, fecha, obra, CO, fase, horas).';
+comment on column public.jornal_repartos.huella is 'md5 de lo que Edgar vio al aceptar (el «visto» de fn_jornal_propuesta): el movimiento, la persona, las fechas, el monto, las cuentas y cada reporte de horas que entra o que el «Así es» aprueba (id, fecha, obra, CO, fase, horas, si entra y si se aprueba).';
 
 -- Lo que fue al libro, por obra y CO (n: el orden del grupo; orden: el de su
 -- línea en el asiento, vacío si al grupo no le llegó ni un centavo).
@@ -892,6 +1038,18 @@ revoke execute on function public.fn_jornal_rango(date, date) from public, anon,
 grant  execute on function public.fn_jornal_rango(date, date) to authenticated;
 comment on function public.fn_jornal_rango(date, date) is 'c10: un período en una frase («del 19 al 25 de octubre de 2026»).';
 
+-- Un mes como se dice: «octubre de 2026» (el de ese día).
+create or replace function public.fn_jornal_mes(p date) returns text
+language sql immutable
+set search_path = public, pg_temp
+as $$
+  select (array['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre',
+                'diciembre'])[extract(month from p)::int] || ' de ' || extract(year from p)::int
+$$;
+revoke execute on function public.fn_jornal_mes(date) from public, anon, service_role;
+grant  execute on function public.fn_jornal_mes(date) to authenticated;
+comment on function public.fn_jornal_mes(date) is 'c10: el mes de un día como se dice («octubre de 2026»).';
+
 -- El texto con que se reconoce un pago: la descripción normalizada del
 -- banco (movimientos_banco.desc_norm, que c6 deja en mayúsculas, solo con
 -- letras, dígitos, # y &) y su nota normalizada igual (la regla de c6,
@@ -930,7 +1088,13 @@ comment on function public.fn_jornal_limpio(text) is 'c10: un texto sin espacios
 -- ¿Sirve este patrón? Nulo = sí; si no, el porqué en llano. Tiene que ser
 -- una expresión regular que Postgres entienda, con al menos tres letras o
 -- dígitos, y no puede casar con cualquier pago (un «ZELLE» a secas casaría
--- con todos los Zelle, y el de Edgar a su casero entraría como jornal).
+-- con todos los Zelle, y el de Edgar a su casero entraría como jornal). Se
+-- prueba contra lo que el banco escribe sin nombre («ZELLE PAYMENT TO») y
+-- contra pagos a OTRA persona, con un nombre que nadie lleva («QQXZ WWKJ»):
+-- un patrón con el nombre de alguien no casa con ese; uno que diga «un Zelle
+-- a quien sea» («ZELLE PAYMENT TO [A-Z]») sí, y no vale. (Lo que casa de
+-- verdad en esta base —con cuántos destinatarios distintos— lo mira
+-- fn_jornal_persona al dar de alta.)
 create or replace function public.fn_jornal_patron_mal(p text) returns text
 language plpgsql immutable
 set search_path = public, pg_temp
@@ -955,37 +1119,56 @@ begin
   end;
   foreach s in array array['', 'X', 'ZELLE', 'ZELLE PAYMENT TO', 'ZELLE PAYMENT TO 12345678901', 'ZELLE PAYMENT FROM',
                            'ONLINE TRANSFER', 'ONLINE PAYMENT', 'PAYMENT', 'PAYMENT TO', 'CHECK 1234', 'ACH DEBIT',
-                           'DEBIT CARD PURCHASE', 'TRANSFER TO', 'WITHDRAWAL'] loop
+                           'DEBIT CARD PURCHASE', 'TRANSFER TO', 'WITHDRAWAL',
+                           -- (pagos a otra persona y a un comercio, con un nombre que nadie lleva)
+                           'ZELLE PAYMENT TO QQXZ WWKJ', 'ZELLE PAYMENT TO QQXZ WWKJ 12345678901', 'ZELLE PMT TO QQXZ',
+                           'ONLINE TRANSFER TO QQXZ WWKJ', 'PAYMENT TO QQXZ WWKJ', 'POS PURCHASE QQXZ WWKJ SUPPLY 0042'] loop
     if s ~* v then
       return format('«%s» casaría con cualquier pago (también con «%s»): tiene que llevar su nombre', v,
-                    case when s = '' then 'una descripción vacía' else s end);
+                    case when s = '' then 'una descripción vacía'
+                         when s like '%QQXZ%' then replace(replace(s, 'QQXZ WWKJ', 'otra persona'), 'QQXZ', 'otra persona')
+                         else s end);
     end if;
   end loop;
   return null;
 end $$;
 revoke execute on function public.fn_jornal_patron_mal(text) from public, anon, service_role;
 grant  execute on function public.fn_jornal_patron_mal(text) to authenticated;
-comment on function public.fn_jornal_patron_mal(text) is 'c10: por qué un patrón no sirve para reconocer el pago de una persona (nulo = sirve): vacío, corto, no es una expresión regular válida, o casaría con cualquier pago.';
+comment on function public.fn_jornal_patron_mal(text) is 'c10: por qué un patrón no sirve para reconocer el pago de una persona (nulo = sirve): vacío, corto, no es una expresión regular válida, o casaría con cualquier pago (con lo que el banco escribe sin nombre, o con un pago a otra persona).';
+
+-- A QUIÉN dice el banco que fue un pago: el nombre que escribe en su
+-- descripción (ya normalizada: desc_norm), sin el «ZELLE PAYMENT TO» de
+-- delante ni el código de confirmación de detrás (las palabras con un
+-- dígito), hasta cuatro palabras. «ZELLE PAYMENT TO ZZANA PRUEBA
+-- JPM99ABC123» → «ZZANA PRUEBA». Vacío si no queda nada. De aquí salen el
+-- patrón que se propone para una persona y la cuenta de con cuántos
+-- destinatarios distintos casa un patrón (fn_jornal_persona).
+create or replace function public.fn_jornal_destinatario(p_desc_norm text) returns text
+language sql immutable
+set search_path = public, pg_temp
+as $$
+  select array_to_string((array(select w.t
+                                  from regexp_split_to_table(
+                                         regexp_replace(coalesce(p_desc_norm, ''),
+                                           '^(ZELLE( PAYMENT| PMT| TRANSFER)?( TO| FROM)?|ONLINE (PAYMENT|TRANSFER)( TO)?|PAYMENT TO|TRANSFER TO) ',
+                                           ''), ' ') with ordinality as w(t, o)
+                                 where w.t !~ '[0-9]' and w.t !~ '[#&]' and w.t <> ''
+                                 order by w.o))[1:4], ' ')
+$$;
+revoke execute on function public.fn_jornal_destinatario(text) from public, anon, service_role;
+grant  execute on function public.fn_jornal_destinatario(text) to authenticated;
+comment on function public.fn_jornal_destinatario(text) is 'c10: a quién dice el banco que fue un pago: el nombre de su descripción normalizada, sin «ZELLE PAYMENT TO» ni el código de confirmación (hasta cuatro palabras; vacío si no queda nada).';
 
 -- El patrón que la pantalla ofrece al dar de alta a una persona desde un
--- movimiento: el nombre que el banco escribe, sin el «ZELLE PAYMENT TO» de
--- delante ni el código de confirmación de detrás (las palabras con un
--- dígito), hasta cuatro palabras, entre límites de palabra. «ZELLE PAYMENT
--- TO ZZANA PRUEBA JPM99ABC123» → «\mZZANA PRUEBA\M». Nulo si no queda un
--- nombre.
+-- movimiento: ese nombre, entre límites de palabra. «ZELLE PAYMENT TO ZZANA
+-- PRUEBA JPM99ABC123» → «\mZZANA PRUEBA\M». Nulo si no queda un nombre.
 create or replace function public.fn_jornal_patron_sugerido(p_movimiento uuid) returns text
 language sql stable
 set search_path = public, pg_temp
 as $$
   select case when length(regexp_replace(z.nombre, '[^[:alnum:]]', '', 'g')) >= 3 and public.fn_jornal_patron_mal(z.nombre) is null
               then '\m' || z.nombre || '\M' end
-    from (select array_to_string((array(select w.t
-                                          from regexp_split_to_table(
-                                                 regexp_replace(m.desc_norm,
-                                                   '^(ZELLE( PAYMENT| PMT| TRANSFER)?( TO| FROM)?|ONLINE (PAYMENT|TRANSFER)( TO)?|PAYMENT TO|TRANSFER TO) ',
-                                                   ''), ' ') with ordinality as w(t, o)
-                                         where w.t !~ '[0-9]' and w.t !~ '[#&]' and w.t <> ''
-                                         order by w.o))[1:4], ' ') as nombre
+    from (select public.fn_jornal_destinatario(m.desc_norm) as nombre
             from public.movimientos_banco m
            where m.id = p_movimiento) z
 $$;
@@ -997,6 +1180,13 @@ comment on function public.fn_jornal_patron_sugerido(uuid) is 'c10: el patrón q
 -- 'sin_obra' (las horas sin obra). Nulo = sí; si no, el porqué en llano.
 -- Lo que c6 rechaza desde el banco (50xx, la mano de obra de nómina; 6000 y
 -- 6005, sueldo) se dice aquí, antes: así ningún reparto se cae al postear.
+-- Y lo sin obra no va a cualquier gasto: no a una cuenta con su propia
+-- etiqueta fiscal (multas no deducibles, depreciación, comidas al 50 %, el
+-- seguro del accionista…: cada una tiene su renglón en la declaración) ni a
+-- las que alimenta otra parte del libro (el burden de la nómina, los cargos
+-- del banco, la depreciación del cierre, los incobrables, los intereses,
+-- los impuestos). Queda lo que el CPA puede querer: un gasto general (7900
+-- mientras decide) o una cuenta nueva para la mano de obra sin obra.
 create or replace function public.fn_jornal_cuenta_mal(p_cuenta text, p_uso text) returns text
 language sql stable
 set search_path = public, pg_temp
@@ -1020,13 +1210,19 @@ as $$
                 then format('la cuenta %s (%s) no es de costo ni de gasto', c.codigo, c.nombre)
               when p_uso = 'sin_obra' and c.regla_obra = 'obligatoria'
                 then format('la cuenta %s (%s) exige obra, y esto es justo lo que no la tiene', c.codigo, c.nombre)
+              when p_uso = 'sin_obra' and nullif(btrim(c.etiqueta_fiscal), '') is not null and c.etiqueta_fiscal <> '1099'
+                then format('la cuenta %s (%s) lleva su propia etiqueta fiscal («%s»): es de otra cosa, y la mano de obra sin obra '
+                            'ahí saldría mal en la declaración', c.codigo, c.nombre, c.etiqueta_fiscal)
+              when p_uso = 'sin_obra' and c.codigo in ('6010', '6130', '6950', '6980', '7100', '9000')
+                then format('la cuenta %s (%s) la alimenta otra parte del libro (la nómina, el banco, el cierre o los impuestos): la '
+                            'mano de obra sin obra no va ahí', c.codigo, c.nombre)
          end
     from (select p_cuenta as q) x
     left join public.cuentas c on c.codigo = x.q
 $$;
 revoke execute on function public.fn_jornal_cuenta_mal(text, text) from public, anon, service_role;
 grant  execute on function public.fn_jornal_cuenta_mal(text, text) to authenticated;
-comment on function public.fn_jornal_cuenta_mal(text, text) is 'c10: por qué una cuenta no sirve para el jornal (nulo = sirve): p_uso «obra» (activa, imputable, de costo, que admita obra) o «sin_obra» (de costo o gasto, que no exija obra); nunca 50xx, 6000 ni 6005 (c6 no las deja entrar desde el banco).';
+comment on function public.fn_jornal_cuenta_mal(text, text) is 'c10: por qué una cuenta no sirve para el jornal (nulo = sirve): p_uso «obra» (activa, imputable, de costo, que admita obra) o «sin_obra» (de costo o gasto, que no exija obra, sin etiqueta fiscal propia —salvo 1099— y que no sea de las que alimenta otra parte del libro: 6010, 6130, 6950, 6980, 7100, 9000); nunca 50xx, 6000 ni 6005 (c6 no las deja entrar desde el banco).';
 
 -- LA REGLA DEL PERÍODO: la semana de trabajo (de lunes a domingo) que paga
 -- un pago, según el día en que se hizo. De lunes a miércoles, la semana
@@ -1155,9 +1351,19 @@ grant  execute on function public.fn_jornal_repartir_ids(bigint[], numeric) to a
 comment on function public.fn_jornal_repartir_ids(bigint[], numeric) is 'c10: EL NÚCLEO por reportes de horas: reparte un monto entre esos reportes (horas.id) por sus horas, agrupados por obra y CO (lo sin obra, un grupo), al centavo y por mayores restos (a resto igual: más horas, obra, CO; lo sin obra al final): una fila por reporte con su grupo, las horas y el monto del grupo y los del reporte. Los grupos suman el monto; los reportes de cada grupo, el del grupo. No escribe nada; a quien no es el dueño no le devuelve nada. MX005 si el monto no es mayor que cero y en centavos.';
 
 -- Por persona y período (lo que usará f11): las horas de esa persona en
--- esas fechas, TODAS (las que ya tengan otro pago también: quién descuenta
--- qué lo decide quien llama; el jornal del Zelle lo hace en su propuesta).
-create or replace function public.fn_jornal_repartir(p_usuario uuid, p_desde date, p_hasta date, p_monto numeric)
+-- esas fechas. TODAS, las que ya tengan otro pago también: quién descuenta
+-- qué lo decide quien llama (el jornal del Zelle lo hace en su propuesta).
+-- p_solo_aprobadas: solo las APROBADAS. El plan (§1, §3) dice que la clave
+-- del reparto de la nómina son las horas aprobadas: f11 lo pide así
+-- (fn_jornal_repartir(persona, desde, hasta, bruto, true)) y, si con todas
+-- sale otra cosa, es que quedan horas por aprobar en ese período de pago. El
+-- jornal del Zelle no lo usa: su «Así es» aprueba las horas que reparte, en
+-- la misma transacción. Sin él (falso, de fábrica), todas: para mirar.
+-- (La versión de antes, de cuatro parámetros, se quita: la de cinco con su
+-- valor de fábrica contesta igual a quien la llama con cuatro.)
+drop function if exists public.fn_jornal_repartir(uuid, date, date, numeric);
+create or replace function public.fn_jornal_repartir(p_usuario uuid, p_desde date, p_hasta date, p_monto numeric,
+                                                     p_solo_aprobadas boolean default false)
 returns table (grupo int, proyecto_id text, co text, horas_grupo numeric, monto_grupo numeric(14,2),
                horas_id bigint, fecha date, fase text, horas numeric, monto numeric(14,2),
                horas_total numeric, monto_total numeric(14,2))
@@ -1173,11 +1379,12 @@ begin
   end if;
   return query
   select a.* from fn_jornal_repartir_ids(array(select x.id from public.horas x
-                                                where x.usuario_id = p_usuario and x.fecha between p_desde and p_hasta), p_monto) a;
+                                                where x.usuario_id = p_usuario and x.fecha between p_desde and p_hasta
+                                                  and (not coalesce(p_solo_aprobadas, false) or x.aprobado_el is not null)), p_monto) a;
 end $$;
-revoke execute on function public.fn_jornal_repartir(uuid, date, date, numeric) from public, anon, service_role;
-grant  execute on function public.fn_jornal_repartir(uuid, date, date, numeric) to authenticated;
-comment on function public.fn_jornal_repartir(uuid, date, date, numeric) is 'c10: EL NÚCLEO (lo que f11 alimentará con el journal de nómina): las horas de una persona en un período, agrupadas por obra y CO, y la parte de un monto que le toca a cada grupo y a cada reporte, al centavo (fn_jornal_repartir_ids). Solo lee; no sabe nada del banco. Solo el dueño.';
+revoke execute on function public.fn_jornal_repartir(uuid, date, date, numeric, boolean) from public, anon, service_role;
+grant  execute on function public.fn_jornal_repartir(uuid, date, date, numeric, boolean) to authenticated;
+comment on function public.fn_jornal_repartir(uuid, date, date, numeric, boolean) is 'c10: EL NÚCLEO (lo que f11 alimentará con el journal de nómina): las horas de una persona en un período —todas, o solo las aprobadas con p_solo_aprobadas—, agrupadas por obra y CO, y la parte de un monto que le toca a cada grupo y a cada reporte, al centavo (fn_jornal_repartir_ids). Solo lee; no sabe nada del banco. Solo el dueño.';
 
 
 -- ---------------------------------------------------------------------
@@ -1437,8 +1644,13 @@ declare
   v_ops      jsonb;
   v_apr      bigint[];
   v_fa       date;
-  v_hoy      date := fn_fecha_miami(now());
   v_h2       numeric;
+  v_m2       numeric;
+  v_b        boolean;
+  v_d2       date;
+  v_d3       date;
+  v_h3       numeric;
+  v_m3       numeric;
 begin
   select * into m from movimientos_banco where id = p_movimiento;
   if not found then
@@ -1605,33 +1817,39 @@ begin
                        'faltaban.', fn_jornal_h(v_cub_h), v_cub_txt, fn_jornal_h(v_horas)) end);
   end if;
   -- Reportes de esas fechas que NO entran aquí (ya los cubre otro pago) y hoy
-  -- están sin aprobar: el «Así es» los aprueba igual, y Edgar lo ve antes.
+  -- están sin aprobar: el «Así es» los aprueba igual (c3 aprueba por persona y
+  -- fechas), Edgar lo ve antes, y van en la huella.
   select count(*),
          left(string_agg(format('%s h del %s%s', fn_jornal_h(h.horas), fn_jornal_dia(h.fecha), coalesce(' en ' || pr.nombre, ' sin obra')),
-                         '; ' order by h.fecha, h.id), 600)
-    into v_n, v_x
+                         '; ' order by h.fecha, h.id), 600),
+         coalesce(jsonb_agg(h.id order by h.id), '[]'::jsonb)
+    into v_n, v_x, v_j
     from horas h
     left join proyectos pr on pr.id = h.proyecto_id
    where h.id = any (v_apr) and not (h.id = any (v_ids));
   if v_n > 0 then
-    v_avisos := v_avisos || jsonb_build_object('codigo', 'cubiertas_sin_aprobar', 'corto', 'Hay horas de otro pago sin aprobar', 'texto',
+    v_avisos := v_avisos || jsonb_build_object('codigo', 'cubiertas_sin_aprobar', 'corto', 'Hay horas de otro pago sin aprobar',
+      'horas_ids', v_j, 'texto',
       format('%s reporte(s) de esas fechas que no entran en este reparto están sin aprobar (ya los cubre otro pago, y cambiaron después '
              'o se les quitó la aprobación): %s. Al aceptar quedan aprobados como están hoy. El reparto que los cubre sigue hecho con '
              'las horas de antes: lo dice el control del jornal.', v_n, v_x));
   end if;
   -- Horas suyas de una semana YA repartida que no están en ningún reparto
-  -- (llegaron tarde) y que tampoco entran en este: ningún pago las recoge solo.
+  -- (llegaron tarde) y que tampoco entran en este: ningún pago las recoge
+  -- solo. Con las fechas que las cogerían (desde, hasta), para ofrecerlas.
   select count(*), coalesce(sum(t.horas), 0),
          left(string_agg(format('%s h del %s%s (semana del pago del %s)', fn_jornal_h(t.horas), fn_jornal_dia(t.fecha),
-                                coalesce(' en ' || t.obra, ' sin obra'), fn_jornal_dia(t.fecha_pago)), '; ' order by t.fecha, t.horas_id), 600)
-    into v_n, v_h2, v_x
+                                coalesce(' en ' || t.obra, ' sin obra'), fn_jornal_dia(t.fecha_pago)), '; ' order by t.fecha, t.horas_id), 600),
+         min(t.fecha), max(t.fecha)
+    into v_n, v_h2, v_x, v_d2, v_d3
     from fn_jornal_tardias(jp.usuario_id) t
    where not (t.horas_id = any (v_ids));
   if v_n > 0 then
-    v_avisos := v_avisos || jsonb_build_object('codigo', 'horas_tardias', 'corto', 'Tiene horas de una semana ya repartida sin pago', 'texto',
+    v_avisos := v_avisos || jsonb_build_object('codigo', 'horas_tardias', 'corto', 'Tiene horas de una semana ya repartida sin pago',
+      'horas', v_h2, 'reportes', v_n, 'desde', v_d2, 'hasta', v_d3, 'texto',
       format('%s tiene %s h de una semana ya repartida que no están en ningún reparto (se reportaron o se movieron después): %s. Si '
-             'este pago las cubre, elige fechas que las incluyan (a mano); si no, deshaz aquel reparto y vuelve a repartirlo con las '
-             'horas de hoy.', pf.nombre, fn_jornal_h(v_h2), v_x));
+             'este pago las cubre, elige fechas que las incluyan (a mano, desde el %s); si no, deshaz aquel reparto y vuelve a '
+             'repartirlo con las horas de hoy.', pf.nombre, fn_jornal_h(v_h2), v_x, fn_jornal_dia(v_d2, true)));
   end if;
   select string_agg(format('el del pago del %s (%s, %s)', fn_jornal_dia(mm.fecha), fn_jornal_usd(r.monto), fn_jornal_rango(r.desde, r.hasta)),
                     '; ' order by mm.fecha, r.id),
@@ -1654,24 +1872,58 @@ begin
     v_desvio := round((v_sale / v_tarifa - 1) * 100, 1);
     if abs(v_desvio) > cfg.aviso_tarifa_pct then
       v_avisos := v_avisos || jsonb_build_object('codigo', 'tarifa_lejos', 'corto', 'La tarifa que sale se aleja de la suya', 'texto',
+        -- (y si el Zelle lleva además otra cosa —un reembolso de material—, sale
+        -- caro por hora: un pago se reparte entero, no hay cómo apartar una parte)
         format('Sale a %s la hora y su tarifa en Costos del equipo es %s (%s %% %s). Revisa las fechas (¿el pago es de otra semana, o '
-               'de dos?) o las horas reportadas. Es solo un aviso: se puede repartir igual.', fn_jornal_usd(v_sale),
+               'de dos?) o las horas reportadas; y si el pago lleva además otra cosa (un reembolso de material), aquí iría entero a '
+               'su mano de obra. Es solo un aviso: se puede repartir igual.', fn_jornal_usd(v_sale),
                fn_jornal_usd(v_tarifa), trim_scale(abs(v_desvio)), case when v_desvio > 0 then 'más' else 'menos' end));
     end if;
   end if;
-  select string_agg(distinct format('%s (%s)', x->>'obra', case x->>'obra_estado' when 'completado' then 'terminada' else 'cancelada' end), '; ')
+  -- ¿Lo describe el banco como un pago a una persona? Un cargo en un comercio
+  -- cuyo nombre lleva el de alguien («POS PURCHASE … ZZANA SUPPLY») casa con
+  -- su patrón igual que su Zelle: se dice, para que no entre como jornal sin
+  -- mirarlo. Un aviso, no un freno (un banco puede describir un pago de otra
+  -- forma).
+  if v_txt !~ '\m(ZELLE|TRANSFER|TRANSFERENCIA|PAYMENT|PMT|PAGO|CHECK|CHEQUE|ACH|WIRE|VENMO|PAYPAL|CASHAPP|P2P)\M'
+     or v_txt ~ '\m(POS|PURCHASE|COMPRA|CARD|TARJETA)\M' then
+    v_avisos := v_avisos || jsonb_build_object('codigo', 'no_parece_pago', 'corto', 'No parece un pago a una persona', 'texto',
+      format('El banco no lo describe como un pago a una persona (un Zelle, una transferencia, un cheque): «%s». Mira que no sea una '
+             'compra en un comercio con un nombre parecido al de %s: si lo es, no lo repartas, clasifícalo en la Bandeja como siempre.',
+             left(coalesce(m.descripcion, m.memo, ''), 80), pf.nombre));
+  end if;
+  select string_agg(distinct format('%s (%s)', x->>'obra', case x->>'obra_estado' when 'completado' then 'terminada' else 'no aprobada' end), '; ')
            filter (where x->>'obra_estado' in ('completado', 'no_aprobado')),
+         coalesce(bool_or(x->>'obra_estado' = 'completado'), false),
          string_agg(distinct format('%s (%s)', x->>'obra', x->>'obra_estado'), '; ')
            filter (where x->>'obra_estado' in ('estimando', 'enviado'))
-    into v_x, v_y
+    into v_x, v_b, v_y
     from jsonb_array_elements(v_lineas) x;
   if v_x is not null then
-    v_avisos := v_avisos || jsonb_build_object('codigo', 'obra_terminada', 'corto', 'Hay una obra terminada', 'texto',
+    -- (terminada = completado; «no aprobada» = no_aprobado, como la llama la app)
+    v_avisos := v_avisos || jsonb_build_object('codigo', 'obra_terminada',
+      'corto', case when v_b then 'Hay una obra terminada' else 'Hay una obra no aprobada' end, 'texto',
       format('Hay horas en una obra que ya no está activa: %s. Su parte va a esa obra igual: el trabajo se hizo ahí.', v_x));
   end if;
   if v_y is not null then
     v_avisos := v_avisos || jsonb_build_object('codigo', 'obra_sin_aprobar', 'corto', 'Hay una obra sin aprobar', 'texto',
       format('Hay horas en una obra que todavía no está aprobada: %s. Su parte va a esa obra.', v_y));
+  end if;
+  -- Dos CO de la misma obra que solo se distinguen por las mayúsculas, los
+  -- espacios o un signo («co #1» y «CO #1»): el CO es texto libre (hasta que
+  -- f10 les dé su lista) y salen como dos líneas. Se dice; no se adivina cuál
+  -- es el bueno.
+  select string_agg(format('%s: %s', q.obra, q.cos), '; ' order by q.obra)
+    into v_x
+    from (select x->>'obra' as obra, string_agg('«' || (x->>'co') || '»', ' y ' order by x->>'co') as cos
+            from jsonb_array_elements(v_lineas) x
+           where x->>'co' is not null
+           group by x->>'proyecto_id', x->>'obra', upper(regexp_replace(x->>'co', '[^[:alnum:]]', '', 'g'))
+          having count(*) > 1) q;
+  if v_x is not null then
+    v_avisos := v_avisos || jsonb_build_object('codigo', 'co_parecidos', 'corto', 'Hay CO que parecen el mismo', 'texto',
+      format('Hay CO escritos de dos formas en la misma obra (%s): salen como líneas distintas. Si son el mismo, corrígelo en Horas '
+             'y vuelve a mirar.', v_x));
   end if;
   if v_sin is not null then
     if cfg.cuenta_sin_obra is null then
@@ -1699,26 +1951,76 @@ begin
     v_avisos := v_avisos || jsonb_build_object('codigo', 'posible_duplicado', 'corto', 'Posible duplicado sin decidir', 'texto', v_x);
     if v_puede then v_puede := false; v_porque := v_x; end if;
   end if;
+  -- LA FECHA CON QUE ENTRARÁ EL ASIENTO (la regla de c6 y c3 para todo lo que
+  -- trae el banco: la del movimiento; con su mes ya cerrado, el primer día
+  -- del primer mes abierto posterior).
   select p.periodo, p.estado into v_mes from periodos p where p.tipo <> 'anio' and m.fecha between p.desde and p.hasta;
+  v_fa := m.fecha;
   if v_mes.estado = 'cerrado' then
     select min(p.desde) into v_d from periodos p where p.tipo = 'mes' and p.estado = 'abierto' and p.desde > m.fecha;
+    v_fa := coalesce(v_d, m.fecha);
     v_avisos := v_avisos || jsonb_build_object('codigo', 'mes_cerrado', 'corto', 'El mes del pago está cerrado', 'texto',
       format('El pago es del %s y ese mes ya está cerrado: el asiento entrará con fecha %s (el primer día del mes abierto), como '
              'todo lo que el banco trae tarde. El reparto sigue siendo por las horas de las fechas que elijas.',
              fn_jornal_dia(m.fecha, true), coalesce(fn_jornal_dia(v_d, true), '(no hay un mes abierto)')));
   end if;
-  select string_agg(format('%s (asiento %s)', a.origen_id, a.numero), ', ' order by a.origen_id)
-    into v_x
-    from asientos a
-   where a.origen_tabla = 'horas_devengo' and a.camino not in ('reverso', 'reverso_automatico')
-     and a.origen_id in (select to_char(d, 'YYYY-MM')
-                           from generate_series(date_trunc('month', v_desde::timestamp), date_trunc('month', v_hasta::timestamp),
-                                                interval '1 month') d)
-     and not exists (select 1 from asientos x where x.reversa_a = a.id and x.camino = 'reverso');
+  -- EL CORTE DE MES Y DE AÑO. El asiento entra el día del pago (el libro va
+  -- por la fecha del banco, como QuickBooks): las horas de otro mes —o de
+  -- otro año— dejan su costo en el mes del pago. Se dice, con cuántas horas y
+  -- cuánto; no se frena. Lo del año es lo que le importa al CPA (el ejercicio
+  -- fiscal): si quiere ese costo en el año en que se trabajó, es un ajuste
+  -- suyo de fin de año (o el devengo de diciembre de c3, que ya no choca con
+  -- un pago hecho en enero: abajo).
+  select coalesce(sum(q.h) filter (where q.otro_anio), 0), coalesce(sum(q.m) filter (where q.otro_anio), 0),
+         string_agg(distinct q.anio, ' y ' order by q.anio) filter (where q.otro_anio),
+         coalesce(sum(q.h), 0), coalesce(sum(q.m), 0), string_agg(fn_jornal_mes(q.mes), ' y ' order by q.mes)
+    into v_h2, v_m2, v_y, v_h3, v_m3, v_x
+    from (select date_trunc('month', (x->>'fecha')::date)::date as mes, min(to_char((x->>'fecha')::date, 'YYYY')) as anio,
+                 bool_or(to_char((x->>'fecha')::date, 'YYYY') <> to_char(v_fa, 'YYYY')) as otro_anio,
+                 sum((x->>'horas')::numeric) as h, sum((x->>'monto')::numeric) as m
+            from jsonb_array_elements(v_det) x
+           where (x->>'entra')::boolean and to_char((x->>'fecha')::date, 'YYYY-MM') <> to_char(v_fa, 'YYYY-MM')
+           group by 1) q;
+  if v_h2 > 0 then
+    v_avisos := v_avisos || jsonb_build_object('codigo', 'otro_anio', 'corto', 'Horas de otro año', 'horas', v_h2, 'monto', v_m2,
+      'fecha_asiento', v_fa, 'texto',
+      format('%s h de este pago (%s) se trabajaron en %s y el asiento entra el %s: su costo queda en el ejercicio %s (el libro va por '
+             'la fecha del pago, como QuickBooks). Si el CPA quiere ese costo en el año en que se trabajó, es un ajuste suyo de fin de '
+             'año: díselo. Es solo un aviso.', fn_jornal_h(v_h2), fn_jornal_usd(v_m2), v_y, fn_jornal_dia(v_fa, true),
+             to_char(v_fa, 'YYYY')));
+  elsif v_h3 > 0 then
+    v_avisos := v_avisos || jsonb_build_object('codigo', 'otro_mes', 'corto', 'Horas de otro mes', 'horas', v_h3, 'monto', v_m3,
+      'fecha_asiento', v_fa, 'texto',
+      format('%s h de este pago (%s) se trabajaron en %s y el asiento entra el %s: su costo queda en %s (el libro va por la fecha del '
+             'pago, como QuickBooks). Es solo un aviso.', fn_jornal_h(v_h3), fn_jornal_usd(v_m3), v_x, fn_jornal_dia(v_fa, true),
+             fn_jornal_mes(v_fa)));
+  end if;
+  -- EL DEVENGO ESTÁNDAR (c3, fn_horas_devengar: opcional) pone en su mes lo
+  -- trabajado y TODAVÍA NO PAGADO, y se deshace solo el día 1 del mes
+  -- siguiente. Doble es solo esto: una hora que entra en este reparto está en
+  -- el documento de un devengo vivo, y este pago entra al libro DENTRO del
+  -- mes de ese devengo (o antes). Un pago que entra después —el lunes
+  -- siguiente al fin de mes— no choca: ese mes lleva el devengo, y el
+  -- siguiente su reverso y el pago real.
+  select string_agg(format('%s (asiento %s)', q.mes, q.numero), ', ' order by q.mes, q.numero), coalesce(sum(q.h), 0)
+    into v_x, v_h2
+    from (select a.origen_id as mes, a.numero, sum(h.horas) as h
+            from asientos a
+            cross join lateral jsonb_array_elements(case when jsonb_typeof(a.procedencia->'documento'->'horas') = 'array'
+                                                         then a.procedencia->'documento'->'horas' else '[]'::jsonb end) d
+            join horas h on h.id = (case when d->>'horas_id' ~ '^-?[0-9]{1,18}$' then (d->>'horas_id')::bigint end)
+           where a.origen_tabla = 'horas_devengo' and a.camino not in ('reverso', 'reverso_automatico')
+             and not exists (select 1 from asientos x where x.reversa_a = a.id and x.camino = 'reverso')
+             and a.fecha_contable >= v_fa
+             and h.id = any (v_ids)
+           group by a.origen_id, a.numero) q;
   if v_x is not null then
-    v_avisos := v_avisos || jsonb_build_object('codigo', 'devengo_estandar', 'corto', 'El mes tiene devengo estándar', 'texto',
-      format('Ese mes tiene devengo estándar de horas: %s. Con este jornal, la mano de obra de esas horas saldría dos veces ese mes '
-             '(el devengo en 5000 y el pago real). Antes de cerrar el mes hay que quitar uno de los dos.', v_x));
+    v_avisos := v_avisos || jsonb_build_object('codigo', 'devengo_estandar', 'corto', 'Horas ya en el devengo estándar del mes',
+      'horas', v_h2, 'texto',
+      format('%s h de este reparto ya están en el devengo estándar de %s, y este pago entra al libro el %s, dentro de ese mes: su '
+             'mano de obra saldría dos veces ahí (el devengo en 5000 y el pago real). El devengo estándar es solo para lo trabajado '
+             'y todavía no pagado: hay que retirarlo de ese mes antes de cerrarlo (avisa).', fn_jornal_h(v_h2), v_x,
+             fn_jornal_dia(v_fa, true)));
   end if;
   if v_desde > m.fecha then
     v_avisos := v_avisos || jsonb_build_object('codigo', 'periodo_futuro', 'corto', 'Las fechas son posteriores al pago', 'texto',
@@ -1740,28 +2042,40 @@ begin
   end if;
 
   -- LA HUELLA de lo que Edgar ve: el movimiento, la persona, las fechas, el
-  -- monto, las cuentas, si entran las cubiertas, y cada reporte que entra.
+  -- monto, las cuentas, si entran las cubiertas, y CADA reporte que entra o
+  -- que el «Así es» va a aprobar: su id, fecha, obra, CO, fase y horas
+  -- (limpios, como se reparten), si entra («E») y si se aprueba («A»). La
+  -- huella cubre EXACTAMENTE lo que se aprueba: un reporte que no entra (ya
+  -- lo cubre otro pago) y pierde su aprobación entre que Edgar mira y toca
+  -- —alguien le cambió las horas, y c3 se la tumbó— cambia la huella, y no se
+  -- aprueba sin que él lo vea.
   v_visto := md5(concat_ws('|', 'c10', m.id::text, jp.usuario_id::text, to_char(v_desde, 'YYYY-MM-DD'), to_char(v_hasta, 'YYYY-MM-DD'),
                            v_monto::text, v_cuenta, coalesce(cfg.cuenta_sin_obra, '-'), case when v_incl then 'con' else 'sin' end)
                  || E'\n'
                  || coalesce((select string_agg(concat_ws('|', h.id::text, to_char(h.fecha, 'YYYY-MM-DD'), coalesce(h.proyecto_id, '-'),
-                                                          coalesce(nullif(btrim(h.co), ''), '-'), coalesce(nullif(btrim(h.fase), ''), '-'),
-                                                          trim_scale(h.horas)::text), E'\n' order by h.id)
-                                from horas h where h.id = any (v_ids)), ''));
+                                                          coalesce(case when h.proyecto_id is null then null else fn_jornal_limpio(h.co) end, '-'),
+                                                          coalesce(fn_jornal_limpio(h.fase), '-'), trim_scale(h.horas)::text,
+                                                          case when h.id = any (v_ids) then 'E' else '-' end,
+                                                          case when h.id = any (v_apr) then 'A' else '-' end), E'\n' order by h.id)
+                                from horas h where h.id = any (v_ids) or h.id = any (v_apr)), ''));
 
-  -- La propuesta de la IA (c8) que este movimiento tenga pendiente, si c8 está.
-  if to_regclass('public.contador_propuestas') is not null then
-    begin
-      execute 'select p.id from public.contador_propuestas p where p.movimiento_id = $1 and p.estado = ''pendiente'' limit 1'
-         into v_pia using m.id;
-    exception when others then
-      v_pia := null;
-    end;
-  end if;
+  -- Las propuestas de la IA (c8) que este pago tiene abiertas, si c8 está: la
+  -- pendiente (propuesta_ia, como siempre) y, con ella, las aprobadas o
+  -- editadas cuyo asiento ya no vive (propuestas_ia, con qué hacer con cada
+  -- una: «rechazar» la pendiente, «caducar» las otras). Las cierra la pantalla
+  -- por la función de borde «contador»: c10 no escribe en c8.
+  select coalesce(jsonb_agg(jsonb_build_object('propuesta_id', i.propuesta_id, 'clase', i.clase, 'estado', i.estado,
+                                               'resumen', i.resumen, 'asiento', i.asiento,
+                                               'que_hacer', case i.clase when 'pendiente' then 'rechazar' else 'caducar' end)
+                            order by (i.clase = 'pendiente') desc, i.propuesta_id), '[]'::jsonb),
+         (array_agg(i.propuesta_id) filter (where i.clase = 'pendiente'))[1]
+    into v_iac, v_pia
+    from fn_jornal_ia(m.id) i;
 
   return jsonb_build_object(
     'reconocido', true,
-    'movimiento', v_mov || jsonb_build_object('periodo', v_mes.periodo, 'mes_cerrado', coalesce(v_mes.estado = 'cerrado', false)),
+    'movimiento', v_mov || jsonb_build_object('periodo', v_mes.periodo, 'mes_cerrado', coalesce(v_mes.estado = 'cerrado', false),
+                                              'fecha_asiento', v_fa),
     'persona', jsonb_build_object('usuario_id', jp.usuario_id, 'nombre', pf.nombre, 'rol', pf.rol, 'tarifa', v_tarifa,
                                   'cuenta', v_cuenta, 'patron', jp.patron),
     'periodo', jsonb_build_object('desde', v_desde, 'hasta', v_hasta, 'regla', v_regla, 'texto', fn_jornal_rango(v_desde, v_hasta),
@@ -1771,7 +2085,8 @@ begin
     'lineas', v_lineas, 'sin_obra', v_sin, 'detalle', v_det, 'cubiertas', v_cub,
     'tarifa_sale', v_sale, 'tarifa_equipo', v_tarifa, 'tarifa_desvio_pct', v_desvio,
     'avisos', v_avisos, 'puede_aplicar', v_puede, 'por_que', v_porque,
-    'visto', v_visto, 'propuesta_ia', v_pia,
+    'visto', v_visto, 'aprueba', jsonb_build_object('reportes', cardinality(v_apr), 'ids', to_jsonb(v_apr)),
+    'propuesta_ia', v_pia, 'propuestas_ia', v_iac,
     'opciones', jsonb_build_object('incluir_cubiertas', v_incl));
 end $$;
 revoke execute on function public.fn_jornal_calcular(uuid, date, date, jsonb) from public, anon, service_role;
@@ -1782,7 +2097,8 @@ comment on function public.fn_jornal_calcular(uuid, date, date, jsonb) is 'c10: 
 -- reconocido: {reconocido: false, por_que, movimiento, y —si es un cargo
 -- pendiente sin persona— patron_sugerido y candidatos}. Si lo es:
 --   movimiento   {id, fecha, monto (lo pagado, en positivo), cuenta,
---                 descripcion, estado, periodo, mes_cerrado}
+--                 descripcion, estado, periodo, mes_cerrado, fecha_asiento
+--                 (el día con que entrará al libro)}
 --   persona      {usuario_id, nombre, rol, tarifa (costos_equipo), cuenta, patron}
 --   periodo      {desde, hasta, regla (semana_anterior | semana_en_curso |
 --                 a_mano), texto, por_defecto {desde, hasta, regla},
@@ -1796,15 +2112,24 @@ comment on function public.fn_jornal_calcular(uuid, date, date, jsonb) is 'c10: 
 --                 reportes de esas fechas)
 --   cubiertas    {horas, reportes, incluidas, repartos [...]} o null
 --   tarifa_sale, tarifa_equipo, tarifa_desvio_pct
---   avisos       [{codigo, corto, texto}]: sin_horas, horas_cubiertas, se_pisa,
---                tarifa_lejos, sin_tarifa, obra_terminada, obra_sin_aprobar,
---                falta_cuenta_sin_obra, cuenta_mal, posible_duplicado,
---                mes_cerrado, devengo_estandar, periodo_futuro,
---                reparto_suelto (se_pisa trae además repartos [ids];
---                reparto_suelto, reparto_id)
+--   avisos       [{codigo, corto, texto}]: sin_horas, horas_cubiertas,
+--                cubiertas_sin_aprobar (+horas_ids), horas_tardias (+horas,
+--                reportes, desde, hasta: las fechas que las cogerían),
+--                se_pisa (+repartos [ids]), sin_tarifa, tarifa_lejos,
+--                no_parece_pago, obra_terminada, obra_sin_aprobar,
+--                co_parecidos, falta_cuenta_sin_obra, cuenta_mal,
+--                posible_duplicado, mes_cerrado, otro_anio u otro_mes
+--                (+horas, monto, fecha_asiento), devengo_estandar (+horas),
+--                periodo_futuro, reparto_suelto (+reparto_id)
 --   puede_aplicar, por_que
 --   visto        la huella que hay que devolver a fn_jornal_aplicar
+--   aprueba      {reportes, ids}: los reportes de esas fechas que el «Así es»
+--                va a aprobar (todos los que están sin aprobar, entren o no)
 --   propuesta_ia la propuesta pendiente de c8 para este movimiento (o null)
+--   propuestas_ia [{propuesta_id, clase (pendiente | sin_asiento), estado,
+--                resumen, asiento, que_hacer (rechazar | caducar)}]: todo lo
+--                de c8 que este pago tiene abierto (la pendiente, y las
+--                aprobadas o editadas cuyo asiento ya no vive)
 --   opciones     {incluir_cubiertas}
 -- Las fechas a mano van las dos (o ninguna: el período por defecto), hasta
 -- 62 días. Solo el dueño.
@@ -1834,7 +2159,7 @@ begin
 end $$;
 revoke execute on function public.fn_jornal_propuesta(uuid, date, date, jsonb) from public, anon, service_role;
 grant  execute on function public.fn_jornal_propuesta(uuid, date, date, jsonb) to authenticated;
-comment on function public.fn_jornal_propuesta(uuid, date, date, jsonb) is 'c10: la propuesta de reparto de un pago (SOLO LEE): si el movimiento es el pago de una persona dada de alta, la persona y su tarifa, el período (el de la regla del día del pago, o las fechas que se pidan) con las dos semanas para elegir, las horas, las líneas por obra y CO, lo sin obra, el detalle por reporte, lo ya cubierto por otro pago, la tarifa que sale, los avisos en llano, si se puede aplicar y por qué no, y «visto», la huella que hay que devolver a fn_jornal_aplicar. Si no lo es, {reconocido: false, por_que}. Solo el dueño.';
+comment on function public.fn_jornal_propuesta(uuid, date, date, jsonb) is 'c10: la propuesta de reparto de un pago (SOLO LEE): si el movimiento es el pago de una persona dada de alta, la persona y su tarifa, el período (el de la regla del día del pago, o las fechas que se pidan) con las dos semanas para elegir, las horas, las líneas por obra y CO, lo sin obra, el detalle por reporte, lo ya cubierto por otro pago, la tarifa que sale, los avisos en llano, si se puede aplicar y por qué no, «visto» (la huella que hay que devolver a fn_jornal_aplicar), «aprueba» (los reportes que el «Así es» aprobará) y lo de la IA (c8) que el pago tiene abierto (propuesta_ia, propuestas_ia). Si no lo es, {reconocido: false, por_que}. Solo el dueño.';
 
 
 -- ---------------------------------------------------------------------
@@ -1848,7 +2173,8 @@ comment on function public.fn_jornal_propuesta(uuid, date, date, jsonb) is 'c10:
 --     con el porqué, y nada cambia;
 --   · si la huella no es la que Edgar vio (p_visto): MX011, y nada cambia;
 --   · aprueba las horas de esas fechas que estaban sin aprobar, por el
---     camino de c3 (fn_horas_aprobar con sus ids: lo que Edgar vio);
+--     camino de c3 (fn_horas_aprobar con sus ids: lo que Edgar vio, la
+--     lista «aprueba» del cálculo, que la huella cubre entera);
 --   · postea por el camino del banco (fn_banco_clasificar, c6): la línea del
 --     banco y una por obra y CO a la cuenta del jornal, con su obra, su CO y
 --     la persona (tercero empleado); lo sin obra, a su cuenta. Sin motivo,
@@ -1862,7 +2188,9 @@ comment on function public.fn_jornal_propuesta(uuid, date, date, jsonb) is 'c10:
 -- desde, hasta, regla_periodo, monto, horas, tarifa_sale, asiento {id,
 -- numero, fecha_contable, periodo}, tardio (la nota de c6 si el mes del pago
 -- estaba cerrado), horas_aprobadas {reportes, ids}, lineas, sin_obra,
--- avisos, propuesta_ia, nota}.
+-- avisos, propuesta_ia, propuestas_ia (lo de c8 que queda abierto: la
+-- pantalla lo cierra por la función de borde «contador»), nota}. NO se frena
+-- por una propuesta pendiente de la IA (cabecera, «decisiones»).
 create or replace function public.fn_jornal_aplicar(p_movimiento uuid, p_desde date, p_hasta date, p_visto text,
                                                     p_opciones jsonb default '{}'::jsonb)
 returns jsonb
@@ -1935,12 +2263,13 @@ begin
   v_nombre := v_j->'persona'->>'nombre';
 
   -- LA APROBACIÓN, por el camino de c3: los reportes de esas fechas que
-  -- estaban sin aprobar (los que Edgar vio: van por sus ids). Si entre
-  -- medias apareció otro, c3 lo dice (MX008) y aquí sale como MX011.
-  select coalesce(array_agg((x->>'horas_id')::bigint order by (x->>'horas_id')::bigint), '{}')
+  -- estaban sin aprobar, TODOS (entren o no en este reparto: c3 aprueba por
+  -- persona y fechas, y pide esa lista exacta). Es la lista «aprueba» del
+  -- cálculo, la misma que va en la huella: lo que Edgar vio, por sus ids. Si
+  -- entre medias apareció otro, c3 lo dice (MX008) y aquí sale como MX011.
+  select coalesce(array_agg(x.v::bigint order by x.v::bigint), '{}')
     into v_ids
-    from jsonb_array_elements(v_j->'detalle') x
-   where not (x->>'aprobada')::boolean;
+    from jsonb_array_elements_text(v_j->'aprueba'->'ids') x(v);
   if cardinality(v_ids) > 0 then
     begin
       v_ap := fn_horas_aprobar(v_u, p_desde, p_hasta, jsonb_build_object('ids', to_jsonb(v_ids)));
@@ -1995,10 +2324,31 @@ begin
   -- El asiento que quedó ES el reparto: la línea 1 es la del banco y las
   -- nuestras van detrás, en su orden, con su cuenta, su monto, su obra, su CO
   -- y la persona.
-  select string_agg(format('la línea %s', z.o + 1), ', ' order by z.o), count(*)
-    into v_mal, v_n
+  -- (Si no lo fuera —c6 limpia o cambia algo que c10 no previó—, se dice QUÉ
+  -- línea y QUÉ campo, con lo que quedó y lo que se pidió, y qué hacer: nada
+  -- se guarda, y el pago sigue en la Bandeja. El CO y la fase ya van limpios
+  -- como los deja c6, fn_jornal_limpio: antes un CO con un salto de línea
+  -- paraba aquí con «la línea 3… Avisa», sin decir que era el CO.)
+  select string_agg(format('la línea %s%s: %s', z.o + 1, coalesce(' (' || pr.nombre || ')', ''),
+                           concat_ws('; ',
+                             case when al.asiento_id is null then 'no está en el asiento' end,
+                             case when al.asiento_id is not null and al.cuenta is distinct from z.l->>'cuenta'
+                                  then format('la cuenta quedó %s y se pidió %s', al.cuenta, z.l->>'cuenta') end,
+                             case when al.asiento_id is not null and al.monto is distinct from (z.l->>'monto')::numeric
+                                  then format('el monto quedó %s y se pidió %s', al.monto, z.l->>'monto') end,
+                             case when al.asiento_id is not null and al.proyecto_id is distinct from z.l->>'proyecto_id'
+                                  then format('la obra quedó «%s» y se pidió «%s»', coalesce(al.proyecto_id, ''), coalesce(z.l->>'proyecto_id', '')) end,
+                             case when al.asiento_id is not null and al.co is distinct from z.l->>'co'
+                                  then format('el CO quedó %s y se pidió %s', coalesce(quote_literal(al.co), 'vacío'),
+                                              coalesce(quote_literal(z.l->>'co'), 'vacío')) end,
+                             case when al.asiento_id is not null
+                                       and (al.tercero_tipo is distinct from 'empleado' or al.tercero_id is distinct from v_u::text)
+                                  then 'no lleva a la persona (tercero empleado)' end)),
+                    ' · ' order by z.o)
+    into v_mal
     from (select x.l, x.o from jsonb_array_elements(v_lineas) with ordinality as x(l, o)) z
     left join asiento_lineas al on al.asiento_id = v_as.id and al.orden = z.o + 1
+    left join proyectos pr on pr.id = z.l->>'proyecto_id'
    where al.asiento_id is null
       or al.cuenta is distinct from z.l->>'cuenta' or al.monto is distinct from (z.l->>'monto')::numeric
       or al.proyecto_id is distinct from z.l->>'proyecto_id' or al.co is distinct from z.l->>'co'
@@ -2006,8 +2356,14 @@ begin
   if v_mal is not null
      or (select count(*) from asiento_lineas al where al.asiento_id = v_as.id) <> jsonb_array_length(v_lineas) + 1 then
     raise exception using errcode = 'MX001',
-      message = format('El asiento %s que dejó el banco no es el reparto que se le pidió (%s): no se guarda nada. Avisa.',
-                       v_as.numero, coalesce(v_mal, 'trae otras líneas'));
+      message = format('El asiento %s que dejó el banco no es el reparto que se le pidió: %s. No se guardó nada (ni el asiento, ni el '
+                       'reparto, ni la aprobación de las horas): el pago sigue en la Bandeja. Si lo que no coincide es el CO o la '
+                       'obra de unas horas, corrígelos en Horas y vuelve a mirar el reparto; si no, avisa con este mensaje.',
+                       v_as.numero,
+                       coalesce(left(v_mal, 900),
+                                format('trae %s líneas y se pidieron %s (la del banco y una por cada parte)',
+                                       (select count(*) from asiento_lineas al where al.asiento_id = v_as.id),
+                                       jsonb_array_length(v_lineas) + 1)));
   end if;
 
   -- EL REPARTO, sus partes y su detalle (con la marca de la guarda).
@@ -2043,16 +2399,34 @@ begin
     'asiento', jsonb_build_object('id', v_as.id, 'numero', v_as.numero, 'fecha_contable', v_as.fecha_contable, 'periodo', v_as.periodo),
     'tardio', v_as.procedencia->>'tardio',
     'horas_aprobadas', jsonb_build_object('reportes', cardinality(v_ids), 'ids', to_jsonb(v_ids)),
-    'lineas', v_j->'lineas', 'sin_obra', v_sin, 'avisos', v_j->'avisos', 'propuesta_ia', v_j->'propuesta_ia',
-    'nota', format('Repartido: %s de %s (%s, %s h) entre %s obra(s)%s; asiento %s del %s.%s',
+    'lineas', v_j->'lineas', 'sin_obra', v_sin, 'avisos', v_j->'avisos',
+    -- (lo de la IA que este pago deja abierto, para que la pantalla lo cierre
+    -- por la función de borde «contador»: la pendiente —«No es eso»— y las
+    -- aprobadas cuyo asiento ya no vive —«caducar»—; si no llega a cerrarlas,
+    -- el control del jornal, el 80, las sigue enseñando)
+    'propuesta_ia', v_j->'propuesta_ia', 'propuestas_ia', v_j->'propuestas_ia',
+    -- (las obras a las que les llegó dinero: un grupo al que no le toca ni un
+    -- centavo no lleva línea, y no se cuenta)
+    'nota', format('Repartido: %s de %s (%s, %s h) entre %s obra(s)%s; asiento %s del %s.%s%s',
                    fn_jornal_usd((v_j->'movimiento'->>'monto')::numeric), v_nombre, v_j->'periodo'->>'texto',
-                   fn_jornal_h((v_j->>'horas')::numeric), v_j->>'obras',
-                   case when v_sin is not null then ' y lo sin obra' else '' end, v_as.numero, fn_jornal_dia(v_as.fecha_contable, true),
+                   fn_jornal_h((v_j->>'horas')::numeric),
+                   (select count(distinct x->>'proyecto_id') from jsonb_array_elements(v_j->'lineas') x where (x->>'monto')::numeric > 0),
+                   case when v_sin is not null and (v_sin->>'monto')::numeric > 0 then ' y lo sin obra' else '' end,
+                   v_as.numero, fn_jornal_dia(v_as.fecha_contable, true),
+                   case when (select count(*) from jsonb_array_elements(v_j->'lineas' || case when v_sin is not null then jsonb_build_array(v_sin)
+                                                                                           else '[]'::jsonb end) x
+                               where (x->>'monto')::numeric = 0) > 0
+                        then format(' A %s grupo(s) de horas no les llegó ni un centavo (el pago es muy chico): no llevan línea.',
+                                    (select count(*) from jsonb_array_elements(v_j->'lineas' || case when v_sin is not null
+                                                                                                    then jsonb_build_array(v_sin)
+                                                                                                    else '[]'::jsonb end) x
+                                      where (x->>'monto')::numeric = 0))
+                        else '' end,
                    case when cardinality(v_ids) > 0 then format(' Quedaron aprobados %s reporte(s) de horas.', cardinality(v_ids)) else '' end));
 end $$;
 revoke execute on function public.fn_jornal_aplicar(uuid, date, date, text, jsonb) from public, anon, service_role;
 grant  execute on function public.fn_jornal_aplicar(uuid, date, date, text, jsonb) to authenticated;
-comment on function public.fn_jornal_aplicar(uuid, date, date, text, jsonb) is 'c10: «Así es»: en una transacción vuelve a calcular el reparto de un pago; si la huella (p_visto) ya no es la de las horas de hoy, MX011 y nada cambia; si lo es, aprueba esas horas por c3 (fn_horas_aprobar), postea por c6 (fn_banco_clasificar: una línea por obra y CO con la persona como tercero; lo sin obra a su cuenta), comprueba el asiento línea por línea y guarda el reparto con su detalle. MX008 si el movimiento ya está resuelto, no hay horas o falta una cuenta; los errores de c6, c3 y c2 salen tal cual. p_opciones: {incluir_cubiertas, motivo}. Solo el dueño.';
+comment on function public.fn_jornal_aplicar(uuid, date, date, text, jsonb) is 'c10: «Así es»: en una transacción vuelve a calcular el reparto de un pago; si la huella (p_visto) ya no es la de las horas de hoy, MX011 y nada cambia; si lo es, aprueba por c3 (fn_horas_aprobar) los reportes de esas fechas sin aprobar —los que la huella cubre—, postea por c6 (fn_banco_clasificar: una línea por obra y CO con la persona como tercero; lo sin obra a su cuenta), comprueba el asiento línea por línea (MX001 con la línea y el campo, si no lo fuera) y guarda el reparto con su detalle; devuelve también lo de la IA (c8) que queda abierto (propuestas_ia). MX008 si el movimiento ya está resuelto, no hay horas o falta una cuenta; los errores de c6, c3 y c2 salen tal cual. p_opciones: {incluir_cubiertas, motivo}. Solo el dueño.';
 
 -- DESHACER un reparto, con su motivo: por el camino del banco
 -- (fn_banco_descasar, c6): el asiento se REVERSA (no se borra) y el
@@ -2107,7 +2481,7 @@ begin
     if not exists (select 1 from asientos x where x.reversa_a = r.asiento_id and x.camino = 'reverso') then
       raise exception using errcode = 'MX008',
         message = format('El movimiento ya no está casado con el asiento %s de este reparto, y ese asiento sigue vivo en el libro: '
-                         'no lo toco. Mira v_jornal_control y avisa.', coalesce(v_num, '?'));
+                         'no lo toco. Mira el control del jornal (Contabilidad → Bandeja) y avisa.', coalesce(v_num, '?'));
     end if;
     v_fuera := true;
   end if;
@@ -2173,7 +2547,8 @@ begin
     v_x := fn_jornal_cuenta_mal(btrim(p->>'cuenta_sin_obra'), 'sin_obra');
     if v_x is not null then
       raise exception using errcode = 'MX004',
-        message = format('La cuenta de la mano de obra sin obra no vale: %s. Tiene que ser de costo o de gasto y no exigir obra.', v_x);
+        message = format('La cuenta de la mano de obra sin obra no vale: %s. Sirve una de gasto general que no exija obra (7900 mientras '
+                         'el CPA decide), o la que él cree para esto.', v_x);
     end if;
   end if;
   if p ? 'burden_estandar_pct' and jsonb_typeof(p->'burden_estandar_pct') <> 'null' then
@@ -2236,6 +2611,10 @@ declare
   v_n      int;
   v_amb    int;
   v_fila   jornal_personas;
+  v_pila   text;
+  v_nd     int;
+  v_dtxt   text;
+  v_av     text[] := '{}';
 begin
   perform fn_jornal_exigir_dueno();
   if p is null or jsonb_typeof(p) <> 'object' then
@@ -2329,15 +2708,42 @@ begin
     into v_n, v_amb
     from movimientos_banco mm
    where v_fila.activa and mm.estado = 'pendiente' and mm.monto < 0 and fn_jornal_texto(mm.desc_norm, mm.memo) ~* v_fila.patron;
+  -- LO QUE NO SE PUEDE SABER SOLO, DICHO (avisos; ninguno frena: el banco
+  -- puede escribir el nombre legal y la app el de pila):
+  --   · el patrón no lleva el nombre de pila del perfil: ¿es el de otra
+  --     persona? (el patrón de Zzana en el perfil de Zzcaro reconocía sus
+  --     pagos a nombre de Zzcaro, con ella como tercero, sin decir nada);
+  --   · el patrón casa, en lo que el banco ya trajo, con pagos a varios
+  --     destinatarios distintos (un comercio con un nombre parecido, otra
+  --     persona con el mismo apellido): tiene que llevar solo su nombre.
+  if v_fila.activa then
+    v_pila := upper(translate(split_part(btrim(coalesce(v_pf.nombre, '')), ' ', 1), 'áéíóúüñÁÉÍÓÚÜÑ', 'aeiouunAEIOUUN'));
+    if v_pila ~ '^[A-Z]{3,}$' and position(v_pila in upper(v_fila.patron)) = 0 then
+      v_av := v_av || format('El patrón «%s» no lleva el nombre de %s («%s»): mira que sea el de sus pagos y no el de otra persona.',
+                             v_fila.patron, v_pf.nombre, v_pila);
+    end if;
+    select count(*), left(string_agg('«' || q.d || '»', ', ' order by q.n desc, q.d), 300)
+      into v_nd, v_dtxt
+      from (select fn_jornal_destinatario(mm.desc_norm) as d, count(*) as n
+              from movimientos_banco mm
+             where mm.monto < 0 and fn_jornal_texto(mm.desc_norm, mm.memo) ~* v_fila.patron
+             group by 1) q;
+    if v_nd > 1 then
+      v_av := v_av || format('El patrón casa con pagos que el banco describe de %s formas distintas (%s): mira que todos sean suyos; si '
+                             'alguno es de un comercio o de otra persona, afina el patrón.', v_nd, v_dtxt);
+    end if;
+  end if;
   return to_jsonb(v_fila)
          || jsonb_build_object('nombre', v_pf.nombre, 'nueva', v_ex.usuario_id is null, 'pagos_pendientes', v_n, 'ambiguos', v_amb,
+                               'avisos', to_jsonb(v_av),
                                'nota_alta', case when not v_fila.activa then format('%s queda de baja: sus pagos ya no se reconocen solos.', v_pf.nombre)
                                                  when v_amb > 0 then format('%s de sus %s pago(s) pendientes casan también con otra persona: afina el patrón.', v_amb, v_n)
-                                                 else format('%s: %s pago(s) pendientes reconocidos con «%s».', v_pf.nombre, v_n, v_fila.patron) end);
+                                                 else format('%s: %s pago(s) pendientes reconocidos con «%s».', v_pf.nombre, v_n, v_fila.patron) end
+                                            || case when cardinality(v_av) > 0 then ' Ojo: ' || array_to_string(v_av, ' ') else '' end);
 end $$;
 revoke execute on function public.fn_jornal_persona(jsonb) from public, anon, service_role;
 grant  execute on function public.fn_jornal_persona(jsonb) to authenticated;
-comment on function public.fn_jornal_persona(jsonb) is 'c10: da de alta, cambia o da de baja (activa = false) a una persona cuyo pago se reparte por sus horas: {usuario_id, patron? (o movimiento_id: sale de su descripción), cuenta?, activa?, nota?}. El patrón se valida (22023), la cuenta también (MX004), el dueño no (MX008), y dos personas no comparten patrón (MX008). Devuelve la fila, su nombre y cuántos pagos pendientes reconoce. Solo el dueño.';
+comment on function public.fn_jornal_persona(jsonb) is 'c10: da de alta, cambia o da de baja (activa = false) a una persona cuyo pago se reparte por sus horas: {usuario_id, patron? (o movimiento_id: sale de su descripción), cuenta?, activa?, nota?}. El patrón se valida (22023), la cuenta también (MX004), el dueño no (MX008), y dos personas no comparten patrón (MX008). Devuelve la fila, su nombre, cuántos pagos pendientes reconoce y sus avisos (el patrón no lleva su nombre de pila; casa con pagos a varios destinatarios). Solo el dueño.';
 
 
 -- ---------------------------------------------------------------------
@@ -2381,7 +2787,7 @@ as $$
               when l.cuenta = '5200' then 'subcontratos'
               when l.cuenta = '5300' then 'equipo'
               else 'otros' end,
-         nullif(btrim(l.co), ''), nullif(btrim(l.fase), ''), l.cost_code,
+         public.fn_jornal_limpio(l.co), public.fn_jornal_limpio(l.fase), l.cost_code,
          (case when cu.tipo = 'ingreso' then -l.monto else l.monto end)::numeric(14,2),
          jl.reparto_id is not null, jl.reparto_id
     from public.asiento_lineas l
@@ -2422,7 +2828,7 @@ as $$
        pf as materialized (select p.id, p.nombre, p.rol from public.perfiles p),
        ce as materialized (select c.usuario_id, c.costo_hora from public.costos_equipo c)
   select h.id, h.proyecto_id, h.usuario_id, pf.nombre, coalesce(pf.rol = 'dueno', false), h.fecha,
-         nullif(btrim(h.co), ''), nullif(btrim(h.fase), ''), h.horas, h.aprobado_el is not null,
+         public.fn_jornal_limpio(h.co), public.fn_jornal_limpio(h.fase), h.horas, h.aprobado_el is not null,
          k.clase, ce.costo_hora, coalesce(pg.monto, 0)::numeric(14,2),
          (case when k.clase in ('estandar', 'dueno') then round(h.horas * ce.costo_hora * (1 + cfg.b / 100), 2) end)::numeric(14,2),
          pg.n
@@ -2459,6 +2865,10 @@ comment on function public.fn_margen_horas(text) is 'c10: las horas con obra, re
 -- es el suyo y los beneficios coalesce(estimados.benefits_pct,
 -- escenarios.benefits); sin él, el escenario B. Un cero es «no hay».
 -- benefits_detalle no se lee: es lo que se cotiza, no un costo.
+-- (Su costo_estimado es la suma de LO QUE HAY estimado, mano de obra y
+-- material. Si con eso hay un total que comparar contra el real lo decide
+-- fn_margen_obras, que es quien ve el real: v_margen_obra.costo_estimado
+-- sale vacío cuando el estimado está incompleto.)
 create or replace function public.fn_margen_estimado(p_proyecto text default null)
 returns table (proyecto_id text, horas_estimadas numeric, escenario text, estimado_id bigint, beneficios numeric,
                tarifa_estimada numeric(10,2), mano_obra_estimada numeric(14,2), material_presupuesto numeric(14,2),
@@ -2488,7 +2898,7 @@ as $$
 $$;
 revoke execute on function public.fn_margen_estimado(text) from public, anon, service_role;
 grant  execute on function public.fn_margen_estimado(text) to authenticated;
-comment on function public.fn_margen_estimado(text) is 'c10: el estimado de cada obra, de las mismas fuentes que la app: horas_estimadas (proyectos), material_presupuesto y contrato (finanzas_proyecto) y la tarifa de mano de obra del escenario con que se cotizó (el del estimado enlazado, con coalesce(estimados.benefits_pct, escenarios.benefits); sin estimado enlazado, el B). Un cero cuenta como «no hay». Solo lectura.';
+comment on function public.fn_margen_estimado(text) is 'c10: el estimado de cada obra, de las mismas fuentes que la app: horas_estimadas (proyectos), material_presupuesto y contrato (finanzas_proyecto) y la tarifa de mano de obra del escenario con que se cotizó (el del estimado enlazado, con coalesce(estimados.benefits_pct, escenarios.benefits); sin estimado enlazado, el B). Un cero cuenta como «no hay». costo_estimado es la suma de lo que hay (si da un total que comparar con el real lo decide fn_margen_obras). Solo lectura.';
 
 -- LA FILA POR OBRA (v_margen_obra la enseña entera; fn_margen_obra pide una):
 --   proyecto_id, obra, cliente, tipo, estado, completado_el
@@ -2508,13 +2918,40 @@ comment on function public.fn_margen_estimado(text) is 'c10: el estimado de cada
 --     estándar), mano_obra_dueno (aparte: no suma), burden_estandar_pct,
 --     costo_con_estandar (costo_real + mano_obra_estandar)
 --   EL ESTIMADO: horas_estimadas, tarifa_estimada, escenario, estimado_id,
---     mano_obra_estimada, material_presupuesto, costo_estimado
+--     mano_obra_estimada, material_presupuesto, costo_estimado,
+--     estimado_completo y estimado_falta. UN ESTIMADO PARCIAL NO SE COMPARA
+--     CON UN REAL COMPLETO: costo_estimado (mano de obra estimada + material
+--     presupuestado) solo sale si el estimado da un total que comparar
+--     (estimado_completo). No lo da —y costo_estimado, margen_estimado, su %
+--     y diferencia salen vacíos, con el porqué en estimado_falta— cuando:
+--       · no hay nada estimado (ni horas ni material);
+--       · hay horas estimadas y no hay con qué valorarlas (falta el
+--         escenario o sus tarifas);
+--       · no hay mano de obra estimada y la obra YA lleva mano de obra (real,
+--         u horas a estándar);
+--       · no hay presupuesto de material y la obra YA lleva material en el
+--         libro.
+--     estimado_falta empieza por «No hay estimado» (nada estimado, lleve o
+--     no real la obra) o por «Estimado incompleto» (hay una parte y falta
+--     otra, y dice cuál). Lo que falta y todavía no tiene real (una obra de
+--     servicio sin material, por ejemplo) no estorba: se compara lo mismo
+--     con lo mismo.
+--     Antes la parte que faltaba sumaba 0 y la obra salía «se pasa» o «dentro»
+--     contra un real que sí traía ese concepto. Concepto por concepto
+--     (fn_margen_obra) se sigue comparando lo que sí está estimado.
 --   margen_real (ingreso_libro − costo_real) y su % sobre el ingreso;
 --   margen_estimado (contrato − costo_estimado) y su % sobre el contrato;
 --   diferencia (costo_estimado − costo_con_estandar: en positivo, la obra
---     va por debajo de lo estimado)
+--     va por debajo de lo estimado; vacía si el estimado no está completo o
+--     si el estándar no se puede calcular)
 --   pagos_sin_repartir (pagos reconocidos en la Bandeja cuya semana tiene
---     horas de esta obra), asientos, avisos (text[], en llano)
+--     horas de esta obra), asientos, avisos (text[], en llano: también las
+--     horas tardías de una semana ya repartida y los pagos de mano de obra
+--     resueltos fuera del jornal, que dejan horas de esta obra a estándar)
+-- (Crece por el final del estimado: se borra y se rehace, porque «create or
+-- replace» no cambia las columnas de lo que devuelve; las vistas que la leen
+-- se borraron arriba y se rehacen abajo, en este mismo pegado.)
+drop function if exists public.fn_margen_obras(text);
 create or replace function public.fn_margen_obras(p_proyecto text default null)
 returns table (proyecto_id text, obra text, cliente text, tipo text, estado text, completado_el date,
                libro_desde date, parcial boolean, parcial_por text,
@@ -2528,6 +2965,7 @@ returns table (proyecto_id text, obra text, cliente text, tipo text, estado text
                burden_estandar_pct numeric, costo_con_estandar numeric(14,2),
                horas_estimadas numeric, tarifa_estimada numeric(10,2), escenario text, estimado_id bigint,
                mano_obra_estimada numeric(14,2), material_presupuesto numeric(14,2), costo_estimado numeric(14,2),
+               estimado_completo boolean, estimado_falta text,
                margen_real numeric(14,2), margen_real_pct numeric, margen_estimado numeric(14,2),
                margen_estimado_pct numeric, diferencia numeric(14,2),
                pagos_sin_repartir int, asientos int, avisos text[])
@@ -2597,7 +3035,28 @@ as $$
           where (p_proyecto is null or h.proyecto_id = p_proyecto)
             and not exists (select 1 from public.jornal_reparto_horas rh join public.jornal_repartos r on r.id = rh.reparto_id
                              where rh.horas_id = h.id and r.estado = 'aplicado')
-          group by h.proyecto_id)
+          group by h.proyecto_id),
+       tar as materialized (
+         -- LAS HORAS TARDÍAS de cada obra (fn_jornal_tardias): de una semana que
+         -- esa persona ya tiene repartida, y fuera de su reparto. Salen a
+         -- estándar (no tienen pago real repartido) y el pago de esa semana
+         -- sigue entero entre las demás obras: se dice, para que no parezca
+         -- que la semana costó lo pagado MÁS el estándar.
+         select t.proyecto_id, sum(t.horas) as horas,
+                string_agg(distinct format('%s, pago del %s', coalesce(t.persona, 'alguien'), public.fn_jornal_dia(t.fecha_pago)), '; ') as quien
+           from public.fn_jornal_tardias(null) t
+          where t.proyecto_id is not null and (p_proyecto is null or t.proyecto_id = p_proyecto)
+          group by t.proyecto_id),
+       fue as materialized (
+         -- LOS PAGOS RESUELTOS FUERA DEL JORNAL (fn_jornal_fuera) que dejan horas
+         -- de esta obra sin pago real: su costo está en otra parte del libro y
+         -- estas horas salen, además, a estándar.
+         select f.proyecto_id, count(distinct f.movimiento_id)::int as n,
+                string_agg(distinct format('%s a %s el %s', public.fn_jornal_usd(f.monto), coalesce(f.persona, 'alguien'),
+                                           public.fn_jornal_dia(f.fecha)), '; ') as cual
+           from public.fn_jornal_fuera() f
+          where f.proyecto_id is not null and (p_proyecto is null or f.proyecto_id = p_proyecto)
+          group by f.proyecto_id)
   select p.id, p.nombre, p.cliente, p.tipo, p.estado,
          (case when to_jsonb(p)->>'completado_el' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' then left(to_jsonb(p)->>'completado_el', 10)::date end),
          lb.d, pre.proyecto_id is not null, pre.que,
@@ -2610,12 +3069,13 @@ as $$
          s.mo_estandar::numeric(14,2), s.falta, hrs.mo_dueno::numeric(14,2), cfg.b,
          (coalesce(lin.costo, 0) + s.mo_estandar)::numeric(14,2),
          est.horas_estimadas, est.tarifa_estimada, est.escenario, est.estimado_id,
-         est.mano_obra_estimada, est.material_presupuesto, est.costo_estimado,
+         est.mano_obra_estimada, est.material_presupuesto, e.costo::numeric(14,2),
+         e.completo, e.falta,
          (coalesce(lin.ingreso, 0) - coalesce(lin.costo, 0))::numeric(14,2),
          case when coalesce(lin.ingreso, 0) <> 0 then round(100 * (lin.ingreso - lin.costo) / lin.ingreso, 1) end,
-         (est.contrato - est.costo_estimado)::numeric(14,2),
-         case when est.contrato <> 0 then round(100 * (est.contrato - est.costo_estimado) / est.contrato, 1) end,
-         (est.costo_estimado - (coalesce(lin.costo, 0) + s.mo_estandar))::numeric(14,2),
+         (est.contrato - e.costo)::numeric(14,2),
+         case when est.contrato <> 0 then round(100 * (est.contrato - e.costo) / est.contrato, 1) end,
+         (e.costo - (coalesce(lin.costo, 0) + s.mo_estandar))::numeric(14,2),
          coalesce(pend.n, 0), coalesce(lin.asientos, 0),
          array_remove(array[
            case when pre.proyecto_id is not null
@@ -2629,6 +3089,15 @@ as $$
                             case when s.mo_estandar is not null then ': ' || public.fn_jornal_usd(s.mo_estandar) || ', estándar, no real'
                                  else '' end) end,
            case when s.falta is not null then s.falta end,
+           case when tar.proyecto_id is not null
+                then format('%s h de esta obra son de una semana ya repartida y no entraron en su reparto (%s): se reportaron o se movieron '
+                            'después. Aquí salen a estándar, y el pago de esa semana sigue repartido entre las demás obras. Deshaz ese '
+                            'reparto y vuelve a repartirlo con las horas de hoy, o repártelas con el pago que las cubra.',
+                            public.fn_jornal_h(tar.horas), tar.quien) end,
+           case when fue.proyecto_id is not null
+                then format('%s pago(s) de mano de obra se resolvieron en la Bandeja sin repartir por horas (%s): si era el pago de esas '
+                            'semanas, su costo está en otra parte del libro y las horas de esta obra salen, además, a estándar. '
+                            'Des-cásalo en la Bandeja y repártelo por sus horas.', fue.n, fue.cual) end,
            case when coalesce(hrs.dueno, 0) > 0
                 then format('%s h de %s (dueño) no están en el costo: no cobra por hora.', public.fn_jornal_h(hrs.dueno),
                             coalesce(hrs.duenos, 'el dueño')) end,
@@ -2636,7 +3105,8 @@ as $$
            case when est.horas_estimadas is null then 'Sin horas estimadas.' end,
            case when est.horas_estimadas is not null and est.tarifa_estimada is null
                 then format('Falta el escenario %s del estimador (o sus tarifas): no hay con qué estimar la mano de obra.', est.escenario) end,
-           case when est.material_presupuesto is null then 'Sin presupuesto de material.' end
+           case when est.material_presupuesto is null then 'Sin presupuesto de material.' end,
+           case when not e.completo and not e.nada then e.falta end
          ], null)
     from public.proyectos p
     cross join lb
@@ -2646,6 +3116,8 @@ as $$
     left join est on est.proyecto_id = p.id
     left join pre on pre.proyecto_id = p.id
     left join pend on pend.proyecto_id = p.id
+    left join tar on tar.proyecto_id = p.id
+    left join fue on fue.proyecto_id = p.id
     cross join lateral (
       select case when coalesce(hrs.estandar, 0) = 0 then 0
                   when cfg.b is null or hrs.sin_tarifa is not null then null
@@ -2656,12 +3128,43 @@ as $$
                   when hrs.sin_tarifa is not null
                     then format('Falta la tarifa de %s en Costos del equipo: la mano de obra estándar no se calcula.', hrs.sin_tarifa)
              end as falta) s
+    -- ¿DA EL ESTIMADO UN TOTAL QUE COMPARAR? Qué le falta, y si lo que falta
+    -- ya tiene real en la obra (arriba, en la cabecera de la función).
+    cross join lateral (
+      select (est.horas_estimadas is null and est.material_presupuesto is null) as nada,
+             (est.horas_estimadas is not null and est.tarifa_estimada is null) as mo_sin_tarifa,
+             (est.mano_obra_estimada is null and (coalesce(lin.mano_obra, 0) <> 0 or coalesce(hrs.estandar, 0) > 0)) as mo_falta,
+             (est.material_presupuesto is null and coalesce(lin.material, 0) <> 0) as mat_falta) q
+    cross join lateral (
+      select q.nada,
+             not (q.nada or q.mo_sin_tarifa or q.mo_falta or q.mat_falta) as completo,
+             case when not (q.nada or q.mo_sin_tarifa or q.mo_falta or q.mat_falta)
+                  then coalesce(est.mano_obra_estimada, 0) + coalesce(est.material_presupuesto, 0) end as costo,
+             -- (sin nada estimado —ni horas ni material— es «no hay estimado», lleve o
+             -- no lleve real la obra; «incompleto» es cuando hay una parte y falta otra)
+             case when q.nada then 'No hay estimado: faltan las horas estimadas y el presupuesto de material.'
+                  when q.mo_sin_tarifa or q.mo_falta or q.mat_falta
+                    then 'Estimado incompleto: '
+                         || concat_ws('; y ',
+                              case when q.mo_sin_tarifa
+                                     then format('hay %s h estimadas y falta el escenario %s del estimador (o sus tarifas) para valorarlas',
+                                                 public.fn_jornal_h(est.horas_estimadas), est.escenario)
+                                   when q.mo_falta
+                                     then format('no tiene horas estimadas y ya lleva mano de obra (%s)',
+                                                 concat_ws(' y ',
+                                                   case when coalesce(lin.mano_obra, 0) <> 0 then public.fn_jornal_usd(lin.mano_obra) || ' real' end,
+                                                   case when coalesce(hrs.estandar, 0) > 0 then public.fn_jornal_h(hrs.estandar) || ' h a estándar' end)) end,
+                              case when q.mat_falta
+                                     then format('no tiene presupuesto de material y ya lleva %s de material en el libro',
+                                                 public.fn_jornal_usd(lin.material)) end)
+                         || '. No da un total que comparar con el costo real: se compara concepto por concepto lo que sí está estimado.'
+             end as falta) e
    where (p_proyecto is null or p.id = p_proyecto)
      and (select public.fn_jornal_ve())
 $$;
 revoke execute on function public.fn_margen_obras(text) from public, anon, service_role;
 grant  execute on function public.fn_margen_obras(text) to authenticated;
-comment on function public.fn_margen_obras(text) is 'c10: la fila de v_margen_obra para todas las obras, o para una: el real del libro por concepto (la mano de obra, real: jornales y nómina), las horas por clase, la mano de obra estándar («estándar, no real»: nunca se postea), el estimado de las fuentes de la app, los márgenes, la diferencia y los avisos en llano. Solo lectura.';
+comment on function public.fn_margen_obras(text) is 'c10: la fila de v_margen_obra para todas las obras, o para una: el real del libro por concepto (la mano de obra, real: jornales y nómina), las horas por clase, la mano de obra estándar («estándar, no real»: nunca se postea), el estimado de las fuentes de la app (costo_estimado solo si da un total que comparar: estimado_completo; si no, estimado_falta dice qué falta), los márgenes, la diferencia y los avisos en llano (también las horas tardías y los pagos resueltos fuera del jornal). Solo lectura.';
 
 -- La llave «bajar» (la de c4: los pedazos de v_libro que suman una cifra)
 -- de un concepto del real de una obra. Las líneas de un jornal se piden por
@@ -2785,9 +3288,13 @@ begin
     jsonb_build_object('concepto', 'mano_obra_estandar', 'nivel', 'detalle', 'etiqueta', 'Mano de obra estándar, no real',
                        'estimado', null, 'real', null, 'estandar', o.mano_obra_estandar, 'total', o.mano_obra_estandar,
                        'diferencia', null, 'horas', o.horas_estandar, 'burden_estandar_pct', o.burden_estandar_pct,
+                       -- (con la tarifa y el burden de HOY: costos_equipo no guarda su
+                       -- historia, y si la tarifa de alguien cambia, cambia el estándar de
+                       -- todas sus horas sin pago, también las de obras ya terminadas. Es
+                       -- una estimación para comparar, nunca un asiento: se dice.)
                        'nota', coalesce(o.mano_obra_estandar_falta,
-                                        'Horas sin pago real repartido × la tarifa de Costos del equipo × (1 + burden estándar). No está '
-                                        'en el libro.')),
+                                        'Horas sin pago real repartido × la tarifa de Costos del equipo × (1 + burden estándar), con la '
+                                        'tarifa y el burden de hoy (si cambian, este número cambia). No está en el libro.')),
     jsonb_build_object('concepto', 'subcontratos', 'nivel', 'concepto', 'etiqueta', 'Subcontratos',
                        'estimado', null, 'real', o.subcontratos_real, 'estandar', null, 'total', o.subcontratos_real, 'diferencia', null,
                        'bajar', fn_margen_bajar(p_proyecto, 'subcontratos')),
@@ -2797,9 +3304,12 @@ begin
     jsonb_build_object('concepto', 'otros', 'nivel', 'concepto', 'etiqueta', 'Otros costos de obra',
                        'estimado', null, 'real', o.otros_costos_real, 'estandar', null, 'total', o.otros_costos_real, 'diferencia', null,
                        'bajar', fn_margen_bajar(p_proyecto, 'otros')),
+    -- (el total estimado y su diferencia solo salen si el estimado da un total
+    -- que comparar: estimado_completo; si no, su nota dice qué falta)
     jsonb_build_object('concepto', 'total', 'nivel', 'total', 'etiqueta', 'Costo de la obra',
                        'estimado', o.costo_estimado, 'real', o.costo_real, 'estandar', o.mano_obra_estandar,
-                       'total', o.costo_con_estandar, 'diferencia', o.diferencia, 'bajar', fn_margen_bajar(p_proyecto, 'costo')),
+                       'total', o.costo_con_estandar, 'diferencia', o.diferencia, 'estimado_completo', o.estimado_completo,
+                       'nota', o.estimado_falta, 'bajar', fn_margen_bajar(p_proyecto, 'costo')),
     jsonb_build_object('concepto', 'ingreso', 'nivel', 'ingreso', 'etiqueta', 'Facturado (en el libro)',
                        'estimado', o.contrato, 'real', o.ingreso_libro, 'estandar', null, 'total', o.ingreso_libro,
                        'diferencia', null, 'bajar', fn_margen_bajar(p_proyecto, 'ingreso')));
@@ -3125,9 +3635,10 @@ with rep as (
          from pg_catalog.pg_proc p
         where p.pronamespace = 'public'::regnamespace
           and p.proname in ('fn_jornal_exigir_dueno', 'fn_jornal_ve', 'fn_jornal_precondiciones', 'fn_jornal_guarda', 'fn_jornal_usd',
-                            'fn_jornal_h', 'fn_jornal_dia', 'fn_jornal_rango', 'fn_jornal_texto', 'fn_jornal_patron_mal',
-                            'fn_jornal_patron_sugerido', 'fn_jornal_cuenta_mal', 'fn_jornal_periodo', 'fn_jornal_regla',
-                            'fn_jornal_repartir_ids', 'fn_jornal_repartir', 'fn_jornal_opciones', 'fn_jornal_calcular',
+                            'fn_jornal_h', 'fn_jornal_dia', 'fn_jornal_rango', 'fn_jornal_mes', 'fn_jornal_texto', 'fn_jornal_limpio',
+                            'fn_jornal_patron_mal', 'fn_jornal_destinatario', 'fn_jornal_patron_sugerido', 'fn_jornal_cuenta_mal',
+                            'fn_jornal_periodo', 'fn_jornal_regla', 'fn_jornal_repartir_ids', 'fn_jornal_repartir', 'fn_jornal_tardias',
+                            'fn_jornal_fuera', 'fn_jornal_ia', 'fn_jornal_opciones', 'fn_jornal_calcular',
                             'fn_jornal_propuesta', 'fn_jornal_aplicar', 'fn_jornal_deshacer', 'fn_jornal_config', 'fn_jornal_persona',
                             'fn_jornal_pegado', 'fn_margen_libro_desde', 'fn_margen_lineas', 'fn_margen_horas', 'fn_margen_estimado',
                             'fn_margen_obras', 'fn_margen_bajar', 'fn_margen_obra', 'fn_margen_control'))
@@ -3139,7 +3650,7 @@ select z.orden, z.cuadre, z.nivel, z.ok, z.detalle
            case when t.n = 0
                 then format('%s reparto(s) aplicado(s): cada parte está en su asiento con su cuenta, su obra, su CO, su monto y su persona, '
                             'todas suman el pago, y su detalle por reporte de horas suma cada parte.', t.total)
-                else left(t.d, 1500) || ' → no toques el libro: mira el reparto (v_jornal_repartos) y su asiento, y avisa.' end as detalle
+                else left(t.d, 1500) || ' → no toques el libro: mira ese reparto y su asiento (en Repartos), y avisa.' end as detalle
       from (select count(*) filter (where y.mal is not null) as n, count(*) as total,
                    string_agg(format('el reparto del pago del %s a %s (%s, asiento %s): %s', y.fecha_pago, y.persona, y.monto, y.asiento, y.mal),
                               '; ') filter (where y.mal is not null) as d
@@ -3173,8 +3684,8 @@ select z.orden, z.cuadre, z.nivel, z.ok, z.detalle
     -- 20: ningún reparto aplicado cuyo asiento se reversó por fuera, o cuyo movimiento ya no está casado con él
     select 20, 'jornal: ningún reparto aplicado con su asiento reversado o su pago suelto', 'cuadre', t.n = 0,
            case when t.n = 0 then 'Cada reparto aplicado tiene su asiento vivo y su pago casado con él.'
-                else left(t.d, 1500) || ' → márcalo deshecho con su motivo (fn_jornal_deshacer; la pantalla: «Deshacer») y, si toca, '
-                     'vuelve a repartir el pago.' end
+                else left(t.d, 1500) || ' → toca «Deshacer» en ese reparto (en Repartos), con su motivo, y, si toca, vuelve a repartir '
+                     'el pago.' end
       from (select count(*) as n,
                    string_agg(format('el reparto del pago del %s a %s (%s): %s', v.fecha_pago, v.persona, v.monto,
                                      case when v.reversado then format('su asiento %s se reversó por fuera (des-casado en la Bandeja)', v.asiento)
@@ -3204,14 +3715,32 @@ select z.orden, z.cuadre, z.nivel, z.ok, z.detalle
                                 when h.usuario_id is distinct from v.usuario_id then 'cambió de persona'
                                 when h.fecha <> rh.fecha then format('cambió de fecha (ahora %s)', h.fecha)
                                 when h.proyecto_id is distinct from rh.proyecto_id then 'cambió de obra'
-                                when (case when h.proyecto_id is null then null else nullif(btrim(h.co), '') end) is distinct from rh.co then 'cambió de CO'
-                                when nullif(btrim(h.fase), '') is distinct from rh.fase then 'cambió de fase'
+                                -- (el CO y la fase, limpios como al repartir: la misma regla que c6)
+                                when (case when h.proyecto_id is null then null else public.fn_jornal_limpio(h.co) end) is distinct from rh.co then 'cambió de CO'
+                                when public.fn_jornal_limpio(h.fase) is distinct from rh.fase then 'cambió de fase'
                                 when h.horas <> rh.horas then format('cambió de horas (de %s a %s)', public.fn_jornal_h(rh.horas), public.fn_jornal_h(h.horas))
                                 when h.aprobado_el is null then 'ya no está aprobado'
                            end as mal
                       from viv v
                       join public.jornal_reparto_horas rh on rh.reparto_id = v.id
                       left join public.horas h on h.id = rh.horas_id) y) t
+    union all
+    -- 35 (un aviso): ninguna hora de una semana ya repartida se quedó fuera de su reparto. El 30 mira las horas que SÍ entraron;
+    --     las que llegan después a esa semana (se reportaron tarde, o se les cambió la fecha) no las ve nadie: el pago sigue
+    --     repartido entre las demás obras y estas salen a estándar. Es un aviso y no un cuadre: Edgar puede pagarlas con el
+    --     Zelle siguiente (y entonces eran, de verdad, horas sin pago), y hasta que lo haga no hay nada roto en el libro.
+    select 35, 'jornal: ninguna hora de una semana ya repartida se quedó fuera de su reparto', 'aviso', t.n = 0,
+           case when t.n = 0 then 'Ninguna persona tiene horas, dentro de las fechas de un reparto suyo aplicado, fuera de sus repartos.'
+                else left(t.d, 1500) || ' → se reportaron o se movieron después de repartir esa semana: no recibieron nada de ese pago, que '
+                     'sigue repartido entre las demás obras, y en su obra salen a estándar. Toca «Deshacer» en ese reparto y vuelve a '
+                     'repartirlo con las horas de hoy; o, si las paga otro pago, repártelas con él eligiendo sus fechas a mano.' end
+      from (select count(*) as n,
+                   string_agg(format('%s: %s h en %s reporte(s) (%s) dentro del reparto del pago del %s', coalesce(y.persona, '?'),
+                                     public.fn_jornal_h(y.h), y.n, y.dias, y.fecha_pago), '; ' order by y.fecha_pago, y.persona) as d
+              from (select x.persona, x.reparto_id, x.fecha_pago, count(*) as n, sum(x.horas) as h,
+                           string_agg(distinct public.fn_jornal_dia(x.fecha) || coalesce(' en ' || x.obra, ' sin obra'), ', ') as dias
+                      from public.fn_jornal_tardias(null) x
+                     group by x.persona, x.reparto_id, x.fecha_pago) y) t
     union all
     -- 40: ninguna hora en dos repartos vivos sin que Edgar lo aceptara
     select 40, 'jornal: ninguna hora en dos repartos vivos sin que Edgar lo aceptara', 'cuadre', t.n = 0,
@@ -3232,28 +3761,49 @@ select z.orden, z.cuadre, z.nivel, z.ok, z.detalle
                      group by rh.horas_id
                     having count(*) > 1) y) t
     union all
-    -- 50: ningún mes con devengo estándar (fn_horas_devengar, c3) y jornales a la vez
-    select 50, 'jornal: ningún mes con devengo estándar y jornales a la vez', 'cuadre', t.n = 0,
-           case when t.n = 0 then 'Ningún mes tiene a la vez el devengo estándar de horas y jornales repartidos.'
-                else left(t.d, 1500) || ' → la mano de obra de esas horas sale dos veces ese mes (el devengo en 5000 y el pago real). '
-                     'El devengo estándar no hace falta con jornales repartidos: que se retire antes de cerrar el mes (se deshace solo el '
-                     'día 1 del mes siguiente).' end
-      from (select count(*) as n,
-                   string_agg(format('%s: el devengo %s y %s jornal(es) por %s', dv.mes, dv.numero, j.n, public.fn_jornal_usd(j.monto)), '; ') as d
-              from (select a.origen_id as mes, a.numero
-                      from public.asientos a
-                     where a.origen_tabla = 'horas_devengo' and a.camino not in ('reverso', 'reverso_automatico')
-                       and not exists (select 1 from public.asientos x where x.reversa_a = a.id and x.camino = 'reverso')) dv
-              cross join lateral (select count(distinct v.id) as n, coalesce(sum(rh.monto), 0) as monto
-                                    from viv v
-                                    join public.jornal_reparto_horas rh on rh.reparto_id = v.id
-                                   where not v.reversado and to_char(rh.fecha, 'YYYY-MM') = dv.mes) j
-             where j.n > 0) t
+    -- 50: ninguna hora a la vez en un devengo estándar vivo (fn_horas_devengar, c3) y en un jornal que entró al libro DENTRO del
+    --     mes de ese devengo (o antes). El devengo pone a fin de mes lo trabajado y todavía no pagado, y se deshace solo el día 1
+    --     del mes siguiente: el jornal que entra después (el Zelle del lunes) no choca con él —ese mes lleva el devengo, y el
+    --     siguiente su reverso y el pago real: nada dos veces—. Antes se comparaba el mes de las HORAS con el del devengo y se
+    --     daba por vivo un devengo ya deshecho: el uso de manual del devengo (octubre devengado, y su Zelle el 2-nov) salía en
+    --     rojo sin vuelta. Lo que ya no tiene arreglo —un mes cerrado— se dice en el detalle y no deja el cuadre en rojo: el
+    --     mes siguiente lo compensa con el reverso del devengo.
+    select 50, 'jornal: ninguna hora a la vez en el devengo estándar de un mes y en un jornal pagado ese mes', 'cuadre', t.n = 0,
+           case when t.n = 0
+                then 'Ninguna hora está a la vez en el devengo estándar de un mes abierto y en un jornal que entró al libro ese mes.'
+                     || coalesce(' (Ya cerrado, sin arreglo: ' || t.cerrados || ': ese mes quedó con esa mano de obra dos veces y el '
+                                 'siguiente con ella de menos, por el reverso del devengo.)', '')
+                else left(t.d, 1500) || ' → esa mano de obra sale dos veces en ese mes (el devengo en 5000 y el pago real) y de menos en el '
+                     'siguiente, cuando el devengo se deshace solo. El devengo estándar es solo para lo trabajado y todavía no pagado: hay '
+                     'que retirarlo de ese mes antes de cerrarlo (avisa).' end
+      from (select count(*) filter (where y.abierto) as n,
+                   string_agg(y.que, '; ' order by y.mes) filter (where y.abierto) as d,
+                   string_agg(y.que, '; ' order by y.mes) filter (where not y.abierto) as cerrados
+              from (select dv.mes, dv.abierto,
+                           format('%s: el devengo %s cuenta %s h (%s reporte(s)) que ya tienen su pago real en ese mes, en %s jornal(es)',
+                                  dv.mes, dv.numero, public.fn_jornal_h(sum(x.horas)), count(distinct x.horas_id),
+                                  count(distinct x.reparto_id)) as que
+                      from (select a.id, a.origen_id as mes, a.numero, a.procedencia,
+                                   coalesce((select p.hasta from public.periodos p where p.periodo = a.origen_id), a.fecha_contable) as fin,
+                                   coalesce((select to_jsonb(p)->>'estado' from public.periodos p where p.periodo = a.origen_id), 'abierto')
+                                     = 'abierto' as abierto
+                              from public.asientos a
+                             where a.origen_tabla = 'horas_devengo' and a.camino not in ('reverso', 'reverso_automatico')
+                               and not exists (select 1 from public.asientos x where x.reversa_a = a.id and x.camino = 'reverso')) dv
+                      cross join lateral (select rh.horas_id, rh.horas, v.id as reparto_id
+                                            from jsonb_array_elements(case when jsonb_typeof(dv.procedencia->'documento'->'horas') = 'array'
+                                                                           then dv.procedencia->'documento'->'horas' else '[]'::jsonb end) d
+                                            join public.jornal_reparto_horas rh
+                                              on rh.horas_id = (case when d->>'horas_id' ~ '^-?[0-9]{1,18}$' then (d->>'horas_id')::bigint end)
+                                            join viv v on v.id = rh.reparto_id and not v.reversado
+                                            join public.asientos ja on ja.id = v.asiento_id
+                                           where ja.fecha_contable <= dv.fin) x
+                     group by dv.mes, dv.numero, dv.abierto) y) t
     union all
     -- 60: cada persona activa se reconoce sin dudas y va a una cuenta que sirve; la configuración también
     select 60, 'jornal: cada persona dada de alta se reconoce sin dudas y va a una cuenta que sirve', 'aviso', t.n = 0,
            case when t.n = 0 then format('%s persona(s) activa(s): patrones válidos, ningún pago casa con dos, y sus cuentas sirven.', t.total)
-                else left(t.d, 1500) || ' → corrígelo en las personas del jornal (fn_jornal_persona) o en sus ajustes (fn_jornal_config).' end
+                else left(t.d, 1500) || ' → corrígelo en las personas del jornal (su patrón o su cuenta) o en los ajustes del jornal.' end
       from (select (select count(*) from public.jornal_personas jp where jp.activa) as total, count(*) as n, string_agg(y.que, '; ') as d
               from (select format('%s: %s', coalesce(pf.nombre, jp.usuario_id::text), public.fn_jornal_patron_mal(jp.patron)) as que
                       from public.jornal_personas jp left join public.perfiles pf on pf.id = jp.usuario_id
@@ -3276,6 +3826,47 @@ select z.orden, z.cuadre, z.nivel, z.ok, z.detalle
                                            where jp.activa and public.fn_jornal_patron_mal(jp.patron) is null
                                              and public.fn_jornal_texto(mm.desc_norm, mm.memo) ~* jp.patron) k
                      where mm.estado = 'pendiente' and mm.monto < 0 and k.n > 1) y) t
+    union all
+    -- 70 (un aviso): ningún pago de una persona dada de alta resuelto en la Bandeja por OTRO camino (clasificado a mano, o
+    --     aprobada la propuesta de la IA) mientras tiene horas sin pago en esas semanas (fn_jornal_fuera). Si era su pago por
+    --     horas, su costo está entero donde se clasificó —sin su nombre: el 1099 por tercero no lo suma— y esas horas salen,
+    --     además, a estándar: la semana cuenta dos veces en el costo con estándar. Un aviso: puede ser otra cosa de verdad (un
+    --     reembolso), y entonces se va solo cuando esas horas tengan su pago.
+    select 70, 'jornal: ningún pago de una persona dada de alta resuelto fuera del jornal', 'aviso', t.n = 0,
+           case when t.n = 0
+                then 'Ningún pago ya resuelto en la Bandeja por otro camino es de una persona del jornal con horas sin pago en esas semanas.'
+                else left(t.d, 1500) || ' → si era su pago por horas, su costo quedó entero donde se clasificó (y sin su nombre: no suma '
+                     'para su 1099), y sus horas de esas semanas salen además a estándar. Des-cásalo en la Bandeja, con su motivo, y '
+                     'repártelo por sus horas. Si de verdad era otra cosa (un reembolso), déjalo: este aviso se va cuando esas horas '
+                     'tengan su pago.' end
+      from (select count(*) as n,
+                   string_agg(format('el pago del %s a %s por %s (%s%s): %s h suyas sin pago del %s al %s', y.fecha, coalesce(y.persona, '?'),
+                                     public.fn_jornal_usd(y.monto), coalesce(y.resuelto_como, 'casado'),
+                                     coalesce(', asiento ' || y.asiento, ''), public.fn_jornal_h(y.h), y.desde, y.hasta),
+                              '; ' order by y.fecha, y.movimiento_id) as d
+              from (select f.movimiento_id, f.fecha, f.monto, f.persona, f.resuelto_como, f.asiento, f.desde, f.hasta, sum(f.horas) as h
+                      from public.fn_jornal_fuera() f
+                     group by f.movimiento_id, f.fecha, f.monto, f.persona, f.resuelto_como, f.asiento, f.desde, f.hasta) y) t
+    union all
+    -- 80 (un aviso): ninguna propuesta de la IA (c8) abierta en un pago ya repartido (fn_jornal_ia): la pendiente, que ya no se
+    --     puede aprobar (el movimiento está casado) y enciende la alarma 71 de c8 a los 7 días y su cuadre 64 el día que la obra
+    --     que proponía se termina; y la aprobada o editada cuyo asiento se reversó (Edgar la aceptó y después des-casó el pago
+    --     para repartirlo), que deja su cuadre 60 en rojo. El cierre de c9 toma los cuadres de c8 por «detiene». c10 no las
+    --     puede cerrar (c8 es de su función de borde): las enseña, con qué hacer.
+    select 80, 'jornal: ninguna propuesta de la IA abierta en un pago ya repartido', 'aviso', t.n = 0,
+           case when t.n = 0 then 'Ningún pago repartido tiene una propuesta de la IA pendiente, ni una aprobada cuyo asiento ya no vive.'
+                else left(t.d, 1500) || ' → ya no se pueden aprobar (ese pago está repartido) y la IA contable las sigue contando como '
+                     'abiertas: pueden frenar el cierre del mes. Hay que cerrarlas: a la pendiente se le dice «No es eso»; la aprobada '
+                     'cuyo asiento se reversó se cierra con su motivo. Si la Bandeja no lo hizo al repartir, vuelve a abrirla; si siguen '
+                     'aquí, avisa.' end
+      from (select count(*) as n,
+                   string_agg(format('el pago del %s a %s (%s): su propuesta de la IA %s%s', v.fecha_pago, coalesce(v.persona, '?'),
+                                     public.fn_jornal_usd(v.monto),
+                                     case i.clase when 'pendiente' then 'sigue pendiente'
+                                          else format('está %s y su asiento %s ya no vive', i.estado, coalesce(i.asiento, '(no tiene)')) end,
+                                     coalesce(' (proponía ' || i.resumen || ')', '')), '; ' order by v.fecha_pago, i.propuesta_id) as d
+              from public.fn_jornal_ia(null) i
+              join viv v on v.movimiento_id = i.movimiento_id) t
     union all
     -- 90: las protecciones de la capa (como el 63 de c8, por nombre exacto)
     select 90, 'jornal: protecciones de la capa', 'cuadre', t.n = 0,
@@ -3340,7 +3931,7 @@ select z.orden, z.cuadre, z.nivel, z.ok, z.detalle
  where (select public.fn_jornal_ve());
 revoke all on public.v_jornal_control from public, anon, authenticated, service_role;
 grant select on public.v_jornal_control to authenticated;
-comment on view public.v_jornal_control is 'c10: el control del jornal (orden, cuadre, nivel, ok, detalle en llano): 10 cada reparto aplicado es las líneas de su asiento vivo, al centavo y obra por obra, y su detalle por reporte suma cada parte; 20 ningún reparto aplicado con su asiento reversado por fuera o su pago suelto; 25 ninguno deshecho con su asiento vivo; 30 las horas de cada reparto aplicado siguen como se repartieron y aprobadas; 40 ninguna hora en dos repartos vivos sin que Edgar lo aceptara; 50 ningún mes con devengo estándar y jornales a la vez; 60 (aviso) las personas se reconocen sin dudas y sus cuentas sirven; 90 las protecciones de la capa. nivel: cuadre (algo roto) o aviso.';
+comment on view public.v_jornal_control is 'c10: el control del jornal (orden, cuadre, nivel, ok, detalle en llano): 10 cada reparto aplicado es las líneas de su asiento vivo, al centavo y obra por obra, y su detalle por reporte suma cada parte; 20 ningún reparto aplicado con su asiento reversado por fuera o su pago suelto; 25 ninguno deshecho con su asiento vivo; 30 las horas de cada reparto aplicado siguen como se repartieron y aprobadas; 35 (aviso) ninguna hora de una semana ya repartida se quedó fuera de su reparto; 40 ninguna hora en dos repartos vivos sin que Edgar lo aceptara; 50 ninguna hora a la vez en el devengo estándar de un mes y en un jornal pagado ese mes; 60 (aviso) las personas se reconocen sin dudas y sus cuentas sirven; 70 (aviso) ningún pago de una persona dada de alta resuelto fuera del jornal con horas suyas sin pago; 80 (aviso) ninguna propuesta de la IA abierta en un pago ya repartido; 90 las protecciones de la capa. nivel: cuadre (algo roto) o aviso.';
 
 -- EL COSTO POR OBRA: una fila por obra (fn_margen_obras; sus columnas, allí).
 create view public.v_margen_obra with (security_invoker = true) as
@@ -3419,8 +4010,8 @@ begin
   union all
   select 40, 'margen: la mano de obra de jornales en el libro = los repartos aplicados', 'cuadre', my.j = rp.j,
          case when my.j = rp.j then format('%s reparto(s) aplicado(s) con su asiento vivo: %s de jornales en las obras, lo mismo en el libro.', rp.n, fn_jornal_usd(rp.j))
-              else format('El libro tiene %s de jornales por obra y los repartos aplicados dicen %s: diferencia %s. Mira v_jornal_control (un '
-                          'reparto que no es su asiento).', fn_jornal_usd(my.j), fn_jornal_usd(rp.j), fn_jornal_usd(my.j - rp.j)) end
+              else format('El libro tiene %s de jornales por obra y los repartos aplicados dicen %s: diferencia %s. Mira el control del '
+                          'jornal (un reparto que no es su asiento).', fn_jornal_usd(my.j), fn_jornal_usd(rp.j), fn_jornal_usd(my.j - rp.j)) end
     from my cross join rp
   union all
   select 50, 'margen: las horas de cada obra = las de la app', 'cuadre', my.h = hh.h and t.n = 0,
@@ -3456,11 +4047,18 @@ begin
        where yo.costo_real <> coalesce(c4.costo, 0) $q$
       into v_n, v_d using v_per, v_o;
     ok := v_n = 0;
-    detalle := case when v_n = 0 then format('Obra por obra, el costo real de aquí es el de v_costo_por_obra (todo el libro, hasta el período %s).', v_per)
+    -- (El total por obra es el mismo; la etiqueta no: los jornales de 2026 van
+    -- a la 5200 —«contract labor», como en QuickBooks, para el 1099—, y en
+    -- «Estados» salen dentro de «Subcontratos»; aquí, aparte, como mano de
+    -- obra real. c4 está sellado y no sabe del jornal: se dice.)
+    detalle := case when v_n = 0
+                    then format('Obra por obra, el costo real de aquí es el de «Estados» (su costo por obra, todo el libro, hasta el '
+                                'período %s). Los jornales van a la cuenta de subcontratos: en «Estados» salen dentro de '
+                                '«Subcontratos» y aquí como mano de obra real; el total de cada obra es el mismo.', v_per)
                     else format('%s obra(s) con otro costo en Estados: %s. ¿Cambió el mapeo de una cuenta de costo en los estados? Avisa.', v_n, v_d) end;
   exception when others then
     ok := false;
-    detalle := format('No se pudo comparar con Estados (v_costo_por_obra): %s %s.', sqlstate, sqlerrm);
+    detalle := format('No se pudo comparar con «Estados» (su costo por obra): %s %s. Avisa.', sqlstate, sqlerrm);
   end;
   return next;
 end $$;
