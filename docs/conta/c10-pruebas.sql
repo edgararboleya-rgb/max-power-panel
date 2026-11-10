@@ -4227,6 +4227,71 @@ begin
 end $$;
 
 
+-- 61. EL CIERRE MIRA LA MANO DE OBRA REPARTIDA (c9, con su bloque de c10:
+--     las filas 170 y 171 de fn_cierre_revisar). Sin ese bloque un mes se
+--     podía cerrar con un reparto suelto. La 170 (detiene) dice lo mismo que
+--     los cuadres de v_jornal_control y v_margen_control; la 171, sus
+--     avisos. Un reparto des-casado por fuera pone la 170 en rojo con el
+--     detalle del control 20; deshecho, vuelve a como estaba. Si el c9 de
+--     esta base es el de antes (sin el bloque), se omite y dice qué pegar.
+do $$
+declare
+  v_obt text; v_mov uuid; v_r jsonb; v_per text; a text; b text; c text; v_rojos int; v_ok0 boolean;
+  f record;
+  v_nom text := 'el cierre (c9) mira la mano de obra repartida: la fila 170 de su revisión (detiene) dice lo que los cuadres de c10 y '
+                'la 171 sus avisos; un reparto des-casado por fuera la pone en rojo, y deshecho vuelve a como estaba';
+  v_esp text := 'antes: la 170 detiene y dice lo que los cuadres de c10; la 171 es un aviso | des-casado por fuera: la 170 en rojo, '
+                'detiene, con el reparto suelto | deshecho: la 170 como antes';
+begin
+  if to_regprocedure('public.fn_cierre_revisar(text)') is null then
+    insert into _pruebas values (61, v_nom, v_esp, 'omitida: c9 (el cierre) no está en esta base', null);
+    return;
+  end if;
+  if pg_temp.c10_omitir(61, v_nom, v_esp) then return; end if;
+  if pg_temp.c10_omitir_rojo(61, v_nom, v_esp, 'jornal', array[20]) then return; end if;
+  begin
+    perform pg_temp.c10_sembrar();
+    select p.periodo into v_per from periodos p where p.tipo = 'mes' and pg_temp.c10_d() between p.desde and p.hasta;
+    perform pg_temp.c10_hora(1, 'p1', pg_temp.c10_w1(0), 'c10-prueba-a', 8);
+    v_mov := pg_temp.c10_cargo('c10-t61', pg_temp.c10_d(), 200.00, 'Zelle payment to C10 PRUEBA ZZANA 9061');
+    perform pg_temp.c10_alta('p1');
+    v_r := pg_temp.c10_aplicar(v_mov, pg_temp.c10_w1(0), pg_temp.c10_w1(6));
+    select (select count(*) from v_jornal_control x where x.nivel = 'cuadre' and x.ok is not true)
+         + (select count(*) from v_margen_control y where y.nivel = 'cuadre' and y.ok is not true)
+      into v_rojos;
+    perform pg_temp.c10_ser('dueno');
+    select x.nivel, x.ok into f from fn_cierre_revisar(v_per) x where x.orden = 170;
+    if not found then
+      v_obt := 'omitida: el cierre de esta base todavía no trae las filas de la mano de obra (170 y 171): vuelve a pegar '
+               'docs/conta/c9-cierre.sql y corre esto otra vez';
+      raise exception using errcode = 'MXT00';
+    end if;
+    v_ok0 := f.ok;
+    a := format('la 170 %s y %s; la 171 %s', f.nivel,
+                case when f.ok = (v_rojos = 0) then 'dice lo que los cuadres de c10'
+                     else format('dice %s con %s cuadre(s) de c10 en rojo', f.ok, v_rojos) end,
+                coalesce((select case when x.nivel = 'aviso' then 'es un aviso' else 'es ' || x.nivel end
+                            from fn_cierre_revisar(v_per) x where x.orden = 171), 'no está'));
+    perform fn_banco_descasar(v_mov, 'c10-pruebas: lo suelto en la Bandeja (se deshace)');
+    select x.nivel, x.ok, x.detalle into f from fn_cierre_revisar(v_per) x where x.orden = 170;
+    b := format('la 170 %s, %s, %s', case when f.ok then 'en VERDE' else 'en rojo' end, f.nivel,
+                case when f.detalle like '%se reversó por fuera%' then 'con el reparto suelto'
+                     else 'sin decir cuál: ' || left(coalesce(f.detalle, ''), 200) end);
+    perform pg_temp.c10_ser('editor');
+    perform pg_temp.c10_deshacer((v_r->>'reparto_id')::uuid, 'c10-pruebas: se había des-casado en la Bandeja');
+    perform pg_temp.c10_ser('dueno');
+    select x.ok into f from fn_cierre_revisar(v_per) x where x.orden = 170;
+    perform pg_temp.c10_ser('editor');
+    c := case when f.ok is not distinct from v_ok0 then 'la 170 como antes' else 'la 170 NO volvió: ' || coalesce(f.ok::text, 'nulo') end;
+    v_obt := format('antes: %s | des-casado por fuera: %s | deshecho: %s', a, b, c);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (61, v_nom, v_esp, v_obt, case when v_obt like 'omitida:%' then null else v_obt = v_esp end);
+end $$;
+
 -- Lo que se puso para la sesión, como estaba
 reset c4.control_tope;
 reset mxp.cierre_sin_push;

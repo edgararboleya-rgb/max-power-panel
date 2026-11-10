@@ -125,6 +125,9 @@ arriba.
 1. Importar el banco hasta el último día del mes (Plaid lo hace solo; una
    tarjeta que corta antes, su actividad reciente en QFX).
 2. Bandeja: cada cargo casado o clasificado («Así es» a la propuesta de la IA).
+   Los pagos a quien cobra por horas salen como «Mano de obra · {persona}»:
+   se reparten por sus horas con «Así es» (no se clasifican a mano: el costo
+   de la obra los contaría dos veces, y la lista del cierre lo avisa).
 3. Conciliar: cada cuenta al último día del mes, y «Confirmar».
 4. Cierre: la lista en verde → «CERRAR OCTUBRE 2026» → «Exportar» (el mayor y el
    PDF al bucket `cierres`, y por correo).

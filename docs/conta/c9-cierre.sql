@@ -71,6 +71,10 @@
 --           mes y cuánto suman (informativo, siempre en verde)                aviso
 --      160  subs: COI vigente de cada sub pagado en el mes (sin datos de COI
 --           todavía —llegan con f12a— lo dice, en verde)                      aviso
+--      170  mano de obra y costo por obra (c10, si está): los cuadres de
+--           v_jornal_control y v_margen_control, en una fila               detiene
+--      171  mano de obra y costo por obra (c10, si está): sus avisos, en
+--           una fila                                                        aviso
 --     En verde cada capa deja UN renglón resumen; en rojo, un renglón por
 --     control, con el detalle que esa capa escribió. Cada renglón dice qué
 --     hacer y a qué página ir (ir_a: bandeja, conciliar, movimientos,
@@ -1429,6 +1433,36 @@ begin
     exception when others then
       v_rows := v_rows || fn_cierre_fila(145, 'ia: v_contador_control', 'detiene', false,
         format('No se pudo revisar el contador: %s %s.', sqlstate, sqlerrm), 'Avisa: el control del contador (c8) no responde.', 'bandeja');
+    end;
+  end if;
+
+  -- 170 y 171. La mano de obra repartida y el costo por obra (c10), si
+  -- están: sus cuadres (v_jornal_control y v_margen_control: uno en rojo
+  -- detiene) y sus avisos (horas que llegaron tarde a una semana ya
+  -- repartida, un pago de mano de obra resuelto fuera del reparto, una
+  -- propuesta de la IA que quedó abierta en un pago repartido, un patrón o
+  -- una cuenta que ya no sirve: avisan). Dos filas fijas, con el detalle de
+  -- lo que esté en rojo, en un rango que nadie más usa.
+  if to_regclass('public.v_jornal_control') is not null and to_regclass('public.v_margen_control') is not null then
+    begin
+      for r in execute 'select q.n, count(*) filter (where not q.ok) as rojos, count(*) as filas, '
+                    || 'left(string_agg(q.detalle, '' · '' order by q.o) filter (where not q.ok), 1200) as detalle '
+                    || 'from (select x.orden as o, x.nivel as n, x.ok is true as ok, x.detalle from public.v_jornal_control x '
+                    || 'union all select 100 + y.orden, y.nivel, y.ok is true, y.detalle from public.v_margen_control y) q '
+                    || 'group by q.n order by q.n desc' loop
+        v_rows := v_rows || fn_cierre_fila(case when r.n = 'aviso' then 171 else 170 end,
+          case when r.n = 'aviso' then 'mano de obra y costo por obra: sus avisos (c10)'
+               else 'mano de obra y costo por obra: sus cuadres (c10)' end,
+          case when r.n = 'aviso' then 'aviso' else 'detiene' end, r.rojos = 0,
+          case when r.rojos = 0 then format('Los %s, en verde.', r.filas) else coalesce(r.detalle, 'en rojo, sin detalle') end,
+          case when r.rojos = 0 then null
+               else 'El detalle dice qué (c10): Contabilidad → Bandeja (la mano de obra y sus repartos) y Costo por obra.' end,
+          'bandeja');
+      end loop;
+    exception when others then
+      v_rows := v_rows || fn_cierre_fila(170, 'mano de obra y costo por obra: v_jornal_control', 'detiene', false,
+        format('No se pudo revisar la mano de obra repartida: %s %s.', sqlstate, sqlerrm),
+        'Avisa: el control de la mano de obra (c10) no responde.', 'bandeja');
     end;
   end if;
 

@@ -482,9 +482,13 @@
 --      hecho falta, para con MX000 y no queda nada. Con la pantalla de
 --      Contabilidad cerrada: si alguien la está leyendo en ese momento, para
 --      con 55P03 («lock timeout»), no queda nada y basta volver a pegarlo.
---   2. SQL Editor → pegar docs/conta/c10-pruebas.sql → sus filas, todas en
+--   2. SQL Editor → volver a pegar docs/conta/c9-cierre.sql (el del 10-nov:
+--      su revisión trae las filas 170 y 171, que miran los controles de
+--      este archivo; es idempotente). Sin este paso el cierre no mira los
+--      repartos, y la prueba 61 sale «omitida» diciéndolo.
+--   3. SQL Editor → pegar docs/conta/c10-pruebas.sql → sus filas, todas en
 --      true (las «omitida» dicen por qué; no es un fallo).
---   3. En la app: Contabilidad → Bandeja. En el Zelle de un ayudante,
+--   4. En la app: Contabilidad → Bandeja. En el Zelle de un ayudante,
 --      «Es mano de obra: repartir por sus horas» lo da de alta (una vez por
 --      persona); desde entonces sus pagos salen con la semana, las obras y
 --      lo que le toca a cada una, y «Así es» los mete al libro.
@@ -4151,7 +4155,16 @@ begin
     v_txt := format('el control falló: %s %s', sqlstate, sqlerrm);
   end;
   return query select 'control'::text, v_txt;
+  -- (¿el cierre de esta base ya mira los repartos? El c9 del 10-nov trae las
+  -- filas 170 y 171; el de antes no, y hay que volver a pegarlo.)
   return query select 'siguiente paso'::text,
+                      case when to_regprocedure('public.fn_cierre_revisar(text)') is not null
+                                and not exists (select 1 from pg_proc p
+                                                 where p.oid = to_regprocedure('public.fn_cierre_revisar(text)')
+                                                   and p.prosrc like '%v_jornal_control%')
+                           then 'PRIMERO vuelve a pegar docs/conta/c9-cierre.sql: el cierre de esta base todavía no mira los repartos de '
+                                'mano de obra (sus filas 170 y 171). Después, '
+                           else '' end ||
                       'pega docs/conta/c10-pruebas.sql; en la app, Contabilidad → Bandeja: en el Zelle de un ayudante, «Es mano de obra: repartir '
                       'por sus horas» lo da de alta, y desde entonces sus pagos salen con su semana, sus obras y lo que le toca a cada una; '
                       '«Así es» los mete al libro (y aprueba esas horas). El costo por obra, en cada obra (estimado contra real).'::text;
