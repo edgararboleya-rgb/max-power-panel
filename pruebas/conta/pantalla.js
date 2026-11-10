@@ -951,6 +951,279 @@ const C9_FN = {
     return { ...e };
   }
 };
+// ---- la mano de obra y el costo por obra (c10, fase 9): la forma EXACTA de v_jornal_pendientes, v_jornal_repartos,
+// v_jornal_personas, v_jornal_control, v_margen_obra, v_margen_control y jornal_config, y de las respuestas de
+// fn_jornal_propuesta, fn_jornal_aplicar, fn_jornal_deshacer, fn_jornal_persona, fn_jornal_config y fn_margen_obra
+// (docs/conta/c10-costo-obra.sql, los ejemplos del banco f9ej). El reparto se calcula aquí con la regla de la base
+// (centavos por mayores restos, a resto igual más horas y luego la obra): el total es el pago. Datos inventados («C10 PRUEBA»).
+const J_MOV = { ana: 'c1000000-0000-4000-8000-000000000001', beto: 'c1000000-0000-4000-8000-000000000002', ana2: 'c1000000-0000-4000-8000-000000000003', carla: 'c1000000-0000-4000-8000-000000000004' };
+const J_PER = { ana: '00000000-0000-4000-a000-0000000c1001', beto: '00000000-0000-4000-a000-0000000c1002', carla: '00000000-0000-4000-a000-0000000c1003' };
+const J_OBRAS = { 'c10-prueba-a': ['C10 PRUEBA Obra A', 'ejecucion'], 'c10-prueba-b': ['C10 PRUEBA Obra B', 'ejecucion'], 'c10-prueba-e': ['C10 PRUEBA Obra E', 'pausa'],
+  'c10-prueba-f': ['C10 PRUEBA Obra F', 'completado'], 'c10-prueba-h': ['C10 PRUEBA Obra H', 'ejecucion'], 'c10-prueba-i': ['C10 PRUEBA Obra I', 'ejecucion'] };
+// los asientos de la obra A que ya están en el libro (el material, el subcontrato de verdad, el equipo, el permiso, la factura) y el del jornal de ejemplo
+const J_AS = { mat: 'c1a00000-0000-4000-8000-000000000001', co: 'c1a00000-0000-4000-8000-000000000002', sub: 'c1a00000-0000-4000-8000-000000000003', perm: 'c1a00000-0000-4000-8000-000000000005', fac: 'c1a00000-0000-4000-8000-000000000006', jornal: '1b0d2ea3-e7a3-4620-8f9b-958ad9a6acaf' };
+const J_IA = 'c1b00000-0000-4000-8000-0000000000aa'; // la propuesta de la IA (c8) que tenía el pago de Zzbeto
+const MES_J = ['', 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+const jTexto = (d, h) => { const [a1, m1, d1] = d.split('-').map(Number), [a2, m2, d2] = h.split('-').map(Number);
+  return a1 !== a2 ? `del ${d1} de ${MES_J[m1]} de ${a1} al ${d2} de ${MES_J[m2]} de ${a2}` : m1 !== m2 ? `del ${d1} de ${MES_J[m1]} al ${d2} de ${MES_J[m2]} de ${a2}` : `del ${d1} al ${d2} de ${MES_J[m2]} de ${a2}`; };
+const jDia = (iso, n) => { const [a, m, d] = iso.split('-').map(Number); return new Date(Date.UTC(a, m - 1, d + n)).toISOString().slice(0, 10); };
+// la regla de la base: lunes a miércoles → la semana anterior; jueves a domingo → la semana en curso (de lunes a domingo)
+function jRegla(f) {
+  const [a, m, d] = f.split('-').map(Number), dow = (new Date(Date.UTC(a, m - 1, d)).getUTCDay() + 6) % 7, lunes = jDia(f, -dow);
+  const anterior = { desde: jDia(lunes, -7), hasta: jDia(lunes, -1), regla: 'semana_anterior' }, esta = { desde: lunes, hasta: jDia(lunes, 6), regla: 'semana_en_curso' };
+  return { def: dow <= 2 ? anterior : esta, anterior, esta };
+}
+const J = {};
+const jMov = (id, fecha, monto, descripcion) => ({ movimiento_id: id, cuenta: '1010', cuenta_nombre: 'Banco operativo', fecha, periodo: fecha.slice(0, 7), monto, descripcion, memo: null, cheque: null, tipo_banco: 'DEBIT',
+  motivo: 'sin_ticket', texto: TEXTO_SIN_TICKET, opciones: [{ texto: 'Clasificarlo a 5200 (pide obra)', llamar: 'fn_banco_clasificar', args: { p_movimiento: id, p_lineas: [{ cuenta: '5200' }] } }], obra: null, propuesta: { motivo: 'sin_ticket' },
+  posible_duplicado_de: null, duplicado_fecha: null, duplicado_descripcion: null, duplicado_origen: null, dias: Math.max(0, Math.round((Date.parse(HOY) - Date.parse(fecha)) / 86400000)), alarma: false, origen: 'plaid', archivo_id: null, importado_el: fecha + 'T12:00:00+00:00' });
+function jReset() {
+  J.config = { id: 1, cuenta_defecto: '5200', cuenta_sin_obra: null, burden_estandar_pct: null, aviso_tarifa_pct: 25.00, actualizado: '2026-11-09T22:00:00+00:00', actualizado_por: null };
+  J.personas = [
+    { usuario_id: J_PER.ana, nombre: 'Zzana C10 PRUEBA', rol: 'campo', perfil_activo: true, tarifa: 25, registrada: true, activa: true, patron: '\\mPRUEBA ZZANA\\M', cuenta_propia: null, nota: null, creado_el: '2026-11-09T22:00:00+00:00' },
+    { usuario_id: J_PER.beto, nombre: 'Zzbeto C10 PRUEBA', rol: 'campo', perfil_activo: true, tarifa: 24, registrada: true, activa: true, patron: '\\mPRUEBA ZZBETO\\M', cuenta_propia: null, nota: null, creado_el: '2026-11-09T22:00:00+00:00' },
+    { usuario_id: J_PER.carla, nombre: 'Zzcarla C10 PRUEBA', rol: 'campo', perfil_activo: true, tarifa: 18, registrada: false, activa: false, patron: null, cuenta_propia: null, nota: null, creado_el: null }
+  ];
+  const h = (id, u, fecha, p, co, fase, horas) => ({ id, u, fecha, p, co, fase, horas });
+  J.horas = [
+    // Zzana, la semana del 26-oct (37 h en 6 obras; la A con y sin CO; la F terminada)
+    h(-1010000001, J_PER.ana, '2026-10-26', 'c10-prueba-a', null, 'rough', 8), h(-1010000002, J_PER.ana, '2026-10-27', 'c10-prueba-a', 'CO #1', 'rough', 6.5),
+    h(-1010000003, J_PER.ana, '2026-10-27', 'c10-prueba-b', null, 'trim', 1.5), h(-1010000004, J_PER.ana, '2026-10-28', 'c10-prueba-e', null, null, 7.25),
+    h(-1010000005, J_PER.ana, '2026-10-29', 'c10-prueba-f', null, 'rough', 4), h(-1010000006, J_PER.ana, '2026-10-29', 'c10-prueba-h', null, 'rough', 4),
+    h(-1010000007, J_PER.ana, '2026-10-30', 'c10-prueba-i', null, 'mobilizacion', 3.75), h(-1010000008, J_PER.ana, '2026-10-30', 'c10-prueba-a', null, 'trim', 2),
+    // Zzbeto, la semana del 2-nov (24 h; 2 sin obra)
+    h(-1020000001, J_PER.beto, '2026-11-02', 'c10-prueba-a', null, 'rough', 8), h(-1020000002, J_PER.beto, '2026-11-03', 'c10-prueba-a', null, 'rough', 8),
+    h(-1020000003, J_PER.beto, '2026-11-04', 'c10-prueba-h', null, 'rough', 6), h(-1020000004, J_PER.beto, '2026-11-05', null, null, null, 2),
+    // Zzcarla (sin dar de alta), la semana del 2-nov: 12 h en la B
+    h(-1030000001, J_PER.carla, '2026-11-02', 'c10-prueba-b', null, 'trim', 6), h(-1030000002, J_PER.carla, '2026-11-03', 'c10-prueba-b', null, 'trim', 6)
+  ];
+  J.movs = [jMov(J_MOV.ana, '2026-11-02', -940.00, 'Zelle payment to C10 PRUEBA ZZANA 9001'), jMov(J_MOV.beto, '2026-11-06', -600.00, 'Zelle payment to C10 PRUEBA ZZBETO 9003'),
+    jMov(J_MOV.ana2, '2026-11-09', -520.00, 'Zelle payment to C10 PRUEBA ZZANA 9002'), jMov(J_MOV.carla, '2026-11-06', -300.00, 'Zelle payment to C10 PRUEBA ZZCARLA 9004')];
+  J.fuera = new Set(); J.repartos = []; J.seq = 3; J.mx011 = false; J.pideMotivo = false; J.ctlRojo = false; J.margenRojo = false;
+  J.propuestaIA = { [J_MOV.beto]: J_IA };
+  // el libro de la obra A (lo que «bajar» lee de v_libro): material base y del CO, un subcontrato de verdad en 5200, equipo, el permiso, la factura y el jornal
+  const lj = (asiento_id, numero, fecha, descripcion, orden, cuenta, cuenta_nombre, monto, proyecto_id, memo) => ({ asiento_id, numero, orden, fecha, periodo: fecha.slice(0, 7), descripcion, memo: memo || null, cuenta, cuenta_nombre, debe: monto > 0 ? monto : 0, haber: monto < 0 ? -monto : 0, monto, proyecto_id, cost_code: null });
+  J.libro = [
+    lj(J_AS.mat, '2026-000101', '2026-10-05', 'Ticket · material de la obra A', 2, '5100', 'Material', 450.25, 'c10-prueba-a'), lj(J_AS.mat, '2026-000101', '2026-10-05', 'Ticket · renta de equipo', 3, '5300', 'Equipo y renta', 75.25, 'c10-prueba-a'),
+    lj(J_AS.co, '2026-000102', '2026-10-20', 'Ticket · material del CO #1', 2, '5100', 'Material', 300.00, 'c10-prueba-a', 'CO #1'),
+    lj(J_AS.sub, '2026-000103', '2026-10-22', 'Subcontrato · zanja', 2, '5200', 'Subcontratos', 500.00, 'c10-prueba-a'),
+    lj(J_AS.perm, '2026-000104', '2026-10-23', 'Permiso de la obra A', 2, '5400', 'Permisos e inspecciones', 60.00, 'c10-prueba-a'),
+    lj(J_AS.fac, '2026-000105', '2026-10-25', 'Factura 1 de la obra A', 2, '4020', 'Ingresos comerciales', -5000.00, 'c10-prueba-a'),
+    lj(J_AS.jornal, '2026-000004', '2026-11-02', 'Jornal de Zzana C10 PRUEBA', 2, '5200', 'Subcontratos', 254.05, 'c10-prueba-a', 'Jornal de Zzana C10 PRUEBA · 26-oct a 1-nov-2026 · 10 h de 37 h'),
+    lj(J_AS.jornal, '2026-000004', '2026-11-02', 'Jornal de Zzana C10 PRUEBA', 3, '5200', 'Subcontratos', 165.14, 'c10-prueba-a', 'CO #1 · 6.5 h de 37 h'),
+    lj(J_AS.jornal, '2026-000004', '2026-11-02', 'Jornal de Zzana C10 PRUEBA', 4, '5200', 'Subcontratos', 38.11, 'c10-prueba-b')
+  ];
+}
+const jPersonaDe = m => J.personas.find(p => p.registrada && p.activa && p.patron && new RegExp(p.patron.replace(/\\m|\\M/g, '\\b'), 'i').test(m.descripcion));
+const jHorasCubiertas = () => new Set(J.repartos.filter(r => r.estado === 'aplicado').flatMap(r => r.horas_ids));
+const jAviso = (codigo, corto, texto) => ({ codigo, corto, texto });
+// mayores restos en centavos: a cada parte la entera de C × h / H; lo que sobra, de uno en uno a los restos mayores (a resto igual, más horas, luego el orden)
+function jPartir(cents, partes) {
+  const H = partes.reduce((s, x) => s + Math.round(x.horas * 100), 0);
+  const base = partes.map((x, i) => { const num = cents * Math.round(x.horas * 100); return { i, ent: Math.floor(num / H), resto: num % H, horas: x.horas }; });
+  let sobra = cents - base.reduce((s, x) => s + x.ent, 0);
+  [...base].sort((a, b) => b.resto - a.resto || b.horas - a.horas || a.i - b.i).forEach(x => { if (sobra > 0) { x.ent += 1; sobra -= 1; } });
+  return base.map(x => x.ent);
+}
+function jCalc(mid, desde, hasta, op) {
+  op = op || {};
+  const m = J.movs.find(x => x.movimiento_id === mid), per = m && jPersonaDe(m);
+  const movJ = m ? { id: m.movimiento_id, fecha: m.fecha, monto: Math.abs(m.monto), cuenta: m.cuenta, estado: J.fuera.has(mid) ? 'casado' : 'pendiente', periodo: m.periodo, descripcion: m.descripcion, mes_cerrado: false } : null;
+  if (!per) return { reconocido: false, por_que: 'Este pago no es de nadie dado de alta para cobrar por horas.', movimiento: movJ, candidatos: J.personas.filter(p => !p.registrada).map(p => ({ usuario_id: p.usuario_id, nombre: p.nombre, rol: p.rol })) };
+  const rg = jRegla(m.fecha), d = desde || rg.def.desde, h = hasta || rg.def.hasta;
+  const regla = d === rg.anterior.desde && h === rg.anterior.hasta ? 'semana_anterior' : d === rg.esta.desde && h === rg.esta.hasta ? 'semana_en_curso' : 'a_mano';
+  const cub = jHorasCubiertas(), todas = J.horas.filter(x => x.u === per.usuario_id && x.fecha >= d && x.fecha <= h).sort((a, b) => a.fecha.localeCompare(b.fecha) || b.id - a.id);
+  const cubiertas = todas.filter(x => cub.has(x.id)), entran = todas.filter(x => op.incluir_cubiertas || !cub.has(x.id));
+  const cents = Math.round(Math.abs(m.monto) * 100);
+  const grupos = [];
+  for (const x of entran) { const k = (x.p || '~') + '|' + (x.co || ''); let g = grupos.find(y => y.k === k); if (!g) grupos.push(g = { k, p: x.p, co: x.co, horas: 0, rep: [] }); g.horas += x.horas; g.rep.push(x); }
+  grupos.sort((a, b) => (a.p ? 0 : 1) - (b.p ? 0 : 1) || String(a.p).localeCompare(String(b.p)) || (a.co ? 1 : 0) - (b.co ? 1 : 0));
+  const montos = grupos.length ? jPartir(cents, grupos) : [];
+  const lineas = [], detalle = []; let sinObra = null;
+  grupos.forEach((g, i) => {
+    const n = i + 1, monto = montos[i] / 100;
+    const reps = jPartir(montos[i], g.rep);
+    g.rep.forEach((x, j) => detalle.push({ horas_id: x.id, fecha: x.fecha, proyecto_id: x.p, obra: x.p ? J_OBRAS[x.p][0] : null, co: x.co, fase: x.fase, horas: x.horas, aprobada: false, entra: true, monto: reps[j] / 100, n, cubierta_por: null }));
+    if (g.p) lineas.push({ n, proyecto_id: g.p, obra: J_OBRAS[g.p][0], obra_estado: J_OBRAS[g.p][1], co: g.co, horas: g.horas, monto, cuenta: '5200' });
+    else sinObra = { n, horas: g.horas, monto, cuenta: J.config.cuenta_sin_obra, falta_cuenta: !J.config.cuenta_sin_obra };
+  });
+  for (const x of todas.filter(y => !entran.includes(y))) detalle.push({ horas_id: x.id, fecha: x.fecha, proyecto_id: x.p, obra: x.p ? J_OBRAS[x.p][0] : null, co: x.co, fase: x.fase, horas: x.horas, aprobada: true, entra: false, monto: 0, n: null, cubierta_por: J.repartos.find(r => r.horas_ids.includes(x.id)).reparto_id });
+  const horas = entran.reduce((s, x) => s + x.horas, 0), texto = jTexto(d, h);
+  const avisos = [];
+  if (!horas) avisos.push(jAviso('sin_horas', 'Sin horas en esas fechas', `${per.nombre} no tiene horas reportadas ${texto}. Elige otras fechas (la semana anterior, esta semana, o a mano); si este pago no es por horas, clasifícalo en la Bandeja como siempre.`));
+  if (cubiertas.length && !op.incluir_cubiertas) avisos.push(jAviso('horas_cubiertas', 'Parte de las horas ya tiene otro pago', `${cubiertas.reduce((s, x) => s + x.horas, 0)} h de esas fechas ya entraron en otro reparto: este pago se reparte solo por las que faltan. Si es otro pago de las mismas horas, márcalo.`));
+  const tarifaSale = horas ? Math.round(cents / horas) / 100 : null, desvio = tarifaSale && per.tarifa ? Math.round((tarifaSale - per.tarifa) / per.tarifa * 1000) / 10 : null;
+  if (desvio != null && Math.abs(desvio) > J.config.aviso_tarifa_pct) avisos.push(jAviso('tarifa_lejos', 'La tarifa que sale se aleja de la suya', `Sale a $${tarifaSale.toFixed(2)} la hora y su tarifa es $${per.tarifa.toFixed(2)} (${desvio > 0 ? '+' : ''}${desvio} %): revisa las fechas (¿dos semanas juntas?, ¿horas sin reportar?).`));
+  const term = lineas.filter(l => l.obra_estado === 'completado');
+  if (term.length) avisos.push(jAviso('obra_terminada', 'Hay una obra terminada', `Hay horas en una obra que ya no está activa: ${term.map(l => l.obra + ' (terminada)').join(', ')}. Su parte va a esa obra igual: el trabajo se hizo ahí.`));
+  if (sinObra && sinObra.falta_cuenta) avisos.push(jAviso('falta_cuenta_sin_obra', 'Falta la cuenta de lo sin obra', `${sinObra.horas} h no tienen obra (les tocan $${sinObra.monto.toFixed(2)}) y no pueden ir a 5200, que exige obra. Di una vez a qué cuenta va la mano de obra sin obra (ajustes del jornal), o ponles su obra en Horas y vuelve a mirar.`));
+  const frena = avisos.find(a => ['sin_horas', 'falta_cuenta_sin_obra'].includes(a.codigo));
+  const visto = sha(Buffer.from(JSON.stringify([mid, d, h, Math.abs(m.monto), J.config.cuenta_sin_obra, !!op.incluir_cubiertas, entran.map(x => [x.id, x.fecha, x.p, x.co, x.fase, x.horas])]))).slice(0, 32);
+  const opciones = [rg.anterior, rg.esta].map(o => { const hs = J.horas.filter(x => x.u === per.usuario_id && x.fecha >= o.desde && x.fecha <= o.hasta); return { regla: o.regla, desde: o.desde, hasta: o.hasta, por_defecto: o.regla === rg.def.regla, horas: hs.reduce((s, x) => s + x.horas, 0), horas_sin_pago: hs.filter(x => !cub.has(x.id)).reduce((s, x) => s + x.horas, 0) }; });
+  return { reconocido: true, movimiento: movJ, persona: { usuario_id: per.usuario_id, nombre: per.nombre, rol: per.rol, tarifa: per.tarifa, cuenta: '5200', patron: per.patron },
+    periodo: { desde: d, hasta: h, regla, texto, por_defecto: { desde: rg.def.desde, hasta: rg.def.hasta, regla: rg.def.regla }, opciones },
+    horas, reportes: entran.length, obras: new Set(lineas.map(l => l.proyecto_id)).size, lineas, sin_obra: sinObra, detalle,
+    cubiertas: cubiertas.length ? { horas: cubiertas.reduce((s, x) => s + x.horas, 0), reportes: cubiertas.length, incluidas: !!op.incluir_cubiertas, repartos: [...new Set(cubiertas.map(x => J.repartos.find(r => r.horas_ids.includes(x.id)).reparto_id))] } : null,
+    tarifa_sale: tarifaSale, tarifa_equipo: per.tarifa, tarifa_desvio_pct: desvio, avisos, puede_aplicar: !frena, por_que: frena ? frena.texto : null, visto,
+    propuesta_ia: J.propuestaIA[mid] || null, opciones: { incluir_cubiertas: !!op.incluir_cubiertas } };
+}
+// v_jornal_pendientes: una fila por pago pendiente reconocido, con la semana de la regla (= fn_jornal_propuesta sin fechas)
+const jPendientes = () => J.movs.filter(m => !J.fuera.has(m.movimiento_id) && jPersonaDe(m)).map(m => {
+  const p = jCalc(m.movimiento_id);
+  return { movimiento_id: m.movimiento_id, cuenta: m.cuenta, fecha: m.fecha, monto: Math.abs(m.monto), descripcion: m.descripcion, usuario_id: p.persona.usuario_id, persona: p.persona.nombre, tarifa: p.persona.tarifa,
+    desde: p.periodo.desde, hasta: p.periodo.hasta, regla: p.periodo.regla, periodo_texto: p.periodo.texto, horas: p.horas, reportes: p.reportes, obras: p.obras, horas_sin_obra: p.sin_obra ? p.sin_obra.horas : null,
+    tarifa_sale: p.tarifa_sale, puede_aplicar: p.puede_aplicar, por_que: p.por_que, aviso: p.avisos.map(a => a.corto).join(' · ') || null, n_avisos: p.avisos.length, avisos: p.avisos, lineas: p.lineas, visto: p.visto, propuesta_ia: p.propuesta_ia };
+});
+const jRepartosVista = () => [...J.repartos].sort((a, b) => b.creado_el.localeCompare(a.creado_el)).map(r => ({ ...r, horas_ids: undefined, horas_aprobadas: r.horas_ids.length }));
+const jPersonasVista = () => J.personas.map(p => {
+  const pend = jPendientes().filter(f => f.usuario_id === p.usuario_id), reps = J.repartos.filter(r => r.usuario_id === p.usuario_id && r.estado === 'aplicado'), hs = J.horas.filter(x => x.u === p.usuario_id), cub = jHorasCubiertas();
+  return { usuario_id: p.usuario_id, nombre: p.nombre, rol: p.rol, perfil_activo: true, registrada: p.registrada, activa: p.activa, patron: p.patron, cuenta_propia: null, cuenta: '5200', tarifa: p.tarifa, nota: p.nota, creado_el: p.creado_el, actualizado_el: p.creado_el,
+    pagos_pendientes: pend.length, pagos_pendientes_monto: pend.reduce((s, f) => s + f.monto, 0), repartos: reps.length, repartido: reps.reduce((s, r) => s + r.monto, 0), ultimo_reparto: reps.length ? reps[reps.length - 1].creado_el : null,
+    horas_90_dias: hs.reduce((s, x) => s + x.horas, 0), horas_sin_pago: hs.filter(x => !cub.has(x.id)).reduce((s, x) => s + x.horas, 0) };
+});
+const jCtl = () => [[10, 'jornal: cada reparto aplicado = las líneas de su asiento', 'cuadre'], [20, 'jornal: ningún reparto aplicado con su asiento reversado o su pago suelto', 'cuadre'], [25, 'jornal: ningún reparto deshecho con su asiento todavía vivo', 'cuadre'],
+  [30, 'jornal: las horas de cada reparto aplicado siguen como se repartieron', 'cuadre'], [40, 'jornal: ninguna hora en dos repartos vivos sin que Edgar lo aceptara', 'cuadre'], [50, 'jornal: ningún mes con devengo estándar y jornales a la vez', 'cuadre'],
+  [60, 'jornal: cada persona dada de alta se reconoce sin dudas y va a una cuenta que sirve', 'aviso'], [90, 'jornal: protecciones de la capa', 'cuadre']]
+  .map(([orden, cuadre, nivel]) => ({ orden, cuadre, nivel, ok: !(J.ctlRojo && orden === 20), detalle: J.ctlRojo && orden === 20 ? '1 reparto aplicado con su pago des-casado en la Bandeja (Zzana C10 PRUEBA, 2-nov): ciérralo con «Deshacer». (prueba)' : 'En verde. (prueba)' }));
+const jCtlMargen = () => [[10, 'margen: el costo real por obra sumado = el 5xxx con obra del mayor'], [20, 'margen: el ingreso por obra sumado = el 40xx con obra del mayor'], [30, 'margen: los conceptos de cada obra suman su costo'],
+  [40, 'margen: la mano de obra de jornales en el libro = los repartos aplicados'], [50, 'margen: las horas de cada obra = las de la app'], [60, 'margen: el costo de cada obra = el de Estados (c4)']]
+  .map(([orden, cuadre]) => ({ orden, cuadre, nivel: 'cuadre', ok: !(J.margenRojo && orden === 10), detalle: J.margenRojo && orden === 10 ? 'Las obras suman $2,645.50 y el mayor con obra dice $2,700.00. (prueba)' : 'En verde. (prueba)' }));
+// v_margen_obra: la obra A del ejemplo (F del informe), la F terminada y parcial, y la B sin estimado
+const J_OBRA_A = { proyecto_id: 'c10-prueba-a', obra: 'C10 PRUEBA Obra A', cliente: 'C10 PRUEBA Cliente', tipo: 'comercial', estado: 'ejecucion', completado_el: null, libro_desde: '2026-10-01', parcial: false, parcial_por: null,
+  contrato: 12000.00, ingreso_libro: 5000.00, material_real: 750.25, mano_obra_real: 419.19, mano_obra_jornales: 419.19, mano_obra_nomina: 0.00, subcontratos_real: 500.00, equipo_real: 75.25, otros_costos_real: 60.00, costo_real: 1804.69,
+  horas_reales: 32.5, horas_co: 6.5, horas_base: null, horas_antes_libro: 0, horas_con_pago_real: 16.5, horas_estandar: 16, horas_dueno: 0, horas_sin_aprobar: 16, mano_obra_estandar: 422.40, mano_obra_estandar_falta: null, mano_obra_dueno: null,
+  burden_estandar_pct: 10.00, costo_con_estandar: 2227.09, horas_estimadas: 120, tarifa_estimada: 36.25, escenario: 'B', estimado_id: null, mano_obra_estimada: 4350.00, material_presupuesto: 2500.00, costo_estimado: 6850.00,
+  margen_real: 3195.31, margen_real_pct: 63.9, margen_estimado: 5150.00, margen_estimado_pct: 42.9, diferencia: 4622.91, pagos_sin_repartir: 1, asientos: 3,
+  avisos: ['1 pago(s) de mano de obra de esas semanas siguen sin repartir en la Bandeja: su costo todavía no está en esta obra.', '16 h van a estándar (sin pago real repartido): $422.40, estándar, no real.'] };
+const J_OBRA_F = { ...J_OBRA_A, proyecto_id: 'c10-prueba-f', obra: 'C10 PRUEBA Obra F', cliente: 'C10 PRUEBA Otro cliente', tipo: 'residencial', estado: 'completado', completado_el: '2026-10-31', parcial: true, parcial_por: 'ya andaba antes del libro: tenía saldo en la apertura y horas de septiembre',
+  contrato: 3000.00, ingreso_libro: 1500.00, material_real: 1200.00, mano_obra_real: 101.62, mano_obra_jornales: 101.62, subcontratos_real: 0, equipo_real: 0, otros_costos_real: 0, costo_real: 1301.62, horas_reales: 4, horas_co: 0, horas_antes_libro: 30,
+  horas_con_pago_real: 4, horas_estandar: 0, horas_sin_aprobar: 0, mano_obra_estandar: 0, costo_con_estandar: 1301.62, horas_estimadas: 40, tarifa_estimada: 36.25, mano_obra_estimada: 1450.00, material_presupuesto: 800.00, costo_estimado: 2250.00,
+  margen_real: 198.38, margen_real_pct: 13.2, margen_estimado: 750.00, margen_estimado_pct: 25.0, diferencia: 948.38, pagos_sin_repartir: 0, asientos: 2, avisos: ['Parcial: lo de antes del 1-oct-2026 está en QuickBooks.'] };
+const J_OBRA_B = { ...J_OBRA_A, proyecto_id: 'c10-prueba-b', obra: 'C10 PRUEBA Obra B', cliente: 'C10 PRUEBA Cliente', estado: 'ejecucion', contrato: null, ingreso_libro: 0, material_real: 0, mano_obra_real: 38.11, mano_obra_jornales: 38.11, subcontratos_real: 0, equipo_real: 0,
+  otros_costos_real: 0, costo_real: 38.11, horas_reales: 1.5, horas_co: 0, horas_con_pago_real: 1.5, horas_estandar: 0, horas_sin_aprobar: 0, mano_obra_estandar: 0, costo_con_estandar: 38.11, horas_estimadas: null, tarifa_estimada: null, escenario: null,
+  mano_obra_estimada: null, material_presupuesto: null, costo_estimado: null, margen_real: -38.11, margen_real_pct: null, margen_estimado: null, margen_estimado_pct: null, diferencia: null, pagos_sin_repartir: 0, asientos: 1, avisos: [] };
+const jBajar = (filtros, signo) => [{ vista: 'v_libro', campo: 'monto', signo: signo || 1, filtros }];
+const J_COSTO = ['5000', '5001', '5010', '5011', '5015', '5019', '5100', '5200', '5300', '5400', '5500', '5600', '5900', '5950'];
+// fn_margen_obra de la obra A: la del ejemplo G del informe, entera (conceptos con su «bajar», por cuenta, por CO, por fase, el vacío del cost code, la cobertura y el reparto)
+const jMargenA = () => {
+  const A = 'c10-prueba-a', no = [J_AS.jornal];
+  return { obra: { ...J_OBRA_A }, avisos: J_OBRA_A.avisos,
+    conceptos: [
+      { concepto: 'material', nivel: 'concepto', etiqueta: 'Material', estimado: 2500.00, real: 750.25, estandar: null, total: 750.25, diferencia: 1749.75, bajar: jBajar({ cuenta: '5100', proyecto_id: A, asiento_id_no: no }) },
+      { concepto: 'mano_obra', nivel: 'concepto', etiqueta: 'Mano de obra', estimado: 4350.00, real: 419.19, estandar: 422.40, total: 841.59, diferencia: 3508.41, horas_reales: 32.5, horas_estimadas: 120, tarifa_estimada: 36.25,
+        bajar: [...jBajar({ cuenta: J_COSTO, proyecto_id: A, asiento_id: no }), ...jBajar({ cuenta: J_COSTO.slice(0, 6), proyecto_id: A, asiento_id_no: no })] },
+      { concepto: 'mano_obra_real', nivel: 'detalle', etiqueta: 'Mano de obra real (pagada y repartida)', estimado: null, real: 419.19, estandar: null, total: 419.19, diferencia: null, horas: 16.5, jornales: 419.19, nomina: 0.00,
+        bajar: [...jBajar({ cuenta: J_COSTO, proyecto_id: A, asiento_id: no }), ...jBajar({ cuenta: J_COSTO.slice(0, 6), proyecto_id: A, asiento_id_no: no })] },
+      { concepto: 'mano_obra_estandar', nivel: 'detalle', etiqueta: 'Mano de obra estándar, no real', estimado: null, real: null, estandar: 422.40, total: 422.40, diferencia: null, horas: 16, burden_estandar_pct: 10.0,
+        nota: 'Horas sin pago real repartido × la tarifa de Costos del equipo × (1 + burden estándar). No está en el libro.' },
+      { concepto: 'subcontratos', nivel: 'concepto', etiqueta: 'Subcontratos', estimado: null, real: 500.00, estandar: null, total: 500.00, diferencia: null, bajar: jBajar({ cuenta: '5200', proyecto_id: A, asiento_id_no: no }) },
+      { concepto: 'equipo', nivel: 'concepto', etiqueta: 'Equipo y renta', estimado: null, real: 75.25, estandar: null, total: 75.25, diferencia: null, bajar: jBajar({ cuenta: '5300', proyecto_id: A, asiento_id_no: no }) },
+      { concepto: 'otros', nivel: 'concepto', etiqueta: 'Otros costos de obra', estimado: null, real: 60.00, estandar: null, total: 60.00, diferencia: null, bajar: jBajar({ cuenta: ['5400', '5500', '5600', '5900', '5950'], proyecto_id: A, asiento_id_no: no }) },
+      { concepto: 'total', nivel: 'total', etiqueta: 'Costo de la obra', estimado: 6850.00, real: 1804.69, estandar: 422.40, total: 2227.09, diferencia: 4622.91, bajar: jBajar({ cuenta: J_COSTO, proyecto_id: A }) },
+      { concepto: 'ingreso', nivel: 'ingreso', etiqueta: 'Facturado (en el libro)', estimado: 12000.00, real: 5000.00, estandar: null, total: 5000.00, diferencia: null, bajar: jBajar({ cuenta: ['4010', '4020', '4030', '4040'], proyecto_id: A }, -1) }
+    ],
+    por_cuenta: [
+      { cuenta: '5100', nombre: 'Material', concepto: 'material', jornal: false, real: 750.25, asientos: 2, bajar: jBajar({ cuenta: '5100', proyecto_id: A, asiento_id_no: no }) },
+      { cuenta: '5200', nombre: 'Subcontratos', concepto: 'subcontratos', jornal: false, real: 500.00, asientos: 1, bajar: jBajar({ cuenta: '5200', proyecto_id: A, asiento_id_no: no }) },
+      { cuenta: '5200', nombre: 'Subcontratos', concepto: 'mano_obra', jornal: true, real: 419.19, asientos: 1, bajar: jBajar({ cuenta: '5200', proyecto_id: A, asiento_id: no }) },
+      { cuenta: '5300', nombre: 'Equipo y renta', concepto: 'equipo', jornal: false, real: 75.25, asientos: 1, bajar: jBajar({ cuenta: '5300', proyecto_id: A, asiento_id_no: no }) },
+      { cuenta: '5400', nombre: 'Permisos e inspecciones', concepto: 'otros', jornal: false, real: 60.00, asientos: 1, bajar: jBajar({ cuenta: '5400', proyecto_id: A, asiento_id_no: no }) }
+    ],
+    por_co: [
+      { co: null, etiqueta: 'Base (sin CO)', horas: 26, horas_con_pago_real: 10, horas_estandar: 16, mano_obra_real: 254.05, mano_obra_estandar: 422.40, material_real: 450.25, subcontratos_real: 500.00, equipo_real: 75.25, otros_costos_real: 60.00, costo_real: 1339.55, ingreso_libro: 5000.00, alcance: null },
+      { co: 'CO #1', etiqueta: 'CO #1', horas: 6.5, horas_con_pago_real: 6.5, horas_estandar: 0, mano_obra_real: 165.14, mano_obra_estandar: 0, material_real: 300.00, subcontratos_real: 0, equipo_real: 0, otros_costos_real: 0, costo_real: 465.14, ingreso_libro: 0, alcance: null }
+    ],
+    por_fase: [
+      { fase: 'rough', etiqueta: 'rough', horas: 30.5, horas_con_pago_real: 14.5, mano_obra_real: 368.38, horas_estandar: 16, mano_obra_estandar: 422.40, horas_dueno: 0, horas_antes_libro: 0, otros_costos_libro: 300.00 },
+      { fase: 'trim', etiqueta: 'trim', horas: 2, horas_con_pago_real: 2, mano_obra_real: 50.81, horas_estandar: 0, mano_obra_estandar: 0, horas_dueno: 0, horas_antes_libro: 0, otros_costos_libro: 0 }
+    ],
+    por_cost_code: { hay: false, nota: 'Todavía no hay nada capturado con código en esta obra: las líneas del libro no traen cost code (el ticket no lo lleva). Se compara por obra y por cuenta.', filas: [] },
+    cobertura: [
+      { usuario_id: J_PER.ana, persona: 'Zzana C10 PRUEBA', es_dueno: false, tarifa: 25, horas: 16.5, horas_con_pago_real: 16.5, pagado: 419.19, horas_estandar: 0, estandar: null, horas_dueno: 0, horas_antes_libro: 0, horas_sin_aprobar: 0 },
+      { usuario_id: J_PER.beto, persona: 'Zzbeto C10 PRUEBA', es_dueno: false, tarifa: 24, horas: 16, horas_con_pago_real: 0, pagado: 0.00, horas_estandar: 16, estandar: 422.40, horas_dueno: 0, horas_antes_libro: 0, horas_sin_aprobar: 16 }
+    ],
+    repartos: [{ reparto_id: '1b4c2dd2-f106-44c3-a7fc-7ed7bdc1434b', estado: 'aplicado', fecha_pago: '2026-11-02', usuario_id: J_PER.ana, persona: 'Zzana C10 PRUEBA', desde: '2026-10-26', hasta: '2026-11-01', monto: 940.00, horas: 37.00,
+      monto_obra: 419.19, horas_obra: 16.5, asiento_id: J_AS.jornal, asiento: '2026-000004', reverso_id: null, deshecho_motivo: null }] };
+};
+const jMargenOtra = o => ({ obra: { ...o }, avisos: o.avisos, conceptos: [{ concepto: 'total', nivel: 'total', etiqueta: 'Costo de la obra', estimado: o.costo_estimado, real: o.costo_real, estandar: null, total: o.costo_con_estandar, diferencia: o.diferencia }],
+  por_cuenta: [], por_co: [], por_fase: [], por_cost_code: { hay: false, nota: 'Todavía no hay nada capturado con código en esta obra. Se compara por obra y por cuenta.', filas: [] }, cobertura: [], repartos: [] });
+const err10 = (code, message, hint, status) => ({ status: status || 400, error: { code, message, hint: hint || null, details: null } });
+const C10_VISTAS = { v_jornal_pendientes: jPendientes, v_jornal_repartos: jRepartosVista, v_jornal_personas: jPersonasVista, v_jornal_control: jCtl, v_margen_control: jCtlMargen,
+  v_margen_obra: () => [J_OBRA_A, J_OBRA_B, J_OBRA_F], jornal_config: () => [J.config] };
+const C10_FN = {
+  fn_jornal_propuesta: a => {
+    if (!a.p_movimiento) return err10('22023', 'Di de qué movimiento del banco (p_movimiento).');
+    if (!!a.p_desde !== !!a.p_hasta) return err10('22023', 'Las fechas a mano van las dos (desde y hasta), o ninguna: entonces va la semana que toca.');
+    const extra = Object.keys(a.p_opciones || {}).filter(k => !['incluir_cubiertas', 'motivo'].includes(k));
+    if (extra.length) return err10('22023', `Opción desconocida: ${extra.join(', ')}. Las que hay: incluir_cubiertas (true o false) y motivo (un texto).`);
+    return jCalc(a.p_movimiento, a.p_desde, a.p_hasta, a.p_opciones);
+  },
+  fn_jornal_aplicar: a => {
+    if (!a.p_visto) return err10('22023', 'Falta «visto»: la huella de lo que viste (la da fn_jornal_propuesta).');
+    const op = a.p_opciones || {};
+    if (J.mx011) { J.mx011 = false; J.horas.push({ id: -1010000099, u: J_PER.ana, fecha: '2026-10-31', p: 'c10-prueba-b', co: null, fase: 'trim', horas: 3 }); }
+    const c = jCalc(a.p_movimiento, a.p_desde, a.p_hasta, { incluir_cubiertas: !!op.incluir_cubiertas });
+    if (!c.reconocido) return err10('MX008', c.por_que);
+    if (c.visto !== a.p_visto) return err10('MX011', `Las horas de ${c.persona.nombre} ${c.periodo.texto} ya no son las que viste (alguien reportó, cambió o borró horas, o cambió una cuenta, entre que miraste y que tocaste): no se aprobó ni se posteó nada. Vuelve a mirar el reparto y acepta lo que veas ahora.`, 'vuelve a pedir fn_jornal_propuesta');
+    if (!c.puede_aplicar) return err10('MX008', c.por_que);
+    if (J.pideMotivo && !op.motivo) return err10('MX008', 'Este pago puede ser el del cheque 1234 que ya está en el libro por el mismo monto (c6). Si de verdad es otra cosa, dilo en el motivo.');
+    J.seq += 1; J.fuera.add(a.p_movimiento);
+    const numero = '2026-00000' + J.seq, asiento = { id: 'c1a00000-0000-4000-8000-0000000001' + String(J.seq).padStart(2, '0'), numero, periodo: c.movimiento.periodo, fecha_contable: c.movimiento.fecha };
+    const r = { reparto_id: 'c1c00000-0000-4000-8000-0000000000' + String(J.seq).padStart(2, '0'), estado: 'aplicado', movimiento_id: a.p_movimiento, fecha_pago: c.movimiento.fecha, cuenta_banco: '1010', descripcion: c.movimiento.descripcion,
+      usuario_id: c.persona.usuario_id, persona: c.persona.nombre, desde: c.periodo.desde, hasta: c.periodo.hasta, regla_periodo: c.periodo.regla, periodo_texto: c.periodo.texto, monto: c.movimiento.monto, horas: c.horas, tarifa_sale: c.tarifa_sale,
+      tarifa_equipo: c.tarifa_equipo, cuenta: '5200', cuenta_sin_obra: c.sin_obra ? c.sin_obra.cuenta : null, obras: c.obras,
+      lineas: c.lineas.map((l, i) => ({ n: l.n, orden: i + 2, proyecto_id: l.proyecto_id, obra: l.obra, co: l.co, cuenta: l.cuenta, horas: l.horas, monto: l.monto })).concat(c.sin_obra ? [{ n: c.sin_obra.n, orden: c.lineas.length + 2, proyecto_id: null, obra: null, co: null, cuenta: c.sin_obra.cuenta, horas: c.sin_obra.horas, monto: c.sin_obra.monto }] : []),
+      asiento_id: asiento.id, asiento: numero, asiento_fecha: asiento.fecha_contable, asiento_vivo: true, avisos: c.avisos, opciones: { incluir_cubiertas: !!op.incluir_cubiertas, ...(op.motivo ? { motivo: op.motivo } : {}) },
+      horas_ids: c.detalle.filter(x => x.entra).map(x => x.horas_id), creado_el: new Date(Date.now() + J.seq).toISOString(), creado_por: UID, creado_por_nombre: 'Edgar Prueba',
+      deshecho_el: null, deshecho_por: null, deshecho_por_nombre: null, deshecho_motivo: null, reverso_id: null, reverso: null };
+    J.repartos.push(r);
+    return { reparto_id: r.reparto_id, movimiento_id: r.movimiento_id, estado: 'aplicado', persona: c.persona, desde: r.desde, hasta: r.hasta, regla_periodo: r.regla_periodo, monto: r.monto, horas: r.horas, tarifa_sale: r.tarifa_sale, asiento, tardio: null,
+      horas_aprobadas: { reportes: r.horas_ids.length, ids: r.horas_ids }, lineas: c.lineas, sin_obra: c.sin_obra, avisos: c.avisos, propuesta_ia: c.propuesta_ia,
+      nota: `Repartido: $${r.monto.toFixed(2)} de ${r.persona} (${r.periodo_texto}, ${r.horas} h) entre ${r.obras} obra(s); asiento ${numero}. Quedaron aprobados ${r.horas_ids.length} reporte(s) de horas.` };
+  },
+  fn_jornal_deshacer: a => {
+    if (!a.p_reparto) return err10('22023', 'Di qué reparto.');
+    if (String(a.p_motivo || '').trim().length < 3) return err10('22023', 'Deshacer un reparto dice por qué (motivo): queda escrito en el libro.');
+    const r = J.repartos.find(x => x.reparto_id === a.p_reparto); if (!r) return err10('22023', 'No existe ese reparto.');
+    if (r.estado === 'deshecho') return err10('MX008', `Ese reparto ya estaba deshecho (el ${r.deshecho_el.slice(0, 10)}: ${r.deshecho_motivo}).`);
+    J.seq += 1; J.fuera.delete(r.movimiento_id);
+    Object.assign(r, { estado: 'deshecho', deshecho_el: new Date().toISOString(), deshecho_por: UID, deshecho_por_nombre: 'Edgar Prueba', deshecho_motivo: String(a.p_motivo).trim(), reverso_id: 'c1a00000-0000-4000-8000-0000000002' + String(J.seq).padStart(2, '0'), reverso: '2026-00000' + J.seq, asiento_vivo: false });
+    return { reparto_id: r.reparto_id, estado: 'deshecho', movimiento_id: r.movimiento_id, movimiento_estado: 'pendiente', asiento: { id: r.asiento_id, numero: r.asiento }, reverso: { id: r.reverso_id, numero: r.reverso, fecha_contable: r.fecha_pago },
+      por_fuera: false, horas_siguen_aprobadas: r.horas_ids.length, nota: `Reparto deshecho: el asiento ${r.asiento} quedó reversado con el ${r.reverso} y el pago volvió a la Bandeja. Sus ${r.horas_ids.length} reporte(s) de horas siguen aprobados: se aprobó lo que viste, y lo que se deshace es el reparto del pago.` };
+  },
+  fn_jornal_persona: a => {
+    const p = a.p || {}, per = J.personas.find(x => x.usuario_id === p.usuario_id);
+    if (!p.usuario_id) return err10('22023', 'Di qué persona (usuario_id).');
+    if (!per) return err10('22023', 'Esa persona no está en el equipo.');
+    const extra = Object.keys(p).filter(k => !['usuario_id', 'patron', 'movimiento_id', 'cuenta', 'activa', 'nota'].includes(k));
+    if (extra.length) return err10('22023', `Clave desconocida: ${extra.join(', ')}.`);
+    let patron = p.patron;
+    if (p.movimiento_id) { const m = J.movs.find(x => x.movimiento_id === p.movimiento_id); const t = m ? (/ to (.+?)\s+\d+$/i.exec(m.descripcion) || [])[1] : null; if (!t) return err10('22023', 'No saqué el patrón de esa descripción: escríbelo tú.'); patron = '\\m' + t.toUpperCase() + '\\M'; }
+    if (patron !== undefined && String(patron).replace(/\\[mM]/g, '').trim().length < 4) return err10('22023', 'El patrón es muy corto: casaría con cualquier pago. Pon el nombre como lo escribe el banco.');
+    const nueva = !per.registrada;
+    if (patron !== undefined) per.patron = patron;
+    if (nueva) { per.registrada = true; per.activa = true; per.creado_el = new Date().toISOString(); }
+    if (p.activa !== undefined) per.activa = !!p.activa;
+    const pend = jPendientes().filter(f => f.usuario_id === per.usuario_id).length;
+    return { ...jPersonasVista().find(x => x.usuario_id === per.usuario_id), nombre: per.nombre, nueva, pagos_pendientes: pend, ambiguos: 0,
+      nota_alta: nueva ? `${per.nombre} cobra por horas desde ahora: ${pend} pago(s) suyo(s) esperan su reparto en la Bandeja.` : null };
+  },
+  fn_jornal_config: a => {
+    const p = a.p || {}, extra = Object.keys(p).filter(k => !['cuenta_defecto', 'cuenta_sin_obra', 'burden_estandar_pct', 'aviso_tarifa_pct'].includes(k));
+    if (extra.length) return err10('22023', `Clave desconocida: ${extra.join(', ')}.`);
+    if (p.cuenta_sin_obra && /^50|^600[05]$/.test(p.cuenta_sin_obra)) return err10('MX004', `La ${p.cuenta_sin_obra} no sirve para lo sin obra: la nómina y el sueldo entran solo por su journal.`);
+    if (p.burden_estandar_pct != null && (p.burden_estandar_pct < 0 || p.burden_estandar_pct > 100)) return err10('22023', 'El burden estándar va de 0 a 100 (o nulo).');
+    Object.assign(J.config, p, { actualizado: new Date().toISOString(), actualizado_por: UID });
+    return { ...J.config };
+  },
+  fn_margen_obra: a => {
+    if (!a.p_proyecto) return err10('22023', 'Di qué obra (p_proyecto).');
+    if (a.p_proyecto === 'c10-prueba-a') return jMargenA();
+    const o = [J_OBRA_B, J_OBRA_F].find(x => x.proyecto_id === a.p_proyecto);
+    return o ? jMargenOtra(o) : err10('22023', 'No existe esa obra.');
+  }
+};
+
 const estado = { controlMal: false, controlFilas: null, fallar: false, casarRondas: 0, concNueva: false, plaidFijada: false, plaidSinVista: false, plaidSinFijar: false, mfaFactores: [], sesionAal: undefined,
   // los interruptores de los estados: el control en rojo, el conteo distinto para una vista, el «Sigue» del tope por reloj (cuenta llamadas; 90 o más = nunca termina),
   // el equipo (no dueño), la apertura sin postear, el balance descuadrado, una vista que no existe en la base, un mayor que no termina donde dice la balanza
@@ -967,12 +1240,19 @@ const estado = { controlMal: false, controlFilas: null, fallar: false, casarRond
   // «Proponer sola al abrir la Bandeja» que cada contexto nuevo deja en localStorage ('0', '1', 'quitar' = sin guardar: encendida)
   iaFallas: [], iaVuelo: 0, iaVueloMax: 0, iaSolaPref: '0', iaNiega: false,
   // (fase 8) c9 pegado o no: sin él, sus vistas contestan 404 (PGRST205), sus funciones también (PGRST202) y el bucket «cierres» no existe
-  c9: false };
+  c9: false,
+  // (fase 9) c10 pegado o no: sin él, sus vistas y jornal_config contestan 404 (PGRST205) y sus funciones también (PGRST202)
+  c10: false };
 const llamadas = [], lecturas = []; // lecturas: cada GET a /rest/v1/<vista>?… tal como lo pidió la pantalla
 function tabla(nombre, q) {
   let filas = T[nombre] || [];
   // (fase 8) las vistas y tablas de c9; el mayor de la apertura y la línea de la IA de octubre; el asiento del pago al IRS
   if (C9_VISTAS[nombre]) filas = C9_VISTAS[nombre]();
+  // (fase 9) las vistas de c10; con c10 la bandeja trae los cuatro Zelle de la cuadrilla (los repartidos salen) y el libro las líneas de la obra A
+  if (C10_VISTAS[nombre]) filas = estado.c10 ? C10_VISTAS[nombre]() : [];
+  if (nombre === 'v_banco_bandeja' && estado.c10) filas = filas.concat(J.movs.filter(m => !J.fuera.has(m.movimiento_id)));
+  if (nombre === 'v_libro' && estado.c10) filas = filas.concat(J.libro);
+  if (nombre === 'cuentas' && estado.c10) filas = filas.concat([['5200', 'Subcontratos', 'costo', 'obligatoria'], ['5010', 'Mano de obra (nómina)', 'costo', 'opcional'], ['7900', 'Otros gastos', 'otro_gasto', 'prohibida']].map(([codigo, nombre, tipo, regla_obra]) => ({ codigo, nombre, tipo, regla_obra, imputable: true, activa: true })));
   if (nombre === 'v_mayor' && estado.c9) filas = filas.concat(C9_MAYOR);
   if (nombre === 'asientos' && estado.c9) filas = C9_ASIENTOS;
   // las cuentas de activo fijo (15xx) y su contra-cuenta 1590, que el alta no ofrece
@@ -1010,15 +1290,17 @@ function tabla(nombre, q) {
   // filtros eq./is. de PostgREST, los que usa la pantalla
   for (const [k, v] of q.entries()) {
     if (['select', 'order', 'limit'].includes(k)) continue;
-    const m = /^(eq|is|lte|gte|in)\.(.*)$/.exec(v); if (!m) continue;
-    const lista = m[1] === 'in' ? m[2].replace(/^\(|\)$/g, '').split(',') : null;
-    filas = filas.filter(f => m[1] === 'in' ? lista.includes(String(f[k])) : m[1] === 'eq' ? String(f[k]) === m[2] : m[1] === 'is' ? (m[2] === 'null' ? f[k] == null : f[k] === (m[2] === 'true')) : m[1] === 'lte' ? String(f[k]) <= m[2] : String(f[k]) >= m[2]);
+    const m = /^(not\.in|eq|is|lte|gte|in)\.(.*)$/.exec(v); if (!m) continue;
+    const lista = m[1] === 'in' || m[1] === 'not.in' ? m[2].replace(/^\(|\)$/g, '').split(',') : null;
+    filas = filas.filter(f => m[1] === 'not.in' ? !lista.includes(String(f[k])) : m[1] === 'in' ? lista.includes(String(f[k])) : m[1] === 'eq' ? String(f[k]) === m[2] : m[1] === 'is' ? (m[2] === 'null' ? f[k] == null : f[k] === (m[2] === 'true')) : m[1] === 'lte' ? String(f[k]) <= m[2] : String(f[k]) >= m[2]);
   }
   return filas;
 }
 function rpc(fn, a) {
   // (fase 8) las funciones de c9: sin c9 pegado, PostgREST no las encuentra
   if (C9_FN[fn]) return estado.c9 ? C9_FN[fn](a) : { status: 404, error: { code: 'PGRST202', message: `Could not find the function public.${fn} in the schema cache`, details: null, hint: null } };
+  // (fase 9) las funciones de c10: sin c10 pegado, PostgREST no las encuentra
+  if (C10_FN[fn]) return estado.c10 ? C10_FN[fn](a) : { status: 404, error: { code: 'PGRST202', message: `Could not find the function public.${fn} in the schema cache`, details: null, hint: null } };
   if (estado.fallar && /^fn_banco_(casar_con|clasificar|transferencia|ignorar|duplicado)$/.test(fn)) return { error: { code: 'MX008', message: 'La base dijo que no (prueba)' } };
   if (fn === 'fn_banco_control') {
     const hoy = hoyMiami(), desde = hoy.slice(0, 8) + '01';
@@ -1216,6 +1498,12 @@ async function simular(ctx, rol) {
       llamadas.push({ fn: 'storage:firmar-cierres', args: b });
       return route.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify((b.paths || []).map(ruta => C9.objetos.has(ruta) ? { path: ruta, signedURL: '/object/sign/cierres/' + ruta + '?token=prueba', error: null } : { path: ruta, signedURL: null, error: 'Object not found' })) });
     }
+    // (fase 9) c10 sin pegar: sus vistas y jornal_config no existen (la lectura se anota igual)
+    if (!estado.c10 && /^\/rest\/v1\/(v_jornal_pendientes|v_jornal_repartos|v_jornal_personas|v_jornal_control|v_margen_obra|v_margen_control|jornal_config)$/.test(u.pathname)) {
+      const v = u.pathname.slice('/rest/v1/'.length);
+      lecturas.push(v + u.search);
+      return route.fulfill({ status: 404, headers: CORS, contentType: 'application/json', body: JSON.stringify({ code: 'PGRST205', message: `Could not find the table 'public.${v}' in the schema cache`, details: null, hint: null }) });
+    }
     if (!estado.c9 && /^\/rest\/v1\/(v_cierre_estado|v_cierres|v_ronda_ultima|v_activos_fijos|v_reserva_impuestos|v_dr15_mes|cierre_config|reserva_estimados)$/.test(u.pathname)) {
       const v = u.pathname.slice('/rest/v1/'.length);
       lecturas.push(v + u.search);
@@ -1252,10 +1540,11 @@ if (FOTOS) fs.mkdirSync(FOTOS, { recursive: true });
 // animations: 'disabled' porque el fullPage encoge el viewport un instante, la media query del lateral cambia y la transición de .15 s salía a medias en la imagen
 const foto = async (p, nombre) => { if (FOTOS) await p.screenshot({ path: path.join(FOTOS, nombre + '.png'), fullPage: true, animations: 'disabled' }); };
 const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' ');
-const PAGS = ['resumen', 'bancos', 'bandeja', 'conciliar', 'movimientos', 'estados', 'cierre', 'cobros', 'conexiones'];
-// (fase 8) la lista de respaldo de js/app.js (CONTA_PAGINAS_FIJAS, por si conta.js no cargó) trae las mismas nueve, «cierre» incluida
+const PAGS = ['resumen', 'bancos', 'bandeja', 'conciliar', 'movimientos', 'estados', 'obras', 'cierre', 'cobros', 'conexiones'];
+// (fase 8) la lista de respaldo de js/app.js (CONTA_PAGINAS_FIJAS, por si conta.js no cargó) trae las mismas diez, «cierre» y (fase 9) «obras» incluidas
 const PAGS_APP = PAGS;
 // cambiar de página por su pestaña: en la computadora (≥ 1024 px) las pestañas están escondidas (las enseña el lateral de app.js), así que el clic es del DOM
+const titulo2 = async pg => (await pg.locator('#titulo-vista').textContent()).trim();
 const tab = async (pg, k) => { await pg.locator(`.ct-tab[data-pag="${k}"]`).evaluate(b => b.click()); };
 // esperar a que la pantalla termine de pintar (ni «Cargando…» ni una acción en curso)
 // (7c) ni la cadena de la IA en marcha (propone sola: sin esperarla, lo pintado sería de antes de terminar)
@@ -1297,7 +1586,7 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
   const mesRegla = (() => { const meses = CORTES.filter(c => c.tipo === 'mes' && c.desde <= HOY).sort((x, y) => y.desde.localeCompare(x.desde)); return (meses.find(c => c.corte >= HOY) || meses[0]).periodo; })();
   const titulo = async () => (await p.locator('#titulo-vista').textContent()).trim();
   ok('Edgar tiene la loseta (escondida en Hoy, como las demás del dueño)', !(await p.locator('#btn-conta').getAttribute('hidden')) );
-  ok('…y la pestaña «Contabilidad» en el lateral con las 9 páginas como subtítulos (conta-<k>, los que da MXP_CONTA.paginas(): «Cierre del mes» incluida), y el botón de la barra de abajo', (await p.locator('#lateral [data-lat="conta"]').count()) === 1 &&
+  ok('…y la pestaña «Contabilidad» en el lateral con las 10 páginas como subtítulos (conta-<k>, los que da MXP_CONTA.paginas(): «Costo por obra» y «Cierre del mes» incluidas), y el botón de la barra de abajo', (await p.locator('#lateral [data-lat="conta"]').count()) === 1 &&
     JSON.stringify(await p.locator('#lateral [data-lat^="conta-"]').evaluateAll(bs => bs.map(b => b.dataset.lat))) === JSON.stringify(PAGS.map(k => 'conta-' + k)) && (await p.locator('#nav-abajo button[data-nav="conta"]').getAttribute('hidden')) === null);
 
   // ---- La portada («Resumen»): control antes de pintar, las fichas y «Qué atender» ----
@@ -1306,16 +1595,16 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
   await p.waitForSelector('#conta-raiz .ct-ficha', { timeout: 8000 });
   ok('Al entrar, la vista de la contabilidad se ve, la página es «Resumen» (la portada) y la pestaña «resumen» está marcada', await p.locator('#vista-conta').isVisible() && (await p.locator('#titulo-vista').textContent()).trim() === 'Resumen' && (await p.locator('.ct-tab[data-pag="resumen"][aria-current="page"]').count()) === 1, await p.locator('#titulo-vista').textContent());
   const pags = await p.evaluate(() => window.MXP_CONTA.paginas().map(x => [x.k, x.nombre, /^<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"/.test(x.svg) && /<\/svg>$/.test(x.svg)]));
-  ok('MXP_CONTA.paginas() da las 9 páginas en su orden (Cierre del mes después de Estados), con su nombre y un svg del estilo del menú', JSON.stringify(pags.map(x => x[0])) === JSON.stringify(PAGS) && pags.every(x => x[2]) && pags.map(x => x[1]).join('|') === 'Resumen|Bancos y tarjetas|Bandeja|Conciliar|Movimientos|Estados financieros|Cierre del mes|Cobros en línea|Conexiones y seguridad', JSON.stringify(pags));
+  ok('MXP_CONTA.paginas() da las 10 páginas en su orden (Costo por obra después de Estados, y Cierre del mes), con su nombre y un svg del estilo del menú', JSON.stringify(pags.map(x => x[0])) === JSON.stringify(PAGS) && pags.every(x => x[2]) && pags.map(x => x[1]).join('|') === 'Resumen|Bancos y tarjetas|Bandeja|Conciliar|Movimientos|Estados financieros|Costo por obra|Cierre del mes|Cobros en línea|Conexiones y seguridad', JSON.stringify(pags));
   ok('La página no repite el título que ya pone la barra de la app: la cabecera trae la línea de cifras y, como aria-label, el nombre', (await p.locator('.ct-pag-h').count()) === 0 && (await p.locator('.ct-pag-cab').getAttribute('aria-label')) === 'Resumen' && (await p.locator('.ct-pag-sub').count()) === 1);
   {
     // la lista de respaldo de app.js (por si conta.js no cargó) lleva los mismos trazos que ICONOS de conta.js: el lateral y las pestañas nunca enseñan iconos distintos para la misma página
     const appJs = fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8'), contaJs = fs.readFileSync(path.join(ROOT, 'js', 'conta.js'), 'utf8');
     const fijos = Object.fromEntries([...appJs.matchAll(/\{ k: "(\w+)", nombre: "[^"]+", svg: SVG_MENU\('([^']*)'\) \}/g)].map(m => [m[1], m[2]]));
     const iconos = Object.fromEntries([...contaJs.matchAll(/^\s+(\w+): svgMenu\('([^']*)'\),?$/gm)].map(m => [m[1], m[2]]));
-    ok('La lista de respaldo CONTA_PAGINAS_FIJAS de app.js trae las 9 páginas en el mismo orden y con los mismos trazos que ICONOS de conta.js («Cierre del mes» incluida)', JSON.stringify(Object.keys(fijos)) === JSON.stringify(PAGS_APP) && PAGS_APP.every(k => fijos[k] && fijos[k] === iconos[k]), PAGS_APP.filter(k => fijos[k] !== iconos[k]).join(',') || Object.keys(fijos).join(','));
+    ok('La lista de respaldo CONTA_PAGINAS_FIJAS de app.js trae las 10 páginas en el mismo orden y con los mismos trazos que ICONOS de conta.js («Costo por obra» y «Cierre del mes» incluidas)', JSON.stringify(Object.keys(fijos)) === JSON.stringify(PAGS_APP) && PAGS_APP.every(k => fijos[k] && fijos[k] === iconos[k]), PAGS_APP.filter(k => fijos[k] !== iconos[k]).join(',') || Object.keys(fijos).join(','));
   }
-  ok('En la computadora (1280 px) las pestañas de arriba van escondidas (las enseña el lateral), pero siguen en el DOM con sus 9 páginas', (await p.locator('.ct-tabs').evaluate(e => getComputedStyle(e).display)) === 'none' && (await p.locator('.ct-tab').count()) === PAGS.length && JSON.stringify(await p.locator('.ct-tab').evaluateAll(bs => bs.map(b => b.dataset.pag))) === JSON.stringify(PAGS));
+  ok('En la computadora (1280 px) las pestañas de arriba van escondidas (las enseña el lateral), pero siguen en el DOM con sus 10 páginas', (await p.locator('.ct-tabs').evaluate(e => getComputedStyle(e).display)) === 'none' && (await p.locator('.ct-tab').count()) === PAGS.length && JSON.stringify(await p.locator('.ct-tab').evaluateAll(bs => bs.map(b => b.dataset.pag))) === JSON.stringify(PAGS));
   await espiar(p);
   const ctrlR0 = desde(n).find(l => l.fn === 'fn_banco_control');
   ok('La portada pidió fn_banco_control(hoy) con las cuatro vistas del banco (v_banco_saldos manda) y fn_estados_control con v_resultados del mes de hoy', !!ctrlR0 && ctrlR0.args.p_periodo === 'hoy' && JSON.stringify(ctrlR0.args.p_vistas) === '["v_banco_saldos","v_banco_bandeja","v_conciliacion","v_banco_movimientos"]' &&
@@ -1560,7 +1849,7 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
   const esperarTexto = (sel, re) => p.waitForFunction(([s, r]) => { const e = document.querySelector(s); return e && new RegExp(r).test(e.textContent); }, [sel, re.source], { timeout: 8000 });
   const nBal = T.v_balance_general.filter(f => f.periodo === '2026-10').length;
   nLect = lecturas.length; n = llamadas.length;
-  ok('Las pestañas van en el orden del menú: Resumen, Bancos, Bandeja, Conciliar, Movimientos, Estados, Cierre, Cobros, Conexiones (cada una con su icono)', JSON.stringify(await p.locator('.ct-tab').evaluateAll(bs => bs.map(b => b.dataset.pag))) === JSON.stringify(PAGS) && (await p.locator('.ct-tab svg').count()) === PAGS.length && /Estados/.test(await p.locator('.ct-tab').nth(5).textContent()) && /Cierre/.test(await p.locator('.ct-tab').nth(6).textContent()));
+  ok('Las pestañas van en el orden del menú: Resumen, Bancos, Bandeja, Conciliar, Movimientos, Estados, Obras, Cierre, Cobros, Conexiones (cada una con su icono)', JSON.stringify(await p.locator('.ct-tab').evaluateAll(bs => bs.map(b => b.dataset.pag))) === JSON.stringify(PAGS) && (await p.locator('.ct-tab svg').count()) === PAGS.length && /Estados/.test(await p.locator('.ct-tab').nth(5).textContent()) && /Obras/.test(await p.locator('.ct-tab').nth(6).textContent()) && /Cierre/.test(await p.locator('.ct-tab').nth(7).textContent()));
   await tab(p, 'estados'); await p.waitForSelector('#ct-est-resultados', { timeout: 8000 });
   ok('Al tocarla el título es «Estados financieros» y aparece la barra de chips', (await titulo()) === 'Estados financieros' && (await p.locator('#ct-est-barra').count()) === 1, await titulo());
   const est0 = await estEst();
@@ -3321,6 +3610,302 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     conCodigo(false); estado.c9 = false;
   }
 
+  // ---- La mano de obra y el costo por obra (c10, fase 9): «Qué atender», la tarjeta «Mano de obra · persona» de la Bandeja
+  // (el período en un toque que recalcula, otras fechas, el total que es el pago, la tarifa, sin horas, «Así es» con la huella,
+  // la huella cambiada que recalcula, el motivo que pide el banco, la cuenta de lo sin obra, la propuesta de la IA rechazada,
+  // «No es mano de obra», el alta desde un pago normal), «Costo por obra» (lo que falta por configurar, la lista, una obra con
+  // lo real y lo estándar separados, la cobertura, los CO, la fase, el vacío del cost code, bajar a los asientos, el margen que
+  // no cuadra), los repartos con «Deshacer», las personas, sin el código, sin c10, y el teléfono, el iPad y la computadora ----
+  {
+    estado.c10 = true; jReset();
+    const conCodigo = si => { estado.mfaFactores = si ? [{ id: 'f-1', friendly_name: 'Teléfono de Edgar', factor_type: 'totp', status: 'verified' }] : []; estado.sesionAal = si ? 'aal2' : undefined; };
+    const abrirCtx = async (w, codigo) => {
+      conCodigo(codigo);
+      const cx = await b.newContext({ viewport: { width: w, height: w < 700 ? 844 : 1000 }, deviceScaleFactor: w < 1024 ? 2 : 1, isMobile: w < 1024, hasTouch: w < 1024, serviceWorkers: 'block' });
+      await simular(cx, 'dueno');
+      const q = await cx.newPage(); q.on('pageerror', e => errs.push(`c10 ${w}: ` + String(e).slice(0, 160)));
+      await q.goto('http://localhost:8873/index.html'); await q.waitForSelector('#vista-app:not([hidden])', { timeout: 15000 }); await q.waitForTimeout(800);
+      await q.evaluate(() => document.querySelectorAll('dialog[open]').forEach(d => d.close()));
+      await q.locator('#btn-conta').evaluate(x => x.click()); await q.waitForSelector('#conta-raiz .ct-ficha', { timeout: 8000 }); await pintado(q);
+      return { cx, q };
+    };
+    const ve = async (q, k, op) => { await q.evaluate(([k, o]) => window.MXP_CONTA.ir(k, o || {}), [k, op || null]); await pintado(q); };
+    const tarjeta = q => id => q.locator(`.ct-mov[data-id="${id}"]`);
+    const ultima = (n0, fn) => desde(n0).filter(l => l.fn === fn).pop();
+    let { cx, q } = await abrirCtx(1280, true);
+    const card = tarjeta(q);
+    // ---- «Qué atender» ----
+    let atn = await q.locator('#ct-atender .ct-atn').allTextContents();
+    ok('Mano de obra · «Qué atender» dice cuántos pagos de mano de obra esperan su reparto (3 · $2,060.00) con su botón «Bandeja»', atn.some(t => /^3 pagos de mano de obra esperan su reparto por horas \(\$2,060\.00\)/.test(t)) &&
+      (await q.locator('#ct-atender .ct-atn', { hasText: 'pagos de mano de obra' }).locator('button[data-ir="bandeja"]').count()) === 1, atn.join(' | '));
+    await foto(q, 'c10-0-resumen');
+    // ---- la Bandeja: la tarjeta de Zzana (el lunes 2-nov paga la semana anterior: 37 h en 6 obras) ----
+    let n0 = llamadas.length;
+    await ve(q, 'bandeja');
+    ok('Bandeja · la franja: «3 pagos de mano de obra esperan su reparto por horas · $2,060.00» con «Ver solo esos»', /3 pagos de mano de obra esperan su reparto por horas · \$2,060\.00/.test(await texto(q, '#ct-jr-franja')) && (await q.locator('#ct-jr-ver').count()) === 1, await texto(q, '#ct-jr-franja'));
+    let cA = await fila(q, J_MOV.ana);
+    const tfoot = async c => (await c.locator('.ct-jr-tabla tfoot').innerText()).replace(/\s+/g, ' ');
+    ok('Bandeja · el Zelle de Zzana sale como «Mano de obra · Zzana C10 PRUEBA»: la tabla con 7 líneas (6 obras; la A con y sin CO), sin «Según la IA» ni las opciones de siempre',
+      /Mano de obra · Zzana C10 PRUEBA/.test(await texto(q, `.ct-mov[data-id="${J_MOV.ana}"] .ct-f-motivo`)) && /Mano de obra · Zzana C10 PRUEBA/.test(await cA.locator('.ct-jr-cab h3').textContent()) &&
+      (await cA.locator('.ct-jr-tabla tbody tr').count()) === 7 && (await cA.locator('.ct-jr-tabla tbody tr', { hasText: 'CO #1' }).count()) === 1 &&
+      (await cA.locator('[data-op], [data-otra], [data-ia]').count()) === 0, await cA.locator('.ct-jr-tabla').textContent());
+    ok('…el total cuadra con el pago: «Total · 6 obras · 37 h · $940.00» y «El total es el pago: $940.00»', /Total · 6 obras 37 h \$940\.00/.test(await tfoot(cA)) && /El total es el pago: \$940\.00/.test(await cA.locator('.ct-jr-cuadra').textContent()), await tfoot(cA));
+    ok('…el período: «Semana anterior» marcada (26 oct – 1 nov) y el texto de la base («del 26 de octubre al 1 de noviembre de 2026»)', (await cA.locator('[data-jr-per="anterior"]').getAttribute('aria-pressed')) === 'true' && /26 oct – 1 nov/.test(await cA.locator('[data-jr-per="anterior"]').textContent()) &&
+      /del 26 de octubre al 1 de noviembre de 2026/.test(await cA.locator('.ct-jr-que').textContent()) && /2 nov – 8 nov/.test(await cA.locator('[data-jr-per="esta"]').textContent()));
+    ok('…«Sale a $25.41 la hora (su tarifa: $25.00)», sin ámbar (no se aleja), y el aviso de la base en llano (la obra F terminada)', /Sale a \$25\.41 la hora \(su tarifa: \$25\.00\)/.test(await cA.locator('.ct-jr-tarifa').textContent()) && !(await cA.locator('.ct-jr-tarifa.lejos').count()) &&
+      /C10 PRUEBA Obra F \(terminada\)\. Su parte va a esa obra igual/.test(await cA.locator('[data-aviso="obra_terminada"]').textContent()) && (await cA.locator('.ct-jr-tabla tbody tr', { hasText: 'Obra F' }).locator('.ct-pill', { hasText: 'terminada' }).count()) === 1);
+    ok('…y la Bandeja no pidió la propuesta (la tarjeta sale de la lista de pagos reconocidos, con su huella)', !desde(n0).some(l => l.fn === 'fn_jornal_propuesta') && lecturas.some(l => /^v_jornal_pendientes\?select=\*/.test(l)));
+    await foto(q, 'c10-1-bandeja-tarjeta');
+    // cambiar el período recalcula: esta semana (sin horas), otras fechas (23.25 h en 4 líneas) y otra vez la semana anterior
+    n0 = llamadas.length;
+    await cA.locator('[data-jr-per="esta"]').click(); await esperarLlamada(q, n0, 'fn_jornal_propuesta'); await pintado(q);
+    cA = card(J_MOV.ana);
+    let pr = ultima(n0, 'fn_jornal_propuesta');
+    ok('Período · «Esta semana» pide fn_jornal_propuesta(movimiento, 2-nov, 8-nov) y la tarjeta dice que no hay horas: sin tabla, «Así es» apagado y la salida de «No es mano de obra»',
+      !!pr && pr.args.p_movimiento === J_MOV.ana && pr.args.p_desde === '2026-11-02' && pr.args.p_hasta === '2026-11-08' && JSON.stringify(pr.args.p_opciones) === '{}' &&
+      (await cA.locator('[data-jr-per="esta"]').getAttribute('aria-pressed')) === 'true' && /Sin horas reportadas del 2 al 8 de noviembre de 2026/.test(await cA.locator('.ct-jr-vacio').textContent()) &&
+      (await cA.locator('.ct-jr-tabla').count()) === 0 && await cA.locator('[data-jr-asi]').isDisabled() && (await cA.locator('[data-jr-no]').count()) === 1 && (await cA.locator('[data-aviso="sin_horas"]').count()) === 1, JSON.stringify(pr && pr.args));
+    await foto(q, 'c10-2-sin-horas');
+    n0 = llamadas.length;
+    await cA.locator('[data-jr-per="otras"]').click();
+    await cA.locator('[data-jr-fechas] input[name="desde"]').fill('2026-10-26'); await cA.locator('[data-jr-fechas] input[name="hasta"]').fill('2026-10-28');
+    await cA.locator('[data-jr-fechas] button[type="submit"]').click(); await esperarLlamada(q, n0, 'fn_jornal_propuesta'); await pintado(q);
+    cA = card(J_MOV.ana); pr = ultima(n0, 'fn_jornal_propuesta');
+    ok('Período · «Otras fechas» (26 al 28-oct) manda esas fechas y repinta: 4 líneas, 23.25 h, el total sigue siendo el pago y «Otras fechas» queda marcado', !!pr && pr.args.p_desde === '2026-10-26' && pr.args.p_hasta === '2026-10-28' &&
+      (await cA.locator('.ct-jr-tabla tbody tr').count()) === 4 && /23\.25 h \$940\.00/.test(await tfoot(cA)) && (await cA.locator('[data-jr-per="otras"]').getAttribute('aria-pressed')) === 'true', await tfoot(cA));
+    n0 = llamadas.length;
+    await cA.locator('[data-jr-per="anterior"]').click(); await esperarLlamada(q, n0, 'fn_jornal_propuesta'); await pintado(q);
+    cA = card(J_MOV.ana);
+    const vistoA = jCalc(J_MOV.ana, '2026-10-26', '2026-11-01').visto;
+    ok('Período · otra vez «Semana anterior»: las 7 líneas y los 37 h', (await cA.locator('.ct-jr-tabla tbody tr').count()) === 7 && /37 h \$940\.00/.test(await tfoot(cA)));
+    // «Así es» con la huella cambiada (alguien reportó 3 h más entre medias): nada se hace, se recalcula y se enseña otra vez
+    J.mx011 = true; n0 = llamadas.length;
+    await cA.locator('[data-jr-asi]').click(); await esperarLlamada(q, n0, 'fn_jornal_aplicar'); await q.waitForTimeout(200); await pintado(q);
+    cA = card(J_MOV.ana);
+    const ap1 = ultima(n0, 'fn_jornal_aplicar');
+    ok('«Así es» manda fn_jornal_aplicar con el movimiento, las fechas y la HUELLA que vio (p_visto), sin opciones', !!ap1 && ap1.args.p_movimiento === J_MOV.ana && ap1.args.p_desde === '2026-10-26' && ap1.args.p_hasta === '2026-11-01' && ap1.args.p_visto === vistoA && JSON.stringify(ap1.args.p_opciones) === '{}', JSON.stringify(ap1 && ap1.args));
+    ok('Huella cambiada (MX011) · no se repartió nada: la pantalla vuelve a pedir la propuesta de esas fechas, lo dice («Las horas cambiaron…») y enseña lo de ahora (la B con 4.5 h, 40 h)', J.repartos.length === 0 &&
+      desde(n0).filter(l => l.fn === 'fn_jornal_propuesta').length === 1 && /Las horas cambiaron entre que miraste y que tocaste/.test(await cA.locator('.ct-jr-nota').textContent()) &&
+      /4\.5 h/.test(await cA.locator('.ct-jr-tabla tbody tr', { hasText: 'Obra B' }).textContent()) && /40 h \$940\.00/.test(await tfoot(cA)), await tfoot(cA));
+    await foto(q, 'c10-3-huella-cambiada');
+    // el banco frena («…dilo en el motivo»): sale el campo, y el segundo «Así es» manda el motivo con la MISMA huella
+    J.pideMotivo = true; n0 = llamadas.length;
+    await cA.locator('[data-jr-asi]').click(); await esperarLlamada(q, n0, 'fn_jornal_aplicar'); await q.waitForTimeout(200); await pintado(q);
+    const vistoA2 = ultima(n0, 'fn_jornal_aplicar').args.p_visto;
+    ok('El banco pide el motivo (MX008 «…dilo en el motivo»): su frase, el campo del motivo a la vista y nada repartido', J.repartos.length === 0 && /dilo en el motivo/.test(await cA.locator('.ct-jr-res').textContent()) && await cA.locator('.ct-jr-motivo').isVisible() && vistoA2 !== vistoA);
+    await cA.locator('.ct-jr-motivo textarea').fill('Es su semana: el cheque 1234 es otra cosa');
+    n0 = llamadas.length;
+    await cA.locator('[data-jr-asi]').click(); await esperarLlamada(q, n0, 'fn_jornal_aplicar'); await q.waitForTimeout(250); await pintado(q);
+    const ap3 = ultima(n0, 'fn_jornal_aplicar');
+    ok('…con el motivo: la misma huella y p_opciones.motivo; repartido (1 reparto de $940.00 en 7 líneas), la tarjeta se va y la franja dice 2', !!ap3 && ap3.args.p_visto === vistoA2 && ap3.args.p_opciones.motivo === 'Es su semana: el cheque 1234 es otra cosa' &&
+      J.repartos.length === 1 && J.repartos[0].monto === 940 && J.repartos[0].lineas.length === 7 && (await card(J_MOV.ana).count()) === 0 && /2 pagos de mano de obra esperan/.test(await texto(q, '#ct-jr-franja')), JSON.stringify(ap3 && ap3.args.p_opciones));
+    J.pideMotivo = false;
+    // Zzbeto: 2 h sin obra y sin cuenta para ellas → se pide UNA vez; luego «Así es» y la propuesta de la IA se rechaza
+    let cB = await fila(q, J_MOV.beto);
+    ok('Lo sin obra · la tarjeta de Zzbeto (viernes 6-nov: «Esta semana») enseña «Sin obra · 2 h · $50.00 · falta decir a qué cuenta va», pide la cuenta y no deja «Así es»; el total sigue siendo $600.00',
+      (await cB.locator('[data-jr-per="esta"]').getAttribute('aria-pressed')) === 'true' && /Sin obra\s*falta decir a qué cuenta va\s*2 h\s*\$50\.00/.test((await cB.locator('.ct-jr-sinobra').textContent()).replace(/\s+/g, ' ').replace(/ (?=\d)/g, ' ')) &&
+      (await cB.locator('[data-jr-cuenta] select option[value="7900"]').count()) === 1 && (await cB.locator('[data-jr-cuenta] select option[value="5010"]').count()) === 0 && (await cB.locator('[data-jr-cuenta] select option[value="5200"]').count()) === 0 &&
+      await cB.locator('[data-jr-asi]').isDisabled() && /24 h \$600\.00/.test(await tfoot(cB)), await cB.locator('.ct-jr-sinobra').textContent());
+    await foto(q, 'c10-4-sin-obra');
+    n0 = llamadas.length;
+    await cB.locator('[data-jr-cuenta] select').selectOption('7900'); await cB.locator('[data-jr-cuenta] button[type="submit"]').click();
+    await esperarLlamada(q, n0, 'fn_jornal_propuesta'); await pintado(q);
+    cB = card(J_MOV.beto);
+    const cfg1 = ultima(n0, 'fn_jornal_config');
+    ok('…«Guardar la cuenta» manda fn_jornal_config({p: {cuenta_sin_obra: "7900"}}), recalcula y ya deja «Así es» (lo sin obra va a 7900)', !!cfg1 && JSON.stringify(cfg1.args) === '{"p":{"cuenta_sin_obra":"7900"}}' && J.config.cuenta_sin_obra === '7900' &&
+      !(await cB.locator('[data-jr-asi]').isDisabled()) && /va a 7900/.test(await cB.locator('.ct-jr-sinobra').textContent()) && (await cB.locator('[data-jr-cuenta]').count()) === 0, JSON.stringify(cfg1 && cfg1.args));
+    n0 = llamadas.length;
+    await cB.locator('[data-jr-asi]').click(); await esperarLlamada(q, n0, 'contador:rechazar'); await q.waitForTimeout(250); await pintado(q);
+    const rej = ultima(n0, 'contador:rechazar');
+    ok('La IA (c8) tenía una propuesta para ese pago: tras repartirlo, la pantalla la rechaza por la función «contador» (con su id y el motivo)', J.repartos.length === 2 && !!rej && rej.args.propuesta === J_IA && /mano de obra/i.test(rej.args.motivo) && (await card(J_MOV.beto).count()) === 0, JSON.stringify(rej && rej.args));
+    // el lunes 9-nov a Zzana: sin horas esa semana → «No es mano de obra» devuelve la tarjeta de siempre, y se puede volver
+    let cN = await fila(q, J_MOV.ana2);
+    await cN.locator('[data-jr-no]').click(); await q.waitForTimeout(150);
+    cN = card(J_MOV.ana2);
+    ok('«No es mano de obra» devuelve la tarjeta de siempre (sus opciones y «Otra cosa…»), sin llamar a la base, con el enlace para volver', (await cN.locator('[data-jr-bloque]').count()) === 0 && (await cN.locator('[data-otra]').count()) === 1 && (await cN.locator('[data-op]').count()) === 1 &&
+      (await cN.locator('[data-jr-volver]').count()) === 1 && !/Mano de obra/.test(await texto(q, `.ct-mov[data-id="${J_MOV.ana2}"] .ct-f-motivo`)));
+    await cN.locator('[data-jr-volver]').click(); await q.waitForTimeout(150);
+    ok('…y «Sí es mano de obra» la trae otra vez', (await card(J_MOV.ana2).locator('[data-jr-bloque]').count()) === 1);
+    // un Zelle normal a alguien sin dar de alta: «Repartir por sus horas» → elegirla de la cuadrilla → su tarjeta (con la tarifa en ámbar)
+    let cC = await fila(q, J_MOV.carla);
+    ok('Alta · el Zelle a Zzcarla (sin dar de alta) es un movimiento normal con el enlace discreto «Repartir por sus horas»', (await cC.locator('[data-jr-bloque]').count()) === 0 && (await cC.locator('[data-jr-alta]').count()) === 1 && (await cC.locator('[data-otra]').count()) === 1);
+    await cC.locator('[data-jr-alta]').click(); await cC.locator('.ct-form select[name="usuario"]').waitFor({ timeout: 5000 });
+    ok('…abre la cuadrilla (solo quien tiene horas y no está dado de alta): Zzcarla', JSON.stringify(await cC.locator('.ct-form select[name="usuario"] option').evaluateAll(os => os.map(o => o.value).filter(Boolean))) === JSON.stringify([J_PER.carla]));
+    await foto(q, 'c10-5-alta');
+    n0 = llamadas.length;
+    await cC.locator('.ct-form select[name="usuario"]').selectOption(J_PER.carla); await cC.locator('.ct-form button[type="submit"]').click();
+    await esperarLlamada(q, n0, 'fn_jornal_persona'); await q.waitForTimeout(200); await pintado(q);
+    const alta = ultima(n0, 'fn_jornal_persona');
+    cC = await fila(q, J_MOV.carla);
+    ok('…manda fn_jornal_persona({p: {usuario_id, movimiento_id, activa: true}}) (la base saca el patrón del pago) y el pago sale ya como «Mano de obra · Zzcarla»', !!alta && alta.args.p.usuario_id === J_PER.carla && alta.args.p.movimiento_id === J_MOV.carla && alta.args.p.activa === true &&
+      (await cC.locator('[data-jr-bloque]').count()) === 1 && /Mano de obra · Zzcarla C10 PRUEBA/.test(await cC.locator('.ct-jr-cab h3').textContent()), JSON.stringify(alta && alta.args));
+    ok('Tarifa · a Zzcarla le sale a $25.00 la hora y su tarifa es $18.00: la línea va en ámbar y el aviso de la base lo dice', (await cC.locator('.ct-jr-tarifa.lejos').count()) === 1 && /Sale a \$25\.00 la hora \(su tarifa: \$18\.00\)/.test(await cC.locator('.ct-jr-tarifa').textContent()) &&
+      (await cC.locator('[data-aviso="tarifa_lejos"]').count()) === 1 && !(await cC.locator('[data-jr-asi]').isDisabled()));
+    await foto(q, 'c10-6-tarifa-lejos');
+    // ---- Costo por obra ----
+    n0 = llamadas.length; let l0 = lecturas.length;
+    await ve(q, 'obras');
+    ok('Costo por obra · se abre con su título, su pestaña y su subtítulo del lateral encendidos', (await q.locator('#titulo-vista').textContent()).trim() === 'Costo por obra' && (await q.locator('.ct-tab[data-pag="obras"][aria-current="page"]').count()) === 1 && (await q.locator('#lateral [data-lat="conta-obras"][aria-current="page"]').count()) === 1);
+    ok('…lee el control del margen antes que las obras, las obras y la configuración', lecturas.slice(l0).some(l => /^v_margen_control\?/.test(l)) && lecturas.slice(l0).some(l => /^v_margen_obra\?/.test(l)) && lecturas.slice(l0).some(l => /^jornal_config\?/.test(l)));
+    ok('Configurar · «Lo que falta por configurar»: el burden estándar (falta) con su frase, y la cuenta de lo sin obra ya en 7900', /Lo que falta por configurar/.test(await texto(q, '#ct-ob-config h2')) && (await q.locator('#ct-ob-config .ct-campo', { hasText: 'Burden' }).locator('.ct-pill', { hasText: 'falta' }).count()) === 1 &&
+      /si no aplica, pon 0/i.test(await texto(q, '#ct-ob-config')) && (await q.locator('#ct-ob-config select[name="cuenta_sin_obra"]').inputValue()) === '7900');
+    const filasOb = async () => q.locator('#ct-ob-filas .ct-ob-fila').evaluateAll(xs => xs.map(x => x.dataset.ob));
+    ok('Lista · «Activas» (2): la A y la B; la A con contrato $12,000.00, costo real $1,804.69 (+ $422.40 estándar), margen 63.9 % y «dentro: sobran $4,622.91»; la B «sin estimado»', JSON.stringify(await filasOb()) === '["c10-prueba-a","c10-prueba-b"]' &&
+      /\$12,000\.00/.test(await texto(q, '[data-ob="c10-prueba-a"]')) && /\$1,804\.69\s*\+ \$422\.40 estándar/.test(await texto(q, '[data-ob="c10-prueba-a"]')) && /63\.9 %/.test(await texto(q, '[data-ob="c10-prueba-a"]')) &&
+      /dentro: sobran \$4,622\.91/.test(await texto(q, '[data-ob="c10-prueba-a"] .ct-ob-senal')) && /sin estimado/.test(await texto(q, '[data-ob="c10-prueba-b"] .ct-ob-senal')), await texto(q, '#ct-ob-filas'));
+    await foto(q, 'c10-7-obras-lista');
+    await q.locator('[data-ob-filtro="terminadas"]').click();
+    ok('Lista · «Terminadas»: la F, con «parcial»', JSON.stringify(await filasOb()) === '["c10-prueba-f"]' && (await q.locator('[data-ob="c10-prueba-f"] .ct-pill', { hasText: 'parcial' }).count()) === 1);
+    await q.locator('[data-ob-filtro="todas"]').click(); await q.fill('#ct-ob-buscar', 'obra b');
+    ok('Lista · buscar «obra b» en todas: solo la B', JSON.stringify(await filasOb()) === '["c10-prueba-b"]');
+    await q.fill('#ct-ob-buscar', ''); await q.locator('[data-ob-filtro="activas"]').click();
+    n0 = llamadas.length;
+    await q.locator('#ct-ob-config input[name="burden"]').fill('10'); await q.locator('#ct-ob-config-form button[type="submit"]').click(); await esperarLlamada(q, n0, 'fn_jornal_config'); await pintado(q);
+    const cfg2 = ultima(n0, 'fn_jornal_config');
+    ok('Configurar · el burden 10 manda solo lo que cambió (fn_jornal_config({p: {burden_estandar_pct: 10}})) y la tarjeta queda plegada como «Ajustes»', !!cfg2 && JSON.stringify(cfg2.args) === '{"p":{"burden_estandar_pct":10}}' &&
+      (await q.locator('#ct-ob-config.falta').count()) === 0 && /burden estándar 10 % · lo sin obra a 7900/.test(await texto(q, '#ct-ob-config summary')), JSON.stringify(cfg2 && cfg2.args));
+    // una obra: estimado contra real, lo real y lo estándar separados
+    n0 = llamadas.length;
+    await q.locator('[data-ob="c10-prueba-a"]').click(); await esperarLlamada(q, n0, 'fn_margen_obra'); await pintado(q);
+    const mo = ultima(n0, 'fn_margen_obra');
+    ok('Obra · tocar la A pide fn_margen_obra("c10-prueba-a") y la abre (título «Costo · C10 PRUEBA Obra A», «←» de la app visible)', !!mo && JSON.stringify(mo.args) === '{"p_proyecto":"c10-prueba-a"}' && /Costo · C10 PRUEBA Obra A/.test(await titulo2(q)) && (await q.locator('#ct-ob-det').count()) === 1);
+    const conc = async () => q.locator('#ct-ob-conceptos tbody tr').evaluateAll(trs => trs.map(t => t.innerText.replace(/\s+/g, ' ').trim()));
+    const cc = await conc();
+    ok('Obra · estimado contra real por concepto: Material $2,500.00 / $750.25 / +$1,749.75; la mano de obra con su total $841.59 y DOS filas aparte: la real ($419.19, «real») y la estándar ($422.40, «estándar, no real»)',
+      cc.some(t => /^Material \$2,500\.00 \$750\.25 — \+\$1,749\.75$/.test(t)) && cc.some(t => /^Mano de obra \$4,350\.00 \$419\.19 \$422\.40 \+\$3,508\.41$/.test(t)) &&
+      cc.some(t => /^Mano de obra real \(pagada y repartida\) real/.test(t) && /\$419\.19/.test(t)) && cc.some(t => /^Mano de obra estándar, no real estándar, no real/.test(t) && /\$422\.40/.test(t)) &&
+      (await q.locator('#ct-ob-conceptos tr.ct-ob-est .ct-pill', { hasText: 'estándar, no real' }).count()) === 1 && (await q.locator('#ct-ob-conceptos tr.ct-ob-est [data-bajar]').count()) === 0, cc.join(' | '));
+    ok('Obra · el total ($6,850.00 estimado, $1,804.69 real, $422.40 estándar, +$4,622.91), lo facturado ($12,000.00 contra $5,000.00) y el margen (42.9 % contra 63.9 %)', cc.some(t => /^Costo de la obra \$6,850\.00 \$1,804\.69 \$422\.40 \+\$4,622\.91$/.test(t)) &&
+      cc.some(t => /^Facturado \(en el libro\) \$12,000\.00 \$5,000\.00/.test(t)) && cc.some(t => /^Margen \$5,150\.00 ?42\.9 % \$3,195\.31 ?63\.9 %/.test(t)), cc.join(' | '));
+    ok('Obra · la cobertura («16.5 h con pago real · 16 h a estándar · 16 h sin aprobar») y las horas contra las estimadas («32.5 h reales de 120 h estimadas (27 %)», con su barra)',
+      /16\.5 h con pago real · 16 h a estándar · 16 h sin aprobar/.test(await texto(q, '.ct-ob-cobertura')) && /32\.5 h reales de 120 h estimadas \(27 %\)/.test(await texto(q, '.ct-ob-horas')) && (await q.locator('.ct-ob-barra-h span').count()) === 1, await texto(q, '.ct-ob-cobertura'));
+    ok('Obra · los avisos de la base en llano (1 pago sin repartir, las 16 h a estándar)', /siguen sin repartir en la Bandeja/.test(await texto(q, '#ct-ob-det')) && /16 h van a estándar/.test(await texto(q, '#ct-ob-det')));
+    ok('Obra · los CO aparte (Base 26 h y CO #1 6.5 h con $465.14), por fase (rough y trim), por cuenta (la 5200 dos veces: el subcontrato de verdad y los «jornales»), quién trabajó (2) y el reparto con su asiento',
+      (await q.locator('#ct-ob-co tbody tr').count()) === 2 && /CO #1.*6\.5 h.*\$465\.14/s.test(await texto(q, '#ct-ob-co tbody tr >> nth=1')) && (await q.locator('#ct-ob-fase tbody tr').count()) === 2 &&
+      (await q.locator('#ct-ob-cuentas tbody tr', { hasText: '5200' }).count()) === 2 && (await q.locator('#ct-ob-cuentas .ct-pill', { hasText: 'jornales' }).count()) === 1 && (await q.locator('#ct-ob-quien tbody tr').count()) === 2 &&
+      (await q.locator('#ct-ob-repartos .ct-asiento-btn').count()) === 1);
+    ok('Obra · por cost code: el vacío dicho en llano («Todavía no hay nada capturado con código…»), sin tabla ni ceros', /Todavía no hay nada capturado con código en esta obra/.test(await texto(q, '#ct-ob-cc')) && (await q.locator('#ct-ob-cc table').count()) === 0);
+    await foto(q, 'c10-8-obra');
+    // bajar a los asientos: el material (2 líneas, sin el asiento del jornal) y la mano de obra real (el asiento del jornal)
+    l0 = lecturas.length;
+    await q.locator('#ct-ob-conceptos tr', { hasText: 'Material' }).locator('[data-bajar]').click(); await q.waitForSelector('#ct-ob-bajada', { timeout: 5000 }); await pintado(q);
+    const lb = lecturas.slice(l0).filter(l => /^v_libro\?/.test(l));
+    ok('Bajar · el real del material lee v_libro con la llave de la base (cuenta 5100, la obra, sin el asiento del jornal) y enseña sus 2 líneas, que suman $750.25 «lo mismo que la cifra»', lb.length === 1 &&
+      /cuenta=eq\.5100/.test(lb[0]) && /proyecto_id=eq\.c10-prueba-a/.test(lb[0]) && /asiento_id=not\.in\.\(1b0d2ea3-e7a3-4620-8f9b-958ad9a6acaf\)/.test(lb[0]) &&
+      (await q.locator('#ct-ob-bajada tbody tr').count()) === 2 && /suman \$750\.25: lo mismo que la cifra/.test(await texto(q, '#ct-ob-bajada .ct-aviso.ok')) && (await q.locator('#ct-ob-bajada .ct-asiento-btn').count()) === 2, lb.join(' | '));
+    await foto(q, 'c10-9-bajar');
+    ok('Bajar · «←» de la app vuelve a la obra', await q.evaluate(() => window.MXP_CONTA.atras()) && (await pintado(q), (await q.locator('#ct-ob-det').count()) === 1));
+    l0 = lecturas.length;
+    await q.locator('#ct-ob-conceptos tr.ct-ob-detalle', { hasText: 'Mano de obra real' }).locator('[data-bajar]').click(); await q.waitForSelector('#ct-ob-bajada', { timeout: 5000 }); await pintado(q);
+    ok('Bajar · la mano de obra real: sus dos pedazos (las líneas del jornal por su asiento y la nómina 50xx, que no hay) suman $419.19, y el asiento 2026-000004 se abre en Estados', lecturas.slice(l0).filter(l => /^v_libro\?/.test(l)).length === 2 &&
+      (await q.locator('#ct-ob-bajada tbody tr').count()) === 2 && /suman \$419\.19/.test(await texto(q, '#ct-ob-bajada .ct-aviso.ok')) && (await q.locator('#ct-ob-bajada .ct-asiento-btn', { hasText: '2026-000004' }).count()) === 2);
+    await q.locator('#ct-ob-volver').click(); await pintado(q);
+    await q.locator('#ct-ob-conceptos tr', { hasText: 'Facturado' }).locator('[data-bajar]').click(); await q.waitForSelector('#ct-ob-bajada', { timeout: 5000 }); await pintado(q);
+    ok('Bajar · lo facturado baja con su signo (−1 sobre el haber de 4020): $5,000.00, lo mismo que la cifra', /suma \$5,000\.00: lo mismo que la cifra/.test(await texto(q, '#ct-ob-bajada .ct-aviso.ok')));
+    // una cifra que no suma lo que baja: rojo
+    J.libro.push({ ...J.libro[0], asiento_id: 'c1a00000-0000-4000-8000-0000000000ff', numero: '2026-000199', orden: 2, monto: 10, debe: 10 });
+    await q.locator('#ct-ob-volver').click(); await pintado(q);
+    await q.locator('#ct-ob-conceptos tr', { hasText: 'Material' }).locator('[data-bajar]').click(); await q.waitForSelector('#ct-ob-bajada', { timeout: 5000 }); await pintado(q);
+    ok('Bajar · si lo que baja no suma la cifra, lo dice en rojo («no cuadra…»)', /Lo que baja suma \$760\.25 y la cifra dice \$750\.25: no cuadra/.test(await texto(q, '#ct-ob-bajada .ct-aviso.bad')));
+    J.libro.pop();
+    await q.locator('#ct-ob-bajada .ct-asiento-btn').first().click(); await q.waitForTimeout(400);
+    ok('Bajar · tocar un asiento abre Estados en ese asiento', await q.evaluate(() => window.MXP_CONTA._estado.pagina === 'estados' && !!window.MXP_CONTA._estado.est.asiento));
+    // la F: terminada y parcial
+    await ve(q, 'obras', { sel: 'c10-prueba-f' });
+    ok('Obra F · «parcial» con el porqué de la base y que lo de antes del 1 oct 2026 está en QuickBooks', (await q.locator('#ct-ob-det .ct-pill', { hasText: 'parcial' }).count()) === 1 && /Parcial: ya andaba antes del libro.*está en QuickBooks/.test(await texto(q, '#ct-ob-det .ct-aviso.warn')));
+    // el margen que no cuadra: la página no pinta cifras
+    J.margenRojo = true;
+    await ve(q, 'obras');
+    ok('Falla ruidosa · un cuadre del margen en rojo: «El costo por obra no cuadra» con su detalle, y ninguna obra ni cifra pintada', /El costo por obra no cuadra/.test(await texto(q, '#ct-ob-cuerpo .ct-rojo h2')) && /\$2,700\.00/.test(await texto(q, '#ct-ob-cuerpo .ct-rojo')) && (await q.locator('.ct-ob-fila').count()) === 0);
+    J.margenRojo = false;
+    // ---- Repartos: el historial con «Deshacer» ----
+    await ve(q, 'obras', { sub: 'repartos' });
+    ok('Repartos · los dos repartos (el más nuevo arriba), cada uno con su persona, su monto, su período, su asiento y «Deshacer»', (await q.locator('.ct-rep').count()) === 2 && /Zzbeto C10 PRUEBA · \$600\.00/.test(await texto(q, '.ct-rep >> nth=0')) &&
+      /Zzana C10 PRUEBA · \$940\.00/.test(await texto(q, '.ct-rep >> nth=1')) && (await q.locator('.ct-rep [data-deshacer]').count()) === 2 && (await q.locator('.ct-rep .ct-asiento-btn').count()) === 2);
+    await foto(q, 'c10-10-repartos');
+    const rAna = q.locator(`.ct-rep[data-reparto="${J.repartos[0].reparto_id}"]`);
+    await rAna.locator('[data-deshacer]').click(); await rAna.locator('.ct-form textarea[name="motivo"]').waitFor({ timeout: 5000 });
+    n0 = llamadas.length;
+    await rAna.locator('.ct-form button[type="submit"]').click(); await q.waitForTimeout(150);
+    ok('Deshacer · sin motivo no se manda nada (el motivo es obligatorio)', !desde(n0).some(l => l.fn === 'fn_jornal_deshacer') && (await rAna.locator('.ct-error').count()) === 1);
+    await rAna.locator('.ct-form textarea[name="motivo"]').fill('Las fechas estaban mal');
+    await rAna.locator('.ct-form button[type="submit"]').click(); await esperarLlamada(q, n0, 'fn_jornal_deshacer'); await pintado(q);
+    const des = ultima(n0, 'fn_jornal_deshacer');
+    ok('Deshacer · con motivo manda fn_jornal_deshacer(reparto, motivo); el reparto queda «deshecho» con su motivo y su reverso, y el pago vuelve a la Bandeja', !!des && des.args.p_reparto === J.repartos[0].reparto_id && des.args.p_motivo === 'Las fechas estaban mal' &&
+      (await q.locator(`.ct-rep[data-reparto="${J.repartos[0].reparto_id}"] .ct-pill`, { hasText: 'deshecho' }).count()) === 1 && /«Las fechas estaban mal».*reverso/.test(await texto(q, `.ct-rep[data-reparto="${J.repartos[0].reparto_id}"]`)) &&
+      jPendientes().some(f => f.movimiento_id === J_MOV.ana), JSON.stringify(des && des.args));
+    // ---- Personas ----
+    await ve(q, 'obras', { sub: 'personas' });
+    ok('Personas · las tres de la cuadrilla, ya dadas de alta, con cómo las reconoce el banco («PRUEBA ZZANA») y sus pagos', (await q.locator('.ct-per').count()) === 3 && /Se reconoce por «PRUEBA ZZANA»/.test(await texto(q, `.ct-per[data-usuario="${J_PER.ana}"]`)) &&
+      (await q.locator('.ct-per [data-per-baja]').count()) === 3);
+    await foto(q, 'c10-11-personas');
+    n0 = llamadas.length;
+    await q.locator(`.ct-per[data-usuario="${J_PER.carla}"] [data-per-baja]`).click(); await esperarLlamada(q, n0, 'fn_jornal_persona'); await pintado(q);
+    const baja = ultima(n0, 'fn_jornal_persona');
+    ok('Personas · «Dar de baja» manda fn_jornal_persona({p: {usuario_id, activa: false}}) y queda «de baja» con «Volver a dar de alta»', !!baja && JSON.stringify(baja.args) === JSON.stringify({ p: { usuario_id: J_PER.carla, activa: false } }) &&
+      (await q.locator(`.ct-per[data-usuario="${J_PER.carla}"] [data-per-vuelve]`).count()) === 1);
+    n0 = llamadas.length;
+    await q.locator(`.ct-per[data-usuario="${J_PER.ana}"] [data-per-patron]`).click(); await q.locator(`.ct-per[data-usuario="${J_PER.ana}"] input[name="patron"]`).fill('C10 PRUEBA ZZANA');
+    await q.locator(`.ct-per[data-usuario="${J_PER.ana}"] .ct-form button[type="submit"]`).click(); await esperarLlamada(q, n0, 'fn_jornal_persona'); await pintado(q);
+    const pat = ultima(n0, 'fn_jornal_persona');
+    ok('Personas · «Cambiar el patrón» manda el que escribió Edgar', !!pat && pat.args.p.usuario_id === J_PER.ana && pat.args.p.patron === 'C10 PRUEBA ZZANA', JSON.stringify(pat && pat.args));
+    J.personas.find(x => x.usuario_id === J_PER.ana).patron = '\\mPRUEBA ZZANA\\M';
+    // ---- «Qué atender» con un rojo del jornal ----
+    J.ctlRojo = true;
+    await ve(q, 'resumen');
+    atn = await q.locator('#ct-atender .ct-atn').allTextContents();
+    ok('«Qué atender» · un cuadre del jornal en rojo sale con su detalle y su botón «Obras» (a los repartos)', atn.some(t => /^Mano de obra: ningún reparto aplicado con su asiento reversado o su pago suelto \(no cuadra\)\.1 reparto aplicado/.test(t)) &&
+      (await q.locator('#ct-atender .ct-atn', { hasText: 'Mano de obra: ningún reparto' }).locator('button[data-ir="obras"][data-ir-sub="repartos"]').count()) === 1, atn.join(' | '));
+    await ve(q, 'bandeja');
+    ok('…y la Bandeja lo dice arriba, en su franja', /Ningún reparto aplicado con su asiento reversado o su pago suelto/.test(await texto(q, '#ct-jr-franja .ct-aviso.bad')));
+    J.ctlRojo = false;
+    await cx.close();
+
+    // ---- sin el código del teléfono: la tarjeta se ve, «Así es» no ----
+    ({ cx, q } = await abrirCtx(1280, false));
+    await ve(q, 'bandeja');
+    const cS = await fila(q, J_MOV.ana);
+    ok('Sin el código del teléfono · la tarjeta se ve entera pero «Así es» va apagado y lo dice («pide entrar con el código del teléfono»)', (await cS.locator('.ct-jr-tabla tbody tr').count()) === 7 && await cS.locator('[data-jr-asi]').isDisabled() && /pide entrar con el código del teléfono/.test(await cS.textContent()));
+    await ve(q, 'obras', { sub: 'repartos' });
+    await q.locator('.ct-rep [data-deshacer]').first().click(); await q.waitForTimeout(150);
+    ok('…y «Deshacer» un reparto tampoco: lo dice y no abre el motivo', /primero activa el código del teléfono/.test(await texto(q, '.ct-rep >> nth=0')) && (await q.locator('.ct-rep textarea[name="motivo"]').count()) === 0);
+    await cx.close();
+
+    // ---- el teléfono (390), el iPad (820) y la computadora (1280): sin desplazamiento lateral ----
+    for (const w of [390, 820, 1280]) {
+      ({ cx, q } = await abrirCtx(w, true));
+      const mal = [];
+      const mide = async nombre => { const m = await q.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth, rojo: !!document.querySelector('#conta-raiz .ct-rojo') })); if (m.sw > m.iw + 1 || m.rojo) mal.push(`${nombre}: ${m.sw} > ${m.iw}${m.rojo ? ' (rojo)' : ''}`); await foto(q, `c10-${w}-${nombre}`); };
+      await ve(q, 'bandeja'); await fila(q, J_MOV.ana); await q.waitForTimeout(150); await mide('bandeja');
+      if (w === 390) {
+        const anchos = await q.evaluate(id => { const c = document.querySelector(`.ct-mov[data-id="${id}"] .ct-jr-tabla`); const r = c.getBoundingClientRect(); return { der: Math.round(r.right), iw: window.innerWidth }; }, J_MOV.ana);
+        ok('Teléfono · la tabla del reparto (obra, horas, dólares) cabe en 390 px sin apilarse', anchos.der <= anchos.iw, JSON.stringify(anchos));
+      }
+      await fila(q, J_MOV.carla); await q.waitForTimeout(150); await mide('bandeja-tarifa');
+      await ve(q, 'obras'); await mide('obras');
+      await ve(q, 'obras', { sel: 'c10-prueba-a' }); await mide('obra');
+      await q.locator('#ct-ob-conceptos tr', { hasText: 'Material' }).locator('[data-bajar]').click(); await q.waitForSelector('#ct-ob-bajada', { timeout: 5000 }); await pintado(q); await mide('bajar');
+      await ve(q, 'obras', { sub: 'repartos' }); await mide('repartos');
+      await ve(q, 'obras', { sub: 'personas' }); await mide('personas');
+      ok(`Mano de obra y costo por obra · ${w} px: la Bandeja con la tarjeta, la lista, la obra, lo bajado, los repartos y las personas, sin desplazamiento lateral ni rojos`, !mal.length, mal.join(' | '));
+      if (w === 390) {
+        const tv = await q.evaluate(() => { const t = document.querySelector('.ct-tabs'), a = t.querySelector('.ct-tab[aria-current="page"]'), T = t.getBoundingClientRect(), A = a.getBoundingClientRect(); return { pag: a.dataset.pag, izq: Math.round(A.left - T.left), der: Math.round(T.right - A.right) }; });
+        ok('Teléfono · la pestaña «Obras» se ve entera dentro de la tira de pestañas', tv.pag === 'obras' && tv.izq >= 14 && tv.der >= 14, JSON.stringify(tv));
+      }
+      await cx.close();
+    }
+
+    // ---- sin c10: la Bandeja de siempre y «Costo por obra» lo dice en llano ----
+    estado.c10 = false;
+    ({ cx, q } = await abrirCtx(1280, true));
+    await ve(q, 'bandeja');
+    ok('Sin c10 · la Bandeja es la de siempre (sin franja ni tarjetas de mano de obra) y no se pone en rojo', (await q.locator('#ct-jr-franja').count()) === 0 && (await q.locator('[data-jr-bloque]').count()) === 0 && (await q.locator('#conta-raiz .ct-rojo').count()) === 0);
+    await ve(q, 'obras');
+    ok('Sin c10 · «Costo por obra» dice en llano que falta c10-costo-obra.sql (con «Reintentar»)', /Falta el costo por obra en la base/.test(await texto(q, '#ct-ob-cuerpo .ct-rojo h2')) && /c10-costo-obra\.sql/.test(await texto(q, '#ct-ob-cuerpo .ct-rojo')) && (await q.locator('#ct-reintentar').count()) === 1);
+    await cx.close();
+    conCodigo(false);
+  }
+
   // ---- Sin señal ----
   await ctx.setOffline(true);
   await tab(p, 'bancos'); await p.waitForSelector('.ct-rojo', { timeout: 8000 });
@@ -3337,6 +3922,8 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     estado.c8 = true; iaReset(true, true);
     // (fase 8) c9 pegado: «Cierre del mes» con lo que dejaron las escenas del cierre (la apertura y octubre cerrados y exportados, un activo dado de baja)
     estado.c9 = true;
+    // (fase 9) c10 pegado: la Bandeja con los Zelle de la cuadrilla y «Costo por obra» con sus obras
+    estado.c10 = true; jReset();
     for (const w of [390, 820, 1280]) {
       const cx = await b.newContext({ viewport: { width: w, height: w < 700 ? 844 : 1000 }, deviceScaleFactor: w < 1024 ? 2 : 1, isMobile: w < 1024, hasTouch: w < 1024, serviceWorkers: 'block' });
       await simular(cx, 'dueno');
@@ -3355,7 +3942,7 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
       }
       await cx.close();
     }
-    estado.mfaFactores = []; estado.sesionAal = undefined; estado.stripeDeposito = false; estado.c8 = false; estado.c9 = false; iaReset();
+    estado.mfaFactores = []; estado.sesionAal = undefined; estado.stripeDeposito = false; estado.c8 = false; estado.c9 = false; estado.c10 = false; iaReset();
   }
   ok('Sin errores de JavaScript en la página', errs.length === 0, errs.join(' | '));
   await b.close(); srv.close();

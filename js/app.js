@@ -572,6 +572,7 @@ function esFalloDeRed(err) {
     { k: "conciliar", nombre: "Conciliar", svg: SVG_MENU('<path d="M4 7h7M4 12h7M4 17h7"/><path d="M14 12.5l2.5 2.5L21 10"/>') },
     { k: "movimientos", nombre: "Movimientos", svg: SVG_MENU('<path d="M4 8h14M15 5l3 3-3 3"/><path d="M20 16H6M9 13l-3 3 3 3"/>') },
     { k: "estados", nombre: "Estados financieros", svg: SVG_MENU('<path d="M5 3h9l5 5v13H5z"/><path d="M14 3v5h5"/><path d="M8.5 17v-3M12 17v-6M15.5 17v-4"/>') },
+    { k: "obras", nombre: "Costo por obra", svg: SVG_MENU('<path d="M3 11l9-7 9 7"/><path d="M5 9.5V20h14V9.5"/><path d="M9.5 20v-5.5h5V20"/>') },
     { k: "cierre", nombre: "Cierre del mes", svg: SVG_MENU('<rect x="4" y="10.5" width="16" height="10.5" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><path d="M12 14.5v2.5"/>') },
     { k: "cobros", nombre: "Cobros en línea", svg: SVG_MENU('<circle cx="12" cy="12" r="9"/><path d="M12 6.5v11M9.5 9.5h3.5a1.75 1.75 0 0 1 0 3.5h-2a1.75 1.75 0 0 0 0 3.5H15"/>') },
     { k: "conexiones", nombre: "Conexiones y seguridad", svg: SVG_MENU('<path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6z"/><path d="M9.5 12l2 2 3.5-3.5"/>') }

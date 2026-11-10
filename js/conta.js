@@ -43,6 +43,14 @@
 // export al bucket privado «cierres» con su huella, la ronda de cada mañana
 // (sus rojos van a «Qué atender»), los activos fijos, la reserva de
 // impuestos, el DR-15 y el historial. La cabecera de su sección lo cuenta.
+// Y la mano de obra y el costo por obra (c10, fase 9: v_jornal_pendientes,
+// v_jornal_repartos, v_jornal_personas, v_jornal_control, v_margen_obra,
+// v_margen_control, jornal_config; fn_jornal_propuesta, fn_jornal_aplicar,
+// fn_jornal_deshacer, fn_jornal_persona, fn_jornal_config, fn_margen_obra):
+// el Zelle a un ayudante sale en la Bandeja como «Mano de obra · persona»,
+// repartido por sus horas entre las obras, y la página «Costo por obra» pone
+// el estimado contra el real de cada obra, con la mano de obra real y la
+// estándar separadas. La cabecera de su sección lo cuenta.
 //
 // Cómo está organizada (v290, «que se parezca a un programa de contabilidad»):
 // una portada («Resumen») con las cifras y lo que hay que atender, y una
@@ -80,7 +88,7 @@
     conc: null, concCuenta: null, movCuenta: null, movEstado: "", filtroCuenta: null,
     importe: null, impAbierto: false, ocupado: false,
     // la bandeja como bank feed: qué se busca, qué motivo, en qué orden, si se agrupa por comercio y qué fila está desplegada
-    bj: { q: "", motivo: "", orden: "fecha_asc", agrupar: false, abierta: null },
+    bj: { q: "", motivo: "", orden: "fecha_asc", agrupar: false, abierta: null, soloJr: false },
     plaid: null, plaidErr: null, mfa: null,
     // Stripe (p1): la fila de v_stripe_estado, por qué no se leyó, la salud de la función, los depósitos asentados (para la bandeja) y la pestaña
     stripe: null, stripeErr: null, stripeSalud: null, stripePayouts: null, cobros: null,
@@ -95,13 +103,20 @@
     // El cierre del mes (c9): qué apartado (sub), qué período se mira, las filas de v_cierre_estado, la serie contra el doble pintado,
     // el último error del cierre para explicarlo una vez (MX010), qué período se está exportando, el error de su export,
     // y las notas que la base devolvió (la baja de un activo, la depreciación del mes) para enseñarlas tras repintar
-    cie: { sub: "cierre", periodo: null, estado: null, serie: 0, error: null, exportando: null, exportErr: {}, notas: {} }
+    cie: { sub: "cierre", periodo: null, estado: null, serie: 0, error: null, exportando: null, exportErr: {}, notas: {} },
+    // (fase 9) el jornal en la Bandeja: si c10 está pegado, los pagos que reconoce (movimiento → su reparto normalizado, el
+    // de v_jornal_pendientes o el que Edgar pidió con otras fechas), lo que dijo «No es mano de obra» (solo en memoria), las
+    // personas (para el alta desde un movimiento), la configuración, su control y el error si no contestó
+    jr: { instalado: false, pend: new Map(), no: new Set(), personas: null, cfg: null, control: null, err: null },
+    // «Costo por obra»: qué apartado, qué obra abierta, lo que se baja a sus asientos, el buscador, el filtro y la serie
+    obras: { sub: "obras", sel: null, bajar: null, q: "", filtro: "activas", serie: 0, piezas: [] }
   };
   // Las páginas, en el orden del menú. TITULOS va en el membrete de la app y en el lateral; PESTANAS, corto, en las pestañas del teléfono
   // (fase 8) «Cierre del mes» va después de los estados: es lo último del mes, con lo de arriba ya hecho
-  const ORDEN = ["resumen", "bancos", "bandeja", "conciliar", "movimientos", "estados", "cierre", "cobros", "conexiones"];
-  const TITULOS = { resumen: "Resumen", bancos: "Bancos y tarjetas", bandeja: "Bandeja", conciliar: "Conciliar", movimientos: "Movimientos", estados: "Estados financieros", cierre: "Cierre del mes", cobros: "Cobros en línea", conexiones: "Conexiones y seguridad" };
-  const PESTANAS = { resumen: "Resumen", bancos: "Bancos", bandeja: "Bandeja", conciliar: "Conciliar", movimientos: "Movimientos", estados: "Estados", cierre: "Cierre", cobros: "Cobros", conexiones: "Conexiones" };
+  // (fase 9) «Costo por obra» va junto a los estados: es el otro informe que sale del libro
+  const ORDEN = ["resumen", "bancos", "bandeja", "conciliar", "movimientos", "estados", "obras", "cierre", "cobros", "conexiones"];
+  const TITULOS = { resumen: "Resumen", bancos: "Bancos y tarjetas", bandeja: "Bandeja", conciliar: "Conciliar", movimientos: "Movimientos", estados: "Estados financieros", obras: "Costo por obra", cierre: "Cierre del mes", cobros: "Cobros en línea", conexiones: "Conexiones y seguridad" };
+  const PESTANAS = { resumen: "Resumen", bancos: "Bancos", bandeja: "Bandeja", conciliar: "Conciliar", movimientos: "Movimientos", estados: "Estados", obras: "Obras", cierre: "Cierre", cobros: "Cobros", conexiones: "Conexiones" };
   // el icono de cada página, del mismo trazo que los del menú de la app (24 × 24, línea de 1.8)
   const svgMenu = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
   const ICONOS = {
@@ -111,6 +126,7 @@
     conciliar: svgMenu('<path d="M4 7h7M4 12h7M4 17h7"/><path d="M14 12.5l2.5 2.5L21 10"/>'),
     movimientos: svgMenu('<path d="M4 8h14M15 5l3 3-3 3"/><path d="M20 16H6M9 13l-3 3 3 3"/>'),
     estados: svgMenu('<path d="M5 3h9l5 5v13H5z"/><path d="M14 3v5h5"/><path d="M8.5 17v-3M12 17v-6M15.5 17v-4"/>'),
+    obras: svgMenu('<path d="M3 11l9-7 9 7"/><path d="M5 9.5V20h14V9.5"/><path d="M9.5 20v-5.5h5V20"/>'),
     cierre: svgMenu('<rect x="4" y="10.5" width="16" height="10.5" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><path d="M12 14.5v2.5"/>'),
     cobros: svgMenu('<circle cx="12" cy="12" r="9"/><path d="M12 6.5v11M9.5 9.5h3.5a1.75 1.75 0 0 1 0 3.5h-2a1.75 1.75 0 0 0 0 3.5H15"/>'),
     conexiones: svgMenu('<path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6z"/><path d="M9.5 12l2 2 3.5-3.5"/>')
@@ -140,7 +156,7 @@
     });
   }
   // «←» de la app: solo cuando hay algo interno que cerrar (una conciliación abierta, el mayor o el asiento de los estados). Se avisa en cada pintada
-  const hayAtras = () => !!S.conc || (S.pagina === "estados" && !!(S.est.cuenta || S.est.asiento));
+  const hayAtras = () => !!S.conc || (S.pagina === "estados" && !!(S.est.cuenta || S.est.asiento)) || (S.pagina === "obras" && !!(S.obras.sel || S.obras.bajar));
   const marcarVolver = () => S.hooks.volver(hayAtras());
   // La cabecera común de cada página: una línea con sus cifras (o lo que explica la página), los selectores si los hay y la acción principal a la derecha.
   // El título no se repite: ya lo pone la barra de la app (hooks.titulo); queda como aria-label de la cabecera
@@ -182,6 +198,12 @@
     }
     // el cierre: qué apartado y qué período (sin opciones, el último que se miró)
     if (pag === "cierre") for (const k of ["sub", "periodo"]) if (opciones[k] !== undefined) S.cie[k] = opciones[k];
+    // (fase 9) el costo por obra: qué apartado y qué obra; la pestaña tocada sin más vuelve a la lista (lo bajado se cierra)
+    if (pag === "obras") {
+      for (const k of ["sub", "sel"]) if (opciones[k] !== undefined) S.obras[k] = opciones[k];
+      if (opciones.sel === undefined) S.obras.sel = null;
+      S.obras.bajar = null;
+    }
     marcarPestana();
     S.hooks.titulo(KICKER, TITULOS[pag]);
     S.hooks.pagina(pag);
@@ -277,7 +299,7 @@
   async function pintarResumen() {
     cargando("Controlando con la base…");
     if (!navigator.onLine) return sinSenal(pintarResumen);
-    let lista, suaves, mes, stripeCtl = [], iaCtl = [], ronda = [];
+    let lista, suaves, mes, stripeCtl = [], iaCtl = [], ronda = [], jornal = null;
     try {
       lista = await leerSaldos();
       const vistas = Object.keys(PAGINA_VISTA);
@@ -296,6 +318,8 @@
       iaCtl = await DB._leer("v_contador_control?select=*&order=orden.asc").catch(e => { if (esFalloDeRed(e)) throw e; return []; });
       // la ronda de cada mañana (c9): sus rojos van a «Qué atender»; sin c9 (o si no contesta) no hay nada que atender de ella
       ronda = await DB._leer("v_ronda_ultima?select=*&order=periodo.asc,orden.asc").catch(e => { if (esFalloDeRed(e)) throw e; return []; });
+      // (fase 9) los pagos de mano de obra que esperan reparto y los rojos del jornal y del margen (c10; sin c10, nada)
+      jornal = await leerJornalResumen();
       mes = await leerMes();
     } catch (err) { return pintarError(err, pintarResumen); }
     if (S.pagina !== "resumen") return;
@@ -346,6 +370,8 @@
     const rojosRonda = rojosDeRonda(ronda);
     for (const f of rojosRonda.slice(0, 3)) atender.push({ txt: `${rondaDe(f.fecha)}${f.periodo ? ` · ${nombrePer(f.periodo)}` : ""}: ${controlTxt(f.control)}${f.nivel === "detiene" ? " (detiene el cierre)" : ""}.`, det: f.detalle, ir: "cierre", sub: "cierre" });
     if (rojosRonda.length > 3) atender.push({ txt: `…y ${plural(rojosRonda.length - 3, "rojo más", "rojos más")} de la ronda: la lista entera está en Cierre del mes.`, ir: "cierre", sub: "cierre" });
+    // (fase 9) la mano de obra: los pagos que esperan su reparto por horas y los rojos de sus controles
+    for (const a of atenderJornal(jornal)) atender.push(a);
     main().innerHTML = cabPagina("Resumen", `${plural(vis.length, "cuenta", "cuentas")} · ${pend ? `<b>${plural(pend, "movimiento espera", "movimientos esperan")}</b> en la bandeja` : "la bandeja está al día"} · hoy, ${fechaLarga(hoyMiami())}`) + fichas +
       `<section class="ct-card ct-atender${atender.length ? "" : " ok"}" id="ct-atender"><h2>Qué atender</h2>
         ${atender.length ? `<ul class="ct-atn-lista">${atender.map(a => `<li class="ct-atn"><div class="ct-atn-txt">${esc(a.txt)}${a.det ? `<small>${esc(a.det)}</small>` : ""}</div><button type="button" class="accion secundaria chica" data-ir="${a.ir}"${a.sub ? ` data-ir-sub="${esc(a.sub)}"` : ""}>${esc(PESTANAS[a.ir])}</button></li>`).join("")}</ul>`
@@ -1407,9 +1433,11 @@
       // los depósitos de Stripe ya en el libro y sin casar: el botón «Es el depósito de Stripe del …» (si no contesta, sin botón)
       // (y los que Edgar sacó de la app: esos se llevan aquí como antes)
       // y lo de la IA contable (c8): sin c8, null y la bandeja sigue como antes
+      // y (fase 9) los pagos de mano de obra que c10 reconoce: sin c10, ninguno y la bandeja sigue como antes
       [S.stripePayouts, S.ia] = await Promise.all([
         S.stripe ? DB._leer("v_stripe_payouts?select=po,estado_pantalla,monto,llegada,fuera_motivo&estado_pantalla=in.(asentado,fuera)").catch(e => { if (esFalloDeRed(e)) throw e; return []; }) : [],
-        leerContador()
+        leerContador(),
+        leerJornalBandeja()
       ]);
       const hoy = hoyMiami();
       await controlar(["v_banco_bandeja"], { v_banco_bandeja: b.filter(f => String(f.fecha) <= hoy).length });
@@ -1431,7 +1459,7 @@
     main().innerHTML = cabPagina("Bandeja",
         filas.length ? `<b>${plural(filas.length, "movimiento del banco espera", "movimientos del banco esperan")}</b> tu respuesta por <span class="ct-num">${fmt(sumaMonto(filas))}</span>${viejos ? ` · <span class="bad-txt">${plural(viejos, "lleva", "llevan")} más de 30 días</span>` : ""}. Lo que no contestes no entra al libro; nada se inventa.` : "<b>La bandeja está vacía.</b> Todo lo que trajo el banco tiene su papel en el libro.",
         `<button type="button" class="accion secundaria" id="ct-casar">Casar otra vez</button>`) +
-      (S.ia ? franjaIAHTML(S.ia) : "") +
+      (S.ia ? franjaIAHTML(S.ia) : "") + franjaJornalHTML(filas) +
       (filas.length ? `<section class="ct-card ct-herr" id="ct-bj-herr">
         <div class="ct-herr-fila">
           <label class="ct-campo ct-buscar">Buscar<input id="ct-bj-buscar" type="search" placeholder="Descripción, memo o monto" value="${esc(S.bj.q)}" autocomplete="off"></label>
@@ -1453,6 +1481,9 @@
     });
     // «Proponer ahora» y «Parar» (la franja: la cadena la repinta sola, sin repintar la página)
     wireFranja();
+    // (fase 9) «Ver solo la mano de obra» de su franja
+    const verJr = $("ct-jr-ver"); if (verJr) verJr.addEventListener("click", () => { S.bj.motivo = ""; S.bj.q = ""; S.filtroCuenta = null; S.bj.soloJr = !S.bj.soloJr; pintarBandeja(); });
+    main().querySelectorAll("#ct-jr-franja [data-ir]").forEach(x => x.addEventListener("click", () => ir(x.dataset.ir, x.dataset.irSub ? { sub: x.dataset.irSub } : {})));
     // la barra solo filtra lo ya leído: no vuelve a la base y el buscador no pierde el foco
     const herr = (id, ev, f) => { const el = $(id); if (el) el.addEventListener(ev, f); };
     herr("ct-bj-buscar", "input", ev => { S.bj.q = ev.target.value; pintarListaBandeja(); });
@@ -1475,6 +1506,7 @@
   function filtrarBandeja() {
     const q = sinAcentos(S.bj.q).trim(), qMonto = q.replace(/[$,\s]/g, "");
     let lista = S.bandeja || [];
+    if (S.bj.soloJr) lista = lista.filter(f => !!jrDe(f));
     if (S.filtroCuenta) lista = lista.filter(f => f.cuenta === S.filtroCuenta);
     if (S.bj.motivo) lista = lista.filter(f => f.motivo === S.bj.motivo);
     if (q) lista = lista.filter(f => sinAcentos(`${f.descripcion || ""} ${f.memo || ""} ${f.cheque || ""}`).includes(q) || (qMonto && Math.abs(num(f.monto) || 0).toFixed(2).includes(qMonto)));
@@ -1515,6 +1547,9 @@
     const ot = card.querySelector("[data-otra]"); if (ot) ot.addEventListener("click", () => abrirOtra(card, m));
     card.querySelectorAll("[data-stripe-po]").forEach(b => b.addEventListener("click", () => accionStripe(card, { accion: "casar_payout", po: b.dataset.stripePo, movimiento_id: m.movimiento_id },
       r => r && r.casado === false ? "No casó: sigue en la bandeja" : `Casado con el depósito de Stripe ${b.dataset.stripePo}`)));
+    // (fase 9) la tarjeta de la mano de obra, o el enlace «Repartir por sus horas» de un pago a una persona
+    if (card.dataset.jr) { wireJornal(card, m); return; }
+    wireRepartirLink(card, m);
     wireIA(card, m);
   }
   // (7c) la cadena trae propuestas: se repinta SOLO cada fila cuya propuesta cambió (su chip aparece, su «Según la IA» se llena).
@@ -1523,6 +1558,8 @@
   // banco trajo (v_banco_bandeja), así que las filas son las mismas; si la IA dejó de cuadrar, la lista entera, sin la IA
   // (sin propuesta pendiente, la fila también cambia cuando la cadena empieza o acaba: su «Proponer ahora» se apaga o vuelve)
   const claveIA = m => {
+    // (fase 9) la tarjeta de la mano de obra no enseña la IA: la cadena nunca la repinta
+    if (jrDe(m)) return "jr";
     const f = iaFilaDe(m), corre = S.cadena && S.cadena.activa ? ":c" : "";
     return !iaViva() ? "x" : f && f.estado === "pendiente" ? `${f.propuesta_id}:pendiente` : `${f ? `${f.propuesta_id}:${f.estado}` : "-"}${corre}`;
   };
@@ -1574,7 +1611,9 @@
     const obra = obraTexto(m.obra);
     const abierta = m.movimiento_id === S.bj.abierta;
     const id = esc(m.movimiento_id);
-    return `<article class="ct-mov${m.alarma ? " alarma" : ""}${abierta ? " abierta" : ""}" data-id="${id}" data-ia="${esc(claveIA(m))}">
+    // (fase 9) un pago a una persona que cobra por horas: la tarjeta de la mano de obra en lugar de las opciones de siempre
+    const jr = jrDe(m);
+    return `<article class="ct-mov${m.alarma ? " alarma" : ""}${abierta ? " abierta" : ""}${jr ? " ct-mov-jr" : ""}" data-id="${id}" data-ia="${esc(claveIA(m))}"${jr ? ` data-jr="1"` : ""}>
       <button type="button" class="ct-mov-fila" aria-expanded="${abierta ? "true" : "false"}" aria-controls="ct-det-${id}">
         <span class="ct-f-main">
           <span class="ct-f-desc" title="${esc(m.descripcion || "")}"><b>${esc(m.descripcion || "(sin descripción)")}</b>${m.memo ? `<small>${esc(m.memo)}</small>` : ""}</span>
@@ -1584,20 +1623,20 @@
         <span class="ct-f-meta">
           <span class="ct-f-fecha ct-num">${fechaLarga(m.fecha)}</span>
           <span class="ct-f-cuenta">${esc(m.cuenta_nombre)}</span>
-          <span class="ct-f-motivo">${pill(motivoLlano(m.motivo), m.motivo === "posible_duplicado" || m.motivo === "quitada" ? "warn" : "")}${m.alarma ? pill("más de 30 días", "bad") : ""}${m._esStripe ? pill("Stripe", "cu") : ""}${chipIA(m)}</span>
+          <span class="ct-f-motivo">${jr ? `${pill(`Mano de obra · ${jr.persona}`, "cu")}${jr.puede ? "" : pill(jr.corto || "Falta algo", "warn")}` : `${pill(motivoLlano(m.motivo), m.motivo === "posible_duplicado" || m.motivo === "quitada" ? "warn" : "")}${chipIA(m)}`}${m.alarma ? pill("más de 30 días", "bad") : ""}${m._esStripe ? pill("Stripe", "cu") : ""}</span>
         </span>
       </button>
       <div class="ct-mov-det" id="ct-det-${id}"${abierta ? "" : " hidden"}>
         <div class="ct-meta"><span>hace ${plural(m.dias, "día", "días")}</span>${m.cheque ? `<span>cheque ${esc(m.cheque)}</span>` : ""}${m.tipo_banco ? `<span>${esc(m.tipo_banco)}</span>` : ""}${m.origen ? `<span>entró por ${esc(m.origen)}</span>` : ""}${obra ? pill("obra: " + obra) : ""}</div>
-        <p class="ct-texto">${esc(m.texto)}</p>
-        ${m._esStripe ? `<p class="ct-aviso warn ct-aviso-dep">Depósito de Stripe: casa solo con su depósito en «Cobros en línea» (cuando Stripe mande su detalle${(m._stripe || []).length ? ", o con «Es el depósito…» aquí abajo" : ""}). No lo clasifiques ni lo registres aquí: el dinero entraría dos veces. Si es de antes de instalar los cobros en línea, sácalo allí con «Ya está en el libro» y vuelve aquí.</p>` : ""}
+        ${jr ? jornalHTML(m, jr) : `<p class="ct-texto">${esc(m.texto)}</p>${repartirLinkHTML(m)}`}
+        ${jr ? "" : `${m._esStripe ? `<p class="ct-aviso warn ct-aviso-dep">Depósito de Stripe: casa solo con su depósito en «Cobros en línea» (cuando Stripe mande su detalle${(m._stripe || []).length ? ", o con «Es el depósito…» aquí abajo" : ""}). No lo clasifiques ni lo registres aquí: el dinero entraría dos veces. Si es de antes de instalar los cobros en línea, sácalo allí con «Ya está en el libro» y vuelve aquí.</p>` : ""}
         ${m._stripeFuera ? `<p class="ct-aviso ct-aviso-dep">Depósito de Stripe de fuera de la app (${esc(m._stripeFuera.fuera_motivo || "ya está en el libro")}): regístralo aquí como siempre.</p>` : ""}
         ${m.posible_duplicado_de ? `<p class="ct-aviso warn">Se parece al del ${fecha(m.duplicado_fecha)} «${esc(m.duplicado_descripcion)}»${m.duplicado_origen ? ` (entró por ${esc(m.duplicado_origen)})` : ""}.</p>` : ""}
         ${iaBloqueHTML(m)}
         <div class="ct-acciones">${(m._stripe || []).map(q => `<button type="button" class="accion" data-stripe-po="${esc(q.po)}">Es el depósito de Stripe del ${fechaLarga(q.llegada)}: casarlo</button>`).join("")}${ops.map((o, i) => `<button type="button" class="accion${i || (m._stripe || []).length ? " secundaria" : ""}" data-op="${i}">${esc(o.texto)}</button>`).join("")}
           ${m._esStripe ? "" : `<button type="button" class="accion secundaria ct-otra" data-otra>Otra cosa…</button>`}</div>
         <div class="ct-form" hidden></div>
-        ${m._esStripe ? `<div class="ct-stripe-res"></div>` : ""}
+        ${m._esStripe ? `<div class="ct-stripe-res"></div>` : ""}`}
       </div>
     </article>`;
   }
@@ -1750,6 +1789,367 @@
       apagados.forEach(b => { b.disabled = false; });
       mostrarErrorForma(card, esFalloDeRed(err) ? "Sin señal: no se guardó. Vuelve a intentarlo con señal." : err.message);
     } finally { S.ocupado = false; }
+  }
+
+  // ============================================================
+  // LA MANO DE OBRA EN LA BANDEJA (c10, fase 9) — docs/conta/c10-costo-obra.sql
+  //
+  // Edgar paga a sus ayudantes por Zelle: el lunes, la semana anterior; el
+  // viernes, la semana en curso. Ese Zelle no es de una obra: es su semana,
+  // repartida entre las obras donde estuvo. La base lo reconoce (la persona
+  // dada de alta y su patrón contra la descripción del banco: la lista es
+  // v_jornal_pendientes) y lo reparte por SUS HORAS al centavo; la pantalla
+  // solo lo enseña y manda lo que Edgar vio:
+  //   · LA TARJETA «Mano de obra · persona» sale en lugar de las opciones de
+  //     siempre (y sin la IA: su propuesta lleva una obra, y esto son varias).
+  //     Arriba el período con tres botones de un toque (Semana anterior,
+  //     Esta semana, Otras fechas): cada uno vuelve a pedir la propuesta
+  //     (fn_jornal_propuesta) con esas fechas. Debajo la tabla del reparto
+  //     (obra, su CO si lo hay, horas y dólares; el total ES el pago, y se
+  //     dice), lo sin obra con su cuenta (o el campo para decirla UNA vez,
+  //     que guarda fn_jornal_config), «sale a $X la hora (su tarifa: $Y)» en
+  //     ámbar si la base avisa, y cada aviso de la base tal cual.
+  //   · «ASÍ ES» pide el código del teléfono y manda fn_jornal_aplicar con
+  //     las fechas y la HUELLA (visto) de lo que se ve: la base aprueba esas
+  //     horas y registra el pago repartido en una transacción. Si las horas
+  //     cambiaron entre que Edgar miró y tocó (MX011) no se hizo nada: se
+  //     recalcula y se le enseña otra vez, dicho. Si el banco (c6) frena con
+  //     «…dilo en el motivo», sale el campo del motivo y se reintenta con la
+  //     MISMA huella. Si la IA (c8) tenía una propuesta abierta para ese pago,
+  //     se rechaza por la función de borde «contador» (la base lo pide así).
+  //   · SIN HORAS en esas fechas: lo dice, deja cambiar las fechas o «No es
+  //     mano de obra», que devuelve la tarjeta de siempre (en memoria: al
+  //     volver a abrir la app, la base lo vuelve a reconocer).
+  //   · En un pago normal por Zelle (o Venmo, Cash App, PayPal) a alguien que
+  //     la base no reconoce: un enlace discreto «Repartir por sus horas» para
+  //     darlo de alta eligiéndolo de la cuadrilla (fn_jornal_persona con el
+  //     movimiento: la base saca el patrón de su descripción).
+  // Sin c10 pegado (las vistas no existen) la bandeja sigue como antes. Si
+  // contesta con otro error, la franja lo dice en rojo: nunca se calla.
+  // ============================================================
+  const faltaC10 = err => !!err && (err.status === 404 || ["PGRST205", "PGRST202", "42P01", "42883"].includes(String(err.codigo || "")));
+  // los avisos que no dejan aplicar (los demás son para saber, no frenan)
+  const AVISOS_FRENAN = ["sin_horas", "falta_cuenta_sin_obra", "cuenta_mal", "posible_duplicado", "reparto_suelto"];
+  const nHoras = v => { const n = num(v); return n == null || Number.isNaN(n) ? "—" : n.toLocaleString("en-US", { maximumFractionDigits: 2 }); };
+  const horasTxt = v => `${nHoras(v)} h`;
+  const cent2 = v => Math.round((num(v) || 0) * 100);
+  const jrDe = m => (S.jr.instalado && m && !S.jr.no.has(m.movimiento_id) && S.jr.pend.get(m.movimiento_id)) || null;
+  // el lunes y el domingo de la semana de una fecha, y de la anterior (la regla de la base: lunes a domingo)
+  const diaMas = (iso, n) => { const [a, m, d] = partes(iso); return new Date(Date.UTC(a, m - 1, d + n)).toISOString().slice(0, 10); };
+  function semanasDe(iso) {
+    const [a, m, d] = partes(iso), dow = (new Date(Date.UTC(a, m - 1, d)).getUTCDay() + 6) % 7, lunes = diaMas(iso, -dow);
+    return { esta: [lunes, diaMas(lunes, 6)], anterior: [diaMas(lunes, -7), diaMas(lunes, -1)] };
+  }
+  const rangoCorto = (de, a) => `${fecha(de)} – ${fecha(a)}`;
+
+  // Una fila de v_jornal_pendientes (plana) o una respuesta de fn_jornal_propuesta (con movimiento, persona y periodo
+  // anidados), con la misma forma para pintar. `mano`: la pidió Edgar con otras fechas (se conserva al repintar la bandeja)
+  function normalJr(x, deVista) {
+    const lineas = Array.isArray(x.lineas) ? x.lineas : [];
+    const avisos = Array.isArray(x.avisos) ? x.avisos : [];
+    const mov = deVista ? null : (x.movimiento || {}), per = deVista ? null : (x.periodo || {}), per0 = deVista ? null : (x.persona || {});
+    const monto = Math.abs(num(deVista ? x.monto : mov.monto) || 0);
+    const enObras = lineas.reduce((s, l) => s + cent2(l.monto), 0);
+    let sinObra = null;
+    if (!deVista && x.sin_obra) sinObra = { horas: num(x.sin_obra.horas), monto: num(x.sin_obra.monto), cuenta: x.sin_obra.cuenta || null, falta: !!x.sin_obra.falta_cuenta };
+    // la vista no trae la parte sin obra: son sus horas y lo que falta para el pago (la base reparte el pago entero)
+    else if (deVista && num(x.horas_sin_obra) > 0) sinObra = { horas: num(x.horas_sin_obra), monto: (Math.round(monto * 100) - enObras) / 100, cuenta: (S.jr.cfg && S.jr.cfg.cuenta_sin_obra) || null, falta: avisos.some(a => a.codigo === "falta_cuenta_sin_obra") };
+    const frena = avisos.find(a => AVISOS_FRENAN.includes(a.codigo));
+    return {
+      mov: deVista ? x.movimiento_id : mov.id, monto, mano: !deVista,
+      persona: deVista ? x.persona : per0.nombre, usuario: deVista ? x.usuario_id : per0.usuario_id,
+      tarifa: num(deVista ? x.tarifa : (x.tarifa_equipo != null ? x.tarifa_equipo : per0.tarifa)),
+      desde: String(deVista ? x.desde : per.desde).slice(0, 10), hasta: String(deVista ? x.hasta : per.hasta).slice(0, 10),
+      texto: deVista ? x.periodo_texto : per.texto, opcionesPer: deVista ? null : (Array.isArray(per.opciones) ? per.opciones : null),
+      horas: num(x.horas), reportes: num(x.reportes), obras: num(x.obras), lineas, sinObra,
+      tarifaSale: num(x.tarifa_sale), avisos, puede: x.puede_aplicar === true, porQue: x.por_que || null, visto: x.visto || "",
+      propuestaIA: x.propuesta_ia || null, incluir: !!(x.opciones && x.opciones.incluir_cubiertas), cubiertas: deVista ? null : (x.cubiertas || null),
+      corto: (frena || avisos[0] || {}).corto || null, nota: null
+    };
+  }
+  // los pagos que la base reconoce, su configuración y su control (sin c10: nada; otro error: la franja lo dice en rojo)
+  async function leerJornalBandeja() {
+    S.jr.err = null;
+    try {
+      const [filas, cfg, ctl] = await Promise.all([
+        DB._leer("v_jornal_pendientes?select=*&order=fecha.asc,movimiento_id.asc"),
+        DB._leer("jornal_config?select=*"),
+        DB._leer("v_jornal_control?select=*&order=orden.asc")
+      ]);
+      S.jr.instalado = true; S.jr.cfg = (cfg || [])[0] || null; S.jr.control = Array.isArray(ctl) ? ctl : [];
+      const antes = S.jr.pend; S.jr.pend = new Map();
+      // lo que Edgar pidió con otras fechas se queda mientras el pago siga esperando (su huella la vuelve a mirar la base al aplicar)
+      for (const f of filas) { const prev = antes.get(f.movimiento_id); S.jr.pend.set(f.movimiento_id, prev && prev.mano ? prev : normalJr(f, true)); }
+      for (const id of [...S.jr.no]) if (!S.jr.pend.has(id)) S.jr.no.delete(id);
+    } catch (err) {
+      if (esFalloDeRed(err)) throw err;
+      S.jr.instalado = false; S.jr.pend = new Map(); S.jr.control = null;
+      if (!faltaC10(err)) S.jr.err = err;
+    }
+  }
+  // La franja de la mano de obra, arriba de la bandeja: cuántos pagos esperan su reparto, sus cuadres en rojo, o que no contestó
+  function franjaJornalHTML(filas) {
+    if (S.jr.err) return `<section class="ct-card ct-jr-franja" role="alert"><p class="ct-aviso bad">El reparto de la mano de obra no contestó: ${esc(S.jr.err.message)}. Hasta que conteste, los pagos a la cuadrilla salen como movimientos normales: si son por horas, no los clasifiques a mano todavía.</p></section>`;
+    if (!S.jr.instalado) return "";
+    const suyos = (filas || []).filter(f => jrDe(f)), rojos = (S.jr.control || []).filter(f => f.nivel === "cuadre" && f.ok !== true);
+    if (!suyos.length && !rojos.length && !S.bj.soloJr) return "";
+    const total = suyos.reduce((s, f) => s + Math.abs(num(f.monto) || 0), 0);
+    return `<section class="ct-card ct-jr-franja" id="ct-jr-franja">
+      <div class="ct-jr-franja-fila"><p>${suyos.length ? `<b>${plural(suyos.length, "pago de mano de obra espera", "pagos de mano de obra esperan")}</b> su reparto por horas · <span class="ct-num">${fmt(total)}</span>` : "Ningún pago de mano de obra espera su reparto."}</p>
+        ${suyos.length || S.bj.soloJr ? `<button type="button" class="accion secundaria chica" id="ct-jr-ver" aria-pressed="${S.bj.soloJr ? "true" : "false"}">${S.bj.soloJr ? "Ver todos" : "Ver solo esos"}</button>` : ""}</div>
+      ${rojos.map(f => `<p class="ct-aviso bad">${esc(cap(String(f.cuadre || "").replace(/^jornal: /, "")))}: ${esc(f.detalle || "no cuadra")} <button type="button" class="ct-jr-link" data-ir="obras" data-ir-sub="repartos">Ver los repartos</button></p>`).join("")}
+    </section>`;
+  }
+
+  // ---------- la tarjeta ----------
+  function jornalHTML(m, jr) {
+    const sem = semanasDe(m.fecha);
+    const cual = jr.desde === sem.anterior[0] && jr.hasta === sem.anterior[1] ? "anterior" : jr.desde === sem.esta[0] && jr.hasta === sem.esta[1] ? "esta" : "otras";
+    // las horas de cada semana, si la propuesta las trajo (la de la vista no las trae)
+    const horasDe = ([de, a]) => { const o = (jr.opcionesPer || []).find(x => String(x.desde).slice(0, 10) === de && String(x.hasta).slice(0, 10) === a); return o ? ` · ${horasTxt(o.horas)}` : ""; };
+    const chip = (k, txt, r) => `<button type="button" class="ct-chip ct-jr-chip" data-jr-per="${k}" aria-pressed="${cual === k ? "true" : "false"}">${esc(txt)}${r ? `<small class="ct-num">${esc(rangoCorto(r[0], r[1]))}${esc(horasDe(r))}</small>` : ""}</button>`;
+    const tarifaLejos = jr.avisos.some(a => a.codigo === "tarifa_lejos");
+    const sinHoras = jr.avisos.some(a => a.codigo === "sin_horas") || !(num(jr.horas) > 0);
+    const hayCubiertas = jr.avisos.some(a => a.codigo === "horas_cubiertas") || jr.incluir;
+    const falta = !!(jr.sinObra && jr.sinObra.falta) || jr.avisos.some(a => a.codigo === "falta_cuenta_sin_obra");
+    const total = jr.lineas.reduce((s, l) => s + cent2(l.monto), 0) + (jr.sinObra ? cent2(jr.sinObra.monto) : 0);
+    const cuadra = total === Math.round(jr.monto * 100);
+    const filasT = jr.lineas.map(l => `<tr><td class="ct-jr-obra">${esc(l.obra || l.proyecto_id || "")}${l.co ? `<small>${esc(l.co)}</small>` : ""}${["completado", "cancelado"].includes(l.obra_estado) ? ` ${pill(l.obra_estado === "cancelado" ? "cancelada" : "terminada", "warn")}` : ""}</td><td class="r ct-num" data-col="Horas">${horasTxt(l.horas)}</td><td class="r ct-num" data-col="Dólares">${fmt(l.monto)}</td></tr>`).join("") +
+      (jr.sinObra ? `<tr class="ct-jr-sinobra"><td class="ct-jr-obra">Sin obra<small>${jr.sinObra.cuenta ? `va a ${esc(jr.sinObra.cuenta)} ${esc(nombreCuenta(jr.sinObra.cuenta) === jr.sinObra.cuenta ? "" : nombreCuenta(jr.sinObra.cuenta))}` : "falta decir a qué cuenta va"}</small></td><td class="r ct-num" data-col="Horas">${horasTxt(jr.sinObra.horas)}</td><td class="r ct-num" data-col="Dólares">${fmt(jr.sinObra.monto)}</td></tr>` : "");
+    const tabla = jr.lineas.length || jr.sinObra ? `<div class="ct-jr-tabla-env"><table class="ct-jr-tabla"><thead><tr><th>Obra</th><th class="r">Horas</th><th class="r">Dólares</th></tr></thead>
+        <tbody>${filasT}</tbody>
+        <tfoot><tr><td>Total${num(jr.obras) ? ` · ${plural(jr.obras, "obra", "obras")}` : ""}</td><td class="r ct-num" data-col="Horas">${horasTxt(jr.horas)}</td><td class="r ct-num" data-col="Dólares">${fmt(total / 100)}</td></tr></tfoot></table></div>
+      <p class="ct-jr-cuadra ${cuadra ? "ok-txt" : "bad-txt"}">${cuadra ? `El total es el pago: ${fmt(jr.monto)}.` : `El reparto suma ${fmt(total / 100)} y el pago es ${fmt(jr.monto)}: no cuadra, no lo aceptes y avisa.`}</p>` : "";
+    const tarifa = jr.tarifaSale != null ? `<p class="ct-jr-tarifa${tarifaLejos ? " lejos" : ""}">Sale a <b class="ct-num">${fmt(jr.tarifaSale)} la hora</b> (${jr.tarifa != null ? `su tarifa: <span class="ct-num">${fmt(jr.tarifa)}</span>` : "sin tarifa en Costos del equipo"})</p>` : "";
+    // el porqué de lo que frena, si no es ya uno de los avisos
+    const porQue = !jr.puede && jr.porQue && !jr.avisos.some(a => a.texto === jr.porQue) ? `<p class="ct-aviso warn">${esc(jr.porQue)}</p>` : "";
+    const sinCodigo = !mfaActivo();
+    return `<div class="ct-jr" data-jr-bloque>
+      <div class="ct-jr-cab"><h3>Mano de obra · ${esc(jr.persona)}</h3>${jr.tarifa != null ? `<span class="ct-sub">tarifa ${fmt(jr.tarifa)}/h</span>` : ""}</div>
+      ${jr.nota ? `<p class="ct-aviso warn ct-jr-nota" role="status">${esc(jr.nota)}</p>` : ""}
+      <p class="ct-jr-que">Pago de <b class="ct-num">${fmt(jr.monto)}</b> repartido por sus horas ${esc(jr.texto || rangoCorto(jr.desde, jr.hasta))}${num(jr.reportes) ? ` (${plural(jr.reportes, "reporte", "reportes")})` : ""}.</p>
+      <div class="ct-chips ct-jr-pers" role="group" aria-label="Qué fechas paga">${chip("anterior", "Semana anterior", sem.anterior)}${chip("esta", "Esta semana", sem.esta)}${chip("otras", "Otras fechas", null)}</div>
+      <form class="ct-jr-fechas" data-jr-fechas novalidate${cual === "otras" ? "" : " hidden"}>
+        <label class="ct-campo">Desde<input type="date" name="desde" value="${esc(jr.desde)}" required></label>
+        <label class="ct-campo">Hasta<input type="date" name="hasta" value="${esc(jr.hasta)}" required></label>
+        <div class="ct-acciones"><button type="submit" class="accion secundaria">Repartir con estas fechas</button></div>
+      </form>
+      ${sinHoras ? `<p class="ct-jr-vacio">Sin horas reportadas ${esc(jr.texto || "en esas fechas")}: elige otras fechas arriba o, si este pago no es por horas, «No es mano de obra».</p>` : tabla}
+      ${sinHoras ? "" : tarifa}
+      ${jr.avisos.length ? `<ul class="ct-jr-avisos">${jr.avisos.map(a => `<li class="ct-aviso ${AVISOS_FRENAN.includes(a.codigo) ? "warn" : a.codigo === "tarifa_lejos" ? "warn" : ""}" data-aviso="${esc(a.codigo)}">${esc(a.texto || a.corto)}</li>`).join("")}</ul>` : ""}
+      ${porQue}
+      ${hayCubiertas ? `<label class="ct-casilla ct-jr-cubiertas"><input type="checkbox" data-jr-cubiertas${jr.incluir ? " checked" : ""}> Es otro pago de las mismas horas: repartirlo también por las que ya tienen pago</label>` : ""}
+      ${falta ? `<form class="ct-jr-cuenta" data-jr-cuenta novalidate><p class="ct-form-t">¿A qué cuenta va la mano de obra sin obra?</p>
+          <p class="ct-nota">Se dice una vez y vale para todos los pagos. Mientras el CPA no decida una cuenta propia, lo provisional es 7900 Otros gastos; o ponles su obra a esas horas en Horas y vuelve a mirar.</p>
+          <label class="ct-campo">Cuenta<select name="cuenta" required><option value="">Elige la cuenta…</option>${opcionesSinObra("")}</select></label>
+          <div class="ct-acciones"><button type="submit" class="accion secundaria">Guardar la cuenta</button></div></form>` : ""}
+      <label class="ct-campo ct-jr-motivo" hidden>Motivo (lo pide el banco; queda escrito en el libro)<textarea name="jr_motivo" rows="2"></textarea></label>
+      <div class="ct-acciones">
+        <button type="button" class="accion" data-jr-asi${jr.puede && !sinCodigo && cuadra ? "" : " disabled"}>✓ Así es: repartir ${fmt(jr.monto)}</button>
+        <button type="button" class="accion secundaria" data-jr-no>No es mano de obra</button>
+        ${jr.avisos.some(a => a.codigo === "reparto_suelto") ? `<button type="button" class="accion secundaria" data-ir="obras" data-ir-sub="repartos">Ver los repartos</button>` : ""}
+      </div>
+      ${sinCodigo ? `<p class="ct-nota">«Así es» registra en el libro: pide entrar con el código del teléfono (Conexiones y seguridad).</p>` : ""}
+      <div class="ct-jr-res"></div>
+    </div>`;
+  }
+  // las cuentas que admite lo sin obra (la base vuelve a validar): costo o gasto sin obra obligatoria, nunca nómina (50xx) ni sueldo
+  function opcionesSinObra(sel) {
+    return (S.cuentas || []).filter(c => ["costo", "gasto", "otro_gasto"].includes(c.tipo) && c.regla_obra !== "obligatoria" && !/^50/.test(c.codigo) && !["6000", "6005"].includes(c.codigo))
+      .map(c => `<option value="${esc(c.codigo)}"${c.codigo === sel ? " selected" : ""}>${esc(c.codigo)} · ${esc(c.nombre)}${c.codigo === "7900" ? " (lo provisional)" : ""}</option>`).join("");
+  }
+  // repintar solo esta fila (desplegada), con lo que haya ahora en S.jr
+  function reemplazarFila(m) {
+    S.bj.abierta = m.movimiento_id;
+    const viejo = [...document.querySelectorAll("#ct-bj-lista .ct-mov")].find(c => c.dataset.id === m.movimiento_id); if (!viejo) return null;
+    const t = document.createElement("template"); t.innerHTML = movHTML(m).trim();
+    const nueva = t.content.firstElementChild; viejo.replaceWith(nueva); wireMov(nueva, m);
+    return nueva;
+  }
+  const resJr = card => card.querySelector(".ct-jr-res") || resCaja(card, "ct-jr-res");
+  function errorJr(card, err) {
+    const r = resJr(card);
+    if (esFalloDeRed(err) || !navigator.onLine) { r.innerHTML = `<p class="ct-aviso bad">Sin señal: no se hizo nada. Vuelve a intentarlo con señal.</p>`; return; }
+    if (err.codigo === "MFA" || err.mfa) { r.innerHTML = `<p class="ct-aviso warn">Falta el código del teléfono: sal y vuelve a entrar con él.</p>`; return; }
+    r.innerHTML = `<p class="ct-aviso ${/^(MX|22023|42501)/.test(String(err.codigo || "")) ? "warn" : "bad"} ct-error">${esc(err.message)}</p>`;
+  }
+  function wireJornal(card, m) {
+    const bl = card.querySelector("[data-jr-bloque]"); if (!bl) return;
+    const jr = jrDe(m); if (!jr) return;
+    const sem = semanasDe(m.fecha), fechas = bl.querySelector("[data-jr-fechas]");
+    const opc = () => (jr.incluir ? { incluir_cubiertas: true } : {});
+    bl.querySelectorAll("[data-jr-per]").forEach(b => b.addEventListener("click", () => {
+      const k = b.dataset.jrPer;
+      if (k === "otras") { fechas.hidden = false; bl.querySelectorAll("[data-jr-per]").forEach(x => x.setAttribute("aria-pressed", String(x === b))); fechas.querySelector("input").focus(); return; }
+      const [de, a] = k === "esta" ? sem.esta : sem.anterior;
+      recalcJr(card, m, de, a, opc());
+    }));
+    fechas.addEventListener("submit", ev => {
+      ev.preventDefault();
+      const de = fechas.desde.value, a = fechas.hasta.value;
+      if (!de || !a) { resJr(card).innerHTML = `<p class="ct-aviso warn ct-error">Pon las dos fechas: desde y hasta.</p>`; return; }
+      if (de > a) { resJr(card).innerHTML = `<p class="ct-aviso warn ct-error">Las fechas están al revés: «desde» va antes que «hasta».</p>`; return; }
+      recalcJr(card, m, de, a, opc());
+    });
+    const cub = bl.querySelector("[data-jr-cubiertas]");
+    if (cub) cub.addEventListener("change", () => recalcJr(card, m, jr.desde, jr.hasta, cub.checked ? { incluir_cubiertas: true } : {}));
+    const fc = bl.querySelector("[data-jr-cuenta]");
+    if (fc) fc.addEventListener("submit", async ev => {
+      ev.preventDefault();
+      const cuenta = fc.cuenta.value;
+      if (!cuenta) { resJr(card).innerHTML = `<p class="ct-aviso warn ct-error">Elige la cuenta.</p>`; fc.cuenta.focus(); return; }
+      if (S.ocupado) return;
+      S.ocupado = true; card.classList.add("ocupado");
+      try { S.jr.cfg = await DB._rpc("fn_jornal_config", { p: { cuenta_sin_obra: cuenta } }); }
+      catch (err) { S.ocupado = false; card.classList.remove("ocupado"); errorJr(card, err); return; }
+      S.ocupado = false;
+      S.hooks.avisar(`La mano de obra sin obra va a ${cuenta} desde ahora`);
+      recalcJr(card, m, jr.desde, jr.hasta, opc());
+    });
+    bl.querySelector("[data-jr-no]").addEventListener("click", () => { S.jr.no.add(m.movimiento_id); reemplazarFila(m); });
+    bl.querySelectorAll("[data-ir]").forEach(b => b.addEventListener("click", () => ir(b.dataset.ir, b.dataset.irSub ? { sub: b.dataset.irSub } : {})));
+    const asi = bl.querySelector("[data-jr-asi]");
+    asi.addEventListener("click", () => {
+      const mot = bl.querySelector(".ct-jr-motivo");
+      if (mot && !mot.hidden) {
+        const t = String(mot.querySelector("textarea").value || "").trim();
+        if (!t) { resJr(card).innerHTML = `<p class="ct-aviso warn ct-error">Escribe el motivo: el banco lo pide para registrarlo.</p>`; mot.querySelector("textarea").focus(); return; }
+        return aplicarJr(card, m, t);
+      }
+      aplicarJr(card, m, null);
+    });
+  }
+  // Las mismas fechas u otras: la base vuelve a calcular el reparto (y su huella) y se repinta la tarjeta. `nota`: por qué se recalculó
+  async function recalcJr(card, m, desde, hasta, opciones, nota) {
+    if (S.ocupado) return;
+    if (!navigator.onLine) { resJr(card).innerHTML = `<p class="ct-aviso bad">Sin señal: no se recalculó nada.</p>`; return; }
+    S.ocupado = true; card.classList.add("ocupado");
+    resJr(card).innerHTML = `<p class="ct-aviso" role="status">Repartiendo con sus horas…</p>`;
+    let p;
+    try { p = await DB._rpc("fn_jornal_propuesta", { p_movimiento: m.movimiento_id, p_desde: desde, p_hasta: hasta, p_opciones: opciones || {} }); }
+    catch (err) { S.ocupado = false; card.classList.remove("ocupado"); errorJr(card, err); return; }
+    S.ocupado = false;
+    if (!p || p.reconocido !== true) {
+      S.jr.pend.delete(m.movimiento_id);
+      S.hooks.avisar(p && p.por_que ? p.por_que : "Este pago ya no se reconoce como mano de obra: sale como un movimiento normal", true);
+      reemplazarFila(m); return;
+    }
+    const jr = normalJr(p, false); jr.nota = nota || null;
+    S.jr.pend.set(m.movimiento_id, jr);
+    reemplazarFila(m);
+  }
+  // «Así es»: las fechas y la huella de lo que Edgar ve; el motivo solo si el banco lo pidió
+  async function aplicarJr(card, m, motivo) {
+    const jr = jrDe(m); if (!jr || S.ocupado) return;
+    if (!navigator.onLine) { resJr(card).innerHTML = `<p class="ct-aviso bad">Sin señal: no se hizo nada.</p>`; return; }
+    if (!mfaActivo()) { resJr(card).innerHTML = `<p class="ct-aviso warn">Primero activa el código del teléfono (Conexiones y seguridad) y entra con él: registrar un pago repartido lo pide.</p>`; return; }
+    if (!jr.puede) { resJr(card).innerHTML = `<p class="ct-aviso warn">${esc(jr.porQue || "La base no deja repartir este pago así: mira los avisos.")}</p>`; return; }
+    const opciones = {};
+    if (jr.incluir) opciones.incluir_cubiertas = true;
+    if (motivo) opciones.motivo = motivo;
+    S.ocupado = true;
+    const apagados = [...card.querySelectorAll("button, input, select, textarea")].filter(b => !b.disabled);
+    apagados.forEach(b => { b.disabled = true; });
+    resJr(card).innerHTML = `<p class="ct-aviso ct-espera" role="status">Aprobando sus horas y registrándolo en el libro…</p>`;
+    let r;
+    try { r = await DB._rpc("fn_jornal_aplicar", { p_movimiento: m.movimiento_id, p_desde: jr.desde, p_hasta: jr.hasta, p_visto: jr.visto, p_opciones: opciones }); }
+    catch (err) {
+      S.ocupado = false; apagados.forEach(b => { b.disabled = false; });
+      // las horas cambiaron entre que miró y que tocó: no se hizo nada; se recalcula y se le enseña otra vez
+      if (err.codigo === "MX011") return recalcJr(card, m, jr.desde, jr.hasta, jr.incluir ? { incluir_cubiertas: true } : {},
+        "Las horas cambiaron entre que miraste y que tocaste (alguien reportó, cambió o borró horas): no se aprobó ni se registró nada. Esto es lo de ahora: míralo y vuelve a tocar «Así es».");
+      // el banco (c6) frena hasta que Edgar diga por qué: el campo del motivo y otra vez «Así es», con la misma huella
+      if (/dilo en el motivo/i.test(String(err.message || ""))) {
+        const mot = card.querySelector(".ct-jr-motivo"); if (mot) mot.hidden = false;
+        resJr(card).innerHTML = `<p class="ct-aviso warn">${esc(err.message)}</p><p class="ct-nota">Si de verdad es su pago por horas, escribe el motivo arriba y vuelve a tocar «Así es».</p>`;
+        if (mot) mot.querySelector("textarea").focus();
+        return;
+      }
+      errorJr(card, err); return;
+    }
+    S.ocupado = false;
+    // la IA (c8) tenía una propuesta abierta para este pago: se rechaza por su función (c8 no la cierra sola)
+    let iaAbierta = false;
+    if (r && r.propuesta_ia) {
+      try { await DB._funcion("contador", { accion: "rechazar", propuesta: r.propuesta_ia, motivo: "Es mano de obra: se repartió por sus horas" }, 30000); }
+      catch (e) { iaAbierta = true; }
+    }
+    const asiento = r && r.asiento ? r.asiento.numero : "";
+    S.hooks.avisar(`${r && r.nota ? r.nota : `Repartido${asiento ? ` · asiento ${asiento}` : ""}`}${r && r.tardio ? ` ${r.tardio}` : ""}${iaAbierta ? " · Ojo: la propuesta de la IA para este pago sigue abierta; recházala en la Bandeja." : ""}`, iaAbierta);
+    S.jr.pend.delete(m.movimiento_id); S.saldos = null;
+    await pintarBandeja();
+  }
+
+  // ---------- «Repartir por sus horas» en un pago normal a una persona ----------
+  const PAGO_PERSONA = /\b(zelle|venmo|cash ?app|paypal)\b/i;
+  const pagoAPersona = m => S.jr.instalado && num(m.monto) < 0 && !m._esStripe && PAGO_PERSONA.test(`${m.descripcion || ""} ${m.memo || ""}`);
+  function repartirLinkHTML(m) {
+    if (!pagoAPersona(m)) return "";
+    // «No es mano de obra» se puede deshacer aquí mismo
+    if (S.jr.no.has(m.movimiento_id) && S.jr.pend.has(m.movimiento_id)) return `<p class="ct-jr-enlace"><button type="button" class="ct-jr-link" data-jr-volver>Sí es mano de obra: repartir por sus horas</button></p>`;
+    return `<p class="ct-jr-enlace"><button type="button" class="ct-jr-link" data-jr-alta>Repartir por sus horas</button> <span class="ct-sub">si es lo que cobra alguien de la cuadrilla por sus horas</span></p>`;
+  }
+  const patronLlano = p => String(p || "").replace(/\\[mMyb]/g, "").replace(/\s+/g, " ").trim();
+  function wireRepartirLink(card, m) {
+    const v = card.querySelector("[data-jr-volver]");
+    if (v) v.addEventListener("click", () => { S.jr.no.delete(m.movimiento_id); reemplazarFila(m); });
+    const a = card.querySelector("[data-jr-alta]"); if (!a) return;
+    a.addEventListener("click", async () => {
+      const f = card.querySelector(".ct-form"); f.hidden = false;
+      f.innerHTML = `<p class="ct-aviso" role="status">Buscando la cuadrilla…</p>`;
+      try { S.jr.personas = await DB._leer("v_jornal_personas?select=*&order=nombre.asc"); }
+      catch (err) { mostrarErrorForma(card, esFalloDeRed(err) ? "Sin señal: no se pudo leer la cuadrilla." : err.message); return; }
+      const sin = S.jr.personas.filter(p => !p.registrada), bajas = S.jr.personas.filter(p => p.registrada && !p.activa);
+      if (!sin.length && !bajas.length) {
+        f.innerHTML = `<p class="ct-aviso warn">Toda la cuadrilla con horas en los últimos 90 días ya cobra por horas (o no hay nadie más). Si este pago es de alguien de ellos, el banco lo escribe distinto: cambia su patrón en Costo por obra → Personas.</p>
+          <div class="ct-acciones"><button type="button" class="accion secundaria" data-ir="obras" data-ir-sub="personas">Ir a Personas</button><button type="button" class="accion secundaria" data-cerrar>Cerrar</button></div>`;
+        f.querySelector("[data-ir]").addEventListener("click", () => ir("obras", { sub: "personas" }));
+        f.querySelector("[data-cerrar]").addEventListener("click", () => { f.hidden = true; f.innerHTML = ""; });
+        return;
+      }
+      const op = p => `<option value="${esc(p.usuario_id)}">${esc(p.nombre)}${num(p.horas_90_dias) ? ` · ${horasTxt(p.horas_90_dias)} en 90 días` : ""}</option>`;
+      montarForma(card, formaHTML("¿De quién es este pago? Desde ahora sus pagos se reparten por sus horas",
+        `<label class="ct-campo">Persona de la cuadrilla<select name="usuario" required><option value="">Elige la persona…</option>${sin.length ? `<optgroup label="Con horas, sin dar de alta">${sin.map(op).join("")}</optgroup>` : ""}${bajas.length ? `<optgroup label="Dadas de baja">${bajas.map(op).join("")}</optgroup>` : ""}</select></label>
+         <p class="ct-nota">La base saca de este pago («${esc(m.descripcion || "")}») cómo lo escribe el banco, y con eso reconoce sus pagos de aquí en adelante.</p>`, "Repartir por sus horas"), v => {
+        accionAlta(card, { usuario_id: v.usuario, movimiento_id: m.movimiento_id, activa: true });
+      });
+    });
+  }
+  async function accionAlta(card, p) {
+    if (S.ocupado) return;
+    if (!navigator.onLine) { mostrarErrorForma(card, "Sin señal: no se dio de alta."); return; }
+    S.ocupado = true; card.classList.add("ocupado");
+    let r;
+    try { r = await DB._rpc("fn_jornal_persona", { p }); }
+    catch (err) { S.ocupado = false; card.classList.remove("ocupado"); mostrarErrorForma(card, esFalloDeRed(err) ? "Sin señal: no se dio de alta." : err.message); return; }
+    S.ocupado = false;
+    S.hooks.avisar(r && r.nota_alta ? r.nota_alta : `${(r && r.nombre) || "La persona"}: sus pagos se reparten por sus horas`);
+    S.jr.no.delete(p.movimiento_id);
+    await pintarBandeja();
+  }
+
+  // ---------- «Qué atender» del Resumen ----------
+  async function leerJornalResumen() {
+    try {
+      const [pend, jc, mc] = await Promise.all([
+        DB._leer("v_jornal_pendientes?select=movimiento_id,monto,persona"),
+        DB._leer("v_jornal_control?select=*&order=orden.asc"),
+        DB._leer("v_margen_control?select=*&order=orden.asc")
+      ]);
+      return { pend: pend || [], jc: jc || [], mc: mc || [] };
+    } catch (err) {
+      if (esFalloDeRed(err)) throw err;
+      return faltaC10(err) ? null : { err };
+    }
+  }
+  function atenderJornal(j) {
+    if (!j) return [];
+    if (j.err) return [{ txt: "La mano de obra y el costo por obra no contestaron: los pagos a la cuadrilla no se pueden repartir hasta que contesten.", det: j.err.message, ir: "obras" }];
+    const a = [];
+    if (j.pend.length) a.push({ txt: `${plural(j.pend.length, "pago de mano de obra espera", "pagos de mano de obra esperan")} su reparto por horas (${fmt(j.pend.reduce((s, f) => s + Math.abs(num(f.monto) || 0), 0))}): en la Bandeja, cada uno con su semana y sus obras.`, ir: "bandeja" });
+    for (const f of j.jc) if (f.ok !== true) a.push({ txt: `Mano de obra: ${String(f.cuadre || "").replace(/^jornal: /, "")}${f.nivel === "cuadre" ? " (no cuadra)" : ""}.`, det: f.detalle, ir: "obras", sub: "repartos" });
+    for (const f of j.mc) if (f.ok !== true) a.push({ txt: `Costo por obra: ${String(f.cuadre || "").replace(/^margen: /, "")}${f.nivel === "cuadre" ? " (no cuadra: la página no pinta cifras hasta que cuadre)" : ""}.`, det: f.detalle, ir: "obras", sub: "obras" });
+    return a;
   }
 
   // ============================================================
@@ -4262,7 +4662,391 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     });
   }
 
-  const PAGINAS = { resumen: pintarResumen, bancos: pintarBancos, bandeja: pintarBandeja, conciliar: pintarConciliar, movimientos: pintarMovimientos, estados: pintarEstados, cierre: pintarCierre, cobros: pintarCobros, conexiones: pintarConexiones };
+  // ============================================================
+  // COSTO POR OBRA (c10, fase 9) — docs/conta/c10-costo-obra.sql
+  //
+  // «La fase que justifica todo el proyecto»: cada obra con lo que de verdad
+  // costó contra lo que se estimó. Tres apartados:
+  //   · OBRAS: arriba, lo que falta por configurar (el % de burden estándar y
+  //     la cuenta de la mano de obra sin obra, con su campo y su porqué en
+  //     una frase; fn_jornal_config). Debajo la lista (v_margen_obra: buscar,
+  //     activas / terminadas) con el contrato, el costo real, el margen y una
+  //     señal contra el estimado. Al tocar una, su detalle (fn_margen_obra):
+  //     estimado contra real por concepto, con la mano de obra REAL (pagada y
+  //     repartida) y la ESTÁNDAR (horas sin pago × tarifa × burden) en filas
+  //     aparte y la segunda con su etiqueta «estándar, no real»; la
+  //     cobertura («16.5 h con pago real, 16 h a estándar»), las horas
+  //     estimadas contra las reales, por cuenta, los CO aparte, por fase, por
+  //     cost code (o su vacío dicho en llano), quién trabajó y los repartos.
+  //     Cada número del real trae su «bajar» (la llave de c4: los pedazos de
+  //     v_libro que lo suman): tocarlo enseña esas líneas con su asiento, que
+  //     se abre en Estados; si lo que baja no suma la cifra, se dice en rojo.
+  //   · REPARTOS: el historial (v_jornal_repartos) con «Deshacer» (motivo
+  //     obligatorio y el código del teléfono; fn_jornal_deshacer reversa el
+  //     asiento y el pago vuelve a la Bandeja).
+  //   · PERSONAS: quién cobra por horas (v_jornal_personas): alta con su
+  //     patrón, cambiar el patrón, baja y volver a dar de alta.
+  // FALLA RUIDOSA: antes de pintar una cifra, v_margen_control; un cuadre en
+  // rojo y la página no pinta números (el rojo con el detalle); sus avisos
+  // salen arriba. Sin c10 pegado, la página lo dice en llano. Ninguna cifra
+  // se calcula aquí: vienen listas de la base.
+  // ============================================================
+  const SUBS_OB = { obras: "Obras", repartos: "Repartos", personas: "Personas" };
+  const obCuerpo = () => $("ct-ob-cuerpo");
+  const vivaOb = mia => mia === S.obras.serie && S.pagina === "obras" && !!obCuerpo();
+  const subOb = html => { const s = main() && main().querySelector(".ct-pag-sub"); if (s) s.innerHTML = html; };
+  const OBRA_TERMINADA = ["completado", "cancelado", "cerrado", "terminado"];
+  const ESTADO_OBRA = { estimando: "estimando", enviado: "enviado", aprobado: "aprobada", ejecucion: "en ejecución", pausa: "en pausa", completado: "terminada", cancelado: "cancelada" };
+  const terminada = o => OBRA_TERMINADA.includes(o.estado) || !!o.completado_el;
+  const pctTxt = v => { const n = num(v); return n == null || Number.isNaN(n) ? "—" : `${n.toLocaleString("en-US", { maximumFractionDigits: 1 })} %`; };
+
+  async function pintarObras() {
+    const mia = ++S.obras.serie;
+    if (!navigator.onLine) return sinSenal(pintarObras);
+    if (!SUBS_OB[S.obras.sub]) S.obras.sub = "obras";
+    main().innerHTML = cabPagina(TITULOS.obras, "Leyendo con la base…") +
+      `<section class="ct-card ct-ob-barra"><div class="ct-chips ct-ob-subs" aria-label="Qué parte">${Object.keys(SUBS_OB).map(k =>
+        `<button type="button" class="ct-chip" data-ob-sub="${k}" aria-pressed="${k === S.obras.sub ? "true" : "false"}">${esc(SUBS_OB[k])}</button>`).join("")}</div></section>
+      <div id="ct-ob-cuerpo" class="ct-ob-cuerpo"><div class="ct-card ct-cargando">Cargando…</div></div>`;
+    main().querySelectorAll("[data-ob-sub]").forEach(b => b.addEventListener("click", () => { if (!S.ocupado) ir("obras", { sub: b.dataset.obSub }); }));
+    marcarVolver();
+    if (S.obras.sub === "repartos") return pintarObRepartos(mia);
+    if (S.obras.sub === "personas") return pintarObPersonas(mia);
+    if (S.obras.sel) return pintarObra(S.obras.sel, mia);
+    return pintarObLista(mia);
+  }
+  function errorOb(err, reintentar) {
+    const c = obCuerpo(); if (!c) return;
+    if (faltaC10(err) && !esFalloDeRed(err)) {
+      c.innerHTML = `<section class="ct-card ct-rojo" role="alert"><h2>Falta el costo por obra en la base</h2>
+        <p>Esta página lee lo que deja <span class="ct-num">docs/conta/c10-costo-obra.sql</span>, y la base todavía no lo tiene. Pégalo entero en Supabase (SQL Editor → pegar → Run), después de c1 a c9. Después vuelve aquí.</p>
+        <div class="ct-acciones"><button type="button" class="accion secundaria" id="ct-reintentar">Reintentar</button></div></section>`;
+      $("ct-reintentar").addEventListener("click", reintentar);
+      return;
+    }
+    pintarError(err, reintentar, err.codigo === "42501" ? "Contabilidad es solo del dueño" : undefined, c);
+  }
+  // FALLA RUIDOSA: los cuadres del margen en verde antes de pintar una cifra (sus avisos se devuelven para enseñarlos)
+  async function controlMargen() {
+    const ctl = await DB._leer("v_margen_control?select=*&order=orden.asc");
+    if (!Array.isArray(ctl) || !ctl.length) throw errorControl("El control del costo por obra no devolvió nada", [{ vista: "control del margen", filas: 0, esperadas: "6", detalle: "Vacío: la sesión no es la del dueño (el equipo no ve nada de esto) o a la base le falta c10." }]);
+    const rojos = ctl.filter(f => f.nivel === "cuadre" && f.ok !== true);
+    if (rojos.length) throw errorControl("El costo por obra no cuadra", rojos.map(f => ({ vista: cap(String(f.cuadre || "").replace(/^margen: /, "")), filas: null, esperadas: null, detalle: f.detalle })));
+    return ctl.filter(f => f.ok !== true);
+  }
+  const avisosCtlHTML = avisos => avisos.length ? `<section class="ct-card"><ul class="ct-jr-avisos">${avisos.map(f => `<li class="ct-aviso warn">${esc(cap(String(f.cuadre || "").replace(/^(margen|jornal): /, "")))}: ${esc(f.detalle || "")}</li>`).join("")}</ul></section>` : "";
+  // Una acción de la página (RPC con la sesión del dueño): la tarjeta se apaga, el error va a su forma; si salió, aviso y repintar
+  async function accionOb(card, fn, args, exito) {
+    if (S.ocupado) return;
+    if (!navigator.onLine) { mostrarErrorForma(card, "Sin señal: no se hizo nada."); return; }
+    S.ocupado = true;
+    const apagados = [...card.querySelectorAll("button, input, select, textarea")].filter(b => !b.disabled);
+    apagados.forEach(b => { b.disabled = true; });
+    let r;
+    try { r = await DB._rpc(fn, args); }
+    catch (err) {
+      apagados.forEach(b => { b.disabled = false; });
+      S.ocupado = false;
+      mostrarErrorForma(card, esFalloDeRed(err) ? "Sin señal: no se guardó. Vuelve a intentarlo con señal." : err.codigo === "MFA" ? "Falta el código del teléfono: sal y vuelve a entrar con él." : err.message);
+      return;
+    }
+    S.ocupado = false;
+    const aviso = exito(r);
+    if (aviso) S.hooks.avisar(...(Array.isArray(aviso) ? aviso : [aviso]));
+    if (S.pagina === "obras") await pintarObras();
+  }
+  // Una tabla que en el teléfono se apila (cada celda con su etiqueta): cols [{ t, r?, c? }], filas = celdas en HTML ya escapado
+  const tablaOb = (cols, filas, clase) => `<div class="ct-ob-tabla-env"><table class="ct-tabla ct-ob-tabla${clase ? " " + clase : ""}"><thead><tr>${cols.map(c => `<th${c.r ? ` class="r"` : ""}>${esc(c.t)}</th>`).join("")}</tr></thead>
+    <tbody>${filas.map(f => `<tr${f.clase ? ` class="${f.clase}"` : ""}>${f.celdas.map((v, i) => `<td${cols[i].r ? ` class="r ct-num"` : ""}${i ? ` data-col="${esc(cols[i].t)}"` : ` class="ct-ob-c1"`}>${v}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+
+  // ---------- Obras: lo que falta por configurar y la lista ----------
+  async function pintarObLista(mia) {
+    let avisos, filas, cfg;
+    try {
+      [avisos, filas, cfg] = await Promise.all([
+        controlMargen(),
+        DB._leer("v_margen_obra?select=*&order=obra.asc"),
+        DB._leer("jornal_config?select=*").then(c => (c || [])[0] || null),
+        cuentas()
+      ]);
+      if (!vivaOb(mia)) return;
+      if (!cfg) throw errorControl("La configuración del jornal no apareció", [{ vista: "configuración", filas: 0, esperadas: 1, detalle: "c10 siembra su fila al pegarse: si no está, la sesión no es la del dueño o c10 no se pegó entero." }]);
+    } catch (err) { if (!vivaOb(mia)) return; return errorOb(err, pintarObras); }
+    S.jr.cfg = cfg;
+    const act = filas.filter(o => !terminada(o)), ter = filas.filter(terminada);
+    const sinRep = filas.reduce((s, o) => s + (num(o.pagos_sin_repartir) || 0), 0);
+    subOb(`${plural(filas.length, "obra", "obras")} · costo real <span class="ct-num">${fmt(filas.reduce((s, o) => s + (num(o.costo_real) || 0), 0))}</span>${sinRep ? ` · <span class="bad-txt">${plural(sinRep, "pago de mano de obra sin repartir", "pagos de mano de obra sin repartir")}</span>` : ""}`);
+    if (!["activas", "terminadas", "todas"].includes(S.obras.filtro)) S.obras.filtro = "activas";
+    obCuerpo().innerHTML = configHTML(cfg) + avisosCtlHTML(avisos) +
+      `<section class="ct-card ct-ob-lista" id="ct-ob-lista">
+        <div class="ct-herr-fila"><label class="ct-campo ct-buscar">Buscar<input id="ct-ob-buscar" type="search" placeholder="Obra o cliente" value="${esc(S.obras.q)}" autocomplete="off"></label></div>
+        <div class="ct-chips" aria-label="Qué obras">${[["activas", "Activas", act.length], ["terminadas", "Terminadas", ter.length], ["todas", "Todas", filas.length]].map(([k, t, n]) =>
+          `<button type="button" class="ct-chip" data-ob-filtro="${k}" aria-pressed="${S.obras.filtro === k ? "true" : "false"}">${t} (${n})</button>`).join("")}</div>
+        <div class="ct-ob-cab" aria-hidden="true"><span>Obra</span><span class="r">Contrato</span><span class="r">Costo real</span><span class="r">Margen</span><span>Contra el estimado</span></div>
+        <div id="ct-ob-filas" class="ct-ob-filas"></div>
+        ${ayudaHTML(`<p class="ct-nota">El costo real es lo que el libro tiene con esa obra desde el 1-oct (lo de antes está en QuickBooks: esa obra sale «parcial»). La mano de obra real es lo pagado y repartido por horas; la de las horas que aún no tienen pago va aparte como «estándar, no real», y se suma solo para comparar con el estimado. El margen es lo facturado menos el costo real.</p>`, "¿De dónde sale cada número?")}
+      </section>`;
+    wireConfig(cfg);
+    const pintaFilas = () => {
+      const q = sinAcentos(S.obras.q).trim();
+      let l = S.obras.filtro === "activas" ? act : S.obras.filtro === "terminadas" ? ter : filas;
+      if (q) l = l.filter(o => sinAcentos(`${o.obra || ""} ${o.cliente || ""} ${o.proyecto_id || ""}`).includes(q));
+      $("ct-ob-filas").innerHTML = l.length ? l.map(obraFilaHTML).join("") : `<p class="ct-vacio">${q ? `Ninguna obra con «${esc(S.obras.q)}».` : S.obras.filtro === "terminadas" ? "Ninguna obra terminada todavía." : "Ninguna obra activa."}</p>`;
+      $("ct-ob-filas").querySelectorAll("[data-ob]").forEach(b => b.addEventListener("click", () => { S.obras.sel = b.dataset.ob; S.obras.bajar = null; window.scrollTo(0, 0); pintarObras(); }));
+    };
+    $("ct-ob-buscar").addEventListener("input", ev => { S.obras.q = ev.target.value; pintaFilas(); });
+    obCuerpo().querySelectorAll("[data-ob-filtro]").forEach(b => b.addEventListener("click", () => {
+      S.obras.filtro = b.dataset.obFiltro;
+      obCuerpo().querySelectorAll("[data-ob-filtro]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+      pintaFilas();
+    }));
+    pintaFilas();
+  }
+  // la señal contra el estimado: lo que sobra o lo que se pasa (costo real + estándar contra el costo estimado)
+  function senalOb(o) {
+    if (num(o.costo_estimado) == null) return pill("sin estimado");
+    const d = num(o.diferencia), usado = num(o.costo_estimado) ? (num(o.costo_con_estandar) || 0) / num(o.costo_estimado) : 0;
+    if (d < 0) return pill(`se pasa ${fmtAbs(d)}`, "bad");
+    if (usado > 0.9) return pill(`cerca: sobran ${fmt(d)}`, "warn");
+    return pill(`dentro: sobran ${fmt(d)}`, "ok");
+  }
+  function obraFilaHTML(o) {
+    const est = num(o.mano_obra_estandar);
+    return `<button type="button" class="ct-ob-fila" data-ob="${esc(o.proyecto_id)}">
+      <span class="ct-ob-n"><b>${esc(o.obra || o.proyecto_id)}</b><small>${esc([o.cliente, ESTADO_OBRA[o.estado] || o.estado].filter(Boolean).join(" · "))}</small>${o.parcial ? pill("parcial", "warn") : ""}</span>
+      <span class="ct-ob-v r" data-col="Contrato"><span class="ct-num">${fmt(o.contrato)}</span></span>
+      <span class="ct-ob-v r" data-col="Costo real"><span class="ct-num">${fmt(o.costo_real)}</span>${est ? `<small>+ <span class="ct-num">${fmt(est)}</span> estándar</small>` : ""}</span>
+      <span class="ct-ob-v r" data-col="Margen"><span class="ct-num ${num(o.margen_real) < 0 ? "bad-txt" : ""}">${pctTxt(o.margen_real_pct)}</span>${o.margen_real != null ? `<small class="ct-num">${fmtNeg(o.margen_real)}</small>` : ""}</span>
+      <span class="ct-ob-senal" data-col="Contra el estimado">${senalOb(o)}</span>
+    </button>`;
+  }
+  // Lo que falta por configurar (o, ya puesto, plegado como «Ajustes»): el burden estándar y la cuenta de lo sin obra
+  function configHTML(cfg) {
+    const faltaB = cfg.burden_estandar_pct == null, faltaC = !cfg.cuenta_sin_obra, falta = faltaB || faltaC;
+    const campos = `<form class="ct-pide" id="ct-ob-config-form" novalidate>
+        <label class="ct-campo">Burden estándar (%)${faltaB ? ` ${pill("falta", "warn")}` : ""}<input name="burden" inputmode="decimal" placeholder="por ejemplo 18" value="${cfg.burden_estandar_pct == null ? "" : esc(num(cfg.burden_estandar_pct))}" autocomplete="off">
+          <span class="ct-sub">Lo que cuesta de más cada hora sobre la tarifa (impuestos, seguro, herramienta): con él se calcula la mano de obra estándar de las horas que aún no tienen pago. Si no aplica, pon 0.</span></label>
+        <label class="ct-campo">Cuenta de la mano de obra sin obra${faltaC ? ` ${pill("falta", "warn")}` : ""}<select name="cuenta_sin_obra"><option value="">Sin decir todavía</option>${opcionesSinObra(cfg.cuenta_sin_obra || "")}</select>
+          <span class="ct-sub">A dónde va lo que se paga por horas que no tienen obra (taller, compras, recados). Mientras el CPA no decida otra, 7900 Otros gastos.</span></label>
+        <div class="ct-acciones"><button type="submit" class="accion${falta ? "" : " secundaria"}">Guardar</button></div>
+      </form><div class="ct-form" hidden></div>`;
+    return falta ? `<section class="ct-card ct-ob-config falta" id="ct-ob-config"><h2>Lo que falta por configurar</h2>${campos}</section>`
+      : `<section class="ct-card ct-ob-config" id="ct-ob-config"><details><summary>Ajustes del costo: burden estándar ${pctTxt(cfg.burden_estandar_pct)} · lo sin obra a ${esc(cfg.cuenta_sin_obra)}</summary>${campos}</details></section>`;
+  }
+  function wireConfig(cfg) {
+    const card = $("ct-ob-config"), form = $("ct-ob-config-form"); if (!form) return;
+    form.addEventListener("submit", ev => {
+      ev.preventDefault();
+      const p = {}, t = montoTxt(form.burden.value);
+      const b = t === "" ? null : Number(t);
+      if (t !== "" && (!Number.isFinite(b) || b < 0 || b > 100)) { mostrarErrorForma(card, "El burden va de 0 a 100: escribe solo el número (18, o 22.5); vacío lo quita."); return; }
+      if (b !== (cfg.burden_estandar_pct == null ? null : num(cfg.burden_estandar_pct))) p.burden_estandar_pct = b;
+      const c = form.cuenta_sin_obra.value || null;
+      if (c !== (cfg.cuenta_sin_obra || null)) p.cuenta_sin_obra = c;
+      if (!Object.keys(p).length) { mostrarErrorForma(card, "No cambiaste nada."); return; }
+      accionOb(card, "fn_jornal_config", { p }, () => "Ajustes del costo guardados");
+    });
+  }
+
+  // ---------- Una obra: estimado contra real ----------
+  async function pintarObra(id, mia) {
+    let avisos, d;
+    try {
+      [avisos, d] = await Promise.all([controlMargen(), DB._rpc("fn_margen_obra", { p_proyecto: id })]);
+      if (!vivaOb(mia)) return;
+      if (!d || !d.obra) throw errorControl("La obra no apareció", [{ vista: "costo de la obra", filas: 0, esperadas: 1, detalle: `La base no devolvió la obra ${id}.` }]);
+    } catch (err) { if (!vivaOb(mia)) return; return errorOb(err, pintarObras); }
+    const o = d.obra;
+    S.hooks.titulo(KICKER, `Costo · ${o.obra || id}`);
+    if (S.obras.bajar) return pintarBajar(o, S.obras.bajar, mia);
+    subOb(`<b>${esc(o.obra || id)}</b>${o.cliente ? ` · ${esc(o.cliente)}` : ""} · ${esc(ESTADO_OBRA[o.estado] || o.estado || "")}`);
+    S.obras.piezas = [];
+    // cada número del real que baja: su botón guarda el índice de la pieza
+    const bajarBtn = (valor, bajar, titulo, signo) => {
+      if (valor == null) return `<span class="ct-num">—</span>`;
+      if (!Array.isArray(bajar) || !bajar.length) return `<span class="ct-num">${fmtNeg(valor)}</span>`;
+      const i = S.obras.piezas.push({ titulo, valor: num(valor), bajar }) - 1;
+      return `<button type="button" class="ct-ob-bajar ct-num" data-bajar="${i}" title="Ver sus asientos">${fmtNeg(valor)}</button>`;
+    };
+    const conceptos = Array.isArray(d.conceptos) ? d.conceptos : [];
+    const difTxt = v => v == null ? "—" : `<span class="${num(v) < 0 ? "bad-txt" : "ok-txt"}">${fmtSigno(v)}</span>`;
+    const filasC = conceptos.map(c => {
+      const est = c.concepto === "mano_obra_estandar";
+      const et = `${esc(c.etiqueta || c.concepto)}${est ? ` ${pill("estándar, no real", "warn")}` : ""}${c.concepto === "mano_obra_real" ? ` ${pill("real", "ok")}` : ""}${c.nota ? `<small>${esc(c.nota)}</small>` : ""}${c.concepto === "mano_obra_real" && (num(c.jornales) || num(c.nomina)) ? `<small>jornales <span class="ct-num">${fmt(c.jornales)}</span> · nómina <span class="ct-num">${fmt(c.nomina)}</span>${c.horas != null ? ` · ${horasTxt(c.horas)}` : ""}</small>` : ""}${est && c.horas != null ? `<small>${horasTxt(c.horas)}${c.burden_estandar_pct != null ? ` · burden ${pctTxt(c.burden_estandar_pct)}` : ""}</small>` : ""}`;
+      return { clase: `ct-ob-${c.nivel || "concepto"}${est ? " ct-ob-est" : ""}`, celdas: [et, c.estimado == null ? "—" : fmtNeg(c.estimado), bajarBtn(c.real, c.bajar, c.etiqueta || c.concepto),
+        c.estandar == null ? "—" : `<span class="ct-ob-estnum">${fmtNeg(c.estandar)}</span>`, c.nivel === "detalle" || c.concepto === "ingreso" ? "—" : difTxt(c.diferencia)] };
+    });
+    // el margen, estimado y real (la base los da; aquí solo se ponen juntos)
+    filasC.push({ clase: "ct-ob-margen", celdas: ["Margen", `${fmtNeg(o.margen_estimado)}<small>${pctTxt(o.margen_estimado_pct)}</small>`, `${fmtNeg(o.margen_real)}<small>${pctTxt(o.margen_real_pct)}</small>`, "—", "—"] });
+    const cob = `<p class="ct-ob-cobertura"><b class="ct-num">${horasTxt(o.horas_con_pago_real)}</b> con pago real · <b class="ct-num">${horasTxt(o.horas_estandar)}</b> a estándar${num(o.horas_dueno) ? ` · ${horasTxt(o.horas_dueno)} del dueño (van aparte)` : ""}${num(o.horas_antes_libro) ? ` · ${horasTxt(o.horas_antes_libro)} de antes del libro (en QuickBooks)` : ""}${num(o.horas_sin_aprobar) ? ` · ${horasTxt(o.horas_sin_aprobar)} sin aprobar` : ""}</p>`;
+    const he = num(o.horas_estimadas), hr = num(o.horas_reales) || 0, uso = he ? Math.round(hr / he * 100) : null;
+    const horasEst = `<div class="ct-ob-horas"><p><b class="ct-num">${horasTxt(hr)}</b> reales${he ? ` de <b class="ct-num">${horasTxt(he)}</b> estimadas (${uso} %)` : " · sin horas estimadas"}${num(o.horas_co) ? ` · ${horasTxt(o.horas_co)} de CO` : ""}${o.tarifa_estimada != null ? ` · tarifa estimada <span class="ct-num">${fmt(o.tarifa_estimada)}</span>/h (escenario ${esc(o.escenario || "—")})` : ""}</p>
+      ${he ? `<div class="ct-ob-barra-h${uso > 100 ? " pasa" : ""}" role="img" aria-label="${uso} % de las horas estimadas"><span style="width:${Math.min(uso, 100)}%"></span></div>` : ""}</div>`;
+    const parcial = o.parcial ? `<p class="ct-aviso warn"><b>Parcial:</b> ${esc(o.parcial_por || "la obra ya andaba antes del libro")}. Lo de antes del ${fechaLarga(o.libro_desde)} está en QuickBooks: este costo no es el de toda la obra.</p>` : "";
+    const avisosO = (Array.isArray(d.avisos) ? d.avisos : Array.isArray(o.avisos) ? o.avisos : []).map(t => `<li class="ct-aviso warn">${esc(t)}</li>`).join("");
+    const porCuenta = (d.por_cuenta || []).map(c => ({ celdas: [`<span class="ct-num">${esc(c.cuenta)}</span> ${esc(c.nombre || "")}${c.jornal ? ` ${pill("jornales", "cu")}` : ""}`, bajarBtn(c.real, c.bajar, `${c.cuenta} ${c.nombre || ""}${c.jornal ? " · jornales" : ""}`), esc(c.asientos == null ? "—" : c.asientos)] }));
+    const porCo = (d.por_co || []).map(c => ({ celdas: [`${esc(c.etiqueta || c.co || "Base")}${c.alcance != null ? `<small>estimado del CO <span class="ct-num">${fmt(typeof c.alcance === "object" ? c.alcance.monto : c.alcance)}</span></small>` : ""}`, horasTxt(c.horas), fmt(c.mano_obra_real),
+      num(c.mano_obra_estandar) ? `<span class="ct-ob-estnum">${fmt(c.mano_obra_estandar)}</span>` : fmt(c.mano_obra_estandar), fmt(c.material_real), fmt(c.costo_real), fmt(c.ingreso_libro)] }));
+    const porFase = (d.por_fase || []).map(f => ({ celdas: [esc(f.etiqueta || f.fase || "Sin fase"), horasTxt(f.horas), horasTxt(f.horas_con_pago_real), fmt(f.mano_obra_real), horasTxt(f.horas_estandar),
+      num(f.mano_obra_estandar) ? `<span class="ct-ob-estnum">${fmt(f.mano_obra_estandar)}</span>` : fmt(f.mano_obra_estandar)] }));
+    const cc = d.por_cost_code || {};
+    const ccHTML = cc.hay && Array.isArray(cc.filas) && cc.filas.length
+      ? tablaOb([{ t: "Código" }, { t: "Horas", r: true }, { t: "Real", r: true }, { t: "Estimado", r: true }], cc.filas.map(f => ({ celdas: [`${esc(f.cost_code || f.codigo || "")}${f.etiqueta || f.nombre ? `<small>${esc(f.etiqueta || f.nombre)}</small>` : ""}`, f.horas == null ? "—" : horasTxt(f.horas), fmt(f.real != null ? f.real : f.costo_real), f.estimado == null ? "—" : fmt(f.estimado)] })))
+      : `<p class="ct-vacio ct-ob-sincc">${esc(cc.nota || "Todavía no hay nada capturado con código en esta obra: se compara por obra y por cuenta.")}</p>`;
+    const cober = (d.cobertura || []).map(p => ({ celdas: [`${esc(p.persona || "")}${p.es_dueno ? ` ${pill("dueño: va aparte")}` : ""}${p.tarifa != null ? `<small>tarifa <span class="ct-num">${fmt(p.tarifa)}</span>/h</small>` : ""}`, horasTxt(p.horas), horasTxt(p.horas_con_pago_real), fmt(p.pagado),
+      horasTxt(p.horas_estandar), p.estandar == null ? "—" : `<span class="ct-ob-estnum">${fmt(p.estandar)}</span>`, horasTxt(p.horas_sin_aprobar)] }));
+    const reps = (d.repartos || []).map(r => ({ clase: r.estado === "deshecho" ? "ct-ob-deshecho" : "", celdas: [`${fechaLarga(r.fecha_pago)} · ${esc(r.persona || "")}${r.estado === "deshecho" ? ` ${pill("deshecho", "warn")}` : ""}<small>${esc(rangoCorto(r.desde, r.hasta))} · pago de <span class="ct-num">${fmt(r.monto)}</span> por ${horasTxt(r.horas)}</small>`,
+      horasTxt(r.horas_obra), fmt(r.monto_obra), r.asiento_id ? asientoBtn(r.asiento_id, r.asiento) : esc(r.asiento || "—")] }));
+    const seccion = (t, html, extra) => `<section class="ct-card ct-ob-sec"${extra || ""}><h2>${esc(t)}</h2>${html}</section>`;
+    obCuerpo().innerHTML = `<section class="ct-card ct-ob-det" id="ct-ob-det">
+        <div class="ct-cab"><h2>${esc(o.obra || id)}</h2>${pill(ESTADO_OBRA[o.estado] || o.estado || "—", terminada(o) ? "" : "ok")}${o.parcial ? pill("parcial", "warn") : ""}</div>
+        <p class="ct-nota">${esc([o.cliente, o.tipo].filter(Boolean).join(" · "))}${o.libro_desde ? ` · en el libro desde el ${fechaLarga(o.libro_desde)}` : ""}</p>
+        <div class="ct-kpis cuatro">
+          ${kpiHTML("Contrato", fmt(o.contrato))}
+          ${kpiHTML("Facturado", fmt(o.ingreso_libro), "en el libro")}
+          ${kpiHTML("Costo real", fmt(o.costo_real), num(o.mano_obra_estandar) ? `+ ${fmt(o.mano_obra_estandar)} estándar` : "pagado y en el libro")}
+          ${kpiHTML("Margen real", pctTxt(o.margen_real_pct), o.margen_real == null ? "" : fmtNeg(o.margen_real))}
+        </div>
+        ${parcial}${cob}${horasEst}
+        ${avisosO ? `<ul class="ct-jr-avisos">${avisosO}</ul>` : ""}
+        <div class="ct-acciones"><button type="button" class="accion secundaria" id="ct-ob-volver">‹ Todas las obras</button></div>
+      </section>` + avisosCtlHTML(avisos) +
+      seccion("Estimado contra real", `${tablaOb([{ t: "Concepto" }, { t: "Estimado", r: true }, { t: "Real", r: true }, { t: "Estándar", r: true }, { t: "Diferencia", r: true }], filasC, "ct-ob-conceptos")}
+        <p class="ct-nota">La mano de obra real es lo pagado y repartido; la estándar son las horas que aún no tienen pago, a la tarifa del equipo con el burden: <b>no está en el libro</b> y solo se suma para comparar. La diferencia es lo estimado menos lo gastado: en verde lo que sobra, en rojo lo que se pasa. Toca un número del real para ver sus asientos.</p>`, ` id="ct-ob-conceptos"`) +
+      seccion("Por cuenta", porCuenta.length ? tablaOb([{ t: "Cuenta" }, { t: "Real", r: true }, { t: "Asientos", r: true }], porCuenta) : `<p class="ct-vacio">Ningún costo en el libro con esta obra todavía.</p>`, ` id="ct-ob-cuentas"`) +
+      seccion("Base y CO, aparte", porCo.length ? tablaOb([{ t: "Base o CO" }, { t: "Horas", r: true }, { t: "Mano de obra real", r: true }, { t: "Estándar", r: true }, { t: "Material", r: true }, { t: "Costo real", r: true }, { t: "Facturado", r: true }], porCo) : `<p class="ct-vacio">Sin horas ni costos con CO.</p>`, ` id="ct-ob-co"`) +
+      seccion("Por fase", porFase.length ? tablaOb([{ t: "Fase" }, { t: "Horas", r: true }, { t: "Con pago real", r: true }, { t: "Mano de obra real", r: true }, { t: "A estándar", r: true }, { t: "Estándar", r: true }], porFase) : `<p class="ct-vacio">Sin horas reportadas con fase.</p>`, ` id="ct-ob-fase"`) +
+      seccion("Por cost code", ccHTML, ` id="ct-ob-cc"`) +
+      seccion("Quién trabajó", cober.length ? tablaOb([{ t: "Persona" }, { t: "Horas", r: true }, { t: "Con pago real", r: true }, { t: "Pagado", r: true }, { t: "A estándar", r: true }, { t: "Estándar", r: true }, { t: "Sin aprobar", r: true }], cober) : `<p class="ct-vacio">Nadie ha reportado horas en esta obra.</p>`, ` id="ct-ob-quien"`) +
+      seccion("Pagos repartidos a esta obra", reps.length ? tablaOb([{ t: "Pago" }, { t: "Horas aquí", r: true }, { t: "Le tocó", r: true }, { t: "Asiento", r: true }], reps) : `<p class="ct-vacio">Todavía ningún pago de mano de obra repartido a esta obra.</p>`, ` id="ct-ob-repartos"`);
+    $("ct-ob-volver").addEventListener("click", () => { S.obras.sel = null; pintarObras(); });
+    obCuerpo().querySelectorAll("[data-bajar]").forEach(b => b.addEventListener("click", () => { S.obras.bajar = S.obras.piezas[Number(b.dataset.bajar)]; window.scrollTo(0, 0); pintarObras(); }));
+    obCuerpo().querySelectorAll(".ct-asiento-btn").forEach(b => b.addEventListener("click", () => ir("estados", { cuenta: null, asiento: b.dataset.asiento })));
+  }
+  // La consulta de un pedazo de «bajar» (la llave de c4): solo v_libro, con sus filtros (cuenta, obra, asientos que entran o no)
+  function consultaBajar(pz) {
+    const f = (pz && pz.filtros) || {}, lista = v => (Array.isArray(v) ? v : [v]).map(x => enc(String(x))).join(",");
+    const q = ["select=asiento_id,numero,orden,fecha,descripcion,memo,cuenta,cuenta_nombre,monto,proyecto_id"];
+    if (f.cuenta != null) q.push(Array.isArray(f.cuenta) ? `cuenta=in.(${lista(f.cuenta)})` : `cuenta=eq.${enc(f.cuenta)}`);
+    if (f.proyecto_id != null) q.push(`proyecto_id=eq.${enc(f.proyecto_id)}`);
+    if (f.asiento_id != null) q.push(Array.isArray(f.asiento_id) ? `asiento_id=in.(${lista(f.asiento_id)})` : `asiento_id=eq.${enc(f.asiento_id)}`);
+    if (Array.isArray(f.asiento_id_no) && f.asiento_id_no.length) q.push(`asiento_id=not.in.(${lista(f.asiento_id_no)})`);
+    q.push("order=fecha.asc,numero.asc,orden.asc");
+    return `v_libro?${q.join("&")}`;
+  }
+  // Lo que suma un número del real: sus líneas del libro, cada una con su asiento (se abre en Estados). Si no suman la cifra, rojo
+  async function pintarBajar(o, b, mia) {
+    cargandoOb();
+    let lineas = [];
+    try {
+      const piezas = (b.bajar || []).filter(pz => (pz.vista || "v_libro") === "v_libro");
+      if (piezas.length !== (b.bajar || []).length) throw errorControl("No se puede bajar a esta cifra", [{ vista: "bajar", detalle: "La base pidió leer algo que no es el libro: no se lee." }]);
+      const res = await Promise.all(piezas.map(pz => DB._leer(consultaBajar(pz)).then(ls => ls.map(l => ({ ...l, _signo: Number(pz.signo) === -1 ? -1 : 1 })))));
+      if (!vivaOb(mia)) return;
+      lineas = res.flat();
+    } catch (err) { if (!vivaOb(mia)) return; return errorOb(err, pintarObras); }
+    const suma = lineas.reduce((s, l) => s + cent2(l.monto) * l._signo, 0);
+    const cuadra = suma === Math.round((b.valor || 0) * 100);
+    subOb(`<b>${esc(o.obra || o.proyecto_id)}</b> · ${esc(b.titulo)} · <span class="ct-num">${fmtNeg(b.valor)}</span>`);
+    const filas = lineas.map(l => ({ celdas: [`<span class="ct-num">${fechaLarga(l.fecha)}</span> ${asientoBtn(l.asiento_id, l.numero)} ${esc(l.descripcion || "")}${l.memo ? `<small>${esc(l.memo)}</small>` : ""}`, `<span class="ct-num">${esc(l.cuenta)}</span> ${esc(l.cuenta_nombre || "")}`, fmtNeg(cent2(l.monto) * l._signo / 100)] }));
+    obCuerpo().innerHTML = `<section class="ct-card ct-ob-bajada" id="ct-ob-bajada">
+        <div class="ct-cab"><h2>${esc(b.titulo)} · ${esc(o.obra || "")}</h2></div>
+        ${cuadra ? `<p class="ct-aviso ok">${plural(lineas.length, "línea del libro suma", "líneas del libro suman")} <b class="ct-num">${fmtNeg(suma / 100)}</b>: lo mismo que la cifra.</p>`
+          : `<p class="ct-aviso bad" role="alert">Lo que baja suma <b class="ct-num">${fmtNeg(suma / 100)}</b> y la cifra dice <b class="ct-num">${fmtNeg(b.valor)}</b>: no cuadra. No te fíes de esta cifra y avisa.</p>`}
+        ${filas.length ? tablaOb([{ t: "Asiento" }, { t: "Cuenta" }, { t: "Monto", r: true }], filas) : `<p class="ct-vacio">Ninguna línea del libro.</p>`}
+        <p class="ct-nota">Toca un asiento para verlo entero, con su papel, en Estados.</p>
+        <div class="ct-acciones"><button type="button" class="accion secundaria" id="ct-ob-volver">‹ ${esc(o.obra || "La obra")}</button></div>
+      </section>`;
+    $("ct-ob-volver").addEventListener("click", () => { S.obras.bajar = null; pintarObras(); });
+    obCuerpo().querySelectorAll(".ct-asiento-btn").forEach(x => x.addEventListener("click", () => ir("estados", { cuenta: null, asiento: x.dataset.asiento })));
+  }
+  const cargandoOb = txt => { const c = obCuerpo(); if (c) c.innerHTML = `<div class="ct-card ct-cargando">${esc(txt || "Cargando…")}</div>`; };
+
+  // ---------- Repartos: el historial con «Deshacer» ----------
+  async function pintarObRepartos(mia) {
+    let filas, ctl;
+    try {
+      [filas, ctl] = await Promise.all([
+        DB._leer("v_jornal_repartos?select=*&order=creado_el.desc"),
+        DB._leer("v_jornal_control?select=*&order=orden.asc"),
+        leerMfa()
+      ]);
+      if (!vivaOb(mia)) return;
+    } catch (err) { if (!vivaOb(mia)) return; return errorOb(err, pintarObras); }
+    const vivos = filas.filter(r => r.estado === "aplicado");
+    subOb(`${plural(vivos.length, "pago repartido", "pagos repartidos")} · <span class="ct-num">${fmt(vivos.reduce((s, r) => s + (num(r.monto) || 0), 0))}</span>${filas.length > vivos.length ? ` · ${plural(filas.length - vivos.length, "deshecho", "deshechos")}` : ""}`);
+    const rojos = (ctl || []).filter(f => f.ok !== true);
+    obCuerpo().innerHTML = (rojos.length ? `<section class="ct-card"><ul class="ct-jr-avisos">${rojos.map(f => `<li class="ct-aviso ${f.nivel === "cuadre" ? "bad" : "warn"}">${esc(cap(String(f.cuadre || "").replace(/^jornal: /, "")))}: ${esc(f.detalle || "")}</li>`).join("")}</ul></section>` : "") +
+      (filas.length ? `<div class="ct-ob-reps">${filas.map(repartoHTML).join("")}</div>` : `<section class="ct-card ct-vacio">Todavía ningún pago repartido por horas. Salen en la Bandeja como «Mano de obra».</section>`);
+    obCuerpo().querySelectorAll(".ct-rep").forEach(card => {
+      const r = filas.find(x => x.reparto_id === card.dataset.reparto);
+      card.querySelectorAll(".ct-asiento-btn").forEach(b => b.addEventListener("click", () => ir("estados", { cuenta: null, asiento: b.dataset.asiento })));
+      const d = card.querySelector("[data-deshacer]"); if (!d) return;
+      d.addEventListener("click", () => {
+        if (!mfaActivo()) { mostrarErrorForma(card, "Deshacer un reparto toca el libro: primero activa el código del teléfono (Conexiones y seguridad) y entra con él."); return; }
+        montarForma(card, formaHTML(`Deshacer el reparto de ${esc(fmt(r.monto))} de ${esc(r.persona)}: el asiento ${esc(r.asiento || "")} se reversa (no se borra) y el pago vuelve a la Bandeja. Sus horas siguen aprobadas.`,
+          campoHTML("motivo", "Por qué (queda escrito)", "textarea", "required"), "Deshacer el reparto"), v => {
+          if (String(v.motivo || "").length < 3) { mostrarErrorForma(card, "Di por qué en unas palabras (al menos tres letras)."); return; }
+          accionOb(card, "fn_jornal_deshacer", { p_reparto: r.reparto_id, p_motivo: v.motivo }, x => x && x.nota ? x.nota : "Reparto deshecho");
+        });
+      });
+    });
+  }
+  function repartoHTML(r) {
+    const suelto = r.estado === "aplicado" && r.asiento_vivo === false;
+    const lineas = Array.isArray(r.lineas) ? r.lineas : [];
+    return `<article class="ct-card ct-rep${r.estado === "deshecho" ? " deshecho" : ""}${suelto ? " suelto" : ""}" data-reparto="${esc(r.reparto_id)}">
+      <div class="ct-cab"><h2>${esc(r.persona || "")} · <span class="ct-num">${fmt(r.monto)}</span></h2>${r.estado === "deshecho" ? pill("deshecho", "warn") : suelto ? pill("pago suelto", "bad") : pill("aplicado", "ok")}</div>
+      <p class="ct-nota">Pago del ${fechaLarga(r.fecha_pago)} · ${esc(r.periodo_texto || rangoCorto(r.desde, r.hasta))} · ${horasTxt(r.horas)}${r.tarifa_sale != null ? ` · sale a <span class="ct-num">${fmt(r.tarifa_sale)}</span>/h` : ""} · ${plural(num(r.obras) || 0, "obra", "obras")}${r.asiento_id ? ` · asiento ${asientoBtn(r.asiento_id, r.asiento)}` : ""}</p>
+      ${suelto ? `<p class="ct-aviso bad">El pago se des-casó en la Bandeja y este reparto quedó sin su asiento: ciérralo con «Deshacer» (no toca el libro) y vuelve a repartirlo allí.</p>` : ""}
+      ${r.estado === "deshecho" ? `<p class="ct-aviso warn">Deshecho el ${esc(fechaHora(r.deshecho_el))}${r.deshecho_por_nombre ? ` por ${esc(r.deshecho_por_nombre)}` : ""}: «${esc(r.deshecho_motivo || "")}»${r.reverso ? ` · reverso ${r.reverso_id ? asientoBtn(r.reverso_id, r.reverso) : esc(r.reverso)}` : ""}.</p>` : ""}
+      ${lineas.length ? `<details class="ct-rep-det"><summary>Cómo se repartió (${plural(lineas.length, "línea", "líneas")})</summary>${tablaOb([{ t: "Obra" }, { t: "Horas", r: true }, { t: "Dólares", r: true }],
+        lineas.map(l => ({ celdas: [`${esc(l.obra || (l.proyecto_id ? l.proyecto_id : "Sin obra"))}${l.co ? `<small>${esc(l.co)}</small>` : ""}<small>a ${esc(l.cuenta || "")}</small>`, horasTxt(l.horas), fmt(l.monto)] })))}</details>` : ""}
+      <p class="ct-sub">Repartido el ${esc(fechaHora(r.creado_el))}${r.creado_por_nombre ? ` por ${esc(r.creado_por_nombre)}` : ""}${num(r.horas_aprobadas) ? ` · ${plural(r.horas_aprobadas, "reporte de horas aprobado", "reportes de horas aprobados")}` : ""}</p>
+      ${r.estado === "aplicado" ? `<div class="ct-acciones"><button type="button" class="accion secundaria" data-deshacer>Deshacer</button></div>` : ""}
+      <div class="ct-form" hidden></div>
+    </article>`;
+  }
+
+  // ---------- Personas: quién cobra por horas ----------
+  async function pintarObPersonas(mia) {
+    let filas;
+    try {
+      filas = await DB._leer("v_jornal_personas?select=*&order=registrada.desc,nombre.asc");
+      if (!vivaOb(mia)) return;
+    } catch (err) { if (!vivaOb(mia)) return; return errorOb(err, pintarObras); }
+    const act = filas.filter(p => p.registrada && p.activa);
+    subOb(`${plural(act.length, "persona cobra", "personas cobran")} por horas${filas.some(p => !p.registrada) ? ` · ${plural(filas.filter(p => !p.registrada).length, "con horas sin dar de alta", "con horas sin dar de alta")}` : ""}`);
+    obCuerpo().innerHTML = filas.length ? `<div class="ct-ob-pers">${filas.map(personaHTML).join("")}</div>
+        ${ayudaHTML(`<p class="ct-nota">Dar de alta a alguien dice: «sus pagos por Zelle se reparten por sus horas». La base lo reconoce por cómo escribe el banco su nombre en la descripción (el patrón). Si el banco lo escribe distinto, cambia el patrón; si deja de cobrar así, dalo de baja (lo ya repartido se queda).</p>`, "¿Cómo funciona?")}`
+      : `<section class="ct-card ct-vacio">Nadie de la cuadrilla tiene horas en los últimos 90 días.</section>`;
+    obCuerpo().querySelectorAll(".ct-per").forEach(card => {
+      const p = filas.find(x => x.usuario_id === card.dataset.usuario);
+      const patron = (titulo, boton) => montarForma(card, formaHTML(titulo,
+        `${campoHTML("patron", "Cómo lo escribe el banco (por ejemplo, su nombre y apellido)", "texto", `required value="${esc(patronLlano(p.patron))}"`)}
+         <p class="ct-nota">Las palabras que trae la descripción del Zelle. Que no sean tan comunes que casen con cualquier pago.</p>`, boton),
+        v => accionOb(card, "fn_jornal_persona", { p: { usuario_id: p.usuario_id, patron: v.patron, activa: true } }, x => x && x.nota_alta ? x.nota_alta : `${p.nombre}: guardado`));
+      const alta = card.querySelector("[data-per-alta]"); if (alta) alta.addEventListener("click", () => patron(`Dar de alta a ${esc(p.nombre)}: sus pagos se reparten por sus horas`, "Dar de alta"));
+      const pat = card.querySelector("[data-per-patron]"); if (pat) pat.addEventListener("click", () => patron(`El patrón de ${esc(p.nombre)}`, "Guardar el patrón"));
+      const baja = card.querySelector("[data-per-baja]"); if (baja) baja.addEventListener("click", () => accionOb(card, "fn_jornal_persona", { p: { usuario_id: p.usuario_id, activa: false } }, () => `${p.nombre}: dado de baja (lo ya repartido se queda)`));
+      const vuelve = card.querySelector("[data-per-vuelve]"); if (vuelve) vuelve.addEventListener("click", () => accionOb(card, "fn_jornal_persona", { p: { usuario_id: p.usuario_id, activa: true } }, () => `${p.nombre}: otra vez cobra por horas`));
+    });
+  }
+  function personaHTML(p) {
+    const estado = !p.registrada ? pill("sin dar de alta", "warn") : p.activa ? pill("cobra por horas", "ok") : pill("de baja");
+    return `<article class="ct-card ct-per" data-usuario="${esc(p.usuario_id)}">
+      <div class="ct-cab"><h2>${esc(p.nombre || "")}</h2>${estado}</div>
+      <p class="ct-nota">${p.registrada && p.patron ? `Se reconoce por «<b>${esc(patronLlano(p.patron))}</b>» · ` : ""}${p.tarifa != null ? `tarifa <span class="ct-num">${fmt(p.tarifa)}</span>/h` : "sin tarifa en Costos del equipo"}${p.cuenta ? ` · va a ${esc(p.cuenta)}` : ""}${num(p.horas_90_dias) ? ` · ${horasTxt(p.horas_90_dias)} en 90 días` : ""}${num(p.horas_sin_pago) ? ` · ${horasTxt(p.horas_sin_pago)} sin pago` : ""}</p>
+      ${p.registrada ? `<p class="ct-sub">${num(p.pagos_pendientes) ? `<b>${plural(p.pagos_pendientes, "pago espera", "pagos esperan")}</b> en la Bandeja (<span class="ct-num">${fmt(p.pagos_pendientes_monto)}</span>) · ` : ""}${plural(num(p.repartos) || 0, "pago repartido", "pagos repartidos")} · <span class="ct-num">${fmt(p.repartido)}</span>${p.ultimo_reparto ? ` · el último el ${esc(fechaHora(p.ultimo_reparto))}` : ""}</p>` : ""}
+      ${p.nota ? `<p class="ct-nota">${esc(p.nota)}</p>` : ""}
+      <div class="ct-acciones">${!p.registrada ? `<button type="button" class="accion" data-per-alta>Dar de alta</button>`
+        : p.activa ? `<button type="button" class="accion secundaria" data-per-patron>Cambiar el patrón</button><button type="button" class="accion secundaria" data-per-baja>Dar de baja</button>`
+        : `<button type="button" class="accion secundaria" data-per-vuelve>Volver a dar de alta</button>`}</div>
+      <div class="ct-form" hidden></div>
+    </article>`;
+  }
+
+  const PAGINAS = { resumen: pintarResumen, bancos: pintarBancos, bandeja: pintarBandeja, conciliar: pintarConciliar, movimientos: pintarMovimientos, estados: pintarEstados, obras: pintarObras, cierre: pintarCierre, cobros: pintarCobros, conexiones: pintarConexiones };
 
   // ---------- Lo que la app llama (el contrato con js/app.js) ----------
   window.MXP_CONTA = {
@@ -4289,6 +5073,9 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
       // la bajada de los estados: asiento → mayor → el estado
       if (S.pagina === "estados" && S.est.asiento) { S.est.asiento = null; pintarEstados(); return true; }
       if (S.pagina === "estados" && S.est.cuenta) { S.est.cuenta = null; pintarEstados(); return true; }
+      // (fase 9) el costo por obra: lo bajado a los asientos → la obra → la lista
+      if (S.pagina === "obras" && S.obras.bajar) { S.obras.bajar = null; pintarObras(); return true; }
+      if (S.pagina === "obras" && S.obras.sel) { S.obras.sel = null; pintarObras(); return true; }
       return false;
     },
     ir,

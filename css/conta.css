@@ -736,3 +736,129 @@ body[data-vista="conta"] .fab { display: none; }
 #conta-raiz .ct-hist-cab { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
 #conta-raiz .ct-hist-cab b { font-size: .98rem; margin-right: .2rem; }
 #conta-raiz .ct-hist .ct-nota { margin: .25rem 0 0; overflow-wrap: anywhere; }
+
+/* ===========================================================================
+   (fase 9, c10) La mano de obra en la Bandeja y «Costo por obra».
+   La tarjeta «Mano de obra · persona» va dentro de la fila del feed: el período
+   en tres chips (con su rango debajo), la tabla del reparto (obra · horas ·
+   dólares) que nunca se ensancha (tres columnas caben en 390 px) y el total
+   que dice que es el pago. La tarifa que se aleja va en ámbar. «Costo por
+   obra»: la lista como filas-botón (en la computadora, cinco columnas con su
+   cabecera; en el teléfono y el iPad, apiladas), sus tablas apiladas hasta
+   1023 px como las del cierre, la mano de obra estándar siempre en ámbar
+   («estándar, no real») y la barra de horas reales contra estimadas.
+   =========================================================================== */
+#conta-raiz .ct-mov-jr .ct-f-motivo .ct-pill.cu { white-space: normal; }
+#conta-raiz .ct-jr { margin-top: .5rem; padding: .7rem .8rem .8rem; border-radius: 12px; border: 1px solid var(--cu-light); background: var(--mp-card); min-width: 0; }
+#conta-raiz .ct-jr-cab { display: flex; flex-wrap: wrap; align-items: baseline; gap: .2rem .6rem; }
+#conta-raiz .ct-jr-cab h3 { margin: 0; font-size: 1rem; font-weight: 800; color: var(--cu-dark); flex: 1 1 auto; overflow-wrap: anywhere; }
+#conta-raiz .ct-jr-que { margin: .35rem 0 0; font-size: .92rem; line-height: 1.45; }
+#conta-raiz .ct-jr-pers { margin-top: .5rem; }
+#conta-raiz .ct-jr-chip { display: inline-grid; justify-items: start; text-align: left; line-height: 1.2; padding: .35rem .75rem; }
+#conta-raiz .ct-jr-chip small { font-size: .72rem; font-weight: 600; opacity: .85; }
+#conta-raiz .ct-jr-fechas { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; margin-top: .5rem; }
+#conta-raiz .ct-jr-fechas[hidden] { display: none; }
+#conta-raiz .ct-jr-fechas .ct-acciones { grid-column: 1 / -1; margin-top: 0; }
+#conta-raiz .ct-jr-tabla-env { margin-top: .55rem; }
+#conta-raiz .ct-jr-tabla { width: 100%; border-collapse: collapse; font-size: .88rem; table-layout: auto; }
+#conta-raiz .ct-jr-tabla th { text-align: left; font-size: .7rem; letter-spacing: .06em; text-transform: uppercase; color: var(--cu-dark); font-weight: 800; padding: .3rem .4rem; border-bottom: 1px solid var(--mp-line); }
+#conta-raiz .ct-jr-tabla td { padding: .4rem .4rem; border-bottom: 1px solid var(--mp-line); vertical-align: top; }
+#conta-raiz .ct-jr-tabla .r { text-align: right; white-space: nowrap; }
+#conta-raiz .ct-jr-tabla td.ct-jr-obra { overflow-wrap: anywhere; }
+#conta-raiz .ct-jr-tabla td small { display: block; font-size: .76rem; color: var(--mp-ink-3); }
+#conta-raiz .ct-jr-tabla tr.ct-jr-sinobra td { color: var(--mp-ink-2); font-style: italic; }
+#conta-raiz .ct-jr-tabla tfoot td { font-weight: 800; border-bottom: 0; border-top: 2px solid var(--cu); }
+#conta-raiz .ct-jr-cuadra { margin: .35rem 0 0; font-size: .85rem; }
+#conta-raiz .ct-jr-tarifa { margin: .45rem 0 0; font-size: .9rem; padding: .35rem .6rem; border-radius: 10px; background: var(--mp-sky-1); border: 1px solid var(--mp-line); }
+#conta-raiz .ct-jr-tarifa.lejos { background: var(--warn-bg); border-color: var(--mp-warn-bd); color: var(--warn-ink); }
+#conta-raiz .ct-jr-vacio { margin: .55rem 0 0; padding: .6rem .75rem; border-radius: 10px; border: 1px dashed var(--mp-warn-bd); background: var(--warn-bg); color: var(--warn-ink); font-size: .9rem; line-height: 1.45; }
+#conta-raiz .ct-jr-avisos { list-style: none; margin: .4rem 0 0; padding: 0; display: grid; gap: .3rem; }
+#conta-raiz .ct-jr-avisos .ct-aviso { margin: 0; }
+#conta-raiz .ct-jr-cubiertas { margin-top: .45rem; }
+#conta-raiz .ct-jr-cuenta { display: grid; gap: .4rem; margin-top: .55rem; padding: .6rem .7rem; border-radius: 12px; border: 1px dashed var(--cu-light); background: var(--mp-sky-1); }
+#conta-raiz .ct-jr-cuenta .ct-nota { margin: 0; }
+#conta-raiz .ct-jr-motivo { margin-top: .5rem; }
+#conta-raiz .ct-jr-motivo[hidden] { display: none; }
+#conta-raiz .ct-jr-res:empty { display: none; }
+#conta-raiz .ct-jr-enlace { margin: .4rem 0 0; font-size: .85rem; }
+#conta-raiz .ct-jr-link { font: inherit; font-weight: 700; color: var(--cu-dark); background: none; border: 0; padding: .3rem 0; min-height: 32px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+#conta-raiz .ct-jr-link:focus-visible { outline: 3px solid var(--mp-blue); outline-offset: 2px; }
+#conta-raiz .ct-jr-franja { border-left: 4px solid var(--cu); }
+#conta-raiz .ct-jr-franja-fila { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .8rem; }
+#conta-raiz .ct-jr-franja-fila p { margin: 0; flex: 1 1 14rem; font-size: .95rem; line-height: 1.45; }
+#conta-raiz .ct-jr-franja .ct-aviso { margin-bottom: 0; }
+
+/* ---- Costo por obra ---- */
+#conta-raiz .ct-ob-cuerpo { display: grid; gap: .8rem; min-width: 0; }
+#conta-raiz .ct-ob-config.falta { border-left: 4px solid var(--mp-warn-bd); }
+#conta-raiz .ct-ob-config summary { cursor: pointer; font-weight: 700; color: var(--mp-ink-2); overflow-wrap: anywhere; }
+#conta-raiz .ct-ob-config .ct-campo .ct-sub { font-weight: 500; line-height: 1.4; }
+#conta-raiz .ct-ob-config .ct-campo .ct-pill { justify-self: start; }
+#conta-raiz .ct-ob-lista .ct-chips { margin-top: .5rem; }
+#conta-raiz .ct-ob-cab { display: none; }
+#conta-raiz .ct-ob-filas { display: grid; margin-top: .5rem; }
+#conta-raiz .ct-ob-fila { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .3rem .7rem; width: 100%; text-align: left; font: inherit; color: var(--mp-ink);
+  background: var(--mp-card); border: 0; border-top: 1px solid var(--mp-line); padding: .65rem .2rem; cursor: pointer; min-height: var(--tap); }
+#conta-raiz .ct-ob-fila:first-child { border-top: 0; }
+#conta-raiz .ct-ob-fila:hover { background: var(--mp-sky-1); }
+#conta-raiz .ct-ob-fila:focus-visible { outline: 3px solid var(--mp-blue); outline-offset: -3px; }
+#conta-raiz .ct-ob-n { grid-column: 1 / -1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: .1rem .5rem; }
+#conta-raiz .ct-ob-n b { font-size: .98rem; overflow-wrap: anywhere; }
+#conta-raiz .ct-ob-n small { flex-basis: 100%; font-size: .78rem; color: var(--mp-ink-3); }
+#conta-raiz .ct-ob-v { display: grid; min-width: 0; font-size: .92rem; }
+#conta-raiz .ct-ob-v::before, #conta-raiz .ct-ob-senal::before { content: attr(data-col); font-size: .68rem; letter-spacing: .05em; text-transform: uppercase; color: var(--mp-ink-2); font-weight: 700; }
+#conta-raiz .ct-ob-v small { font-size: .76rem; color: var(--mp-ink-3); }
+#conta-raiz .ct-ob-v.r { text-align: left; }
+#conta-raiz .ct-ob-senal { display: grid; justify-items: start; gap: .1rem; min-width: 0; }
+#conta-raiz .ct-ob-senal .ct-pill { white-space: normal; }
+@media (min-width: 1024px) {
+  #conta-raiz { --ct-ob-cols: minmax(0, 1fr) 8.5rem 9.5rem 7.5rem 13rem; }
+  #conta-raiz .ct-ob-cab { display: grid; grid-template-columns: var(--ct-ob-cols); gap: .7rem; padding: .45rem .2rem; margin-top: .5rem; border-bottom: 1px solid var(--mp-line);
+    font-size: .7rem; letter-spacing: .06em; text-transform: uppercase; color: var(--cu-dark); font-weight: 800; }
+  #conta-raiz .ct-ob-cab .r { text-align: right; }
+  #conta-raiz .ct-ob-filas { margin-top: 0; }
+  #conta-raiz .ct-ob-fila { grid-template-columns: var(--ct-ob-cols); align-items: center; }
+  #conta-raiz .ct-ob-n { grid-column: auto; }
+  #conta-raiz .ct-ob-v.r { text-align: right; }
+  #conta-raiz .ct-ob-v::before, #conta-raiz .ct-ob-senal::before { display: none; }
+}
+#conta-raiz .ct-ob-det .ct-cab h2 { overflow-wrap: anywhere; }
+#conta-raiz .ct-ob-cobertura { margin: .2rem 0 .3rem; font-size: .92rem; line-height: 1.5; }
+#conta-raiz .ct-ob-horas p { margin: .2rem 0 .3rem; font-size: .9rem; line-height: 1.45; color: var(--mp-ink-2); }
+#conta-raiz .ct-ob-barra-h { height: 8px; border-radius: 999px; background: var(--mp-sky-2, var(--mp-line)); overflow: hidden; }
+#conta-raiz .ct-ob-barra-h span { display: block; height: 100%; border-radius: 999px; background: var(--cu); }
+#conta-raiz .ct-ob-barra-h.pasa span { background: var(--bad); }
+#conta-raiz .ct-ob-bajar { font: inherit; font-weight: 700; color: var(--cu-dark); background: none; border: 0; border-bottom: 1.5px dashed var(--cu-light); padding: .15rem 0; min-height: 32px; cursor: pointer; }
+#conta-raiz .ct-ob-bajar:focus-visible { outline: 3px solid var(--mp-blue); outline-offset: 2px; }
+#conta-raiz .ct-ob-estnum { color: var(--warn-ink); font-style: italic; }
+#conta-raiz .ct-ob-tabla td small { display: block; font-size: .76rem; color: var(--mp-ink-3); font-style: normal; }
+#conta-raiz .ct-ob-tabla td.r small { font-family: var(--font); }
+#conta-raiz .ct-ob-tabla tr.ct-ob-detalle td.ct-ob-c1 { padding-left: 1.1rem; }
+#conta-raiz .ct-ob-tabla tr.ct-ob-est td { background: var(--warn-bg); }
+#conta-raiz .ct-ob-tabla tr.ct-ob-total td, #conta-raiz .ct-ob-tabla tr.ct-ob-margen td { font-weight: 800; border-top: 2px solid var(--cu); }
+#conta-raiz .ct-ob-tabla tr.ct-ob-ingreso td { color: var(--ok-ink); }
+#conta-raiz .ct-ob-tabla tr.ct-ob-deshecho td { color: var(--mp-ink-3); }
+#conta-raiz .ct-ob-sincc { text-align: left; padding: .6rem 0 .2rem; }
+#conta-raiz .ct-ob-reps, #conta-raiz .ct-ob-pers { display: grid; gap: .7rem; }
+@media (min-width: 900px) { #conta-raiz .ct-ob-pers { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; } }
+#conta-raiz .ct-rep.deshecho { opacity: .85; }
+#conta-raiz .ct-rep.suelto { border-left: 4px solid var(--bad); }
+#conta-raiz .ct-rep .ct-nota, #conta-raiz .ct-per .ct-nota { overflow-wrap: anywhere; }
+#conta-raiz .ct-rep-det summary { cursor: pointer; font-weight: 700; color: var(--cu-dark); padding: .2rem 0; }
+/* las tablas del costo por obra: apiladas hasta el iPad (en la computadora, con su cabecera) */
+@media (max-width: 1023px) {
+  #conta-raiz .ct-tabla.ct-ob-tabla { min-width: 0; }
+  #conta-raiz .ct-tabla.ct-ob-tabla thead { display: none; }
+  #conta-raiz .ct-tabla.ct-ob-tabla tbody tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .3rem .6rem; padding: .6rem 0; border-bottom: 1px solid var(--mp-line); }
+  #conta-raiz .ct-tabla.ct-ob-tabla tbody tr td { display: block; border: 0; padding: 0; min-width: 0; overflow-wrap: anywhere; }
+  #conta-raiz .ct-tabla.ct-ob-tabla tbody tr.ct-ob-est { padding-left: .5rem; padding-right: .5rem; border-radius: 10px; }
+  #conta-raiz .ct-tabla.ct-ob-tabla tbody tr.ct-ob-est td, #conta-raiz .ct-tabla.ct-ob-tabla tbody tr.ct-ob-total td, #conta-raiz .ct-tabla.ct-ob-tabla tbody tr.ct-ob-margen td { border-top: 0; }
+  #conta-raiz .ct-tabla.ct-ob-tabla tbody tr.ct-ob-est { background: var(--warn-bg); }
+  #conta-raiz .ct-tabla.ct-ob-tabla tbody tr.ct-ob-total, #conta-raiz .ct-tabla.ct-ob-tabla tbody tr.ct-ob-margen { border-top: 2px solid var(--cu); }
+  #conta-raiz .ct-tabla.ct-ob-tabla td.ct-ob-c1 { grid-column: 1 / -1; padding-left: 0; }
+  #conta-raiz .ct-tabla.ct-ob-tabla tr.ct-ob-detalle td.ct-ob-c1 { padding-left: 0; }
+  #conta-raiz .ct-tabla.ct-ob-tabla td[data-col]::before { content: attr(data-col); display: block; font-size: .68rem; letter-spacing: .05em; text-transform: uppercase; color: var(--mp-ink-2); font-weight: 700; font-family: var(--font); font-style: normal; }
+  #conta-raiz .ct-tabla.ct-ob-tabla td.r { text-align: left; }
+}
+@media (min-width: 700px) and (max-width: 1023px) { #conta-raiz .ct-tabla.ct-ob-tabla tbody tr { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+#conta-raiz .ct-ob-tabla-env { overflow-x: auto; min-width: 0; }
