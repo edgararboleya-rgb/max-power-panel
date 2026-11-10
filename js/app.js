@@ -915,13 +915,15 @@ function esFalloDeRed(err) {
       // «Vence esta semana» y «Horas» son del dueño
       $("inicio-vence").innerHTML = "";
       $("inicio-horas").hidden = true;
-      // v281: la bandeja «La IA pregunta» es solo del dueño
+      // v281: la bandeja «La IA pregunta» es solo del dueño (y «QuickBooks: mira esto», que desde el 9-nov va en su caja)
       if ($("inicio-dudas")) { $("inicio-dudas").innerHTML = ""; $("inicio-dudas").hidden = true; }
+      if ($("inicio-qb")) { $("inicio-qb").innerHTML = ""; $("inicio-qb").hidden = true; }
       pintarInicioCampo();
       return;
     }
-    // El orden de la pantalla lo da index.html: próximos días, urgentes, avisos,
-    // vence esta semana, horas, inspecciones y después los resúmenes de siempre
+    // El orden de la pantalla lo da index.html, por zonas (9-nov): «Para atender» (urgentes, dudas, avisos),
+    // «Agenda» (próximos días, vence esta semana, inspecciones), «Equipo» (horas), «Dinero» (las losas,
+    // QuickBooks y el resumen del mes) y «Empresa» (licencia y seguros, la guía del código, los avisos)
     pintarInicioHoy();
     pintarInicioUrgentes();
     pintarInicioDudas();
@@ -2112,9 +2114,18 @@ function esFalloDeRed(err) {
     const deQB = usuario && usuario.finanzas ? ((state && state.qbPendientes) || []) : [];
     // Sin dudas no hay lista que tener abierta
     if (!dudas.length) { dudasAbierto = false; dudaDesplegada = null; }
-    if (!dudas.length && !deQB.length) { caja.innerHTML = ""; caja.hidden = true; return; }
+    // 9-nov: «QuickBooks: mira esto» va en su propia caja, con el dinero (zona «Dinero» del inicio);
+    // si la página fuera una vieja sin esa caja, sale donde salía: debajo de las dudas
+    const cajaQB = $("inicio-qb");
+    const qbAqui = deQB.length && !cajaQB ? tarjetaQB(deQB) : "";
+    if (cajaQB) {
+      cajaQB.hidden = !deQB.length;
+      cajaQB.innerHTML = deQB.length ? tarjetaQB(deQB) : "";
+      cajaQB.querySelectorAll(".qb-visto-btn").forEach(btn => btn.addEventListener("click", () => resolverCobroQB(btn)));
+    }
+    if (!dudas.length && !qbAqui) { caja.innerHTML = ""; caja.hidden = true; return; }
     caja.hidden = false;
-    caja.innerHTML = (dudas.length ? htmlBarraDudas(dudas) : "") + (deQB.length ? tarjetaQB(deQB) : "");
+    caja.innerHTML = (dudas.length ? htmlBarraDudas(dudas) : "") + qbAqui;
     engancharBarraDudas();
     caja.querySelectorAll(".qb-visto-btn").forEach(btn => btn.addEventListener("click", () => resolverCobroQB(btn)));
   }
@@ -7794,9 +7805,11 @@ function esFalloDeRed(err) {
       // 9-nov: la barra sale abierta (solo el dueño la tiene; al campo no le pinta nada)
       if (usuario.finanzas) { dudasAbierto = true; pintarInicioDudas(); }
       setTimeout(() => {
-        const b = $("inicio-dudas");
-        const dest = b && !b.hidden ? ($("bandeja-ia") || b) : $("inicio-hoy");
+        const b = $("inicio-dudas"), q = $("inicio-qb");
+        // sin dudas ni nada de QuickBooks que enseñar, la pantalla se queda arriba del todo (el inicio entero a la vista)
+        const dest = b && !b.hidden ? ($("bandeja-ia") || b) : (q && !q.hidden ? q : null);
         if (dest && dest.scrollIntoView) dest.scrollIntoView({ block: "start" });
+        else window.scrollTo(0, 0);
       }, 300);
       return true;
     }
