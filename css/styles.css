@@ -3053,9 +3053,8 @@ button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);col
   .cal-dia .cal-marca { display: none; }
   .cal-dia .cal-marca-roja { position: absolute; top: 4px; right: 5px; }
 
-  /* inicio: lo del día a la izquierda, las obras a la derecha */
+  /* inicio: por zonas (9-nov); en una columna hasta que caben dos de verdad (abajo, desde 1280px) */
   #vista-home { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 1.6rem; align-items: start; }
-  .home-col { min-width: 0; }
   #vista-home .categorias { grid-template-columns: minmax(0, 1fr); }
   #vista-home .resumen { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
@@ -3086,7 +3085,8 @@ button.alc-linea:hover{background:var(--mp-navy);border-color:var(--mp-navy);col
 }
 /* inicio a dos columnas solo cuando caben de verdad (con el menú lateral, desde 1280px) */
 @media (min-width: 1280px) {
-  #vista-home { grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); }
+  #vista-home { grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr);
+    grid-template-areas: "atender atender" "agenda dinero" "equipo equipo" "empresa empresa"; }
 }
 @media (min-width: 1500px) {
   html { font-size: 16px; }   /* 1rem = 16 px, como siempre (la escala de letra va aparte) */
@@ -3843,7 +3843,7 @@ small { font-size: max(var(--fs-small), 0.8em); }
 /* ---- La pantalla «Hoy» ---- */
 /* En el inicio del campo la barra de títulos («Categorías») sobra: el saludo es el título */
 body.rol-campo[data-vista="home"] .toolbar { display: none; }
-.home-izq .hoy-card, .home-izq .hoy-ahora { margin-bottom: 16px; }
+.home-zona .hoy-card, .home-zona .hoy-ahora { margin-bottom: 16px; }
 .hoy-titulo { margin: 0 0 4px; }
 .hoy-vacio { margin: 6px 0; font-size: var(--fs-5); color: var(--mp-ink-2); }
 
@@ -4115,6 +4115,65 @@ body:has(#toast:not([hidden])) .fab, body:has(#sin-senal:not([hidden])) .fab { d
 .btn.horas-reportar { height: var(--tap); min-height: var(--tap); width: auto; padding: 0 14px; font-size: var(--fs-4); flex: none; }
 .horas-parte + .horas-parte { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--mp-sky-2); }
 .horas-sub { margin: 4px 0 6px; font-size: var(--fs-6); font-weight: 700; color: var(--mp-ink); }
+
+/* ---- El inicio por ZONAS (9-nov): cada cosa en su sitio y con su título ----
+   «Para atender» (urgentes, dudas, avisos) · «Agenda» (próximos días, lo que vence, inspecciones) · «Equipo» (horas) ·
+   «Dinero» (las losas, QuickBooks, el mes) · «Empresa» (licencia y seguros, la guía del código, los avisos del teléfono).
+   En el teléfono van una debajo de otra; en la computadora (desde 1280px) la rejilla de #vista-home las coloca. */
+.home-zona { min-width: 0; margin: 0 0 1.15rem; }
+.zona-titulo { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; font-size: var(--fs-6); font-weight: 800; line-height: 1.2; color: var(--mp-navy); }
+.zona-titulo::before { content: ""; flex: none; width: 4px; height: 1.05em; border-radius: 2px; background: var(--cu-dark); }
+.zona-titulo::after { content: ""; flex: 1; height: 1px; background: var(--mp-line); }
+/* una zona sin nada dentro no enseña su título (antes de cargar, o si no hay nada que atender) */
+.home-zona:not(:has(section:not(:empty):not([hidden]))) { display: none; }
+.zona-dinero .resumen { margin: 0 0 0.9rem; }
+/* la tarjeta de la agenda empieza a la misma distancia de su título que las demás (y a la altura de las losas de «Dinero») */
+.zona-agenda #inicio-hoy .agenda { margin-top: 0; }
+.resumen:empty { display: none; }
+@media (min-width: 1280px) {
+  .zona-atender { grid-area: atender; }
+  .zona-agenda { grid-area: agenda; }
+  .zona-dinero { grid-area: dinero; }
+  .zona-equipo { grid-area: equipo; }
+  .zona-empresa { grid-area: empresa; }
+  /* «Para atender»: las barras en una fila; la que se abre baja y ocupa todo el ancho */
+  .zona-fila { display: flex; flex-wrap: wrap; align-items: stretch; gap: 0 14px; }
+  .zona-fila > section { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
+  .zona-fila > section:empty, .zona-fila > section[hidden] { display: none; }
+  .zona-fila > section:has(.resumen-btn[aria-expanded="true"]) { flex: 1 1 100%; order: 9; display: block; }
+  .zona-fila .dudas-barra { flex: 1; display: flex; flex-direction: column; }
+  .zona-fila .resumen-btn[aria-expanded="false"], .zona-fila .resumen-calmo { flex: 1; }
+  .zona-fila > section:has(.resumen-btn[aria-expanded="true"]) .dudas-barra { display: block; }
+  /* «Equipo»: el reporte de cada uno a la izquierda y la semana a la derecha */
+  .zona-equipo .horas-card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 32px; align-items: start; }
+  .zona-equipo .horas-card[hidden] { display: none; }
+  .zona-equipo .horas-cab { grid-column: 1 / -1; }
+  .zona-equipo #inicio-equipo:empty { display: none; }
+  .zona-equipo #inicio-equipo:empty + #inicio-semana { grid-column: 1 / -1; }
+  .zona-equipo #inicio-semana .horas-parte { margin-top: 0; padding-top: 0; border-top: 0; }
+  /* «Empresa»: las tarjetas en dos columnas parejas */
+  /* (dentro de las columnas el margen de la última tarjeta se pierde: el hueco con lo de abajo se da desde fuera) */
+  .zona-empresa #inicio-empresa { column-count: 2; column-gap: 1.6rem; margin-bottom: 0.9rem; }
+  .zona-empresa #inicio-empresa > .inicio-card { break-inside: avoid; }
+}
+@media (min-width: 1500px) { .zona-empresa #inicio-empresa { column-gap: 2rem; } }
+/* El equipo de campo: su «Hoy» de siempre, sin títulos de zona y en su orden (la tarjeta del día primero) */
+body.rol-campo #vista-home { display: flex; flex-direction: column; align-items: stretch; }
+body.rol-campo #vista-home .home-zona, body.rol-campo #vista-home .zona-fila { display: contents; }
+body.rol-campo #vista-home .zona-titulo { display: none; }
+body.rol-campo #vista-home > .home-zona > section, body.rol-campo #vista-home .zona-fila > section { min-width: 0; }
+body.rol-campo #inicio-hoy { order: 1; }
+body.rol-campo #inicio-urgentes { order: 2; }
+body.rol-campo #inicio-dudas { order: 3; }
+body.rol-campo #inicio-avisos { order: 4; }
+body.rol-campo #inicio-vence { order: 5; }
+body.rol-campo #inicio-horas { order: 6; }
+body.rol-campo #inicio-inspecciones { order: 7; }
+body.rol-campo #resumen, body.rol-campo #inicio-qb { order: 8; }
+body.rol-campo #inicio-mes { order: 9; }
+body.rol-campo #inicio-empresa { order: 10; }
+body.rol-campo #inicio-notif { order: 11; }
+@media (min-width: 1024px) { body.rol-campo #vista-home { max-width: 860px; } }
 
 /* ---- Proyectos: la fila de chips que se desliza de lado ---- */
 .chipb { min-height: var(--tap); padding: 0 14px; border-radius: 10px; border: 1px solid var(--mp-line); background: var(--mp-white); box-sizing: border-box;

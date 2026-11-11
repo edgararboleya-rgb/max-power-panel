@@ -5071,6 +5071,8 @@
     [/^Cerré (.+?) y dejé sus pendientes abiertos\.$/, "I closed $1 and left its to-dos open."],
     [/^(.+?) ya estaba cerrada\.$/, "$1 was already closed."]
   );
+  // 9-nov: el inicio por zonas; los títulos de cada zona («Equipo» y «Dinero» ya estaban arriba)
+  Object.assign(D, { "Para atender": "Needs attention", "Agenda": "Schedule", "Empresa": "Company" });
   // 9-nov: la bandeja ya no se contesta en la app: una barra cerrada («N dudas»), filas para leer y «Copiar para Claude».
   // (Las frases de los botones de contestar de arriba se quedan: la prueba de inglés todavía las lleva en sus muestras.)
   Object.assign(D, {
