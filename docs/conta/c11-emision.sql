@@ -32,7 +32,14 @@
 --          emision_serie (la única función SECURITY DEFINER de la capa:
 --          contadores es del libro y la API no la escribe; un trigger no se
 --          puede llamar suelto). Una emisión que falla no gasta número: se
---          deshace con todo lo demás;
+--          deshace con todo lo demás. Un número que ya lleva OTRA fila de
+--          facturas —de la obra que sea, hecha fuera de la app— no se da
+--          dos veces: la serie lo SALTA y da el siguiente; la emisión lo
+--          dice («saltados») y el control 20 lo sabe (en facturas no queda
+--          hueco: ese número lo lleva aquella). La factura de la retención,
+--          que no es una fila de facturas, lleva SU serie
+--          (MXP-R-2027-0001, «retenciones-2027»): así cada número de la
+--          serie de las facturas ES una fila de facturas;
 --       3. crea la fila de facturas YA EMITIDA (num, fecha de hoy en Miami,
 --          monto, retencion EN DÓLARES, hito_id, a_contratista), como nacen
 --          hoy las de QuickBooks: es el camino que c3 ya contabiliza. El
@@ -58,15 +65,21 @@
 --       sus frenos: no con cobros aplicados, no la de la apertura…), deja
 --       el documento marcado y devuelve el hito a «pendiente» para hacer la
 --       buena, con número nuevo. Lo que el cliente recibió no se corrige.
+--       CON UN PAGO POR CUENTA DE BANCO EN CAMINO NO SE ANULA (MX008): ese
+--       dinero llegaría a una factura anulada, los cobros en línea lo
+--       dejarían de anticipo de la obra, y la factura buena seguiría
+--       debiendo entera aunque el cliente ya pagó. Se espera a que el pago
+--       entre o falle.
 --   (D) EL PDF Y EL ENVÍO. La función de borde nueva (supabase/functions/
 --       facturas, del repo) pinta el PDF con el contenido congelado, lo
 --       sube al bucket PRIVADO «facturas» (lo crea este archivo: solo el
---       dueño sube y lee; nadie borra ni pisa) y lo registra aquí
---       (fn_emision_pdf: ruta, sha256, bytes; la base comprueba que el
---       archivo está en Storage y que se pintó de ESE contenido); manda el
---       correo por Resend y registra el envío (fn_emision_envio: a quién,
---       cuándo, el id de Resend; un reenvío es otra fila; «en mano» también
---       se apunta). Todo se añade, nada se edita.
+--       dueño, con su código del teléfono, sube y lee; nadie borra ni pisa)
+--       y lo registra aquí (fn_emision_pdf: ruta, sha256, bytes; la base
+--       comprueba que el archivo está en Storage y que se pintó de ESE
+--       contenido); manda el correo por Resend y registra el envío
+--       (fn_emision_envio: a quién, cuándo, el id de Resend; un reenvío es
+--       otra fila; «en mano» también se apunta). Todo se añade, nada se
+--       edita.
 --   (E) EL CORTE Y LOS CONTROLES. v_emision_estado dice si hoy se factura
 --       por la app o por QuickBooks (la pantalla desvía el 🧾 con eso);
 --       v_emision_control vigila (ver más abajo), y el cierre del mes (c9)
@@ -113,15 +126,22 @@
 --     NO es ingreso nuevo: el ingreso entero ya entró con cada factura, y lo
 --     retenido está por cobrar en 1120, factura por factura. Por eso NO es
 --     una fila de facturas (c3 le pondría ingreso otra vez) y no lleva
---     asiento: es un documento con su número de la misma serie que lista lo
---     retenido de cada factura de la obra, tal como está abierto en el
---     libro ese día, y lo reclama. Cuando el cliente paga, el cobro va
---     contra la retención de cada factura (es_retencion, por
---     fn_cobro_registrar o por el banco), que es como c3 la cobra. Si se
---     emitió mal, se anula (queda marcada, con su motivo; no hay asiento
---     que deshacer). Y mientras esté viva, las facturas que reclama no se
---     anulan desde aquí (primero se anula ella); si una se anula desde
---     Contabilidad, el control 75 lo avisa.
+--     asiento: es un documento que lista lo retenido de cada factura de la
+--     obra, tal como está abierto en el libro ese día, y lo reclama. LLEVA
+--     SU PROPIA SERIE (MXP-R-2027-0001: el formato de los ajustes con una R
+--     detrás del prefijo; contador «retenciones-AAAA»), no la de las
+--     facturas: si tomara número de aquella, la serie de las facturas
+--     tendría un número sin fila de facturas (un hueco para quien mire
+--     facturas), y el cliente pagaría «la factura MXP-2027-0007», que ni el
+--     banco ni los cobros en línea conocen. Su contenido lleva
+--     «referencias»: los números de las facturas cuya retención reclama,
+--     que es contra lo que se cobra y lo que el cliente cita al pagar.
+--     Cuando paga, el cobro va contra la retención de cada factura
+--     (es_retencion, por fn_cobro_registrar o por el banco), que es como c3
+--     la cobra. Si se emitió mal, se anula (queda marcada, con su motivo;
+--     no hay asiento que deshacer). Y mientras esté viva, las facturas que
+--     reclama no se anulan desde aquí (primero se anula ella); si una se
+--     anula desde Contabilidad, el control 75 lo avisa.
 --   · UN CONFLICTO QUE SE VIGILA: la función qb escribe en ese mismo campo
 --     un PORCENTAJE en las obras por contratista. Hoy todas valen 0. Aquí
 --     siempre se escribe el monto; el control 70 avisa de toda factura que
@@ -129,10 +149,11 @@
 --     lee estimados.retencion_pct como por ciento en el mensaje con que
 --     pide la retención (solo el mensaje: no postea nada con eso).
 --
--- EL PAGO EN LÍNEA (decisión de Edgar del 11-nov: ACH por Stripe como pago
--- principal; la tarjeta, solo diciéndole al cliente el porcentaje que
--- cuesta). p1 está sellado y no se toca. Lo que se comprobó en el banco
--- (c11-pruebas, la 30, la 31 y la 32):
+-- EL PAGO EN LÍNEA (decisiones de Edgar: 11-nov, ACH por Stripe como pago
+-- principal; 12-nov, SOLO ACH POR AHORA: la tarjeta queda apagada hasta una
+-- versión futura de los cobros en línea que contabilice el recargo como
+-- ingreso; eso no se hace aquí). p1 está sellado y no se toca. Lo que se
+-- comprobó en el banco (c11-pruebas, la 30, la 31 y la 32):
 --   · EL ENLACE DE UNA FACTURA DE LA APP ES EL DE p1, SOLO POR CUENTA DE
 --     BANCO. p1 arma un Payment Link de un solo uso por lo que el LIBRO
 --     dice que la factura debe en 1110 (fn_stripe_enlace_preparar: sus
@@ -162,17 +183,25 @@
 --     que declare tarjeta. El cobro entra al libro por p1 como siempre:
 --     Dr 1020 / Cr 1110 de la factura al cobrar; la comisión de Stripe, a
 --     6130 al depositar (sus asientos P1 y P2). Nada de eso es de aquí.
---   · LA TARJETA QUEDA APAGADA, y no por gusto. Un pago con recargo cobra
---     más de lo que la factura debe en el libro, y p1 reparte un cobro así:
---     primero lo que la factura debe en 1110, después su retención, y LO
---     QUE SOBRA LO DEJA DE ANTICIPO DE LA OBRA (un saldo a favor del
---     cliente) con el aviso «¿pagó dos veces?». El recargo no es un
---     anticipo: es un ingreso (o una recuperación de la comisión). p1 no
---     tiene dónde decirle a qué cuenta va, y arreglarlo a mano cada vez
---     sería rodearlo. Hasta que p1 sepa de recargos (una versión suya, con
---     su prueba), fn_emision_config no deja poner tarjeta_pct: el campo y
---     la cuenta del recargo existen, vacíos; la factura no menciona la
---     tarjeta, y el control 80 avisa si una factura de la app se cobró con
+--   · LA TARJETA QUEDA APAGADA (decisión del 12-nov-2026: por ahora solo
+--     ACH), y no por gusto. Un pago con recargo cobra más de lo que la
+--     factura debe en el libro, y p1 reparte un cobro así: primero lo que
+--     la factura debe en 1110, después su retención, y LO QUE SOBRA LO DEJA
+--     DE ANTICIPO DE LA OBRA (un saldo a favor del cliente) con el aviso
+--     «¿pagó dos veces?». El recargo no es un anticipo: es un ingreso (o
+--     una recuperación de la comisión). p1 no tiene dónde decirle a qué
+--     cuenta va, y arreglarlo a mano cada vez sería rodearlo. En llano, con
+--     las palabras de Edgar: LA TARJETA SE ENCIENDE CUANDO EL SISTEMA DE
+--     COBROS SEPA REGISTRAR EL RECARGO. Lo dice UN solo texto
+--     (fn_emision_tarjeta_texto) en los ajustes (tarjeta_texto), en el pago
+--     de cada factura (tarjeta.por_que), en el control 80 y en
+--     v_emision_estado (tarjeta_texto): la pantalla lo enseña tal cual.
+--     Mientras, fn_emision_config no deja poner tarjeta_pct (MX008, con ese
+--     texto): el campo y la cuenta del recargo existen, vacíos; LA FACTURA
+--     NO LE OFRECE TARJETA AL CLIENTE (su contenido dice
+--     pago_en_linea.tarjeta = false y, si hay pago en línea, una línea en
+--     inglés para el cliente: «Online payment is by bank account (ACH)
+--     only.»), y el control 80 avisa si una factura de la app se cobró con
 --     tarjeta (el enlace no era solo de cuenta de banco). Las reglas de las
 --     marcas de tarjeta sobre recargos (aviso, tope, débito) y a qué cuenta
 --     va el recargo NO se afirman aquí: se confirman con Stripe y con el
@@ -218,7 +247,16 @@
 --     factura).
 --   · s1 (el código del teléfono) exige aal2 en cada petición de la API si
 --     el dueño tiene factor: vale igual para la pantalla y para la función
---     de borde, que llama con la sesión de Edgar. Esta capa no añade nada.
+--     de borde, que llama con la sesión de Edgar. PERO STORAGE NO PASA POR
+--     ESA GUARDA: con solo la contraseña (una sesión aal1) se leían y se
+--     subían los PDF del bucket «facturas». Por eso las policies del bucket
+--     piden aquí el código del teléfono («(select auth.jwt() ->> 'aal') =
+--     'aal2'», lo mismo que ya exige la función de borde), y hay además dos
+--     candados «restrictive» de lectura y de subida: aunque otra policy
+--     permisiva de Storage dejara pasar, en este bucket solo entra el dueño
+--     con su código; la llave pública, nunca. El control 90 mira que esos
+--     candados sigan puestos. (El bucket «cierres» de c9 tiene el mismo
+--     hueco: se cierra en c9, con el bloque que acompaña a esta capa.)
 --
 -- LOS ERRORES CON NOMBRE (conta.js los enseña tal cual; ninguno es nuevo):
 --   MX000  falta algo que este archivo da por hecho: no se aplica nada
@@ -232,16 +270,21 @@
 --          más, fuera de rango)
 --   MX008  no procede, con el porqué y qué hacer: todavía no es el corte;
 --          faltan los datos de la empresa o el «How to pay»; el hito ya se
---          facturó o ya se cobró; el borrador ya se emitió; la factura ya
---          estaba anulada; el libro no la aceptó (dice qué falta); la
---          tarjeta está apagada; un PDF con un enlace que no es el suyo; un
---          envío sin PDF. Y los MX008 de c3 al anular, tal cual
+--          facturó (aquí, o la ficha lo tiene como facturado) o ya se cobró;
+--          el borrador ya se emitió; la factura ya
+--          estaba anulada; anularla con un pago por cuenta de banco en
+--          camino, o con cobros aplicados; el libro no la aceptó (dice qué
+--          falta); la tarjeta está apagada; un PDF con un enlace que no es
+--          el suyo; un envío sin PDF; poner el corte después de una factura
+--          viva. Y los demás MX008 de c3 al anular, tal cual
 --   MX011  YA NO ES LO QUE VISTE: el «visto» que manda la pantalla no es el
---          del borrador de hoy (lo cambió otra pestaña, o cambiaron los
---          ajustes que salen en la factura), o cambió algo de fuera desde
---          que se armó (el hito, el contrato, la retención, a quién se
---          factura la obra), o el PDF no se pintó del contenido congelado:
---          no se hace nada; se refresca y se vuelve a pedir
+--          del borrador de hoy (lo cambió otra pestaña; cambiaron los
+--          ajustes que salen en la factura; entró o se anuló otra factura
+--          de la obra —cambian su ordinal y lo facturado antes—; o se miró
+--          un día y se emite otro), o cambió algo de fuera desde que se
+--          armó (el hito, el contrato, la retención, a quién se factura la
+--          obra), o el PDF no se pintó del contenido congelado: no se hace
+--          nada; se refresca y se vuelve a pedir
 --   22023  entrada mal formada: falta un dato, una clave desconocida, una
 --          ruta fuera de su carpeta, un archivo que no está en Storage
 --   22007  una fecha que no viene como AAAA-MM-DD
@@ -252,25 +295,39 @@
 -- LOS CONTROLES (v_emision_control: orden, cuadre, nivel, ok, detalle):
 --   10 cuadre  cada factura emitida por la app es su asiento de c3, al
 --              centavo (1110 + 1120 = monto; 1120 = retención; el ingreso)
---   20 cuadre  la serie de cada año, sin huecos ni repetidos, y el contador
---              en su último número
+--   20 cuadre  las series de cada año (facturas y facturas de la
+--              retención), sin huecos ni repetidos, y cada contador en su
+--              último número (un número saltado vale solo si lo lleva una
+--              factura hecha fuera de la app)
 --   30 cuadre  cada documento emitido sigue sellado (su huella, sus líneas,
 --              sus totales) y su fila de facturas dice lo mismo
 --   40 cuadre  ningún hito con dos facturas vivas si alguna salió de la app
+--              (el hito de una factura de la app es el de su documento)
+--   42 aviso   cada factura de hito de la app sigue enlazada a su hito en
+--              la ficha (su fila de facturas no cambió de hito; su hito no
+--              se borró quedando hitos por facturar en la obra)
+--   44 aviso   en ninguna obra lo facturado por hitos pasa de lo que suman
+--              sus hitos (un hito borrado, vuelto a crear y facturado otra
+--              vez)
 --   50 aviso   cada PDF registrado sigue en Storage y mide lo mismo
 --   60 aviso   ninguna factura emitida hace más de N días sin PDF
 --   62 aviso   ni sin mandar (o entregar en mano)
+--   64 aviso   ninguna factura de la app cobrada entera en el libro y sin
+--              marcar como cobrada en la ficha de su obra
 --   70 aviso   ninguna factura que no salió de la app con una retención que
 --              parece un porcentaje (el conflicto con qb)
---   72 aviso   ninguna factura fechada desde el corte que no salió de la app
+--   72 aviso   ninguna factura fechada desde el corte que no salió de la
+--              app; ninguna de fuera con un número de la serie
 --   75 aviso   ninguna anulada en el libro y sin cerrar aquí; ninguna
 --              factura de la retención que reclame lo de una anulada; ningún
 --              hito con dos facturas vivas de antes
 --   80 aviso   el pago en línea como se decidió (ningún cobro con tarjeta de
---              una factura de la app; el porcentaje de tarjeta, vacío)
+--              una factura de la app; el porcentaje de tarjeta, vacío;
+--              ninguna anulada con un pago en camino)
 --   85 aviso   los datos de la empresa y el «How to pay», puestos cuando se
 --              acerca el corte
---   90 cuadre  las protecciones de la capa
+--   90 cuadre  las protecciones de la capa, y los candados del bucket
+--              «facturas» (solo el dueño, con su código del teléfono)
 --   Un «cuadre» en rojo es algo roto (detiene el cierre del mes: fila 172);
 --   un «aviso», algo que mirar (fila 173). Ningún cuadre mira facturas de
 --   antes de la app: no se enciende con la historia.
@@ -289,6 +346,29 @@
 --   · UN HITO, UNA FACTURA VIVA, y un solo borrador por hito (tocar 🧾 dos
 --     veces abre el mismo). La factura de un hito lleva UNA línea por el
 --     monto del hito; si el hito cambia, el borrador lo dice y se refresca.
+--     EL HITO DE UNA FACTURA DE LA APP ES EL DE SU DOCUMENTO
+--     (emision_documentos.hito_id, que no cambia), no solo el que diga hoy
+--     su fila de facturas: si alguien vacía o cambia facturas.hito_id, o
+--     borra el hito (la llave de la app deja facturas.hito_id en nulo), ese
+--     hito sigue facturado para el borrador, para la emisión, para la lista
+--     de hitos de la obra y para el control 40
+--     (fn_emision_factura_de_hito). Y SOLO SE FACTURA UN HITO PENDIENTE (la
+--     regla de la app publicada: su 🧾 solo sale en un hito pendiente): uno
+--     que la ficha ya tiene como «facturado» y que aquí no tiene ninguna
+--     factura viva (se facturó en QuickBooks a mano, o su factura se anotó
+--     sin su hito: en producción hay facturas de antes sin hito) NO se
+--     factura otra vez: el borrador no se abre y uno ya abierto no se emite
+--     (MX008, con qué hacer: si de verdad falta facturarlo, se pone antes en
+--     pendiente), y la lista de hitos de la obra no lo ofrece. Antes solo se
+--     frenaba el «cobrado»: el «facturado» sin factura enlazada salía con su
+--     botón de facturar y sin un solo aviso (el ingreso, dos veces). Un hito
+--     borrado y vuelto a crear es
+--     OTRO hito: eso no se puede frenar (no hay con qué saber que es el
+--     mismo), pero se dice: el borrador avisa si en la obra hay una factura
+--     viva de un hito borrado, y si con esta factura lo facturado pasa del
+--     contrato; el control 42 nombra la factura del hito borrado mientras a
+--     la obra le queden hitos por facturar; y el control 44 dice si lo
+--     facturado por hitos pasa de lo que suman los hitos de la obra.
 --     (Lo que esta capa NO puede impedir: que durante el paralelo la función
 --     qb facture por su lado un hito que la app está emitiendo en ese mismo
 --     instante. No se le pone un índice a facturas, que es de la app: si
@@ -300,15 +380,46 @@
 --   · EL «VISTO»: fn_emision_emitir pide la huella de lo que la pantalla
 --     enseñó (como el «Así es» de c10). Una factura emitida no tiene vuelta
 --     sin nota de crédito: se emite lo que Edgar vio, no lo que otra
---     pestaña dejó.
+--     pestaña dejó. La huella es de la VISTA PREVIA ENTERA (el documento,
+--     sus líneas, los ajustes que salen en la factura, la fecha, el
+--     ordinal, el contrato y lo facturado antes en la obra, lo retenido a
+--     la fecha): lo que se congela es lo que se vio, salvo el número, y la
+--     emisión lo comprueba otra vez al sellar. Dos emisiones a la vez en la
+--     MISMA obra van de una en una (un candado por obra): la segunda ya no
+--     es lo que se vio —cambiaron su ordinal y lo facturado antes— y para
+--     con MX011; se refresca y se emite.
 --   · TODO LO QUE VE EL CLIENTE VA EN INGLÉS. La base no sabe inglés: mira
 --     si un texto PARECE español (palabras y signos) y entonces no emite
 --     hasta que Edgar lo cambie o confirme que está bien así
 --     (idioma_revisado). Es una ayuda, no una garantía.
---   · LO QUE NO HACE: no marca «pagada» (eso lo llevan hoy la casilla y,
---     desde f15, el libro); no manda correos ni habla con Stripe (la
---     función de borde); no propone las líneas T&M desde las horas (se
---     escriben); no hace catálogo, SOV ni paquete del GC (Fase 18).
+--   · EL CORTE TIENE VUELTA ATRÁS mientras no haya una factura viva: solo
+--     las emitidas y SIN ANULAR impiden poner el corte después de su fecha
+--     (una emisión de prueba, anulada, no lo clava). Y mover el corte de
+--     forma que cambie HOY por dónde se factura lo dice: fn_emision_config
+--     devuelve un «aviso» (desde hoy el 🧾 ya no manda a QuickBooks; o
+--     vuelve a mandar). v_emision_estado.corte_hasta es el último día en
+--     que se puede poner.
+--   · LO QUE NO HACE: no marca «pagada» (la casilla de la ficha es de
+--     Edgar; desde el corte nadie la marca sola —antes lo hacía
+--     QuickBooks—: el control 64 dice qué facturas de la app ya están
+--     cobradas enteras en el libro y siguen sin marcar; quién la lleva
+--     desde el corte está por decidir con la otra sesión, f15); no manda
+--     correos ni habla con Stripe (la función de borde); no propone las
+--     líneas T&M desde las horas (se escriben); no hace catálogo, SOV ni
+--     paquete del GC (Fase 18).
+--     NO HAY NOTA DE CRÉDITO PARCIAL (c3 la dejó «para la facturación de
+--     f10»: queda fuera de esta versión): una factura con cobros aplicados
+--     no se anula entera —primero se anula ese cobro en el libro—, y
+--     rebajar una parte de una factura ya cobrada es un asiento del CPA.
+--     Y NO LLEVA LA RETENCIÓN POR PAGAR A SUBCONTRATISTAS (la cuenta 2020):
+--     no es de la emisión, y hoy no la lleva ninguna capa. Para llevarla
+--     hacen falta dos cosas que no son de aquí: un campo en la app que diga
+--     cuánto se le retiene a un sub en cada cuenta suya (y cuándo se le
+--     suelta), y una versión del puente de gastos de c3 (sellado) que lo
+--     asiente (Dr el costo / Cr 2020 al retener; Dr 2020 / Cr el banco al
+--     pagar). Hasta entonces, lo retenido a un sub entra al costo el día
+--     que se le paga, y el avance del WIP de esa obra va corto en ese
+--     monto.
 --
 -- Lo que este archivo NO toca: c1..c10, s1, p1, es_dueno(), docs/sql, el
 -- libro (ni una línea: el asiento es de c3), la función qb, correo ni
@@ -338,12 +449,17 @@
 -- Lo que llama la pantalla y la función de borde (RPC, como el dueño; las
 -- que escriben, con POST). Montos: numeric(14,2) en dólares; en el
 -- contenido congelado, como texto de dos decimales («1111.11»):
---   fn_emision_config(p jsonb)                       los ajustes
+--   fn_emision_config(p jsonb)                       los ajustes (devuelve
+--                                                    además tarjeta_texto y,
+--                                                    si toca, aviso)
 --   fn_emision_obra(p jsonb)                         la retención de una obra
 --   fn_emision_borrador(p jsonb)                     crear, cambiar o refrescar un borrador
 --   fn_emision_documento(p_documento uuid)           solo lee: el documento entero
 --   fn_emision_descartar(p_documento uuid)           tirar un borrador
 --   fn_emision_emitir(p_documento uuid, p_visto text, p_opciones jsonb)
+--                                                    (devuelve además
+--                                                    saltados y aviso si la
+--                                                    serie saltó un número)
 --   fn_emision_anular(p_documento uuid, p_motivo text, p_fecha date)
 --   fn_emision_pago(p_documento uuid)                solo lee: qué va a Stripe y qué enlace hay
 --   fn_emision_pdf(p_documento uuid, p_archivo jsonb)
@@ -375,14 +491,14 @@ declare
                                     'emision_pdfs', 'emision_envios'];
   c_vistas constant text[] := array['v_emision_estado', 'v_emision_documentos', 'v_emision_obras', 'v_emision_control'];
   c_fn     constant text[] := array['fn_emision_precondiciones', 'fn_emision_exigir_dueno', 'fn_emision_ve', 'fn_emision_guarda',
-                                    'fn_emision_numerar', 'fn_emision_usd', 'fn_emision_dia', 'fn_emision_numero',
-                                    'fn_emision_tarjeta_lista', 'fn_emision_parece_espanol', 'fn_emision_cuenta', 'fn_emision_saldo',
-                                    'fn_emision_retencion', 'fn_emision_retencion_de', 'fn_emision_destinatario', 'fn_emision_enlaces',
-                                    'fn_emision_pagos', 'fn_emision_storage', 'fn_emision_retenido', 'fn_emision_revisar',
-                                    'fn_emision_visto', 'fn_emision_contenido', 'fn_emision_documento', 'fn_emision_borrador',
-                                    'fn_emision_descartar', 'fn_emision_obra', 'fn_emision_config', 'fn_emision_emitir',
-                                    'fn_emision_anular', 'fn_emision_pago', 'fn_emision_pdf', 'fn_emision_envio',
-                                    'fn_emision_control', 'fn_emision_pegado'];
+                                    'fn_emision_numerar', 'fn_emision_usd', 'fn_emision_dia', 'fn_emision_numero', 'fn_emision_formato',
+                                    'fn_emision_tarjeta_lista', 'fn_emision_tarjeta_texto', 'fn_emision_parece_espanol',
+                                    'fn_emision_cuenta', 'fn_emision_saldo', 'fn_emision_retencion', 'fn_emision_retencion_de',
+                                    'fn_emision_destinatario', 'fn_emision_enlaces', 'fn_emision_pagos', 'fn_emision_storage',
+                                    'fn_emision_retenido', 'fn_emision_factura_de_hito', 'fn_emision_revisar', 'fn_emision_visto',
+                                    'fn_emision_contenido', 'fn_emision_documento', 'fn_emision_borrador', 'fn_emision_descartar',
+                                    'fn_emision_obra', 'fn_emision_config', 'fn_emision_emitir', 'fn_emision_anular', 'fn_emision_pago',
+                                    'fn_emision_pdf', 'fn_emision_envio', 'fn_emision_control', 'fn_emision_pegado'];
 begin
   foreach v_x in array array['es_dueno()', 'fn_desde_editor()', 'fn_fecha_miami(timestamptz)', 'fn_libro_version()',
                              'fn_verificar_cadena()', 'fn_factura_anular(bigint,text,date)'] loop
@@ -665,7 +781,6 @@ create table if not exists public.emision_documentos (
                                                  and (anulado_el is null or estado = 'emitida')
                                                  and (nota_credito is null or anulado_el is not null)),
   constraint emision_documentos_numero_unico  unique (numero),
-  constraint emision_documentos_serie_unica   unique (anio, secuencia),
   constraint emision_documentos_factura_unica unique (factura_id)
 );
 create index if not exists emision_documentos_obra_idx on public.emision_documentos (proyecto_id);
@@ -676,8 +791,15 @@ create unique index if not exists emision_documentos_hito_borrador on public.emi
   where estado = 'borrador' and hito_id is not null;
 create unique index if not exists emision_documentos_ret_borrador on public.emision_documentos (proyecto_id)
   where estado = 'borrador' and forma = 'retencion';
-comment on table public.emision_documentos is 'c11: cada factura que se prepara o se emite desde la app: su estado (borrador o emitida), su forma (hito, porcentaje del contrato, tm = horas y material, o retencion = la que cobra lo retenido, sin fila de facturas ni asiento), la obra, el hito y si es el de depósito, el porcentaje y el contrato que usó de base, a quién se factura (cliente: {nombre, atencion, direccion, correo}; a_contratista), las notas al cliente, la retención (retencion_pct y de dónde salió: obra, estimado, borrador o ninguna), el monto (la suma de sus líneas), lo retenido de esta factura en dólares (retencion) y lo que se paga ahora (a_pagar = monto − retencion). Emitida: su número de la serie del año (numero, anio, secuencia), su fecha y su vencimiento, su fila de facturas y el asiento que puso c3, el contenido congelado de lo que recibe el cliente (contenido) y su huella sha256, quién y cuándo. Anulada: cuándo, quién, por qué y su nota de crédito. Un borrador se cambia con fn_emision_borrador; emitido, no cambia.';
-comment on column public.emision_documentos.contenido is 'El documento entero como lo recibe el cliente, congelado al emitir: {v, forma, numero, fecha, vence, terminos, empresa, cliente, obra, lineas, totales, contrato, como_pagar, pago_en_linea, notas…}. Los montos van como texto de dos decimales. El PDF se pinta de aquí y de nada más.';
+-- (cada serie, sus números: las facturas llevan la del año y la factura de la
+-- retención la suya, así que el consecutivo es único DENTRO de su serie. La
+-- restricción «un consecutivo por año» de una versión anterior de este
+-- archivo se quita; al volver a pegar no cambia nada)
+alter table public.emision_documentos drop constraint if exists emision_documentos_serie_unica;
+create unique index if not exists emision_documentos_serie_idx on public.emision_documentos ((forma = 'retencion'), anio, secuencia)
+  where anio is not null;
+comment on table public.emision_documentos is 'c11: cada factura que se prepara o se emite desde la app: su estado (borrador o emitida), su forma (hito, porcentaje del contrato, tm = horas y material, o retencion = la que cobra lo retenido, sin fila de facturas ni asiento), la obra, el hito y si es el de depósito, el porcentaje y el contrato que usó de base, a quién se factura (cliente: {nombre, atencion, direccion, correo}; a_contratista), las notas al cliente, la retención (retencion_pct y de dónde salió: obra, estimado, borrador o ninguna), el monto (la suma de sus líneas), lo retenido de esta factura en dólares (retencion) y lo que se paga ahora (a_pagar = monto − retencion). Emitida: su número de su serie del año (numero, anio, secuencia: las facturas, MXP-2027-0001; la factura de la retención, la suya, MXP-R-2027-0001), su fecha y su vencimiento, su fila de facturas y el asiento que puso c3, el contenido congelado de lo que recibe el cliente (contenido) y su huella sha256, quién y cuándo. Anulada: cuándo, quién, por qué y su nota de crédito. Un borrador se cambia con fn_emision_borrador; emitido, no cambia.';
+comment on column public.emision_documentos.contenido is 'El documento entero como lo recibe el cliente, congelado al emitir: {v, forma, numero, fecha, vence, terminos, empresa, cliente, obra, lineas, totales, contrato, como_pagar, pago_en_linea, referencias (la de la retención: las facturas cuya retención reclama), notas…}. Los montos van como texto de dos decimales. El PDF se pinta de aquí y de nada más.';
 comment on column public.emision_documentos.huella is 'sha256 (hexadecimal) del texto de contenido: lo que ata cada PDF al documento congelado.';
 
 -- Las líneas de un documento: descripción (en inglés), cantidad, precio e
@@ -707,21 +829,40 @@ create table if not exists public.emision_lineas (
 );
 comment on table public.emision_lineas is 'c11: las líneas de cada documento, en su orden (n): el tipo (hito, porcentaje, horas, material, otro, o retencion = lo retenido de una factura), la descripción y el detalle (en inglés: lo ve el cliente), la cantidad, la unidad, el precio y el importe (= round(cantidad × precio, 2)); ref dice de qué sale (el hito, la factura retenida). El monto del documento es la suma de sus importes. Solo cambian mientras el documento es un borrador.';
 
--- La serie: un número por fila, por año, seguido y sin huecos. El número lo
--- pone el trigger de esta tabla desde contadores («facturas-AAAA»).
+-- Las series: un número por fila, por serie y año, seguido y sin huecos. Son
+-- DOS: «facturas» (MXP-2027-0001: toda fila de facturas que emite la app
+-- lleva uno, y cada número de esa serie es una fila de facturas) y
+-- «retenciones» (MXP-R-2027-0001: la factura de la retención, que no es una
+-- fila de facturas ni tiene asiento, lleva la suya para no dejar huecos en
+-- la de las facturas). El número lo pone el trigger de esta tabla desde
+-- contadores («facturas-AAAA» y «retenciones-AAAA»).
 create table if not exists public.emision_serie (
+  serie         text         not null default 'facturas',
   anio          int          not null,
   secuencia     int          not null,
   numero        text         not null,
   documento_id  uuid         not null references public.emision_documentos (id),
   creado_el     timestamptz  not null default now(),
   creado_por    uuid,
-  constraint emision_serie_pk        primary key (anio, secuencia),
+  constraint emision_serie_pk        primary key (serie, anio, secuencia),
+  constraint emision_serie_cual      check (serie in ('facturas', 'retenciones')),
   constraint emision_serie_anio      check (anio between 2026 and 2999 and secuencia >= 1),
   constraint emision_serie_numero    unique (numero),
   constraint emision_serie_documento unique (documento_id)
 );
-comment on table public.emision_serie is 'c11: la serie de las facturas: una fila por número, por año (anio, secuencia), con su número escrito (MXP-2027-0001) y el documento que lo lleva. El consecutivo lo pone el trigger de esta tabla desde contadores (serie facturas-AAAA) en la misma transacción que emite: una emisión que falla no gasta número. Solo se añade.';
+-- (la columna «serie» y su llave, también sobre una tabla de una versión
+-- anterior de este archivo; al volver a pegar no cambia nada)
+do $$
+begin
+  if not exists (select 1 from information_schema.columns
+                  where table_schema = 'public' and table_name = 'emision_serie' and column_name = 'serie') then
+    alter table public.emision_serie add column serie text not null default 'facturas';
+    alter table public.emision_serie add constraint emision_serie_cual check (serie in ('facturas', 'retenciones'));
+    alter table public.emision_serie drop constraint emision_serie_pk;
+    alter table public.emision_serie add constraint emision_serie_pk primary key (serie, anio, secuencia);
+  end if;
+end $$;
+comment on table public.emision_serie is 'c11: las series de la facturación: una fila por número, por serie (facturas: MXP-2027-0001, la de las facturas, que son filas de facturas; retenciones: MXP-R-2027-0001, la de la factura de la retención, que no lo es) y año (anio, secuencia), con su número escrito y el documento que lo lleva. El consecutivo lo pone el trigger de esta tabla desde contadores (series facturas-AAAA y retenciones-AAAA) en la misma transacción que emite: una emisión que falla no gasta número. Solo se añade.';
 
 -- Cada PDF de un documento emitido (n: 1, 2, 3…; el último es el que vale):
 -- dónde está en el bucket «facturas», su sha256, su tamaño, de qué
@@ -870,11 +1011,18 @@ revoke execute on function public.fn_emision_guarda() from public, anon, authent
 comment on function public.fn_emision_guarda() is 'c11: la guarda de las tablas de c11: se escriben solo con la marca de la transacción (mx_emision.escribe) que ponen sus funciones; un documento emitido no se borra ni cambia (solo se le apunta su anulación, una vez); sus líneas cambian solo en borrador; la serie, los PDF y los envíos solo se añaden; nada se trunca.';
 
 -- EL NÚMERO: el trigger de emision_serie. Toma el contador del año en la
--- tabla contadores de c2 (serie «facturas-AAAA»: su fila, con «for
--- update»: dos emisiones a la vez se esperan), lo sube de uno en uno —la
--- guarda de contadores no deja otra cosa— y escribe el consecutivo y el
--- número. Todo dentro de la transacción que emite: si algo falla después,
--- el contador vuelve atrás con lo demás y no queda hueco.
+-- tabla contadores de c2 (serie «facturas-AAAA», o «retenciones-AAAA» para
+-- la factura de la retención: su fila, con «for update»: dos emisiones a la
+-- vez se esperan), lo sube de uno en uno —la guarda de contadores no deja
+-- otra cosa— y escribe el consecutivo y el número. Todo dentro de la
+-- transacción que emite: si algo falla después, el contador vuelve atrás
+-- con lo demás y no queda hueco.
+-- UN NÚMERO QUE YA LLEVA OTRA FACTURA NO SE DA DOS VECES: si una fila de
+-- facturas —de la obra que sea, hecha fuera de la app— ya tiene escrito el
+-- número que toca, la serie lo SALTA y da el siguiente (en facturas no queda
+-- hueco: ese número lo lleva aquella; la emisión lo dice y el control 20 lo
+-- sabe). Antes solo se miraba la misma obra: en otra salían dos facturas con
+-- el mismo número, y en la misma la emisión se quedaba trancada.
 -- SECURITY DEFINER porque contadores es del libro: la API solo la lee
 -- (c2, «permisos»). Es la única de la capa. Devuelve «trigger»: Postgres no
 -- deja llamarla suelta; y sin EXECUTE para nadie. Solo corre al insertar en
@@ -890,21 +1038,37 @@ declare
   v_serie text;
   v_n     bigint;
   v_fmt   text;
+  v_num   text;
+  v_i     int := 0;
 begin
   if new.anio is null or new.anio < 2026 or new.anio > 2999 then
     raise exception using errcode = '22023', message = format('El año de la serie no vale (%s).', coalesce(new.anio::text, 'ninguno'));
   end if;
-  v_serie := 'facturas-' || new.anio;
-  insert into contadores (serie, ultimo) values (v_serie, 0) on conflict (serie) do nothing;
-  select c.ultimo + 1 into v_n from contadores c where c.serie = v_serie for update;
-  update contadores set ultimo = v_n where serie = v_serie;
+  if new.serie is null or new.serie not in ('facturas', 'retenciones') then
+    raise exception using errcode = '22023', message = format('La serie no vale (%s).', coalesce(new.serie, 'ninguna'));
+  end if;
+  v_serie := new.serie || '-' || new.anio;
   select c.serie_formato into v_fmt from emision_config c where c.id = 1;
+  v_fmt := fn_emision_formato(coalesce(v_fmt, 'MXP-AAAA-NNNN'), new.serie);
+  insert into contadores (serie, ultimo) values (v_serie, 0) on conflict (serie) do nothing;
+  loop
+    select c.ultimo + 1 into v_n from contadores c where c.serie = v_serie for update;
+    update contadores set ultimo = v_n where serie = v_serie;
+    v_num := fn_emision_numero(v_fmt, new.anio, v_n::int);
+    exit when not exists (select 1 from facturas f where f.num = v_num);
+    v_i := v_i + 1;
+    if v_i >= 50 then
+      raise exception using errcode = 'MX008',
+        message = format('No se emitió nada: los 50 números siguientes de la serie (hasta el %s) ya los llevan facturas hechas fuera de la '
+                         'app. Eso no es normal: avisa antes de seguir.', v_num);
+    end if;
+  end loop;
   new.secuencia := v_n;
-  new.numero    := fn_emision_numero(coalesce(v_fmt, 'MXP-AAAA-NNNN'), new.anio, v_n::int);
+  new.numero    := v_num;
   return new;
 end $$;
 revoke execute on function public.fn_emision_numerar() from public, anon, authenticated, service_role;
-comment on function public.fn_emision_numerar() is 'c11: el trigger que da el número de la serie (emision_serie): sube de uno en uno el contador del año en contadores (c2, serie facturas-AAAA) y escribe el consecutivo y el número con el formato de los ajustes. SECURITY DEFINER (contadores es del libro) y, por ser de trigger, nadie la puede llamar suelta; sin EXECUTE para nadie.';
+comment on function public.fn_emision_numerar() is 'c11: el trigger que da el número de la serie (emision_serie): sube de uno en uno el contador del año en contadores (c2: serie facturas-AAAA, o retenciones-AAAA para la factura de la retención) y escribe el consecutivo y el número con el formato de los ajustes; un número que ya lleva una fila de facturas hecha fuera de la app se salta (no se da dos veces). SECURITY DEFINER (contadores es del libro) y, por ser de trigger, nadie la puede llamar suelta; sin EXECUTE para nadie.';
 
 do $$
 declare
@@ -1038,6 +1202,35 @@ as $$ select false $$;
 revoke execute on function public.fn_emision_tarjeta_lista() from public, anon, service_role;
 grant  execute on function public.fn_emision_tarjeta_lista() to authenticated;
 comment on function public.fn_emision_tarjeta_lista() is 'c11: si el libro ya sabe registrar un pago con tarjeta con su recargo. Hoy no (p1 lo dejaría de anticipo de la obra): la tarjeta queda apagada y el porcentaje no se deja poner.';
+
+-- El formato del número de cada serie: el de los ajustes (MXP-AAAA-NNNN) para
+-- las facturas; para la factura de la retención, el mismo con una R detrás
+-- del prefijo (MXP-R-AAAA-NNNN).
+create or replace function public.fn_emision_formato(p_formato text, p_serie text) returns text
+language sql immutable
+set search_path = public, pg_temp
+as $$
+  select case when p_serie = 'retenciones' then replace(coalesce(p_formato, 'MXP-AAAA-NNNN'), '-AAAA-', '-R-AAAA-')
+              else coalesce(p_formato, 'MXP-AAAA-NNNN') end
+$$;
+revoke execute on function public.fn_emision_formato(text, text) from public, anon, service_role;
+grant  execute on function public.fn_emision_formato(text, text) to authenticated;
+comment on function public.fn_emision_formato(text, text) is 'c11: el formato del número de una serie: el de los ajustes para las facturas (MXP-AAAA-NNNN) y, para la factura de la retención, el mismo con una R detrás del prefijo (MXP-R-AAAA-NNNN).';
+
+-- POR QUÉ LA TARJETA ESTÁ APAGADA, en llano (decisión de Edgar del
+-- 12-nov-2026: por ahora solo ACH). Lo dicen los ajustes, el pago de una
+-- factura, el control y v_emision_estado: un solo texto.
+create or replace function public.fn_emision_tarjeta_texto() returns text
+language sql immutable
+set search_path = public, pg_temp
+as $$
+  select 'La tarjeta está apagada: se enciende cuando el sistema de cobros sepa registrar el recargo (hoy lo dejaría como un anticipo de '
+         'la obra, no como un ingreso). Por ahora el pago en línea es solo por cuenta de banco (ACH), y la factura no le ofrece tarjeta '
+         'al cliente.'::text
+$$;
+revoke execute on function public.fn_emision_tarjeta_texto() from public, anon, service_role;
+grant  execute on function public.fn_emision_tarjeta_texto() to authenticated;
+comment on function public.fn_emision_tarjeta_texto() is 'c11: por qué la tarjeta está apagada, en llano (decisión del 12-nov-2026: por ahora solo ACH; se enciende cuando el sistema de cobros sepa registrar el recargo). Un solo texto para los ajustes, el pago, el control y la pantalla.';
 
 -- ¿Parece español? Una ayuda, no una garantía: lo que ve el cliente va en
 -- inglés. Verdad si trae ¿ o ¡, una palabra de obra en español, o tres o
@@ -1240,6 +1433,34 @@ revoke execute on function public.fn_emision_retenido(text) from public, anon, s
 grant  execute on function public.fn_emision_retenido(text) to authenticated;
 comment on function public.fn_emision_retenido(text) is 'c11: lo retenido de una obra que falta reclamar: por cada factura emitida, lo que su partida tiene abierto en la retención por cobrar (1120) en el libro, si no lo reclama ya una factura de retención viva. Son las líneas de la factura de la retención.';
 
+-- LA FACTURA VIVA DE UN HITO, la sepa quien la sepa: la fila de facturas que
+-- apunta a ese hito (facturas.hito_id) O la que la app emitió de ese hito
+-- (emision_documentos.hito_id, que no cambia aunque alguien vacíe o cambie
+-- facturas.hito_id, o se borre el hito: la llave de facturas lo deja en
+-- nulo). Con una, el hito no se factura otra vez: lo miran el borrador, la
+-- emisión, la anulación (para soltar el hito), la lista de hitos de la obra
+-- y el control. A quien no es el dueño no le devuelve nada.
+create or replace function public.fn_emision_factura_de_hito(p_hito bigint)
+returns table (factura_id bigint, num text, fecha date, documento_id uuid)
+language sql stable
+set search_path = public, pg_temp
+as $$
+  select f.id, f.num, f.fecha, d.id
+    from public.facturas f
+    left join public.emision_documentos d on d.factura_id = f.id
+   where f.hito_id = p_hito and f.estado <> 'anulada' and (select public.fn_emision_ve())
+  union
+  select f.id, f.num, f.fecha, d.id
+    from public.emision_documentos d
+    join public.facturas f on f.id = d.factura_id
+   where d.hito_id = p_hito and d.estado = 'emitida' and d.anulado_el is null and f.estado <> 'anulada'
+     and (select public.fn_emision_ve())
+   order by 1
+$$;
+revoke execute on function public.fn_emision_factura_de_hito(bigint) from public, anon, service_role;
+grant  execute on function public.fn_emision_factura_de_hito(bigint) to authenticated;
+comment on function public.fn_emision_factura_de_hito(bigint) is 'c11: las facturas vivas de un hito: las filas de facturas que apuntan a él (hito_id) y las que la app emitió de él (el documento guarda su hito aunque la fila de facturas deje de apuntarlo, o el hito se borre). Con una, ese hito no se factura otra vez. A quien no es el dueño no le devuelve nada.';
+
 
 -- ---------------------------------------------------------------------
 -- 5. EL BORRADOR: lo que lo frena o lo avisa, su huella («visto»), el
@@ -1362,17 +1583,44 @@ begin
           format('El hito «%s» ya está marcado como cobrado: no se factura otra vez. Si de verdad hay que facturarlo, ponlo antes en '
                  'pendiente.', h.titulo)));
       end if;
-      select format('%s del %s', f.num, fn_emision_dia(f.fecha)) into v_txt
-        from facturas f where f.hito_id = d.hito_id and f.estado <> 'anulada' order by f.id limit 1;
+      -- (la factura viva de ese hito, la sepa quien la sepa: la fila de facturas o el documento que salió de aquí)
+      select format('%s del %s', x.num, fn_emision_dia(x.fecha)) into v_txt
+        from fn_emision_factura_de_hito(d.hito_id) x order by x.factura_id limit 1;
       if v_txt is not null then
         v := v || jsonb_build_array(jsonb_build_object('codigo', 'hito_facturado', 'frena', true, 'texto',
           format('El hito «%s» ya se facturó: factura %s. No se hace otra; si aquella está mal, se anula con su nota de crédito.',
                  h.titulo, v_txt)));
+      elsif h.estado = 'facturado' then
+        -- (la ficha lo tiene como FACTURADO y aquí no hay ninguna factura viva suya: se facturó fuera de la app —QuickBooks a
+        -- mano— o su factura se anotó sin su hito. Solo se factura un hito pendiente, como en la app)
+        v := v || jsonb_build_array(jsonb_build_object('codigo', 'hito_marcado_facturado', 'frena', true, 'texto',
+          format('El hito «%s» ya está marcado como facturado en la ficha de la obra y aquí no hay ninguna factura suya (¿se facturó '
+                 'en QuickBooks, o su factura se anotó sin su hito?): no se factura otra vez. Si de verdad falta facturarlo, ponlo '
+                 'antes en pendiente.', h.titulo)));
       end if;
       if round(coalesce(h.monto, 0), 2) is distinct from d.monto or coalesce(h.es_deposito, false) is distinct from d.es_deposito then
         v := v || jsonb_build_array(jsonb_build_object('codigo', 'hito_cambio', 'frena', true, 'texto',
           format('El hito «%s» ahora vale %s y este borrador dice %s: refresca el borrador y vuelve a mirarlo.', h.titulo,
                  fn_emision_usd(round(coalesce(h.monto, 0), 2)), fn_emision_usd(d.monto))));
+      end if;
+      -- Con esta, lo facturado de la obra pasa de su contrato: avisa y deja (puede faltar una orden de cambio en la ficha).
+      select round(fp.contrato, 2) into v_x from finanzas_proyecto fp where fp.proyecto_id = d.proyecto_id;
+      select coalesce(sum(round(f.monto, 2)), 0) into v_y from facturas f where f.proyecto_id = d.proyecto_id and f.estado = 'emitida';
+      if v_x is not null and v_y + d.monto > v_x then
+        v := v || jsonb_build_array(jsonb_build_object('codigo', 'pasa_del_contrato', 'frena', false, 'texto',
+          format('Con esta factura lo facturado de la obra (%s) pasa del contrato (%s): mira que este hito no esté ya facturado con otro '
+                 'nombre, o que no falte una orden de cambio en el contrato de la obra.', fn_emision_usd(v_y + d.monto), fn_emision_usd(v_x))));
+      end if;
+      -- Una factura viva de esta obra salió de un hito que después se BORRÓ: este puede ser aquel vuelto a crear.
+      select string_agg(format('%s (%s)', ed.numero, fn_emision_usd(ed.monto)), ', ' order by ed.numero) into v_txt
+        from emision_documentos ed
+        join facturas f on f.id = ed.factura_id
+       where ed.proyecto_id = d.proyecto_id and ed.forma = 'hito' and ed.estado = 'emitida' and ed.anulado_el is null
+         and f.estado <> 'anulada' and not exists (select 1 from hitos x where x.id = ed.hito_id);
+      if v_txt is not null then
+        v := v || jsonb_build_array(jsonb_build_object('codigo', 'hito_borrado_facturado', 'frena', false, 'texto',
+          format('En esta obra, la factura %s salió de un hito que después se borró. Mira que este hito no sea aquel vuelto a crear: se '
+                 'facturaría dos veces. Si lo es, descarta este borrador.', v_txt)));
       end if;
     end if;
   elsif d.forma = 'porcentaje' then
@@ -1417,6 +1665,11 @@ begin
     v := v || jsonb_build_array(jsonb_build_object('codigo', 'contratista_sin_retencion', 'frena', false, 'texto',
       'Es a un contratista y va sin retención: si él retiene un porcentaje, ponlo en la obra antes de emitir.'));
   end if;
+  if d.forma = 'hito' and d.es_deposito and d.retencion > 0 then
+    v := v || jsonb_build_array(jsonb_build_object('codigo', 'deposito_con_retencion', 'frena', false, 'texto',
+      format('Es el depósito y lleva retención (%s %%: se le retienen %s y paga ahora %s). Si del depósito no se retiene, pon en 0 la '
+             'retención de este borrador.', trim_scale(d.retencion_pct), fn_emision_usd(d.retencion), fn_emision_usd(d.a_pagar))));
+  end if;
   -- El idioma (una ayuda): lo que ve el cliente va en inglés
   select string_agg(distinct x.que, ', ') into v_txt
     from (select 'una línea' as que from emision_lineas l
@@ -1433,31 +1686,7 @@ begin
 end $$;
 revoke execute on function public.fn_emision_revisar(uuid) from public, anon, service_role;
 grant  execute on function public.fn_emision_revisar(uuid) to authenticated;
-comment on function public.fn_emision_revisar(uuid) is 'c11: lo que hay que mirar antes de emitir un borrador: una lista de {codigo, texto, frena}: el corte, los datos de la empresa y el «How to pay», a quién se factura (y si la obra cambió de destinatario), la regla de ingreso de la obra, que sume, el hito (ya cobrado, ya facturado, cambió), el contrato, la retención, un texto que parece español… Solo lee.';
-
--- LA HUELLA DE UN BORRADOR («visto»): md5 de lo que la pantalla enseña y
--- la emisión congelaría: el documento, sus líneas y los ajustes que salen
--- en la factura. fn_emision_emitir la pide: si no es la de hoy, MX011.
-create or replace function public.fn_emision_visto(p_documento uuid) returns text
-language sql stable
-set search_path = public, pg_temp
-as $$
-  select md5(jsonb_build_object(
-           'd', jsonb_build_object('id', d.id, 'forma', d.forma, 'proyecto_id', d.proyecto_id, 'hito_id', d.hito_id,
-                                   'es_deposito', d.es_deposito, 'porcentaje', d.porcentaje, 'base', d.base,
-                                   'a_contratista', d.a_contratista, 'cliente', d.cliente, 'notas', d.notas,
-                                   'retencion_pct', d.retencion_pct, 'monto', d.monto, 'retencion', d.retencion, 'a_pagar', d.a_pagar),
-           'l', (select coalesce(jsonb_agg(jsonb_build_array(l.n, l.tipo, l.descripcion, l.detalle, l.cantidad, l.unidad, l.precio,
-                                                             l.importe, l.ref) order by l.n), '[]'::jsonb)
-                   from public.emision_lineas l where l.documento_id = d.id),
-           'c', (select jsonb_build_array(c.empresa, c.como_pagar, c.terminos_dias, c.terminos_texto, c.ach)
-                   from public.emision_config c where c.id = 1))::text)
-    from public.emision_documentos d
-   where d.id = p_documento
-$$;
-revoke execute on function public.fn_emision_visto(uuid) from public, anon, service_role;
-grant  execute on function public.fn_emision_visto(uuid) to authenticated;
-comment on function public.fn_emision_visto(uuid) is 'c11: la huella de un borrador (md5 del documento, sus líneas y los ajustes que salen en la factura): lo que la pantalla enseñó. fn_emision_emitir la pide.';
+comment on function public.fn_emision_revisar(uuid) is 'c11: lo que hay que mirar antes de emitir un borrador: una lista de {codigo, texto, frena}: el corte, los datos de la empresa y el «How to pay», a quién se factura (y si la obra cambió de destinatario), la regla de ingreso de la obra, que sume, el hito (ya cobrado, ya facturado —por su fila de facturas o por el documento que salió de él—, o marcado como facturado en la ficha sin factura aquí: solo se factura un hito pendiente; cambió; en la obra hay una factura viva de un hito que se borró), el contrato (y si con esta factura lo facturado pasa de él), la retención (y si es el depósito y lleva retención), un texto que parece español… Solo lee.';
 
 -- EL CONTENIDO: el documento entero como lo recibe el cliente. Para un
 -- borrador es la vista previa (sin número: p_numero nulo); al emitir es lo
@@ -1483,6 +1712,7 @@ declare
   v_antes  numeric;
   v_n      int;
   v_con    numeric;
+  v_ach    boolean;
   v_fecha  date := coalesce(p_fecha, fn_fecha_miami(now()));
 begin
   if not fn_emision_ve() then
@@ -1493,6 +1723,7 @@ begin
     return null;
   end if;
   select * into cfg from emision_config where id = 1;
+  v_ach := cfg.ach and d.forma <> 'retencion' and to_regclass('public.stripe_enlaces') is not null;
   select to_jsonb(p) into v_pr from proyectos p where p.id = d.proyecto_id;
   if d.hito_id is not null then
     select jsonb_build_object('id', x.id, 'titulo', x.titulo, 'es_deposito', coalesce(x.es_deposito, false)) into v_h
@@ -1546,13 +1777,40 @@ begin
                             'facturado_con_esta', (v_antes + case when d.forma = 'retencion' then 0 else d.monto end)::numeric(14,2)::text,
                             'pct', round((v_antes + case when d.forma = 'retencion' then 0 else d.monto end) * 100 / v_con, 1)::text) end,
     'como_pagar', nullif(btrim(cfg.como_pagar), ''),
-    'pago_en_linea', jsonb_build_object('ach', cfg.ach and d.forma <> 'retencion' and to_regclass('public.stripe_enlaces') is not null,
-                                        'tarjeta', false),
+    -- (el pago en línea: solo por cuenta de banco; la tarjeta no se le ofrece al cliente. «texto» es lo que la factura le
+    -- dice, en inglés, cuando hay pago en línea)
+    'pago_en_linea', jsonb_build_object('ach', v_ach, 'tarjeta', false,
+                                        'texto', case when v_ach then 'Online payment is by bank account (ACH) only.' end),
+    -- (la factura de la retención no es una factura del libro: lo que el cliente cita al pagar son los números de las
+    -- facturas cuya retención reclama)
+    'referencias', case when d.forma = 'retencion'
+                        then (select jsonb_agg(l.ref->>'numero' order by l.n)
+                                from emision_lineas l where l.documento_id = d.id and l.ref->>'numero' is not null) end,
     'notas', d.notas));
 end $$;
 revoke execute on function public.fn_emision_contenido(uuid, text, date, bigint) from public, anon, service_role;
 grant  execute on function public.fn_emision_contenido(uuid, text, date, bigint) to authenticated;
-comment on function public.fn_emision_contenido(uuid, text, date, bigint) is 'c11: el documento entero como lo recibe el cliente: {v, forma, numero, fecha, vence, terminos, empresa, cliente, a_contratista, obra, hito, ordinal, lineas, totales, contrato, como_pagar, pago_en_linea, notas}, con los montos como texto de dos decimales. Para un borrador es la vista previa (sin número); al emitir es lo que se congela. Solo lee.';
+comment on function public.fn_emision_contenido(uuid, text, date, bigint) is 'c11: el documento entero como lo recibe el cliente: {v, forma, numero, fecha, vence, terminos, empresa, cliente, a_contratista, obra, hito, ordinal, lineas, totales, contrato, como_pagar, pago_en_linea: {ach, tarjeta: false, texto}, referencias (la de la retención), notas}, con los montos como texto de dos decimales. Para un borrador es la vista previa (sin número); al emitir es lo que se congela. Solo lee.';
+
+-- LA HUELLA DE UN BORRADOR («visto»): md5 de TODO lo que la pantalla enseña
+-- y la emisión congelaría: la vista previa entera (fn_emision_contenido sin
+-- número: el documento, sus líneas, los ajustes que salen en la factura, la
+-- fecha de hoy, el ordinal, el contrato y lo facturado antes en la obra, lo
+-- retenido a la fecha). fn_emision_emitir la pide: si no es la de hoy
+-- —cambió el borrador, cambiaron los ajustes, entró otra factura de la obra
+-- entre medias, o se miró ayer y se emite hoy—, MX011. Lo que se congela es
+-- lo que se vio, salvo el número.
+create or replace function public.fn_emision_visto(p_documento uuid) returns text
+language sql stable
+set search_path = public, pg_temp
+as $$
+  select md5(p_documento::text || x.c::text)
+    from (select public.fn_emision_contenido(p_documento, null, null, null) as c) x
+   where x.c is not null
+$$;
+revoke execute on function public.fn_emision_visto(uuid) from public, anon, service_role;
+grant  execute on function public.fn_emision_visto(uuid) to authenticated;
+comment on function public.fn_emision_visto(uuid) is 'c11: la huella de un borrador (md5 de su vista previa entera: el documento, sus líneas, los ajustes que salen en la factura, la fecha, el ordinal, el contrato y lo facturado antes en la obra, lo retenido a la fecha): lo que la pantalla enseñó y lo que se congelaría, salvo el número. fn_emision_emitir la pide.';
 
 -- EL DOCUMENTO ENTERO PARA LA PANTALLA (un borrador o una factura
 -- emitida): {documento, lineas, y —borrador— avisos, puede_emitir,
@@ -1780,12 +2038,20 @@ begin
         message = format('El hito «%s» ya está marcado como cobrado: no se factura otra vez. Si de verdad hay que facturarlo, ponlo '
                          'antes en pendiente.', h.titulo);
     end if;
-    select format('%s del %s', f.num, fn_emision_dia(f.fecha)) into v_txt
-      from facturas f where f.hito_id = v_hito and f.estado <> 'anulada' order by f.id limit 1;
+    select format('%s del %s', x.num, fn_emision_dia(x.fecha)) into v_txt
+      from fn_emision_factura_de_hito(v_hito) x order by x.factura_id limit 1;
     if v_txt is not null then
       raise exception using errcode = 'MX008',
         message = format('El hito «%s» ya se facturó: factura %s. No se hace otra; si aquella está mal, se anula con su nota de '
                          'crédito.', h.titulo, v_txt);
+    end if;
+    -- (solo se factura un hito PENDIENTE, como en la app: el que la ficha ya tiene como facturado y aquí no tiene factura viva
+    -- se facturó fuera —QuickBooks a mano— o su factura se anotó sin su hito)
+    if h.estado = 'facturado' then
+      raise exception using errcode = 'MX008',
+        message = format('El hito «%s» ya está marcado como facturado en la ficha de la obra y aquí no hay ninguna factura suya (¿se '
+                         'facturó en QuickBooks, o su factura se anotó sin su hito?): no se factura otra vez. Si de verdad falta '
+                         'facturarlo, ponlo antes en pendiente.', h.titulo);
     end if;
     if h.monto is null or round(h.monto, 2) <= 0 then
       raise exception using errcode = 'MX005', message = format('El hito «%s» no tiene monto: ponle su monto antes de facturarlo.', h.titulo);
@@ -2009,7 +2275,7 @@ begin
 end $$;
 revoke execute on function public.fn_emision_borrador(jsonb) from public, anon, service_role;
 grant  execute on function public.fn_emision_borrador(jsonb) to authenticated;
-comment on function public.fn_emision_borrador(jsonb) is 'c11: crea, cambia o refresca un borrador de factura. p: {documento? (el que se cambia), forma (hito | porcentaje | tm | retencion), proyecto_id, hito_id, porcentaje, lineas: [{descripcion, cantidad?, precio, tipo?, unidad?, detalle?}], descripcion, detalle, retencion_pct (nulo = el de la obra), cliente: {nombre, atencion, direccion, correo} (nulo = el de la obra), notas}. El de un hito y el de la retención de una obra son uno solo (si ya hay, se abre ese). Cada llamada vuelve a leer el hito, el contrato, lo retenido y la retención de la obra: con solo «documento», refresca. Devuelve fn_emision_documento y {nuevo}. 22023, MX005, MX008. Solo el dueño.';
+comment on function public.fn_emision_borrador(jsonb) is 'c11: crea, cambia o refresca un borrador de factura. p: {documento? (el que se cambia), forma (hito | porcentaje | tm | retencion), proyecto_id, hito_id, porcentaje, lineas: [{descripcion, cantidad?, precio, tipo?, unidad?, detalle?}], descripcion, detalle, retencion_pct (nulo = el de la obra), cliente: {nombre, atencion, direccion, correo} (nulo = el de la obra), notas}. El de un hito y el de la retención de una obra son uno solo (si ya hay, se abre ese). Cada llamada vuelve a leer el hito, el contrato, lo retenido y la retención de la obra: con solo «documento», refresca. Solo se factura un hito pendiente: el ya cobrado, el ya facturado aquí y el que la ficha tiene como facturado sin factura aquí dan MX008. Devuelve fn_emision_documento y {nuevo}. 22023, MX005, MX008. Solo el dueño.';
 
 -- TIRAR UN BORRADOR (no llegó a ser factura: no deja nada).
 create or replace function public.fn_emision_descartar(p_documento uuid) returns jsonb
@@ -2046,7 +2312,9 @@ comment on function public.fn_emision_descartar(uuid) is 'c11: tira un borrador 
 -- LOS AJUSTES. p: {corte: «AAAA-MM-DD», serie_formato, terminos_dias,
 -- terminos_texto, empresa: {nombre, licencia, direccion, telefono, correo,
 -- web} (sustituye entero), como_pagar, ach, tarjeta_pct, cuenta_recargo,
--- pdf_dias}; solo cambia lo que llega. Devuelve los ajustes como quedaron.
+-- pdf_dias}; solo cambia lo que llega. Devuelve los ajustes como quedaron,
+-- con tarjeta_lista, tarjeta_texto (por qué la tarjeta está apagada) y, si
+-- mover el corte cambia HOY por dónde se factura, aviso.
 create or replace function public.fn_emision_config(p jsonb) returns jsonb
 language plpgsql
 set search_path = public, pg_temp
@@ -2062,6 +2330,9 @@ declare
   v_cta    text;
   v_k      cuentas;
   v_min    date;
+  v_antes  date;
+  v_hoy    date := fn_fecha_miami(now());
+  v_aviso  text;
   c        emision_config;
 begin
   perform fn_emision_exigir_dueno();
@@ -2089,10 +2360,25 @@ begin
     if v_corte < date '2026-10-01' then
       raise exception using errcode = 'MX008', message = 'El corte no puede ser anterior al 1-oct-2026 (el día en que empieza el libro).';
     end if;
-    select min(d.fecha) into v_min from emision_documentos d where d.estado = 'emitida';
+    -- (solo cuentan las emitidas y SIN ANULAR: una emisión de prueba, anulada, no deja el corte sin vuelta atrás)
+    select min(d.fecha) into v_min
+      from emision_documentos d
+      left join facturas f on f.id = d.factura_id
+     where d.estado = 'emitida' and d.anulado_el is null and coalesce(f.estado, 'emitida') <> 'anulada';
     if v_min is not null and v_corte > v_min then
       raise exception using errcode = 'MX008',
-        message = format('Ya hay facturas emitidas por la app desde el %s: el corte no se pone después de esa fecha.', fn_emision_dia(v_min));
+        message = format('Hay facturas emitidas por la app (y sin anular) desde el %s: el corte no se pone después de esa fecha. Si '
+                         'fueron de prueba, anúlalas primero.', fn_emision_dia(v_min));
+    end if;
+    -- Mover el corte de forma que cambie HOY por dónde se factura: se dice (no se frena).
+    select x.corte into v_antes from emision_config x where x.id = 1;
+    if v_corte <= v_hoy and v_antes > v_hoy then
+      v_aviso := format('Desde hoy el 🧾 de cada hito abre la factura aquí y ya NO manda a QuickBooks (el corte estaba en el %s). Si es '
+                        'solo para probar, vuelve a poner el corte en su día cuando termines; y si emites una de verdad, mientras '
+                        'esté viva (sin anular) el corte ya no se puede poner después de su fecha.', fn_emision_dia(v_antes));
+    elsif v_corte > v_hoy and v_antes <= v_hoy then
+      v_aviso := format('El corte queda en el %s: hasta entonces el 🧾 vuelve a mandar a QuickBooks, y aquí solo se preparan '
+                        'borradores.', fn_emision_dia(v_corte));
     end if;
   end if;
   if p ? 'serie_formato' then
@@ -2161,11 +2447,7 @@ begin
       raise exception using errcode = 'MX005', message = 'El porcentaje de la tarjeta va de más de 0 a 10, con tres decimales como mucho.';
     end if;
     if not fn_emision_tarjeta_lista() then
-      raise exception using errcode = 'MX008',
-        message = 'La tarjeta todavía no se puede encender: lo que el cliente pagara de más por el recargo, los cobros en línea lo '
-                  'dejarían como un anticipo de la obra (un saldo a su favor), no como un ingreso, y el libro quedaría mal. Queda '
-                  'apagada hasta que eso se arregle y se confirmen con Stripe y con el CPA las reglas del recargo. Mientras, el pago '
-                  'en línea es por cuenta de banco (ACH).';
+      raise exception using errcode = 'MX008', message = fn_emision_tarjeta_texto();
     end if;
   end if;
   if p ? 'cuenta_recargo' and nullif(btrim(p->>'cuenta_recargo'), '') is not null then
@@ -2198,11 +2480,12 @@ begin
    where id = 1
   returning * into c;
   perform set_config('mx_emision.escribe', '', true);
-  return to_jsonb(c) || jsonb_build_object('tarjeta_lista', fn_emision_tarjeta_lista());
+  return to_jsonb(c) || jsonb_strip_nulls(jsonb_build_object('tarjeta_lista', fn_emision_tarjeta_lista(),
+                                                             'tarjeta_texto', fn_emision_tarjeta_texto(), 'aviso', v_aviso));
 end $$;
 revoke execute on function public.fn_emision_config(jsonb) from public, anon, service_role;
 grant  execute on function public.fn_emision_config(jsonb) to authenticated;
-comment on function public.fn_emision_config(jsonb) is 'c11: cambia los ajustes de la facturación ({corte, serie_formato, terminos_dias, terminos_texto, empresa: {nombre, licencia, direccion, telefono, correo, web}, como_pagar, ach, tarjeta_pct, cuenta_recargo, pdf_dias}; solo lo que llega) y los devuelve. El corte no va antes del 1-oct-2026 ni después de la primera factura emitida; el formato no cambia a media serie; el porcentaje de la tarjeta no se deja poner mientras la tarjeta esté apagada (MX008). 22023, 22007, MX004, MX005, MX008. Solo el dueño.';
+comment on function public.fn_emision_config(jsonb) is 'c11: cambia los ajustes de la facturación ({corte, serie_formato, terminos_dias, terminos_texto, empresa: {nombre, licencia, direccion, telefono, correo, web}, como_pagar, ach, tarjeta_pct, cuenta_recargo, pdf_dias}; solo lo que llega) y los devuelve. Devuelve además tarjeta_lista, tarjeta_texto (por qué la tarjeta está apagada, en llano) y, si mover el corte cambia hoy por dónde se factura, aviso. El corte no va antes del 1-oct-2026 ni después de la primera factura emitida y sin anular; el formato no cambia a media serie; el porcentaje de la tarjeta no se deja poner mientras la tarjeta esté apagada (MX008, con ese texto). 22023, 22007, MX004, MX005, MX008. Solo el dueño.';
 
 -- LA RETENCIÓN DE UNA OBRA. p: {proyecto_id, retencion_pct (10 = 10 %; null
 -- = la del estimado enlazado o ninguna; 0 = sin retención), nota}.
@@ -2271,12 +2554,15 @@ comment on function public.fn_emision_obra(jsonb) is 'c11: fija la retención de
 --               visto): si ya no es la de hoy, MX011 y no pasa nada
 --   p_opciones  {idioma_revisado: true} = «sí, ese texto que parece español
 --               está bien así»
--- El orden de los candados: el documento, su hito (o, en la de retención,
--- las facturas de la obra), los ajustes (compartido: no cambian a media
--- emisión), el contador del año, y solo entonces el libro (los períodos y
--- la cadena los toma el puente de c3). Dos emisiones del mismo borrador, o
--- de dos borradores del mismo hito, se esperan: la segunda ve lo que dejó
--- la primera y para con MX008.
+-- El orden de los candados: el documento, su obra (un candado por obra: dos
+-- emisiones de la misma obra van de una en una; la anulación toma el
+-- mismo), su hito (o, en la de retención, las facturas de la obra), los
+-- ajustes (compartido: no cambian a media emisión), el contador del año, y
+-- solo entonces el libro (los períodos y la cadena los toma el puente de
+-- c3). Dos emisiones del mismo borrador, o de dos borradores del mismo
+-- hito, se esperan: la segunda ve lo que dejó la primera y para con MX008.
+-- Dos de la misma obra: la segunda ya no es lo que se vio (cambiaron su
+-- ordinal y lo facturado antes) y para con MX011.
 create or replace function public.fn_emision_emitir(p_documento uuid, p_visto text, p_opciones jsonb default '{}'::jsonb)
 returns jsonb
 language plpgsql
@@ -2290,6 +2576,9 @@ declare
   v_rev    jsonb;
   a        jsonb;
   v_anio   int;
+  v_serie  text;
+  v_prev   bigint;
+  v_salt   jsonb;
   v_num    text;
   v_sec    int;
   v_fid    bigint;
@@ -2301,6 +2590,7 @@ declare
   v_s2     numeric;
   v_s3     numeric;
   v_hito   text;
+  v_vista  jsonb;
   v_cont   jsonb;
   v_huella text;
 begin
@@ -2327,6 +2617,8 @@ begin
       message = format('Ese borrador ya se emitió: es la factura %s del %s%s. No se emite dos veces.', d.numero, fn_emision_dia(d.fecha),
                        case when d.anulado_el is not null then ' (anulada)' else '' end);
   end if;
+  -- (la obra: sus emisiones y sus anulaciones, de una en una. La segunda mira lo que dejó la primera)
+  perform pg_advisory_xact_lock(820261111, hashtext('obra:' || d.proyecto_id));
   if d.hito_id is not null then
     perform 1 from hitos x where x.id = d.hito_id for update;
   end if;
@@ -2337,11 +2629,13 @@ begin
   select * into cfg from emision_config where id = 1 for share;
   v_hoy := fn_fecha_miami(now());
 
-  -- 2. Es lo que Edgar vio, y nada lo frena
-  if p_visto is distinct from fn_emision_visto(d.id) then
+  -- 2. Es lo que Edgar vio (la vista previa entera: el documento, sus líneas, los ajustes, la fecha, el ordinal, lo
+  --    facturado antes y lo retenido a la fecha), y nada lo frena
+  v_vista := fn_emision_contenido(d.id, null, null, null);
+  if p_visto is null or p_visto is distinct from fn_emision_visto(d.id) then
     raise exception using errcode = 'MX011',
-      message = 'El borrador ya no es el que viste (cambió en otra pestaña, o cambiaron los ajustes de la factura): no se emitió nada. '
-                'Vuelve a mirarlo y emite otra vez.';
+      message = 'El borrador ya no es el que viste (cambió en otra pestaña, cambiaron los ajustes de la factura, entró o se anuló '
+                'otra factura de esta obra, o lo miraste otro día): no se emitió nada. Vuelve a mirarlo y emite otra vez.';
   end if;
   v_rev := fn_emision_revisar(d.id);
   for a in select value from jsonb_array_elements(v_rev) loop
@@ -2353,19 +2647,29 @@ begin
     end if;
   end loop;
 
-  -- 3. Su número: el siguiente del año, sin huecos (el trigger de la serie)
-  v_anio := extract(year from v_hoy)::int;
+  -- 3. Su número: el siguiente del año, sin huecos (el trigger de la serie). Las facturas llevan la serie del año
+  --    (MXP-AAAA-NNNN); la factura de la retención, que no es una fila de facturas, la suya (MXP-R-AAAA-NNNN): así cada
+  --    número de la serie de las facturas ES una fila de facturas.
+  v_anio  := extract(year from v_hoy)::int;
+  v_serie := case when d.forma = 'retencion' then 'retenciones' else 'facturas' end;
+  select coalesce((select c.ultimo from contadores c where c.serie = v_serie || '-' || v_anio), 0) into v_prev;
   perform set_config('mx_emision.escribe', 'emision_serie', true);
-  insert into emision_serie (anio, documento_id, creado_por) values (v_anio, d.id, auth.uid())
+  insert into emision_serie (serie, anio, documento_id, creado_por) values (v_serie, v_anio, d.id, auth.uid())
   returning numero, secuencia into v_num, v_sec;
   perform set_config('mx_emision.escribe', '', true);
+  -- (los números que la serie saltó porque ya los llevaba una factura hecha fuera de la app: se dicen)
+  if v_sec > v_prev + 1 then
+    select jsonb_agg(fn_emision_numero(fn_emision_formato(cfg.serie_formato, v_serie), v_anio, k.k) order by k.k) into v_salt
+      from generate_series(v_prev::int + 1, v_sec - 1) k(k)
+     where not exists (select 1 from emision_serie s where s.serie = v_serie and s.anio = v_anio and s.secuencia = k.k);
+  end if;
 
   -- 4. La factura, ya emitida, y su asiento (el puente de c3, adelantado)
   if d.forma <> 'retencion' then
-    if exists (select 1 from facturas f where f.proyecto_id = d.proyecto_id and f.num = v_num) then
+    -- (una red: el trigger de la serie ya saltó los números que lleva otra factura, de la obra que sea)
+    if exists (select 1 from facturas f where f.num = v_num) then
       raise exception using errcode = 'MX008',
-        message = format('Esa obra ya tiene una factura con el número %s (no salió de aquí): no se emitió nada. Avisa antes de seguir.',
-                         v_num);
+        message = format('Ya hay una factura con el número %s (no salió de aquí): no se emitió nada. Avisa antes de seguir.', v_num);
     end if;
     insert into facturas (proyecto_id, num, fecha, monto, pagada, hito_id, a_contratista, estado, retencion)
     values (d.proyecto_id, v_num, v_hoy, d.monto, false, d.hito_id, d.a_contratista, 'emitida', d.retencion)
@@ -2406,8 +2710,14 @@ begin
     select x.estado into v_hito from hitos x where x.id = d.hito_id;
   end if;
 
-  -- 6. El contenido, congelado, y el sello
+  -- 6. El contenido, congelado, y el sello. Lo que se congela ES lo que se vio, salvo el número: se comprueba (si algo de
+  --    la obra cambió entre que se miró y este punto —un cobro, el contrato—, no se emite).
   v_cont := fn_emision_contenido(d.id, v_num, v_hoy, v_fid);
+  if (v_cont - 'numero') is distinct from v_vista then
+    raise exception using errcode = 'MX011',
+      message = 'Algo de la obra cambió mientras se emitía (otra factura, un cobro, el contrato): no se emitió nada. Vuelve a mirar '
+                'el borrador y emite otra vez.';
+  end if;
   v_huella := encode(sha256(convert_to(v_cont::text, 'UTF8')), 'hex');
   perform set_config('mx_emision.escribe', 'emision_documentos', true);
   update emision_documentos
@@ -2424,21 +2734,34 @@ begin
     'tardio', case when v_fc is not null and v_fc <> v_hoy
                    then format('El mes de hoy ya estaba cerrado: el asiento entró el %s.', fn_emision_dia(v_fc)) end,
     'hito_id', d.hito_id, 'hito_estado', v_hito, 'huella', v_huella,
+    'saltados', v_salt,
+    'aviso', case when v_salt is not null
+                  then format('La serie saltó %s: ya lo(s) llevaba una factura hecha fuera de la app (un número no se da dos veces). '
+                              'El control de la facturación dice cuál.',
+                              (select string_agg(x.x, ', ') from jsonb_array_elements_text(v_salt) x(x))) end,
     'sigue', 'El PDF y el envío: la función de facturas lo pinta con este contenido, lo sube y lo registra.'));
 end $$;
 revoke execute on function public.fn_emision_emitir(uuid, text, jsonb) from public, anon, service_role;
 grant  execute on function public.fn_emision_emitir(uuid, text, jsonb) to authenticated;
-comment on function public.fn_emision_emitir(uuid, text, jsonb) is 'c11: emite un borrador, todo o nada: comprueba que es el que Edgar vio (p_visto; si no, MX011) y que nada lo frena (el corte, los datos de la empresa, el hito, la regla de ingreso…: MX008; algo que cambió: MX011); le da el siguiente número del año, sin huecos; crea la fila de facturas ya emitida, adelanta el puente de c3 y comprueba su asiento al centavo (si el libro no la acepta, MX008 con el porqué y no queda nada); mueve el hito a facturado; y congela el contenido con su huella. p_opciones: {idioma_revisado}. Devuelve {documento, numero, fecha, vence, monto, retencion, a_pagar, factura_id, asiento, hito_estado, huella}. Solo el dueño.';
+comment on function public.fn_emision_emitir(uuid, text, jsonb) is 'c11: emite un borrador, todo o nada: comprueba que es el que Edgar vio (p_visto, la huella de la vista previa entera; si no, MX011) y que nada lo frena (el corte, los datos de la empresa, el hito, la regla de ingreso…: MX008; algo que cambió: MX011); le da el siguiente número de su serie del año, sin huecos (saltando el que ya lleve una factura hecha fuera de la app: lo dice en saltados); crea la fila de facturas ya emitida, adelanta el puente de c3 y comprueba su asiento al centavo (si el libro no la acepta, MX008 con el porqué y no queda nada); mueve el hito a facturado; y congela el contenido con su huella (lo que se vio, salvo el número). Dos emisiones de la misma obra van de una en una. p_opciones: {idioma_revisado}. Devuelve {documento, numero, fecha, vence, monto, retencion, a_pagar, factura_id, asiento, hito_estado, huella, saltados?, aviso?}. Solo el dueño.';
 
 -- ANULAR una factura emitida: con su nota de crédito, por c3
 -- (fn_factura_anular: NC-AAAA-NNNN, el espejo de su asiento, y sus frenos
--- —no con cobros aplicados, no la de la apertura—, que salen tal cual).
+-- —no la de la apertura…—, que salen tal cual).
 -- Aquí: el documento queda marcado (cuándo, quién, por qué, su nota) y su
 -- hito vuelve a pendiente si no le queda otra factura viva. La de retención
 -- no tiene asiento: solo se marca. Si la factura ya se anuló desde
--- Contabilidad (c3 directo), esto termina lo de aquí. Y una factura cuya
--- retención está reclamada en una factura de la retención viva no se anula
--- (MX008): primero se anula aquella.
+-- Contabilidad (c3 directo), esto termina lo de aquí. Y NO se anula (MX008,
+-- en llano y con qué hacer):
+--   · una factura cuya retención está reclamada en una factura de la
+--     retención viva: primero se anula aquella;
+--   · una factura con un pago por cuenta de banco EMPEZADO O EN CAMINO (los
+--     cobros en línea): ese dinero llegaría a una factura anulada, quedaría
+--     de anticipo de la obra, y la factura buena seguiría debiendo entera
+--     aunque el cliente ya pagó. Se espera a que el pago entre o falle;
+--   · una factura con cobros aplicados (el freno es de c3; aquí se dice sin
+--     nombres de funciones): la nota de crédito por una parte no existe
+--     todavía (cabecera, «Lo que NO hace»).
 create or replace function public.fn_emision_anular(p_documento uuid, p_motivo text, p_fecha date default null)
 returns jsonb
 language plpgsql
@@ -2452,6 +2775,11 @@ declare
   v_ya    boolean := false;
   v_hito  text;
   v_ret   text;
+  v_np    bigint;
+  v_nec   bigint;
+  v_mp    numeric;
+  v_cob   numeric;
+  v_enl   jsonb;
 begin
   perform fn_emision_exigir_dueno();
   if coalesce(btrim(p_motivo), '') = '' then
@@ -2468,6 +2796,8 @@ begin
     raise exception using errcode = 'MX008',
       message = format('La factura %s ya estaba anulada%s.', d.numero, coalesce(' (' || d.nota_credito || ')', ''));
   end if;
+  -- (la obra, como al emitir: una emisión de la misma obra espera, y mira lo que deja esta anulación)
+  perform pg_advisory_xact_lock(820261111, hashtext('obra:' || d.proyecto_id));
   -- (el hito antes que el libro: el mismo orden que al emitir)
   if d.forma = 'hito' and d.hito_id is not null then
     perform 1 from hitos x where x.id = d.hito_id for update;
@@ -2488,14 +2818,46 @@ begin
       v_ya := true;
       select n.numero into v_nc from notas_credito n where n.anula_a = d.factura_id;
     else
+      -- UN PAGO EN LÍNEA EMPEZADO O EN CAMINO: no se anula ahora
+      select count(*), count(*) filter (where s.estado = 'en_camino'), coalesce(sum(s.monto), 0) into v_np, v_nec, v_mp
+        from fn_emision_pagos() s
+       where s.factura_id = d.factura_id and s.estado in ('iniciado', 'en_camino');
+      if v_np > 0 then
+        raise exception using errcode = 'MX008',
+          message = format('La factura %s tiene un pago por cuenta de banco %s (%s): no se anula ahora. Ese dinero llegaría a una '
+                           'factura anulada y quedaría de anticipo de la obra, y la factura buena seguiría debiendo entera aunque '
+                           'el cliente ya pagó. Espera a que el pago entre o falle (se ve en Cobros en línea): si falla, se anula; '
+                           'si entra, la factura queda cobrada.', d.numero,
+                           case when v_nec > 0 then 'en camino' else 'empezado (el cliente está verificando su cuenta de banco)' end,
+                           fn_emision_usd(v_mp));
+      end if;
+      -- CON COBROS APLICADOS no se anula entera (el freno es de c3: aquí, en llano y con qué hacer)
+      select -coalesce(sum(l.monto), 0) into v_cob
+        from asiento_lineas l
+        join asientos a on a.id = l.asiento_id
+       where l.partida_tabla = 'facturas' and l.partida_id = d.factura_id::text
+         and a.origen_tabla in ('cobros', 'aplicaciones_cobro', 'cobros_devoluciones');
+      if v_cob <> 0 then
+        raise exception using errcode = 'MX008',
+          message = format('La factura %s tiene cobros aplicados por %s: así no se anula entera, y la nota de crédito por una parte '
+                           'todavía no existe. Primero hay que anular ese cobro en el libro (hoy no hay botón: avisa y se hace); '
+                           'después se anula esta, se hace la buena y el cobro se registra otra vez contra la buena.', d.numero,
+                           fn_emision_usd(v_cob));
+      end if;
       v_res := fn_factura_anular(d.factura_id, btrim(p_motivo), p_fecha);
       v_nc := v_res->>'nota_credito';
     end if;
+    -- (su enlace de pago vivo, si lo tiene: la pantalla lo dice; la revisión de los cobros en línea lo desactiva)
+    select jsonb_build_object('id', e.enlace_id, 'url', e.url, 'estado', e.estado) into v_enl
+      from fn_emision_enlaces() e
+     where e.factura_id = d.factura_id and e.estado in ('creando', 'activo')
+     order by e.creado_el desc limit 1;
   end if;
+  -- (el hito vuelve a pendiente si no le queda otra factura viva: la que apunte a él o la que la app emitió de él)
   if d.forma = 'hito' and d.hito_id is not null then
     update hitos set estado = 'pendiente'
      where id = d.hito_id and estado = 'facturado'
-       and not exists (select 1 from facturas f where f.hito_id = d.hito_id and f.estado <> 'anulada');
+       and not exists (select 1 from fn_emision_factura_de_hito(d.hito_id));
     select x.estado into v_hito from hitos x where x.id = d.hito_id;
   end if;
   perform set_config('mx_emision.escribe', 'emision_documentos', true);
@@ -2509,11 +2871,15 @@ begin
     'ya_estaba_en_el_libro', case when v_ya then true end,
     'sin_asiento', case when d.factura_id is null then 'La factura de la retención no tiene asiento: quedó anulada y lo retenido se puede volver a reclamar.' end,
     'hito_id', d.hito_id, 'hito_estado', v_hito,
-    'sigue', 'Si el cliente ya la recibió, avísale. La buena es un borrador nuevo, con número nuevo; su enlace de pago, si tenía, hay que desactivarlo.'));
+    'enlace', v_enl,
+    'sigue', 'Si el cliente ya la recibió, avísale. La buena es un borrador nuevo, con número nuevo'
+             || case when v_enl is not null
+                     then '. Su enlace de pago sigue vivo: desactívalo en Cobros en línea (si no, lo hace su revisión automática).'
+                     else '; su enlace de pago, si tenía, hay que desactivarlo.' end));
 end $$;
 revoke execute on function public.fn_emision_anular(uuid, text, date) from public, anon, service_role;
 grant  execute on function public.fn_emision_anular(uuid, text, date) to authenticated;
-comment on function public.fn_emision_anular(uuid, text, date) is 'c11: anula una factura emitida por la app: por c3 (fn_factura_anular: su nota de crédito NC-AAAA-NNNN y el espejo de su asiento, con sus frenos, que salen tal cual), marca el documento (cuándo, quién, por qué, su nota) y devuelve su hito a pendiente si no le queda otra factura viva. La de retención, sin asiento, solo se marca. Si ya se había anulado en el libro, termina lo de aquí. Devuelve {numero, anulada, nota_credito, asiento, hito_estado}. Solo el dueño.';
+comment on function public.fn_emision_anular(uuid, text, date) is 'c11: anula una factura emitida por la app: por c3 (fn_factura_anular: su nota de crédito NC-AAAA-NNNN y el espejo de su asiento, con sus frenos), marca el documento (cuándo, quién, por qué, su nota) y devuelve su hito a pendiente si no le queda otra factura viva. La de retención, sin asiento, solo se marca. Si ya se había anulado en el libro, termina lo de aquí. No anula (MX008, en llano) una factura con un pago por cuenta de banco empezado o en camino, con cobros aplicados, o con su retención reclamada en una factura de la retención viva. Devuelve {numero, anulada, nota_credito, asiento, hito_estado, enlace?: su enlace de pago vivo}. Solo el dueño.';
 
 
 -- ---------------------------------------------------------------------
@@ -2524,7 +2890,19 @@ comment on function public.fn_emision_anular(uuid, text, date) is 'c11: anula un
 --    el envío. Aquí se comprueba y se guarda.
 -- ---------------------------------------------------------------------
 -- El bucket privado «facturas» (como «cierres» de c9): solo el dueño sube
--- y lee; nadie borra ni pisa por la API (un PDF nuevo va con otro nombre).
+-- y lee, Y SOLO CON EL CÓDIGO DEL TELÉFONO (aal2); nadie borra ni pisa por
+-- la API (un PDF nuevo va con otro nombre).
+--   · POR QUÉ aal2 AQUÍ. La guarda de s1 corta cada petición de la API de
+--     datos sin el código del teléfono, pero Storage no pasa por ahí: con
+--     solo la contraseña de Edgar se leían (y se subían) los PDF de todas las
+--     facturas. La función de borde «facturas» ya exige aal2; el bucket pide
+--     ahora lo mismo: «(select auth.jwt() ->> 'aal') = 'aal2'» en sus
+--     policies (el patrón de Supabase para exigir el segundo factor en una
+--     policy; a confirmar con un PDF de verdad en el primer despliegue).
+--   · Y DOS CANDADOS «restrictive» de lectura y de subida (como los de
+--     borrar y pisar): aunque otra policy permisiva de Storage —de otra parte
+--     de la app, sin filtro de bucket— dejara pasar, en este bucket solo
+--     entra el dueño con su código. La llave pública (anon), nunca.
 do $$
 begin
   if to_regclass('storage.buckets') is null or to_regclass('storage.objects') is null then
@@ -2539,10 +2917,19 @@ begin
   begin
     drop policy if exists "facturas: el dueno sube" on storage.objects;
     create policy "facturas: el dueno sube" on storage.objects for insert to authenticated
-      with check (bucket_id = 'facturas' and public.es_dueno());
+      with check (bucket_id = 'facturas' and public.es_dueno() and (select auth.jwt() ->> 'aal') = 'aal2');
     drop policy if exists "facturas: el dueno lee" on storage.objects;
     create policy "facturas: el dueno lee" on storage.objects for select to authenticated
-      using (bucket_id = 'facturas' and public.es_dueno());
+      using (bucket_id = 'facturas' and public.es_dueno() and (select auth.jwt() ->> 'aal') = 'aal2');
+    drop policy if exists "facturas: solo el dueno con su codigo lee" on storage.objects;
+    create policy "facturas: solo el dueno con su codigo lee" on storage.objects as restrictive for select to authenticated
+      using (bucket_id is distinct from 'facturas' or (public.es_dueno() and (select auth.jwt() ->> 'aal') = 'aal2'));
+    drop policy if exists "facturas: solo el dueno con su codigo sube" on storage.objects;
+    create policy "facturas: solo el dueno con su codigo sube" on storage.objects as restrictive for insert to authenticated
+      with check (bucket_id is distinct from 'facturas' or (public.es_dueno() and (select auth.jwt() ->> 'aal') = 'aal2'));
+    drop policy if exists "facturas: la llave publica no entra" on storage.objects;
+    create policy "facturas: la llave publica no entra" on storage.objects as restrictive for all to anon
+      using (bucket_id is distinct from 'facturas') with check (bucket_id is distinct from 'facturas');
     drop policy if exists "facturas: no se borra" on storage.objects;
     create policy "facturas: no se borra" on storage.objects as restrictive for delete to anon, authenticated
       using (bucket_id is distinct from 'facturas');
@@ -2550,7 +2937,7 @@ begin
     create policy "facturas: no se pisa" on storage.objects as restrictive for update to anon, authenticated
       using (bucket_id is distinct from 'facturas') with check (bucket_id is distinct from 'facturas');
   exception when others then
-    raise notice 'c11: no se pudieron poner las policies del bucket «facturas» (%): ponlas en Storage → Policies (solo el dueño sube y lee; nadie borra).', sqlerrm;
+    raise notice 'c11: no se pudieron poner las policies del bucket «facturas» (%): ponlas en Storage → Policies (solo el dueño, con su código del teléfono, sube y lee; nadie borra). El control de la facturación lo dirá en rojo.', sqlerrm;
   end;
 end $$;
 
@@ -2630,10 +3017,7 @@ begin
                 'descripcion', format('Invoice %s — %s', d.numero, coalesce(nullif(btrim(cfg.empresa->>'nombre'), ''), 'Invoice'))) end,
     'enlace', v_enlace,
     'en_camino', v_camino,
-    'tarjeta', jsonb_build_object(
-                 'ofrecida', false,
-                 'por_que', 'La tarjeta está apagada: los cobros en línea dejarían el recargo como un anticipo de la obra, no como un '
-                            'ingreso. Se enciende cuando eso se arregle y se confirmen con Stripe y con el CPA las reglas del recargo.')));
+    'tarjeta', jsonb_build_object('ofrecida', false, 'por_que', fn_emision_tarjeta_texto())));
 end $$;
 revoke execute on function public.fn_emision_pago(uuid) from public, anon, service_role;
 grant  execute on function public.fn_emision_pago(uuid) to authenticated;
@@ -2919,24 +3303,32 @@ declare
   v_n       bigint;
   v_tot     bigint;
   v_d       text;
+  v_patron  text;
   v_storage boolean := to_regclass('storage.objects') is not null;
   c_fn constant text[] := array['fn_emision_precondiciones', 'fn_emision_exigir_dueno', 'fn_emision_ve', 'fn_emision_guarda',
-                                'fn_emision_numerar', 'fn_emision_usd', 'fn_emision_dia', 'fn_emision_numero',
-                                'fn_emision_tarjeta_lista', 'fn_emision_parece_espanol', 'fn_emision_cuenta', 'fn_emision_saldo',
-                                'fn_emision_retencion', 'fn_emision_retencion_de', 'fn_emision_destinatario', 'fn_emision_enlaces',
-                                'fn_emision_pagos', 'fn_emision_storage', 'fn_emision_retenido', 'fn_emision_revisar',
-                                'fn_emision_visto', 'fn_emision_contenido', 'fn_emision_documento', 'fn_emision_borrador',
-                                'fn_emision_descartar', 'fn_emision_obra', 'fn_emision_config', 'fn_emision_emitir',
-                                'fn_emision_anular', 'fn_emision_pago', 'fn_emision_pdf', 'fn_emision_envio',
-                                'fn_emision_control', 'fn_emision_pegado'];
+                                'fn_emision_numerar', 'fn_emision_usd', 'fn_emision_dia', 'fn_emision_numero', 'fn_emision_formato',
+                                'fn_emision_tarjeta_lista', 'fn_emision_tarjeta_texto', 'fn_emision_parece_espanol',
+                                'fn_emision_cuenta', 'fn_emision_saldo', 'fn_emision_retencion', 'fn_emision_retencion_de',
+                                'fn_emision_destinatario', 'fn_emision_enlaces', 'fn_emision_pagos', 'fn_emision_storage',
+                                'fn_emision_retenido', 'fn_emision_factura_de_hito', 'fn_emision_revisar', 'fn_emision_visto',
+                                'fn_emision_contenido', 'fn_emision_documento', 'fn_emision_borrador', 'fn_emision_descartar',
+                                'fn_emision_obra', 'fn_emision_config', 'fn_emision_emitir', 'fn_emision_anular', 'fn_emision_pago',
+                                'fn_emision_pdf', 'fn_emision_envio', 'fn_emision_control', 'fn_emision_pegado'];
   c_tablas constant text[] := array['emision_config', 'emision_obras', 'emision_documentos', 'emision_lineas', 'emision_serie',
                                     'emision_pdfs', 'emision_envios'];
   c_vistas constant text[] := array['v_emision_estado', 'v_emision_documentos', 'v_emision_obras', 'v_emision_control'];
+  -- los candados del bucket «facturas» (Storage): los que piden el código del teléfono, y los que cierran
+  c_bucket_aal constant text[] := array['facturas: el dueno sube', 'facturas: el dueno lee',
+                                        'facturas: solo el dueno con su codigo lee', 'facturas: solo el dueno con su codigo sube'];
+  c_bucket_cierra constant text[] := array['facturas: solo el dueno con su codigo lee', 'facturas: solo el dueno con su codigo sube',
+                                           'facturas: la llave publica no entra', 'facturas: no se borra', 'facturas: no se pisa'];
 begin
   if not fn_emision_ve() then
     return;
   end if;
   select * into cfg from emision_config where id = 1;
+  -- (un número con la forma de las series de aquí: MXP-2027-0001 o MXP-R-2027-0001)
+  v_patron := '^' || replace(replace(cfg.serie_formato, '-AAAA-', '-(R-)?[0-9]{4}-'), 'NNNN', '[0-9]{4,}') || '$';
 
   -- 10: cada factura emitida por la app (viva) ES su asiento de c3, al centavo
   select count(*) filter (where y.mal is not null), count(*),
@@ -2975,33 +3367,57 @@ begin
                   else left(v_d, 1500) || ' → no toques el libro ni la factura: avisa.' end;
   return next;
 
-  -- 20: la serie de cada año, sin huecos ni repetidos, y el contador en su último número
+  -- 20: las series de cada año (la de las facturas y la de las facturas de la retención), seguidas y sin repetidos, y cada
+  -- contador en su último número. Un consecutivo que falta solo vale si lo lleva una fila de facturas que no salió de la app:
+  -- la serie lo saltó para no darlo dos veces (el trigger del número).
   select count(*), string_agg(y.que, '; ' order by y.que) into v_n, v_d
-    from (select format('la serie de %s tiene %s número(s), del %s al %s, y su contador va en %s', a.anio, a.n, a.mn, a.mx,
+    from (select format('la serie de %s de %s tiene %s número(s), el último el %s, y su contador va en %s', a.cual, a.anio, a.n, a.mx,
                         coalesce(c.ultimo::text, '(sin contador)')) as que
-            from (select s.anio, count(*) as n, min(s.secuencia) as mn, max(s.secuencia) as mx from emision_serie s group by s.anio) a
-            left join contadores c on c.serie = 'facturas-' || a.anio
-           where a.mn <> 1 or a.mx <> a.n or c.ultimo is distinct from a.mx
+            from (select s.serie, s.anio, count(*) as n, max(s.secuencia) as mx,
+                         case s.serie when 'facturas' then 'las facturas' else 'las facturas de la retención' end as cual
+                    from emision_serie s group by s.serie, s.anio) a
+            left join contadores c on c.serie = a.serie || '-' || a.anio
+           where c.ultimo is distinct from a.mx
           union all
-          select format('el contador de %s va en %s y no hay ninguna factura con número de ese año', substr(c.serie, 10), c.ultimo)
+          select format('en la serie de %s falta el número %s y ninguna factura lo lleva', a.anio,
+                        fn_emision_numero(fn_emision_formato(cfg.serie_formato, a.serie), a.anio, k.k))
+            from (select s.serie, s.anio, max(s.secuencia) as mx from emision_serie s group by s.serie, s.anio) a
+           cross join lateral generate_series(1, a.mx) k(k)
+           where not exists (select 1 from emision_serie s where s.serie = a.serie and s.anio = a.anio and s.secuencia = k.k)
+             and not exists (select 1 from facturas f
+                              where f.num = fn_emision_numero(fn_emision_formato(cfg.serie_formato, a.serie), a.anio, k.k)
+                                and not exists (select 1 from emision_documentos d where d.factura_id = f.id))
+          union all
+          select format('el contador de %s de %s va en %s y no hay ningún número de ese año',
+                        case split_part(c.serie, '-', 1) when 'facturas' then 'las facturas' else 'las facturas de la retención' end,
+                        split_part(c.serie, '-', 2), c.ultimo)
             from contadores c
-           where c.serie ~ '^facturas-[0-9]{4}$' and c.ultimo > 0
-             and not exists (select 1 from emision_serie s where s.anio = substr(c.serie, 10)::int)
+           where c.serie ~ '^(facturas|retenciones)-[0-9]{4}$' and c.ultimo > 0
+             and not exists (select 1 from emision_serie s
+                              where s.serie = split_part(c.serie, '-', 1) and s.anio = split_part(c.serie, '-', 2)::int)
           union all
           select format('el número %s no tiene su factura emitida', s.numero)
             from emision_serie s
            where not exists (select 1 from emision_documentos d
                               where d.id = s.documento_id and d.estado = 'emitida' and d.numero = s.numero
-                                and d.anio = s.anio and d.secuencia = s.secuencia)
+                                and d.anio = s.anio and d.secuencia = s.secuencia
+                                and (d.forma = 'retencion') = (s.serie = 'retenciones'))
           union all
           select format('la factura %s no está en la serie', d.numero)
             from emision_documentos d
            where d.estado = 'emitida' and not exists (select 1 from emision_serie s where s.documento_id = d.id)) y;
   orden := 20; cuadre := 'facturas: la serie de cada año, sin huecos ni repetidos'; nivel := 'cuadre'; ok := v_n = 0;
   detalle := case when v_n = 0
-                  then coalesce((select 'Cada año va seguido desde el 1 y su contador está en el último: '
-                                        || string_agg(format('%s, %s número(s)', s.anio, s.n), '; ' order by s.anio) || '.'
-                                   from (select x.anio, count(*) as n from emision_serie x group by x.anio) s),
+                  then coalesce((select 'Cada serie va seguida y su contador está en el último número: '
+                                        || string_agg(format('%s de %s, %s número(s)%s',
+                                                             case s.serie when 'facturas' then 'facturas' else 'facturas de la retención' end,
+                                                             s.anio, s.n,
+                                                             case when s.mx > s.n
+                                                                  then format(' (y %s que la serie saltó porque ya lo(s) llevaba una factura '
+                                                                              'hecha fuera de la app)', s.mx - s.n) else '' end),
+                                                      '; ' order by s.anio, s.serie) || '.'
+                                   from (select x.serie, x.anio, count(*) as n, max(x.secuencia) as mx
+                                           from emision_serie x group by x.serie, x.anio) s),
                                 'Todavía no se ha emitido ninguna factura por la app: la serie empieza en el 1.')
                   else left(v_d, 1500) || ' → un número no se da sin su factura: avisa (no se arregla a mano).' end;
   return next;
@@ -3042,20 +3458,79 @@ begin
                   else left(v_d, 1500) || ' → lo que el cliente recibió ya no es lo guardado: no corrijas nada a mano; avisa.' end;
   return next;
 
-  -- 40: ningún hito con dos facturas vivas si alguna salió de la app
-  select count(*), string_agg(format('el hito «%s» de %s tiene %s facturas vivas (%s)', y.titulo, y.obra, y.n, y.nums), '; ')
+  -- 40: ningún hito con dos facturas vivas si alguna salió de la app. EL HITO DE UNA FACTURA DE LA APP ES EL DE SU DOCUMENTO
+  -- (no cambia), no el que diga hoy su fila de facturas: si alguien vacía o cambia facturas.hito_id —o borra el hito, y la
+  -- llave lo deja en nulo— y el hito se factura otra vez, aquí se ve igual.
+  select count(*), string_agg(format('el hito %s de %s tiene %s facturas vivas (%s)', y.titulo, y.obra, y.n, y.nums), '; '
+                              order by y.obra, y.titulo)
     into v_n, v_d
-    from (select h.titulo, coalesce(p.nombre, f.proyecto_id) as obra, count(*) as n, string_agg(f.num, ', ' order by f.id) as nums
-            from facturas f
-            join hitos h on h.id = f.hito_id
-            left join proyectos p on p.id = f.proyecto_id
-           where f.hito_id is not null and f.estado <> 'anulada'
-           group by h.id, h.titulo, p.nombre, f.proyecto_id
-          having count(*) > 1
-             and bool_or(exists (select 1 from emision_documentos d where d.factura_id = f.id))) y;
+    from (select coalesce('«' || h.titulo || '»', '(borrado después de facturarlo)') as titulo,
+                 coalesce(p.nombre, x.proyecto_id) as obra, x.n, x.nums
+            from (select coalesce(d.hito_id, f.hito_id) as hito, min(f.proyecto_id) as proyecto_id, count(*) as n,
+                         string_agg(f.num, ', ' order by f.id) as nums
+                    from facturas f
+                    left join emision_documentos d on d.factura_id = f.id and d.anulado_el is null
+                   where f.estado <> 'anulada' and coalesce(d.hito_id, f.hito_id) is not null
+                   group by coalesce(d.hito_id, f.hito_id)
+                  having count(*) > 1 and bool_or(d.id is not null)) x
+            left join hitos h on h.id = x.hito
+            left join proyectos p on p.id = x.proyecto_id) y;
   orden := 40; cuadre := 'facturas: ningún hito facturado dos veces'; nivel := 'cuadre'; ok := v_n = 0;
-  detalle := case when v_n = 0 then 'Ningún hito tiene dos facturas vivas con alguna emitida por la app.'
+  detalle := case when v_n = 0 then 'Ningún hito tiene dos facturas vivas con alguna emitida por la app (el hito de cada factura de la '
+                                    'app es el de su documento, diga lo que diga hoy la ficha).'
                   else left(v_d, 1500) || ' → ese hito entró dos veces al ingreso: anula la que sobre (con su nota de crédito).' end;
+  return next;
+
+  -- 42 (aviso): la fila de facturas de una factura de hito de la app ya no apunta al hito de su documento (alguien la cambió,
+  -- o el hito se borró). Con el hito vivo: la ficha lo enseña sin su factura. Con el hito borrado: mientras la obra tenga
+  -- hitos por facturar, uno puede ser aquel vuelto a crear.
+  select count(*), string_agg(y.que, '; ' order by y.que) into v_n, v_d
+    from (select case when h.id is not null
+                      then format('la factura %s (%s) de %s salió del hito «%s» y su fila de facturas ya no lo dice%s', d.numero,
+                                  fn_emision_usd(d.monto), coalesce(p.nombre, d.proyecto_id), h.titulo,
+                                  case when f.hito_id is not null then ' (apunta a otro hito)' else '' end)
+                      else format('la factura %s (%s) de %s salió de un hito que después se borró, y la obra tiene hitos por facturar '
+                                  '(%s)', d.numero, fn_emision_usd(d.monto), coalesce(p.nombre, d.proyecto_id), pf.cuales) end as que
+            from emision_documentos d
+            join facturas f on f.id = d.factura_id
+            left join hitos h on h.id = d.hito_id
+            left join proyectos p on p.id = d.proyecto_id
+            left join lateral (select string_agg('«' || x.titulo || '»', ', ' order by x.orden, x.id) as cuales
+                                 from hitos x
+                                where h.id is null and x.proyecto_id = d.proyecto_id and coalesce(x.estado, 'pendiente') = 'pendiente'
+                                  and coalesce(round(x.monto, 2), 0) > 0
+                                  and not exists (select 1 from fn_emision_factura_de_hito(x.id))) pf on true
+           where d.forma = 'hito' and d.estado = 'emitida' and d.anulado_el is null and f.estado <> 'anulada'
+             and f.hito_id is distinct from d.hito_id
+             and (h.id is not null or pf.cuales is not null)) y;
+  orden := 42; cuadre := 'facturas: cada factura de hito sigue enlazada a su hito'; nivel := 'aviso'; ok := v_n = 0;
+  detalle := case when v_n = 0 then 'Cada factura de hito emitida por la app sigue enlazada a su hito en la ficha de la obra (o su hito '
+                                    'se borró y a la obra ya no le queda ninguno por facturar).'
+                  else left(v_d, 1500) || ' → la que ya no lo dice: en la ficha ese hito se ve sin su factura, pero YA está facturado '
+                       '(la app no deja facturarlo otra vez): avisa para volver a enlazarla. La del hito borrado: si alguno de esos '
+                       'hitos es aquel vuelto a crear, NO lo factures: ya se facturó con esa factura.' end;
+  return next;
+
+  -- 44 (aviso): en cada obra, lo facturado por hitos (vivo) no pasa de lo que suman sus hitos. Es lo que queda a la vista si
+  -- un hito se factura, se borra, se vuelve a crear y se factura otra vez (son dos hitos distintos: el 40 no lo ve).
+  select count(*), string_agg(format('en %s lo facturado por hitos suma %s (%s) y sus hitos suman %s', y.obra, fn_emision_usd(y.fact),
+                                     y.nums, fn_emision_usd(y.hitos)), '; ' order by y.obra)
+    into v_n, v_d
+    from (select coalesce(p.nombre, x.proyecto_id) as obra, x.fact, x.nums, coalesce(hs.suma, 0) as hitos
+            from (select f.proyecto_id, sum(round(f.monto, 2)) as fact, string_agg(f.num, ', ' order by f.id) as nums,
+                         bool_or(d.id is not null) as de_la_app
+                    from facturas f
+                    left join emision_documentos d on d.factura_id = f.id and d.anulado_el is null
+                   where f.estado <> 'anulada' and coalesce(d.hito_id, f.hito_id) is not null
+                   group by f.proyecto_id) x
+            left join proyectos p on p.id = x.proyecto_id
+            left join lateral (select sum(round(h.monto, 2)) as suma from hitos h where h.proyecto_id = x.proyecto_id) hs on true
+           where x.de_la_app and x.fact > coalesce(hs.suma, 0)) y;
+  orden := 44; cuadre := 'facturas: lo facturado por hitos no pasa de los hitos de la obra'; nivel := 'aviso'; ok := v_n = 0;
+  detalle := case when v_n = 0 then 'En ninguna obra con facturas de hito de la app lo facturado por hitos pasa de lo que suman sus hitos.'
+                  else left(v_d, 1500) || ' → un hito se facturó dos veces (¿se borró y se volvió a crear?), o se borró o se rebajó '
+                       'después de facturarlo: mira las facturas de esa obra; la que sobre se anula con su nota de crédito, y si lo '
+                       'que cambió fue el contrato, pon los hitos como quedaron.' end;
   return next;
 
   -- 50 (aviso): cada PDF registrado sigue en Storage y mide lo mismo
@@ -3081,13 +3556,16 @@ begin
   return next;
 
   -- 60 (aviso): ninguna factura emitida hace más de N días sin PDF
-  select count(*), string_agg(format('%s (del %s)', d.numero, fn_emision_dia(d.fecha)), ', ' order by d.numero) into v_n, v_d
+  select count(*), string_agg(format('%s (del %s%s)', d.numero, fn_emision_dia(d.fecha),
+                                     case when d.forma = 'retencion' then '; es la de la retención' else '' end), ', ' order by d.numero)
+    into v_n, v_d
     from emision_documentos d
    where d.estado = 'emitida' and d.anulado_el is null and v_hoy - d.fecha > cfg.pdf_dias
      and not exists (select 1 from emision_pdfs x where x.documento_id = d.id);
   orden := 60; cuadre := format('facturas: ninguna emitida hace más de %s día(s) sin su PDF', cfg.pdf_dias); nivel := 'aviso'; ok := v_n = 0;
   detalle := case when v_n = 0 then 'Cada factura emitida tiene su PDF (o es de estos días).'
-                  else left(v_d, 1500) || ' → están emitidas y en el libro, pero sin su PDF: ábrelas en Facturación y genera el PDF.' end;
+                  else left(v_d, 1500) || ' → están emitidas (las facturas, ya en el libro; la de la retención no lleva asiento), pero '
+                       'sin su PDF: ábrelas en Facturación y genera el PDF.' end;
   return next;
 
   -- 62 (aviso): ni sin mandar
@@ -3099,6 +3577,26 @@ begin
   detalle := case when v_n = 0 then 'Cada factura emitida se mandó o se entregó (o es de estos días).'
                   else left(v_d, 1500) || ' → el cliente todavía no las tiene: mándalas desde Facturación, o apunta que se '
                        'entregaron en mano.' end;
+  return next;
+
+  -- 64 (aviso): una factura de la app que el LIBRO ya tiene cobrada entera (no debe nada en la cuenta por cobrar ni en la
+  -- retención por cobrar) y que en la ficha de su obra sigue sin marcar como cobrada. Desde el corte nadie marca esa casilla
+  -- sola (antes la marcaba QuickBooks): esta capa no la toca —es de Edgar—, pero lo dice.
+  select count(*), string_agg(format('%s (%s, de %s)', d.numero, fn_emision_usd(d.monto), coalesce(p.nombre, d.proyecto_id)), ', '
+                              order by d.numero)
+    into v_n, v_d
+    from emision_documentos d
+    join facturas f on f.id = d.factura_id
+    left join proyectos p on p.id = d.proyecto_id
+   cross join lateral fn_emision_saldo(d.factura_id) s
+   where d.estado = 'emitida' and d.anulado_el is null and f.estado <> 'anulada'
+     and s.cxc = 0 and s.retencion = 0 and not coalesce(f.pagada, false);
+  orden := 64; cuadre := 'facturas: las cobradas en el libro, marcadas como cobradas en su obra'; nivel := 'aviso'; ok := v_n = 0;
+  detalle := case when v_n = 0 then 'Ninguna factura de la app que el libro tenga cobrada entera está sin marcar como cobrada en la '
+                                    'ficha de su obra.'
+                  else left(v_d, 1500) || ' → el libro ya las tiene cobradas enteras y en la ficha de su obra siguen sin marcar: '
+                       'mientras no se marquen, la ficha y el portal del cliente las enseñan como pendientes de pago. Márcalas como '
+                       'cobradas en la obra (Dinero → la factura → cobrada); hoy nada lo hace solo.' end;
   return next;
 
   -- 70 (aviso): una factura que no salió de la app con una «retención» que parece un porcentaje
@@ -3123,16 +3621,24 @@ begin
                        'repartido lo por cobrar y lo retenido de esa factura: avisa; se corrige con un asiento entre las dos cuentas.' end;
   return next;
 
-  -- 72 (aviso): ninguna factura fechada desde el corte que no salió de la app
-  select count(*), string_agg(format('#%s (del %s, %s)', f.num, fn_emision_dia(f.fecha), fn_emision_usd(round(f.monto, 2))), ', ' order by f.fecha, f.id)
+  -- 72 (aviso): ninguna factura fechada desde el corte que no salió de la app; ni una hecha fuera —de la fecha que sea— con
+  -- un número con la forma de la serie (la serie lo salta para no darlo dos veces) o con el mismo número que una de la app.
+  select count(*), string_agg(format('#%s (del %s, %s%s)', f.num, fn_emision_dia(f.fecha), fn_emision_usd(round(f.monto, 2)),
+                                     case when exists (select 1 from emision_documentos d where d.numero = f.num)
+                                            then '; lleva el MISMO número que una factura de la app'
+                                          when f.num ~ v_patron then '; lleva un número con la forma de la serie: la serie lo salta'
+                                          else '' end), ', ' order by f.fecha, f.id)
     into v_n, v_d
     from facturas f
-   where f.fecha >= cfg.corte and f.estado <> 'anulada'
+   where ((f.fecha >= cfg.corte and f.estado <> 'anulada') or coalesce(f.num ~ v_patron, false))
      and not exists (select 1 from emision_documentos d where d.factura_id = f.id);
   orden := 72; cuadre := 'facturas: desde el corte, todas salen de la app'; nivel := 'aviso'; ok := v_n = 0;
-  detalle := case when v_n = 0 then format('Ninguna factura fechada desde el %s se hizo fuera de la app.', fn_emision_dia(cfg.corte))
+  detalle := case when v_n = 0 then format('Ninguna factura fechada desde el %s se hizo fuera de la app, y ninguna de fuera lleva un '
+                                           'número de la serie.', fn_emision_dia(cfg.corte))
                   else left(v_d, 1500) || format(' → desde el %s se factura por la app: esas se hicieron por otro camino '
-                       '(¿QuickBooks?) y no llevan el número de la serie. Mira si están bien así.', fn_emision_dia(cfg.corte)) end;
+                       '(¿QuickBooks?, ¿a mano en la ficha?). Mira si están bien así. La que lleva un número con la forma de la serie: '
+                       'la app salta ese número para no darlo dos veces. La que lleva el mismo número que una factura de la app: una '
+                       'de las dos sobra; avisa.', fn_emision_dia(cfg.corte)) end;
   return next;
 
   -- 75 (aviso): anuladas en el libro y sin cerrar aquí; una factura de la retención que reclama lo de una anulada; hitos
@@ -3151,12 +3657,12 @@ begin
            where r.forma = 'retencion' and r.estado = 'emitida' and r.anulado_el is null and f.estado = 'anulada'
           union all
           select format('el hito «%s» de %s tiene %s facturas vivas de antes (%s)', h.titulo, coalesce(p.nombre, h.proyecto_id), x.n, x.nums)
-            from (select f.hito_id, count(*) as n, string_agg(f.num, ', ' order by f.id) as nums
+            from (select coalesce(d.hito_id, f.hito_id) as hito_id, count(*) as n, string_agg(f.num, ', ' order by f.id) as nums
                     from facturas f
-                   where f.hito_id is not null and f.estado <> 'anulada'
-                   group by f.hito_id
-                  having count(*) > 1
-                     and not bool_or(exists (select 1 from emision_documentos d where d.factura_id = f.id))) x
+                    left join emision_documentos d on d.factura_id = f.id and d.anulado_el is null
+                   where f.estado <> 'anulada' and coalesce(d.hito_id, f.hito_id) is not null
+                   group by coalesce(d.hito_id, f.hito_id)
+                  having count(*) > 1 and not bool_or(d.id is not null)) x
             join hitos h on h.id = x.hito_id
             left join proyectos p on p.id = h.proyecto_id) y;
   orden := 75; cuadre := 'facturas: ninguna anulación a medias, ningún hito con dos facturas de antes'; nivel := 'aviso'; ok := v_n = 0;
@@ -3167,7 +3673,8 @@ begin
                        'facturas de antes: mira cuál sobra.' end;
   return next;
 
-  -- 80 (aviso): el pago en línea como se decidió (cada cosa, con qué hacer)
+  -- 80 (aviso): el pago en línea como se decidió (12-nov-2026: solo por cuenta de banco; la tarjeta, apagada). Cada cosa,
+  -- con qué hacer.
   select count(*), string_agg(y.que, '; ' order by y.que) into v_n, v_d
     from (select format('la factura %s se cobró con tarjeta (%s): su enlace no estaba restringido a cuenta de banco, y la comisión de la '
                         'tarjeta la pagó la empresa → avisa para revisar cómo se crean los enlaces', d.numero, fn_emision_usd(s.monto)) as que
@@ -3178,9 +3685,19 @@ begin
           union all
           select format('el porcentaje de la tarjeta está puesto (%s %%) y la tarjeta sigue apagada → quítalo de los ajustes de facturación '
                         'hasta que la tarjeta se pueda encender', trim_scale(cfg.tarjeta_pct))
-           where cfg.tarjeta_pct is not null and not fn_emision_tarjeta_lista()) y;
+           where cfg.tarjeta_pct is not null and not fn_emision_tarjeta_lista()
+          union all
+          select format('la factura %s está anulada y tiene un pago por cuenta de banco en camino (%s): cuando entre, los cobros en línea '
+                        'lo dejarán de anticipo de la obra → cuando llegue, aplícalo a la factura buena (o devuélvelo)', d.numero,
+                        fn_emision_usd(sum(s.monto)))
+            from fn_emision_pagos() s
+            join emision_documentos d on d.factura_id = s.factura_id
+            join facturas f on f.id = d.factura_id
+           where s.estado in ('iniciado', 'en_camino') and (d.anulado_el is not null or f.estado = 'anulada')
+           group by d.numero) y;
   orden := 80; cuadre := 'facturas: el pago en línea, solo por cuenta de banco'; nivel := 'aviso'; ok := v_n = 0;
-  detalle := case when v_n = 0 then 'Ninguna factura de la app se cobró con tarjeta, y el porcentaje de la tarjeta está vacío (apagada).'
+  detalle := case when v_n = 0 then 'Ninguna factura de la app se cobró con tarjeta, el porcentaje de la tarjeta está vacío y ninguna '
+                                    'anulada tiene un pago en camino. ' || fn_emision_tarjeta_texto()
                   else left(v_d, 1500) || '.' end;
   return next;
 
@@ -3197,8 +3714,8 @@ begin
                               'Facturación → Ajustes (en inglés: los ve el cliente).', v_d) end;
   return next;
 
-  -- 90: las protecciones de la capa (por nombre exacto). (El bucket no se mira aquí: por la API el dueño no ve
-  -- storage.buckets; lo dice el pegado, y un PDF que no se pudo subir no se registra.)
+  -- 90: las protecciones de la capa (por nombre exacto), y los candados del bucket «facturas» si esta base tiene Storage
+  -- (sus policies se leen del catálogo: solo el dueño, con el código del teléfono, sube y lee; nadie borra ni pisa).
   select count(*), string_agg(y.que, '; ') into v_n, v_d
     from (select pr.proname || ' es SECURITY DEFINER' as que
             from pg_catalog.pg_proc pr
@@ -3256,12 +3773,37 @@ begin
                   select 'emision_serie', 'trg_emision_serie_numerar', 'fn_emision_numerar') x
             left join pg_catalog.pg_trigger tg on tg.tgrelid = to_regclass('public.' || x.t) and tg.tgname = x.tg
            where tg.oid is null or tg.tgenabled not in ('O', 'A')
-              or tg.tgfoid is distinct from to_regprocedure('public.' || x.fn || '()')) y;
+              or tg.tgfoid is distinct from to_regprocedure('public.' || x.fn || '()')
+          union all
+          select 'el bucket de las facturas: ' || b.que
+            from (select 'la tabla de Storage no tiene sus candados encendidos (RLS)' as que
+                   where not coalesce((select c.relrowsecurity from pg_catalog.pg_class c
+                                        where c.oid = to_regclass('storage.objects')), false)
+                  union all
+                  select format('falta el candado «%s»', n.n)
+                    from unnest(c_bucket_aal || c_bucket_cierra) n(n)
+                   where not exists (select 1 from pg_catalog.pg_policy pl
+                                      where pl.polrelid = to_regclass('storage.objects') and pl.polname = n.n)
+                   group by n.n
+                  union all
+                  select format('el candado «%s» no pide el código del teléfono', pl.polname)
+                    from pg_catalog.pg_policy pl
+                   where pl.polrelid = to_regclass('storage.objects') and pl.polname = any (c_bucket_aal)
+                     and coalesce(pg_get_expr(pl.polqual, pl.polrelid), '') || coalesce(pg_get_expr(pl.polwithcheck, pl.polrelid), '')
+                         not like '%aal2%'
+                  union all
+                  select format('el candado «%s» ya no es de los que cierran', pl.polname)
+                    from pg_catalog.pg_policy pl
+                   where pl.polrelid = to_regclass('storage.objects') and pl.polname = any (c_bucket_cierra) and pl.polpermissive) b
+           where v_storage) y;
   orden := 90; cuadre := 'facturas: protecciones de la capa'; nivel := 'cuadre'; ok := v_n = 0;
   detalle := case when v_n = 0
                   then 'Solo la función del número corre con los permisos del dueño de la base (es de trigger y nadie la ejecuta '
                        'suelta); ninguna la ejecutan anon ni service_role; las tablas con RLS y su guarda; las vistas '
-                       'security_invoker.'
+                       'security_invoker; '
+                       || case when v_storage then 'y el bucket de las facturas, solo para el dueño con su código del teléfono (nadie '
+                                                   'borra ni pisa).'
+                               else 'esta base no tiene Storage: el bucket de las facturas no se mira aquí.' end
                   else left(v_d, 1500) || ' → vuelve a pegar c11-emision.sql (lo pone como debe).' end;
   return next;
 end $$;
@@ -3275,7 +3817,12 @@ comment on function public.fn_emision_control() is 'c11: el control de la factur
 --     permisos de quien la lee; solo leen tablas y funciones de aquí).
 -- ---------------------------------------------------------------------
 -- POR DÓNDE SE FACTURA HOY (una fila): la app o QuickBooks, y lo que la
--- pantalla necesita para decirlo.
+-- pantalla necesita para decirlo. siguiente_numero: el de la serie de las
+-- facturas del año en que se va a emitir (el de hoy, o el del corte si
+-- todavía no llegó), ya saltando los que lleve una factura hecha fuera de
+-- la app. corte_hasta: el último día en que se puede poner el corte (la
+-- fecha de la primera factura viva emitida por la app; nulo = cualquiera).
+-- tarjeta_texto: por qué la tarjeta está apagada, en llano.
 create view public.v_emision_estado with (security_invoker = true) as
 select h.hoy,
        c.corte,
@@ -3288,9 +3835,7 @@ select h.hoy,
          as texto,
        greatest(c.corte - h.hoy, 0) as dias_para_el_corte,
        c.serie_formato,
-       public.fn_emision_numero(c.serie_formato, extract(year from h.hoy)::int,
-                                coalesce((select max(s.secuencia) from public.emision_serie s
-                                           where s.anio = extract(year from h.hoy)::int), 0) + 1) as siguiente_numero,
+       public.fn_emision_numero(c.serie_formato, sn.anio, sn.sec) as siguiente_numero,
        c.terminos_dias,
        array_remove(array[case when coalesce(btrim(c.empresa->>'nombre'), '') = '' then 'empresa' end,
                           case when btrim(c.como_pagar) = '' then 'como_pagar' end], null) as falta,
@@ -3305,13 +3850,27 @@ select h.hoy,
            and not exists (select 1 from public.emision_pdfs x where x.documento_id = d.id)) as sin_pdf,
        (select count(*) from public.emision_documentos d
          where d.estado = 'emitida' and d.anulado_el is null
-           and not exists (select 1 from public.emision_envios e where e.documento_id = d.id)) as sin_mandar
+           and not exists (select 1 from public.emision_envios e where e.documento_id = d.id)) as sin_mandar,
+       (select min(d.fecha)
+          from public.emision_documentos d
+          left join public.facturas f on f.id = d.factura_id
+         where d.estado = 'emitida' and d.anulado_el is null and coalesce(f.estado, 'emitida') <> 'anulada') as corte_hasta,
+       public.fn_emision_tarjeta_texto() as tarjeta_texto
   from public.emision_config c
  cross join (select public.fn_fecha_miami(now()) as hoy) h
+ cross join lateral (select y.anio,
+                            (select min(k.k)
+                               from generate_series(y.ultimo + 1, y.ultimo + 51) k(k)
+                              where not exists (select 1 from public.facturas f
+                                                 where f.num = public.fn_emision_numero(c.serie_formato, y.anio, k.k))) as sec
+                       from (select a.anio,
+                                    coalesce((select max(s.secuencia) from public.emision_serie s
+                                               where s.serie = 'facturas' and s.anio = a.anio), 0) as ultimo
+                               from (select extract(year from greatest(h.hoy, c.corte))::int as anio) a) y) sn
  where c.id = 1 and (select public.fn_emision_ve());
 revoke all on public.v_emision_estado from public, anon, authenticated, service_role;
 grant select on public.v_emision_estado to authenticated;
-comment on view public.v_emision_estado is 'c11: por dónde se factura hoy (una fila): hoy (en Miami), el corte, por_la_app y camino (app o quickbooks: la pantalla desvía el 🧾 con esto), texto (en llano), dias_para_el_corte, el formato y el siguiente número de la serie, terminos_dias, falta (lo que falta en los ajustes para poder emitir: empresa, como_pagar), puede_emitir, pago_en_linea (por cuenta de banco, con los cobros en línea instalados), tarjeta (apagada), y cuántos borradores, emitidas, anuladas, sin PDF y sin mandar hay.';
+comment on view public.v_emision_estado is 'c11: por dónde se factura hoy (una fila): hoy (en Miami), el corte, por_la_app y camino (app o quickbooks: la pantalla desvía el 🧾 con esto), texto (en llano), dias_para_el_corte, el formato y el siguiente número de la serie de las facturas (del año en que se va a emitir, ya saltando los que lleve una factura hecha fuera de la app), terminos_dias, falta (lo que falta en los ajustes para poder emitir: empresa, como_pagar), puede_emitir, pago_en_linea (por cuenta de banco, con los cobros en línea instalados), tarjeta (apagada) y tarjeta_texto (por qué, en llano), cuántos borradores, emitidas, anuladas, sin PDF y sin mandar hay, y corte_hasta (el último día en que se puede poner el corte: la fecha de la primera factura viva emitida por la app; nulo = cualquiera).';
 
 -- LOS DOCUMENTOS: una fila por borrador o factura emitida, con lo que la
 -- lista de la pantalla pinta. estado: borrador, emitida o anulada.
@@ -3345,10 +3904,16 @@ select d.id,
  where (select public.fn_emision_ve());
 revoke all on public.v_emision_documentos from public, anon, authenticated, service_role;
 grant select on public.v_emision_documentos to authenticated;
-comment on view public.v_emision_documentos is 'c11: cada borrador y cada factura emitida por la app: id, estado (borrador, emitida o anulada), forma, la obra, a quién (cliente, a_contratista), el hito y si es el de depósito, numero, fecha, vence, monto, retencion_pct, retencion, a_pagar, su factura y su asiento (el de hoy en el libro), lo que debe hoy en el libro (saldo y saldo_retencion), su nota de crédito y su anulación, cuántos PDF y el último (pdf_ruta, pdf_el), cuántos envíos y el último (enviado_el, enviado_a), el visto de un borrador, y sus fechas.';
+comment on view public.v_emision_documentos is 'c11: cada borrador y cada factura emitida por la app: id, estado (borrador, emitida o anulada), forma, la obra, a quién (cliente, a_contratista), el hito y si es el de depósito, numero, fecha, vence, monto, retencion_pct, retencion, a_pagar, su factura y su asiento (el de hoy en el libro), lo que debe hoy en el libro (saldo y saldo_retencion), su nota de crédito y su anulación, cuántos PDF y el último (pdf_ruta, pdf_el), cuántos envíos y el último (enviado_el, enviado_a), el visto de un borrador (la huella de su vista previa entera), y sus fechas.';
 
 -- LAS OBRAS, para facturar: su contrato, lo facturado, su retención y sus
--- hitos (con su factura viva o su borrador, y si se pueden facturar).
+-- hitos (con su factura viva o su borrador, y si se pueden facturar). La
+-- factura viva de un hito es la que apunta a él o la que la app emitió de
+-- él (fn_emision_factura_de_hito): un hito cuya fila de facturas dejó de
+-- apuntarlo sigue saliendo como facturado, y no se puede facturar otra vez.
+-- «puede» = el hito está PENDIENTE, no tiene factura viva y tiene monto: el
+-- que la ficha ya tiene como facturado (o cobrado) no se ofrece, tenga o no
+-- su factura enlazada aquí.
 create view public.v_emision_obras with (security_invoker = true) as
 select p.id as proyecto_id, p.nombre as obra, p.tipo, p.estado,
        dest.d->'cliente'->>'nombre' as cliente,
@@ -3381,25 +3946,25 @@ select p.id as proyecto_id, p.nombre as obra, p.tipo, p.estado,
                                                order by y.orden, y.id), '[]'::jsonb) as hitos
                        from (select h.id, h.titulo, round(h.monto, 2) as monto, h.estado, coalesce(h.es_deposito, false) as es_deposito,
                                     coalesce(h.orden, 0) as orden, fv.num as factura, bo.id as borrador,
-                                    h.estado is distinct from 'cobrado' and fv.num is null and coalesce(round(h.monto, 2), 0) > 0 as puede
+                                    coalesce(h.estado, 'pendiente') = 'pendiente' and fv.num is null
+                                      and coalesce(round(h.monto, 2), 0) > 0 as puede
                                from public.hitos h
-                               left join lateral (select f.num from public.facturas f
-                                                   where f.hito_id = h.id and f.estado <> 'anulada' order by f.id limit 1) fv on true
+                               left join lateral (select x.num from public.fn_emision_factura_de_hito(h.id) x
+                                                   order by x.factura_id limit 1) fv on true
                                left join lateral (select d.id from public.emision_documentos d
                                                    where d.hito_id = h.id and d.estado = 'borrador' limit 1) bo on true
                               where h.proyecto_id = p.id) y) hi
  where (select public.fn_emision_ve());
 revoke all on public.v_emision_obras from public, anon, authenticated, service_role;
 grant select on public.v_emision_obras to authenticated;
-comment on view public.v_emision_obras is 'c11: cada obra, para facturarla: a quién se factura (cliente, a_contratista), su contrato (finanzas_proyecto.contrato), lo facturado (las facturas emitidas y sin anular) y cuántas, por_facturar, su retención (retencion_pct y de dónde sale: obra, estimado o ninguna), lo retenido que el libro tiene por cobrar (retenido), sus hitos por facturar (hitos_pendientes y su monto) y la lista de todos (hitos: [{id, titulo, monto, estado, es_deposito, factura: el número de su factura viva, borrador: el id de su borrador, puede: si se puede facturar}]), cuántos borradores tiene y si su tipo de obra tiene su regla de ingreso confirmada (ingreso_listo: sin ella el libro no acepta la factura).';
+comment on view public.v_emision_obras is 'c11: cada obra, para facturarla: a quién se factura (cliente, a_contratista), su contrato (finanzas_proyecto.contrato), lo facturado (las facturas emitidas y sin anular) y cuántas, por_facturar, su retención (retencion_pct y de dónde sale: obra, estimado o ninguna), lo retenido que el libro tiene por cobrar (retenido), sus hitos por facturar (hitos_pendientes y su monto: los pendientes sin factura viva) y la lista de todos (hitos: [{id, titulo, monto, estado, es_deposito, factura: el número de su factura viva —la que apunta a él o la que la app emitió de él—, borrador: el id de su borrador, puede: si se puede facturar (pendiente, sin factura viva y con monto)}]), cuántos borradores tiene y si su tipo de obra tiene su regla de ingreso confirmada (ingreso_listo: sin ella el libro no acepta la factura).';
 
 -- EL CONTROL, como vista.
 create view public.v_emision_control with (security_invoker = true) as
 select c.orden, c.cuadre, c.nivel, c.ok, c.detalle from public.fn_emision_control() c;
 revoke all on public.v_emision_control from public, anon, authenticated, service_role;
 grant select on public.v_emision_control to authenticated;
-comment on view public.v_emision_control is 'c11: el control de la facturación (orden, cuadre, nivel, ok, detalle en llano): 10 cada factura emitida por la app es su asiento de c3, al centavo; 20 la serie de cada año sin huecos ni repetidos y su contador en el último; 30 cada documento emitido sigue sellado y su fila de facturas dice lo mismo; 40 ningún hito con dos facturas vivas si alguna salió de la app; 50 (aviso) cada PDF registrado sigue en Storage y mide lo mismo; 60 (aviso) ninguna emitida hace más de N días sin PDF; 62 (aviso) ni sin mandar; 70 (aviso) ninguna factura de fuera de la app con una retención que parece un porcentaje; 72 (aviso) ninguna fechada desde el corte hecha fuera de la app; 75 (aviso) ninguna anulación a medias, ninguna factura de la retención que reclame lo de una anulada, ni hitos con dos facturas de antes; 80 (aviso) el pago en línea solo por cuenta de banco; 85 (aviso) los datos de la empresa y el «How to pay»; 90 las protecciones de la capa. nivel: cuadre (algo roto: detiene el cierre) o aviso.';
-
+comment on view public.v_emision_control is 'c11: el control de la facturación (orden, cuadre, nivel, ok, detalle en llano): 10 cada factura emitida por la app es su asiento de c3, al centavo; 20 las series de cada año (facturas y facturas de la retención) sin huecos ni repetidos y cada contador en el último (un número saltado vale solo si lo lleva una factura hecha fuera de la app); 30 cada documento emitido sigue sellado y su fila de facturas dice lo mismo; 40 ningún hito con dos facturas vivas si alguna salió de la app (el hito de una factura de la app es el de su documento); 42 (aviso) cada factura de hito sigue enlazada a su hito; 44 (aviso) en ninguna obra lo facturado por hitos pasa de lo que suman sus hitos; 50 (aviso) cada PDF registrado sigue en Storage y mide lo mismo; 60 (aviso) ninguna emitida hace más de N días sin PDF; 62 (aviso) ni sin mandar; 64 (aviso) ninguna cobrada entera en el libro y sin marcar como cobrada en su obra; 70 (aviso) ninguna factura de fuera de la app con una retención que parece un porcentaje; 72 (aviso) ninguna fechada desde el corte hecha fuera de la app, ni una de fuera con un número de la serie; 75 (aviso) ninguna anulación a medias, ninguna factura de la retención que reclame lo de una anulada, ni hitos con dos facturas de antes; 80 (aviso) el pago en línea solo por cuenta de banco (la tarjeta, apagada); 85 (aviso) los datos de la empresa y el «How to pay»; 90 las protecciones de la capa y los candados del bucket de las facturas. nivel: cuadre (algo roto: detiene el cierre) o aviso.';
 
 -- ---------------------------------------------------------------------
 -- 11. Lo que enseña el SQL Editor al terminar de pegar.
@@ -3411,6 +3976,7 @@ as $$
 declare
   cfg     emision_config;
   v_hoy   date := fn_fecha_miami(now());
+  v_anio  int;
   v_falta text;
   v_rojos text;
 begin
@@ -3418,6 +3984,7 @@ begin
     raise exception using errcode = '42501', message = 'Esto lo enseña el SQL Editor al pegar c11-emision.sql.';
   end if;
   select * into cfg from emision_config where id = 1;
+  v_anio := extract(year from greatest(v_hoy, cfg.corte))::int;
   return query select 'ajustes'::text,
     format('corte %s · número %s · %s · pago en línea por cuenta de banco: %s · tarjeta: apagada · aviso de PDF a los %s día(s)',
            fn_emision_dia(cfg.corte), cfg.serie_formato,
@@ -3428,16 +3995,28 @@ begin
          else format('por QuickBooks, hasta el %s (faltan %s días); aquí, borradores para probar', fn_emision_dia(cfg.corte - 1),
                      cfg.corte - v_hoy) end;
   return query select 'la serie'::text,
-    coalesce((select string_agg(format('%s: %s número(s), el último %s', s.anio, s.n, s.ultimo), ' · ' order by s.anio)
-                from (select x.anio, count(*) as n, (array_agg(x.numero order by x.secuencia desc))[1] as ultimo
-                        from emision_serie x group by x.anio) s),
-             format('sin estrenar: la primera será %s', fn_emision_numero(cfg.serie_formato, extract(year from greatest(v_hoy, cfg.corte))::int, 1)));
+    coalesce((select string_agg(format('%s de %s: %s número(s), el último %s',
+                                       case s.serie when 'facturas' then 'facturas' else 'facturas de la retención' end,
+                                       s.anio, s.n, s.ultimo), ' · ' order by s.anio, s.serie)
+                from (select x.serie, x.anio, count(*) as n, (array_agg(x.numero order by x.secuencia desc))[1] as ultimo
+                        from emision_serie x group by x.serie, x.anio) s),
+             format('sin estrenar: la primera factura será %s; la primera factura de la retención (que lleva su propia serie), %s',
+                    fn_emision_numero(cfg.serie_formato, v_anio, 1),
+                    fn_emision_numero(fn_emision_formato(cfg.serie_formato, 'retenciones'), v_anio, 1)));
   return query select 'tablas'::text, 'emision_config, emision_obras, emision_documentos, emision_lineas, emision_serie, emision_pdfs, emision_envios'::text;
   return query select 'vistas'::text, 'v_emision_estado, v_emision_documentos, v_emision_obras, v_emision_control'::text;
-  if to_regclass('storage.buckets') is not null then
+  if to_regclass('storage.buckets') is not null and to_regclass('storage.objects') is not null then
     return query execute
-      'select ''bucket facturas''::text, case when exists (select 1 from storage.buckets b where b.id = ''facturas'') '
-      'then ''existe (privado)'' else ''NO se pudo crear: créalo en Storage (privado) y vuelve a pegar'' end';
+      'select ''bucket facturas''::text, case '
+      'when not exists (select 1 from storage.buckets b where b.id = ''facturas'') '
+      '  then ''NO se pudo crear: créalo en Storage (privado) y vuelve a pegar'' '
+      'when (select count(*) from pg_catalog.pg_policy pl where pl.polrelid = ''storage.objects''::regclass '
+      '        and pl.polname = any (array[''facturas: el dueno sube'', ''facturas: el dueno lee'', '
+      '                                    ''facturas: solo el dueno con su codigo lee'', ''facturas: solo el dueno con su codigo sube'', '
+      '                                    ''facturas: la llave publica no entra'', ''facturas: no se borra'', ''facturas: no se pisa''])) < 7 '
+      '  then ''existe (privado), pero NO se pudieron poner todos sus candados: ponlos en Storage → Policies (solo el dueño, con su '
+      'código del teléfono, sube y lee; nadie borra); el control lo dice en rojo'' '
+      'else ''existe (privado): solo el dueño, con su código del teléfono, sube y lee; nadie borra ni pisa'' end';
   else
     return query select 'bucket facturas'::text, 'sin Storage en esta base (en Supabase el bucket privado «facturas» se crea al pegar)'::text;
   end if;
@@ -3445,8 +4024,8 @@ begin
     case when to_regclass('public.stripe_enlaces') is null
            then 'los cobros en línea (p1) no están en esta base: las facturas salen sin enlace de pago'
          when not cfg.ach then 'apagado en los ajustes (ach = false)'
-         else 'por cuenta de banco (ACH), con el enlace de los cobros en línea restringido a cuenta de banco; la tarjeta, apagada (el '
-              'libro no sabe registrar el recargo: ver la cabecera)' end;
+         else 'por cuenta de banco (ACH), con el enlace de los cobros en línea restringido a cuenta de banco. '
+              || fn_emision_tarjeta_texto() end;
   v_falta := concat_ws('; ',
     nullif(concat_ws(' y ',
              case when coalesce(btrim(cfg.empresa->>'nombre'), '') = '' then 'los datos de la empresa (nombre, licencia, dirección, teléfono, correo, web)' end,
@@ -3472,6 +4051,6 @@ begin
     'pega docs/conta/c11-pruebas.sql; después, en la app, Facturación → Ajustes: los datos de la empresa y el «How to pay»'::text;
 end $$;
 revoke execute on function public.fn_emision_pegado() from public, anon, authenticated, service_role;
-comment on function public.fn_emision_pegado() is 'c11: lo que enseña el SQL Editor al pegar c11-emision.sql: los ajustes, por dónde se factura hoy, la serie, las tablas y las vistas, el bucket, el pago en línea, qué falta, el control, si el cierre lo mira y el paso siguiente. Sin API.';
+comment on function public.fn_emision_pegado() is 'c11: lo que enseña el SQL Editor al pegar c11-emision.sql: los ajustes, por dónde se factura hoy, las series, las tablas y las vistas, el bucket y sus candados, el pago en línea, qué falta, el control, si el cierre lo mira y el paso siguiente. Sin API.';
 
 select * from public.fn_emision_pegado();

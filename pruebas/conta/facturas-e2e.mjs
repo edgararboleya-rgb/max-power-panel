@@ -19,9 +19,10 @@
        pide otro enlace);
      · el correo: lo que recibe Resend (de, para, copia a Edgar, responder-a,
        asunto, el PDF adjunto que es el registrado, el botón de pago), el
-       envío apuntado en la factura y en la tabla correos; el reenvío; Resend
-       caído; el correo que sale y no se apunta (y apuntarlo después con su id
-       de Resend, sin volver a mandarlo); correos sin permiso (avisa y sigue);
+       envío apuntado en la factura; el reenvío; Resend caído; el correo que
+       sale y no se apunta (y apuntarlo después con su id de Resend, sin
+       volver a mandarlo); que NO escribe en la tabla correos del cartero (en
+       producción el dueño solo la lee);
      · Stripe que no deja restringir el enlace (y el PDF sin enlace) y la
        llave sin permiso; el enlace desfasado por un cobro parcial (se pide
        otro y el PDF nuevo es otra versión); la factura de la retención (sin
@@ -386,6 +387,8 @@ const hijos = [];
   ok('F15 lo que dice el PDF (en inglés): INVOICE, el número, la fecha, Due on receipt, a quién, la obra, la línea del hito, Subtotal $1,234.57, «Less retainage held (10%) -$123.46», «Amount due $1,111.11», How to pay y el enlace con lo que cobra ($1,111.11)',
     /INVOICE/.test(lin) && lin.includes(`No. ${eA.numero}`) && /Date [A-Z][a-z]{2} \d{1,2}, \d{4}/.test(lin) && /Due on receipt/.test(lin) && /ZZ Cliente Uno/.test(lin) && /C11 PRUEBA Oficina Uno/.test(lin) &&
     /C11 PRUEBA Rough-in/.test(lin) && /Subtotal \$1,234\.57/.test(lin) && /Less retainage held \(10%\) -\$123\.46/.test(lin) && /Amount due \$1,111\.11/.test(lin) && /HOW TO PAY/.test(lin) && lin.includes(enlA[2]) && /Pay \$1,111\.11 online by bank transfer \(ACH\)/.test(lin) && !/balance due today/.test(lin) && /Progress billing #1/.test(lin), lin.slice(0, 1500));
+  ok('F15b (12-nov) con el enlace dice lo que manda la base del pago en línea («Online payment is by bank account (ACH) only.»), cita su número y NO ofrece tarjeta en ninguna parte',
+    /Online payment is by bank account \(ACH\) only\./.test(lin) && lin.includes(`Please reference invoice ${eA.numero}.`) && !/card/i.test(lin), lin.slice(-900));
   ok('F16 los metadatos del PDF: el título «Invoice <número>», en inglés, y la huella del contenido en las palabras clave', (() => { const i = infoPdf('f-hito'); return i.includes(`Invoice ${eA.numero}`) && i.includes(`c11:${dA.huella}`); })(), infoPdf('f-hito'));
   r = await llamar({ accion: 'pdf', documento: docA });
   ok('F17 otra vez: el MISMO archivo (ya_estaba), sin otro registro, sin otro objeto y con el mismo enlace (la restricción es idempotente)',
@@ -402,11 +405,12 @@ const hijos = [];
     JSON.stringify(c1.cuerpo.cc) === '["zz.edgar@c11-pruebas.invalid"]' && c1.cuerpo.reply_to === 'billing@c11-pruebas.invalid' && c1.cuerpo.subject === `Invoice ${eA.numero} from ZZ Electric C11 PRUEBA, Inc.`, { r: r.j, correo: { ...c1.cuerpo, html: undefined, text: undefined, attachments: undefined } });
   ok('F20 …con el PDF adjunto («Invoice-<número>.pdf») que es EL REGISTRADO (mismo sha256), y el cuerpo en inglés con el botón de pago y el mensaje de Edgar',
     adj.filename === `Invoice-${eA.numero}.pdf` && sha(Buffer.from(adj.content || '', 'base64')) === pA.sha256 && c1.cuerpo.html.includes(enlA[2]) && /Pay \$1,111\.11 by bank transfer/.test(c1.cuerpo.html) &&
-    /The rough-in inspection passed today\./.test(c1.cuerpo.html) && /How to pay/.test(c1.cuerpo.html) && /assets\/membrete-email\.png/.test(c1.cuerpo.html) && /Amount due: \$1,111\.11/.test(c1.cuerpo.text), c1.cuerpo.text);
+    /The rough-in inspection passed today\./.test(c1.cuerpo.html) && /How to pay/.test(c1.cuerpo.html) && /assets\/membrete-email\.png/.test(c1.cuerpo.html) && /Amount due: \$1,111\.11/.test(c1.cuerpo.text) &&
+    /Online payment is by bank account \(ACH\) only\./.test(c1.cuerpo.html) && c1.cuerpo.text.includes(`Please reference invoice ${eA.numero}.`) && !/card/i.test(c1.cuerpo.html + c1.cuerpo.text), c1.cuerpo.text);
   const dA2 = await documento(docA);
-  ok('F21 el envío quedó en la factura (n 1, correo, para, cc, asunto, el id de Resend, el PDF) y en correos (tipo factura_app)',
+  ok('F21 el envío quedó en la factura (n 1, correo, para, cc, asunto, el id de Resend, el PDF), sin avisos',
     dA2.envios.length === 1 && dA2.envios[0].resend_id === c1.id && dA2.envios[0].pdf_id === pA.id && dA2.envios[0].cc === 'zz.edgar@c11-pruebas.invalid' && r.j.envio.n === 1 && r.j.reenvio === false &&
-    q(`select count(*) from correos where resend_id = '${c1.id}' and tipo = 'factura_app' and proyecto_id = 'u10-prueba-a' and enviado_por = '${UID}'`) === '1' && r.j.avisos.length === 0, { envios: dA2.envios, r: r.j });
+    r.j.avisos.length === 0, { envios: dA2.envios, r: r.j });
   r = await llamar({ accion: 'enviar', documento: docA, para: 'zz.otro@c11-pruebas.invalid', cc: 'zz.pm@c11-pruebas.invalid' });
   ok('F22 reenviar (a otro, con otra copia): otro correo (otra llave de idempotencia), n 2, reenvio = true, el mismo PDF',
     r.estado === 200 && rs.correos.length === 2 && rs.correos[1].idem !== rs.correos[0].idem && r.j.envio.n === 2 && r.j.reenvio === true && JSON.stringify(rs.correos[1].cuerpo.cc) === '["zz.edgar@c11-pruebas.invalid","zz.pm@c11-pruebas.invalid"]' && r.j.pdf.id === pA.id, r.j);
@@ -421,10 +425,9 @@ const hijos = [];
   ok('F25 el correo sale y no se apunta: 500 SIN_APUNTAR con el id de Resend en datos (para apuntarlo sin volver a mandarlo)', r.estado === 500 && r.j.codigo === 'SIN_APUNTAR' && id3 === rs.correos[2].id && /no se vuelve a mandar/.test(r.j.error), r.j);
   const ap = jsonDe(await comoEdgar(`select fn_emision_envio(${literal(docA)}, ${literal({ medio: 'correo', para: r.j.datos.para, cc: r.j.datos.cc, asunto: r.j.datos.asunto, resend_id: id3, pdf_id: r.j.datos.pdf_id })})::text;`));
   ok('F26 …y apuntarlo con ese id (lo que hace «Apuntar el envío» de la pantalla): n 3, sin otro correo', ap.envio.n === 3 && rs.correos.length === 3, ap);
-  q(`drop policy "correos: el dueno" on correos`);
   r = await llamar({ accion: 'enviar', documento: docA });
-  ok('F27 la tabla correos no deja (sin policy): se manda y se apunta en la factura igual, con un aviso en llano', r.estado === 200 && r.j.envio.n === 4 && r.j.avisos.some((a) => /no en el registro de correos/.test(a)), r.j);
-  q(`create policy "correos: el dueno" on correos for all to authenticated using (public.es_dueno()) with check (public.es_dueno())`);
+  ok('F27 la tabla correos (del cartero, la otra sesión; en producción el dueño solo la lee) no se toca: ninguna llamada a /rest/v1/correos en todos los envíos, 0 filas, y el envío n 4 sin avisos',
+    r.estado === 200 && r.j.envio.n === 4 && r.j.avisos.length === 0 && !gw.llamadas.some((l) => /\/rest\/v1\/correos$/.test(l)) && q(`select count(*) from correos`) === '0', { r: r.j, llamadas: gw.llamadas.filter((l) => /correos/.test(l)) });
 
   // ---- Stripe no deja restringir el enlace; la llave sin permiso ----
   const bB = await borrador({ forma: 'hito', hito_id: -1010100003 });
@@ -435,7 +438,8 @@ const hijos = [];
   r = await llamar({ accion: 'pdf', documento: bB.documento.id, sin_enlace: true });
   const tB = textoPdf(objetos.get(r.j.pdf && r.j.pdf.ruta) || Buffer.alloc(0), 'f-deposito-sin-enlace');
   ok('F29 …el PDF sin enlace (sin_enlace): registrado sin pago en línea, dice «Deposit» y How to pay, ningún buy.stripe ni enlace del simulado, con su aviso',
-    r.estado === 200 && r.j.enlace === null && JSON.stringify((await documento(bB.documento.id)).pdfs[0].pago) === '{}' && /Deposit/.test(tB) && /HOW TO PAY/.test(tB) && !/pagar\/plink_/.test(tB) && r.j.avisos.some((a) => /lo pediste así/.test(a)), r.j);
+    r.estado === 200 && r.j.enlace === null && JSON.stringify((await documento(bB.documento.id)).pdfs[0].pago) === '{}' && /Deposit/.test(tB) && /HOW TO PAY/.test(tB) && !/pagar\/plink_/.test(tB) && r.j.avisos.some((a) => /lo pediste así/.test(a)) &&
+    !/Online payment is by bank account/.test(tB), r.j);
   sim.estado.sinPermiso.push({ ruta: '/v1/payment_links/', metodo: 'POST', rak: 'rak_payment_link_write' });
   r = await llamar({ accion: 'pdf', documento: bB.documento.id });
   ok('F30 la llave sin permiso de escribir Payment Links: 502 STRIPE_PERMISO en llano', r.estado === 502 && r.j.codigo === 'STRIPE_PERMISO' && /Payment Links: Write/.test(r.j.error), r.j);
@@ -464,6 +468,14 @@ const hijos = [];
   const tR = textoPdf(objetos.get(r.j.pdf && r.j.pdf.ruta) || Buffer.alloc(0), 'f-retencion');
   ok('F33 la factura de la retención: PDF sin enlace (ni se pide a p1), «Retainage release», «Retainage released $123.46» y el total', r.estado === 200 && r.j.enlace === null && portero.restringir.length === n0 &&
     /Retainage release/.test(tR) && /Retainage released\s+\$123\.46/.test(tR) && /Amount due\s+\$123\.46/.test(tR) && eR.estado === 'emitida', r.j);
+  const tRl = tR.replace(/\s+/g, ' ');
+  ok('F33a (12-nov) su número es de SU serie (MXP-R-AAAA-0001: no es una fila de facturas) y el PDF cita lo que reclama (la factura del hito), no su propio número; ni pago en línea ni tarjeta',
+    /^MXP-R-\d{4}-0001$/.test(eR.numero) && tRl.includes(`No. ${eR.numero}`) && tRl.includes(`Please reference invoice ${eA.numero}.`) && !tRl.includes(`Please reference invoice ${eR.numero}`) && !/Online payment|online by bank transfer|card/i.test(tRl), { numero: eR.numero, texto: tRl.slice(-700) });
+  const nCorreos = rs.correos.length;
+  r = await llamar({ accion: 'enviar', documento: bR.documento.id });
+  const cR = (rs.correos[rs.correos.length - 1] || { cuerpo: {} }).cuerpo;
+  ok('F33c …y su correo: sin botón de pago, dice que libera la retención de la factura del hito y que se cite esa',
+    r.estado === 200 && rs.correos.length === nCorreos + 1 && !/by bank transfer<\/a>/.test(cR.html || '') && (cR.text || '').includes(`It releases the retainage withheld on invoice ${eA.numero}.`) && (cR.text || '').includes(`Please reference invoice ${eA.numero}.`), cR.text);
   ok('F33b …su «How to pay» (el de la casa, sin hablar de enlaces) sale igual y sin aviso; uno que hablara de «the secure link» avisaría en un PDF sin enlace',
     /Check payable to ZZ Electric C11 PRUEBA, Inc\./.test(tR) && !(r.j.avisos || []).length && modFacturas._probar.hablaDeEnlace('Bank transfer (ACH): use the secure link in the email.') === true &&
     modFacturas._probar.hablaDeEnlace('Pay online with the button') === true && modFacturas._probar.hablaDeEnlace('Check payable to ZZ Electric C11 PRUEBA, Inc. Please write the invoice number on the check.') === false, r.j);
@@ -477,7 +489,7 @@ const hijos = [];
   await comoEdgar(`select fn_emision_anular(${literal(bT.documento.id)}, 'ZZ prueba: se facturó a la obra equivocada', null);`);
   r = await llamar({ accion: 'pdf', documento: bT.documento.id });
   const r2 = await llamar({ accion: 'enviar', documento: bT.documento.id });
-  ok('F35 una anulada: ni PDF ni correo (409 MX008 con su nota de crédito)', r.estado === 409 && r.j.codigo === 'MX008' && /anulada \(nota de crédito NC-/.test(r.j.error) && r2.estado === 409 && rs.correos.length === 5 && eT.estado === 'emitida', { r: r.j, r2: r2.j });
+  ok('F35 una anulada: ni PDF ni correo (409 MX008 con su nota de crédito)', r.estado === 409 && r.j.codigo === 'MX008' && /anulada \(nota de crédito NC-/.test(r.j.error) && r2.estado === 409 && rs.correos.length === 6 && eT.estado === 'emitida', { r: r.j, r2: r2.j });
 
   // ---- Deno: la misma función, el mismo archivo ----
   const deno = [DENO, path.join(os.tmpdir(), 'deno')].find((x) => x && existsSync(x));

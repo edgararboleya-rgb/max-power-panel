@@ -129,10 +129,18 @@ arriba.
    se reparten por sus horas con «Así es» (no se clasifican a mano: el costo
    de la obra los contaría dos veces, y la lista del cierre lo avisa).
 3. Conciliar: cada cuenta al último día del mes, y «Confirmar».
-4. Cierre: la lista en verde → «CERRAR OCTUBRE 2026» → «Exportar» (el mayor y el
-   PDF al bucket `cierres`, y por correo).
-5. Si hay activos: «Postear depreciación» antes de cerrar (la lista lo pide).
-6. Comparar con QuickBooks mientras dure el paralelo (Estados → QuickBooks).
+4. WIP (con c12): en cada obra de precio fijo, el **costo total estimado** a
+   hoy (no puede ser menos que lo gastado); una obra que no toca este mes, «Dejarla
+   fuera este mes» con su nota. Después «Postear el ajuste»: un asiento el
+   último día del mes que se deshace solo el día 1. Si se mueve algo de la obra
+   después de postear, se vuelve a postear (la lista del cierre lo pide).
+5. Facturas (con c11, desde el corte): las que el aviso 64 dice cobradas en el
+   libro se marcan pagadas en la ficha de la obra (todavía nada lo marca solo).
+6. Cierre: la lista en verde → «CERRAR OCTUBRE 2026» → «Exportar» (el mayor y el
+   PDF al bucket `cierres`, y por correo). El bucket pide el código del
+   teléfono.
+7. Si hay activos: «Postear depreciación» antes de cerrar (la lista lo pide).
+8. Comparar con QuickBooks mientras dure el paralelo (Estados → QuickBooks).
 
 ## 7. Lo que apagar y encender, si hace falta
 

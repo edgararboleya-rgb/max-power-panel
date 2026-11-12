@@ -4070,7 +4070,7 @@
       const m = String(d.message || d.error || "");
       throw new Error(r.status === 409 || /exist|duplicate/i.test(m) ? `«${ruta}» ya estaba en el bucket «cierres» (ahí nada se pisa): vuelve a exportar; cada export usa su carpeta.`
         : /bucket not found/i.test(m) ? "No existe el bucket «cierres» en Storage: vuelve a pegar docs/conta/c9-cierre.sql (lo crea) o créalo privado en Storage."
-        : r.status === 403 || /row-level|policy|unauthorized/i.test(m) ? "Storage no dejó subir al bucket «cierres»: sus policies (solo el dueño sube) no están, o esta sesión no es la del dueño. Vuelve a pegar c9-cierre.sql."
+        : r.status === 403 || /row-level|policy|unauthorized/i.test(m) ? "Storage no dejó subir al bucket «cierres»: el bucket pide la sesión del dueño CON el código del teléfono (sal y vuelve a entrar con él), o sus policies no están (vuelve a pegar c9-cierre.sql)."
         : `No se pudo subir ${ruta} al bucket «cierres» (${r.status}${m ? `: ${m}` : ""}).`);
     }
   }
@@ -5309,6 +5309,16 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
   //     fn_wip_antes: confirmarlo o poner los de QuickBooks con su nota).
   //     Después el schedule con su total y, plegado, lo que va al libro. Un
   //     mes cerrado solo se lee (la foto de su ajuste).
+  //     (arreglo de la base del 12-nov) NINGUNA OBRA SALE SOLA: la que traía
+  //     saldo del ajuste anterior entra aunque ya no esté activa (cancelada,
+  //     pasada a T&M), con su porqué; la decisión es de Edgar: revisarla, o
+  //     «Dejarla fuera este mes» con su nota (fn_wip_revisar {excluir}, estado
+  //     'excluida'; el mes que viene se vuelve a preguntar). Lo que le falta a
+  //     una obra puede ser también «precio» (el contrato de la ficha cambió
+  //     después de revisarla: «El cambio de contrato es de después», un toque
+  //     con {precio_de_despues}, o revisarla con el precio nuevo) o «estimado»
+  //     (lleva más costo que su estimado: «Subir el costo estimado»; un costo
+  //     estimado menor que lo gastado la base lo frena siempre, MX005).
   //   · OBRAS (v_wip_obras): cuáles llevan WIP y por qué, lo de antes de cada
   //     una y su marca (fn_wip_obra: «contrato», «tm» o «auto», con su nota).
   //   · HISTORIAL (v_wip_ajustes y v_wip_revisiones).
@@ -5339,8 +5349,10 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     : `La base contestó con un error que no es de las reglas del WIP: ${err.message || "sin texto"}. Recarga la app; si sigue, avisa.`;
   // los cuadres del control que son trabajo por hacer: se enseñan en rojo, pero no tapan la página (aquí es donde se arreglan)
   const CUADRES_TAREA = [40, 50, 60];
-  const ORIGEN_REV = { a_mano: "un número a mano", mes_anterior: "confirmó lo del mes anterior", estimado: "confirmó su estimado", terminada: "terminada" };
-  const FALTA_WIP = { revision: "falta revisar", antes: "falta lo de antes", cuenta_ingreso: "sin cuenta de ingreso" };
+  const ORIGEN_REV = { a_mano: "un número a mano", mes_anterior: "confirmó lo del mes anterior", estimado: "confirmó su estimado", terminada: "terminada", excluida: "fuera este mes" };
+  // lo que le falta a una obra para entrar en el ajuste (fn_wip_calcular.falta); «precio»: el contrato de su ficha cambió después de
+  // revisarla; «estimado»: lleva más costo que su costo estimado revisado (el estimado quedó viejo)
+  const FALTA_WIP = { revision: "falta revisar", antes: "falta lo de antes", cuenta_ingreso: "sin cuenta de ingreso", precio: "cambió el contrato", estimado: "pasa de su estimado" };
   const MODO_WIP = { auto: "Lo que diga la regla (residencial o comercial con contrato: sí; de servicio: no)", contrato: "Lleva WIP: es de precio fijo", tm: "No lleva WIP: se cobra por horas o por lo hecho (T&M)" };
   // un % como lo da la base (0–100, dos decimales); un monto que se escribe: dólares con dos decimales como mucho
   const pctW = v => { const n = num(v); return n == null || Number.isNaN(n) ? "—" : `${n.toLocaleString("en-US", { maximumFractionDigits: 2 })} %`; };
@@ -5488,7 +5500,8 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     const nSobre = d.filas.filter(f => f.en_ajuste && num(f.sobre_facturado) > 0).length;
     const desglose = [num(o.listas) ? plural(o.listas, "lista", "listas") : "", num(o.por_revisar) ? `${o.por_revisar} por revisar` : "",
       num(o.por_confirmar_antes) ? `${o.por_confirmar_antes} sin lo de antes confirmado` : "", num(o.sin_cuenta_ingreso) ? `${o.sin_cuenta_ingreso} sin cuenta de ingreso` : "",
-      num(o.sin_movimiento) ? `${o.sin_movimiento} sin movimiento` : ""].filter(Boolean).join(", ");
+      num(o.por_precio) ? `${o.por_precio} con el contrato cambiado después de revisarla` : "", num(o.por_estimado) ? `${o.por_estimado} con más costo que su estimado` : "",
+      num(o.excluidas) ? `${o.excluidas} fuera este mes a propósito` : "", num(o.sin_movimiento) ? `${o.sin_movimiento} sin movimiento` : ""].filter(Boolean).join(", ");
     const exige = r.exigido ? "El cierre de este mes lo exige." : r.exigir_desde ? `El cierre lo exige desde ${esc(nombrePer(r.exigir_desde))}.` : "El cierre todavía no lo exige.";
     return `<section class="ct-card ct-wip-res" id="ct-wip-res">
         <div class="ct-cab"><h2>${esc(cap(r.nombre))}</h2>${estadoWipPill(r)}</div>
@@ -5529,42 +5542,65 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
   // lo que se puede hacer; lo pendiente primero
   function revisionWipHTML(d, enCierre) {
     const r = d.res, filas = d.filas;
-    const rango = f => f.estado === "pendiente" ? 0 : f.estado === "lista" ? 1 : 2;
+    const rango = f => ({ pendiente: 0, lista: 1, excluida: 2 })[f.estado] ?? 3;
     const orden = [...filas].sort((x, y) => rango(x) - rango(y));
     const pend = filas.filter(f => f.estado === "pendiente").length;
     return `<div class="ct-cab"><h2>La revisión de ${esc(r.nombre)}</h2>${r.cerrado ? pill("cerrado") : pend ? pill(`${pend} por hacer`, "warn") : filas.length ? pill("todo revisado", "ok") : pill("ninguna obra")}</div>
-      <p class="ct-nota">${r.cerrado ? "Así quedó cada obra al cerrar el mes." : `Cada obra de precio fijo, con lo que lleva gastado y su costo TOTAL estimado (desde el inicio hasta terminarla). Si no cambió, «Sigue igual» en un toque; si cambió, el número nuevo con su nota.${enCierre ? "" : " Las que ya andaban antes del libro piden una vez lo de antes."}`}</p>
+      <p class="ct-nota">${r.cerrado ? "Así quedó cada obra al cerrar el mes." : `Cada obra de precio fijo, con lo que lleva gastado y su costo TOTAL estimado (desde el inicio hasta terminarla). Si no cambió, «Sigue igual» en un toque; si cambió, el número nuevo con su nota.${enCierre ? "" : " Las que ya andaban antes del libro piden una vez lo de antes."} Ninguna obra sale sola del WIP: la que no debe contar este mes (cancelada, sin lo de antes todavía) se deja fuera con su nota, y el mes que viene se vuelve a preguntar.`}</p>
       ${orden.length ? `<ul class="ct-wip-lista">${orden.map(f => obraRevHTML(f, r)).join("")}</ul>` : `<p class="ct-vacio">Ninguna obra de precio fijo activa en ${esc(r.nombre)}.</p>`}`;
   }
   function obraRevHTML(f, r) {
     const falta = Array.isArray(f.falta) ? f.falta : [];
     const sePuede = !r.cerrado && String(r.desde) <= hoyMiami();
+    const excl = f.estado === "excluida";
+    // sin revisión y sin propuesta: la base la trae al mes porque traía saldo, pero hoy ya no lleva WIP (pasada a T&M, sin contrato…):
+    // lo único que se decide aquí es dejarla fuera este mes con su nota (o arreglar su ficha o su marca en «Obras»)
+    const noLleva = f.estado === "pendiente" && !f.revision_id && f.propuesta_nota == null;
     const pills = (f.estado === "lista" ? pill(f.terminada ? "terminada" : "revisada", "ok")
-      : f.estado === "pendiente" ? pill(falta.map(k => FALTA_WIP[k] || k).join(" · ") || "pendiente", "warn") : pill("sin movimiento"))
+      : f.estado === "pendiente" ? pill(falta.map(k => FALTA_WIP[k] || k).join(" · ") || "pendiente", "warn")
+      : excl ? pill("fuera este mes") : pill("sin movimiento"))
       + (f.pasa_de_100 ? pill("pasa de 100 %", "bad") : "") + (noCero(f.perdida_total) ? pill("con pérdida", "bad") : "");
     // lo que lleva gastado: la base lo da sumado cuando la obra ya se calcula; si no, sus partes (aquí no se suman)
     const gastado = f.costo_fecha != null
       ? `Lleva <b class="ct-num">${fmt(f.costo_fecha)}</b> gastados${noCero(f.costo_antes) ? ` (<span class="ct-num">${fmt(f.costo_libro)}</span> en el libro y <span class="ct-num">${fmt(f.costo_antes)}</span> de antes)` : ""}`
       : `Lleva <b class="ct-num">${fmt(f.costo_libro)}</b> en el libro${f.de_antes ? (f.costo_antes != null ? ` y <b class="ct-num">${fmt(f.costo_antes)}</b> de antes del libro` : " y lo de antes del libro, sin confirmar") : ""}`;
-    const estim = f.terminada ? "terminada: <b>100 %</b> hecho"
+    const estim = excl ? "fuera del WIP este mes: su ingreso es lo facturado"
+      : f.terminada ? "terminada: <b>100 %</b> hecho"
       : f.costo_estimado != null ? `costo total estimado <b class="ct-num">${fmt(f.costo_estimado)}</b> · <b>${pctW(f.pct_avance)}</b> hecho${f.pasa_de_100 ? ` (de verdad ${pctW(f.pct_real)})` : ""}`
       : f.propuesta_costo_estimado != null ? `${f.propuesta_origen === "estimado" ? "su estimado" : "la vez pasada"}: <b class="ct-num">${fmt(f.propuesta_costo_estimado)}</b>`
       : "sin costo estimado todavía";
     const lado = ladoWip(f);
-    const cifras = f.ingreso_ganado != null ? `<p class="ct-wip-ob-c">Precio <span class="ct-num">${fmt(f.precio_contrato)}</span> · ganado <span class="ct-num">${fmt(f.ingreso_ganado)}</span> · facturado <span class="ct-num">${fmt(f.facturado_fecha)}</span>${lado ? ` → <b class="ct-wip-l ${lado.clase}">${esc(lado.txt)}</b>` : ""}</p>` : "";
-    const barra = f.pct_avance != null ? `<div class="ct-ob-barra-h${f.pasa_de_100 ? " pasa" : ""}" role="img" aria-label="${esc(pctW(f.pct_avance))} hecho"><span style="width:${Math.max(0, Math.min(100, num(f.pct_avance) || 0))}%"></span></div>` : "";
-    const revisada = f.revision_id ? `<p class="ct-sub">Revisada el ${esc(fechaHora(f.revisado_el))} · ${esc(ORIGEN_REV[f.revision_origen] || f.revision_origen || "")}${f.revision_nota ? ` · «${esc(f.revision_nota)}»` : ""}</p>` : "";
+    const cifras = f.ingreso_ganado != null && !excl ? `<p class="ct-wip-ob-c">Precio <span class="ct-num">${fmt(f.precio_contrato)}</span> · ganado <span class="ct-num">${fmt(f.ingreso_ganado)}</span> · facturado <span class="ct-num">${fmt(f.facturado_fecha)}</span>${lado ? ` → <b class="ct-wip-l ${lado.clase}">${esc(lado.txt)}</b>` : ""}${f.en_ajuste ? "" : ` <span class="ct-sub">(no entra en el ajuste hasta que se arregle lo de arriba)</span>`}</p>` : "";
+    const barra = f.pct_avance != null && !excl ? `<div class="ct-ob-barra-h${f.pasa_de_100 ? " pasa" : ""}" role="img" aria-label="${esc(pctW(f.pct_avance))} hecho"><span style="width:${Math.max(0, Math.min(100, num(f.pct_avance) || 0))}%"></span></div>` : "";
+    const revisada = f.revision_id ? `<p class="ct-sub">${excl ? "Fuera desde el" : "Revisada el"} ${esc(fechaHora(f.revisado_el))} · ${esc(ORIGEN_REV[f.revision_origen] || f.revision_origen || "")}${f.revision_nota ? ` · «${esc(f.revision_nota)}»` : ""}</p>` : "";
     const avisos = (Array.isArray(f.avisos) ? f.avisos : []).map(t => `<li class="ct-aviso warn">${esc(t)}</li>`).join("");
-    // lo que se puede hacer (un mes abierto y ya empezado): lo de antes, la revisión (un toque, otro número, terminada)
+    const mesCorto = esc(nombrePer(r.periodo).replace(/ de \d{4}$/, ""));
+    // lo que se puede hacer (un mes abierto y ya empezado), según lo que le falta
     const acc = [];
-    if (sePuede && falta.includes("antes")) acc.push(`<button type="button" class="accion chica" data-wip-antes>Lo de antes del libro</button>`);
-    if (sePuede && falta.includes("revision")) {
-      if (f.propuesta_terminada) acc.push(`<button type="button" class="accion chica" data-wip-terminada>Terminó en ${esc(nombrePer(r.periodo).replace(/ de \d{4}$/, ""))}</button>`);
-      if (f.propuesta_costo_estimado != null) acc.push(`<button type="button" class="accion chica" data-wip-igual>Sigue igual: ${fmt(f.propuesta_costo_estimado)}</button>`);
-      acc.push(`<button type="button" class="accion secundaria chica" data-wip-otro>${f.propuesta_costo_estimado != null ? "Otro número" : "Poner su costo estimado"}</button>`);
-    } else if (sePuede && f.revision_id) {
-      acc.push(`<button type="button" class="ct-jr-link" data-wip-otro>Cambiar la revisión</button>`);
-      if (!f.terminada && f.obra_estado === "completado") acc.push(`<button type="button" class="ct-jr-link" data-wip-terminada>Terminó en ${esc(nombrePer(r.periodo).replace(/ de \d{4}$/, ""))}</button>`);
+    if (sePuede && excl) {
+      acc.push(`<button type="button" class="accion secundaria chica" data-wip-otro>Volver a meterla: su costo estimado</button>`);
+    } else if (sePuede && noLleva) {
+      acc.push(`<button type="button" class="accion chica" data-wip-excluir>Dejarla fuera este mes (con su nota)</button>`);
+      acc.push(`<button type="button" class="ct-jr-link" data-wip-ir-obras>¿Lleva WIP? Su marca, en «Obras»</button>`);
+    } else if (sePuede) {
+      if (falta.includes("antes")) acc.push(`<button type="button" class="accion chica" data-wip-antes>Lo de antes del libro</button>`);
+      if (falta.includes("precio")) {
+        acc.push(`<button type="button" class="accion chica" data-wip-despues>El cambio de contrato es de después</button>`);
+        acc.push(`<button type="button" class="accion secundaria chica" data-wip-otro>Revisarla con el precio nuevo</button>`);
+      }
+      if (falta.includes("estimado")) {
+        acc.push(`<button type="button" class="accion chica" data-wip-otro>Subir el costo estimado</button>`);
+        if (!f.terminada && f.obra_estado === "completado") acc.push(`<button type="button" class="accion secundaria chica" data-wip-terminada>Terminó en ${mesCorto}</button>`);
+      }
+      if (falta.includes("revision")) {
+        if (f.propuesta_terminada) acc.push(`<button type="button" class="accion chica" data-wip-terminada>Terminó en ${mesCorto}</button>`);
+        if (f.propuesta_costo_estimado != null) acc.push(`<button type="button" class="accion chica" data-wip-igual>Sigue igual: ${fmt(f.propuesta_costo_estimado)}</button>`);
+        acc.push(`<button type="button" class="accion secundaria chica" data-wip-otro>${f.propuesta_costo_estimado != null ? "Otro número" : "Poner su costo estimado"}</button>`);
+      } else if (f.revision_id && !falta.includes("precio") && !falta.includes("estimado")) {
+        acc.push(`<button type="button" class="ct-jr-link" data-wip-otro>Cambiar la revisión</button>`);
+        if (!f.terminada && f.obra_estado === "completado") acc.push(`<button type="button" class="ct-jr-link" data-wip-terminada>Terminó en ${mesCorto}</button>`);
+      }
+      if (f.estado !== "sin_movimiento") acc.push(`<button type="button" class="ct-jr-link" data-wip-excluir>Dejarla fuera este mes</button>`);
     }
     const propNota = sePuede && falta.includes("revision") && f.propuesta_nota ? `<p class="ct-sub ct-wip-prop">${esc(f.propuesta_nota)}</p>` : "";
     // (la clase del estado lleva su prefijo: «lista» suelta es una rejilla de la app, en css/styles.css)
@@ -5573,7 +5609,7 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
         <p class="ct-wip-ob-d">${gastado} · ${estim}</p>
         ${barra}${cifras}${revisada}
         ${f.estado === "pendiente" && f.falta_texto ? `<p class="ct-aviso warn ct-wip-falta">${esc(f.falta_texto)}</p>` : ""}
-        ${avisos ? `<ul class="ct-jr-avisos">${avisos}</ul>` : ""}
+        ${avisos && !excl ? `<ul class="ct-jr-avisos">${avisos}</ul>` : ""}
         ${propNota}
         ${acc.length ? `<div class="ct-acciones ct-wip-acc">${acc.join("")}</div>` : ""}
         <div class="ct-form" hidden></div>
@@ -5587,7 +5623,7 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
       { t: "Ganado", r: true }, { t: "Facturado", r: true }, { t: "Por detrás o por delante", r: true }];
     const filas = d.filas.map(f => {
       const lado = ladoWip(f);
-      const marcas = (f.estado === "pendiente" ? pill((Array.isArray(f.falta) ? f.falta : []).map(k => FALTA_WIP[k] || k).join(" · ") || "pendiente", "warn") : f.estado === "sin_movimiento" ? pill("sin movimiento") : "")
+      const marcas = (f.estado === "pendiente" ? pill((Array.isArray(f.falta) ? f.falta : []).map(k => FALTA_WIP[k] || k).join(" · ") || "pendiente", "warn") : f.estado === "sin_movimiento" ? pill("sin movimiento") : f.estado === "excluida" ? pill("fuera este mes") : "")
         + (f.pasa_de_100 ? pill("pasa de 100 %", "bad") : "") + (noCero(f.perdida_total) ? pill(`pierde ${fmt(f.perdida_total)}`, "bad") : "") + (f.terminada ? pill("terminada", "ok") : "");
       return { clase: f.en_ajuste ? "" : "ct-wip-fuera", celdas: [`<b>${esc(f.obra || f.proyecto_id)}</b>${f.cliente ? `<small>${esc(f.cliente)}</small>` : ""}${marcas ? `<span class="ct-wip-marcas">${marcas}</span>` : ""}`,
         fmt(f.precio_contrato), fmt(f.costo_estimado), fmt(f.costo_fecha), pctW(f.pct_avance), fmt(f.ingreso_ganado), fmt(f.facturado_fecha),
@@ -5601,7 +5637,7 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
         <div class="ct-cab"><h2>El WIP de ${esc(r.nombre)}, obra por obra</h2>${r.fuente === "posteado" ? pill("lo que se posteó") : pill("calculado hoy")}</div>
         ${tablaOb(cols, filas, "ct-wip-tabla")}
         ${mas.length ? `<details class="ct-wip-mas"><summary>Las demás cifras: utilidad, costo para terminar, pérdida</summary>${tablaOb([{ t: "Obra" }, { t: "Utilidad estimada", r: true }, { t: "Costo para terminar", r: true }, { t: "Utilidad a la fecha", r: true }, { t: "Pérdida", r: true }, { t: "Se provisiona", r: true }], mas, "ct-wip-tabla")}</details>` : ""}
-        ${ayudaHTML(`<p class="ct-nota">Por costo a costo: el % hecho es lo gastado a la fecha entre el costo total estimado que revisaste este mes (se queda en 100 % aunque se pase); lo ganado es el precio por ese %. Si lo ganado pasa de lo facturado vas por detrás (te falta facturar: 1200); si lo facturado pasa de lo ganado vas por delante (2400). Una obra con más costo estimado que precio reconoce su pérdida entera el mes en que se ve. Lo gastado y lo facturado cuentan desde el inicio de la obra: lo de antes del libro, confirmado.</p>
+        ${ayudaHTML(`<p class="ct-nota">Por costo a costo: el % hecho es lo gastado a la fecha entre el costo total estimado que revisaste este mes; lo ganado es el precio por ese %. Si lo gastado pasa del estimado, el estimado quedó viejo: esa obra no entra en el ajuste hasta que lo subas (o la marques terminada). Si lo ganado pasa de lo facturado vas por detrás (te falta facturar: 1200); si lo facturado pasa de lo ganado vas por delante (2400). Una obra con más costo estimado que precio reconoce su pérdida entera el mes en que se ve. Lo gastado y lo facturado cuentan desde el inicio de la obra: lo de antes del libro, confirmado.</p>
           <p class="ct-nota">Para la afianzadora (en inglés): contract price = precio · estimated cost = costo estimado · estimated profit = utilidad estimada · cost to date = costo a la fecha · % complete = % hecho · earned revenue = ganado · billed to date = facturado · underbillings = por detrás · overbillings = por delante · cost to complete = costo para terminar · gross profit to date = utilidad a la fecha · loss provision = se provisiona.</p>`, "¿Cómo se calcula?")}
       </section>`;
   }
@@ -5639,6 +5675,15 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
         () => accionWip(li, "fn_wip_revisar", { p_proyecto: f.proyecto_id, p_periodo: r.periodo, p: { terminada: true } }, x => notaRevision(x), { aviso: `${f.obra}: terminada`, periodo: r.periodo })));
       const antes = li.querySelector("[data-wip-antes]");
       if (antes) antes.addEventListener("click", () => abrirAntes(li, f.proyecto_id, r.periodo));
+      // dejarla fuera este mes, con su nota (la base la pide); el mes que viene se vuelve a preguntar
+      const ex = li.querySelector("[data-wip-excluir]");
+      if (ex) ex.addEventListener("click", () => formaExcluir(li, f, r));
+      // el contrato de la ficha cambió después de revisarla y el cambio es de después: un toque (la revisión se queda con su precio)
+      const dd = li.querySelector("[data-wip-despues]");
+      if (dd) dd.addEventListener("click", () => accionWip(li, "fn_wip_revisar", { p_proyecto: f.proyecto_id, p_periodo: r.periodo, p: { precio_de_despues: true } },
+        x => notaRevision(x), { aviso: `${f.obra}: el cambio de contrato es de después`, releer: true, periodo: r.periodo, boton: dd }));
+      const io = li.querySelector("[data-wip-ir-obras]");
+      if (io) io.addEventListener("click", () => { S.wip.q = f.obra || ""; S.wip.filtro = "todas"; ir("wip", { sub: "obras" }); });
     });
     const posteo = cont.querySelector("#ct-wip-posteo");
     if (posteo) {
@@ -5648,10 +5693,18 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
   }
   // la nota que devuelve la revisión: si con ella el ajuste ya posteado dejó de estar al día, en ámbar (hay que volver a postear)
   const notaRevision = x => x ? { texto: x.nota || "Revisada.", tipo: x.ajuste && x.ajuste.vivo && !x.ajuste.al_dia ? "warn" : "ok" } : null;
-  // OTRO NÚMERO: el costo total estimado (texto), su nota y, si este mes el precio no es el de la ficha, el precio con su nota
+  // DEJARLA FUERA ESTE MES: con su nota (la base la pide); su ingreso de ese mes es lo facturado y el mes que viene se vuelve a preguntar
+  function formaExcluir(li, f, r) {
+    montarForma(li, formaHTML(`Dejar «${esc(f.obra)}» fuera del WIP de ${esc(nombrePer(r.periodo))}: este mes no entra en el ajuste y su ingreso es lo facturado. Queda escrito por qué, con quién y cuándo; el mes que viene se vuelve a preguntar.`,
+      campoHTML("nota", "Por qué (por ejemplo, «el cliente canceló el contrato»)", "textarea", `required data-falta="Di por qué se queda fuera: queda escrito con la revisión."`), "Dejarla fuera este mes"), v =>
+      accionWip(li, "fn_wip_revisar", { p_proyecto: f.proyecto_id, p_periodo: r.periodo, p: { excluir: true, nota: v.nota } }, x => notaRevision(x), { aviso: `${f.obra}: fuera este mes`, periodo: r.periodo }));
+  }
+  // OTRO NÚMERO: el costo total estimado (texto), su nota y, si este mes el precio no es el de la ficha, el precio con su nota.
+  // El costo total no puede ser menos de lo que la obra ya lleva (la base lo frena: MX005); se dice antes
   function formaRevision(li, f, r) {
     const prop = f.propuesta_costo_estimado != null;
-    montarForma(li, formaHTML(`El costo TOTAL estimado de «${esc(f.obra)}» en ${esc(nombrePer(r.periodo))}: lo que costará entera, desde el inicio hasta terminarla (no lo que falta).${prop ? ` La vez pasada: <span class="ct-num">${fmt(f.propuesta_costo_estimado)}</span>; si lo cambias, di por qué.` : ""}`,
+    const lleva = f.costo_fecha != null ? ` Ya lleva <span class="ct-num">${fmt(f.costo_fecha)}</span> gastados: el costo total no puede ser menos.` : "";
+    montarForma(li, formaHTML(`El costo TOTAL estimado de «${esc(f.obra)}» en ${esc(nombrePer(r.periodo))}: lo que costará entera, desde el inicio hasta terminarla (no lo que falta).${lleva}${prop ? ` La vez pasada: <span class="ct-num">${fmt(f.propuesta_costo_estimado)}</span>; si lo cambias, di por qué.` : ""}`,
       `${campoHTML("costo", "Costo total estimado ($)", "monto", `required value="${f.costo_estimado != null && !f.terminada ? esc(dos(f.costo_estimado)) : ""}" data-falta="Falta el costo total estimado."`)}
        ${campoHTML("nota", prop ? "Por qué cambia (queda escrito con la revisión)" : "Nota (opcional; queda con la revisión)", "textarea")}
        <details class="ct-wip-precio"><summary>¿Este mes el precio no es el de la ficha (${fmt(f.precio_ficha)})?</summary>
@@ -5719,11 +5772,12 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
       const f = d.filas.find(x => x.proyecto_id === id) || {}, lado = ladoWip(f);
       return `<li><b>${esc(f.obra || id)}</b>: ${lado ? esc(lado.txt) : "—"}${noCero(f.perdida_provision) ? `; y pierde ${fmt(f.perdida_total)}: se provisionan ${fmt(f.perdida_provision)}` : ""}.</li>`;
     }).join("");
-    const fuera = d.filas.filter(f => f.estado === "pendiente");
+    const fuera = d.filas.filter(f => f.estado === "pendiente"), excluidas = d.filas.filter(f => f.estado === "excluida");
     montarForma(card, formaHTML(`${a.vivo ? `El ajuste que está posteado (asiento ${esc(a.numero)}) ya no es el de hoy: se reversa dentro de ${esc(r.nombre)} y entra este. ` : ""}Se postea <b>un asiento</b> del ${esc(fechaLarga(r.hasta))}, con ${plural(ids.length, "obra", "obras")}:`,
       `<ul class="ct-wip-postea">${porObra}</ul>
        <details class="ct-wip-lineas"><summary>Las ${plural(ls.length, "línea", "líneas")} del asiento</summary>${lineasPorObraHTML(ls)}</details>
-       ${fuera.length ? `<p class="ct-aviso warn">No entran (les falta algo): ${esc(fuera.map(f => f.obra).join(", "))}. Su ingreso sigue siendo lo facturado.</p>` : ""}
+       ${fuera.length ? `<p class="ct-aviso warn">No entran (les falta algo): ${esc(fuera.map(f => `${f.obra} (${(Array.isArray(f.falta) ? f.falta : []).map(k => FALTA_WIP[k] || k).join(", ")})`).join("; "))}. Su ingreso sigue siendo lo facturado.</p>` : ""}
+       ${excluidas.length ? `<p class="ct-aviso warn">Fuera este mes a propósito: ${esc(excluidas.map(f => `${f.obra}${f.revision_nota ? ` («${f.revision_nota}»)` : ""}`).join("; "))}. Su ingreso es lo facturado.</p>` : ""}
        <p class="ct-nota">Se deshace solo el <b>${esc(fechaLarga(r.reverso_fecha))}</b>: ese día el libro vuelve a lo facturado, y el mes que viene se ajusta otra vez con lo de entonces. Mientras ${esc(r.nombre)} siga abierto, si algo cambia se vuelve a postear.</p>
        ${campoHTML("nota", "Nota (opcional; queda con el ajuste)", "textarea")}`, a.vivo ? "Volver a postear" : "Postear el ajuste"), v =>
       accionWip(card, "fn_wip_postear", { p_periodo: r.periodo, p_motivo: v.nota || null }, x => x ? { texto: x.nota, tipo: x.posteado ? "ok" : "warn" } : null,
@@ -5855,7 +5909,7 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
       </li>`;
     const rvHTML = x => `<li class="ct-wip-hi${x.vigente ? "" : " deshecho"}">
         <p><b>${esc(x.obra || x.proyecto_id)}</b> · ${esc(x.periodo_nombre || nombrePer(x.periodo))} ${x.vigente ? pill("vigente", "ok") : pill("sustituida")}</p>
-        <p class="ct-sub">${x.terminada ? "Terminada (100 %)" : `Costo total estimado <span class="ct-num">${fmt(x.costo_estimado)}</span>`} · precio <span class="ct-num">${fmt(x.precio_contrato)}</span>${x.precio_ficha != null && num(x.precio_ficha) !== num(x.precio_contrato) ? ` (la ficha decía ${fmt(x.precio_ficha)})` : ""} · ${esc(ORIGEN_REV[x.origen] || x.origen || "")}${x.nota ? ` · «${esc(x.nota)}»` : ""}</p>
+        <p class="ct-sub">${x.origen === "excluida" ? "Fuera del WIP ese mes" : x.terminada ? "Terminada (100 %)" : `Costo total estimado <span class="ct-num">${fmt(x.costo_estimado)}</span>`} · precio <span class="ct-num">${fmt(x.precio_contrato)}</span>${x.precio_ficha != null && num(x.precio_ficha) !== num(x.precio_contrato) ? ` (la ficha decía ${fmt(x.precio_ficha)})` : ""} · ${esc(ORIGEN_REV[x.origen] || x.origen || "")}${x.nota ? ` · «${esc(x.nota)}»` : ""}</p>
         <p class="ct-sub">El ${esc(fechaHora(x.revisado_el))}${x.revisado_por_nombre ? ` por ${esc(x.revisado_por_nombre)}` : ""}${x.sustituida_el ? ` · sustituida el ${esc(fechaHora(x.sustituida_el))}` : ""}</p>
       </li>`;
     const c = wipCuerpo();
@@ -5920,10 +5974,21 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
   //     facturas: «pdf», «enviar», «ver»), entregarla en mano (fn_emision_
   //     envio), y anularla con nota de crédito (fn_emision_anular) —y, si
   //     tenía, desactivar su enlace de pago (la función stripe).
-  // FALLA RUIDOSA: antes de pintar una cifra, v_emision_control; un cuadre en
-  // rojo y la página no pinta números; sus avisos salen arriba. Sin c11, la
-  // página lo dice en llano. Ningún monto se suma aquí: vienen de la base (y
-  // los del contenido, como texto de dos decimales, solo se escriben).
+  // FALLA RUIDOSA: antes de pintar una cifra, v_emision_control (16 filas);
+  // un cuadre en rojo y la página no pinta números; sus avisos salen arriba.
+  // Sin c11, la página lo dice en llano. Ningún monto se suma aquí: vienen de
+  // la base (y los del contenido, como texto de dos decimales, solo se
+  // escriben).
+  // (arreglo de la base del 12-nov) LA TARJETA ESTÁ APAGADA (decisión de
+  // Edgar: solo ACH; se enciende cuando los cobros en línea sepan registrar
+  // el recargo): la pantalla lo dice con el texto de la base (tarjeta_texto,
+  // tarjeta.por_que) y la factura no ofrece tarjeta; con pago en línea dice
+  // pago_en_linea.texto. La factura de la retención lleva su serie
+  // (MXP-R-AAAA-NNNN) y cita las facturas que reclama (referencias). Si la
+  // serie salta un número que ya lleva una factura hecha fuera de la app, la
+  // emisión lo dice (aviso). Mover el corte de forma que cambie hoy por dónde
+  // va el 🧾 se pregunta antes y la base lo confirma (aviso); el corte no va
+  // después de la primera factura viva de la app (corte_hasta).
   // ============================================================
   const SUBS_FAC = { facturas: "Facturas", obras: "Por facturar", ajustes: "Ajustes" };
   const FORMA_FAC = { hito: "Hito", porcentaje: "Porcentaje del contrato", tm: "T&M (horas y material)", retencion: "Retención" };
@@ -5956,6 +6021,14 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
   const hayCifra = v => /[1-9]/.test(String(v == null ? "" : v));
   // ¿El «How to pay» habla de un enlace de pago (que una factura sin enlace no lleva)? La misma regla que la función facturas
   const hablaDeEnlace = s => /\b(link|links|click|button|stripe|qr)\b|\bpay(ing)? online\b|\bonline payment/i.test(String(s == null ? "" : s));
+  // Lo que el cliente cita al pagar (lo mismo que el PDF, pdf.ts referenciaEn): su número; la de la retención (serie propia
+  // MXP-R-…, que no es una factura del libro), los números de las facturas cuya retención reclama (contenido.referencias)
+  const listaEn = xs => xs.length <= 1 ? (xs[0] || "") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`;
+  const referenciaEn = c => {
+    const refs = Array.isArray(c.referencias) ? c.referencias.map(x => String(x == null ? "" : x).trim()).filter(Boolean) : [];
+    if (c.forma === "retencion" && refs.length) return `Please reference invoice${refs.length > 1 ? "s" : ""} ${listaEn(refs)}.`;
+    return c.numero ? `Please reference invoice ${c.numero}.` : "";
+  };
 
   // LA FACTURA COMO LA RECIBE EL CLIENTE (docs/conta/f10-factura-vista-previa.html; el PDF de la función de borde la pinta igual):
   // del contenido de la base y de nada más. Sin número (borrador): «DRAFT»
@@ -5996,8 +6069,8 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
       <table class="ct-fx-lineas"><thead><tr><th>Description</th>${tm ? `<th class="r ct-fx-pc">Qty</th><th class="r ct-fx-pc">Rate</th>` : ""}<th class="r">Amount</th></tr></thead><tbody>${lineas || `<tr><td colspan="${tm ? 4 : 2}" class="ct-fx-gris">No lines yet.</td></tr>`}</tbody></table>
       <div class="ct-fx-abajo">
         <div class="ct-fx-pago"><p class="ct-fx-et">How to pay</p><p>${c.como_pagar ? conSaltos(c.como_pagar) : `<span class="ct-fx-falta">(falta el «How to pay» en Ajustes)</span>`}</p>
-          ${c.pago_en_linea && c.pago_en_linea.ach ? `<p><b>Pay ${cobra ? esc(cobra) + " " : ""}online by bank transfer (ACH)${op.enlace ? ":" : ""}</b><br><span class="ct-fx-gris">${op.enlace ? esc(op.enlace) : "The secure payment link goes in the PDF and the email."}</span>${saldoHoy ? `<br><span class="ct-fx-gris">That is the balance due today: payments already received are deducted.</span>` : ""}</p>` : ""}
-          ${c.numero ? `<p class="ct-fx-gris">Please reference invoice ${esc(c.numero)}.</p>` : ""}</div>
+          ${c.pago_en_linea && c.pago_en_linea.ach ? `<p><b>Pay ${cobra ? esc(cobra) + " " : ""}online by bank transfer (ACH)${op.enlace ? ":" : ""}</b><br><span class="ct-fx-gris">${op.enlace ? esc(op.enlace) : "The secure payment link goes in the PDF and the email."}</span>${saldoHoy ? `<br><span class="ct-fx-gris">That is the balance due today: payments already received are deducted.</span>` : ""}${c.pago_en_linea.texto ? `<br><span class="ct-fx-gris">${esc(c.pago_en_linea.texto)}</span>` : ""}</p>` : ""}
+          ${referenciaEn(c) ? `<p class="ct-fx-gris ct-fx-cita">${esc(referenciaEn(c))}</p>` : ""}</div>
         <div class="ct-fx-tot">${tot.map(([a, b, cl2]) => `<div class="ct-fx-fila ${cl2}"><span>${esc(a)}</span><span>${esc(b)}</span></div>`).join("")}
           <div class="ct-fx-fila debe"><span>${saldoHoy ? "Balance due today" : "Amount due"}</span><span>${esc(saldoHoy ? cobra : usdTxt(t.a_pagar))}</span></div></div>
       </div>
@@ -6024,8 +6097,9 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     } catch (err) { if (!vivaFac(mia)) return; return errorFac(err, pintarFacturas); }
     S.fac.estado = est;
     pintarFacArriba(est, avisos);
-    // (el siguiente número, solo desde el corte: antes, la base lo da con el año de hoy y la primera de verdad lleva el del corte)
-    subFac(`${plural(num(est.emitidas) || 0, "emitida", "emitidas")} · ${plural(num(est.borradores) || 0, "borrador", "borradores")}${num(est.anuladas) ? ` · ${plural(est.anuladas, "anulada", "anuladas")}` : ""}${est.camino === "app" ? ` · la siguiente, <span class="ct-num">${esc(est.siguiente_numero || "—")}</span>` : ` · se numeran desde el corte (${esc(fechaLarga(est.corte))})`}`);
+    // (el siguiente número lo da la base: el del año en que se va a emitir —antes del corte, el del corte—, ya saltando los que
+    // lleve una factura hecha fuera de la app)
+    subFac(`${plural(num(est.emitidas) || 0, "emitida", "emitidas")} · ${plural(num(est.borradores) || 0, "borrador", "borradores")}${num(est.anuladas) ? ` · ${plural(est.anuladas, "anulada", "anuladas")}` : ""}${est.camino === "app" ? ` · la siguiente, <span class="ct-num">${esc(est.siguiente_numero || "—")}</span>` : ` · se numeran desde el corte (${esc(fechaLarga(est.corte))}): la primera, <span class="ct-num">${esc(est.siguiente_numero || "—")}</span>`}`);
     // el 🧾 de un hito (desde el corte, js/app.js manda aquí): su borrador (el que ya hubiera, o uno nuevo)
     if (S.fac.pedido) { const p = S.fac.pedido; S.fac.pedido = null; return abrirHitoFac(p, mia); }
     if (S.fac.doc) return pintarFacDoc(S.fac.doc, mia);
@@ -6043,7 +6117,7 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
   // FALLA RUIDOSA: los cuadres de la facturación en verde antes de pintar una cifra; sus avisos se devuelven para enseñarlos
   async function controlFac() {
     const ctl = await DB._leer("v_emision_control?select=*&order=orden.asc");
-    if (!Array.isArray(ctl) || !ctl.length) throw errorControl("El control de la facturación no devolvió nada", [{ vista: "control de las facturas", filas: 0, esperadas: "13", detalle: "Vacío: la sesión no es la del dueño o a la base le falta la facturación." }]);
+    if (!Array.isArray(ctl) || !ctl.length) throw errorControl("El control de la facturación no devolvió nada", [{ vista: "control de las facturas", filas: 0, esperadas: "16", detalle: "Vacío: la sesión no es la del dueño o a la base le falta la facturación." }]);
     const rojos = ctl.filter(f => f.nivel === "cuadre" && f.ok !== true);
     if (rojos.length) throw errorControl("La facturación no cuadra", rojos.map(f => ({ vista: cap(String(f.cuadre || "").replace(/^facturas: /, "")), filas: null, esperadas: null, detalle: f.detalle })));
     return ctl.filter(f => f.ok !== true);
@@ -6301,7 +6375,8 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     let d, pago = null;
     try {
       d = await DB._rpc("fn_emision_documento", { p_documento: id });
-      if (d && d.documento && d.documento.estado !== "borrador" && d.documento.factura_id != null) pago = await DB._rpc("fn_emision_pago", { p_documento: id }).catch(e => { if (esFalloDeRed(e)) throw e; return { error: mensajeFac(e) }; });
+      // (también la de la retención, que no tiene fila de facturas: la base dice por qué no se paga en línea)
+      if (d && d.documento && d.documento.estado !== "borrador") pago = await DB._rpc("fn_emision_pago", { p_documento: id }).catch(e => { if (esFalloDeRed(e)) throw e; return { error: mensajeFac(e) }; });
       if (!vivaFac(mia)) return;
       if (!d || !d.documento) throw errorControl("La factura no apareció", [{ vista: "documento", filas: 0, esperadas: 1, detalle: `La base no devolvió ${id}.` }]);
     } catch (err) {
@@ -6331,7 +6406,7 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
           ${kpiHTML("Retención", fmt(dd.retencion), `${esc(String(num(dd.retencion_pct) || 0))} % · ${esc(RETENCION_DE[dd.retencion_origen] || dd.retencion_origen || "")}`)}
           ${kpiHTML("A pagar ahora", fmt(dd.a_pagar))}
         </div>
-        ${avisos.length ? `<ul class="ct-jr-avisos ct-fac-avisos">${avisos.map(a => `<li class="ct-aviso ${a.frena ? "bad" : "warn"}" data-aviso="${esc(a.codigo)}">${esc(a.texto)}</li>`).join("")}</ul>` : `<p class="ct-aviso ok">Nada lo frena: se puede emitir.</p>`}
+        ${avisos.length ? `<ul class="ct-jr-avisos ct-fac-avisos">${avisos.map(a => `<li class="ct-aviso ${a.frena ? "bad" : "warn"}" data-aviso="${esc(a.codigo)}">${esc(a.texto)}${a.codigo === "deposito_con_retencion" ? ` <button type="button" class="accion secundaria chica" data-fac-ret0>Sin retención en este depósito</button>` : ""}</li>`).join("")}</ul>` : `<p class="ct-aviso ok">Nada lo frena: se puede emitir.</p>`}
         <div class="ct-acciones">
           <button type="button" class="accion" data-fac-emitir${d.puede_emitir || soloEspanol ? "" : " disabled"}>Emitir la factura</button>
           <button type="button" class="accion secundaria" data-fac-cambiar>Cambiar</button>
@@ -6347,18 +6422,26 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     card.querySelector("[data-fac-volver]").addEventListener("click", () => ir("facturas", { sub: "facturas" }));
     const rf = card.querySelector("[data-fac-refrescar]");
     if (rf) rf.addEventListener("click", () => accionFac(card, "fn_emision_borrador", { p: { documento: dd.id } }, () => "Borrador refrescado con lo de hoy: vuelve a mirarlo"));
+    // (el depósito con retención: un toque la pone en 0 en ESTE borrador; la de la obra no cambia)
+    const r0 = card.querySelector("[data-fac-ret0]");
+    if (r0) r0.addEventListener("click", () => accionFac(card, "fn_emision_borrador", { p: { documento: dd.id, retencion_pct: "0" } }, () => "El depósito va sin retención: mira cómo queda"));
     card.querySelector("[data-fac-tirar]").addEventListener("click", () => montarForma(card, formaHTML("¿Tirar este borrador? No tiene número ni está en el libro: no queda nada.", "", "Tirarlo"),
       () => accionFac(card, "fn_emision_descartar", { p_documento: dd.id }, () => { S.fac.doc = null; S.fac.sub = "facturas"; return "Borrador tirado"; })));
     card.querySelector("[data-fac-cambiar]").addEventListener("click", () => formaBorrador(card, d));
     card.querySelector("[data-fac-emitir]").addEventListener("click", () => {
       if (!mfaActivo()) { mostrarErrorForma(card, "Emitir pone la factura en el libro: pide el código del teléfono. Actívalo en Conexiones y seguridad y entra con él."); return; }
       const est = S.fac.estado || {};
+      // (la de la retención lleva su propia serie, MXP-R-AAAA-NNNN, y no entra al libro: lo que reclama ya está en la retención por cobrar)
+      const numeroTxt = dd.forma === "retencion"
+        ? `Recibe su número de la serie de la retención (<span class="ct-num">MXP-R-${esc(hoyMiami().slice(0, 4))}-…</span>) y la fecha de hoy; no lleva asiento: lo que reclama ya está en la retención por cobrar.`
+        : `Recibe su número (el siguiente: <span class="ct-num">${esc(est.siguiente_numero || "—")}</span>), la fecha de hoy y entra al libro.`;
       montarForma(card, formaHTML(`Vas a emitir la factura a <b>${esc((dd.cliente && dd.cliente.nombre) || "—")}</b> por <b class="ct-num">${fmt(dd.monto)}</b>${num(dd.retencion) ? ` (retenidos <span class="ct-num">${fmt(dd.retencion)}</span>; a pagar ahora <span class="ct-num">${fmt(dd.a_pagar)}</span>)` : ""}.
-          Recibe su número (el siguiente: <span class="ct-num">${esc(est.siguiente_numero || "—")}</span>), la fecha de hoy y entra al libro. <b>Después ya no se cambia</b>: si sale mal, se anula con una nota de crédito y se hace otra.`,
+          ${numeroTxt} <b>Después ya no se cambia</b>: si sale mal, se anula con una nota de crédito y se hace otra.`,
         `<label class="ct-check"><input type="checkbox" name="si" required data-falta="Marca que la revisaste: después de emitirla no se cambia."> La revisé y se emite así</label>
          ${espanol ? `<label class="ct-check"><input type="checkbox" name="idioma" required data-falta="La base ve texto que parece español: cámbialo o confirma que está bien así."> Lo que parece español está bien así (el cliente lo lee en inglés)</label>` : ""}`, "Emitir"), v => {
         accionFac(card, "fn_emision_emitir", { p_documento: dd.id, p_visto: d.visto, p_opciones: v.idioma ? { idioma_revisado: true } : {} }, r => {
-          S.fac.nota = { doc: dd.id, tipo: r.tardio ? "warn" : "ok", texto: `Emitida ${r.numero} (asiento ${r.asiento || "—"}).${r.tardio ? ` ${typeof r.tardio === "string" ? r.tardio : "El mes de hoy estaba cerrado: el asiento entró con otra fecha contable (" + (r.fecha_contable || "—") + ")."}` : ""} Ahora, el PDF y mandarla.` };
+          // (si la serie saltó un número que ya llevaba una factura hecha fuera de la app, la base lo dice en «aviso»)
+          S.fac.nota = { doc: dd.id, tipo: r.tardio || r.aviso ? "warn" : "ok", texto: `Emitida ${r.numero}${r.asiento ? ` (asiento ${r.asiento})` : " (sin asiento: es la de la retención)"}.${r.tardio ? ` ${typeof r.tardio === "string" ? r.tardio : "El mes de hoy estaba cerrado: el asiento entró con otra fecha contable (" + (r.fecha_contable || "—") + ")."}` : ""}${r.aviso ? ` ${r.aviso}` : ""} Ahora, el PDF y mandarla.` };
           return `Emitida la factura ${r.numero}`;
         }, { mfa: "Emitir pide el código del teléfono: actívalo en Conexiones y seguridad y entra con él." });
       });
@@ -6408,9 +6491,14 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     const pdfs = Array.isArray(d.pdfs) ? d.pdfs : [], envios = Array.isArray(d.envios) ? d.envios : [];
     const ult = S.fac.ultimo && S.fac.ultimo.doc === dd.id ? S.fac.ultimo : null;
     const enlaceVivo = pago && pago.enlace && pago.enlace.estado === "activo" ? pago.enlace : null;
+    // el pago en línea: solo por cuenta de banco (ACH). La tarjeta está apagada (decisión del 12-nov) y lo dice la base en llano
+    // (tarjeta.por_que); un pago por cuenta de banco que va en camino se dice aparte (mientras, no hay otro enlace y no se anula)
+    // (solo donde hay pago en línea: en la de la retención, o sin saldo, sobra)
+    const tarjetaTxt = pago && !pago.error && pago.en_linea && pago.tarjeta && pago.tarjeta.por_que ? `<p class="ct-sub ct-fac-tarjeta-txt">${esc(pago.tarjeta.por_que)}</p>` : "";
+    const caminoTxt = pago && !pago.error && pago.en_camino ? `<p class="ct-aviso warn ct-fac-camino">Hay un pago por cuenta de banco en camino por <b class="ct-num">${fmt(pago.en_camino.monto)}</b> (se ve en Cobros en línea): mientras no entre o falle, no se pide otro enlace y la factura no se anula.</p>` : "";
     const pagoTxt = !pago ? "" : pago.error ? `<p class="ct-aviso warn">No se pudo leer el pago en línea: ${esc(pago.error)}</p>`
-      : pago.en_linea ? `<p class="ct-nota">Se paga en línea por cuenta de banco (ACH): ${enlaceVivo ? `el enlace vivo cobra <b class="ct-num">${fmt(enlaceVivo.monto)}</b>${enlaceVivo.vale ? "" : " (ya no es lo que debe: el PDF nuevo pide otro)"}` : "el enlace se pide al hacer el PDF"}. La tarjeta, apagada.</p>`
-      : `<p class="ct-nota">Sin pago en línea: ${esc(pago.por_que_no || "—")}</p>`;
+      : (pago.en_linea ? `<p class="ct-nota">Se paga en línea por cuenta de banco (ACH): ${enlaceVivo ? `el enlace vivo cobra <b class="ct-num">${fmt(enlaceVivo.monto)}</b>${enlaceVivo.vale ? "" : " (ya no es lo que debe: el PDF nuevo pide otro)"}` : "el enlace se pide al hacer el PDF"}.</p>`
+        : `<p class="ct-nota">Sin pago en línea: ${esc(pago.por_que_no || "—")}</p>`) + caminoTxt + tarjetaTxt;
     facCuerpo().innerHTML = `<section class="ct-card ct-fac-doc" id="ct-fac-doc" data-doc="${esc(dd.id)}">
         <div class="ct-cab"><h2><span class="ct-num">${esc(dd.numero)}</span> · ${esc(dd.obra || dd.proyecto_id)}</h2>${anulada ? pill("anulada", "bad") : pill("emitida", "ok")}</div>
         <p class="ct-nota">${esc(FORMA_FAC[dd.forma] || dd.forma)}${dd.hito ? ` «${esc(dd.hito)}»` : ""} · del ${esc(fechaLarga(dd.fecha))} · vence el ${esc(fechaLarga(dd.vence))} · a ${esc((dd.cliente && dd.cliente.nombre) || "—")}${dd.asiento ? ` · asiento <span class="ct-num">${esc(dd.asiento)}</span>` : ""}</p>
@@ -6520,9 +6608,12 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
       if (!vivaFac(mia)) return;
       if (!Array.isArray(cfg) || cfg.length !== 1) throw errorControl("Los ajustes de la facturación no aparecieron", [{ vista: "ajustes", filas: Array.isArray(cfg) ? cfg.length : 0, esperadas: 1, detalle: "La base pone esa fila al instalar la facturación: si no está, la sesión no es la del dueño o no se instaló entera." }]);
     } catch (err) { if (!vivaFac(mia)) return; return errorFac(err, pintarFacturas); }
-    const c = cfg[0], e = c.empresa || {};
+    const c = cfg[0], e = c.empresa || {}, est = S.fac.estado || {};
+    // (por qué la tarjeta está apagada: el texto de la base, el mismo de la factura, el pago y el control)
+    const tarjetaTxt = est.tarjeta_texto || "La tarjeta está apagada: se enciende cuando el sistema de cobros sepa registrar el recargo. Por ahora el pago en línea es solo por cuenta de banco (ACH), y la factura no le ofrece tarjeta al cliente.";
     const EMP = [["nombre", "Nombre de la empresa (como sale en la factura)"], ["licencia", "Licencia"], ["direccion", "Dirección"], ["telefono", "Teléfono"], ["correo", "Correo (el de las facturas)"], ["web", "Web"]];
     facCuerpo().innerHTML = `<section class="ct-card ct-fac-ajustes" id="ct-fac-ajustes"><h2>Lo que sale en la factura</h2>
+        ${notaFacHTML("ajustes")}
         <form class="ct-pide" id="ct-fac-ajustes-form" novalidate>
           <p class="ct-nota">Todo lo que lee el cliente va en inglés. Sin el nombre de la empresa y el «How to pay» no se emite.</p>
           <fieldset class="ct-fac-cliente"><legend>La empresa</legend>${EMP.map(([k, t]) => campoHTML(`e_${k}`, t, "texto", `value="${esc(e[k] || "")}"`)).join("")}</fieldset>
@@ -6535,12 +6626,13 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
           </div>
           <label class="ct-campo">Términos (opcional, en inglés)<textarea name="terminos_texto" rows="2">${esc(c.terminos_texto || "")}</textarea></label>
           <label class="ct-check"><input type="checkbox" name="ach"${c.ach ? " checked" : ""}> Ofrecer el pago en línea por cuenta de banco (ACH, con Stripe)</label>
-          <p class="ct-aviso warn ct-fac-tarjeta">La tarjeta está apagada${c.tarjeta_pct != null ? ` (${esc(c.tarjeta_pct)} %)` : ""}: lo que el cliente pagara de más por el recargo, los cobros en línea lo dejarían como un anticipo de la obra y no como un ingreso. Se enciende cuando eso se arregle y se confirmen con Stripe y con el CPA las reglas del recargo.</p>
+          <p class="ct-aviso warn ct-fac-tarjeta">${esc(tarjetaTxt)}${c.tarjeta_pct != null ? ` En los ajustes quedó un porcentaje de tarjeta puesto (${esc(c.tarjeta_pct)} %): no se usa.` : ""}</p>
           <details class="ct-fac-avanzado"><summary>El corte y el número</summary>
             <div class="ct-fila">
-              ${campoHTML("corte", "Desde qué día se factura aquí (antes, por QuickBooks)", "texto", `type="date" value="${esc(c.corte || "")}"`)}
+              ${campoHTML("corte", "Desde qué día se factura aquí (antes, por QuickBooks)", "texto", `type="date" value="${esc(c.corte || "")}"${est.corte_hasta ? ` max="${esc(est.corte_hasta)}"` : ""}`)}
               ${campoHTML("serie_formato", "Formato del número (no cambia con la serie empezada)", "texto", `value="${esc(c.serie_formato || "")}"`)}
             </div>
+            <p class="ct-sub ct-fac-corte-ayuda">Antes del corte, el 🧾 de cada hito manda la factura a QuickBooks; desde el corte, la abre aquí.${est.corte_hasta ? ` El corte no se puede poner después del ${esc(fechaLarga(est.corte_hasta))}: ese día se emitió aquí la primera factura que sigue viva (si fue de prueba, anúlala primero).` : ""} La factura de la retención lleva su propia serie (MXP-R-AAAA-NNNN).</p>
           </details>
           <div class="ct-acciones"><button type="submit" class="accion">Guardar los ajustes</button></div>
         </form><div class="ct-form" hidden></div>
@@ -6566,7 +6658,19 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
       if (v("corte") && v("corte") !== c.corte) p.corte = v("corte");
       if (v("serie_formato") && v("serie_formato") !== c.serie_formato) p.serie_formato = v("serie_formato");
       if (!Object.keys(p).length) { mostrarErrorForma(card, "No cambiaste nada."); return; }
-      accionFac(card, "fn_emision_config", { p }, () => "Ajustes de la factura guardados");
+      // lo que devuelve la base: si mover el corte cambia HOY por dónde se factura, su «aviso» queda arriba de los ajustes
+      const guardar = () => accionFac(card, "fn_emision_config", { p }, r => {
+        S.fac.nota = r && r.aviso ? { doc: "ajustes", tipo: "warn", texto: r.aviso } : null;
+        return "Ajustes de la factura guardados";
+      });
+      // mover el corte de forma que cambie HOY por dónde va el 🧾 se pregunta antes, en llano (comparar dos fechas no es sumar)
+      const hoy = hoyMiami(), antes = String(c.corte || "");
+      const cruza = p.corte && (p.corte <= hoy) !== (antes <= hoy);
+      if (!cruza) { guardar(); return; }
+      montarForma(card, formaHTML(p.corte <= hoy
+        ? `Con el corte en el <b>${esc(fechaLarga(p.corte))}</b>, desde HOY el 🧾 de cada hito abre la factura aquí y ya <b>no</b> la manda a QuickBooks. Si es solo para probar, vuelve a poner el corte en su día cuando termines.`
+        : `Con el corte en el <b>${esc(fechaLarga(p.corte))}</b>, el 🧾 de cada hito vuelve a mandar la factura a QuickBooks hasta ese día; aquí solo se preparan borradores.`,
+        "", "Sí, mover el corte"), () => guardar());
     });
   }
 

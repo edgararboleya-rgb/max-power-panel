@@ -3,7 +3,7 @@
 -- sub-facturado por obra, y la pérdida provisionada) · c12 (la mitad de la
 -- Fase 10; f10 llama al entregable «c10-facturacion-wip.sql» por un nombre
 -- viejo: c10 ya es el costo por obra, y la factura de la app es c11).
--- 12-nov-2026, v1. Se pega en el SQL Editor DESPUÉS de c1, c2 y c3 (y de
+-- 12-nov-2026, v2 (con lo que encontraron los dos revisores). Se pega en el SQL Editor DESPUÉS de c1, c2 y c3 (y de
 -- c4, c6, c7, s1, p1, c8, c9 y c10 si se usan: la cadena de siempre; c11
 -- puede faltar, esta capa no la mira). Idempotente: se puede volver a pegar
 -- entero (no pisa la configuración, ni una revisión, ni lo confirmado de
@@ -38,11 +38,27 @@
 --       aunque sea de servicio; «tm» = no lo lleva aunque tenga contrato),
 --       con su nota, y queda quién y cuándo. v_wip_obras las enseña todas
 --       con su porqué.
---       En un mes ENTRAN: las activas (aprobado, en ejecución, en pausa), y
---       las terminadas que venían en el WIP (para cerrarlas: 100 %), que
---       tienen fecha de término en el mes (si la app la guarda) o que Edgar
---       revisa a propósito. Una obra sin costo ni facturas todavía no pide
---       nada («sin movimiento»).
+--       En un mes ENTRAN: las activas (aprobado, en ejecución, en pausa);
+--       las que tienen una revisión en el mes; las terminadas que venían en
+--       el WIP (para cerrarlas: 100 %) o con fecha de término en el mes (si
+--       la app la guarda); y TODA obra que traía sub, sobre o provisión en
+--       el último ajuste, esté como esté hoy en la app (cancelada, devuelta
+--       a «enviado», terminada y sin facturar entera, marcada T&M, sin
+--       contrato): su saldo se deshizo solo el día 1 y, si no entrara, no
+--       volvería y nadie lo habría decidido. NINGUNA OBRA CON SALDO SALE
+--       SOLA: o se revisa (sigue midiéndose; la terminada, hasta que lo
+--       facturado sea su precio) o Edgar la EXCLUYE ese mes con su nota
+--       (queda quién, cuándo y por qué; su ingreso vuelve a ser lo
+--       facturado). Una obra sin costo ni facturas todavía no pide nada
+--       («sin movimiento»).
+--       LA QUE LA APP TODAVÍA NO TIENE EN OBRA (en estimación, con la
+--       propuesta enviada, no aprobada) no entra aunque tenga contrato: no
+--       hay obra que medir. Pero si YA TIENE FACTURAS EN EL LIBRO (el
+--       depósito que se factura al firmar, antes de pasarla a «aprobado»),
+--       ese ingreso cuenta entero de una vez y nada lo difiere: el aviso 160
+--       la nombra, con lo facturado, hasta que pase a aprobada (entra, y se
+--       revisa como las demás) o Edgar la marque como que no lleva WIP, con
+--       su nota.
 --   (2) LO QUE NO SE DERIVA, y por eso se guarda (lo demás se calcula):
 --       · wip_revisiones — por obra y mes: EL COSTO TOTAL ESTIMADO REVISADO
 --         (desde el inicio de la obra hasta terminarla), con quién, cuándo
@@ -52,6 +68,13 @@
 --         del mes anterior; la primera vez, lo que dice el estimado de la
 --         obra, c10), u otro número con su nota. Una obra terminada se
 --         revisa como «terminada»: su costo final es el que lleva, 100 %.
+--         La que este mes NO se mide se revisa como «excluida», con su
+--         porqué (se canceló, pasó a T&M, falta lo de antes y este mes no
+--         se puede): una decisión escrita, del mes; al siguiente, si la
+--         obra sigue activa, se vuelve a preguntar. Si el contrato de la
+--         ficha cambia DESPUÉS de revisar, la obra vuelve a «por revisar»
+--         hasta que Edgar diga si el cambio es del mes (se revisa otra vez)
+--         o de después (un toque: se queda como estaba, y queda escrito).
 --         Una revisión no se edita ni se borra: otra la sustituye y la
 --         anterior queda.
 --       · wip_antes — por obra: LO DE ANTES DEL LIBRO. El libro empieza el
@@ -88,8 +111,12 @@
 --         pct_avance           el que se usa: pct_real entre 0 y 100. Con
 --                              más costo que el estimado (pasa_de_100) el
 --                              avance SE TOPA en 100 % —nunca se gana más
---                              que el precio— y la obra pide que se suba el
---                              estimado o se escriba por qué (control)
+--                              que el precio—, pero esa obra NO ENTRA en el
+--                              ajuste: más costo que el estimado sin estar
+--                              terminada es un estimado viejo. Se sube (el
+--                              costo total no puede ser menos de lo que ya
+--                              lleva: la revisión no lo admite) o la obra
+--                              se marca terminada; sin excepción por nota
 --         ingreso_ganado       precio × costo topado ÷ costo estimado
 --         facturado_libro      lo facturado de verdad en el libro hasta ese
 --                              día: el ingreso (40xx con esa obra) de los
@@ -172,8 +199,11 @@
 --         · NO SE POSTEA ANTES DE QUE TERMINE EL MES (MX002): hasta el
 --           último día siguen entrando costos y facturas.
 --         · Las obras que NO están listas (sin revisar, sin lo de antes
---           confirmado, sin cuenta de ingreso) no entran, y la respuesta y
---           la foto dicen cuáles y por qué.
+--           confirmado, sin cuenta de ingreso, con el contrato de la ficha
+--           cambiado después de revisarlas, con más costo que su estimado)
+--           y las excluidas a propósito no entran; la respuesta, la foto, el
+--           control del ajuste y la fila 176 del cierre dicen cuáles y por
+--           qué. Las que no están listas DETIENEN el cierre del mes.
 --   (7) DESDE QUÉ MES SE EXIGE (wip_config.exigir_desde). El cierre (c9)
 --       pide, para cerrar un mes, cada obra con movimiento revisada y el
 --       ajuste posteado y al día. Se exige desde el mes en que se pega este
@@ -192,23 +222,32 @@
 --            por obra al cierre del mes es el del ajuste vivo
 --         30 lo facturado a la fecha = las facturas del libro (sus notas de
 --            crédito restando), obra por obra
---         40 cada obra con movimiento, con su costo estimado revisado
---         50 el ajuste del mes posteado y al día
---         60 ninguna obra con más costo que su estimado sin nota
+--         40 cada obra que entra en el mes, decidida: revisada (con lo de
+--            antes confirmado, su cuenta de ingreso y el contrato de la ficha
+--            sin cambiar desde entonces) o excluida con su nota; y ninguna
+--            obra que traía saldo del ajuste anterior fuera del mes
+--         50 el ajuste del mes posteado y al día (dice quién quedó fuera)
+--         60 ninguna obra con más costo que su estimado revisado (sin
+--            excepción por nota)
 --         90 las protecciones de la capa
 --        110 (aviso) obras que ya andaban sin lo de antes confirmado
 --        120 (aviso) obras con pérdida
---        125 (aviso) obras topadas en 100 % (con su nota)
---        130 (aviso) el contrato de la ficha cambió después de revisar
+--        125 (aviso) obras al 100 % sin estar terminadas
+--        130 (aviso) revisadas con un precio que no es el de la ficha
 --        140 (aviso) facturado por encima del contrato
 --        150 (aviso) ingreso de la obra que no es factura ni ajuste
---        160 (aviso) obras terminadas con movimiento en el mes, fuera del WIP
+--        160 (aviso) obras con dinero fuera del WIP: las terminadas con
+--            movimiento en el mes, y las que la app todavía no tiene en obra
+--            (en estimación, enviada, no aprobada) con facturas en el libro
 --        165 (aviso) obras activas sin contrato que no son de servicio
 --        170 (aviso) horas sin costo en el libro (a estándar, c10)
 --        180 (aviso) la suma de los hitos no es el contrato
 --       fn_wip_cierre(periodo) los resume en las cuatro filas que el cierre
 --       (c9) enseña: 174 los cuadres (detiene), 175 las revisiones del mes
---       (detiene), 176 el ajuste posteado (detiene) y 177 los avisos.
+--       (detiene), 176 el ajuste posteado (detiene) y 177 los avisos. El
+--       nombre de la 174 y de la 177 dice cuáles están en rojo (la ronda de
+--       c9 avisa de cada rojo nuevo por el nombre de la fila), y su detalle
+--       lleva el principio de todos.
 --
 -- Decisiones de diseño (lo que f10 y el encargo dejaban abierto):
 --   · EL PRECIO ES finanzas_proyecto.contrato, no «la suma de alcances
@@ -244,9 +283,19 @@
 --     arregla repartiendo los pagos (c10) o, desde enero, con la nómina.
 --   · UNA OBRA TERMINADA se cierra en el WIP el mes en que Edgar la revisa
 --     como terminada (100 %: ganado = precio; lo que falte por facturar
---     queda sub-facturado ese mes). Después ya no entra. La app no guarda
---     la fecha de término (se lee si existe: proyectos.completado_el); por
---     eso la termina Edgar, no una fecha adivinada.
+--     queda sub-facturado ese mes). Si quedó algo por facturar (o facturado
+--     de más), SIGUE ENTRANDO cada mes —un toque: «sigue terminada»— hasta
+--     que lo facturado sea su precio; con el saldo en cero, ya no entra. La
+--     app no guarda la fecha de término (se lee si existe:
+--     proyectos.completado_el); por eso la termina Edgar, no una fecha
+--     adivinada.
+--   · UNA APERTURA CON SALDO EN LAS CUENTAS DEL WIP (si la balanza del CPA
+--     al 30-sep trae 1200, 2400 o 2410) NO se continúa sola: esta capa
+--     postea cada mes el sobre y sub-facturado ACUMULADO desde el inicio de
+--     cada obra, y ese saldo de apertura quedaría dos veces. El cuadre 10
+--     lo dice en rojo, con ese porqué. Se decide con el CPA ANTES de postear
+--     la apertura: que entre sin WIP (contra 3900), o una versión de esta
+--     capa cuyo ajuste descuente lo que la apertura ya trae.
 --
 -- LA SEGURIDAD (la regla de c2, B.20, y lo que c4, c6, c8, c9 y c10 sellan):
 --   · NINGUNA función de aquí es SECURITY DEFINER. Las que llama la
@@ -309,7 +358,10 @@
 -- notas_credito, recibos, trabajos_externos, horas, costos_equipo,
 -- perfiles y mapeo_tipo_proyecto). No pone índices, triggers ni llaves en
 -- tablas ajenas, ni escribe en finanzas_proyecto ni en alcances. La
--- retención (1120 / 2020) y la factura son de c11 y de c3.
+-- factura y la retención POR COBRAR (1120) son de c11 y de c3. La retención
+-- POR PAGAR a los subcontratistas (2020) no la lleva todavía ninguna capa
+-- (cabecera de c11, «Lo que NO hace»): el costo de un sub entra entero por
+-- su papel, que es lo que este WIP cuenta como costo.
 --
 -- Cómo se instala (Edgar, en este orden):
 --   1. SQL Editor → pegar ESTE archivo entero → Run. Al final sale una
@@ -331,7 +383,8 @@
 -- Lo que llama la pantalla (RPC, como el dueño; las que escriben, con POST):
 --   fn_wip_revisar(p_proyecto text, p_periodo text, p jsonb)   la revisión del mes
 --        p: {"confirmar": true} | {"costo_estimado": "12345.00", "nota": "…"} |
---           {"terminada": true}; y, si hace falta, "precio_contrato"
+--           {"terminada": true} | {"excluir": true, "nota": "…"} |
+--           {"precio_de_despues": true}; y, si hace falta, "precio_contrato"
 --   fn_wip_antes_propuesta(p_proyecto text)                    solo lee: lo de antes, propuesto
 --   fn_wip_antes(p_proyecto text, p jsonb)                     confirma lo de antes: {"costo", "facturado", "nota"}
 --   fn_wip_obra(p_proyecto text, p jsonb)                      la marca: {"modo": "contrato" | "tm" | "auto", "nota"}
@@ -590,15 +643,17 @@ create index if not exists wip_antes_obra_idx on public.wip_antes (proyecto_id);
 comment on table public.wip_antes is 'c12: lo de antes del libro de cada obra que ya andaba: el costo y lo facturado desde su inicio hasta el día anterior al libro (30-sep-2026), CONFIRMADOS por Edgar (confirmado_el, confirmado_por, nota), y lo que la base proponía ese día desde los papeles de la app (propuesta: tickets, trabajos externos, horas × tarifa, facturas). La vigente es la que no tiene sustituida_el; las anteriores quedan. Sin una vigente, una obra que ya andaba no entra en el ajuste. Se escribe con fn_wip_antes.';
 
 -- La revisión de una obra en un mes: el costo total estimado revisado y el
--- precio del contrato que se usó. Solo se añade; otra la sustituye.
+-- precio del contrato que se usó; o «terminada»; o «excluida» (ese mes queda
+-- fuera del WIP a propósito, con su nota). Solo se añade; otra la sustituye.
 create table if not exists public.wip_revisiones (
   id                uuid          primary key default gen_random_uuid(),
   proyecto_id       text          not null,
   periodo           text          not null references public.periodos (periodo),
-  precio_contrato   numeric(14,2) not null,
+  precio_contrato   numeric(14,2),
   precio_ficha      numeric(14,2),
   costo_estimado    numeric(14,2),
   terminada         boolean       not null default false,
+  excluida          boolean       not null default false,
   origen            text          not null,
   propuesta         numeric(14,2),
   propuesta_origen  text,
@@ -606,15 +661,26 @@ create table if not exists public.wip_revisiones (
   revisado_el       timestamptz   not null default now(),
   revisado_por      uuid,
   sustituida_el     timestamptz,
-  sustituida_por    uuid,
-  constraint wip_revisiones_precio check (precio_contrato > 0),
-  constraint wip_revisiones_costo  check ((terminada and costo_estimado is null) or (not terminada and costo_estimado > 0)),
-  constraint wip_revisiones_origen check (origen in ('estimado', 'mes_anterior', 'a_mano', 'terminada')
-                                          and (origen = 'terminada') = terminada)
+  sustituida_por    uuid
 );
+-- (la columna y las reglas de hoy, también sobre una tabla de una versión
+-- anterior de este archivo; al volver a pegar quedan igual)
+alter table public.wip_revisiones add column if not exists excluida boolean not null default false;
+alter table public.wip_revisiones alter column precio_contrato drop not null;
+alter table public.wip_revisiones drop constraint if exists wip_revisiones_precio;
+alter table public.wip_revisiones add constraint wip_revisiones_precio
+  check (case when excluida then precio_contrato is null or precio_contrato > 0 else coalesce(precio_contrato > 0, false) end);
+alter table public.wip_revisiones drop constraint if exists wip_revisiones_costo;
+alter table public.wip_revisiones add constraint wip_revisiones_costo
+  check (case when terminada or excluida then costo_estimado is null else coalesce(costo_estimado > 0, false) end);
+alter table public.wip_revisiones drop constraint if exists wip_revisiones_origen;
+alter table public.wip_revisiones add constraint wip_revisiones_origen
+  check (origen in ('estimado', 'mes_anterior', 'a_mano', 'terminada', 'excluida')
+         and (origen = 'terminada') = terminada and (origen = 'excluida') = excluida and not (terminada and excluida)
+         and (not excluida or coalesce(btrim(nota), '') <> ''));
 create unique index if not exists wip_revisiones_vigente on public.wip_revisiones (proyecto_id, periodo) where sustituida_el is null;
 create index if not exists wip_revisiones_periodo_idx on public.wip_revisiones (periodo);
-comment on table public.wip_revisiones is 'c12: la revisión de cada obra en cada mes: el costo total estimado REVISADO (costo_estimado: desde el inicio de la obra hasta terminarla; vacío si terminada, que usa el costo que lleva), el precio del contrato que se usó ese mes (precio_contrato) y el de la ficha ese día (precio_ficha: finanzas_proyecto.contrato, que cambia sin historia), de dónde salió el número (origen: mes_anterior = se confirmó lo del mes anterior; estimado = se confirmó el estimado de la obra; a_mano = otro número; terminada), lo que la base proponía (propuesta, propuesta_origen), la nota, quién y cuándo. La vigente es la que no tiene sustituida_el; las anteriores quedan. No se edita ni se borra. Se escribe con fn_wip_revisar.';
+comment on table public.wip_revisiones is 'c12: la revisión de cada obra en cada mes: el costo total estimado REVISADO (costo_estimado: desde el inicio de la obra hasta terminarla; vacío si terminada, que usa el costo que lleva, y si excluida), el precio del contrato que se usó ese mes (precio_contrato) y el de la ficha ese día (precio_ficha: finanzas_proyecto.contrato, que cambia sin historia), de dónde salió el número (origen: mes_anterior = se confirmó lo del mes anterior; estimado = se confirmó el estimado de la obra; a_mano = otro número; terminada; excluida = ese mes la obra queda fuera del WIP a propósito, con su porqué en la nota), lo que la base proponía (propuesta, propuesta_origen), la nota, quién y cuándo. La vigente es la que no tiene sustituida_el; las anteriores quedan. No se edita ni se borra. Se escribe con fn_wip_revisar.';
 
 -- Cada ajuste posteado: el asiento de cierre de un mes. Solo se añade; lo
 -- único que le pasa es quedar deshecho (una vez), con su motivo y su reverso.
@@ -690,10 +756,14 @@ create table if not exists public.wip_ajuste_obras (
   ingreso_otro         numeric(14,2),
   avisos               text[]        not null default '{}',
   constraint wip_ajuste_obras_pk     primary key (ajuste_id, proyecto_id),
-  constraint wip_ajuste_obras_estado check (estado in ('lista', 'pendiente', 'sin_movimiento') and en_ajuste = (estado = 'lista'))
+  constraint wip_ajuste_obras_estado check (estado in ('lista', 'pendiente', 'excluida', 'sin_movimiento') and en_ajuste = (estado = 'lista'))
 );
 create index if not exists wip_ajuste_obras_obra_idx on public.wip_ajuste_obras (proyecto_id);
-comment on table public.wip_ajuste_obras is 'c12: la foto de cada obra en cada ajuste de WIP, como se calculó al postear (las columnas de v_wip_schedule): las que entraron (en_ajuste, estado lista) con su precio, costo estimado, costo a la fecha, % de avance, ingreso ganado, facturado, sub y sobre-facturado, costo para terminar, utilidad y pérdida, su revisión (revision_id) y lo de antes que se usó (antes_id); y las que se quedaron fuera (pendiente, sin_movimiento) con lo que les faltaba. El WIP de un mes cerrado se lee de aquí. No se edita ni se borra.';
+-- (el estado «excluida», también sobre una tabla de una versión anterior de este archivo)
+alter table public.wip_ajuste_obras drop constraint if exists wip_ajuste_obras_estado;
+alter table public.wip_ajuste_obras add constraint wip_ajuste_obras_estado
+  check (estado in ('lista', 'pendiente', 'excluida', 'sin_movimiento') and en_ajuste = (estado = 'lista'));
+comment on table public.wip_ajuste_obras is 'c12: la foto de cada obra en cada ajuste de WIP, como se calculó al postear (las columnas de v_wip_schedule): las que entraron (en_ajuste, estado lista) con su precio, costo estimado, costo a la fecha, % de avance, ingreso ganado, facturado, sub y sobre-facturado, costo para terminar, utilidad y pérdida, su revisión (revision_id) y lo de antes que se usó (antes_id); y las que se quedaron fuera (pendiente, con lo que les faltaba; excluida, a propósito con su nota; sin_movimiento). El WIP de un mes cerrado se lee de aquí. No se edita ni se borra.';
 
 
 -- ---------------------------------------------------------------------
@@ -1102,8 +1172,10 @@ comment on function public.fn_wip_libro(date, text) is 'c12: por obra y hasta un
 --   fuente               'calculado' (un mes abierto: lo de hoy) | 'posteado'
 --                        (un mes cerrado: la foto de su ajuste)
 --   estado               'lista' (entra en el ajuste) | 'pendiente' (le falta
---                        algo: falta y falta_texto) | 'sin_movimiento'
---   falta                {revision, antes, cuenta_ingreso}; falta_texto en llano
+--                        algo: falta y falta_texto) | 'excluida' (Edgar la
+--                        dejó fuera este mes, con su nota) | 'sin_movimiento'
+--   falta                {revision, antes, cuenta_ingreso, precio, estimado};
+--                        falta_texto en llano
 --   en_ajuste            estado = 'lista'
 --   terminada            se revisó como terminada (100 %)
 --   precio_contrato      el de la revisión; precio_ficha, el de la ficha hoy
@@ -1122,8 +1194,14 @@ comment on function public.fn_wip_libro(date, text) is 'c12: por obra y hasta un
 --   propuesta_nota, propuesta_terminada (la app la tiene como terminada)
 --   avisos               text[], en llano
 -- Las cifras derivadas salen vacías mientras falte la revisión o lo de antes
--- (no se enseña un avance a medias). p_propuestas = false no pide el
--- estimado a c10 (el plan y el control no lo necesitan).
+-- (no se enseña un avance a medias), y en una obra excluida. p_propuestas =
+-- false no pide el estimado a c10 (el plan y el control no lo necesitan).
+--
+-- QUÉ OBRAS ENTRAN (cabecera, punto 1). Ninguna obra que traía saldo sale
+-- sola: la que llevaba sub, sobre o provisión en el último ajuste vivo de un
+-- mes anterior ENTRA en este mes, esté como esté en la app (cancelada,
+-- terminada, devuelta a «enviado», marcada T&M, sin contrato), hasta que
+-- Edgar decida: revisarla (sigue midiéndose) o excluirla con su nota.
 drop function if exists public.fn_wip_calcular(text, text, boolean);
 create function public.fn_wip_calcular(p_periodo text, p_proyecto text default null, p_propuestas boolean default true)
 returns table (periodo text, proyecto_id text, obra text, cliente text, tipo text, obra_estado text, fuente text,
@@ -1157,14 +1235,14 @@ begin
   end if;
   v_nom := fn_wip_mes(p.periodo);
   -- LA PROPUESTA DE FÁBRICA: el estimado de la obra (c10), solo si hace falta
-  -- (alguna obra que todavía no tiene ninguna revisión) y si c10 está. Se
-  -- lee al vuelo: c12 no cuelga de c10, y si c10 cambia de forma no hay
-  -- propuesta de fábrica y lo demás sigue.
+  -- (alguna obra que todavía no tiene ninguna revisión que la midiera) y si
+  -- c10 está. Se lee al vuelo: c12 no cuelga de c10, y si c10 cambia de forma
+  -- no hay propuesta de fábrica y lo demás sigue.
   if p_propuestas and to_regprocedure('public.fn_margen_obras(text)') is not null
      and exists (select 1 from fn_wip_obras(p_proyecto) o
                   where o.lleva_wip and (o.activa or o.terminada)
                     and not exists (select 1 from wip_revisiones r
-                                     where r.proyecto_id = o.proyecto_id and r.sustituida_el is null)) then
+                                     where r.proyecto_id = o.proyecto_id and r.sustituida_el is null and not r.excluida)) then
     begin
       execute 'select coalesce(jsonb_object_agg(o.proyecto_id, jsonb_build_object(''costo'', o.costo_estimado, '
            || '''completo'', o.estimado_completo, ''falta'', o.estimado_falta)), ''{}''::jsonb) '
@@ -1175,44 +1253,95 @@ begin
     end;
   end if;
   return query
-  with ob as materialized (
-         select o.* from fn_wip_obras(p_proyecto) o where o.lleva_wip),
+  with ult as materialized (
+         -- el último ajuste vivo de un mes ANTERIOR (el más reciente)
+         select a.id, a.periodo, q.desde
+           from wip_ajustes a
+           join periodos q on q.periodo = a.periodo
+          where a.deshecho_el is null and q.desde < p.desde
+          order by q.desde desc
+          limit 1),
+       arr as materialized (
+         -- LO QUE VIENE CON SALDO: las obras que ese ajuste dejó con sub,
+         -- sobre o provisión (se deshizo solo el día 1: si este mes no entran,
+         -- ese saldo no vuelve y nadie lo decidió)
+         select w.proyecto_id, ult.periodo, ult.desde, w.sub_facturado, w.sobre_facturado, w.perdida_provision
+           from ult
+           join wip_ajuste_obras w on w.ajuste_id = ult.id
+          where w.en_ajuste and (w.sub_facturado <> 0 or w.sobre_facturado <> 0 or w.perdida_provision <> 0)
+            and (p_proyecto is null or w.proyecto_id = p_proyecto)),
+       ob as materialized (
+         select o.* from fn_wip_obras(p_proyecto) o),
        rv as materialized (
          select r.* from wip_revisiones r
           where r.periodo = p.periodo and r.sustituida_el is null and (p_proyecto is null or r.proyecto_id = p_proyecto)),
-       ant as materialized (
-         -- la revisión viva más reciente de un mes anterior, por obra
-         select distinct on (r.proyecto_id) r.proyecto_id, r.periodo, r.costo_estimado, r.terminada
+       antx as materialized (
+         -- la última revisión viva de un mes anterior, por obra (la que sea:
+         -- dice si la obra salió a propósito o si ya se cerró como terminada)
+         select distinct on (r.proyecto_id) r.proyecto_id, r.periodo, q.desde, r.excluida, r.terminada, r.precio_contrato
            from wip_revisiones r
            join periodos q on q.periodo = r.periodo
           where r.sustituida_el is null and q.desde < p.desde and (p_proyecto is null or r.proyecto_id = p_proyecto)
           order by r.proyecto_id, q.desde desc),
+       ant as materialized (
+         -- la última revisión viva de un mes anterior que MIDIÓ la obra (no
+         -- una exclusión): de ahí sale la propuesta de un toque
+         select distinct on (r.proyecto_id) r.proyecto_id, r.periodo, r.costo_estimado, r.terminada
+           from wip_revisiones r
+           join periodos q on q.periodo = r.periodo
+          where r.sustituida_el is null and not r.excluida and q.desde < p.desde
+            and (p_proyecto is null or r.proyecto_id = p_proyecto)
+          order by r.proyecto_id, q.desde desc),
        lb as materialized (select * from fn_wip_libro(p.hasta, p_proyecto)),
        b as (
-         -- QUÉ OBRAS ENTRAN: las activas; las que tienen revisión en el mes;
-         -- las terminadas que venían en el WIP y siguen sin cerrar (su última
-         -- revisión anterior no es «terminada»); y las terminadas con fecha de
-         -- término en el mes, si la app la guarda.
-         select ob.proyecto_id, ob.obra, ob.cliente, ob.tipo, ob.obra_estado, ob.terminada as obra_terminada,
-                ob.contrato, ob.cuenta_ingreso, ob.de_antes, ob.de_antes_por, ob.antes_id, ob.antes_costo, ob.antes_facturado,
-                rv.id as rev_id, rv.precio_contrato as rev_precio, rv.costo_estimado as rev_costo,
-                coalesce(rv.terminada, false) as rev_terminada, rv.origen as rev_origen, rv.nota as rev_nota,
+         -- QUÉ OBRAS ENTRAN. De las que llevan WIP: las activas; las que tienen
+         -- revisión en el mes; las terminadas que venían en el WIP y siguen sin
+         -- cerrar (su última revisión anterior no es «terminada» ni una
+         -- exclusión); y las terminadas con fecha de término en el mes, si la
+         -- app la guarda. Y, lleven WIP hoy o no: las que tienen una revisión
+         -- en el mes; LAS QUE TRAÍAN SALDO del último ajuste (si su última
+         -- decisión no fue excluirlas); y LAS TERMINADAS QUE SIGUEN SIN
+         -- FACTURARSE ENTERAS (su última revisión fue «terminada» y lo
+         -- facturado a la fecha no es su precio), se haya posteado o no su mes.
+         select ob.proyecto_id, ob.obra, ob.cliente, ob.tipo, ob.obra_estado, ob.terminada as obra_terminada, ob.activa,
+                ob.lleva_wip, ob.motivo, ob.contrato, ob.cuenta_ingreso, ob.de_antes, ob.de_antes_por, ob.antes_id, ob.antes_costo,
+                ob.antes_facturado,
+                rv.id as rev_id, rv.precio_contrato as rev_precio, rv.precio_ficha as rev_ficha, rv.costo_estimado as rev_costo,
+                coalesce(rv.terminada, false) as rev_terminada, coalesce(rv.excluida, false) as rev_excluida,
+                rv.origen as rev_origen, rv.nota as rev_nota,
                 rv.revisado_el as rev_el, rv.revisado_por as rev_por, rv.propuesta as rev_propuesta,
                 rv.propuesta_origen as rev_propuesta_origen,
                 ant.periodo as ant_periodo, ant.costo_estimado as ant_costo, coalesce(ant.terminada, false) as ant_terminada,
-                coalesce(lb.costo, 0) as c_libro, coalesce(lb.facturado, 0) as f_libro, coalesce(lb.ingreso_otro, 0) as i_otro
+                coalesce(lb.costo, 0) as c_libro, coalesce(lb.facturado, 0) as f_libro, coalesce(lb.ingreso_otro, 0) as i_otro,
+                (arr.proyecto_id is not null and not coalesce(antx.excluida and antx.desde >= arr.desde, false)) as arrastra,
+                (coalesce(antx.terminada and not antx.excluida, false)
+                 and coalesce(lb.facturado, 0) + coalesce(ob.antes_facturado, 0) is distinct from antx.precio_contrato) as sigue_terminada,
+                antx.periodo as antx_periodo, antx.precio_contrato as antx_precio,
+                arr.periodo as arr_periodo,
+                concat_ws(' y ', case when arr.sub_facturado <> 0 then fn_wip_usd(arr.sub_facturado) || ' sub-facturados' end,
+                                 case when arr.sobre_facturado <> 0 then fn_wip_usd(arr.sobre_facturado) || ' sobre-facturados' end,
+                                 case when arr.perdida_provision <> 0 then fn_wip_usd(arr.perdida_provision) || ' de pérdida provisionada' end)
+                  as arr_txt
            from ob
            left join rv on rv.proyecto_id = ob.proyecto_id
            left join ant on ant.proyecto_id = ob.proyecto_id
+           left join antx on antx.proyecto_id = ob.proyecto_id
+           left join arr on arr.proyecto_id = ob.proyecto_id
            left join lb on lb.proyecto_id = ob.proyecto_id
-          where ob.activa or rv.id is not null
-             or (ob.terminada and ant.proyecto_id is not null and not ant.terminada)
-             or (ob.terminada and ob.completado_el between p.desde and p.hasta)),
+          where (ob.lleva_wip
+                 and (ob.activa
+                      or (ob.terminada and antx.proyecto_id is not null and not antx.terminada and not antx.excluida)
+                      or (ob.terminada and ob.completado_el between p.desde and p.hasta)))
+             or rv.id is not null
+             or (arr.proyecto_id is not null and not coalesce(antx.excluida and antx.desde >= arr.desde, false))
+             or (coalesce(antx.terminada and not antx.excluida, false)
+                 and coalesce(lb.facturado, 0) + coalesce(ob.antes_facturado, 0) is distinct from antx.precio_contrato)),
        c as (
          select b.*,
-                (b.rev_id is not null and not (b.de_antes and b.antes_id is null)) as calc,
+                -- se mide: lleva WIP, tiene su revisión (que no es una exclusión) y lo de antes confirmado si ya andaba
+                (b.lleva_wip and b.rev_id is not null and not b.rev_excluida and not (b.de_antes and b.antes_id is null)) as calc,
                 (b.c_libro <> 0 or b.f_libro <> 0 or b.i_otro <> 0 or b.de_antes or b.antes_id is not null
-                 or b.rev_id is not null) as mov
+                 or b.rev_id is not null or b.arrastra or b.sigue_terminada) as mov
            from b),
        d as (
          select c.*,
@@ -1237,35 +1366,71 @@ begin
        h as (
          select g.*,
                 case when not g.calc or g.rev_terminada then null else greatest(g.est - g.rev_precio, 0) end as perdida,
-                array_remove(array[case when g.rev_id is null then 'revision' end,
-                                   case when g.de_antes and g.antes_id is null then 'antes' end,
-                                   case when g.cuenta_ingreso is null then 'cuenta_ingreso' end], null) as falta,
-                case when g.rev_id is not null then g.rev_propuesta
+                -- LO QUE LE FALTA para entrar en el ajuste (una excluida no pide nada: ya se decidió)
+                array_remove(array[
+                  case when g.rev_id is null or (not g.lleva_wip and not g.rev_excluida) then 'revision' end,
+                  case when g.lleva_wip and not g.rev_excluida and g.de_antes and g.antes_id is null then 'antes' end,
+                  case when g.lleva_wip and not g.rev_excluida and g.cuenta_ingreso is null then 'cuenta_ingreso' end,
+                  -- el contrato de la ficha cambió DESPUÉS de revisarla (no es el que se usó ni el que la ficha decía entonces)
+                  case when g.lleva_wip and g.rev_id is not null and not g.rev_excluida
+                            and g.contrato is distinct from g.rev_precio and g.contrato is distinct from g.rev_ficha then 'precio' end,
+                  -- lleva más costo que su estimado sin estar terminada: el estimado quedó viejo
+                  case when g.calc and not g.rev_terminada and g.c_fecha > g.est then 'estimado' end], null) as falta,
+                case when not g.lleva_wip then null
+                     when g.rev_id is not null then g.rev_propuesta
                      when g.ant_periodo is not null and not g.ant_terminada then g.ant_costo
                      when coalesce((v_c10->g.proyecto_id->>'completo')::boolean, false)
                           and (v_c10->g.proyecto_id->>'costo')::numeric > 0 then round((v_c10->g.proyecto_id->>'costo')::numeric, 2)
                 end as prop,
-                case when g.rev_id is not null then g.rev_propuesta_origen
+                case when not g.lleva_wip then null
+                     when g.rev_id is not null then g.rev_propuesta_origen
                      when g.ant_periodo is not null and not g.ant_terminada then 'mes_anterior'
                      when coalesce((v_c10->g.proyecto_id->>'completo')::boolean, false)
-                          and (v_c10->g.proyecto_id->>'costo')::numeric > 0 then 'estimado' end as prop_origen
+                          and (v_c10->g.proyecto_id->>'costo')::numeric > 0 then 'estimado' end as prop_origen,
+                -- de dónde viene con saldo, en llano (vacío si no trae)
+                case when g.arrastra then format('Traía %s en el ajuste de %s', g.arr_txt, fn_wip_mes(g.arr_periodo)) end as arr_frase
            from g)
   select p.periodo, h.proyecto_id, h.obra, h.cliente, h.tipo, h.obra_estado, 'calculado'::text,
-         (case when not h.mov then 'sin_movimiento' when cardinality(h.falta) > 0 then 'pendiente' else 'lista' end),
-         (case when not h.mov then '{}'::text[] else h.falta end),
+         (case when not h.mov then 'sin_movimiento' when h.rev_excluida then 'excluida'
+               when cardinality(h.falta) > 0 then 'pendiente' else 'lista' end),
+         (case when not h.mov or h.rev_excluida then '{}'::text[] else h.falta end),
          (case when not h.mov then 'Sin costo ni facturas todavía: no hay nada que medir.'
-               when cardinality(h.falta) = 0 then null
+               when h.rev_excluida or cardinality(h.falta) = 0 then null
                else concat_ws(' ',
-                      case when h.rev_id is null and h.contrato is null
-                             then 'Su ficha no tiene contrato: ponlo (o dilo al revisar) para poder revisarla.'
+                      case when not h.lleva_wip
+                             then format('%s y hoy ya no lleva WIP (%s) Nada sale del WIP solo: exclúyela este mes con su nota (su ingreso vuelve a '
+                                         'ser lo facturado), o, si sigue siendo de precio fijo, arregla su ficha o su marca y revísala.',
+                                         coalesce(h.arr_frase, format('Se revisó en %s', v_nom)), h.motivo)
+                           when h.rev_id is null and h.contrato is null
+                             then concat_ws(' ', h.arr_frase || '.', 'Su ficha no tiene contrato: ponlo (o dilo al revisar) para poder revisarla.')
+                           when h.rev_id is null and h.sigue_terminada
+                             then format('Ya estaba terminada (se revisó así en %s) y sigue sin facturarse entera: lleva facturado %s de %s. '
+                                         'Se queda en el WIP hasta que lo facturado sea su precio: revísala como terminada otra vez (un '
+                                         'toque)%s, o exclúyela con su nota.', fn_wip_mes(h.antx_periodo),
+                                         fn_wip_usd(h.f_libro + coalesce(h.antes_facturado, 0)), fn_wip_usd(h.antx_precio),
+                                         case when h.obra_terminada then '' else '; si volvió a abrirse, revisa su costo estimado' end)
+                           when h.rev_id is null and h.arrastra and not h.activa and not h.obra_terminada
+                             then format('%s y la app la tiene ahora como «%s». Nada sale del WIP solo: si sigue en pie, revisa su costo '
+                                         'estimado; si se canceló, exclúyela con su nota (su ingreso vuelve a ser lo facturado).',
+                                         h.arr_frase, coalesce(h.obra_estado, 'sin estado'))
                            when h.rev_id is null then format('Falta revisar su costo estimado en %s.', v_nom) end,
-                      case when h.de_antes and h.antes_id is null
+                      case when h.falta @> array['antes']
                              then format('Ya andaba antes del libro (tiene de antes: %s): falta confirmar su costo y lo facturado de antes; '
-                                         'hasta entonces no entra en el ajuste.', h.de_antes_por) end,
-                      case when h.cuenta_ingreso is null
+                                         'hasta entonces no entra en el ajuste. Si este mes no se puede, exclúyela con su nota.', h.de_antes_por) end,
+                      case when h.falta @> array['cuenta_ingreso']
                              then format('Su tipo de obra (%s) no tiene cuenta de ingreso confirmada: sin ella no se sabe contra qué '
-                                         'renglón va el ajuste.', coalesce(h.tipo, 'sin tipo')) end) end),
-         (h.mov and cardinality(h.falta) = 0), h.rev_terminada,
+                                         'renglón va el ajuste.', coalesce(h.tipo, 'sin tipo')) end,
+                      case when h.falta @> array['precio']
+                             then format('El contrato de su ficha cambió después de revisarla (se revisó con %s y la ficha dice ahora %s): si el '
+                                         'cambio es de %s, revísala otra vez con el precio nuevo; si es de después, dilo (un toque) y este '
+                                         'mes se queda con el que tenía.', fn_wip_usd(h.rev_precio),
+                                         case when h.contrato is null then 'nada' else fn_wip_usd(h.contrato) end, v_nom) end,
+                      case when h.falta @> array['estimado']
+                             then format('Lleva %s de costo y su costo estimado revisado es %s (%s %%): ese estimado quedó viejo. Súbelo (el '
+                                         'costo total no puede ser menos de lo que ya lleva) o, si terminó, márcala terminada; hasta '
+                                         'entonces no entra en el ajuste.', fn_wip_usd(h.c_fecha), fn_wip_usd(h.est),
+                                         trim_scale(round(100 * h.c_fecha / h.est, 2))) end) end),
+         (h.mov and not h.rev_excluida and cardinality(h.falta) = 0), h.rev_terminada,
          h.rev_precio::numeric(14,2), h.contrato::numeric(14,2), h.est::numeric(14,2),
          (h.rev_precio - h.est)::numeric(14,2),
          h.c_libro::numeric(14,2),
@@ -1291,7 +1456,9 @@ begin
          h.de_antes, h.antes_id is not null, h.antes_id,
          h.rev_id, h.rev_el, h.rev_por, h.rev_origen, h.rev_nota,
          h.prop::numeric(14,2), h.prop_origen,
-         (case when h.rev_id is not null then null
+         (case when h.rev_id is not null or not h.lleva_wip then null
+               when h.obra_terminada and h.sigue_terminada
+                 then format('Ya estaba terminada en %s: sigue terminada (100 %%) hasta que se facture entera.', fn_wip_mes(h.antx_periodo))
                when h.obra_terminada
                  then 'La app la tiene como terminada: si terminó en este mes, revísala como terminada (100 %); si seguía en obra '
                       'al cierre del mes, revisa su costo estimado.'
@@ -1301,12 +1468,15 @@ begin
                else coalesce('Sin propuesta. ' || nullif(v_c10->h.proyecto_id->>'falta', ''),
                              'Sin propuesta: no hay una revisión anterior ni un estimado completo de la obra. Escribe el costo '
                              'total estimado, desde el inicio hasta terminarla.') end),
-         (h.rev_id is null and h.obra_terminada),
+         (h.rev_id is null and h.lleva_wip and h.obra_terminada),
          (case when not h.calc then '{}'::text[] else array_remove(array[
             case when not h.rev_terminada and h.c_fecha > h.est
-                 then format('Lleva %s de costo y su costo estimado revisado es %s (%s %%): el avance se topa en 100 %%. Sube el costo '
-                             'estimado o deja escrito por qué.', fn_wip_usd(h.c_fecha), fn_wip_usd(h.est),
+                 then format('Lleva %s de costo y su costo estimado revisado es %s (%s %%): no entra en el ajuste hasta que subas el costo '
+                             'estimado (o la marques terminada).', fn_wip_usd(h.c_fecha), fn_wip_usd(h.est),
                              trim_scale(round(100 * h.c_fecha / h.est, 2))) end,
+            case when not h.rev_terminada and h.c_fecha = h.est
+                 then format('Va al 100 %%: lleva justo su costo estimado (%s) y con eso se gana el precio entero. Si todavía le falta '
+                             'trabajo, su costo total estimado tiene que ser mayor.', fn_wip_usd(h.est)) end,
             case when not h.rev_terminada and h.perdida > 0
                  then format('Va con pérdida: el costo estimado (%s) pasa del precio (%s) por %s. De esa pérdida, %s ya está en su '
                              'resultado por el avance y %s se provisiona este mes: la pérdida completa queda reconocida.',
@@ -1315,12 +1485,15 @@ begin
                              fn_wip_usd(greatest(h.perdida - (h.c_tope - h.ganado), 0))) end,
             case when h.rev_terminada and h.c_fecha > h.rev_precio
                  then format('Terminó con pérdida: costó %s y su precio es %s.', fn_wip_usd(h.c_fecha), fn_wip_usd(h.rev_precio)) end,
+            case when h.rev_terminada and h.f_fecha <> h.rev_precio
+                 then format('Terminada y sin facturar entera: lleva facturado %s de %s. Sigue en el WIP cada mes hasta que lo facturado sea '
+                             'su precio.', fn_wip_usd(h.f_fecha), fn_wip_usd(h.rev_precio)) end,
             case when h.f_fecha > h.rev_precio
                  then format('Lo facturado (%s) pasa del contrato (%s): ¿falta una orden de cambio en el contrato de la ficha?',
                              fn_wip_usd(h.f_fecha), fn_wip_usd(h.rev_precio)) end,
             case when h.contrato is distinct from h.rev_precio
-                 then format('El contrato de la ficha (%s) no es el que se usó al revisar (%s): si cambió en este mes, revísala otra '
-                             'vez.', case when h.contrato is null then 'vacío' else fn_wip_usd(h.contrato) end, fn_wip_usd(h.rev_precio)) end,
+                 then format('El contrato de la ficha (%s) no es el que se usó al revisar (%s).',
+                             case when h.contrato is null then 'vacío' else fn_wip_usd(h.contrato) end, fn_wip_usd(h.rev_precio)) end,
             case when h.i_otro <> 0
                  then format('Tiene %s de ingreso en el libro que no viene de una factura ni del WIP (un descuento al cobrar o un '
                              'asiento a mano): no cuenta como facturado.', fn_wip_usd(h.i_otro)) end
@@ -1330,7 +1503,7 @@ begin
 end $$;
 revoke execute on function public.fn_wip_calcular(text, text, boolean) from public, anon, service_role;
 grant  execute on function public.fn_wip_calcular(text, text, boolean) to authenticated;
-comment on function public.fn_wip_calcular(text, text, boolean) is 'c12: el WIP de un mes, calculado hoy a la fecha de su último día: una fila por obra de precio fijo que entra (activas; con revisión en el mes; terminadas que venían en el WIP o con fecha de término en el mes), con su estado (lista, pendiente con lo que falta, sin_movimiento), el precio y el costo estimado de su revisión, el costo y lo facturado a la fecha (libro + lo de antes confirmado), el % de avance (topado en 100), el ingreso ganado (precio × costo ÷ costo estimado, redondeado una vez), sub y sobre-facturado, costo para terminar, utilidad, la pérdida y su provisión (lo que falta por reconocer), la cuenta de ingreso, la propuesta del costo estimado (lo del mes anterior o el estimado de la obra) y los avisos en llano. Solo lectura; a quien no es el dueño, nada.';
+comment on function public.fn_wip_calcular(text, text, boolean) is 'c12: el WIP de un mes, calculado hoy a la fecha de su último día: una fila por obra que entra (las de precio fijo activas; las que tienen revisión en el mes; las terminadas que venían en el WIP o con fecha de término en el mes; y TODA obra que traía sub, sobre o provisión en el último ajuste vivo de un mes anterior, esté como esté hoy en la app: ninguna sale sola), con su estado (lista; pendiente con lo que falta: revision, antes, cuenta_ingreso, precio = el contrato de la ficha cambió después de revisarla, estimado = lleva más costo que su estimado; excluida = Edgar la dejó fuera este mes con su nota; sin_movimiento), el precio y el costo estimado de su revisión, el costo y lo facturado a la fecha (libro + lo de antes confirmado), el % de avance (topado en 100), el ingreso ganado (precio × costo ÷ costo estimado, redondeado una vez), sub y sobre-facturado, costo para terminar, utilidad, la pérdida y su provisión (lo que falta por reconocer), la cuenta de ingreso, la propuesta del costo estimado (lo del mes anterior o el estimado de la obra) y los avisos en llano. Solo lectura; a quien no es el dueño, nada.';
 
 -- EL SCHEDULE DE UN MES (lo que enseña v_wip_schedule): un mes abierto, lo
 -- calculado hoy; un mes CERRADO, la foto de su ajuste (lo que se posteó: un
@@ -1817,18 +1990,33 @@ revoke execute on function public.fn_wip_antes(text, jsonb) from public, anon, s
 grant  execute on function public.fn_wip_antes(text, jsonb) to authenticated;
 comment on function public.fn_wip_antes(text, jsonb) is 'c12: confirma lo de antes del libro de una obra: {"costo": "…", "facturado": "…", "nota": "…"} (montos hasta el día anterior al libro; el cero vale). Si no son los que proponen los papeles de la app (fn_wip_antes_propuesta) pide la nota. Guarda la propuesta de ese día, quién y cuándo; sustituye a la confirmación anterior, que queda. Solo el dueño.';
 
--- LA REVISIÓN DE UNA OBRA EN UN MES (cabecera, punto 2). Tres formas:
+-- LA REVISIÓN DE UNA OBRA EN UN MES (cabecera, punto 2). Cinco formas:
 --   {"confirmar": true}                         un toque: lo propuesto (lo del
 --                                               mes anterior o, la primera
 --                                               vez, el estimado de la obra)
 --   {"costo_estimado": "12345.00", "nota": "…"} otro número, con su nota
 --   {"terminada": true}                         la obra terminó: 100 %
+--   {"excluir": true, "nota": "…"}              este mes queda FUERA del WIP,
+--                                               a propósito y con su porqué
+--                                               (se canceló, pasó a T&M, este
+--                                               mes no se puede medir): su
+--                                               ingreso vuelve a ser lo
+--                                               facturado. Es la única forma
+--                                               de que salga una obra que
+--                                               traía saldo
+--   {"precio_de_despues": true}                 un toque: el contrato de la
+--                                               ficha cambió DESPUÉS de este
+--                                               mes; la revisión se queda con
+--                                               el precio que tenía, y queda
+--                                               escrito
 -- y, si el mes necesita otro precio que el de la ficha, "precio_contrato"
 -- con su nota. El precio se copia de la ficha (cambia sin historia). Pide la
--- nota cuando el número no es el propuesto, cuando el precio no es el de la
--- ficha y cuando el costo estimado es menor que lo que la obra ya lleva. Un
--- mes cerrado no se toca. No rehace el ajuste: si ya estaba posteado, lo
--- dice (y el control lo pone en rojo hasta que se vuelva a postear).
+-- nota cuando el número no es el propuesto y cuando el precio no es el de la
+-- ficha. El costo total estimado NO puede ser menor que lo que la obra ya
+-- lleva (MX005): daría más de 100 % y se ganaría el precio entero sin haber
+-- terminado; se sube, o la obra se marca terminada. Un mes cerrado no se
+-- toca. No rehace el ajuste: si ya estaba posteado, lo dice (y el control lo
+-- pone en rojo hasta que se vuelva a postear).
 create or replace function public.fn_wip_revisar(p_proyecto text, p_periodo text, p jsonb) returns jsonb
 language plpgsql
 set search_path = public, pg_temp
@@ -1843,6 +2031,8 @@ declare
   v_sobra   text;
   v_term    boolean;
   v_conf    boolean;
+  v_excl    boolean;
+  v_pdd     boolean;
   v_nota    text;
   v_ficha   numeric;
   v_precio  numeric;
@@ -1850,6 +2040,8 @@ declare
   v_dado    numeric;
   v_origen  text;
   v_cfecha  numeric;
+  v_prop    numeric;
+  v_prop_o  text;
   v_viva    wip_revisiones;
   v_id      uuid;
   v_fila    jsonb;
@@ -1858,10 +2050,12 @@ begin
   perform fn_wip_exigir_dueno();
   if p is null or jsonb_typeof(p) <> 'object' then
     raise exception using errcode = '22023',
-      message = 'La revisión llega como un objeto JSON: {"confirmar": true}, {"costo_estimado": "…", "nota": "…"} o {"terminada": true}.';
+      message = 'La revisión llega como un objeto JSON: {"confirmar": true}, {"costo_estimado": "…", "nota": "…"}, {"terminada": true}, '
+                '{"excluir": true, "nota": "…"} o {"precio_de_despues": true}.';
   end if;
   select string_agg(k, ', ' order by k) into v_sobra
-    from jsonb_object_keys(p) k where k not in ('confirmar', 'costo_estimado', 'nota', 'terminada', 'precio_contrato');
+    from jsonb_object_keys(p) k
+   where k not in ('confirmar', 'costo_estimado', 'nota', 'terminada', 'precio_contrato', 'excluir', 'precio_de_despues');
   if v_sobra is not null then
     raise exception using errcode = '22023', message = format('Clave desconocida en la revisión: %s.', v_sobra);
   end if;
@@ -1884,17 +2078,20 @@ begin
   if not found then
     raise exception using errcode = 'MX008', message = format('No existe la obra «%s».', coalesce(p_proyecto, ''));
   end if;
-  if not o.lleva_wip then
-    raise exception using errcode = 'MX008',
-      message = format('«%s» no lleva WIP. %s Si de verdad es de precio fijo, márcala antes (modo «contrato»).', o.obra, o.motivo);
-  end if;
   begin
     v_term := coalesce((p->>'terminada')::boolean, false);
     v_conf := coalesce((p->>'confirmar')::boolean, false);
+    v_excl := coalesce((p->>'excluir')::boolean, false);
+    v_pdd  := coalesce((p->>'precio_de_despues')::boolean, false);
   exception when others then
-    raise exception using errcode = '22023', message = 'terminada y confirmar son true o false.';
+    raise exception using errcode = '22023', message = 'terminada, confirmar, excluir y precio_de_despues son true o false.';
   end;
   v_nota := nullif(btrim(p->>'nota'), '');
+  if not o.lleva_wip and not v_excl then
+    raise exception using errcode = 'MX008',
+      message = format('«%s» no lleva WIP. %s Si de verdad es de precio fijo, márcala antes (modo «contrato»); si traía saldo del WIP y '
+                       'ya no va, exclúyela con su nota.', o.obra, o.motivo);
+  end if;
   if coalesce(btrim(p->>'costo_estimado'), '') <> '' then
     v_dado := fn_wip_monto(p->>'costo_estimado', 'el costo total estimado');
   end if;
@@ -1902,96 +2099,141 @@ begin
     raise exception using errcode = '22023',
       message = 'Una obra terminada no lleva costo estimado ni propuesta que confirmar: su costo final es el que lleva. Manda solo {"terminada": true}.';
   end if;
+  if (v_excl or v_pdd) and (v_term or v_conf or v_dado is not null or coalesce(btrim(p->>'precio_contrato'), '') <> '' or (v_excl and v_pdd)) then
+    raise exception using errcode = '22023',
+      message = 'Excluir una obra del WIP del mes, o decir que el cambio de su contrato es de después, va solo: {"excluir": true, "nota": "…"} '
+                'o {"precio_de_despues": true}.';
+  end if;
+  if v_excl and v_nota is null then
+    raise exception using errcode = '22023',
+      message = format('Dejar «%s» fuera del WIP de %s pide su porqué en la nota (por ejemplo, «el cliente canceló el contrato» o «falta '
+                       'el costo de antes: lo pasa el contador en diciembre»): queda escrito con quién y cuándo.', o.obra, v_nom);
+  end if;
 
   -- Dos revisiones a la vez de la misma obra y mes: una detrás de otra.
   -- (primero el candado del ajuste del mes: una revisión no entra a mitad de un «postear» de ese mes; después el suyo)
   perform pg_advisory_xact_lock(820261112, hashtext('ajuste:' || per.periodo));
   perform pg_advisory_xact_lock(820261112, hashtext('rev:' || p_proyecto || ':' || per.periodo));
 
-  -- El precio: el de la ficha hoy, o el que se diga (con su nota).
-  v_ficha := o.contrato;
-  if coalesce(btrim(p->>'precio_contrato'), '') <> '' then
-    v_precio := fn_wip_monto(p->>'precio_contrato', 'el precio del contrato');
-  else
-    v_precio := v_ficha;
-  end if;
-  if v_precio is null then
-    raise exception using errcode = 'MX008',
-      message = format('«%s» no tiene contrato en su ficha: ponlo en la obra, o dilo en la revisión (precio_contrato) con su nota.', o.obra);
-  end if;
-  if v_ficha is distinct from v_precio and v_nota is null then
-    raise exception using errcode = '22023',
-      message = format('El precio que pones (%s) no es el contrato de la ficha (%s): deja escrito por qué en la nota (por ejemplo, '
-                       '«orden de cambio 2 firmada, falta en la ficha»).', fn_wip_usd(v_precio),
-                       case when v_ficha is null then 'vacío' else fn_wip_usd(v_ficha) end);
-  end if;
-
-  -- La fila de hoy, con su propuesta (si la obra entra en el mes).
+  -- La fila de hoy, con su propuesta (si la obra entra en el mes), y la revisión viva del mes.
   select * into f from fn_wip_calcular(per.periodo, p_proyecto, true) s;
   v_hay_f := found;
-
-  if v_term then
-    if not o.terminada then
-      raise exception using errcode = 'MX008',
-        message = format('La app tiene «%s» como «%s», no como terminada: márcala completada en su ficha y revísala como terminada, o '
-                         'revisa su costo estimado.', o.obra, o.obra_estado);
-    end if;
-    v_costo := null;
-    v_origen := 'terminada';
-  elsif v_conf then
-    if not v_hay_f or f.propuesta_costo_estimado is null then
-      raise exception using errcode = 'MX008',
-        message = format('No hay una propuesta que confirmar para «%s» en %s (ni revisión anterior ni un estimado completo): escribe '
-                         'su costo total estimado.', o.obra, v_nom);
-    end if;
-    if v_dado is not null and v_dado <> f.propuesta_costo_estimado then
-      raise exception using errcode = 'MX008',
-        message = format('La propuesta de «%s» ya no es la que viste (%s; ahora es %s): vuelve a mirar antes de confirmar.', o.obra,
-                         fn_wip_usd(v_dado), fn_wip_usd(f.propuesta_costo_estimado));
-    end if;
-    v_costo := f.propuesta_costo_estimado;
-    v_origen := coalesce(f.propuesta_origen, 'a_mano');
-  else
-    if v_dado is null then
-      raise exception using errcode = '22023',
-        message = 'Falta el costo total estimado (costo_estimado), o confirmar lo propuesto (confirmar), o decir que la obra terminó (terminada).';
-    end if;
-    v_costo := v_dado;
-    v_origen := case when v_hay_f and f.propuesta_costo_estimado = v_costo then coalesce(f.propuesta_origen, 'a_mano') else 'a_mano' end;
-    if v_origen = 'a_mano' and v_hay_f and f.propuesta_costo_estimado is not null and v_nota is null then
-      raise exception using errcode = '22023',
-        message = format('Cambias el costo estimado de «%s» de %s (%s) a %s: deja escrito por qué en la nota.', o.obra,
-                         fn_wip_usd(f.propuesta_costo_estimado),
-                         case f.propuesta_origen when 'mes_anterior' then 'lo del mes anterior' when 'estimado' then 'su estimado'
-                              else 'lo propuesto' end, fn_wip_usd(v_costo));
-    end if;
+  if v_hay_f then
+    v_prop := f.propuesta_costo_estimado; v_prop_o := f.propuesta_origen;
   end if;
-
-  -- Con menos costo estimado que lo que la obra ya lleva, pide la nota (el
-  -- avance se topa en 100 % y el control lo vigila).
-  if not v_term then
-    select coalesce(l.costo, 0) into v_cfecha from fn_wip_libro(per.hasta, p_proyecto) l;
-    v_cfecha := coalesce(v_cfecha, 0) + coalesce(o.antes_costo, 0);
-    if v_cfecha > v_costo and v_nota is null then
-      raise exception using errcode = '22023',
-        message = format('El costo estimado (%s) es menor que lo que «%s» ya lleva al %s (%s): daría %s %% de avance. Súbelo, o deja '
-                         'escrito por qué en la nota.', fn_wip_usd(v_costo), o.obra, fn_wip_dia(per.hasta), fn_wip_usd(v_cfecha),
-                         trim_scale(round(100 * v_cfecha / v_costo, 2)));
-    end if;
-  end if;
-
   select * into v_viva from wip_revisiones r where r.proyecto_id = p_proyecto and r.periodo = per.periodo and r.sustituida_el is null;
-  if found and v_viva.precio_contrato = v_precio and v_viva.costo_estimado is not distinct from v_costo
-     and v_viva.terminada = v_term and v_viva.nota is not distinct from v_nota then
+  v_ficha := o.contrato;
+
+  if v_excl then
+    -- FUERA ESTE MES, a propósito. Solo una obra que está en el WIP del mes
+    -- (activa, con revisión, o que traía saldo): lo demás no tiene de dónde salir.
+    if not v_hay_f then
+      raise exception using errcode = 'MX008',
+        message = format('«%s» no está en el WIP de %s (no lleva WIP ni traía saldo del ajuste anterior): no hay nada que excluir.',
+                         o.obra, v_nom);
+    end if;
+    v_precio := v_ficha; v_costo := null; v_origen := 'excluida';
+  elsif v_pdd then
+    -- EL CAMBIO DEL CONTRATO ES DE DESPUÉS: la revisión del mes se queda como
+    -- está (su costo estimado, su precio), y apunta el contrato que la ficha
+    -- dice hoy: deja de pedir que se revise otra vez. Queda escrito en su nota.
+    if v_viva.id is null or v_viva.excluida then
+      raise exception using errcode = 'MX008',
+        message = format('«%s» no tiene una revisión en %s que conservar: revísala primero.', o.obra, v_nom);
+    end if;
+    if v_ficha is not distinct from v_viva.precio_contrato or v_ficha is not distinct from v_viva.precio_ficha then
+      raise exception using errcode = 'MX008',
+        message = format('El contrato de la ficha de «%s» no cambió desde que se revisó en %s: no hay nada que decir.', o.obra, v_nom);
+    end if;
+    v_precio := v_viva.precio_contrato; v_costo := v_viva.costo_estimado; v_term := v_viva.terminada; v_origen := v_viva.origen;
+    v_prop := v_viva.propuesta; v_prop_o := v_viva.propuesta_origen;
+    v_nota := left(concat_ws(' · ', v_viva.nota,
+                format('El contrato de la ficha pasó de %s a %s después de %s: este mes se queda con %s.',
+                       case when v_viva.precio_ficha is null then 'vacío' else fn_wip_usd(v_viva.precio_ficha) end,
+                       case when v_ficha is null then 'vacío' else fn_wip_usd(v_ficha) end, v_nom, fn_wip_usd(v_viva.precio_contrato))), 1000);
+  else
+    -- El precio: el de la ficha hoy, o el que se diga (con su nota).
+    if coalesce(btrim(p->>'precio_contrato'), '') <> '' then
+      v_precio := fn_wip_monto(p->>'precio_contrato', 'el precio del contrato');
+    else
+      v_precio := v_ficha;
+    end if;
+    if v_precio is null then
+      raise exception using errcode = 'MX008',
+        message = format('«%s» no tiene contrato en su ficha: ponlo en la obra, o dilo en la revisión (precio_contrato) con su nota.', o.obra);
+    end if;
+    if v_ficha is distinct from v_precio and v_nota is null then
+      raise exception using errcode = '22023',
+        message = format('El precio que pones (%s) no es el contrato de la ficha (%s): deja escrito por qué en la nota (por ejemplo, '
+                         '«orden de cambio 2 firmada, falta en la ficha»).', fn_wip_usd(v_precio),
+                         case when v_ficha is null then 'vacío' else fn_wip_usd(v_ficha) end);
+    end if;
+
+    if v_term then
+      if not o.terminada then
+        raise exception using errcode = 'MX008',
+          message = format('La app tiene «%s» como «%s», no como terminada: márcala completada en su ficha y revísala como terminada, o '
+                           'revisa su costo estimado.', o.obra, o.obra_estado);
+      end if;
+      v_costo := null;
+      v_origen := 'terminada';
+    elsif v_conf then
+      if not v_hay_f or f.propuesta_costo_estimado is null then
+        raise exception using errcode = 'MX008',
+          message = format('No hay una propuesta que confirmar para «%s» en %s (ni revisión anterior ni un estimado completo): escribe '
+                           'su costo total estimado.', o.obra, v_nom);
+      end if;
+      if v_dado is not null and v_dado <> f.propuesta_costo_estimado then
+        raise exception using errcode = 'MX008',
+          message = format('La propuesta de «%s» ya no es la que viste (%s; ahora es %s): vuelve a mirar antes de confirmar.', o.obra,
+                           fn_wip_usd(v_dado), fn_wip_usd(f.propuesta_costo_estimado));
+      end if;
+      v_costo := f.propuesta_costo_estimado;
+      v_origen := coalesce(f.propuesta_origen, 'a_mano');
+    else
+      if v_dado is null then
+        raise exception using errcode = '22023',
+          message = 'Falta el costo total estimado (costo_estimado), o confirmar lo propuesto (confirmar), o decir que la obra terminó '
+                    '(terminada), o dejarla fuera este mes con su nota (excluir).';
+      end if;
+      v_costo := v_dado;
+      v_origen := case when v_hay_f and f.propuesta_costo_estimado = v_costo then coalesce(f.propuesta_origen, 'a_mano') else 'a_mano' end;
+      if v_origen = 'a_mano' and v_hay_f and f.propuesta_costo_estimado is not null and v_nota is null then
+        raise exception using errcode = '22023',
+          message = format('Cambias el costo estimado de «%s» de %s (%s) a %s: deja escrito por qué en la nota.', o.obra,
+                           fn_wip_usd(f.propuesta_costo_estimado),
+                           case f.propuesta_origen when 'mes_anterior' then 'lo del mes anterior' when 'estimado' then 'su estimado'
+                                else 'lo propuesto' end, fn_wip_usd(v_costo));
+      end if;
+    end if;
+
+    -- EL COSTO TOTAL ESTIMADO NO PUEDE SER MENOR QUE LO QUE LA OBRA YA LLEVA
+    -- (con nota o sin ella): daría más de 100 %, el avance se toparía y el
+    -- libro ganaría el precio entero de una obra sin terminar.
+    if not v_term then
+      select coalesce(l.costo, 0) into v_cfecha from fn_wip_libro(per.hasta, p_proyecto) l;
+      v_cfecha := coalesce(v_cfecha, 0) + coalesce(o.antes_costo, 0);
+      if v_cfecha > v_costo then
+        raise exception using errcode = 'MX005',
+          message = format('El costo total estimado (%s) es menor que lo que «%s» ya lleva al %s (%s): daría %s %% de avance. El costo '
+                           'total no puede ser menos de lo gastado: súbelo (por lo menos a %s, más lo que falte por gastar) o, si la '
+                           'obra terminó, márcala terminada.', fn_wip_usd(v_costo), o.obra, fn_wip_dia(per.hasta), fn_wip_usd(v_cfecha),
+                           trim_scale(round(100 * v_cfecha / v_costo, 2)), fn_wip_usd(v_cfecha));
+      end if;
+    end if;
+  end if;
+
+  if v_viva.id is not null and v_viva.precio_contrato is not distinct from v_precio and v_viva.costo_estimado is not distinct from v_costo
+     and v_viva.terminada = v_term and v_viva.excluida = v_excl and v_viva.precio_ficha is not distinct from v_ficha
+     and v_viva.nota is not distinct from v_nota then
     v_id := v_viva.id;
   else
     perform set_config('mx_wip.escribe', 'wip_revisiones', true);
     update wip_revisiones set sustituida_el = clock_timestamp(), sustituida_por = auth.uid()
      where proyecto_id = p_proyecto and periodo = per.periodo and sustituida_el is null;
-    insert into wip_revisiones (proyecto_id, periodo, precio_contrato, precio_ficha, costo_estimado, terminada, origen, propuesta,
+    insert into wip_revisiones (proyecto_id, periodo, precio_contrato, precio_ficha, costo_estimado, terminada, excluida, origen, propuesta,
                                 propuesta_origen, nota, revisado_por)
-    values (p_proyecto, per.periodo, v_precio, v_ficha, v_costo, v_term, v_origen,
-            case when v_hay_f then f.propuesta_costo_estimado end, case when v_hay_f then f.propuesta_origen end, v_nota, auth.uid())
+    values (p_proyecto, per.periodo, v_precio, v_ficha, v_costo, v_term, v_excl, v_origen, v_prop, v_prop_o, v_nota, auth.uid())
     returning id into v_id;
     perform set_config('mx_wip.escribe', '', true);
   end if;
@@ -2002,15 +2244,17 @@ begin
     'revision_id', v_id, 'periodo', per.periodo, 'proyecto_id', p_proyecto, 'ya_estaba', v_viva.id is not distinct from v_id,
     'origen', v_origen, 'fila', v_fila,
     'ajuste', jsonb_build_object('vivo', v_est->'vivo', 'al_dia', v_est->'al_dia', 'numero', v_est->'numero', 'cambios', v_est->'cambios'),
-    'nota', case when (v_est->>'vivo')::boolean and not (v_est->>'al_dia')::boolean
-                 then format('Revisada. El ajuste de %s ya estaba posteado (asiento %s) y con esto ya no está al día: vuelve a postearlo '
-                             '(se reversa y entra el nuevo).', v_nom, v_est->>'numero')
-                 when v_fila->>'estado' = 'pendiente' then 'Revisada. ' || coalesce(v_fila->>'falta_texto', '')
-                 else 'Revisada.' end);
+    'nota', case when v_excl then format('«%s» queda fuera del WIP de %s: su ingreso de ese mes es lo facturado.', o.obra, v_nom)
+                 else 'Revisada.' end
+            || case when (v_est->>'vivo')::boolean and not (v_est->>'al_dia')::boolean
+                    then format(' El ajuste de %s ya estaba posteado (asiento %s) y con esto ya no está al día: vuelve a postearlo '
+                                '(se reversa y entra el nuevo).', v_nom, v_est->>'numero')
+                    when v_fila->>'estado' = 'pendiente' then ' ' || coalesce(v_fila->>'falta_texto', '')
+                    else '' end);
 end $$;
 revoke execute on function public.fn_wip_revisar(text, text, jsonb) from public, anon, service_role;
 grant  execute on function public.fn_wip_revisar(text, text, jsonb) to authenticated;
-comment on function public.fn_wip_revisar(text, text, jsonb) is 'c12: la revisión de una obra en un mes abierto: {"confirmar": true} (un toque: lo propuesto, que es lo del mes anterior o, la primera vez, el estimado de la obra), {"costo_estimado": "…", "nota": "…"} (otro número: el costo TOTAL estimado, desde el inicio hasta terminar) o {"terminada": true} (100 %; la obra tiene que estar completada en la app). Copia el precio de la ficha (o el de "precio_contrato", con su nota). Pide la nota si el número no es el propuesto, si el precio no es el de la ficha o si el costo estimado es menor que lo que la obra ya lleva. Sustituye a la revisión anterior del mes, que queda. Devuelve la fila del WIP como queda y si el ajuste ya posteado dejó de estar al día. Solo el dueño.';
+comment on function public.fn_wip_revisar(text, text, jsonb) is 'c12: la revisión de una obra en un mes abierto: {"confirmar": true} (un toque: lo propuesto, que es lo del mes anterior o, la primera vez, el estimado de la obra), {"costo_estimado": "…", "nota": "…"} (otro número: el costo TOTAL estimado, desde el inicio hasta terminar), {"terminada": true} (100 %; la obra tiene que estar completada en la app), {"excluir": true, "nota": "…"} (este mes queda fuera del WIP a propósito, con su porqué: la única forma de que salga una obra que traía saldo) o {"precio_de_despues": true} (un toque: el contrato de la ficha cambió después de este mes y la revisión se queda con el precio que tenía). Copia el precio de la ficha (o el de "precio_contrato", con su nota). Pide la nota si el número no es el propuesto o si el precio no es el de la ficha; el costo estimado no puede ser menor que lo que la obra ya lleva (MX005). Sustituye a la revisión anterior del mes, que queda. Devuelve la fila del WIP como queda y si el ajuste ya posteado dejó de estar al día. Solo el dueño.';
 
 
 -- ---------------------------------------------------------------------
@@ -2031,6 +2275,7 @@ declare
   v_tot     jsonb;
   v_nlin    int;
   v_fuera   jsonb;
+  v_excl    jsonb;
   a         wip_ajustes;
   v_motivo  text;
   v_rev     jsonb;
@@ -2075,6 +2320,11 @@ begin
     into v_fuera
     from jsonb_to_recordset(v_plan->'filas') as x(proyecto_id text, obra text, estado text, falta jsonb, falta_texto text)
    where x.estado = 'pendiente';
+  -- (las que Edgar dejó fuera este mes a propósito, con su nota)
+  select coalesce(jsonb_agg(jsonb_build_object('proyecto_id', x.proyecto_id, 'obra', x.obra, 'nota', x.revision_nota) order by x.obra), '[]'::jsonb)
+    into v_excl
+    from jsonb_to_recordset(v_plan->'filas') as x(proyecto_id text, obra text, estado text, revision_nota text)
+   where x.estado = 'excluida';
 
   if (v_est->>'vivo')::boolean then
     select * into a from wip_ajustes x where x.id = (v_est->>'id')::uuid;
@@ -2096,7 +2346,7 @@ begin
         'asiento', jsonb_build_object('id', a.asiento_id, 'numero', a.numero, 'fecha', a.fecha),
         'reverso', v_est->'reverso_auto',
         'obras', a.obras, 'lineas', a.lineas, 'sub_facturado', a.sub_facturado, 'sobre_facturado', a.sobre_facturado, 'perdida', a.perdida,
-        'fuera', v_fuera,
+        'fuera', v_fuera, 'excluidas', v_excl,
         'nota', format('El ajuste de WIP de %s ya estaba posteado y sigue al día (asiento %s): no se duplica.', v_nom, a.numero));
     else
       -- Cambió después de postear: se reversa dentro de su mes (c2 anula
@@ -2119,7 +2369,7 @@ begin
   if v_nlin = 0 then
     return jsonb_build_object(
       'periodo', per.periodo, 'posteado', false, 'ya_estaba', false, 'rehecho', v_rehecho, 'obras', coalesce((v_tot->>'obras')::int, 0),
-      'fuera', v_fuera,
+      'fuera', v_fuera, 'excluidas', v_excl,
       'nota', case when v_rehecho is not null
                    then format('El ajuste anterior de %s (asiento %s) se deshizo, y hoy no hay nada que ajustar.', v_nom, v_rehecho->>'numero')
                    when coalesce((v_tot->>'obras')::int, 0) = 0
@@ -2128,7 +2378,9 @@ begin
                                     then format(' (%s pendiente(s): les falta su revisión o lo de antes del libro)', jsonb_array_length(v_fuera))
                                     else '' end)
                    else format('En %s no hay nada que ajustar: en las %s obra(s) listas lo ganado es lo facturado, al centavo.', v_nom,
-                               v_tot->>'obras') end);
+                               v_tot->>'obras') end
+              || case when jsonb_array_length(v_excl) > 0
+                      then format(' %s obra(s) quedaron fuera a propósito, con su nota.', jsonb_array_length(v_excl)) else '' end);
   end if;
 
   -- El reverso del día 1 cae en el mes siguiente: tiene que existir.
@@ -2189,19 +2441,22 @@ begin
     'obras', (v_tot->>'obras')::int, 'lineas', v_nlin,
     'sub_facturado', (v_tot->>'sub_facturado')::numeric, 'sobre_facturado', (v_tot->>'sobre_facturado')::numeric,
     'perdida', (v_tot->>'perdida_provision')::numeric,
-    'fuera', v_fuera,
+    'fuera', v_fuera, 'excluidas', v_excl,
     'nota', format('%s el ajuste de WIP de %s: asiento %s, con %s obra(s) (sub-facturado %s, sobre-facturado %s, pérdida %s). Se deshace '
-                   'solo el %s (asiento %s).%s',
+                   'solo el %s (asiento %s).%s%s',
                    case when v_rehecho is not null then 'Rehecho' else 'Posteado' end, v_nom, v_res->>'numero', v_tot->>'obras',
                    fn_wip_usd((v_tot->>'sub_facturado')::numeric), fn_wip_usd((v_tot->>'sobre_facturado')::numeric),
                    fn_wip_usd((v_tot->>'perdida_provision')::numeric), fn_wip_dia(per.hasta + 1), v_res->'reverso'->>'numero',
                    case when jsonb_array_length(v_fuera) > 0
                         then format(' %s obra(s) no entraron: les falta su revisión o lo de antes del libro.', jsonb_array_length(v_fuera))
+                        else '' end,
+                   case when jsonb_array_length(v_excl) > 0
+                        then format(' %s obra(s) quedaron fuera a propósito, con su nota.', jsonb_array_length(v_excl))
                         else '' end));
 end $$;
 revoke execute on function public.fn_wip_postear(text, text) from public, anon, service_role;
 grant  execute on function public.fn_wip_postear(text, text) to authenticated;
-comment on function public.fn_wip_postear(text, text) is 'c12: postea el ajuste de WIP de un mes abierto y ya terminado: UN asiento fechado su último día, por fn_postear como el dueño y reversible (nace con su reverso automático del día 1 del mes siguiente), con las obras listas: sub-facturada Dr 1200 / Cr su ingreso, sobre-facturada Dr su ingreso / Cr 2400, pérdida Dr 5950 / Cr 2410, cada línea con su obra. Idempotente: si el mes ya tiene su ajuste y sigue al día, lo devuelve (ya_estaba); si el WIP cambió después, lo rehace (reversa el anterior dentro de su mes con fn_reversar, que anula también su reverso del día 1, y postea el nuevo); si no hay nada que ajustar, no postea. Guarda el ajuste y la foto de cada obra. Devuelve el asiento, su reverso, los totales y las obras que no entraron con su porqué. Solo el dueño.';
+comment on function public.fn_wip_postear(text, text) is 'c12: postea el ajuste de WIP de un mes abierto y ya terminado: UN asiento fechado su último día, por fn_postear como el dueño y reversible (nace con su reverso automático del día 1 del mes siguiente), con las obras listas: sub-facturada Dr 1200 / Cr su ingreso, sobre-facturada Dr su ingreso / Cr 2400, pérdida Dr 5950 / Cr 2410, cada línea con su obra. Idempotente: si el mes ya tiene su ajuste y sigue al día, lo devuelve (ya_estaba); si el WIP cambió después, lo rehace (reversa el anterior dentro de su mes con fn_reversar, que anula también su reverso del día 1, y postea el nuevo); si no hay nada que ajustar, no postea. Guarda el ajuste y la foto de cada obra. Devuelve el asiento, su reverso, los totales las obras que no entraron con su porqué (fuera) y las que Edgar dejó fuera ese mes a propósito (excluidas). Solo el dueño.';
 
 -- DESHACER el ajuste de un mes abierto, sin poner otro: se reversa en su
 -- fecha (c2 anula también su reverso del día 1) y queda marcado, con su
@@ -2348,10 +2603,13 @@ begin
            'total', count(*),
            'listas', count(*) filter (where x.estado = 'lista'),
            'pendientes', count(*) filter (where x.estado = 'pendiente'),
+           'excluidas', count(*) filter (where x.estado = 'excluida'),
            'sin_movimiento', count(*) filter (where x.estado = 'sin_movimiento'),
            'por_revisar', count(*) filter (where x.estado = 'pendiente' and x.falta ? 'revision'),
            'por_confirmar_antes', count(*) filter (where x.estado = 'pendiente' and x.falta ? 'antes'),
-           'sin_cuenta_ingreso', count(*) filter (where x.estado = 'pendiente' and x.falta ? 'cuenta_ingreso')),
+           'sin_cuenta_ingreso', count(*) filter (where x.estado = 'pendiente' and x.falta ? 'cuenta_ingreso'),
+           'por_precio', count(*) filter (where x.estado = 'pendiente' and x.falta ? 'precio'),
+           'por_estimado', count(*) filter (where x.estado = 'pendiente' and x.falta ? 'estimado')),
          jsonb_build_object(
            'obras', count(*) filter (where x.en_ajuste),
            'precio_contrato', coalesce(sum(x.precio_contrato) filter (where x.en_ajuste), 0)::numeric(14,2),
@@ -2390,13 +2648,26 @@ begin
                    then format('El ajuste posteado de %s (asiento %s) ya no es el de hoy: %s. Vuelve a postearlo: se reversa y entra el '
                                'nuevo.', v_nom, v_est->>'numero', coalesce(v_est->>'cambios', 'cambió su cálculo'))
                  when (v_obras->>'pendientes')::int > 0
-                   then format('%s obra(s) no entran todavía: %s por revisar y %s sin lo de antes del libro confirmado.',
-                               v_obras->>'pendientes', v_obras->>'por_revisar', v_obras->>'por_confirmar_antes')
+                   then format('%s obra(s) no entran todavía: %s.%s', v_obras->>'pendientes',
+                               concat_ws(', ',
+                                 case when (v_obras->>'por_revisar')::int > 0 then (v_obras->>'por_revisar') || ' por revisar' end,
+                                 case when (v_obras->>'por_confirmar_antes')::int > 0
+                                      then (v_obras->>'por_confirmar_antes') || ' sin lo de antes del libro confirmado' end,
+                                 case when (v_obras->>'sin_cuenta_ingreso')::int > 0
+                                      then (v_obras->>'sin_cuenta_ingreso') || ' sin cuenta de ingreso' end,
+                                 case when (v_obras->>'por_precio')::int > 0
+                                      then (v_obras->>'por_precio') || ' con el contrato de la ficha cambiado después de revisarla' end,
+                                 case when (v_obras->>'por_estimado')::int > 0
+                                      then (v_obras->>'por_estimado') || ' con más costo que su estimado' end),
+                               case when (v_obras->>'excluidas')::int > 0
+                                    then format(' Y %s fuera a propósito, con su nota.', v_obras->>'excluidas') else '' end)
+                 when (v_obras->>'excluidas')::int > 0 and v_porq is null
+                   then format('%s obra(s) quedan fuera del WIP de %s a propósito, con su nota.', v_obras->>'excluidas', v_nom)
                  else v_porq end);
 end $$;
 revoke execute on function public.fn_wip_resumen(text) from public, anon, service_role;
 grant  execute on function public.fn_wip_resumen(text) to authenticated;
-comment on function public.fn_wip_resumen(text) is 'c12: el resumen del WIP de un mes para la pantalla (sin período, el mes que toca): si está cerrado, terminado y exigido; cuántas obras (listas, pendientes, por revisar, sin lo de antes confirmado, sin movimiento); los totales de las obras listas (contrato, costo estimado, utilidad, costo a la fecha, ganado, facturado, sub y sobre-facturado, costo para terminar, pérdida y provisión; la pantalla no suma); cómo está el ajuste (posteado, al día, qué cambió); las líneas que se postearían hoy (o las posteadas, en un mes cerrado), con el nombre de la cuenta y de la obra; y si se puede postear o deshacer, con el porqué. Solo lee. Solo el dueño.';
+comment on function public.fn_wip_resumen(text) is 'c12: el resumen del WIP de un mes para la pantalla (sin período, el mes que toca): si está cerrado, terminado y exigido; cuántas obras (listas, pendientes, excluidas a propósito, por revisar, sin lo de antes confirmado, con el contrato cambiado, con más costo que su estimado, sin movimiento); los totales de las obras listas (contrato, costo estimado, utilidad, costo a la fecha, ganado, facturado, sub y sobre-facturado, costo para terminar, pérdida y provisión; la pantalla no suma); cómo está el ajuste (posteado, al día, qué cambió); las líneas que se postearían hoy (o las posteadas, en un mes cerrado), con el nombre de la cuenta y de la obra; y si se puede postear o deshacer, con el porqué. Solo lee. Solo el dueño.';
 
 
 -- ---------------------------------------------------------------------
@@ -2441,6 +2712,14 @@ declare
   v_t2       text;
   v_t3       text;
   v_j        jsonb;
+  v_pend_n   bigint := 0;
+  v_pend_t   text;
+  v_excl_n   bigint := 0;
+  v_excl_t   text;
+  v_horas_n  bigint := 0;
+  v_horas_ok boolean := true;
+  v_horas_det text;
+  v_suf      text;
 begin
   if not fn_wip_ve() then
     return;
@@ -2469,16 +2748,66 @@ begin
     v_est   := fn_wip_ajuste_estado(per.periodo, v_plan);
     v_filas := v_plan->'filas';
     v_tot   := v_plan->'totales';
+    -- LO QUE QUEDA FUERA DEL AJUSTE, para decirlo donde se postea y donde se
+    -- cierra (la fila 176): las pendientes (les falta algo), las excluidas a
+    -- propósito (con su nota) y las que tienen horas sin costo en el libro
+    -- (su avance va corto).
+    select count(*) filter (where s.estado = 'pendiente'),
+           left(string_agg(s.obra, ', ' order by s.obra) filter (where s.estado = 'pendiente'), 400),
+           count(*) filter (where s.estado = 'excluida'),
+           left(string_agg(format('%s («%s»)', s.obra, left(coalesce(s.revision_nota, 'sin nota'), 120)), '; ' order by s.obra)
+                  filter (where s.estado = 'excluida'), 500)
+      into v_pend_n, v_pend_t, v_excl_n, v_excl_t
+      from jsonb_to_recordset(v_filas) as s(obra text, estado text, revision_nota text);
+    if to_regprocedure('public.fn_margen_obras(text)') is null then
+      v_horas_ok := true;
+      v_horas_det := 'El costo por obra (c10) no está en esta base: no se sabe qué horas siguen sin costo en el libro.';
+    else
+      begin
+        execute 'select coalesce(jsonb_object_agg(o.proyecto_id, jsonb_build_object(''h'', o.horas_estandar, ''m'', o.mano_obra_estandar)), '
+             || '''{}''::jsonb) from public.fn_margen_obras(null) o where o.horas_estandar > 0'
+           into v_j;
+        select count(*), left(string_agg(format('%s (%s h%s)', s.obra, trim_scale((v_j->s.proyecto_id->>'h')::numeric),
+                                                case when (v_j->s.proyecto_id->>'m') is null then ''
+                                                     else ', ' || fn_wip_usd((v_j->s.proyecto_id->>'m')::numeric) || ' a estándar' end),
+                                         '; ' order by s.obra), 900)
+          into v_horas_n, v_t
+          from jsonb_to_recordset(v_filas) as s(proyecto_id text, obra text, estado text)
+         where s.estado <> 'sin_movimiento' and v_j ? s.proyecto_id;
+        v_horas_ok := v_horas_n = 0;
+        v_horas_det := case when v_horas_n = 0 then 'Ninguna obra del WIP tiene hoy horas sin costo en el libro.'
+                            else format('%s obra(s) del WIP tienen hoy horas reportadas que no están en el libro (sin pago repartido): %s. Su '
+                                        'costo a la fecha va corto y su avance también. Reparte los pagos de mano de obra pendientes.',
+                                        v_horas_n, v_t) end;
+      exception when others then
+        v_horas_ok := true; v_horas_n := 0;
+        v_horas_det := format('No se pudo leer el costo por obra (c10) para ver las horas sin costo: %s.', sqlerrm);
+      end;
+    end if;
+    -- (lo que se añade al texto del ajuste del mes: quién quedó fuera y por qué)
+    v_suf := concat_ws(' ',
+               case when v_pend_n > 0
+                    then format('OJO: %s obra(s) NO entran en el ajuste porque les falta algo (%s): su ingreso de %s se queda en lo '
+                                'facturado hasta que se arregle.', v_pend_n, v_pend_t, v_nom) end,
+               case when v_excl_n > 0
+                    then format('Fuera del ajuste a propósito, %s obra(s): %s.', v_excl_n, v_excl_t) end,
+               case when v_horas_n > 0
+                    then format('Y %s obra(s) tienen horas sin costo en el libro: su avance va corto.', v_horas_n) end);
   end if;
 
   -- 10. En 1200, 2400, 2410 y 5950 solo están los ajustes del WIP: lo que no
   --     es de un ajuste (ni su reverso) no deja saldo, cuenta por cuenta y
-  --     obra por obra. Todo el libro.
-  select count(*), left(string_agg(format('%s en la %s%s', fn_wip_usd(x.saldo), x.cuenta, coalesce(' de ' || x.obra, ' sin obra')),
-                                   '; ' order by x.cuenta, x.obra), 900)
-    into v_n, v_t
-    from (select l.cuenta, pr.nombre as obra, sum(l.monto) as saldo
+  --     obra por obra. Todo el libro. Si el saldo viene de la APERTURA (el WIP
+  --     que traía QuickBooks al 30-sep), se dice con su porqué: esta capa no
+  --     lo continúa sola (cabecera, «Una apertura con saldo…»).
+  select count(*), left(string_agg(format('%s en la %s%s%s', fn_wip_usd(x.saldo), x.cuenta, coalesce(' de ' || x.obra, ' sin obra'),
+                                          case when x.de_apertura then ' (viene de la apertura)' else '' end),
+                                   '; ' order by x.cuenta, x.obra), 900),
+         count(*) filter (where x.de_apertura)
+    into v_n, v_t, v_n2
+    from (select l.cuenta, pr.nombre as obra, sum(l.monto) as saldo, bool_or(a.tipo = 'apertura') as de_apertura
             from asiento_lineas l
+            join asientos a on a.id = l.asiento_id
             left join proyectos pr on pr.id = l.proyecto_id
            where l.cuenta in ('1200', '2400', '2410', '5950')
              and not exists (select 1 from fn_wip_asientos() w where w.asiento_id = l.asiento_id)
@@ -2488,7 +2817,13 @@ begin
   detalle := case when v_n = 0 then 'En las cuentas del WIP (sub-facturado, sobre-facturado, la provisión por pérdida y su gasto) no hay '
                                     'más saldo que el de los ajustes del WIP.'
                   else format('Hay saldo en las cuentas del WIP que no viene de un ajuste: %s. Esas cuentas las lleva el ajuste del mes: '
-                              'si es un asiento a mano, revérsalo; si lo pidió el contador (un saldo inicial), avisa antes de cerrar.', v_t) end;
+                              'si es un asiento a mano, revérsalo; si lo pidió el contador (un saldo inicial), avisa antes de cerrar.%s', v_t,
+                              case when v_n2 > 0
+                                   then ' Lo que viene de la apertura es el WIP que traía QuickBooks al 30 de septiembre: el ajuste de cada '
+                                        'mes ya lleva el sobre y sub-facturado acumulado desde el inicio de cada obra, y con ese saldo '
+                                        'quedaría dos veces. Se decide con el contador: que la apertura entre sin WIP (contra utilidades '
+                                        'retenidas), o que el ajuste descuente lo que la apertura ya trae (avisa: es un cambio de esta capa).'
+                                   else '' end) end;
   return next;
 
   -- 20. Cada ajuste vivo es su asiento (no se reversó por fuera; sus líneas
@@ -2593,29 +2928,58 @@ begin
   end if;
   return next;
 
-  -- 40. Cada obra con movimiento, con su costo estimado revisado en el mes
-  --     (y su tipo con cuenta de ingreso). Exigible.
+  -- 40. Cada obra que entra en el mes, DECIDIDA: con su costo estimado
+  --     revisado (y lo de antes del libro confirmado si ya andaba, su tipo
+  --     con cuenta de ingreso, y el contrato de su ficha sin cambiar desde
+  --     que se revisó), o excluida a propósito con su nota. Aquí cae también
+  --     la obra que traía saldo del ajuste anterior: entra aunque la app ya
+  --     no la tenga activa, y no sale sin esa decisión. Exigible. (La que
+  --     lleva más costo que su estimado tiene su cuadre, el 60.)
   orden := 40; cuadre := 'wip: cada obra con su costo estimado revisado en el mes'; nivel := 'cuadre';
   if not v_vivo then
     ok := true; detalle := v_noaplica;
   else
     select count(*) filter (where s.estado <> 'sin_movimiento'),
-           count(*) filter (where s.estado = 'pendiente' and (s.falta ? 'revision' or s.falta ? 'cuenta_ingreso')),
-           left(string_agg(s.obra || case when s.falta ? 'cuenta_ingreso' and not s.falta ? 'revision' then ' (su tipo no tiene cuenta de ingreso confirmada)'
-                                          else '' end, ', ' order by s.obra)
-                  filter (where s.estado = 'pendiente' and (s.falta ? 'revision' or s.falta ? 'cuenta_ingreso')), 900)
+           count(*) filter (where s.estado = 'pendiente' and s.falta ?| array['revision', 'antes', 'cuenta_ingreso', 'precio']),
+           left(string_agg(s.obra || coalesce(' (' || nullif(concat_ws(', ',
+                             case when s.falta ? 'antes' then 'falta confirmar lo de antes del libro' end,
+                             case when s.falta ? 'cuenta_ingreso' then 'su tipo no tiene cuenta de ingreso confirmada' end,
+                             case when s.falta ? 'precio' then 'el contrato de su ficha cambió después de revisarla' end), '') || ')', ''),
+                           ', ' order by s.obra)
+                  filter (where s.estado = 'pendiente' and s.falta ?| array['revision', 'antes', 'cuenta_ingreso', 'precio']), 900)
       into v_n, v_n2, v_t
       from jsonb_to_recordset(v_filas) as s(obra text, estado text, falta jsonb);
-    ok := v_n2 = 0 or v_cuando is not null;
-    detalle := case when v_n = 0 then format('En %s no hay obras de precio fijo con movimiento.', v_nom)
-                    when v_n2 = 0 then format('Las %s obra(s) de precio fijo con movimiento tienen su costo estimado revisado en %s.', v_n, v_nom)
+    -- LA RED: una obra que traía sub, sobre o provisión en el último ajuste
+    -- vivo de un mes anterior, que no se excluyó después, y que hoy no está
+    -- entre las filas del mes. No debe pasar (entra sola); si pasa, detiene.
+    select count(*), left(string_agg(coalesce(w.obra, w.proyecto_id), ', ' order by w.obra), 400)
+      into v_n3, v_t3
+      from (select a.id, q.desde from wip_ajustes a join periodos q on q.periodo = a.periodo
+             where a.deshecho_el is null and q.desde < per.desde order by q.desde desc limit 1) u
+      join wip_ajuste_obras w on w.ajuste_id = u.id
+     where w.en_ajuste and (w.sub_facturado <> 0 or w.sobre_facturado <> 0 or w.perdida_provision <> 0)
+       and not exists (select 1 from jsonb_to_recordset(v_filas) as s(proyecto_id text) where s.proyecto_id = w.proyecto_id)
+       and not exists (select 1 from wip_revisiones r join periodos q on q.periodo = r.periodo
+                        where r.proyecto_id = w.proyecto_id and r.sustituida_el is null and r.excluida
+                          and q.desde >= u.desde and q.desde < per.desde);
+    ok := (v_n2 = 0 or v_cuando is not null) and v_n3 = 0;
+    detalle := case when v_n3 > 0
+                    then format('%s obra(s) traían saldo del WIP en el ajuste anterior y no están en el WIP de %s: %s. Ninguna obra con '
+                                'saldo sale sola: avisa antes de cerrar.', v_n3, v_nom, v_t3)
+                    when v_n = 0 then format('En %s no hay obras de precio fijo con movimiento.', v_nom)
+                    when v_n2 = 0 then format('Las %s obra(s) de precio fijo con movimiento tienen su costo estimado revisado en %s%s.', v_n,
+                                              v_nom, case when v_excl_n > 0
+                                                          then format(' (%s de ellas, fuera a propósito con su nota)', v_excl_n) else '' end)
                     when v_cuando is not null then format('%s Hoy faltan por revisar %s de %s: %s.', v_cuando, v_n2, v_n, v_t)
                     else format('Faltan por revisar %s de las %s obra(s) de precio fijo con movimiento en %s: %s.', v_n2, v_n, v_nom, v_t) end;
   end if;
   return next;
 
   -- 50. El ajuste del mes, posteado y al día. Exigible; pero un ajuste ya
-  --     posteado que dejó de estar al día está en rojo siempre.
+  --     posteado que dejó de estar al día está en rojo siempre. El texto dice
+  --     SIEMPRE quién quedó fuera del ajuste y por qué (las que no entran
+  --     porque les falta algo, las excluidas a propósito con su nota, y las
+  --     que tienen horas sin costo en el libro).
   orden := 50; cuadre := 'wip: el ajuste del mes posteado y al día'; nivel := 'cuadre';
   if not v_vivo then
     ok := true;
@@ -2632,30 +2996,41 @@ begin
                       'postearlo.', v_nom, v_est->>'numero');
   elsif (v_est->>'vivo')::boolean and (v_est->>'al_dia')::boolean then
     ok := true;
-    detalle := format('El ajuste de %s está posteado y al día (asiento %s, del %s; se deshace solo el %s): sub-facturado %s, '
-                      'sobre-facturado %s y pérdida %s, en %s obra(s).', v_nom, v_est->>'numero', fn_wip_dia(per.hasta),
-                      fn_wip_dia(per.hasta + 1), fn_wip_usd((v_est->>'sub_facturado')::numeric),
-                      fn_wip_usd((v_est->>'sobre_facturado')::numeric), fn_wip_usd((v_est->>'perdida')::numeric), v_est->>'obras');
+    detalle := concat_ws(' ',
+                 format('El ajuste de %s está posteado y al día (asiento %s, del %s; se deshace solo el %s): sub-facturado %s, '
+                        'sobre-facturado %s y pérdida %s, en %s obra(s).', v_nom, v_est->>'numero', fn_wip_dia(per.hasta),
+                        fn_wip_dia(per.hasta + 1), fn_wip_usd((v_est->>'sub_facturado')::numeric),
+                        fn_wip_usd((v_est->>'sobre_facturado')::numeric), fn_wip_usd((v_est->>'perdida')::numeric), v_est->>'obras'),
+                 nullif(v_suf, ''));
   elsif (v_est->>'vivo')::boolean then
     ok := false;
     detalle := format('El ajuste posteado de %s (asiento %s) ya no es el que da el WIP de hoy: %s. Vuelve a postearlo: se reversa y '
                       'entra el nuevo.', v_nom, v_est->>'numero', coalesce(v_est->>'cambios', 'cambió su cálculo'));
   elsif (v_est->>'lineas_hoy')::int = 0 then
     ok := true;
-    detalle := case when coalesce((v_tot->>'obras')::int, 0) = 0 then format('En %s no hay ninguna obra lista para el ajuste: nada que postear.', v_nom)
-                    else format('En %s no hay nada que ajustar: en las %s obra(s) listas lo ganado es lo facturado.', v_nom, v_tot->>'obras') end;
+    detalle := concat_ws(' ',
+                 case when coalesce((v_tot->>'obras')::int, 0) = 0
+                      then format('En %s no hay ninguna obra lista para el ajuste: nada que postear.', v_nom)
+                      else format('En %s no hay nada que ajustar: en las %s obra(s) listas lo ganado es lo facturado.', v_nom, v_tot->>'obras') end,
+                 nullif(v_suf, ''));
   else
     ok := v_cuando is not null;
-    detalle := format('%s el ajuste de WIP de %s: sub-facturado %s en %s obra(s), sobre-facturado %s en %s, y pérdida por reconocer %s.',
-                      case when v_cuando is not null then v_cuando || ' Hoy daría' else 'Falta postear' end, v_nom,
-                      fn_wip_usd((v_tot->>'sub_facturado')::numeric), v_tot->>'obras_sub',
-                      fn_wip_usd((v_tot->>'sobre_facturado')::numeric), v_tot->>'obras_sobre',
-                      fn_wip_usd((v_tot->>'perdida_provision')::numeric));
+    detalle := concat_ws(' ',
+                 format('%s el ajuste de WIP de %s: sub-facturado %s en %s obra(s), sobre-facturado %s en %s, y pérdida por reconocer %s.',
+                        case when v_cuando is not null then v_cuando || ' Hoy daría' else 'Falta postear' end, v_nom,
+                        fn_wip_usd((v_tot->>'sub_facturado')::numeric), v_tot->>'obras_sub',
+                        fn_wip_usd((v_tot->>'sobre_facturado')::numeric), v_tot->>'obras_sobre',
+                        fn_wip_usd((v_tot->>'perdida_provision')::numeric)),
+                 nullif(v_suf, ''));
   end if;
   return next;
 
-  -- 60. Ninguna obra con más costo que su estimado revisado, sin nota.
-  orden := 60; cuadre := 'wip: ninguna obra con más costo que su estimado sin nota'; nivel := 'cuadre';
+  -- 60. Ninguna obra con más costo que su costo estimado revisado sin estar
+  --     terminada. Sin excepción por nota: más costo que el estimado es un
+  --     estimado viejo (esa obra no entra en el ajuste hasta subirlo o
+  --     marcarla terminada: con el avance topado en 100 % ganaría el precio
+  --     entero sin haber terminado).
+  orden := 60; cuadre := 'wip: ninguna obra con más costo que su estimado revisado'; nivel := 'cuadre';
   if not v_vivo then
     ok := true; detalle := v_noaplica;
   else
@@ -2663,12 +3038,13 @@ begin
                                             fn_wip_usd(s.costo_estimado), trim_scale(s.pct_real)), '; ' order by s.obra), 900)
       into v_n, v_t
       from jsonb_to_recordset(v_filas)
-           as s(obra text, pasa_de_100 boolean, costo_fecha numeric, costo_estimado numeric, pct_real numeric, revision_nota text)
-     where s.pasa_de_100 and coalesce(btrim(s.revision_nota), '') = '';
+           as s(obra text, pasa_de_100 boolean, costo_fecha numeric, costo_estimado numeric, pct_real numeric)
+     where s.pasa_de_100;
     ok := v_n = 0;
-    detalle := case when v_n = 0 then format('En %s ninguna obra lleva más costo que su estimado revisado sin que esté escrito por qué.', v_nom)
-                    else format('%s obra(s) llevan más costo que su estimado revisado, sin nota: %s. Sube su costo estimado (o escribe por '
-                                'qué): con el avance topado en 100 %% se gana el precio entero y una pérdida no se ve.', v_n, v_t) end;
+    detalle := case when v_n = 0 then format('En %s ninguna obra lleva más costo que su costo estimado revisado.', v_nom)
+                    else format('%s obra(s) llevan más costo que su costo estimado revisado y no están terminadas: %s. Ese estimado '
+                                'quedó viejo: no entran en el ajuste hasta que lo subas (el costo total no puede ser menos de lo que ya '
+                                'llevan) o las marques terminadas.', v_n, v_t) end;
   end if;
   return next;
 
@@ -2743,18 +3119,22 @@ begin
 
   -- ------------------------------ LOS AVISOS ------------------------------
   -- 110. Obras que ya andaban antes del libro, sin lo de antes confirmado:
-  --      no entran en el ajuste.
+  --      no entran en el ajuste (y el cuadre 40 detiene el cierre del mes
+  --      hasta que se confirme, o se excluyan ese mes con su nota).
   orden := 110; cuadre := 'wip: obras que ya andaban sin lo de antes confirmado'; nivel := 'aviso';
   if not v_vivo then
     ok := true; detalle := v_noaplica;
   else
-    select count(*), left(string_agg(s.obra, ', ' order by s.obra), 900) into v_n, v_t
-      from jsonb_to_recordset(v_filas) as s(obra text, estado text, falta jsonb)
-     where s.estado = 'pendiente' and s.falta ? 'antes';
+    select count(*), left(string_agg(s.obra || case when s.estado = 'excluida' then ' (fuera este mes, con su nota)' else '' end,
+                                     ', ' order by s.obra), 900)
+      into v_n, v_t
+      from jsonb_to_recordset(v_filas) as s(obra text, estado text, falta jsonb, de_antes boolean, antes_confirmado boolean)
+     where (s.estado = 'pendiente' and s.falta ? 'antes') or (s.estado = 'excluida' and s.de_antes and not s.antes_confirmado);
     ok := v_n = 0;
     detalle := case when v_n = 0 then format('En %s ninguna obra del WIP espera que se confirme lo de antes del libro.', v_nom)
                     else format('%s obra(s) ya andaban antes del libro y no tienen confirmado su costo y lo facturado de antes: %s. Mientras '
-                                'tanto NO entran en el ajuste de %s (su ingreso sigue siendo lo facturado). Confírmalo una vez por obra.',
+                                'tanto NO entran en el ajuste de %s (su ingreso sigue siendo lo facturado), y un mes que exige el WIP no '
+                                'cierra hasta que se confirme (una vez por obra) o se deje fuera ese mes con su nota.',
                                 v_n, v_t, v_nom) end;
   end if;
   return next;
@@ -2775,37 +3155,45 @@ begin
   end if;
   return next;
 
-  -- 125. Obras topadas en 100 % (con su nota: las que no la tienen están en
-  --      el cuadre 60).
-  orden := 125; cuadre := 'wip: obras topadas en 100 %'; nivel := 'aviso';
+  -- 125. Obras al 100 % sin estar terminadas: llevan justo su costo estimado
+  --      (las que lo pasan están en el cuadre 60). Con eso se gana el precio
+  --      entero: si les falta trabajo, el estimado tiene que ser mayor.
+  orden := 125; cuadre := 'wip: obras al 100 % sin estar terminadas'; nivel := 'aviso';
   if not v_vivo then
     ok := true; detalle := v_noaplica;
   else
-    select count(*), left(string_agg(format('%s (%s %%: %s)', s.obra, trim_scale(s.pct_real), s.revision_nota), '; ' order by s.obra), 900)
+    select count(*), left(string_agg(format('%s (lleva %s, justo su estimado)', s.obra, fn_wip_usd(s.costo_fecha)), '; ' order by s.obra), 900)
       into v_n, v_t
-      from jsonb_to_recordset(v_filas) as s(obra text, pasa_de_100 boolean, pct_real numeric, revision_nota text)
-     where s.pasa_de_100 and coalesce(btrim(s.revision_nota), '') <> '';
+      from jsonb_to_recordset(v_filas) as s(obra text, en_ajuste boolean, terminada boolean, pct_real numeric, costo_fecha numeric)
+     where s.en_ajuste and not s.terminada and s.pct_real >= 100;
     ok := v_n = 0;
-    detalle := case when v_n = 0 then format('En %s ninguna obra está topada en 100 %%.', v_nom)
-                    else format('%s obra(s) llevan más costo que su estimado y van topadas en 100 %%, con su nota: %s.', v_n, v_t) end;
+    detalle := case when v_n = 0 then format('En %s ninguna obra va al 100 %% sin estar terminada.', v_nom)
+                    else format('%s obra(s) van al 100 %% sin estar terminadas: %s. Con el costo igual a su estimado se gana el precio '
+                                'entero: si todavía les falta trabajo, su costo total estimado tiene que ser mayor; si terminaron, '
+                                'márcalas terminadas.', v_n, v_t) end;
   end if;
   return next;
 
-  -- 130. El contrato de la ficha cambió después de revisar.
+  -- 130. Revisadas con un precio que no es el contrato que hoy dice la ficha
+  --      (a propósito, con su nota: otro precio, o «el cambio es de después»).
+  --      La que cambió DESPUÉS de revisarla y todavía no se decidió no está
+  --      aquí: está «por revisar» y la detiene el cuadre 40.
   orden := 130; cuadre := 'wip: el contrato de la ficha cambió después de revisar'; nivel := 'aviso';
   if not v_vivo then
     ok := true; detalle := v_noaplica;
   else
-    select count(*), left(string_agg(format('%s (revisada con %s; la ficha dice %s)', s.obra, fn_wip_usd(s.precio_contrato),
-                                            case when s.precio_ficha is null then 'nada' else fn_wip_usd(s.precio_ficha) end),
+    select count(*), left(string_agg(format('%s (revisada con %s; la ficha dice %s%s)', s.obra, fn_wip_usd(s.precio_contrato),
+                                            case when s.precio_ficha is null then 'nada' else fn_wip_usd(s.precio_ficha) end,
+                                            case when s.falta ? 'precio' then '; falta decir si el cambio es de este mes' else '' end),
                                      '; ' order by s.obra), 900)
       into v_n, v_t
-      from jsonb_to_recordset(v_filas) as s(obra text, revision_id uuid, precio_contrato numeric, precio_ficha numeric)
-     where s.revision_id is not null and s.precio_ficha is distinct from s.precio_contrato;
+      from jsonb_to_recordset(v_filas) as s(obra text, estado text, falta jsonb, revision_id uuid, precio_contrato numeric, precio_ficha numeric)
+     where s.revision_id is not null and s.estado <> 'excluida' and s.precio_ficha is distinct from s.precio_contrato;
     ok := v_n = 0;
     detalle := case when v_n = 0 then format('En %s cada obra revisada usa el contrato que hoy dice su ficha.', v_nom)
-                    else format('En %s obra(s) el contrato de la ficha ya no es el que se usó al revisar: %s. Si el cambio es de %s, '
-                                'revísala otra vez; si es de después, déjala.', v_n, v_t, v_nom) end;
+                    else format('En %s obra(s) el precio con que se revisó no es el contrato que hoy dice la ficha: %s. Si el cambio es de '
+                                '%s, revísala otra vez con el precio nuevo; si es de después, dilo (un toque) y se queda como está.',
+                                v_n, v_t, v_nom) end;
   end if;
   return next;
 
@@ -2843,14 +3231,31 @@ begin
   end if;
   return next;
 
-  -- 160. Obras de precio fijo terminadas, con costo o facturas en el mes, que
-  --      no están en el WIP del mes (si terminó este mes con parte por
-  --      facturar, hay que revisarla como terminada para que entre).
-  orden := 160; cuadre := 'wip: obras terminadas con movimiento en el mes, fuera del WIP'; nivel := 'aviso';
+  -- 160. Obras de precio fijo con dinero FUERA del WIP del mes:
+  --      (a) las terminadas, con costo o facturas en el mes, que no están en
+  --      el WIP del mes (si terminó este mes con parte por facturar, hay que
+  --      revisarla como terminada para que entre);
+  --      (b) las que la app todavía NO tiene en obra (en estimación, con la
+  --      propuesta enviada, no aprobada) y ya tienen facturas en el libro
+  --      hasta el fin del mes: no entran (no hay obra que medir), y lo que
+  --      se les facturó —el depósito al firmar— cuenta entero como ingreso.
+  --      Se dice hasta que la obra pase a aprobada (entra en el WIP) o Edgar
+  --      la marque como que no lleva WIP, con su nota.
+  orden := 160; cuadre := 'wip: obras terminadas o sin aprobar, con dinero fuera del WIP'; nivel := 'aviso';
   if not v_vivo then
     ok := true; detalle := v_noaplica;
   else
-    select count(*), left(string_agg(o.obra, ', ' order by o.obra), 900) into v_n, v_t
+    select count(*), left(string_agg(format('%s (la app la tiene %s; facturado %s)', o.obra,
+                                            case o.obra_estado when 'estimando' then 'en estimación' when 'enviado' then 'con la propuesta enviada'
+                                                               when 'no_aprobado' then 'como no aprobada'
+                                                               else 'como «' || coalesce(o.obra_estado, 'sin estado') || '»' end,
+                                            fn_wip_usd(lb.facturado)), '; ' order by o.obra), 600)
+      into v_n2, v_t2
+      from fn_wip_obras(null) o
+      join fn_wip_libro(per.hasta, null) lb on lb.proyecto_id = o.proyecto_id
+     where o.lleva_wip and not o.activa and not o.terminada and lb.facturado <> 0
+       and not exists (select 1 from jsonb_to_recordset(v_filas) as s(proyecto_id text) where s.proyecto_id = o.proyecto_id);
+    select count(*), left(string_agg(o.obra, ', ' order by o.obra), 600) into v_n, v_t
       from fn_wip_obras(null) o
      where o.lleva_wip and o.terminada
        and not exists (select 1 from jsonb_to_recordset(v_filas) as s(proyecto_id text) where s.proyecto_id = o.proyecto_id)
@@ -2860,10 +3265,20 @@ begin
                     where l.proyecto_id = o.proyecto_id and cu.tipo in ('costo', 'ingreso')
                       and x.fecha_contable between per.desde and per.hasta
                       and not exists (select 1 from fn_wip_asientos() w where w.asiento_id = l.asiento_id));
-    ok := v_n = 0;
-    detalle := case when v_n = 0 then format('En %s ninguna obra terminada de precio fijo tiene costo o facturas fuera del WIP.', v_nom)
-                    else format('%s obra(s) terminadas de precio fijo tienen costo o facturas en %s y no están en su WIP: %s. Si alguna '
-                                'terminó este mes y le falta facturar, revísala como terminada para que entre.', v_n, v_nom, v_t) end;
+    ok := v_n = 0 and v_n2 = 0;
+    detalle := case when v_n = 0 and v_n2 = 0
+                    then format('En %s ninguna obra de precio fijo terminada o sin aprobar tiene costo o facturas fuera del WIP.', v_nom)
+                    else concat_ws(' ',
+                           case when v_n > 0
+                                then format('%s obra(s) terminadas de precio fijo tienen costo o facturas en %s y no están en su WIP: %s. Si '
+                                            'alguna terminó este mes y le falta facturar, revísala como terminada para que entre.',
+                                            v_n, v_nom, v_t) end,
+                           case when v_n2 > 0
+                                then format('%s obra(s) de precio fijo ya tienen facturas en el libro y la app todavía no las tiene en obra: '
+                                            '%s. No están en el WIP: lo que se les facturó (un depósito, por ejemplo) cuenta entero como '
+                                            'ingreso, de una vez. Si ya se aprobó, pásala a aprobada o en ejecución en su ficha: entra al '
+                                            'WIP y se revisa como las demás. Si no va a ser obra, márcala como que no lleva WIP, con su '
+                                            'nota, y deja de salir aquí.', v_n2, v_t2) end) end;
   end if;
   return next;
 
@@ -2887,32 +3302,13 @@ begin
   return next;
 
   -- 170. Horas de obras del WIP que no tienen costo en el libro (c10: «a
-  --      estándar»): su costo a la fecha va corto, y su avance también.
+  --      estándar»): su costo a la fecha va corto, y su avance también. (Se
+  --      leyó arriba: el texto del ajuste del mes también lo dice.)
   orden := 170; cuadre := 'wip: horas sin costo en el libro'; nivel := 'aviso';
   if not v_vivo then
     ok := true; detalle := v_noaplica;
-  elsif to_regprocedure('public.fn_margen_obras(text)') is null then
-    ok := true; detalle := 'El costo por obra (c10) no está en esta base: no se sabe qué horas siguen sin costo en el libro.';
   else
-    begin
-      execute 'select coalesce(jsonb_object_agg(o.proyecto_id, jsonb_build_object(''h'', o.horas_estandar, ''m'', o.mano_obra_estandar)), '
-           || '''{}''::jsonb) from public.fn_margen_obras(null) o where o.horas_estandar > 0'
-         into v_j;
-      select count(*), left(string_agg(format('%s (%s h%s)', s.obra, trim_scale((v_j->s.proyecto_id->>'h')::numeric),
-                                              case when (v_j->s.proyecto_id->>'m') is null then ''
-                                                   else ', ' || fn_wip_usd((v_j->s.proyecto_id->>'m')::numeric) || ' a estándar' end),
-                                       '; ' order by s.obra), 900)
-        into v_n, v_t
-        from jsonb_to_recordset(v_filas) as s(proyecto_id text, obra text, estado text)
-       where s.estado <> 'sin_movimiento' and v_j ? s.proyecto_id;
-      ok := v_n = 0;
-      detalle := case when v_n = 0 then 'Ninguna obra del WIP tiene hoy horas sin costo en el libro.'
-                      else format('%s obra(s) del WIP tienen hoy horas reportadas que no están en el libro (sin pago repartido): %s. Su '
-                                  'costo a la fecha va corto y su avance también. Reparte los pagos de mano de obra pendientes.', v_n, v_t) end;
-    exception when others then
-      ok := true;
-      detalle := format('No se pudo leer el costo por obra (c10) para ver las horas sin costo: %s.', sqlerrm);
-    end;
+    ok := v_horas_ok; detalle := v_horas_det;
   end if;
   return next;
 
@@ -2939,12 +3335,21 @@ begin
 end $$;
 revoke execute on function public.fn_wip_control(text) from public, anon, service_role;
 grant  execute on function public.fn_wip_control(text) to authenticated;
-comment on function public.fn_wip_control(text) is 'c12: el control del WIP de un mes (sin período, el mes que toca): 10 en las cuentas del WIP solo está el ajuste; 20 cada ajuste vivo es su asiento y el saldo por obra al cierre del mes es el del ajuste; 30 lo facturado a la fecha = las facturas del libro; 40 cada obra con movimiento revisada en el mes; 50 el ajuste posteado y al día; 60 ninguna obra con más costo que su estimado sin nota; 90 las protecciones; y los avisos 110 a 180. Las filas 40 y 50 no se ponen en rojo mientras el mes no se exija o no haya terminado. Solo lectura; a quien no es el dueño, nada.';
+comment on function public.fn_wip_control(text) is 'c12: el control del WIP de un mes (sin período, el mes que toca): 10 en las cuentas del WIP solo está el ajuste; 20 cada ajuste vivo es su asiento y el saldo por obra al cierre del mes es el del ajuste; 30 lo facturado a la fecha = las facturas del libro; 40 cada obra que entra en el mes, decidida (revisada, con lo de antes confirmado y el contrato de la ficha sin cambiar desde entonces, o excluida con su nota; y ninguna que traía saldo del ajuste anterior fuera del mes); 50 el ajuste posteado y al día (dice quién quedó fuera y por qué); 60 ninguna obra con más costo que su estimado revisado (sin excepción por nota); 90 las protecciones; y los avisos 110 a 180. Las filas 40 y 50 no se ponen en rojo mientras el mes no se exija o no haya terminado. Solo lectura; a quien no es el dueño, nada.';
 
 -- LAS CUATRO FILAS DEL CIERRE (c9: fn_cierre_revisar las pide si esta capa
 -- está): 174 los cuadres del WIP (detiene), 175 cada obra con su costo
 -- estimado revisado (detiene), 176 el ajuste del mes posteado y al día
 -- (detiene) y 177 sus avisos. Con qué hacer y a qué página ir.
+--   · La 174 y la 177 juntan varios controles. Su NOMBRE dice cuántos y
+--     cuáles están en rojo («… — 2 en rojo: 120, 170»): la ronda de c9 avisa
+--     al teléfono de cada rojo NUEVO mirando el nombre de la fila, y así uno
+--     que se enciende detrás de otro que ya estaba no pasa callado.
+--   · Su detalle lleva TODOS los que están en rojo, cada uno recortado a su
+--     parte (c9 guarda 1500 letras por fila): ninguno se queda fuera porque
+--     el primero sea largo. El texto entero de cada uno está en el control
+--     del WIP (Contabilidad → WIP).
+--   · La 176 dice siempre quién quedó fuera del ajuste y por qué.
 drop function if exists public.fn_wip_cierre(text);
 create function public.fn_wip_cierre(p_periodo text)
 returns table (orden int, control text, nivel text, ok boolean, detalle text, que_hacer text, ir_a text)
@@ -2957,6 +3362,7 @@ declare
   v_n bigint;
   v_r bigint;
   v_t text;
+  v_q text;
   f   record;
 begin
   if not fn_wip_ve() then
@@ -2965,23 +3371,30 @@ begin
   select coalesce(jsonb_agg(to_jsonb(c) order by c.orden), '[]'::jsonb) into v_c from fn_wip_control(p_periodo) c;
   ir_a := 'wip';
 
-  select count(*), count(*) filter (where not x.ok), left(string_agg(x.detalle, ' · ' order by x.orden) filter (where not x.ok), 1200)
-    into v_n, v_r, v_t
-    from jsonb_to_recordset(v_c) as x(orden int, nivel text, ok boolean, detalle text)
+  select count(*), count(*) filter (where not x.ok), string_agg(x.orden::text, ', ' order by x.orden) filter (where not x.ok)
+    into v_n, v_r, v_q
+    from jsonb_to_recordset(v_c) as x(orden int, nivel text, ok boolean)
    where x.nivel = 'cuadre' and x.orden not in (40, 50);
-  orden := 174; control := 'wip: los cuadres del WIP (c12)'; nivel := 'detiene'; ok := v_r = 0;
+  select string_agg(case when length(x.detalle) > greatest(160, 1380 / greatest(v_r, 1)::int)
+                         then left(x.detalle, greatest(160, 1380 / greatest(v_r, 1)::int) - 1) || '…' else x.detalle end,
+                    ' · ' order by x.orden)
+    into v_t
+    from jsonb_to_recordset(v_c) as x(orden int, nivel text, ok boolean, detalle text)
+   where x.nivel = 'cuadre' and x.orden not in (40, 50) and not x.ok;
+  orden := 174; control := 'wip: los cuadres del WIP (c12)' || case when v_r > 0 then format(' — %s en rojo: %s', v_r, v_q) else '' end;
+  nivel := 'detiene'; ok := v_r = 0;
   detalle := case when v_r = 0 then format('Los %s, en verde.', v_n) else coalesce(v_t, 'en rojo, sin detalle') end;
   que_hacer := case when v_r = 0 then null
                     else 'El detalle dice qué: Contabilidad → WIP. Un asiento a mano en las cuentas del WIP se reversa; un ajuste que no '
-                         'cuadra se vuelve a postear.' end;
+                         'cuadra se vuelve a postear; a una obra con más costo que su estimado se le sube el estimado (o se marca terminada).' end;
   return next;
 
   select x.ok, x.detalle into f from jsonb_to_recordset(v_c) as x(orden int, ok boolean, detalle text) where x.orden = 40;
   orden := 175; control := 'wip: cada obra con su costo estimado revisado'; nivel := 'detiene'; ok := coalesce(f.ok, false);
   detalle := coalesce(f.detalle, 'sin detalle');
   que_hacer := case when coalesce(f.ok, false) then null
-                    else 'En Contabilidad → WIP, revisa cada obra de la lista: confirma lo propuesto con un toque, o pon su costo total '
-                         'estimado con su nota.' end;
+                    else 'En Contabilidad → WIP, decide cada obra de la lista: confirma lo propuesto con un toque, pon su costo total '
+                         'estimado con su nota, confirma lo de antes del libro, o déjala fuera este mes con su nota.' end;
   return next;
 
   select x.ok, x.detalle into f from jsonb_to_recordset(v_c) as x(orden int, ok boolean, detalle text) where x.orden = 50;
@@ -2991,18 +3404,26 @@ begin
                     else 'En Contabilidad → WIP, toca «Postear el ajuste» (si ya estaba posteado, lo rehace con lo de hoy).' end;
   return next;
 
-  select count(*), count(*) filter (where not x.ok), left(string_agg(x.detalle, ' · ' order by x.orden) filter (where not x.ok), 1200)
-    into v_n, v_r, v_t
-    from jsonb_to_recordset(v_c) as x(orden int, nivel text, ok boolean, detalle text)
+  select count(*), count(*) filter (where not x.ok), string_agg(x.orden::text, ', ' order by x.orden) filter (where not x.ok)
+    into v_n, v_r, v_q
+    from jsonb_to_recordset(v_c) as x(orden int, nivel text, ok boolean)
    where x.nivel = 'aviso';
-  orden := 177; control := 'wip: sus avisos (c12)'; nivel := 'aviso'; ok := v_r = 0;
+  select string_agg(case when length(x.detalle) > greatest(120, 1380 / greatest(v_r, 1)::int)
+                         then left(x.detalle, greatest(120, 1380 / greatest(v_r, 1)::int) - 1) || '…' else x.detalle end,
+                    ' · ' order by x.orden)
+    into v_t
+    from jsonb_to_recordset(v_c) as x(orden int, nivel text, ok boolean, detalle text)
+   where x.nivel = 'aviso' and not x.ok;
+  orden := 177; control := 'wip: sus avisos (c12)' || case when v_r > 0 then format(' — %s en rojo: %s', v_r, v_q) else '' end;
+  nivel := 'aviso'; ok := v_r = 0;
   detalle := case when v_r = 0 then format('Los %s, en verde.', v_n) else coalesce(v_t, 'en rojo, sin detalle') end;
-  que_hacer := case when v_r = 0 then null else 'No detienen el cierre. El detalle dice qué mirar: Contabilidad → WIP.' end;
+  que_hacer := case when v_r = 0 then null
+                    else 'No detienen el cierre. Aquí va el principio de cada uno; entero, en Contabilidad → WIP.' end;
   return next;
 end $$;
 revoke execute on function public.fn_wip_cierre(text) from public, anon, service_role;
 grant  execute on function public.fn_wip_cierre(text) to authenticated;
-comment on function public.fn_wip_cierre(text) is 'c12: las cuatro filas del WIP para la revisión del cierre (c9) de un período: 174 los cuadres del WIP (detiene), 175 cada obra con su costo estimado revisado en el mes (detiene), 176 el ajuste del mes posteado y al día (detiene) y 177 sus avisos (aviso); cada una con ok, el detalle en llano, qué hacer e ir_a = wip. La 175 y la 176 no se ponen en rojo mientras el mes no se exija o no haya terminado. Solo lectura; a quien no es el dueño, nada.';
+comment on function public.fn_wip_cierre(text) is 'c12: las cuatro filas del WIP para la revisión del cierre (c9) de un período: 174 los cuadres del WIP (detiene), 175 cada obra con su costo estimado revisado en el mes (detiene), 176 el ajuste del mes posteado y al día (detiene; dice quién quedó fuera del ajuste y por qué) y 177 sus avisos (aviso); cada una con ok, el detalle en llano, qué hacer e ir_a = wip. El nombre de la 174 y de la 177 dice cuántos y cuáles de sus controles están en rojo (así la ronda avisa de cada rojo nuevo), y su detalle lleva el principio de todos. La 175 y la 176 no se ponen en rojo mientras el mes no se exija o no haya terminado. Solo lectura; a quien no es el dueño, nada.';
 
 
 -- ---------------------------------------------------------------------
@@ -3032,14 +3453,14 @@ select m.periodo, s.proyecto_id, s.obra, s.cliente, s.tipo, s.obra_estado, s.fue
   cross join lateral public.fn_wip_schedule(m.periodo) s;
 revoke all on public.v_wip_schedule from public, anon, authenticated, service_role;
 grant select on public.v_wip_schedule to authenticated;
-comment on view public.v_wip_schedule is 'c12: el WIP por costo a costo, una fila por obra y mes (el formato que pide la afianzadora): precio_contrato, costo_estimado (el revisado), utilidad_estimada, costo_fecha (costo_libro + costo_antes), pct_avance (topado en 100; pct_real sin tope y pasa_de_100), ingreso_ganado (precio × costo ÷ costo estimado), facturado_fecha (facturado_libro + facturado_antes, sin los ajustes de WIP), sub_facturado (1200), sobre_facturado (2400), costo_para_terminar, utilidad_fecha, perdida_total y perdida_provision (2410: lo que falta por reconocer); con su estado (lista | pendiente y qué falta | sin_movimiento), la revisión del mes, la propuesta del costo estimado y los avisos. fuente: calculado (un mes abierto, lo de hoy) o posteado (un mes cerrado, la foto de su ajuste). Se lee filtrada por periodo.';
+comment on view public.v_wip_schedule is 'c12: el WIP por costo a costo, una fila por obra y mes (el formato que pide la afianzadora): precio_contrato, costo_estimado (el revisado), utilidad_estimada, costo_fecha (costo_libro + costo_antes), pct_avance (topado en 100; pct_real sin tope y pasa_de_100), ingreso_ganado (precio × costo ÷ costo estimado), facturado_fecha (facturado_libro + facturado_antes, sin los ajustes de WIP), sub_facturado (1200), sobre_facturado (2400), costo_para_terminar, utilidad_fecha, perdida_total y perdida_provision (2410: lo que falta por reconocer); con su estado (lista | pendiente y qué falta | excluida a propósito con su nota | sin_movimiento), la revisión del mes, la propuesta del costo estimado y los avisos. fuente: calculado (un mes abierto, lo de hoy) o posteado (un mes cerrado, la foto de su ajuste). Se lee filtrada por periodo.';
 
 -- EL CONTROL del mes que toca (fn_wip_control sin período).
 create view public.v_wip_control with (security_invoker = true) as
 select c.orden, c.cuadre, c.nivel, c.ok, c.detalle from public.fn_wip_control(null) c;
 revoke all on public.v_wip_control from public, anon, authenticated, service_role;
 grant select on public.v_wip_control to authenticated;
-comment on view public.v_wip_control is 'c12: el control del WIP del mes que toca (orden, cuadre, nivel, ok, detalle en llano): 10 en las cuentas del WIP solo está el ajuste; 20 cada ajuste es su asiento y el saldo por obra es el del ajuste; 30 lo facturado a la fecha = las facturas del libro; 40 cada obra con su costo estimado revisado; 50 el ajuste del mes posteado y al día; 60 ninguna obra con más costo que su estimado sin nota; 90 las protecciones; y los avisos: 110 lo de antes sin confirmar, 120 obras con pérdida, 125 topadas en 100 %, 130 el contrato cambió, 140 facturado sobre el contrato, 150 ingreso que no es factura, 160 terminadas fuera del WIP, 165 activas sin contrato, 170 horas sin costo en el libro, 180 los hitos no suman el contrato. nivel: cuadre (detiene el cierre) o aviso. Para otro mes, fn_wip_control(periodo).';
+comment on view public.v_wip_control is 'c12: el control del WIP del mes que toca (orden, cuadre, nivel, ok, detalle en llano): 10 en las cuentas del WIP solo está el ajuste; 20 cada ajuste es su asiento y el saldo por obra es el del ajuste; 30 lo facturado a la fecha = las facturas del libro; 40 cada obra con su costo estimado revisado (o excluida con su nota); 50 el ajuste del mes posteado y al día; 60 ninguna obra con más costo que su estimado revisado; 90 las protecciones; y los avisos: 110 lo de antes sin confirmar, 120 obras con pérdida, 125 al 100 % sin estar terminadas, 130 revisadas con un precio que no es el de la ficha, 140 facturado sobre el contrato, 150 ingreso que no es factura, 160 terminadas (o sin aprobar en la app y con facturas) fuera del WIP, 165 activas sin contrato, 170 horas sin costo en el libro, 180 los hitos no suman el contrato. nivel: cuadre (detiene el cierre) o aviso. Para otro mes, fn_wip_control(periodo).';
 
 -- LOS AJUSTES: cada uno con su asiento, su reverso y quién.
 create view public.v_wip_ajustes with (security_invoker = true) as

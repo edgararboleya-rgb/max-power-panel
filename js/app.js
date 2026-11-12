@@ -3243,11 +3243,12 @@ function esFalloDeRed(err) {
 
   // (f10, c11) ¿Por dónde se factura hoy? v_emision_estado (solo la ve el dueño, que es quien tiene el 🧾): «app» desde el
   // corte de la facturación (1-ene-2027, configurable en Contabilidad → Facturas → Ajustes); «quickbooks» antes. Sin c11 en
-  // la base (la vista no existe: 404 / PGRST205 / 42P01): «quickbooks», como siempre. Sin señal («sin_senal») o sin el
-  // código del teléfono («mfa») no se adivina. Y ANTE LA DUDA NO SE FACTURA: si la base contesta otra cosa (un 500, un
-  // statement timeout, la vista vacía…), solo se va a QuickBooks si el último corte que este teléfono leyó de la base es
-  // posterior a hoy (en Miami); si no, «duda»: se avisa y no se factura (una factura de QuickBooks después del corte quedaría
-  // fuera de la serie y solo lo diría más tarde el aviso 72).
+  // la base (la vista no existe: 404 / PGRST205 / 42P01): «quickbooks», como siempre, salvo que este teléfono ya haya visto
+  // un corte que llegó (entonces c11 estaba y ya no contesta: «duda»). Sin señal («sin_senal») o sin el código del teléfono
+  // («mfa») no se adivina. Y ANTE LA DUDA NO SE FACTURA: si la base contesta otra cosa (un 500, un statement timeout, la
+  // vista vacía…), solo se va a QuickBooks si el último corte que este teléfono leyó de la base es posterior a hoy (en
+  // Miami); si no, «duda»: se avisa y no se factura (una factura de QuickBooks después del corte quedaría fuera de la serie
+  // y solo lo diría más tarde el aviso 72).
   const CORTE_VISTO = "mxp_factura_corte";
   const hoyMiamiFac = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   function corteRecordado() {
@@ -3262,8 +3263,8 @@ function esFalloDeRed(err) {
       if (e && e.mfa) return "mfa";
       const m = String((e && e.message) || "");
       if (e instanceof TypeError || /failed to fetch|load failed|networkerror|network request failed/i.test(m)) return "sin_senal";
-      if (e && (e.status === 404 || e.codigo === "PGRST205" || e.codigo === "42P01")) return "quickbooks";
       const c = corteRecordado();
+      if (e && (e.status === 404 || e.codigo === "PGRST205" || e.codigo === "42P01")) return c && hoyMiamiFac() >= c ? "duda" : "quickbooks";
       return c && hoyMiamiFac() < c ? "quickbooks" : "duda";
     }
     const x = Array.isArray(f) ? f[0] : null;

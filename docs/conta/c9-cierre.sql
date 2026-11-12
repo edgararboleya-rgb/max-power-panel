@@ -75,6 +75,17 @@
 --           v_jornal_control y v_margen_control, en una fila               detiene
 --      171  mano de obra y costo por obra (c10, si está): sus avisos, en
 --           una fila                                                        aviso
+--      172  facturas (c11, si está): los cuadres de v_emision_control, en
+--           una fila; su nombre dice cuáles están en rojo                detiene
+--      173  facturas (c11, si está): sus avisos, en una fila               aviso
+--      174  wip (c12, si está): los cuadres del WIP                       detiene
+--      175  wip (c12): cada obra de precio fijo con su costo estimado
+--           revisado en el mes                                          detiene
+--      176  wip (c12): el ajuste del mes posteado y al día                detiene
+--      177  wip (c12): sus avisos, en una fila                             aviso
+--           (las cuatro del WIP las arma c12, fn_wip_cierre; la 175 y la
+--           176 salen en verde mientras el mes no termine o el WIP no se
+--           exija todavía: wip_config.exigir_desde)
 --     En verde cada capa deja UN renglón resumen; en rojo, un renglón por
 --     control, con el detalle que esa capa escribió. Cada renglón dice qué
 --     hacer y a qué página ir (ir_a: bandeja, conciliar, movimientos,
@@ -137,7 +148,8 @@
 --     export_archivos, exportado_el, exportado_por), comprobando que cada
 --     archivo está en Storage. Se puede repetir: el último gana, los
 --     anteriores quedan en export_historial. Este archivo crea el bucket y
---     sus policies (solo el dueño sube y lee; nadie borra ni pisa por la
+--     sus policies (solo el dueño, con el código del teléfono —aal2—, sube y
+--     lee: los libros del mes no se leen con la contraseña sola; nadie borra ni pisa por la
 --     API) si Storage existe. El hash del mayor que va en el export es
 --     fn_cierre_hash_mayor: sha256 del texto que forman las líneas del
 --     período ordenadas por fecha, posición en la cadena y línea, cada una
@@ -1466,6 +1478,70 @@ begin
     end;
   end if;
 
+  -- 172 y 173. La emisión de facturas (c11), si está: sus cuadres
+  -- (v_emision_control: uno en rojo detiene —una factura emitida que no es
+  -- su asiento, la serie con un hueco, un documento que ya no es el que se
+  -- selló, un hito facturado dos veces, las protecciones y los candados del
+  -- bucket—) y sus avisos (una factura de hito que ya no apunta a su hito,
+  -- lo facturado por hitos que pasa de los hitos, un PDF que ya no está, una
+  -- factura sin PDF o sin mandar, una cobrada en el libro y sin marcar en su
+  -- obra, una retención que parece un porcentaje, una factura de después del
+  -- corte hecha fuera de la app, una anulación a medias, un cobro con
+  -- tarjeta, los datos de la empresa: avisan). Dos filas fijas, en un rango
+  -- que nadie más usa. El NOMBRE de cada fila dice cuáles de sus controles
+  -- están en rojo (la ronda avisa de un rojo nuevo por el nombre), y su
+  -- detalle lleva el principio de cada uno, con su número delante.
+  if to_regclass('public.v_emision_control') is not null then
+    begin
+      for r in execute 'select q.n, count(*) filter (where not q.ok) as rojos, count(*) as filas, '
+                    || 'string_agg(q.o::text, '', '' order by q.o) filter (where not q.ok) as cuales, '
+                    || 'string_agg(q.o || '': '' || case when length(q.detalle) > q.tope then left(q.detalle, q.tope - 1) || ''…'' else q.detalle end, '
+                    ||            ''' · '' order by q.o) filter (where not q.ok) as detalle '
+                    || 'from (select x.orden as o, x.nivel as n, x.ok is true as ok, coalesce(x.detalle, '''') as detalle, '
+                    ||              'greatest(120, 1380 / greatest(count(*) filter (where x.ok is not true) over (partition by x.nivel), 1))::int as tope '
+                    ||         'from public.v_emision_control x) q '
+                    || 'group by q.n order by q.n desc' loop
+        v_rows := v_rows || fn_cierre_fila(case when r.n = 'aviso' then 173 else 172 end,
+          case when r.n = 'aviso' then 'facturas: sus avisos (c11)' else 'facturas: sus cuadres (c11)' end
+            || case when r.rojos > 0 then format(' — %s en rojo: %s', r.rojos, r.cuales) else '' end,
+          case when r.n = 'aviso' then 'aviso' else 'detiene' end, r.rojos = 0,
+          case when r.rojos = 0 then format('Los %s, en verde.', r.filas) else coalesce(r.detalle, 'en rojo, sin detalle') end,
+          case when r.rojos = 0 then null
+               else 'Aquí va el principio de cada uno (con su número); entero, en el control de la facturación (Facturación: las facturas '
+                    'emitidas, su PDF y su envío, y sus ajustes).' end,
+          'facturas');
+      end loop;
+    exception when others then
+      v_rows := v_rows || fn_cierre_fila(172, 'facturas: v_emision_control', 'detiene', false,
+        format('No se pudo revisar la facturación: %s %s.', sqlstate, sqlerrm),
+        'Avisa: el control de la facturación (c11) no responde.', 'facturas');
+    end;
+  end if;
+
+  -- 174 a 177. El WIP por costo a costo (c12), si está: sus cuadres (174),
+  -- cada obra con su costo estimado revisado en el mes (175) y el ajuste del
+  -- mes posteado y al día (176) detienen; sus avisos (177) avisan. Las
+  -- cuatro filas las arma c12 (fn_wip_cierre), con su detalle en llano, qué
+  -- hacer y a qué página ir; aquí solo se piden. La 175 y la 176 salen en
+  -- verde, diciendo cuánto falta, mientras el mes no termine o el WIP no se
+  -- exija todavía. Cuatro filas fijas, en un rango que nadie más usa.
+  if to_regprocedure('public.fn_wip_cierre(text)') is not null then
+    declare
+      v_wip jsonb := '[]'::jsonb;
+    begin
+      for r in execute 'select x.orden as o, x.control, x.nivel as n, x.ok is true as k, x.detalle, x.que_hacer, x.ir_a '
+                    || 'from public.fn_wip_cierre($1) x where x.orden between 174 and 177 order by x.orden' using p.periodo loop
+        v_wip := v_wip || fn_cierre_fila(r.o, r.control, case when r.n = 'aviso' then 'aviso' else 'detiene' end, r.k,
+                                         coalesce(r.detalle, 'en rojo, sin detalle'), r.que_hacer, r.ir_a);
+      end loop;
+      v_rows := v_rows || v_wip;
+    exception when others then
+      v_rows := v_rows || fn_cierre_fila(174, 'wip: los cuadres del WIP (c12)', 'detiene', false,
+        format('No se pudo revisar el WIP: %s %s.', sqlstate, sqlerrm),
+        'Avisa: el control del WIP (c12) no responde.', 'wip');
+    end;
+  end if;
+
   -- 150. Cambios del período (informativo): reversos y asientos de la IA.
   select count(*) filter (where a.camino in ('reverso', 'reverso_automatico')),
          coalesce(sum(d.deb) filter (where a.camino in ('reverso', 'reverso_automatico')), 0),
@@ -1652,10 +1728,10 @@ begin
   begin
     drop policy if exists "cierres: el dueno sube" on storage.objects;
     create policy "cierres: el dueno sube" on storage.objects for insert to authenticated
-      with check (bucket_id = 'cierres' and public.es_dueno());
+      with check (bucket_id = 'cierres' and public.es_dueno() and (select auth.jwt() ->> 'aal') = 'aal2');
     drop policy if exists "cierres: el dueno lee" on storage.objects;
     create policy "cierres: el dueno lee" on storage.objects for select to authenticated
-      using (bucket_id = 'cierres' and public.es_dueno());
+      using (bucket_id = 'cierres' and public.es_dueno() and (select auth.jwt() ->> 'aal') = 'aal2');
     drop policy if exists "cierres: no se borra" on storage.objects;
     create policy "cierres: no se borra" on storage.objects as restrictive for delete to anon, authenticated
       using (bucket_id is distinct from 'cierres');
@@ -1663,7 +1739,7 @@ begin
     create policy "cierres: no se pisa" on storage.objects as restrictive for update to anon, authenticated
       using (bucket_id is distinct from 'cierres') with check (bucket_id is distinct from 'cierres');
   exception when others then
-    raise notice 'c9: no se pudieron poner las policies del bucket «cierres» (%): ponlas en Storage → Policies (solo el dueño sube y lee; nadie borra).', sqlerrm;
+    raise notice 'c9: no se pudieron poner las policies del bucket «cierres» (%): ponlas en Storage → Policies (solo el dueño con el código del teléfono sube y lee; nadie borra).', sqlerrm;
   end;
 end $$;
 

@@ -4,7 +4,7 @@
 --
 -- CÓMO SE CORRE. En el SQL Editor de Supabase: DESPUÉS de c12-wip.sql (y de
 -- volver a pegar c9-cierre.sql, que trae las filas 174 a 177), pegar este
--- archivo entero → Run. Sale la tabla _pruebas: 44 filas, todas con ok =
+-- archivo entero → Run. Sale la tabla _pruebas: 48 filas, todas con ok =
 -- true (las que salen «omitida» dicen por qué y no son un fallo). Si el
 -- editor se cansa antes del final, la corrida sigue en el servidor y se lee
 -- después en pruebas.c12_resultado (ver el final).
@@ -66,7 +66,8 @@
 -- 10 el depósito sin costo: todo a sobre-facturado (2400);
 -- 11 la PÉRDIDA: sin costo, a la mitad y con todo el costo, el resultado
 --    acumulado es la pérdida completa, una vez; y con centavos;
--- 12 una obra que PASA DE 100 %: el tope, el aviso y la nota;
+-- 12 una obra que PASA DE 100 %: queda pendiente y fuera del ajuste, el
+--    cuadre 60 la detiene y ninguna nota lo salta;
 -- 13 el redondeo: una sola vez, medio centavo hacia arriba; con 100 % el
 --    ganado es el precio;
 -- 14 una obra que ya andaba ANTES DEL LIBRO: la propuesta, confirmarla, otros
@@ -74,7 +75,7 @@
 -- 15 otra que ya andaba, SIN CONFIRMAR: no entra en el ajuste, y se dice;
 -- 16 una de servicio (T&M) no entra; marcada «contrato», sí;
 -- 17 una obra TERMINADA: 100 %, lo que falta por facturar queda
---    sub-facturado; después ya no entra;
+--    sub-facturado; sigue entrando mientras no se facture entera;
 -- 18 la propuesta del costo estimado: el estimado de la obra (c10) y lo del
 --    mes anterior; un toque; otro número pide su nota; la propuesta que
 --    cambió;
@@ -105,7 +106,8 @@
 --    c3 sanos no se puede poner en rojo sin romper sus guardas);
 -- 33 el 40 (cada obra revisada): exigible, en rojo y de vuelta;
 -- 34 el 50 (el ajuste posteado): exigible, en rojo y de vuelta;
--- 35 el 60 (más costo que el estimado sin nota) en rojo y de vuelta;
+-- 35 el 60 (más costo que el estimado, con nota o sin ella) en rojo y de
+--    vuelta, y el nombre de la fila 174 dice cuál;
 -- 36 los avisos (pérdida, facturado por encima del contrato, ingreso que no
 --    es factura, terminadas fuera del WIP, activas sin contrato, horas sin
 --    costo en el libro, los hitos) y la fila 177 del cierre;
@@ -123,6 +125,19 @@
 -- 44 el cierre de la suite: c2, c3, c6 y c4 como estaban, c8 y c10 sin
 --    cuadres rojos nuevos, nada de c12 para anon o service_role ni SECURITY
 --    DEFINER; y fn_wip_pegado responde.
+-- Y lo que encontraron los revisores (cada una FALLA con la capa de antes):
+-- 45 NINGUNA OBRA CON SALDO SALE SOLA: la cancelada, la marcada T&M y la
+--    terminada sin facturar entera entran en el mes siguiente; salen solo
+--    excluidas con su nota; la terminada sigue entrando;
+-- 46 el contrato de la ficha cambia después de revisar: pendiente (precio),
+--    detiene, y se decide («es de después», o se revisa otra vez);
+-- 47 lo de antes sin confirmar detiene; excluida ese mes con su nota, la
+--    fila 176 lo dice.
+-- Y lo que encontró la revisión final (FALLA con la capa de antes):
+-- 48 una obra de precio fijo con su depósito facturado que la app todavía
+--    tiene como «enviado»: no entra en el WIP (su ingreso es lo facturado) y
+--    el aviso 160 la nombra; pasada a aprobada, entra; otra en estimación,
+--    marcada «tm» con su nota, ya no se nombra; la que solo tiene costo, no.
 -- Última sentencia: select * from _pruebas order by n;
 -- =====================================================================
 create temp table if not exists _pruebas(n int, prueba text, esperado text, obtenido text, ok boolean);
@@ -601,6 +616,19 @@ begin
          <> all (coalesce(string_to_array(nullif(pg_temp.c12('ajenas_permisos'), ''), '; '), '{}'::text[]));
   if v_resto is null and exists (select 1 from pg_temp.c12_permisos_fallan()) then return 'verde'; end if;
   return 'rojo: ' || left(coalesce(v_resto, v_det), 300);
+end $$;
+
+-- EL RELOJ FINGIDO (el de c2-pruebas y c11-pruebas): «hoy» pasa a ser esa
+-- fecha (o el hoy de verdad, si es posterior). Solo DENTRO de la
+-- subtransacción de una prueba: su MXT00 lo deshace.
+create or replace function pg_temp.c12_fingir_hoy(p_hoy date) returns void language plpgsql as $$
+begin
+  execute format($f$
+    create or replace function public.fn_fecha_miami(t timestamptz) returns date
+    language sql stable
+    set search_path = public, pg_temp
+    as $b$ select greatest((t at time zone 'America/New_York')::date, %L::date) $b$
+  $f$, p_hoy);
 end $$;
 
 
@@ -1120,18 +1148,21 @@ begin
 end $$;
 
 -- 12. Una obra que PASA DE 100 %. Precio 10,000 y estimado 5,000; con 3,000
---     de costo va al 60 %. Llega más costo (6,500 en total): 130 % real; el
---     avance se topa en 100 % y gana el precio, 10,000, no más; lo avisa, y
---     el control 60 (más costo que el estimado, sin nota) la pone en rojo.
---     Revisar con un estimado menor que el costo pide la nota; con ella
---     pasa al aviso 125; subiendo el estimado deja de pasar.
+--     de costo va al 60 %. Llega más costo (6,500 en total): 130 % real. Más
+--     costo que el estimado sin estar terminada es un estimado viejo: la obra
+--     queda «pendiente» (le falta: estimado), FUERA del ajuste —con el avance
+--     topado en 100 % ganaría el precio entero sin haber terminado—, y el
+--     cuadre 60 la pone en rojo. Ninguna nota lo salta: revisar con un
+--     estimado menor que el costo no entra (MX005), con nota o sin ella.
+--     Subiendo el estimado vuelve a entrar; y si se deja justo en lo que
+--     lleva (100 %), entra y lo avisa el 125.
 do $$
 declare
   v_obt text; a text; b text; c text; d text; e text; f text;
-  v_esp text := 'al revisar (3000 de 5000): 60.00 %, ganado 6000.00 | con 6500 de costo: real 130.00 %, se topa en 100.00 %, ganado '
-                '10000.00, para terminar 0.00, util 3500.00, y lo avisa: sí | el control 60 la nombra: sí | revisar otra vez con 5000 y sin '
-                'nota: 22023 | con su nota: el 60 ya no la nombra y el aviso 125 sí | subiendo el estimado a 13000: 50.00 %, sin tope, y el '
-                '125 ya no la nombra';
+  v_esp text := 'al revisar (3000 de 5000): 60.00 %, ganado 6000.00 | con 6500 de costo: pendiente {estimado}, real 130.00 %, fuera del '
+                'ajuste, y lo dice: sí | el control 60 la nombra: sí | revisar otra vez con 5000, sin nota: MX005; con su nota: MX005 | '
+                'subiendo el estimado a 13000: lista, 50.00 %, y el 60 ya no la nombra | con el estimado justo en lo que lleva (6500): '
+                'lista, 100.00 %, y el aviso 125 la nombra: sí';
 begin
   if pg_temp.c12_omitir(12, 'una obra que pasa de 100 %', v_esp) then return; end if;
   begin
@@ -1141,27 +1172,31 @@ begin
     select format('%s %%, ganado %s', s.pct_avance, s.ingreso_ganado) into a
       from fn_wip_schedule(pg_temp.c12('mes')) s where s.proyecto_id = 'c12-prueba-e';
     perform pg_temp.c12_costo('c12-prueba-e', 3500, 14);
-    select format('real %s %%, se topa en %s %%, ganado %s, para terminar %s, util %s, y lo avisa: %s', s.pct_real, s.pct_avance,
-                  s.ingreso_ganado, s.costo_para_terminar, s.utilidad_fecha,
-                  case when s.pasa_de_100 and exists (select 1 from unnest(s.avisos) t where t like '%el avance se topa en 100 %%') then 'sí' else 'no' end)
+    select format('%s {%s}, real %s %%, %s, y lo dice: %s', s.estado, array_to_string(s.falta, ','), s.pct_real,
+                  case when s.en_ajuste then 'DENTRO del ajuste' else 'fuera del ajuste' end,
+                  case when s.pasa_de_100 and s.falta_texto like 'Lleva $6,500.00 de costo y su costo estimado revisado es $5,000.00 (130 %): ese estimado quedó viejo.%'
+                            and exists (select 1 from unnest(s.avisos) t where t like '%no entra en el ajuste hasta que subas el costo estimado%')
+                       then 'sí' else 'no: ' || coalesce(s.falta_texto, 'sin texto') end)
       into b from fn_wip_schedule(pg_temp.c12('mes')) s where s.proyecto_id = 'c12-prueba-e';
     c := pg_temp.c12_nombra(60, 'e');
-    d := pg_temp.c12_estado('select public.fn_wip_revisar(''c12-prueba-e'', ' || quote_literal(pg_temp.c12('mes')) || ', ''{"costo_estimado": "5000"}''::jsonb)');
-    perform pg_temp.c12_rev('c12-prueba-e', '{"costo_estimado": "5000", "nota": "C12 PRUEBA: el excedente lo cubre un cambio que falta firmar"}');
-    e := format('el 60 %s y el aviso 125 %s', case pg_temp.c12_nombra(60, 'e') when 'no' then 'ya no la nombra' else 'la sigue nombrando' end,
-                case pg_temp.c12_nombra(125, 'e') when 'sí' then 'sí' else 'no' end);
+    d := 'sin nota: ' || pg_temp.c12_estado('select public.fn_wip_revisar(''c12-prueba-e'', ' || quote_literal(pg_temp.c12('mes')) || ', ''{"costo_estimado": "5000"}''::jsonb)')
+         || '; con su nota: ' || pg_temp.c12_estado('select public.fn_wip_revisar(''c12-prueba-e'', ' || quote_literal(pg_temp.c12('mes'))
+                                                  || ', ''{"costo_estimado": "5000", "nota": "C12 PRUEBA: el excedente lo cubre un cambio que falta firmar"}''::jsonb)');
     perform pg_temp.c12_rev('c12-prueba-e', '{"costo_estimado": "13000", "nota": "C12 PRUEBA: estimado puesto al día"}');
-    select format('%s %%, %s, y el 125 %s', s.pct_avance, case when s.pasa_de_100 then 'CON tope' else 'sin tope' end,
-                  case pg_temp.c12_nombra(125, 'e') when 'no' then 'ya no la nombra' else 'la sigue nombrando' end)
+    select format('%s, %s %%, y el 60 %s', s.estado, s.pct_avance,
+                  case pg_temp.c12_nombra(60, 'e') when 'no' then 'ya no la nombra' else 'la sigue nombrando' end)
+      into e from fn_wip_schedule(pg_temp.c12('mes')) s where s.proyecto_id = 'c12-prueba-e';
+    perform pg_temp.c12_rev('c12-prueba-e', '{"costo_estimado": "6500", "nota": "C12 PRUEBA: justo lo que lleva"}');
+    select format('%s, %s %%, y el aviso 125 la nombra: %s', s.estado, s.pct_avance, pg_temp.c12_nombra(125, 'e'))
       into f from fn_wip_schedule(pg_temp.c12('mes')) s where s.proyecto_id = 'c12-prueba-e';
-    v_obt := format('al revisar (3000 de 5000): %s | con 6500 de costo: %s | el control 60 la nombra: %s | revisar otra vez con 5000 y sin '
-                    'nota: %s | con su nota: %s | subiendo el estimado a 13000: %s', a, b, c, d, e, f);
+    v_obt := format('al revisar (3000 de 5000): %s | con 6500 de costo: %s | el control 60 la nombra: %s | revisar otra vez con 5000, %s | '
+                    'subiendo el estimado a 13000: %s | con el estimado justo en lo que lleva (6500): %s', a, b, c, d, e, f);
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (12, 'una obra que PASA DE 100 %: con más costo (6,500) que su estimado revisado (5,000) el avance real es 130 %, se topa en 100 % y gana el precio, no más; lo avisa y el control 60 la pone en rojo; revisar con un estimado menor que el costo pide la nota (22023), con ella pasa al aviso 125, y subiendo el estimado deja de pasar',
+  insert into _pruebas values (12, 'una obra que PASA DE 100 %: con más costo (6,500) que su estimado revisado (5,000) queda pendiente (su estimado quedó viejo) y FUERA del ajuste, y el control 60 la pone en rojo; ninguna nota lo salta (un estimado menor que el costo no entra: MX005); subiendo el estimado vuelve a entrar, y justo al 100 % lo avisa el 125',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
@@ -1358,7 +1393,9 @@ end $$;
 --     (la app la tiene completada) y llega un último costo de 500: el mes
 --     siguiente la propone como terminada; revisada así es 100 %: el costo
 --     final es el que lleva (5,500), ganó el precio (8,000) y lo que falta
---     por facturar (2,000) queda sub-facturado. El mes de después ya no sale.
+--     por facturar (2,000) queda sub-facturado. El mes de después SIGUE
+--     ENTRANDO mientras no se facture entera (antes dejaba de entrar y ese
+--     sub-facturado se perdía sin aviso); facturados los 2,000, ya no sale.
 --     No se termina una obra que la app tiene en obra (MX008), y una
 --     terminada no lleva costo estimado (22023).
 do $$
@@ -1367,7 +1404,8 @@ declare
   v_esp text := 'en el mes, en obra: 83.33 %, ganado 6666.67, sub 666.67 | terminada después, el mes siguiente la propone como terminada: '
                 'pendiente {revision}: sin cifras, propone terminada: sí | revisada como terminada: lista: precio 8000.00, est 5500.00, util '
                 'est 2500.00, costo 5500.00, 100.00 %, ganado 8000.00, fact 6000.00, sub 2000.00, sobre 0.00, para terminar 0.00, util '
-                '2500.00, perdida 0.00, prov 0.00 | el mes de después: no sale | terminar una que sigue en obra: MX008 | terminada con '
+                '2500.00, perdida 0.00, prov 0.00 | el mes de después, con 2,000 por facturar: sigue entrando, pendiente {revision}: sin '
+                'cifras, y propone terminada: sí | facturada entera: no sale | terminar una que sigue en obra: MX008 | terminada con '
                 'costo estimado: 22023';
 begin
   if pg_temp.c12_omitir(17, 'una obra terminada', v_esp) then return; end if;
@@ -1386,18 +1424,23 @@ begin
     c := pg_temp.c12_fila('c12-prueba-j', v_sig);
     select q.periodo into v_des from periodos q
      where q.tipo = 'mes' and q.desde = (select x.hasta + 1 from periodos x where x.periodo = v_sig);
-    select coalesce((select 'SALE: ' || s.estado from fn_wip_calcular(v_des, 'c12-prueba-j', false) s), 'no sale') into d;
+    select coalesce((select format('sigue entrando, %s, y propone terminada: %s', pg_temp.c12_fila('c12-prueba-j', v_des),
+                                   case when s.propuesta_terminada then 'sí' else 'no' end)
+                       from fn_wip_calcular(v_des, 'c12-prueba-j', true) s), 'NO SALE') into d;
+    -- (se factura lo que faltaba, en el mes siguiente: lo facturado ya es su precio)
+    perform pg_temp.c12_factura(10, 'c12-prueba-j', 2000, (select (q.desde - pg_temp.c12_d(0)) + 5 from periodos q where q.periodo = v_sig));
+    select d || ' | facturada entera: ' || coalesce((select 'SALE: ' || s.estado from fn_wip_calcular(v_des, 'c12-prueba-j', false) s), 'no sale') into d;
     perform pg_temp.c12_costo('c12-prueba-a', 3000);
     e := pg_temp.c12_estado('select public.fn_wip_revisar(''c12-prueba-a'', ' || quote_literal(pg_temp.c12('mes')) || ', ''{"terminada": true}''::jsonb)');
     f := pg_temp.c12_estado('select public.fn_wip_revisar(''c12-prueba-j'', ' || quote_literal(v_sig) || ', ''{"terminada": true, "costo_estimado": "5500"}''::jsonb)');
     v_obt := format('en el mes, en obra: %s | terminada después, el mes siguiente la propone como terminada: %s | revisada como terminada: '
-                    '%s | el mes de después: %s | terminar una que sigue en obra: %s | terminada con costo estimado: %s', a, b, c, d, e, f);
+                    '%s | el mes de después, con 2,000 por facturar: %s | terminar una que sigue en obra: %s | terminada con costo estimado: %s', a, b, c, d, e, f);
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (17, 'una obra TERMINADA: el mes siguiente a estar en el WIP la propone como terminada; revisada así es 100 % (su costo final es el que lleva, gana el precio y lo que falta por facturar queda sub-facturado); después ya no entra; no se termina una que la app tiene en obra (MX008), y terminada no lleva costo estimado (22023)',
+  insert into _pruebas values (17, 'una obra TERMINADA: el mes siguiente a estar en el WIP la propone como terminada; revisada así es 100 % (su costo final es el que lleva, gana el precio y lo que falta por facturar queda sub-facturado); SIGUE ENTRANDO cada mes mientras no se facture entera, y facturada entera ya no entra; no se termina una que la app tiene en obra (MX008), y terminada no lleva costo estimado (22023)',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
@@ -2352,7 +2395,7 @@ begin
     a := format('el cuadre %s y nombra la obra: %s; la fila 175 del cierre detiene y dice qué hacer: %s', pg_temp.c12_ctl(40),
                 case when pg_temp.c12_nombra(40, 'a') = 'sí' and pg_temp.c12_ctl_det(40) like 'Faltan por revisar % de las % obra(s) de precio fijo con movimiento en %' then 'sí'
                      else 'no: ' || pg_temp.c12_ctl_det(40) end,
-                case when not f.ok and f.nivel = 'detiene' and f.detalle = pg_temp.c12_ctl_det(40) and f.que_hacer like '%revisa cada obra de la lista%'
+                case when not f.ok and f.nivel = 'detiene' and f.detalle = pg_temp.c12_ctl_det(40) and f.que_hacer like '%decide cada obra de la lista%'
                      then 'sí' else 'no' end);
     perform fn_wip_config(jsonb_build_object('exigir_desde', v_sig));
     b := format('%s, y dice cuánto falta: %s', pg_temp.c12_ctl(40),
@@ -2395,10 +2438,14 @@ begin
            'qué hacer: sí | exigido solo desde el mes siguiente: verde, y dice lo que daría: sí | sin decir desde cuándo: verde | '
            || case when v_curso is null then '(no hay un mes en curso abierto)'
                    else 'el mes en curso, exigido pero sin terminar: verde, y dice que se hace al cerrarlo: sí' end
-           || ' | posteado: verde, dice el asiento y cuándo se deshace: sí; la fila 176 ya no detiene: sí';
+           || ' | posteado: verde, dice el asiento y cuándo se deshace: sí; y quién quedó fuera: sí; la fila 176 ya no detiene: sí';
   if pg_temp.c12_omitir(34, 'el cuadre 50: el ajuste posteado, exigible', v_esp) then return; end if;
   begin
     perform pg_temp.c12_escena();
+    -- (una obra que ya andaba, revisada y sin lo de antes confirmado: no entra, y el texto del ajuste lo tiene que decir)
+    perform pg_temp.c12_factura(7, 'c12-prueba-g', 3000, -10);
+    perform pg_temp.c12_costo('c12-prueba-g', 2000);
+    perform pg_temp.c12_rev('c12-prueba-g', '{"costo_estimado": "9000"}');
     select * into f from pg_temp.c12_cie(176);
     a := format('el cuadre %s y dice lo que falta postear: %s; la fila 176 del cierre detiene y dice qué hacer: %s', pg_temp.c12_ctl(50),
                 case when pg_temp.c12_ctl_det(50) like 'Falta postear el ajuste de WIP de ' || fn_wip_mes(v_mes) || ': sub-facturado % en % obra(s), '
@@ -2424,11 +2471,13 @@ begin
     end if;
     r := pg_temp.c12_postear();
     select * into f from pg_temp.c12_cie(176);
-    e := format('%s, dice el asiento y cuándo se deshace: %s; la fila 176 ya no detiene: %s', pg_temp.c12_ctl(50),
+    e := format('%s, dice el asiento y cuándo se deshace: %s; y quién quedó fuera: %s; la fila 176 ya no detiene: %s', pg_temp.c12_ctl(50),
                 case when pg_temp.c12_ctl_det(50) like 'El ajuste de ' || fn_wip_mes(v_mes) || ' está posteado y al día (asiento ' || (r->'asiento'->>'numero')
                                                        || ', del ' || fn_wip_dia(pg_temp.c12_h()) || '; se deshace solo el ' || fn_wip_dia(pg_temp.c12_h() + 1)
-                                                       || '): sub-facturado %, sobre-facturado % y pérdida %, en % obra(s).' then 'sí'
+                                                       || '): sub-facturado %, sobre-facturado % y pérdida %, en % obra(s).%' then 'sí'
                      else 'no: ' || pg_temp.c12_ctl_det(50) end,
+                case when pg_temp.c12_ctl_det(50) like '%OJO: % obra(s) NO entran en el ajuste porque les falta algo (%C12 PRUEBA Obra G%)%'
+                     then 'sí' else 'no: ' || pg_temp.c12_ctl_det(50) end,
                 case when f.ok and f.que_hacer is null and f.detalle = pg_temp.c12_ctl_det(50) then 'sí' else 'no' end);
     v_obt := format('exigido, con obras listas y sin postear: %s | exigido solo desde el mes siguiente: %s | sin decir desde cuándo: %s | %s '
                     '| posteado: %s', a, b, c, d, e);
@@ -2442,42 +2491,43 @@ begin
 end $$;
 
 -- 35. EL CUADRE 60 Y LA FILA 174: una obra con más costo que su estimado
---     revisado, sin nota, detiene el cierre (con el avance topado en 100 % se
---     gana el precio entero y una pérdida no se vería); subiendo el estimado,
---     vuelve a verde.
+--     revisado detiene el cierre, TENGA O NO una nota su revisión (una nota
+--     por otra cosa no lo salta); el nombre de la fila 174 dice cuál de sus
+--     cuadres está en rojo; subiendo el estimado, vuelve a verde.
 do $$
 declare
   v_obt text; f record; a text; b text; c text;
-  v_esp text := 'con 6500 de costo y 5000 de estimado, sin nota: el cuadre 60 la nombra con sus cifras: sí; la fila 174 del cierre '
-                'detiene y la nombra: sí | subido el estimado a 13000: el cuadre ya no la nombra, la fila 174 tampoco, y los cuadres: nada '
-                'nuevo en rojo';
+  v_esp text := 'revisada con una nota por otra cosa (5000) y después con 6500 de costo: el cuadre 60 la nombra con sus cifras: sí; la fila '
+                '174 del cierre detiene, la nombra y su nombre dice cuál está en rojo: sí | subido el estimado a 13000: el cuadre ya no la '
+                'nombra, la fila 174 tampoco, y los cuadres: nada nuevo en rojo';
 begin
   if pg_temp.c12_omitir(35, 'el cuadre 60 y la fila 174 del cierre', v_esp) then return; end if;
   begin
     perform pg_temp.c12_sembrar();
     perform fn_wip_config(jsonb_build_object('exigir_desde', pg_temp.c12('mes')));
     perform pg_temp.c12_costo('c12-prueba-e', 3000);
-    perform pg_temp.c12_rev('c12-prueba-e', '{"costo_estimado": "5000"}');
+    perform pg_temp.c12_rev('c12-prueba-e', '{"costo_estimado": "5000", "nota": "C12 PRUEBA: una nota por otra cosa (la orden de cambio 1)"}');
     perform pg_temp.c12_costo('c12-prueba-e', 3500, 14);
-    select * into f from pg_temp.c12_cie(174);
+    select c.ok, c.nivel, c.detalle, c.que_hacer, c.control into f from fn_wip_cierre(pg_temp.c12('mes')) c where c.orden = 174;
     a := case when pg_temp.c12_ctl(60) = 'rojo'
-                   and pg_temp.c12_ctl_det(60) like '%C12 PRUEBA Obra E (lleva $6,500.00 y su estimado es $5,000.00: 130 %)%Sube su costo estimado (o escribe por qué)%'
+                   and pg_temp.c12_ctl_det(60) like '%C12 PRUEBA Obra E (lleva $6,500.00 y su estimado es $5,000.00: 130 %)%Ese estimado quedó viejo%'
               then 'sí' else 'no: ' || pg_temp.c12_ctl_det(60) end;
     b := case when not f.ok and f.nivel = 'detiene' and f.detalle like '%C12 PRUEBA Obra E (lleva $6,500.00 y su estimado es $5,000.00: 130 %)%'
-                   and f.que_hacer is not null then 'sí' else 'no: ' || coalesce(f.detalle, 'sin fila') end;
+                   and f.que_hacer is not null and f.control ~ '^wip: los cuadres del WIP \(c12\) — [0-9]+ en rojo: ([0-9]+, )*60(, [0-9]+)*$'
+              then 'sí' else 'no: ' || coalesce(f.control || ': ' || f.detalle, 'sin fila') end;
     perform pg_temp.c12_rev('c12-prueba-e', '{"costo_estimado": "13000", "nota": "C12 PRUEBA: estimado puesto al día"}');
     select * into f from pg_temp.c12_cie(174);
     c := format('el cuadre %s, la fila 174 %s, y los cuadres: %s',
                 case pg_temp.c12_nombra(60, 'e') when 'no' then 'ya no la nombra' else 'la SIGUE nombrando' end,
                 case when f.detalle not like '%C12 PRUEBA Obra E%' then 'tampoco' else 'SÍ' end, pg_temp.c12_propios());
-    v_obt := format('con 6500 de costo y 5000 de estimado, sin nota: el cuadre 60 la nombra con sus cifras: %s; la fila 174 del cierre '
-                    'detiene y la nombra: %s | subido el estimado a 13000: %s', a, b, c);
+    v_obt := format('revisada con una nota por otra cosa (5000) y después con 6500 de costo: el cuadre 60 la nombra con sus cifras: %s; la '
+                    'fila 174 del cierre detiene, la nombra y su nombre dice cuál está en rojo: %s | subido el estimado a 13000: %s', a, b, c);
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (35, 'EL CUADRE 60 EN ROJO Y DE VUELTA: una obra con más costo que su estimado revisado, sin nota, pone el cuadre en rojo con sus cifras y la fila 174 del cierre detiene; subido el estimado, vuelve a verde',
+  insert into _pruebas values (35, 'EL CUADRE 60 EN ROJO Y DE VUELTA: una obra con más costo que su estimado revisado pone el cuadre en rojo con sus cifras y la fila 174 del cierre detiene (y su nombre dice cuál de sus cuadres es), tenga o no una nota la revisión; subido el estimado, vuelve a verde',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
@@ -2500,7 +2550,7 @@ begin
            'sí | '
            || case when v_horas then 'horas sin costo en el libro (170): sí'
                    else '(sin el costo por obra (c10) o sin nadie del equipo en esta base: el aviso 170 no se prueba)' end
-           || ' | los hitos no suman el contrato (180): sí | la fila 177 del cierre los junta, es un aviso y no detiene: sí; y los cuadres: '
+           || ' | los hitos no suman el contrato (180): sí | la fila 177 del cierre los junta a todos y su nombre dice cuáles, es un aviso y no detiene: sí; y los cuadres: '
               'nada nuevo en rojo';
   if pg_temp.c12_omitir(36, 'los avisos del WIP', v_esp) then return; end if;
   begin
@@ -2561,18 +2611,24 @@ begin
     values (-1200036, 'c12-prueba-d', 'C12 PRUEBA: depósito', 6000, 'pendiente', true);
     h := case when pg_temp.c12_ctl_det(180) like '%C12 PRUEBA Obra D (hitos $6,000.00, contrato $30,000.00)%' then 'sí' else 'no: ' || pg_temp.c12_ctl_det(180) end;
     -- la fila 177 del cierre
-    select * into f from pg_temp.c12_cie(177);
+    -- (con datos reales los avisos son muchos y largos: la fila no puede dejarse ninguno, y su nombre dice cuáles son,
+    -- que es lo que mira la ronda de c9 para avisar de un rojo nuevo)
+    select c.ok, c.nivel, c.detalle, c.que_hacer, c.control into f from fn_wip_cierre(v_mes) c where c.orden = 177;
     i := format('%s; y los cuadres: %s',
                 case when not f.ok and f.nivel = 'aviso' and f.que_hacer like 'No detienen el cierre.%'
-                          and f.detalle like '%C12 PRUEBA Obra C (pérdida $2,000.00%' and f.detalle like '%C12 PRUEBA Obra B (facturado $21,000.00%'
-                          and f.detalle like '%C12 PRUEBA Obra A ($300.00)%' and f.detalle like '%C12 PRUEBA Obra D (hitos $6,000.00%'
+                          and f.control = 'wip: sus avisos (c12)' || (select format(' — %s en rojo: %s', count(*), string_agg(k.orden::text, ', ' order by k.orden))
+                                                                       from fn_wip_control(v_mes) k where k.nivel = 'aviso' and not k.ok)
+                          and f.control ~ '\m120\M' and f.control ~ '\m140\M' and f.control ~ '\m150\M' and f.control ~ '\m180\M'
+                          and not exists (select 1 from fn_wip_control(v_mes) k
+                                           where k.nivel = 'aviso' and not k.ok and position(left(k.detalle, 100) in f.detalle) = 0)
+                          and length(f.detalle) <= 1500
                           and not exists (select 1 from fn_wip_control(v_mes) k where k.orden between 110 and 180 and k.nivel <> 'aviso')
-                     then 'sí' else 'no: ' || left(coalesce(f.detalle, 'sin fila'), 300) end,
+                     then 'sí' else 'no: ' || coalesce(f.control, '') || ' · ' || left(coalesce(f.detalle, 'sin fila'), 300) end,
                 pg_temp.c12_propios());
     v_obt := format('pérdida (120): nombra la obra, con la pérdida y lo provisionado: %s | facturado por encima del contrato (140): %s | '
                     'ingreso que no es factura (150): %s | terminada con costo en el mes y fuera del WIP (160): %s | activa sin contrato '
-                    '(165): %s | %s | los hitos no suman el contrato (180): %s | la fila 177 del cierre los junta, es un aviso y no '
-                    'detiene: %s', a, b, c, d, e, g, h, i);
+                    '(165): %s | %s | los hitos no suman el contrato (180): %s | la fila 177 del cierre los junta a todos y su nombre '
+                    'dice cuáles, es un aviso y no detiene: %s', a, b, c, d, e, g, h, i);
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
@@ -2656,8 +2712,23 @@ begin
     select case when count(*) = 4 and string_agg(k.orden::text, ',' order by k.orden) = '174,175,176,177'
                      and string_agg(k.nivel, ',' order by k.orden) = 'detiene,detiene,detiene,aviso'
                      and bool_and(k.ir_a = 'wip')
-                     and string_agg(k.control, ' | ' order by k.orden) = 'wip: los cuadres del WIP (c12) | wip: cada obra con su costo estimado '
-                         'revisado | wip: el ajuste del mes posteado y al día | wip: sus avisos (c12)'
+                     and bool_and(case k.orden
+                                    when 174 then k.control ~ '^wip: los cuadres del WIP \(c12\)( — [0-9]+ en rojo: [0-9]+(, [0-9]+)*)?$'
+                                    when 175 then k.control = 'wip: cada obra con su costo estimado revisado'
+                                    when 176 then k.control = 'wip: el ajuste del mes posteado y al día'
+                                    else k.control ~ '^wip: sus avisos \(c12\)( — [0-9]+ en rojo: [0-9]+(, [0-9]+)*)?$' end)
+                     -- (el nombre de la 174 y de la 177 dice cuántos y cuáles de sus controles están en rojo: ni uno más ni uno
+                     -- menos; la ronda de c9 avisa de un rojo nuevo por el nombre de la fila)
+                     and (select k2.control from fn_wip_cierre(v_mes) k2 where k2.orden = 177)
+                         = 'wip: sus avisos (c12)'
+                           || coalesce((select format(' — %s en rojo: %s', count(*), string_agg(q.orden::text, ', ' order by q.orden))
+                                          from fn_wip_control(v_mes) q where q.nivel = 'aviso' and not q.ok having count(*) > 0), '')
+                     and (select k2.control from fn_wip_cierre(v_mes) k2 where k2.orden = 174)
+                         = 'wip: los cuadres del WIP (c12)'
+                           || coalesce((select format(' — %s en rojo: %s', count(*), string_agg(q.orden::text, ', ' order by q.orden))
+                                          from fn_wip_control(v_mes) q
+                                         where q.nivel = 'cuadre' and q.orden not in (40, 50) and not q.ok having count(*) > 0), '')
+                     and (select k2.control from fn_wip_cierre(v_mes) k2 where k2.orden = 177) ~ '\m120\M'
                 then 'sí' else 'no' end into a
       from fn_wip_cierre(v_mes) k;
     select case when (select k.ok from fn_wip_cierre(v_mes) k where k.orden = 174)
@@ -2776,9 +2847,12 @@ begin
   if pg_temp.c12_omitir(40, 'los textos no nombran funciones', v_esp) then return; end if;
   begin
     perform pg_temp.c12_escena();
-    perform pg_temp.c12_costo('c12-prueba-e', 6500);
+    perform pg_temp.c12_costo('c12-prueba-e', 3000);
     perform pg_temp.c12_rev('c12-prueba-e', '{"costo_estimado": "5000", "nota": "C12 PRUEBA: con nota"}');
+    perform pg_temp.c12_costo('c12-prueba-e', 3500, 14);
     perform pg_temp.c12_factura(7, 'c12-prueba-g', 3000, -10);
+    perform pg_temp.c12_costo('c12-prueba-m', 100);
+    perform pg_temp.c12_rev('c12-prueba-m', '{"excluir": true, "nota": "C12 PRUEBA: este mes no se mide"}');
     perform pg_temp.c12_costo('c12-prueba-k', 800);
     -- sin postear
     select v_txt || array_agg(k.orden || ': ' || k.detalle) into v_txt from fn_wip_control(v_mes) k;
@@ -2817,6 +2891,10 @@ begin
     v_txt := v_txt || pg_temp.c12_dice('select public.fn_wip_obra(''c12-prueba-k'', ''{"modo": "contrato"}''::jsonb)');
     v_txt := v_txt || pg_temp.c12_dice('select public.fn_wip_postear(' || quote_literal(coalesce(pg_temp.c12_curso(), '2019-01')) || ')');
     v_txt := v_txt || pg_temp.c12_dice('select public.fn_wip_postear(' || quote_literal(v_mes) || ')', 'equipo');
+    v_txt := v_txt || pg_temp.c12_dice('select public.fn_wip_revisar(''c12-prueba-b'', ' || quote_literal(v_mes) || ', ''{"excluir": true}''::jsonb)');
+    v_txt := v_txt || pg_temp.c12_dice('select public.fn_wip_revisar(''c12-prueba-b'', ' || quote_literal(v_mes) || ', ''{"precio_de_despues": true}''::jsonb)');
+    v_txt := v_txt || pg_temp.c12_dice('select public.fn_wip_revisar(''c12-prueba-e'', ' || quote_literal(v_mes) || ', ''{"costo_estimado": "5000", "nota": "x"}''::jsonb)');
+    v_txt := v_txt || pg_temp.c12_dice('select public.fn_wip_revisar(''c12-prueba-h'', ' || quote_literal(v_mes) || ', ''{"excluir": true, "nota": "x"}''::jsonb)');
     select count(*), string_agg(left(t, 160), ' || ') filter (where t ~ '(fn_|wip_|v_wip|v_margen|mx_|select |\(\)|security|jsonb|null)')
       into v_n, v_mal from unnest(v_txt) t;
     v_obt := coalesce(v_mal, case when v_n >= 60 then 'ninguno' else 'solo se miraron ' || v_n || ' textos' end);
@@ -2826,6 +2904,316 @@ begin
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
   insert into _pruebas values (40, 'LOS TEXTOS, EN LLANO: el detalle de cada control y de cada aviso (en verde y en rojo), las filas del cierre, el resumen, las filas del WIP, lo que dicen postear, rehacer y deshacer, y los errores de cada día no nombran ninguna función, tabla ni vista',
+    v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+
+-- ---------------------------------------------------------------------
+-- LO QUE ENCONTRARON LOS REVISORES (45 a 47): ninguna obra con saldo sale
+-- sola, el contrato que cambia después de revisar, y lo de antes sin
+-- confirmar. Usan el reloj fingido de c2-pruebas (solo dentro de su
+-- subtransacción: el MXT00 lo deshace).
+-- ---------------------------------------------------------------------
+
+-- 45. NINGUNA OBRA CON SALDO SALE SOLA. Con el ajuste del mes posteado (A
+--     sub-facturada 3,000; B sobre-facturada 4,000; C sub-facturada 5,000 y
+--     1,000 de provisión), al mes siguiente B se cancela en la app
+--     («no_aprobado»), C se marca T&M y A termina con 8,000 por facturar. Las
+--     tres ENTRAN en el mes siguiente (antes B y C desaparecían, su saldo se
+--     deshacía el día 1 y no volvía, sin que nada se pusiera en rojo), el
+--     cuadre 40 las nombra y la fila 175 detiene. B y C salen solo excluidas
+--     con su nota; A se revisa como terminada y, mientras no se facture
+--     entera, SIGUE ENTRANDO el mes de después (antes dejaba de entrar y su
+--     1200 se perdía).
+do $$
+declare
+  v_obt text; r jsonb; v_mes text := pg_temp.c12('mes'); v_sig text := pg_temp.c12('mes_sig'); v_des text; v_hoy2 date; v_fin date;
+  a text; b text; c text; d text; e text; f text; g text;
+  v_esp text := 'posteado el mes: A sub 3000.00, B sobre 4000.00, C sub 5000.00 y provisión 1000.00 | el mes siguiente, con B cancelada, C '
+                'marcada T&M y A terminada: B pendiente {revision} y dice que traía su saldo: sí; C pendiente {revision} y dice que ya no '
+                'lleva WIP: sí; A pendiente {revision}, propone terminada: sí | el cuadre 40 nombra a las tres y la fila 175 detiene: sí | '
+                'excluir sin nota: 22023; con su nota: B excluida, C excluida, y el cuadre 40 ya no las nombra: sí | A terminada: lista, '
+                'ganado 10000.00, sub 8000.00 | el ajuste del mes siguiente: 1200 8000.00 a | ingreso -8000.00 a; dice las dos excluidas: '
+                'sí; la fila 176 las nombra con su nota: sí; saldo de A en 1200 al cierre: 8000.00 | el mes de después: A sigue entrando '
+                '(terminada, sin facturar entera): sí; B: no sale; C: no sale';
+begin
+  if pg_temp.c12_omitir(45, 'ninguna obra con saldo sale sola', v_esp) then return; end if;
+  select q.periodo, q.desde + 1 into v_des, v_hoy2 from periodos q
+   where q.tipo = 'mes' and q.estado = 'abierto' and q.desde = (select x.hasta + 1 from periodos x where x.periodo = v_sig);
+  select x.hasta into v_fin from periodos x where x.periodo = v_sig;
+  if v_des is null then
+    insert into _pruebas values (45, 'ninguna obra con saldo sale sola', v_esp,
+      'omitida: el mes de después del siguiente al de las pruebas no está abierto en el libro: no hay dónde ver que la obra sigue entrando', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c12_escena();
+    r := pg_temp.c12_postear();
+    a := format('A sub %s, B sobre %s, C sub %s y provisión %s', pg_temp.c12_saldo('1200', 'c12-prueba-a', pg_temp.c12_h()),
+                -pg_temp.c12_saldo('2400', 'c12-prueba-b', pg_temp.c12_h()), pg_temp.c12_saldo('1200', 'c12-prueba-c', pg_temp.c12_h()),
+                -pg_temp.c12_saldo('2410', 'c12-prueba-c', pg_temp.c12_h()));
+    -- el mes siguiente: B se cancela, C pasa a T&M y A termina; el reloj, al día 2 del mes de después (el siguiente ya terminó)
+    update proyectos set estado = 'no_aprobado' where id = 'c12-prueba-b';
+    update proyectos set estado = 'completado' where id = 'c12-prueba-a';
+    perform pg_temp.c12_ser('dueno');
+    perform fn_wip_obra('c12-prueba-c', '{"modo": "tm", "nota": "C12 PRUEBA: pasa a cobrarse por horas"}');
+    perform pg_temp.c12_ser('editor');
+    perform pg_temp.c12_fingir_hoy(v_hoy2);
+    b := format('B %s; C %s; A %s',
+           coalesce((select format('%s {%s} y dice que traía su saldo: %s', s.estado, array_to_string(s.falta, ','),
+                                   case when s.falta_texto like 'Traía $4,000.00 sobre-facturados en el ajuste de ' || fn_wip_mes(v_mes)
+                                                                || ' y la app la tiene ahora como «no_aprobado».%exclúyela con su nota%'
+                                        then 'sí' else 'no: ' || coalesce(s.falta_texto, '-') end)
+                       from fn_wip_calcular(v_sig, 'c12-prueba-b', true) s), 'NO SALE'),
+           coalesce((select format('%s {%s} y dice que ya no lleva WIP: %s', s.estado, array_to_string(s.falta, ','),
+                                   case when s.falta_texto like 'Traía $5,000.00 sub-facturados y $1,000.00 de pérdida provisionada en el ajuste de '
+                                                                || fn_wip_mes(v_mes) || ' y hoy ya no lleva WIP%exclúyela este mes con su nota%'
+                                        then 'sí' else 'no: ' || coalesce(s.falta_texto, '-') end)
+                       from fn_wip_calcular(v_sig, 'c12-prueba-c', true) s), 'NO SALE'),
+           coalesce((select format('%s {%s}, propone terminada: %s', s.estado, array_to_string(s.falta, ','),
+                                   case when s.propuesta_terminada then 'sí' else 'no' end)
+                       from fn_wip_calcular(v_sig, 'c12-prueba-a', true) s), 'NO SALE'));
+    c := case when pg_temp.c12_nombra(40, 'a', v_sig) = 'sí' and pg_temp.c12_nombra(40, 'b', v_sig) = 'sí' and pg_temp.c12_nombra(40, 'c', v_sig) = 'sí'
+                   and (select not x.ok and x.nivel = 'detiene' from pg_temp.c12_cie(175, v_sig) x) then 'sí'
+              else 'no: ' || coalesce(pg_temp.c12_ctl_det(40, v_sig), 'sin fila') end;
+    d := 'excluir sin nota: ' || pg_temp.c12_estado('select public.fn_wip_revisar(''c12-prueba-b'', ' || quote_literal(v_sig) || ', ''{"excluir": true}''::jsonb)');
+    perform pg_temp.c12_rev('c12-prueba-b', '{"excluir": true, "nota": "C12 PRUEBA: el cliente canceló el contrato"}', v_sig);
+    perform pg_temp.c12_rev('c12-prueba-c', '{"excluir": true, "nota": "C12 PRUEBA: desde ahora se cobra por horas"}', v_sig);
+    d := d || format('; con su nota: B %s, C %s, y el cuadre 40 ya no las nombra: %s',
+                     (select s.estado from fn_wip_calcular(v_sig, 'c12-prueba-b', false) s),
+                     (select s.estado from fn_wip_calcular(v_sig, 'c12-prueba-c', false) s),
+                     case when pg_temp.c12_nombra(40, 'b', v_sig) = 'no' and pg_temp.c12_nombra(40, 'c', v_sig) = 'no' then 'sí' else 'no' end);
+    perform pg_temp.c12_rev('c12-prueba-a', '{"terminada": true}', v_sig);
+    select format('%s, ganado %s, sub %s', s.estado, s.ingreso_ganado, s.sub_facturado) into e
+      from fn_wip_calcular(v_sig, 'c12-prueba-a', false) s;
+    r := pg_temp.c12_postear(v_sig);
+    f := format('%s; dice las dos excluidas: %s; la fila 176 las nombra con su nota: %s; saldo de A en 1200 al cierre: %s',
+                pg_temp.c12_lin((r->'asiento'->>'id')::uuid),
+                case when (select count(*) from jsonb_array_elements(r->'excluidas') x
+                            where x->>'proyecto_id' in ('c12-prueba-b', 'c12-prueba-c') and coalesce(x->>'nota', '') like 'C12 PRUEBA:%') = 2
+                          and r->>'nota' like '%quedaron fuera a propósito, con su nota.' then 'sí' else 'no: ' || coalesce(r->>'nota', '-') end,
+                case when (select x.detalle from pg_temp.c12_cie(176, v_sig) x)
+                          like '%Fuera del ajuste a propósito, % obra(s): %C12 PRUEBA Obra B («C12 PRUEBA: el cliente canceló el contrato»)%'
+                                || 'C12 PRUEBA Obra C («C12 PRUEBA: desde ahora se cobra por horas»)%'
+                     then 'sí' else 'no: ' || coalesce((select x.detalle from pg_temp.c12_cie(176, v_sig) x), 'sin fila') end,
+                pg_temp.c12_saldo('1200', 'c12-prueba-a', v_fin));
+    g := format('A sigue entrando (terminada, sin facturar entera): %s; B: %s; C: %s',
+                coalesce((select case when s.estado = 'pendiente' and s.propuesta_terminada
+                                           and s.falta_texto like 'Ya estaba terminada (se revisó así en ' || fn_wip_mes(v_sig)
+                                                                  || ') y sigue sin facturarse entera: lleva facturado $2,000.00 de $10,000.00.%'
+                                      then 'sí' else 'no: ' || s.estado || ' · ' || coalesce(s.falta_texto, '-') end
+                            from fn_wip_calcular(v_des, 'c12-prueba-a', true) s), 'NO SALE'),
+                coalesce((select 'SALE: ' || s.estado from fn_wip_calcular(v_des, 'c12-prueba-b', false) s), 'no sale'),
+                coalesce((select 'SALE: ' || s.estado from fn_wip_calcular(v_des, 'c12-prueba-c', false) s), 'no sale'));
+    v_obt := format('posteado el mes: %s | el mes siguiente, con B cancelada, C marcada T&M y A terminada: %s | el cuadre 40 nombra a las '
+                    'tres y la fila 175 detiene: %s | %s | A terminada: %s | el ajuste del mes siguiente: %s | el mes de después: %s',
+                    a, b, c, d, e, f, g);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (45, 'NINGUNA OBRA CON SALDO SALE SOLA: la que traía sub, sobre o provisión en el último ajuste entra en el mes siguiente aunque la app la tenga cancelada, marcada T&M o terminada; el cuadre 40 la nombra y detiene; sale solo excluida con su nota (y la fila 176 lo dice); y la terminada que no se ha facturado entera sigue entrando cada mes',
+    v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 46. EL CONTRATO DE LA FICHA CAMBIA DESPUÉS DE REVISAR Y POSTEAR (10,000 →
+--     12,000). Antes solo avisaba (130) y el mes cerraba con 5,000 ganados
+--     donde a mano son 6,000. Ahora la obra vuelve a «pendiente» (le falta:
+--     precio), el cuadre 40 la nombra y el ajuste deja de estar al día. Se
+--     decide: «el cambio es de después» (un toque: se queda como estaba, queda
+--     escrito, y el ajuste vuelve a estar al día sin repostear), o se revisa
+--     otra vez con el precio nuevo (ganado 6,000; el ajuste se rehace).
+do $$
+declare
+  v_obt text; r jsonb; v_mes text := pg_temp.c12('mes'); a text; b text; c text; d text; e text; f text;
+  v_esp text := 'revisada y posteada con 10000: lista, ganado 5000.00, sub 3000.00 | la ficha pasa a 12000: pendiente {precio}, con las '
+                'cifras de su revisión (ganado 5000.00), y dice qué hacer: sí; el cuadre 40 la nombra con su porqué: sí; el ajuste ya no '
+                'está al día: sí | «el cambio es de después» en una obra sin revisión: MX008 | dicho en un toque: lista, precio 10000.00, '
+                'sub 3000.00; queda escrito: sí; el cuadre 40 ya no la nombra y el 130 sí: sí; el ajuste vuelve a estar al día sin '
+                'repostear: sí; otra vez, sin cambio nuevo: MX008 | revisada otra vez con el precio nuevo: lista, precio 12000.00, ganado '
+                '6000.00, sub 4000.00; y el ajuste pide rehacerse: sí';
+begin
+  if pg_temp.c12_omitir(46, 'el contrato de la ficha cambia después de revisar', v_esp) then return; end if;
+  begin
+    perform pg_temp.c12_sembrar();
+    perform fn_wip_config(jsonb_build_object('exigir_desde', v_mes));
+    perform pg_temp.c12_costo('c12-prueba-a', 3000);
+    perform pg_temp.c12_factura(1, 'c12-prueba-a', 2000);
+    perform pg_temp.c12_rev('c12-prueba-a', '{"costo_estimado": "6000"}');
+    r := pg_temp.c12_postear();
+    select format('%s, ganado %s, sub %s', s.estado, s.ingreso_ganado, s.sub_facturado) into a
+      from fn_wip_calcular(v_mes, 'c12-prueba-a', false) s;
+    update finanzas_proyecto set contrato = 12000 where proyecto_id = 'c12-prueba-a';
+    select format('%s {%s}, con las cifras de su revisión (ganado %s), y dice qué hacer: %s; el cuadre 40 la nombra con su porqué: %s; el '
+                  'ajuste ya no está al día: %s', s.estado, array_to_string(s.falta, ','), s.ingreso_ganado,
+                  case when s.falta_texto like 'El contrato de su ficha cambió después de revisarla (se revisó con $10,000.00 y la ficha dice ahora '
+                                               '$12,000.00)%si es de después, dilo (un toque)%' then 'sí' else 'no: ' || coalesce(s.falta_texto, '-') end,
+                  case when pg_temp.c12_ctl(40) = 'rojo'
+                            and pg_temp.c12_ctl_det(40) like '%C12 PRUEBA Obra A (el contrato de su ficha cambió después de revisarla)%' then 'sí'
+                       else 'no: ' || pg_temp.c12_ctl_det(40) end,
+                  case when not (fn_wip_ajuste_estado(v_mes)->>'al_dia')::boolean
+                            and fn_wip_ajuste_estado(v_mes)->>'cambios' like '%sale C12 PRUEBA Obra A (estaba sub-facturado $3,000.00)%' then 'sí'
+                       else 'no: ' || coalesce(fn_wip_ajuste_estado(v_mes)->>'cambios', 'sigue al día') end)
+      into b from fn_wip_calcular(v_mes, 'c12-prueba-a', false) s;
+    c := pg_temp.c12_estado('select public.fn_wip_revisar(''c12-prueba-b'', ' || quote_literal(v_mes) || ', ''{"precio_de_despues": true}''::jsonb)');
+    r := pg_temp.c12_rev('c12-prueba-a', '{"precio_de_despues": true}');
+    select format('%s, precio %s, sub %s; queda escrito: %s; el cuadre 40 ya no la nombra y el 130 sí: %s; el ajuste vuelve a estar al día '
+                  'sin repostear: %s', s.estado, s.precio_contrato, s.sub_facturado,
+                  case when s.revision_nota like 'El contrato de la ficha pasó de $10,000.00 a $12,000.00 después de ' || fn_wip_mes(v_mes)
+                                                 || ': este mes se queda con $10,000.00.' then 'sí' else 'no: ' || coalesce(s.revision_nota, '-') end,
+                  case when pg_temp.c12_nombra(40, 'a') = 'no' and pg_temp.c12_nombra(130, 'a') = 'sí' then 'sí' else 'no' end,
+                  case when (fn_wip_ajuste_estado(v_mes)->>'al_dia')::boolean then 'sí' else 'no' end)
+      into d from fn_wip_calcular(v_mes, 'c12-prueba-a', false) s;
+    d := d || '; otra vez, sin cambio nuevo: '
+           || pg_temp.c12_estado('select public.fn_wip_revisar(''c12-prueba-a'', ' || quote_literal(v_mes) || ', ''{"precio_de_despues": true}''::jsonb)');
+    perform pg_temp.c12_rev('c12-prueba-a', '{"costo_estimado": "6000"}');
+    select format('%s, precio %s, ganado %s, sub %s; y el ajuste pide rehacerse: %s', s.estado, s.precio_contrato, s.ingreso_ganado,
+                  s.sub_facturado,
+                  case when fn_wip_ajuste_estado(v_mes)->>'cambios' like '%C12 PRUEBA Obra A pasa de sub-facturado $3,000.00 a sub-facturado $4,000.00%'
+                       then 'sí' else 'no: ' || coalesce(fn_wip_ajuste_estado(v_mes)->>'cambios', 'sigue al día') end)
+      into e from fn_wip_calcular(v_mes, 'c12-prueba-a', false) s;
+    v_obt := format('revisada y posteada con 10000: %s | la ficha pasa a 12000: %s | «el cambio es de después» en una obra sin revisión: %s '
+                    '| dicho en un toque: %s | revisada otra vez con el precio nuevo: %s', a, b, c, d, e);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (46, 'EL CONTRATO DE LA FICHA CAMBIA DESPUÉS DE REVISAR: la obra vuelve a pendiente (le falta: precio), el cuadre 40 la nombra y el ajuste posteado deja de estar al día; se decide con un toque («el cambio es de después»: se queda como estaba y queda escrito) o revisándola otra vez con el precio nuevo',
+    v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 47. LO DE ANTES SIN CONFIRMAR DETIENE (en producción, la mayoría de las
+--     obras activas empezaron antes del libro). Una obra que ya andaba,
+--     revisada y sin lo de antes confirmado: antes el cuadre 40 no la contaba
+--     y el mes cerraba en verde con ella fuera. Ahora el cuadre 40 la nombra
+--     con su porqué (la fila 175 detiene); se arregla confirmando lo de
+--     antes, o dejándola fuera ESE mes con su nota: entonces el control del
+--     ajuste y la fila 176 dicen que quedó fuera y por qué, el aviso 110 la
+--     sigue nombrando, y el mes siguiente se vuelve a preguntar.
+do $$
+declare
+  v_obt text; r jsonb; v_mes text := pg_temp.c12('mes'); v_sig text := pg_temp.c12('mes_sig'); a text; b text; c text; d text;
+  v_esp text := 'revisada y sin lo de antes confirmado: el cuadre 40 la nombra con su porqué: sí; la fila 175 detiene: sí | excluida este '
+                'mes con su nota: excluida {}: precio 15000.00, sin cifras; el cuadre 40 ya no la nombra: sí; el aviso 110 la sigue '
+                'nombrando: sí | al postear: dice que quedó fuera a propósito: sí; el control del ajuste y la fila 176 la nombran con su '
+                'nota: sí; sin líneas suyas: - | el mes siguiente se vuelve a preguntar: pendiente {revision,antes}';
+begin
+  if pg_temp.c12_omitir(47, 'lo de antes sin confirmar detiene', v_esp) then return; end if;
+  begin
+    perform pg_temp.c12_sembrar();
+    perform fn_wip_config(jsonb_build_object('exigir_desde', v_mes));
+    perform pg_temp.c12_factura(7, 'c12-prueba-g', 3000, -10);
+    perform pg_temp.c12_costo('c12-prueba-g', 2000);
+    perform pg_temp.c12_rev('c12-prueba-g', '{"costo_estimado": "9000"}');
+    perform pg_temp.c12_costo('c12-prueba-a', 3000);
+    perform pg_temp.c12_rev('c12-prueba-a', '{"costo_estimado": "6000"}');
+    a := format('el cuadre 40 la nombra con su porqué: %s; la fila 175 detiene: %s',
+                case when pg_temp.c12_ctl(40) = 'rojo' and pg_temp.c12_ctl_det(40) like '%C12 PRUEBA Obra G (falta confirmar lo de antes del libro)%'
+                     then 'sí' else 'no: ' || pg_temp.c12_ctl_det(40) end,
+                case when (select not x.ok and x.nivel = 'detiene' and x.detalle like '%C12 PRUEBA Obra G%' from pg_temp.c12_cie(175) x) then 'sí' else 'no' end);
+    perform pg_temp.c12_rev('c12-prueba-g', '{"excluir": true, "nota": "C12 PRUEBA: el costo de antes lo pasa el contador el mes que viene"}');
+    b := format('%s; el cuadre 40 ya no la nombra: %s; el aviso 110 la sigue nombrando: %s', pg_temp.c12_fila('c12-prueba-g'),
+                case pg_temp.c12_nombra(40, 'g') when 'no' then 'sí' else 'no' end,
+                case when pg_temp.c12_ctl_det(110) like '%C12 PRUEBA Obra G (fuera este mes, con su nota)%' then 'sí'
+                     else 'no: ' || pg_temp.c12_ctl_det(110) end);
+    r := pg_temp.c12_postear();
+    c := format('dice que quedó fuera a propósito: %s; el control del ajuste y la fila 176 la nombran con su nota: %s; sin líneas suyas: %s',
+                case when exists (select 1 from jsonb_array_elements(r->'excluidas') x where x->>'proyecto_id' = 'c12-prueba-g'
+                                     and x->>'nota' = 'C12 PRUEBA: el costo de antes lo pasa el contador el mes que viene')
+                          and r->>'nota' like '%quedaron fuera a propósito, con su nota.' then 'sí' else 'no: ' || coalesce(r->>'nota', '-') end,
+                case when pg_temp.c12_ctl_det(50) like '%Fuera del ajuste a propósito, % obra(s): %C12 PRUEBA Obra G («C12 PRUEBA: el costo de antes '
+                                                       'lo pasa el contador el mes que viene»)%'
+                          and (select x.detalle from pg_temp.c12_cie(176) x) = pg_temp.c12_ctl_det(50) then 'sí'
+                     else 'no: ' || pg_temp.c12_ctl_det(50) end,
+                (select coalesce(string_agg(l.cuenta, ','), '-') from asiento_lineas l
+                  where l.asiento_id = (r->'asiento'->>'id')::uuid and l.proyecto_id = 'c12-prueba-g'));
+    d := coalesce((select format('%s {%s}', s.estado, array_to_string(s.falta, ',')) from fn_wip_calcular(v_sig, 'c12-prueba-g', false) s), 'NO SALE');
+    v_obt := format('revisada y sin lo de antes confirmado: %s | excluida este mes con su nota: %s | al postear: %s | el mes siguiente se '
+                    'vuelve a preguntar: %s', a, b, c, d);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (47, 'LO DE ANTES SIN CONFIRMAR DETIENE: una obra que ya andaba, revisada y sin lo de antes confirmado, pone en rojo el cuadre 40 (fila 175); se confirma, o se deja fuera ese mes con su nota: entonces el control del ajuste y la fila 176 dicen que quedó fuera y por qué, el aviso 110 la sigue nombrando y al mes siguiente se vuelve a preguntar',
+    v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 48. UNA OBRA CON FACTURAS QUE LA APP TODAVÍA NO TIENE EN OBRA (la revisión
+--     final del 12-nov). Una obra de precio fijo cuyo depósito se facturó al
+--     firmar, ANTES de pasarla a «aprobado» en la app (sigue como
+--     «enviado»): no entra en el WIP —no está activa—, así que su depósito
+--     cuenta entero como ingreso y nada lo difiere. Antes ningún control lo
+--     decía (el 160 solo miraba las terminadas; el 165, las activas sin
+--     contrato). Ahora el aviso 160 la nombra, con lo facturado y con qué
+--     hacer; pasada a aprobada entra en el WIP (pendiente de revisar, con su
+--     depósito sobre-facturado al revisarla) y el aviso ya no la nombra.
+--     Otra, todavía «en estimación» y con una factura: la nombra; marcada
+--     como que no lleva WIP («tm», con su nota), ya no. Y una que solo tiene
+--     costo (sin facturas) no se nombra: no hay ingreso de más.
+do $$
+declare
+  v_obt text; v_mes text := pg_temp.c12('mes'); a text; b text; c text; d text; e text;
+  v_esp text := 'con su depósito facturado y la app en «enviado»: no sale en el WIP y el aviso 160 la nombra (con la propuesta enviada; '
+                'facturado $6,000.00) y dice qué hacer: sí | es un aviso, no detiene: la fila 177 lo lleva en su nombre: sí; la 175 y los '
+                'cuadres, como estaban: sí | la que solo tiene costo y no está aprobada: no la nombra: sí | pasada a aprobada: entra '
+                '(pendiente {revision}: sin cifras) y el aviso ya no la nombra: sí; revisada: lista: precio 30000.00, est 20000.00, util '
+                'est 10000.00, costo 0.00, 0.00 %, ganado 0.00, fact 6000.00, sub 0.00, sobre 6000.00, para terminar 20000.00, util 0.00, '
+                'perdida 0.00, prov 0.00 | otra, en estimación y con una factura: la nombra (en estimación; facturado $1,000.00): sí; '
+                'marcada «tm» con su nota, ya no: sí';
+  v_175 text; v_prop text;
+begin
+  if pg_temp.c12_omitir(48, 'una obra con facturas que la app todavía no tiene en obra', v_esp) then return; end if;
+  begin
+    perform pg_temp.c12_sembrar();
+    perform fn_wip_config(jsonb_build_object('exigir_desde', v_mes));
+    select format('%s|%s', x.ok, x.detalle) into v_175 from pg_temp.c12_cie(175) x;
+    v_prop := pg_temp.c12_propios();
+    -- D: su depósito facturado (6,000 de 30,000) y la app todavía la tiene como «enviado»; M: en estimación, con una factura
+    -- de 1,000; L: no aprobada, solo con costo
+    update proyectos set estado = 'enviado' where id = 'c12-prueba-d';
+    update proyectos set estado = 'estimando' where id = 'c12-prueba-m';
+    update proyectos set estado = 'no_aprobado' where id = 'c12-prueba-l';
+    perform pg_temp.c12_factura(48, 'c12-prueba-d', 6000);
+    perform pg_temp.c12_factura(49, 'c12-prueba-m', 1000);
+    perform pg_temp.c12_costo('c12-prueba-l', 400);
+    a := case when pg_temp.c12_fila('c12-prueba-d') = 'no sale' and pg_temp.c12_ctl(160) = 'rojo'
+                   and pg_temp.c12_ctl_det(160) like '%obra(s) de precio fijo ya tienen facturas en el libro y la app todavía no las tiene en obra: '
+                                                     '%C12 PRUEBA Obra D (la app la tiene con la propuesta enviada; facturado $6,000.00)%'
+                   and pg_temp.c12_ctl_det(160) like '%pásala a aprobada o en ejecución en su ficha%márcala como que no lleva WIP, con su nota%'
+              then 'sí' else 'no: ' || pg_temp.c12_fila('c12-prueba-d') || ' · ' || pg_temp.c12_ctl_det(160) end;
+    b := format('la fila 177 lo lleva en su nombre: %s; la 175 y los cuadres, como estaban: %s',
+                case when (select not x.ok and x.nivel = 'aviso' from pg_temp.c12_cie(177) x)
+                          and (select c.control ~ '\m160\M' from fn_wip_cierre(v_mes) c where c.orden = 177) then 'sí' else 'no' end,
+                case when (select format('%s|%s', x.ok, x.detalle) from pg_temp.c12_cie(175) x) = v_175 and pg_temp.c12_propios() = v_prop then 'sí'
+                     else 'no: ' || pg_temp.c12_propios() end);
+    c := case pg_temp.c12_nombra(160, 'l') when 'no' then 'sí' else 'no: ' || pg_temp.c12_ctl_det(160) end;
+    -- pasada a aprobada, entra en el WIP; revisada, su depósito sale sobre-facturado
+    update proyectos set estado = 'aprobado' where id = 'c12-prueba-d';
+    d := format('entra (%s) y el aviso ya no la nombra: %s', pg_temp.c12_fila('c12-prueba-d'),
+                case pg_temp.c12_nombra(160, 'd') when 'no' then 'sí' else 'no' end);
+    perform pg_temp.c12_rev('c12-prueba-d', '{"costo_estimado": "20000"}');
+    d := d || '; revisada: ' || pg_temp.c12_fila('c12-prueba-d');
+    -- M, en estimación y con una factura: la nombra; marcada como que no lleva WIP (con su nota), ya no
+    e := format('la nombra (en estimación; facturado $1,000.00): %s; marcada «tm» con su nota, ya no: ',
+                case when pg_temp.c12_ctl_det(160) like '%C12 PRUEBA Obra M (la app la tiene en estimación; facturado $1,000.00)%' then 'sí'
+                     else 'no: ' || pg_temp.c12_ctl_det(160) end);
+    perform pg_temp.c12_ser('dueno');
+    perform fn_wip_obra('c12-prueba-m', '{"modo": "tm", "nota": "C12 PRUEBA: no va a ser obra; lo facturado se devuelve"}');
+    perform pg_temp.c12_ser('editor');
+    e := e || case pg_temp.c12_nombra(160, 'm') when 'no' then 'sí' else 'no: ' || pg_temp.c12_ctl_det(160) end;
+    v_obt := format('con su depósito facturado y la app en «enviado»: no sale en el WIP y el aviso 160 la nombra (con la propuesta enviada; '
+                    'facturado $6,000.00) y dice qué hacer: %s | es un aviso, no detiene: %s | la que solo tiene costo y no está aprobada: '
+                    'no la nombra: %s | pasada a aprobada: %s | otra, en estimación y con una factura: %s',
+                    a, b, c, d, e);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (48, 'UNA OBRA CON FACTURAS QUE LA APP TODAVÍA NO TIENE EN OBRA (su depósito facturado y la app en «enviado»): no entra en el WIP —su ingreso es lo facturado— y el aviso 160 la nombra con lo facturado y qué hacer, sin detener; la que solo tiene costo no se nombra; pasada a aprobada entra en el WIP (su depósito, sobre-facturado) y el aviso ya no la nombra; otra en estimación con una factura se nombra y, marcada como que no lleva WIP con su nota, ya no',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 

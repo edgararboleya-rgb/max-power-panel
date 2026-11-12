@@ -30,7 +30,7 @@
 // deno-lint-ignore-file no-explicit-any
 type Json = Record<string, any>;
 
-export const PDF_VERSION = "facturas-pdf 2026-11-12.2";
+export const PDF_VERSION = "facturas-pdf 2026-11-12.3";
 
 export interface Librerias {
   PDFLib: any;          // el módulo de pdf-lib (1.17.x)
@@ -59,6 +59,19 @@ const MI = 43.2, MD = 43.2;            // márgenes izquierdo y derecho (0.6 in)
 const ARRIBA = 36;                      // margen de arriba (0.5 in)
 const PIE = 62;                         // lo que ocupa el pie (desde abajo)
 const UTIL = ANCHO - MI - MD;
+
+// ---- lo que el cliente cita al pagar (lo mismo en el PDF, el correo y la vista previa de la pantalla) ----
+// Una factura: «Please reference invoice MXP-2027-0001.». La de la retención: las facturas cuya retención reclama
+// («Please reference invoices MXP-2027-0002 and MXP-2027-0003.»), que es lo que el cliente tiene en sus libros. Sin número
+// (un borrador), nada.
+export function listaEn(xs: string[]): string {
+  return xs.length <= 1 ? (xs[0] ?? "") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`;
+}
+export function referenciaEn(c: Json): string {
+  const refs = Array.isArray(c.referencias) ? c.referencias.map((x: unknown) => String(x ?? "").trim()).filter(Boolean) : [];
+  if (c.forma === "retencion" && refs.length) return `Please reference invoice${refs.length > 1 ? "s" : ""} ${listaEn(refs)}.`;
+  return c.numero ? `Please reference invoice ${c.numero}.` : "";
+}
 
 // ---- textos: lo que Helvetica sabe escribir ----
 const PARECIDOS: Record<string, string> = {
@@ -377,12 +390,17 @@ export async function pintarFactura(libs: Librerias, contenido: Json, op: Opcion
     if (saldoHoy) {
       for (const s of partir(R, `That is the balance due today: payments already received are deducted.`, 8.2, wTxtPago)) pagoLineas.push([s, R, 8.2, "ink2"]);
     }
+    // lo que la base le dice al cliente del pago en línea (c11: «Online payment is by bank account (ACH) only.»): solo con el
+    // enlace impreso, que es cuando hay pago en línea en ESTE papel. La tarjeta no se le ofrece (decisión del 12-nov: se enciende
+    // cuando los cobros en línea sepan registrar el recargo; hasta entonces aquí no hay ninguna línea de tarjeta)
+    if (c.pago_en_linea && c.pago_en_linea.texto) {
+      for (const s of partir(R, c.pago_en_linea.texto, 8.2, wTxtPago)) pagoLineas.push([s, R, 8.2, "ink2"]);
+    }
   }
-  const tarjeta = c.pago_en_linea && typeof c.pago_en_linea.tarjeta === "object" && c.pago_en_linea.tarjeta ? c.pago_en_linea.tarjeta : null;
-  if (tarjeta && tarjeta.pct != null) {
-    for (const s of partir(R, `Card payments add a ${tarjeta.pct}% processing fee.`, 8.6, wTxtPago)) pagoLineas.push([s, R, 8.6, "ink"]);
-  }
-  if (numero) for (const s of partir(R, `Please reference invoice ${numero}.`, 8.2, wTxtPago)) pagoLineas.push([s, R, 8.2, "ink2"]);
+  // lo que el cliente cita al pagar: su número; en la de la retención (que no es una factura del libro), los números de las
+  // facturas cuya retención reclama (contenido.referencias)
+  const cita = referenciaEn(c);
+  if (cita) for (const s of partir(R, cita, 8.2, wTxtPago)) pagoLineas.push([s, R, 8.2, "ink2"]);
   const hPago = 14 + pagoLineas.reduce((a, l) => a + (l[2] < 6 ? 4 : 11.5), 0);
   const hBloque = Math.max(hTot, hPago, qrLado + 16);
   if (y - hBloque < PIE + 10) { nueva(); }

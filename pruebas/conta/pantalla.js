@@ -115,6 +115,27 @@
    apartados «Obras», «Historial» y «Ajustes», la misma revisión dentro de «Cierre
    del mes» (las filas 174 a 177, revisar y postear desde ahí), la falla ruidosa,
    sin c12, el equipo, sin el código del teléfono y 390/820/1280 px.
+   Y (arreglo de la base del 12-nov, c11 y c12 arregladas con los hallazgos de
+   los dos revisores) la base de mentira se volvió a cuadrar con el banco
+   (scratchpad ux10r/js/c11.js y c12.js: 52 y 86 comparaciones, iguales en
+   forma y textos salvo ids, huellas y el «visto»): en c11, la factura de la
+   retención con su serie (MXP-R-AAAA-NNNN) y sus «referencias», el número que
+   ya lleva una factura de fuera (la serie lo salta: «saltados» y «aviso»), el
+   «visto» de la vista previa entera, la tarjeta apagada con UN texto
+   (tarjeta_texto, tarjeta.por_que, pago_en_linea.texto), el aviso de los
+   ajustes al mover el corte, corte_hasta, el pago en camino, el control de 16
+   filas y las filas 172/173 del cierre con el nombre que dice sus rojos; en
+   c12, el estado «excluida», lo que falta «precio» y «estimado», la obra que
+   traía saldo y entra aunque ya no esté activa, {excluir} y
+   {precio_de_despues}, el MX005 de un estimado menor que lo gastado, y las
+   filas 174 a 177 con sus nombres. Se comprueba en la pantalla: la de la
+   retención (lo que cita el cliente), el número saltado, el pago en camino,
+   anular con la retención reclamada, el depósito con retención (ponerla en
+   0), mover el corte (se pregunta antes; el aviso de la base), la tarjeta
+   con el texto de la base, la obra que pasa de su estimado, «El cambio de
+   contrato es de después», «Dejarla fuera este mes» (con su nota), la obra
+   con saldo cancelada o pasada a T&M, y el 🧾 ante un 404 con un corte ya
+   visto (no adivina).
    Los datos son inventados (la forma es la de las vistas de c4, c6 y p1).
    Uso: NODE_PATH=/opt/node22/lib/node_modules node pruebas/conta/pantalla.js
    (con --fotos guarda capturas en el temporal del sistema, o en FOTOS_DIR:
@@ -809,6 +830,15 @@ function c9Revisar(periodo) {
   }
   // (fase 10) el bloque de c12 en fn_cierre_revisar (scratchpad f10/c9-bloque-c12.sql): las cuatro filas de fn_wip_cierre en un mes
   if (!ap && estado.c12 && !estado.c12NoDueno && wPer(p.periodo)) for (const x of wCierre(p.periodo)) f.push(fila9(x.orden, x.control, x.nivel === 'aviso' ? 'aviso' : 'detiene', x.ok, x.detalle, x.que_hacer, x.ir_a));
+  // (fase 10) el bloque de c11 (scratchpad f10/c9-bloque-c11.sql, 12-nov): 172 los cuadres de v_emision_control y 173 sus avisos; el
+  // NOMBRE dice cuáles están en rojo y el detalle lleva el principio de cada uno con su número (presupuesto por fila)
+  if (estado.c11) for (const n of ['cuadre', 'aviso']) {
+    const xs = fControl().filter(x => x.nivel === n), rs = xs.filter(x => x.ok !== true), tope = Math.max(120, Math.trunc(1380 / Math.max(rs.length, 1)));
+    const det = rs.map(x => `${x.orden}: ${[...x.detalle].length > tope ? [...x.detalle].slice(0, tope - 1).join('') + '…' : x.detalle}`).join(' · ');
+    f.push(fila9(n === 'aviso' ? 173 : 172, (n === 'aviso' ? 'facturas: sus avisos (c11)' : 'facturas: sus cuadres (c11)') + (rs.length ? ` — ${rs.length} en rojo: ${rs.map(x => x.orden).join(', ')}` : ''),
+      n === 'aviso' ? 'aviso' : 'detiene', !rs.length, rs.length ? det : `Los ${xs.length}, en verde.`,
+      rs.length ? 'Aquí va el principio de cada uno (con su número); entero, en el control de la facturación (Facturación: las facturas emitidas, su PDF y su envío, y sus ajustes).' : null, 'facturas'));
+  }
   return f.sort((a, b) => a.orden - b.orden);
 }
 const rojo9 = x => x.ok !== true;
@@ -1451,6 +1481,10 @@ const MES_C11 = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 
 const fDia = iso => { const [a, m, d] = iso.split('-').map(Number); return `${d}-${MES_C11[m - 1]}-${a}`; };   // fn_emision_dia
 const fMas = (iso, n) => { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const fUsd = c => usd(c / 100);
+// (arreglo de la base del 12-nov) la tarjeta, apagada con UN texto en llano (fn_emision_tarjeta_texto); lo que la factura le dice al
+// cliente del pago en línea (pago_en_linea.texto)
+const F_TARJETA = 'La tarjeta está apagada: se enciende cuando el sistema de cobros sepa registrar el recargo (hoy lo dejaría como un anticipo de la obra, no como un ingreso). Por ahora el pago en línea es solo por cuenta de banco (ACH), y la factura no le ofrece tarjeta al cliente.';
+const F_ACH_TXT = 'Online payment is by bank account (ACH) only.';
 function fReset({ antes = false, sinEmpresa = false } = {}) {
   Object.assign(F, {
     config: { id: 1, ach: true, corte: antes ? '2027-01-01' : HOY, empresa: sinEmpresa ? {} : { ...F_EMPRESA }, pdf_dias: 2, como_pagar: sinEmpresa ? '' : F_COMO_PAGAR, tarjeta_pct: null,
@@ -1463,7 +1497,10 @@ function fReset({ antes = false, sinEmpresa = false } = {}) {
       { id: -1110000004, p: 'c11-prueba-b', titulo: 'C11 PRUEBA Final', condicion: null, monto: 280000, estado: 'pendiente', dep: false, orden: 1 },
       { id: -1110000005, p: 'c11-prueba-c', titulo: 'C11 PRUEBA Mobilization', condicion: null, monto: 270000, estado: 'pendiente', dep: false, orden: 1 }
     ],
-    docs: [], seq: 0, fid: 700, asi: 1, nc: 0, uuid: 0, ctlRojo: false, avisoSinPdf: false,
+    // seq / seqR: el contador de la serie de las facturas y el de las facturas de la retención (contadores facturas-AAAA y retenciones-AAAA);
+    // fuera: las filas de facturas hechas FUERA de la app ({num, fecha, montoC, p}: la serie salta su número); camino: un pago por cuenta
+    // de banco en camino por documento (centavos)
+    docs: [], seq: 0, seqR: 0, fuera: [], camino: {}, fid: 700, asi: 1, nc: 0, uuid: 0, ctlRojo: false, avisoSinPdf: false,
     fnFalla: null, fnLlamadas: [], enlaces: [], pdfN: 0, resendN: 0
   });
 }
@@ -1472,6 +1509,17 @@ const fObra = id => F_OBRAS[id];
 const fRetDe = p => F.retObra[p] != null ? { pct: F.retObra[p], origen: 'obra' } : { pct: 0, origen: 'ninguna' };
 const fDest = p => { const o = fObra(p); return { a_contratista: !!o.a_contratista, cliente: Object.fromEntries(Object.entries({ nombre: o.cliente, atencion: o.a_contratista ? o.atencion : undefined, direccion: o.a_contratista ? undefined : o.direccion, correo: o.correo }).filter(([, v]) => v)) }; };
 const fPareceEsp = t => !!t && /[ñ¿¡áéíóú]|\b(de la|del|los|las|obra|materiales|trabajo|factura|mano de obra)\b/i.test(t);
+// fn_emision_numero con fn_emision_formato: MXP-2026-0001 (las facturas) y MXP-R-2026-0001 (las facturas de la retención)
+const fNumero = (serie, anio, sec) => `MXP-${serie === 'retenciones' ? 'R-' : ''}${anio}-${sec >= 1000 ? sec : String(sec).padStart(4, '0')}`;
+const fTomado = num => F.fuera.some(x => x.num === num) || F.docs.some(d => d.numero === num && d.factura_id);
+// lo facturado en el libro de una obra (las filas de facturas emitidas y sin anular: las de la app y las de fuera), en centavos
+const fFacturadoObra = p => F.docs.filter(x => x.proyecto_id === p && x.estado === 'emitida' && !x.anulado_el && x.factura_id).reduce((s, x) => s + x.monto, 0)
+  + F.fuera.filter(x => x.p === p).reduce((s, x) => s + x.montoC, 0);
+// fn_emision_factura_de_hito: la factura viva de un hito (la que la app emitió de él)
+const fFacturaDeHito = hid => F.docs.filter(x => x.hito_id === hid && x.estado === 'emitida' && !x.anulado_el && x.factura_id).sort((a, b) => a.factura_id - b.factura_id)[0] || null;
+// fn_emision_retenido: lo retenido de cada factura viva de la obra que no reclama ya una factura de la retención viva
+const fRetenido = p => F.docs.filter(x => x.proyecto_id === p && x.estado === 'emitida' && !x.anulado_el && x.factura_id && x.saldoRetC > 0 &&
+  !F.docs.some(r => r.forma === 'retencion' && r.estado === 'emitida' && !r.anulado_el && r.lineas.some(l => l.ref && l.ref.factura_id === x.factura_id)));
 // los totales del documento: las líneas suman el monto; la retención, una vez sobre el monto; lo que se paga, la resta
 function fTotales(d) {
   d.monto = d.lineas.reduce((s, l) => s + l.importe, 0);
@@ -1488,45 +1536,73 @@ function fAvisos(d) {
   if (!String((d.cliente || {}).nombre || '').trim()) av('falta_cliente', true, 'Falta a quién se le factura (el nombre del cliente o del contratista): ponlo en el borrador o en la obra.');
   if (o.estado === 'completado') av('obra_cerrada', false, `La obra «${o.obra}» está terminada: se puede facturar igual; solo mira que sea lo que quieres.`);
   if (!d.lineas.length || d.monto <= 0) av('sin_monto', true, 'El borrador no tiene líneas o suma cero: una factura tiene que sumar más de cero.');
+  const fact = fFacturadoObra(d.proyecto_id);
   if (d.forma === 'hito') {
     const h = F.hitos.find(x => x.id === d.hito_id);
-    if (h.estado === 'cobrado') av('hito_cobrado', true, `El hito «${h.titulo}» ya está marcado como cobrado: no se factura otra vez. Si de verdad hay que facturarlo, ponlo antes en pendiente.`);
-    if (h.monto !== d.monto) av('hito_cambio', true, `El hito «${h.titulo}» ahora vale ${fUsd(h.monto)} y este borrador dice ${fUsd(d.monto)}: refresca el borrador y vuelve a mirarlo.`);
+    if (!h) av('hito_borrado', true, 'El hito de este borrador ya no existe (o cambió de obra): descarta el borrador.');
+    else {
+      if (h.estado === 'cobrado') av('hito_cobrado', true, `El hito «${h.titulo}» ya está marcado como cobrado: no se factura otra vez. Si de verdad hay que facturarlo, ponlo antes en pendiente.`);
+      const em = fFacturaDeHito(h.id);
+      if (em) av('hito_facturado', true, `El hito «${h.titulo}» ya se facturó: factura ${em.numero} del ${fDia(em.fecha)}. No se hace otra; si aquella está mal, se anula con su nota de crédito.`);
+      // (12-nov, la revisión final) solo se factura un hito PENDIENTE: el que la ficha ya tiene como facturado y aquí no tiene factura
+      else if (h.estado === 'facturado') av('hito_marcado_facturado', true, `El hito «${h.titulo}» ya está marcado como facturado en la ficha de la obra y aquí no hay ninguna factura suya (¿se facturó en QuickBooks, o su factura se anotó sin su hito?): no se factura otra vez. Si de verdad falta facturarlo, ponlo antes en pendiente.`);
+      if (h.monto !== d.monto || h.dep !== !!d.es_deposito) av('hito_cambio', true, `El hito «${h.titulo}» ahora vale ${fUsd(h.monto)} y este borrador dice ${fUsd(d.monto)}: refresca el borrador y vuelve a mirarlo.`);
+      if (o.contrato != null && fact + d.monto > o.contrato) av('pasa_del_contrato', false, `Con esta factura lo facturado de la obra (${fUsd(fact + d.monto)}) pasa del contrato (${fUsd(o.contrato)}): mira que este hito no esté ya facturado con otro nombre, o que no falte una orden de cambio en el contrato de la obra.`);
+      const borr = F.docs.filter(x => x.proyecto_id === d.proyecto_id && x.forma === 'hito' && x.estado === 'emitida' && !x.anulado_el && x.factura_id && !F.hitos.some(y => y.id === x.hito_id)).sort((a, b) => a.numero.localeCompare(b.numero));
+      if (borr.length) av('hito_borrado_facturado', false, `En esta obra, la factura ${borr.map(x => `${x.numero} (${fUsd(x.monto)})`).join(', ')} salió de un hito que después se borró. Mira que este hito no sea aquel vuelto a crear: se facturaría dos veces. Si lo es, descarta este borrador.`);
+    }
+  } else if (d.forma === 'porcentaje') {
+    if (o.contrato !== d.base) av('contrato_cambio', true, `El contrato de la obra ahora es ${fUsd(o.contrato)} y este borrador se calculó sobre ${fUsd(d.base)}: refresca el borrador y vuelve a mirarlo.`);
+    else if (fact + d.monto > o.contrato) av('pasa_del_contrato', false, `Con esta factura lo facturado de la obra (${fUsd(fact + d.monto)}) pasa del contrato (${fUsd(o.contrato)}).`);
+  } else if (d.forma === 'retencion') {
+    const hoy = fRetenido(d.proyecto_id).map(x => `${x.factura_id}:${x.saldoRetC}`).sort().join(','), ls = d.lineas.map(l => `${l.ref.factura_id}:${l.importe}`).sort().join(',');
+    if (hoy !== ls) av('retencion_cambio', true, 'Lo retenido de la obra que falta reclamar ya no es lo que dice este borrador (entró un cobro, o una factura nueva): refresca el borrador y vuelve a mirarlo.');
   }
   if (['porcentaje', 'tm'].includes(d.forma) && F.hitos.some(h => h.p === d.proyecto_id && h.estado === 'pendiente')) av('obra_con_hitos', false, 'Esta obra tiene hitos pendientes de facturar: una factura que no sale de un hito no mueve ninguno.');
   if (d.forma !== 'retencion' && d.retencion_origen !== 'borrador' && fRetDe(d.proyecto_id).pct !== d.retencion_pct) av('retencion_cambio', true, `La retención de la obra ahora es ${fRetDe(d.proyecto_id).pct} % y este borrador dice ${d.retencion_pct} %: refresca el borrador y vuelve a mirarlo.`);
   if (d.forma !== 'retencion' && d.a_contratista && !d.retencion_pct) av('contratista_sin_retencion', false, 'Es a un contratista y va sin retención: si él retiene un porcentaje, ponlo en la obra antes de emitir.');
-  const esp = [d.lineas.some(l => fPareceEsp(l.descripcion) || fPareceEsp(l.detalle)) ? 'una línea' : null, fPareceEsp(d.notas) ? 'las notas' : null].filter(Boolean);
+  if (d.forma === 'hito' && d.es_deposito && d.retencion > 0) av('deposito_con_retencion', false, `Es el depósito y lleva retención (${fNum(d.retencion_pct)} %: se le retienen ${fUsd(d.retencion)} y paga ahora ${fUsd(d.a_pagar)}). Si del depósito no se retiene, pon en 0 la retención de este borrador.`);
+  // (string_agg(distinct …): en orden alfabético)
+  const esp = [d.lineas.some(l => fPareceEsp(l.descripcion) || fPareceEsp(l.detalle)) ? 'una línea' : null, fPareceEsp(d.notas) ? 'las notas' : null,
+    fPareceEsp(cfg.como_pagar) ? 'el «How to pay»' : null, fPareceEsp(cfg.terminos_texto) ? 'los términos' : null].filter(Boolean).sort();
   if (esp.length) av('en_espanol', true, `Parece que hay texto en español (${esp.join(', ')}) y lo que ve el cliente va en inglés: cámbialo, o confirma que está bien así.`);
   return v;
 }
-const fVisto = d => cripto.createHash('md5').update(JSON.stringify([d.forma, d.proyecto_id, d.hito_id, d.porcentaje, d.cliente, d.notas, d.retencion_pct, d.monto, d.lineas, F.config.empresa, F.config.como_pagar, F.config.terminos_dias, F.config.terminos_texto, F.config.ach])).digest('hex');
 const fLineaJ = l => ({ n: l.n, ref: l.ref, tipo: l.tipo, precio: l.precioD / 10000, unidad: l.unidad, detalle: l.detalle, importe: l.importe / 100, cantidad: l.cantD / 10000, descripcion: l.descripcion });
 const fNum = v => { const t = String(v); return t.includes('.') ? t.replace(/0+$/, '').replace(/\.$/, '') : t; };
 const fPrecioTxt = d => { const t = (d / 10000).toFixed(4).replace(/0{1,2}$/, ''); return t.split('.')[1].length < 2 ? (d / 10000).toFixed(2) : t; };
+// ¿se puede pagar en línea con un enlace? (como la base: la de la retención no, el ACH apagado no, con un pago en camino no, sin saldo no)
+const fAchDoc = d => F.config.ach && d.forma !== 'retencion';
 function fContenido(d, numero, fecha) {
   const cfg = F.config, o = fObra(d.proyecto_id), f = fecha || HOY;
   const h = d.hito_id != null ? F.hitos.find(x => x.id === d.hito_id) : null;
-  const antes = F.docs.filter(x => x.proyecto_id === d.proyecto_id && x.estado === 'emitida' && !x.anulado_el && x !== d && x.forma !== 'retencion');
-  const antesC = antes.reduce((s, x) => s + x.monto, 0);
-  const ret = F.docs.filter(x => x.proyecto_id === d.proyecto_id && x.estado === 'emitida' && !x.anulado_el && x.forma !== 'retencion' && x !== d).reduce((s, x) => s + x.retencion, 0) + (d.forma !== 'retencion' ? d.retencion : 0);
+  const antes = F.docs.filter(x => x.proyecto_id === d.proyecto_id && x.estado === 'emitida' && !x.anulado_el && x !== d && x.factura_id);
+  const antesC = antes.reduce((s, x) => s + x.monto, 0) + F.fuera.filter(x => x.p === d.proyecto_id).reduce((s, x) => s + x.montoC, 0);
+  const nAntes = antes.length + F.fuera.filter(x => x.p === d.proyecto_id).length;
+  const ret = F.docs.filter(x => x.proyecto_id === d.proyecto_id && x.estado === 'emitida' && !x.anulado_el && x.factura_id && x !== d).reduce((s, x) => s + x.retencion, 0) + (d.forma !== 'retencion' ? d.retencion : 0);
   const esta = d.forma === 'retencion' ? 0 : d.monto;
   const limpio = x => JSON.parse(JSON.stringify(x, (k, v) => v === null ? undefined : v));
+  const ach = fAchDoc(d);
   return limpio({
     v: 1, forma: d.forma, numero: numero || null, fecha: f, vence: fMas(f, cfg.terminos_dias),
     terminos: { dias: cfg.terminos_dias, etiqueta: cfg.terminos_dias ? `Net ${cfg.terminos_dias}` : 'Due on receipt', texto: cfg.terminos_texto.trim() || null },
     empresa: cfg.empresa, cliente: d.cliente, a_contratista: d.a_contratista,
     obra: { id: d.proyecto_id, nombre: o.obra, direccion: o.direccion || null, ref: null },
     hito: h ? { id: h.id, titulo: h.titulo, es_deposito: h.dep } : null,
-    ordinal: d.forma !== 'retencion' ? antes.length + 1 : null,
+    ordinal: d.forma !== 'retencion' ? nAntes + 1 : null,
     lineas: d.lineas.map(l => ({ n: l.n, tipo: l.tipo, descripcion: l.descripcion, detalle: l.detalle, cantidad: fNum(l.cantD / 10000), unidad: l.unidad, precio: fPrecioTxt(l.precioD), importe: c2s(l.importe), ref: l.ref })),
     totales: { subtotal: c2s(d.monto), retencion_pct: fNum(d.retencion_pct), retencion: c2s(d.retencion), a_pagar: c2s(d.a_pagar), retenido_a_la_fecha: c2s(ret) },
     contrato: o.contrato ? { monto: c2s(o.contrato), facturado_antes: c2s(antesC), esta: c2s(esta), facturado_con_esta: c2s(antesC + esta), pct: (Math.round((antesC + esta) * 1000 / o.contrato) / 10).toFixed(1) } : null,
-    como_pagar: cfg.como_pagar.trim() || null, pago_en_linea: { ach: cfg.ach && d.forma !== 'retencion', tarjeta: false }, notas: d.notas || null
+    como_pagar: cfg.como_pagar.trim() || null, pago_en_linea: { ach, tarjeta: false, texto: ach ? F_ACH_TXT : null },
+    // (la de la retención: lo que el cliente cita al pagar son los números de las facturas cuya retención reclama)
+    referencias: d.forma === 'retencion' ? d.lineas.filter(l => l.ref && l.ref.numero).map(l => l.ref.numero) : null,
+    notas: d.notas || null
   });
 }
+// fn_emision_visto: md5 de la vista previa ENTERA (el documento, sus líneas, los ajustes, la fecha, el ordinal, lo facturado antes…)
+const fVisto = d => cripto.createHash('md5').update(d.id + JSON.stringify(fContenido(d, null))).digest('hex');
 const fEstado = d => d.estado === 'borrador' ? 'borrador' : d.anulado_el ? 'anulada' : 'emitida';
-const fDocJ = d => ({ id: d.id, base: d.base == null ? null : d.base / 100, hito: d.hito_id != null ? F.hitos.find(x => x.id === d.hito_id).titulo : null, obra: fObra(d.proyecto_id).obra, fecha: d.fecha || null, forma: d.forma,
+const fDocJ = d => ({ id: d.id, base: d.base == null ? null : d.base / 100, hito: d.hito_id != null ? (F.hitos.find(x => x.id === d.hito_id) || {}).titulo || null : null, obra: fObra(d.proyecto_id).obra, fecha: d.fecha || null, forma: d.forma,
   monto: d.monto / 100, notas: d.notas || null, vence: d.vence || null, estado: fEstado(d), numero: d.numero || null, a_pagar: d.a_pagar / 100, asiento: d.asiento || null, cliente: d.cliente, hito_id: d.hito_id,
   creado_el: d.creado_el, retencion: d.retencion / 100, anulado_el: d.anulado_el || null, emitido_el: d.emitido_el || null, factura_id: d.factura_id || null, porcentaje: d.porcentaje, es_deposito: !!d.es_deposito,
   proyecto_id: d.proyecto_id, nota_credito: d.nota_credito || null, a_contratista: d.a_contratista, retencion_pct: d.retencion_pct, actualizado_el: d.actualizado_el, anulado_motivo: d.anulado_motivo || null, retencion_origen: d.retencion_origen });
@@ -1545,37 +1621,52 @@ function fLineaTm(l, n) {
   if (!(cant > 0) || !Number.isFinite(pre) || pre === 0 || (pre < 0 && (l.tipo || 'otro') !== 'otro')) return { error: errF('MX005', `Línea ${n}: la cantidad va de más de 0 y el precio no da cero, con cuatro decimales como mucho; un precio negativo (un descuento) va solo en una línea de tipo «otro».`) };
   return { n, ref: null, tipo: l.tipo || 'otro', precioD: pre, unidad: l.unidad || null, detalle: l.detalle || null, importe: redC(cant * pre / 1e6), cantD: cant, descripcion: String(l.descripcion || '').trim() };
 }
+// el siguiente número libre de una serie (como el trigger: salta el que ya lleve una factura hecha fuera de la app) y los saltados
+function fSiguiente(serie, anio, ultimo) {
+  const saltados = []; let sec = ultimo + 1;
+  while (fTomado(fNumero(serie, anio, sec))) { saltados.push(fNumero(serie, anio, sec)); sec += 1; }
+  return { sec, numero: fNumero(serie, anio, sec), saltados };
+}
 const C11_FN = {
   fn_emision_borrador: a => {
     const p = a.p || {};
     const extra = Object.keys(p).filter(k => !['documento', 'forma', 'proyecto_id', 'hito_id', 'porcentaje', 'lineas', 'descripcion', 'detalle', 'retencion_pct', 'cliente', 'notas'].includes(k));
-    if (extra.length) return errF('22023', `Clave desconocida en el borrador: ${extra.join(', ')}.`);
+    if (extra.length) return errF('22023', `Clave desconocida en el borrador: ${extra.join(', ')}. Las que hay: documento, forma, proyecto_id, hito_id, porcentaje, lineas, descripcion, detalle, retencion_pct, cliente y notas.`);
     let d, nuevo = false;
+    const frenoHito = h => {
+      if (h.estado === 'cobrado') return errF('MX008', `El hito «${h.titulo}» ya está marcado como cobrado: no se factura otra vez. Si de verdad hay que facturarlo, ponlo antes en pendiente.`);
+      const em = fFacturaDeHito(h.id);
+      if (em) return errF('MX008', `El hito «${h.titulo}» ya se facturó: factura ${em.numero} del ${fDia(em.fecha)}. No se hace otra; si aquella está mal, se anula con su nota de crédito.`);
+      if (h.estado === 'facturado') return errF('MX008', `El hito «${h.titulo}» ya está marcado como facturado en la ficha de la obra y aquí no hay ninguna factura suya (¿se facturó en QuickBooks, o su factura se anotó sin su hito?): no se factura otra vez. Si de verdad falta facturarlo, ponlo antes en pendiente.`);
+      return null;
+    };
     if (p.documento) {
       d = F.docs.find(x => x.id === p.documento);
       if (!d) return errF('22023', 'No existe ese borrador.');
-      if (d.estado !== 'borrador') return errF('MX008', `La factura ${d.numero} ya se emitió: no se cambia. Si está mal, se anula con su nota de crédito.`);
+      if (d.estado !== 'borrador') return errF('MX008', `La factura ${d.numero} ya se emitió: no cambia. Si está mal, se anula con su nota de crédito y se hace la buena.`);
+      if (d.forma === 'hito') { const h = F.hitos.find(x => x.id === d.hito_id); if (!h) return errF('MX008', 'El hito de este borrador ya no existe (o cambió de obra): descarta el borrador.'); const fr = frenoHito(h); if (fr) return fr; }
     } else {
       const forma = p.forma;
-      if (!['hito', 'porcentaje', 'tm', 'retencion'].includes(forma)) return errF('22023', 'Di qué factura es (forma): hito, porcentaje, tm o retencion.');
+      if (!['hito', 'porcentaje', 'tm', 'retencion'].includes(forma)) return errF('22023', `La forma de la factura es hito, porcentaje, tm o retencion (llegó «${forma || ''}»).`);
       if (forma === 'hito') {
         if (p.hito_id == null) return errF('22023', 'Di qué hito se factura (hito_id).');
-        const h = F.hitos.find(x => x.id === Number(p.hito_id)); if (!h) return errF('22023', 'No existe ese hito.');
+        const h = F.hitos.find(x => x.id === Number(p.hito_id)); if (!h) return errF('22023', `No existe el hito ${p.hito_id}.`);
         const ya = F.docs.find(x => x.hito_id === h.id && x.estado === 'borrador');
+        const fr = frenoHito(h); if (fr) return fr;
         if (ya) return { nuevo: false, ...fDocumento(ya) };
-        const em = F.docs.find(x => x.hito_id === h.id && x.estado === 'emitida' && !x.anulado_el);
-        if (em) return errF('MX008', `El hito «${h.titulo}» ya se facturó: factura ${em.numero} del ${fDia(em.fecha)}. No se hace otra; si aquella está mal, se anula con su nota de crédito.`);
-        if (h.estado === 'cobrado') return errF('MX008', `El hito «${h.titulo}» ya está marcado como cobrado: no se factura otra vez. Si de verdad hay que facturarlo, ponlo antes en pendiente.`);
         d = { forma, proyecto_id: h.p, hito_id: h.id, es_deposito: h.dep, lineas: [{ n: 1, ref: { hito_id: h.id }, tipo: 'hito', precioD: h.monto * 100, unidad: null, detalle: h.condicion, importe: h.monto, cantD: 10000, descripcion: h.titulo }] };
       } else {
-        if (!fObra(p.proyecto_id)) return errF('22023', 'No existe esa obra.');
+        if (!fObra(p.proyecto_id)) return errF('22023', `La obra ${p.proyecto_id} no existe.`);
         d = { forma, proyecto_id: p.proyecto_id, hito_id: null, es_deposito: false, lineas: [] };
         if (forma === 'retencion') {
           const ya = F.docs.find(x => x.forma === 'retencion' && x.estado === 'borrador' && x.proyecto_id === p.proyecto_id);
           if (ya) return { nuevo: false, ...fDocumento(ya) };
-          d.lineas = F.docs.filter(x => x.proyecto_id === p.proyecto_id && x.estado === 'emitida' && !x.anulado_el && x.saldoRetC > 0)
+          d.lineas = fRetenido(p.proyecto_id).sort((x, y) => x.fecha.localeCompare(y.fecha) || x.factura_id - y.factura_id)
             .map((x, i) => ({ n: i + 1, ref: { numero: x.numero, factura_id: x.factura_id }, tipo: 'retencion', precioD: x.saldoRetC * 100, unidad: null, detalle: null, importe: x.saldoRetC, cantD: 10000, descripcion: `Retainage withheld on invoice ${x.numero} (${MES_EN_F[Number(x.fecha.slice(5, 7)) - 1]} ${Number(x.fecha.slice(8))}, ${x.fecha.slice(0, 4)})` }));
-          if (!d.lineas.length) return errF('MX008', `La obra «${fObra(p.proyecto_id).obra}» no tiene retención por reclamar en el libro.`);
+          if (!d.lineas.length) {
+            const rec = F.docs.filter(x => x.proyecto_id === p.proyecto_id && x.forma === 'retencion' && x.estado === 'emitida' && !x.anulado_el).map(x => x.numero).sort();
+            return errF('MX008', `La obra «${fObra(p.proyecto_id).obra}» no tiene retención por cobrar que reclamar${rec.length ? `: lo retenido ya está reclamado en ${rec.join(', ')}` : ' en el libro'}.`);
+          }
         }
       }
       nuevo = true;
@@ -1587,7 +1678,7 @@ const C11_FN = {
     // lo que llega (forma porcentaje: el % del contrato; tm: las líneas; las demás: el texto de su línea)
     if (d.forma === 'porcentaje' && (p.porcentaje != null || nuevo)) {
       const pc = s2c(p.porcentaje == null ? d.porcentaje : p.porcentaje);
-      if (!(pc > 0) || pc > 1000000) { if (nuevo) F.docs.pop(); return errF('MX005', 'El porcentaje va de más de 0 a 100 (30 = 30 %), con cuatro decimales como mucho.'); }
+      if (!(pc > 0) || pc > 1000000) { if (nuevo) F.docs.pop(); return errF('MX005', 'El porcentaje va de más de 0 a 100, con cuatro decimales como mucho.'); }
       const o = fObra(d.proyecto_id); d.porcentaje = pc / 10000; d.base = o.contrato;
       d.lineas = [{ n: 1, ref: null, tipo: 'porcentaje', precioD: redC(o.contrato * pc / 1e6) * 100, unidad: null, detalle: d.lineas[0] ? d.lineas[0].detalle : null, importe: redC(o.contrato * pc / 1e6), cantD: 10000,
         descripcion: `Progress billing — ${fNum(pc / 10000)}% of contract amount (${fUsd(o.contrato)})` }];
@@ -1600,10 +1691,11 @@ const C11_FN = {
     if (p.detalle !== undefined && d.lineas[0] && ['hito', 'porcentaje'].includes(d.forma)) d.lineas[0].detalle = p.detalle || null;
     if (p.retencion_pct !== undefined && d.forma !== 'retencion') {
       if (p.retencion_pct === null) { const r = fRetDe(d.proyecto_id); d.retencion_pct = r.pct; d.retencion_origen = r.origen; }
-      else { const t = s2c(p.retencion_pct); if (!(t >= 0) || t >= 1000000) return errF('MX005', 'La retención va de 0 a menos de 100 (10 = 10 %), con dos decimales como mucho.'); d.retencion_pct = t / 10000; d.retencion_origen = 'borrador'; }
+      else { const t = s2c(p.retencion_pct); if (!(t >= 0) || t >= 1000000) return errF('MX005', 'La retención va de 0 a menos de 100 %, con dos decimales como mucho.'); d.retencion_pct = t / 10000; d.retencion_origen = 'borrador'; }
     } else if (!p.documento || Object.keys(p).length === 1) {
-      // refrescar: lo de fuera otra vez (el hito, la retención de la obra)
-      if (d.forma === 'hito') { const h = F.hitos.find(x => x.id === d.hito_id); d.lineas[0].importe = h.monto; d.lineas[0].precioD = h.monto * 100; }
+      // refrescar: lo de fuera otra vez (el hito, la retención de la obra, lo retenido)
+      if (d.forma === 'hito') { const h = F.hitos.find(x => x.id === d.hito_id); d.lineas[0].importe = h.monto; d.lineas[0].precioD = h.monto * 100; d.es_deposito = h.dep; }
+      if (d.forma === 'retencion') d.lineas = fRetenido(d.proyecto_id).map((x, i) => ({ n: i + 1, ref: { numero: x.numero, factura_id: x.factura_id }, tipo: 'retencion', precioD: x.saldoRetC * 100, unidad: null, detalle: null, importe: x.saldoRetC, cantD: 10000, descripcion: `Retainage withheld on invoice ${x.numero} (${MES_EN_F[Number(x.fecha.slice(5, 7)) - 1]} ${Number(x.fecha.slice(8))}, ${x.fecha.slice(0, 4)})` }));
       if (d.retencion_origen !== 'borrador' && d.forma !== 'retencion') { const r = fRetDe(d.proyecto_id); d.retencion_pct = r.pct; d.retencion_origen = r.origen; }
     }
     if (p.cliente !== undefined) d.cliente = p.cliente === null ? fDest(d.proyecto_id).cliente : Object.fromEntries(Object.entries(p.cliente).filter(([, v]) => v));
@@ -1623,51 +1715,81 @@ const C11_FN = {
     const d = F.docs.find(x => x.id === a.p_documento); if (!d) return errF('22023', 'No existe ese borrador.');
     const op = a.p_opciones || {};
     if (Object.keys(op).some(k => k !== 'idioma_revisado')) return errF('22023', `Opción desconocida: ${Object.keys(op).filter(k => k !== 'idioma_revisado').join(', ')}. La que hay: idioma_revisado.`);
-    if (d.estado === 'emitida') return errF('MX008', `Ese borrador ya se emitió: es la factura ${d.numero} del ${fDia(d.fecha)}. No se emite dos veces.`);
-    if (a.p_visto !== fVisto(d)) return errF('MX011', 'El borrador ya no es el que viste (cambió en otra pestaña, o cambiaron los ajustes de la factura): no se emitió nada. Vuelve a mirarlo y emite otra vez.');
+    if (d.estado === 'emitida') return errF('MX008', `Ese borrador ya se emitió: es la factura ${d.numero} del ${fDia(d.fecha)}${d.anulado_el ? ' (anulada)' : ''}. No se emite dos veces.`);
+    if (a.p_visto !== fVisto(d)) return errF('MX011', 'El borrador ya no es el que viste (cambió en otra pestaña, cambiaron los ajustes de la factura, entró o se anuló otra factura de esta obra, o lo miraste otro día): no se emitió nada. Vuelve a mirarlo y emite otra vez.');
     for (const x of fAvisos(d)) if (x.frena && !(x.codigo === 'en_espanol' && op.idioma_revisado)) return errF(/_cambio$/.test(x.codigo) ? 'MX011' : 'MX008', x.texto);
-    F.seq += 1;
-    Object.assign(d, { estado: 'emitida', numero: `MXP-${HOY.slice(0, 4)}-${String(F.seq).padStart(4, '0')}`, fecha: HOY, vence: fMas(HOY, F.config.terminos_dias), factura_id: ++F.fid, asiento: `2026-${String(++F.asi).padStart(6, '0')}`,
-      emitido_el: new Date().toISOString(), saldoC: d.forma === 'retencion' ? 0 : d.a_pagar, saldoRetC: d.forma === 'retencion' ? 0 : d.retencion });
-    if (d.forma === 'retencion') { d.factura_id = null; d.asiento = null; }
+    // su número: la serie de las facturas (MXP-AAAA-NNNN) o, la de la retención, la suya (MXP-R-AAAA-NNNN); salta lo que ya lleve una factura de fuera
+    const ret = d.forma === 'retencion', anio = Number(HOY.slice(0, 4));
+    const s = fSiguiente(ret ? 'retenciones' : 'facturas', anio, ret ? F.seqR : F.seq);
+    if (ret) F.seqR = s.sec; else F.seq = s.sec;
+    Object.assign(d, { estado: 'emitida', numero: s.numero, fecha: HOY, vence: fMas(HOY, F.config.terminos_dias), factura_id: ret ? null : ++F.fid, asiento: ret ? null : `2026-${String(++F.asi).padStart(6, '0')}`,
+      emitido_el: new Date().toISOString(), saldoC: ret ? 0 : d.a_pagar, saldoRetC: ret ? 0 : d.retencion });
     d.contenido = fContenido(d, d.numero, d.fecha);
     d.huella = sha(JSON.stringify(d.contenido));
-    const h = d.hito_id != null ? F.hitos.find(x => x.id === d.hito_id) : null; if (h) h.estado = 'facturado';
-    return { fecha: d.fecha, monto: d.monto / 100, sigue: 'El PDF y el envío: la función de facturas lo pinta con este contenido, lo sube y lo registra.', vence: d.vence, estado: 'emitida', huella: d.huella, numero: d.numero, a_pagar: d.a_pagar / 100,
-      ...(d.asiento ? { asiento: d.asiento } : {}), hito_id: d.hito_id, documento: d.id, retencion: d.retencion / 100, ...(d.factura_id ? { factura_id: d.factura_id } : {}), hito_estado: h ? 'facturado' : null, fecha_contable: d.fecha };
+    const h = d.hito_id != null ? F.hitos.find(x => x.id === d.hito_id) : null; if (h && h.estado !== 'cobrado') h.estado = 'facturado';
+    const limpio = x => Object.fromEntries(Object.entries(x).filter(([, v]) => v !== null && v !== undefined));
+    return limpio({ fecha: d.fecha, monto: d.monto / 100, sigue: 'El PDF y el envío: la función de facturas lo pinta con este contenido, lo sube y lo registra.', vence: d.vence, estado: 'emitida', huella: d.huella, numero: d.numero, a_pagar: d.a_pagar / 100,
+      asiento: d.asiento, hito_id: d.hito_id, documento: d.id, retencion: d.retencion / 100, factura_id: d.factura_id, hito_estado: h ? h.estado : null, fecha_contable: ret ? null : d.fecha,
+      saltados: s.saltados.length ? s.saltados : null,
+      aviso: s.saltados.length ? `La serie saltó ${s.saltados.join(', ')}: ya lo(s) llevaba una factura hecha fuera de la app (un número no se da dos veces). El control de la facturación dice cuál.` : null });
   },
   fn_emision_anular: a => {
     if (!String(a.p_motivo || '').trim()) return errF('22023', 'Anular una factura dice por qué (el motivo): queda escrito con ella.');
     const d = F.docs.find(x => x.id === a.p_documento); if (!d) return errF('22023', 'No existe esa factura.');
     if (d.estado === 'borrador') return errF('MX008', 'Un borrador no se anula: se tira (todavía no es una factura).');
-    if (d.anulado_el) return errF('MX008', `La factura ${d.numero} ya estaba anulada (${d.nota_credito}).`);
-    if (d.cobradoC) return errF('MX008', `La factura #${d.numero} tiene cobros aplicados por ${fUsd(d.cobradoC)}: primero se deshacen los cobros (o se reversa el cobro) y después se anula.`);
-    F.nc += 1;
+    if (d.anulado_el) return errF('MX008', `La factura ${d.numero} ya estaba anulada${d.nota_credito ? ` (${d.nota_credito})` : ''}.`);
+    let enlace = null;
+    if (d.factura_id) {
+      const rec = F.docs.filter(r => r.forma === 'retencion' && r.estado === 'emitida' && !r.anulado_el && r.lineas.some(l => l.ref && l.ref.factura_id === d.factura_id)).map(r => r.numero);
+      if (rec.length) return errF('MX008', `Lo retenido de la factura ${d.numero} está reclamado en la factura de la retención ${[...new Set(rec)].sort().join(', ')}: anula antes la de la retención (y haz otra después), o deja esta como está.`);
+      if (F.camino[d.id]) return errF('MX008', `La factura ${d.numero} tiene un pago por cuenta de banco en camino (${fUsd(F.camino[d.id])}): no se anula ahora. Ese dinero llegaría a una factura anulada y quedaría de anticipo de la obra, y la factura buena seguiría debiendo entera aunque el cliente ya pagó. Espera a que el pago entre o falle (se ve en Cobros en línea): si falla, se anula; si entra, la factura queda cobrada.`);
+      if (d.cobradoC) return errF('MX008', `La factura ${d.numero} tiene cobros aplicados por ${fUsd(d.cobradoC)}: así no se anula entera, y la nota de crédito por una parte todavía no existe. Primero hay que anular ese cobro en el libro (hoy no hay botón: avisa y se hace); después se anula esta, se hace la buena y el cobro se registra otra vez contra la buena.`);
+      const e = F.enlaces.filter(x => x.doc === d.id && ['creando', 'activo'].includes(x.estado)).pop();
+      if (e) enlace = { id: e.id, url: e.url, estado: e.estado };
+    }
+    F.nc += d.factura_id ? 1 : 0;
     Object.assign(d, { anulado_el: new Date().toISOString(), anulado_motivo: String(a.p_motivo).trim(), nota_credito: d.factura_id ? `NC-2026-${String(F.nc).padStart(4, '0')}` : null, saldoC: 0, saldoRetC: 0 });
-    const h = d.hito_id != null ? F.hitos.find(x => x.id === d.hito_id) : null; if (h) h.estado = 'pendiente';
-    return { sigue: 'Si el cliente ya la recibió, avísale. La buena es un borrador nuevo, con número nuevo; su enlace de pago, si tenía, hay que desactivarlo.', numero: d.numero, anulada: true,
-      ...(d.factura_id ? { asiento: `2026-${String(++F.asi).padStart(6, '0')}`, nota_credito: d.nota_credito, fecha_contable: HOY } : { sin_asiento: true }), hito_id: d.hito_id, documento: d.id, hito_estado: h ? 'pendiente' : null };
+    const h = d.hito_id != null ? F.hitos.find(x => x.id === d.hito_id) : null; if (h && h.estado === 'facturado' && !fFacturaDeHito(h.id)) h.estado = 'pendiente';
+    const limpio = x => Object.fromEntries(Object.entries(x).filter(([, v]) => v !== null && v !== undefined));
+    return limpio({ sigue: `Si el cliente ya la recibió, avísale. La buena es un borrador nuevo, con número nuevo${enlace ? '. Su enlace de pago sigue vivo: desactívalo en Cobros en línea (si no, lo hace su revisión automática).' : '; su enlace de pago, si tenía, hay que desactivarlo.'}`,
+      numero: d.numero, anulada: true, nota_credito: d.nota_credito, asiento: d.factura_id ? `2026-${String(++F.asi).padStart(6, '0')}` : null, fecha_contable: d.factura_id ? HOY : null,
+      sin_asiento: d.factura_id ? null : 'La factura de la retención no tiene asiento: quedó anulada y lo retenido se puede volver a reclamar.', hito_id: d.hito_id, documento: d.id, hito_estado: h ? h.estado : null, enlace });
   },
   fn_emision_obra: a => {
     const p = a.p || {};
-    if (!fObra(p.proyecto_id)) return errF('22023', 'No existe esa obra.');
+    if (!fObra(p.proyecto_id)) return errF('22023', `La obra ${p.proyecto_id || '(ninguna)'} no existe.`);
     if (p.retencion_pct === null || p.retencion_pct === undefined) delete F.retObra[p.proyecto_id];
-    else { const t = s2c(p.retencion_pct); if (!(t >= 0) || t >= 1000000) return errF('MX005', 'La retención va de 0 a menos de 100 (10 = 10 %), con dos decimales como mucho.'); F.retObra[p.proyecto_id] = t / 10000; }
+    else { const t = s2c(p.retencion_pct); if (!(t >= 0) || t >= 1000000) return errF('MX005', 'La retención de la obra es un porcentaje de 0 a menos de 100, con dos decimales como mucho (10 = 10 %).'); F.retObra[p.proyecto_id] = t / 10000; }
     const r = fRetDe(p.proyecto_id);
     return { nota: p.nota || null, retencion: { pct: r.pct, origen: r.origen }, actualizado: new Date().toISOString(), proyecto_id: p.proyecto_id, retencion_pct: F.retObra[p.proyecto_id] == null ? null : F.retObra[p.proyecto_id], actualizado_por: UID };
   },
   fn_emision_config: a => {
     const p = a.p || {};
-    const sobra = Object.keys(p).filter(k => !['corte', 'serie_formato', 'terminos_dias', 'terminos_texto', 'empresa', 'como_pagar', 'ach', 'tarjeta_pct', 'cuenta_recargo', 'pdf_dias'].includes(k));
+    const sobra = Object.keys(p).filter(k => !['corte', 'serie_formato', 'terminos_dias', 'terminos_texto', 'empresa', 'como_pagar', 'ach', 'tarjeta_pct', 'cuenta_recargo', 'pdf_dias'].includes(k)).sort();
     if (sobra.length) return errF('22023', `Clave desconocida en los ajustes: ${sobra.join(', ')}. Las que hay: corte, serie_formato, terminos_dias, terminos_texto, empresa, como_pagar, ach, tarjeta_pct, cuenta_recargo y pdf_dias.`);
-    if (p.corte !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(String(p.corte))) return errF('22007', 'El corte es una fecha AAAA-MM-DD (por ejemplo 2027-01-01).');
-    if (p.corte !== undefined && F.docs.some(d => d.estado === 'emitida') && p.corte > F.docs.filter(d => d.estado === 'emitida').map(d => d.fecha).sort()[0]) return errF('MX008', `Ya hay facturas emitidas por la app desde el ${fDia(F.docs.filter(d => d.estado === 'emitida').map(d => d.fecha).sort()[0])}: el corte no se pone después de esa fecha.`);
-    if (p.tarjeta_pct != null) return errF('MX008', 'La tarjeta todavía no se puede encender: lo que el cliente pagara de más por el recargo, los cobros en línea lo dejarían como un anticipo de la obra (un saldo a su favor), no como un ingreso, y el libro quedaría mal. Queda apagada hasta que eso se arregle y se confirmen con Stripe y con el CPA las reglas del recargo. Mientras, el pago en línea es por cuenta de banco (ACH).');
-    if (p.terminos_dias !== undefined && !(Number.isInteger(p.terminos_dias) && p.terminos_dias >= 0 && p.terminos_dias <= 120)) return errF('22023', 'Los términos van de 0 (al recibirla) a 120 días.');
-    for (const k of ['corte', 'serie_formato', 'terminos_dias', 'terminos_texto', 'como_pagar', 'ach', 'pdf_dias']) if (p[k] !== undefined) F.config[k] = p[k];
+    let aviso = null;
+    if (p.corte !== undefined) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(p.corte))) return errF('22007', 'El corte es una fecha AAAA-MM-DD (por ejemplo 2027-01-01).');
+      if (p.corte < '2026-10-01') return errF('MX008', 'El corte no puede ser anterior al 1-oct-2026 (el día en que empieza el libro).');
+      // (solo cuentan las emitidas y SIN ANULAR)
+      const min = F.docs.filter(d => d.estado === 'emitida' && !d.anulado_el).map(d => d.fecha).sort()[0];
+      if (min && p.corte > min) return errF('MX008', `Hay facturas emitidas por la app (y sin anular) desde el ${fDia(min)}: el corte no se pone después de esa fecha. Si fueron de prueba, anúlalas primero.`);
+      const antes = F.config.corte;
+      if (p.corte <= HOY && antes > HOY) aviso = `Desde hoy el 🧾 de cada hito abre la factura aquí y ya NO manda a QuickBooks (el corte estaba en el ${fDia(antes)}). Si es solo para probar, vuelve a poner el corte en su día cuando termines; y si emites una de verdad, mientras esté viva (sin anular) el corte ya no se puede poner después de su fecha.`;
+      else if (p.corte > HOY && antes <= HOY) aviso = `El corte queda en el ${fDia(p.corte)}: hasta entonces el 🧾 vuelve a mandar a QuickBooks, y aquí solo se preparan borradores.`;
+    }
+    if (p.terminos_dias !== undefined && !(Number.isInteger(Number(p.terminos_dias)) && Number(p.terminos_dias) >= 0 && Number(p.terminos_dias) <= 120)) return errF('MX005', 'Los días para pagar van de 0 (al recibirla) a 120.');
+    if (p.pdf_dias !== undefined && !(Number.isInteger(Number(p.pdf_dias)) && Number(p.pdf_dias) >= 0 && Number(p.pdf_dias) <= 60)) return errF('MX005', 'Los días para avisar de una factura sin PDF van de 0 a 60.');
+    if (p.tarjeta_pct != null) {
+      const t = Number(p.tarjeta_pct);
+      if (!(t > 0) || t > 10 || !/^\d+(\.\d{1,3})?$/.test(String(p.tarjeta_pct))) return errF('MX005', 'El porcentaje de la tarjeta va de más de 0 a 10, con tres decimales como mucho.');
+      return errF('MX008', F_TARJETA);
+    }
+    for (const k of ['corte', 'serie_formato', 'terminos_texto', 'como_pagar', 'ach']) if (p[k] !== undefined) F.config[k] = p[k];
+    for (const k of ['terminos_dias', 'pdf_dias']) if (p[k] !== undefined) F.config[k] = Number(p[k]);
     if (p.empresa !== undefined) F.config.empresa = p.empresa;
     F.config.actualizado = new Date().toISOString();
-    return { ...F.config, tarjeta_lista: false };
+    return { ...F.config, tarjeta_lista: false, tarjeta_texto: F_TARJETA, ...(aviso ? { aviso } : {}) };
   },
   fn_emision_envio: a => {
     const d = F.docs.find(x => x.id === a.p_documento); if (!d) return errF('22023', 'No existe ese documento.');
@@ -1684,13 +1806,15 @@ const C11_FN = {
   fn_emision_pago: a => {
     const d = F.docs.find(x => x.id === a.p_documento); if (!d) return errF('22023', 'No existe ese documento.');
     if (d.estado !== 'emitida') return errF('MX008', 'Un borrador no tiene enlace de pago: se emite primero.');
-    const e = F.enlaces.filter(x => x.doc === d.id && ['creando', 'activo'].includes(x.estado)).pop();
+    const e = d.factura_id ? F.enlaces.filter(x => x.doc === d.id && ['creando', 'activo'].includes(x.estado)).pop() : null;
+    const camino = d.factura_id && F.camino[d.id] ? { pagos: 1, monto: F.camino[d.id] / 100 } : null;
     const no = d.anulado_el ? 'La factura está anulada: no se cobra.' : d.forma === 'retencion' ? 'La factura de la retención no lleva enlace propio: se cobra por cheque o transferencia, o con el enlace «con la retención» de cada factura, desde Cobros en línea.'
-      : !F.config.ach ? 'El pago en línea está apagado en los ajustes de facturación.' : d.saldoC <= 0 ? 'La factura ya no debe nada en el libro.' : null;
+      : !F.config.ach ? 'El pago en línea está apagado en los ajustes de facturación.' : camino ? 'Ya hay un pago por cuenta de banco en camino por esta factura: se espera a que se confirme o falle.'
+      : d.saldoC <= 0 ? 'La factura ya no debe nada en el libro.' : d.saldoC < 50 ? 'Stripe no cobra menos de 0.50.' : null;
     const nombre = F.config.empresa.nombre || 'Invoice';
     return Object.fromEntries(Object.entries({ saldo: d.saldoC / 100, numero: d.numero, stripe: no ? null : { monto: d.saldoC / 100, moneda: 'usd', nombre: `Invoice ${d.numero} · ${nombre}`, metodos: ['us_bank_account'], centavos: d.saldoC, descripcion: `Invoice ${d.numero} — ${nombre}`, un_solo_uso: true, con_retencion: false },
       a_pagar: d.a_pagar / 100, enlace: e ? { id: e.id, url: e.url, vale: e.estado === 'activo' && e.monto === d.saldoC, monto: e.monto / 100, estado: e.estado, creado_el: e.creado_el, con_retencion: false } : null,
-      tarjeta: { por_que: 'La tarjeta está apagada: los cobros en línea dejarían el recargo como un anticipo de la obra, no como un ingreso. Se enciende cuando eso se arregle y se confirmen con Stripe y con el CPA las reglas del recargo.', ofrecida: false },
+      en_camino: camino, tarjeta: { por_que: F_TARJETA, ofrecida: false },
       en_linea: !no, documento: d.id, por_que_no: no, factura_id: d.factura_id, saldo_retencion: d.saldoRetC / 100 }).filter(([, v]) => v !== null && v !== undefined));
   }
 };
@@ -1700,51 +1824,72 @@ function fEstadoVista() {
   const cfg = F.config, porApp = HOY >= cfg.corte, em = F.docs.filter(d => d.estado === 'emitida');
   const falta = [!String(cfg.empresa.nombre || '').trim() ? 'empresa' : null, !cfg.como_pagar.trim() ? 'como_pagar' : null].filter(Boolean);
   const diasCorte = Math.max(0, Math.round((new Date(cfg.corte + 'T12:00:00Z') - new Date(HOY + 'T12:00:00Z')) / 86400000));
-  // (como la base: el año de HOY, también antes del corte; fn_emision_pegado sí usa el año del corte)
-  const anioSig = HOY.slice(0, 4);
+  // (el del año en que se va a emitir: el de hoy, o el del corte si todavía no llegó; ya saltando los que lleve una factura de fuera)
+  const anio = Number((HOY > cfg.corte ? HOY : cfg.corte).slice(0, 4));
+  const ultimo = anio === Number(HOY.slice(0, 4)) ? F.seq : 0;
+  const vivas = em.filter(d => !d.anulado_el).map(d => d.fecha).sort();
   return [{ hoy: HOY, corte: cfg.corte, por_la_app: porApp, camino: porApp ? 'app' : 'quickbooks',
     texto: porApp ? `Desde el ${fDia(cfg.corte)} las facturas se emiten aquí, con su número de la serie del año.` : `Hasta el ${fDia(fMas(cfg.corte, -1))} las facturas salen por QuickBooks (el 🧾 de siempre). Aquí se pueden preparar borradores para probar; se podrán emitir desde el ${fDia(cfg.corte)}.`,
-    dias_para_el_corte: diasCorte, serie_formato: cfg.serie_formato, siguiente_numero: `MXP-${anioSig}-${String(F.seq + 1).padStart(4, '0')}`, terminos_dias: cfg.terminos_dias, falta, puede_emitir: porApp && !falta.length,
+    dias_para_el_corte: diasCorte, serie_formato: cfg.serie_formato, siguiente_numero: fSiguiente('facturas', anio, ultimo).numero, terminos_dias: cfg.terminos_dias, falta, puede_emitir: porApp && !falta.length,
     pago_en_linea: cfg.ach, tarjeta: false, borradores: F.docs.filter(d => d.estado === 'borrador').length, emitidas: em.filter(d => !d.anulado_el).length, anuladas: em.filter(d => d.anulado_el).length,
-    sin_pdf: em.filter(d => !d.anulado_el && !d.pdfs.length).length, sin_mandar: em.filter(d => !d.anulado_el && !d.envios.length).length }];
+    sin_pdf: em.filter(d => !d.anulado_el && !d.pdfs.length).length, sin_mandar: em.filter(d => !d.anulado_el && !d.envios.length).length, corte_hasta: vivas[0] || null, tarjeta_texto: F_TARJETA }];
 }
 const fDocsVista = () => F.docs.map(d => ({ id: d.id, estado: fEstado(d), forma: d.forma, proyecto_id: d.proyecto_id, obra: fObra(d.proyecto_id).obra, cliente: (d.cliente || {}).nombre || null, a_contratista: d.a_contratista,
-  hito_id: d.hito_id, hito: d.hito_id != null ? F.hitos.find(x => x.id === d.hito_id).titulo : null, es_deposito: !!d.es_deposito, numero: d.numero || null, fecha: d.fecha || null, vence: d.vence || null, monto: d.monto / 100,
+  hito_id: d.hito_id, hito: d.hito_id != null ? (F.hitos.find(x => x.id === d.hito_id) || {}).titulo || null : null, es_deposito: !!d.es_deposito, numero: d.numero || null, fecha: d.fecha || null, vence: d.vence || null, monto: d.monto / 100,
   retencion_pct: d.retencion_pct, retencion: d.retencion / 100, a_pagar: d.a_pagar / 100, factura_id: d.factura_id || null, asiento: d.asiento || null, saldo: d.estado === 'emitida' && d.factura_id ? d.saldoC / 100 : null,
   saldo_retencion: d.estado === 'emitida' && d.factura_id ? d.saldoRetC / 100 : null, nota_credito: d.nota_credito || null, anulado_el: d.anulado_el || null, anulado_motivo: d.anulado_motivo || null, pdfs: d.pdfs.length,
   pdf_ruta: d.pdfs.length ? d.pdfs[d.pdfs.length - 1].ruta : null, pdf_el: d.pdfs.length ? d.pdfs[d.pdfs.length - 1].creado_el : null, envios: d.envios.length, enviado_el: d.envios.length ? d.envios[d.envios.length - 1].enviado_el : null,
   enviado_a: d.envios.length ? d.envios[d.envios.length - 1].para : null, visto: d.estado === 'borrador' ? fVisto(d) : null, creado_el: d.creado_el, actualizado_el: d.actualizado_el, emitido_el: d.emitido_el || null }));
 const fObrasVista = () => Object.entries(F_OBRAS).map(([id, o]) => {
-  const em = F.docs.filter(d => d.proyecto_id === id && d.estado === 'emitida' && !d.anulado_el && d.forma !== 'retencion');
-  const fac = em.reduce((s, d) => s + d.monto, 0), hs = F.hitos.filter(h => h.p === id).sort((x, y) => x.orden - y.orden), r = fRetDe(id);
-  return { proyecto_id: id, obra: o.obra, tipo: o.tipo, estado: o.estado, cliente: o.cliente, a_contratista: o.a_contratista, contrato: o.contrato == null ? null : o.contrato / 100, facturado: fac / 100, facturas: em.length,
+  const em = F.docs.filter(d => d.proyecto_id === id && d.estado === 'emitida' && !d.anulado_el && d.factura_id);
+  const fac = fFacturadoObra(id), hs = F.hitos.filter(h => h.p === id).sort((x, y) => x.orden - y.orden || x.id - y.id), r = fRetDe(id);
+  const hj = hs.map(h => { const f = fFacturaDeHito(h.id), b = F.docs.find(d => d.hito_id === h.id && d.estado === 'borrador');
+    return { id: h.id, monto: h.monto / 100, puede: (h.estado || 'pendiente') === 'pendiente' && !f && h.monto > 0, estado: h.estado, titulo: h.titulo, factura: f ? f.numero : null, borrador: b ? b.id : null, es_deposito: h.dep }; });
+  return { proyecto_id: id, obra: o.obra, tipo: o.tipo, estado: o.estado, cliente: o.cliente, a_contratista: o.a_contratista, contrato: o.contrato == null ? null : o.contrato / 100, facturado: fac / 100, facturas: em.length + F.fuera.filter(x => x.p === id).length,
     por_facturar: o.contrato == null ? null : (o.contrato - fac) / 100, retencion_pct: r.pct, retencion_origen: r.origen, retenido: em.reduce((s, d) => s + d.saldoRetC, 0) / 100,
-    hitos_pendientes: hs.filter(h => h.estado === 'pendiente').length, hitos_pendientes_monto: hs.filter(h => h.estado === 'pendiente').reduce((s, h) => s + h.monto, 0) / 100,
-    hitos: hs.map(h => { const f = F.docs.find(d => d.hito_id === h.id && d.estado === 'emitida' && !d.anulado_el), b = F.docs.find(d => d.hito_id === h.id && d.estado === 'borrador');
-      return { id: h.id, monto: h.monto / 100, puede: h.estado === 'pendiente' && !f && !b, estado: h.estado, titulo: h.titulo, factura: f ? f.numero : null, borrador: b ? b.id : null, es_deposito: h.dep }; }),
-    borradores: F.docs.filter(d => d.proyecto_id === id && d.estado === 'borrador').length, ingreso_listo: true };
+    hitos_pendientes: hj.filter(h => h.puede).length, hitos_pendientes_monto: hj.filter(h => h.puede).reduce((s, h) => s + Math.round(h.monto * 100), 0) / 100,
+    hitos: hj, borradores: F.docs.filter(d => d.proyecto_id === id && d.estado === 'borrador').length, ingreso_listo: true };
 });
+// v_emision_control: las 16 filas, con sus textos (docs/conta/c11-emision.sql, fn_emision_control)
 function fControl() {
   const em = F.docs.filter(d => d.estado === 'emitida'), vivas = em.filter(d => !d.anulado_el && d.factura_id), cfg = F.config;
   const faltaE = [!String(cfg.empresa.nombre || '').trim() ? 'los datos de la empresa' : null, !cfg.como_pagar.trim() ? 'el texto «How to pay»' : null].filter(Boolean).join(' y ');
   const sinPdf = F.avisoSinPdf ? em.filter(d => !d.anulado_el) : [];
   const f = (orden, cuadre, nivel, ok, detalle) => ({ ok, nivel, orden, cuadre, detalle });
+  // 20: cada serie con sus números (y los que saltó)
+  const series = [];
+  for (const [serie, nom] of [['facturas', 'facturas'], ['retenciones', 'facturas de la retención']]) {
+    const ds = em.filter(d => (d.forma === 'retencion') === (serie === 'retenciones'));
+    if (!ds.length) continue;
+    const anio = Number(HOY.slice(0, 4)), mx = Math.max(...ds.map(d => Number(d.numero.split('-').pop())));
+    series.push(`${nom} de ${anio}, ${ds.length} número(s)${mx > ds.length ? ` (y ${mx - ds.length} que la serie saltó porque ya lo(s) llevaba una factura hecha fuera de la app)` : ''}`);
+  }
+  const patron = /^MXP-(R-)?\d{4}-\d{4,}$/;
+  const fuera72 = F.fuera.filter(x => x.fecha >= cfg.corte || patron.test(x.num)).sort((a, b) => a.fecha.localeCompare(b.fecha));
+  const cobradas = vivas.filter(d => d.saldoC === 0 && d.saldoRetC === 0 && !d.pagada);
+  const caminoAnul = em.filter(d => d.anulado_el && F.camino[d.id]);
   return [
     f(10, 'facturas: cada factura emitida por la app = su asiento, al centavo', 'cuadre', !F.ctlRojo, F.ctlRojo ? 'la factura MXP-2026-0001 (prueba): su asiento lleva $1,111.11 por cobrar y debía llevar $1,111.12 → el libro y la factura no dicen lo mismo: no la toques a mano; avisa.'
       : `${vivas.length} factura(s) viva(s) emitida(s) por la app: cada una está en el libro con su asiento, al centavo (lo que se cobra ahora más lo retenido es su monto).`),
-    f(20, 'facturas: la serie de cada año, sin huecos ni repetidos', 'cuadre', true, em.length ? `Cada año va seguido desde el 1 y su contador está en el último: ${HOY.slice(0, 4)}, ${F.seq} número(s).` : 'Todavía no se ha emitido ninguna factura por la app: la serie empieza en el 1.'),
+    f(20, 'facturas: la serie de cada año, sin huecos ni repetidos', 'cuadre', true, series.length ? `Cada serie va seguida y su contador está en el último número: ${series.join('; ')}.` : 'Todavía no se ha emitido ninguna factura por la app: la serie empieza en el 1.'),
     f(30, 'facturas: cada documento emitido sigue sellado', 'cuadre', true, `${em.length} documento(s) emitido(s): su contenido es el que se selló, sus líneas suman su monto y su fila de facturas dice lo mismo.`),
-    f(40, 'facturas: ningún hito facturado dos veces', 'cuadre', true, 'Ningún hito tiene dos facturas vivas con alguna emitida por la app.'),
+    f(40, 'facturas: ningún hito facturado dos veces', 'cuadre', true, 'Ningún hito tiene dos facturas vivas con alguna emitida por la app (el hito de cada factura de la app es el de su documento, diga lo que diga hoy la ficha).'),
+    f(42, 'facturas: cada factura de hito sigue enlazada a su hito', 'aviso', true, 'Cada factura de hito emitida por la app sigue enlazada a su hito en la ficha de la obra (o su hito se borró y a la obra ya no le queda ninguno por facturar).'),
+    f(44, 'facturas: lo facturado por hitos no pasa de los hitos de la obra', 'aviso', true, 'En ninguna obra con facturas de hito de la app lo facturado por hitos pasa de lo que suman sus hitos.'),
     f(50, 'facturas: cada PDF registrado sigue en su sitio', 'aviso', true, `${em.reduce((s, d) => s + d.pdfs.length, 0)} PDF registrado(s): todos siguen en el bucket facturas y miden lo que se registró (su sha256 queda guardado para comparar la copia que tenga el cliente).`),
-    f(60, `facturas: ninguna emitida hace más de ${cfg.pdf_dias} día(s) sin su PDF`, 'aviso', !sinPdf.length, sinPdf.length ? `${sinPdf.map(d => `${d.numero} (del ${fDia(d.fecha)})`).join(', ')} → están emitidas y en el libro, pero sin su PDF: ábrelas en Facturación y genera el PDF.` : 'Cada factura emitida tiene su PDF (o es de estos días).'),
+    f(60, `facturas: ninguna emitida hace más de ${cfg.pdf_dias} día(s) sin su PDF`, 'aviso', !sinPdf.length, sinPdf.length ? `${sinPdf.map(d => `${d.numero} (del ${fDia(d.fecha)}${d.forma === 'retencion' ? '; es la de la retención' : ''})`).join(', ')} → están emitidas (las facturas, ya en el libro; la de la retención no lleva asiento), pero sin su PDF: ábrelas en Facturación y genera el PDF.` : 'Cada factura emitida tiene su PDF (o es de estos días).'),
     f(62, `facturas: ninguna emitida hace más de ${cfg.pdf_dias} día(s) sin mandar`, 'aviso', true, 'Cada factura emitida se mandó o se entregó (o es de estos días).'),
+    f(64, 'facturas: las cobradas en el libro, marcadas como cobradas en su obra', 'aviso', !cobradas.length, !cobradas.length ? 'Ninguna factura de la app que el libro tenga cobrada entera está sin marcar como cobrada en la ficha de su obra.'
+      : `${cobradas.map(d => `${d.numero} (${fUsd(d.monto)}, de ${fObra(d.proyecto_id).obra})`).join(', ')} → el libro ya las tiene cobradas enteras y en la ficha de su obra siguen sin marcar: mientras no se marquen, la ficha y el portal del cliente las enseñan como pendientes de pago. Márcalas como cobradas en la obra (Dinero → la factura → cobrada); hoy nada lo hace solo.`),
     f(70, 'facturas: ninguna retención que parezca un porcentaje', 'aviso', true, 'Ninguna factura hecha fuera de la app trae una retención entre 0 y 100 que no cuadre con el porcentaje de su obra.'),
-    f(72, 'facturas: desde el corte, todas salen de la app', 'aviso', true, `Ninguna factura fechada desde el ${fDia(cfg.corte)} se hizo fuera de la app.`),
+    f(72, 'facturas: desde el corte, todas salen de la app', 'aviso', !fuera72.length, !fuera72.length ? `Ninguna factura fechada desde el ${fDia(cfg.corte)} se hizo fuera de la app, y ninguna de fuera lleva un número de la serie.`
+      : `${fuera72.map(x => `#${x.num} (del ${fDia(x.fecha)}, ${fUsd(x.montoC)}${patron.test(x.num) ? '; lleva un número con la forma de la serie: la serie lo salta' : ''})`).join(', ')} → desde el ${fDia(cfg.corte)} se factura por la app: esas se hicieron por otro camino (¿QuickBooks?, ¿a mano en la ficha?). Mira si están bien así. La que lleva un número con la forma de la serie: la app salta ese número para no darlo dos veces. La que lleva el mismo número que una factura de la app: una de las dos sobra; avisa.`),
     f(75, 'facturas: ninguna anulación a medias, ningún hito con dos facturas de antes', 'aviso', true, 'Toda factura de la app anulada en el libro está cerrada aquí, ninguna factura de la retención reclama lo de una anulada, y ningún hito trae dos facturas vivas de antes.'),
-    f(80, 'facturas: el pago en línea, solo por cuenta de banco', 'aviso', true, 'Ninguna factura de la app se cobró con tarjeta, y el porcentaje de la tarjeta está vacío (apagada).'),
+    f(80, 'facturas: el pago en línea, solo por cuenta de banco', 'aviso', !caminoAnul.length, !caminoAnul.length ? `Ninguna factura de la app se cobró con tarjeta, el porcentaje de la tarjeta está vacío y ninguna anulada tiene un pago en camino. ${F_TARJETA}`
+      : `${caminoAnul.map(d => `la factura ${d.numero} está anulada y tiene un pago por cuenta de banco en camino (${fUsd(F.camino[d.id])}): cuando entre, los cobros en línea lo dejarán de anticipo de la obra → cuando llegue, aplícalo a la factura buena (o devuélvelo)`).join('; ')}.`),
     f(85, 'facturas: los datos de la empresa y el «How to pay»', 'aviso', !faltaE || HOY < fMas(cfg.corte, -14), !faltaE ? 'Los datos de la empresa y el «How to pay» están puestos.' : HOY < fMas(cfg.corte, -14) ? `Faltan ${faltaE} en los ajustes de facturación; se piden desde dos semanas antes del corte (${fDia(cfg.corte)}).`
       : `Faltan ${faltaE} en los ajustes de facturación → sin eso no se puede emitir ninguna factura: ponlos en Facturación → Ajustes (en inglés: los ve el cliente).`),
-    f(90, 'facturas: protecciones de la capa', 'cuadre', true, 'Solo la función del número corre con los permisos del dueño de la base (es de trigger y nadie la ejecuta suelta); ninguna la ejecutan anon ni service_role; las tablas con RLS y su guarda; las vistas security_invoker.')
+    f(90, 'facturas: protecciones de la capa', 'cuadre', true, 'Solo la función del número corre con los permisos del dueño de la base (es de trigger y nadie la ejecuta suelta); ninguna la ejecutan anon ni service_role; las tablas con RLS y su guarda; las vistas security_invoker; y el bucket de las facturas, solo para el dueño con su código del teléfono (nadie borra ni pisa).')
   ];
 }
 const C11_VISTAS = { v_emision_estado: fEstadoVista, v_emision_documentos: fDocsVista, v_emision_obras: fObrasVista, v_emision_control: fControl, emision_config: () => [{ ...F.config }] };
@@ -1755,7 +1900,7 @@ const F_AVISO_ENLACE = 'El «How to pay» de esta factura habla de un enlace de 
 // Pide el dueño con aal2 (lo lee del JWT). F.fnFalla: la siguiente respuesta mala ({ estado, cuerpo }).
 function funcionFacturas(b, auth) {
   let aal = null; try { aal = JSON.parse(Buffer.from(String(auth).replace(/^Bearer /, '').split('.')[1], 'base64url').toString()).aal; } catch { /* sin sesión */ }
-  const V = { version: 'facturas 2026-11-12.2' };
+  const V = { version: 'facturas 2026-11-12.4' };
   if (b.accion === 'salud') return { cuerpo: { ...V, ok: true, funcion: 'facturas', resend: true, stripe: 'real', falta: [] } };
   if (aal !== 'aal2') return { estado: 403, cuerpo: { ...V, ok: false, codigo: 'MFA', error: 'Falta el código del teléfono: entra otra vez con él (las facturas lo piden).' } };
   if (F.fnFalla) { const f = F.fnFalla; F.fnFalla = null; return { estado: f.estado, cuerpo: { ...V, ok: false, ...f.cuerpo } }; }
@@ -1764,7 +1909,8 @@ function funcionFacturas(b, auth) {
   if (d.estado === 'borrador') return { estado: 409, cuerpo: { ...V, ok: false, codigo: 'MX008', error: 'Es un borrador: el PDF es de la factura emitida. Emítela primero.' } };
   if (d.anulado_el) return { estado: 409, cuerpo: { ...V, ok: false, codigo: 'MX008', error: `La factura ${d.numero} está anulada (nota de crédito ${d.nota_credito || '—'}): ya no se le hace PDF ni se manda.` } };
   const hacerPdf = () => {
-    const conEnlace = F.config.ach && d.forma !== 'retencion' && d.saldoC > 0 && !b.sin_enlace;
+    // (como index.ts: con enlace si fn_emision_pago dice en_linea —sin pago por cuenta de banco en camino, con saldo— y no se pidió sin él)
+    const conEnlace = C11_FN.fn_emision_pago({ p_documento: d.id }).en_linea === true && !b.sin_enlace;
     let e = null;
     if (conEnlace) {
       e = F.enlaces.filter(x => x.doc === d.id && x.estado === 'activo').pop();
@@ -1870,31 +2016,53 @@ function wObra(pid) {
 }
 const wLibro = (pid, periodo) => { const L = W.libro[pid] || {}, s = o => Object.entries(o || {}).filter(([m]) => m <= periodo).reduce((a, [, v]) => a + v, 0); return { costo: s(L.costo), fact: s(L.fact) }; };
 const wRev = (pid, periodo) => W.rev.find(r => r.proyecto_id === pid && r.periodo === periodo && !r.sustituida_el);
-const wRevAnt = (pid, periodo) => W.rev.filter(r => r.proyecto_id === pid && r.periodo < periodo && !r.sustituida_el).sort((a, b) => b.periodo.localeCompare(a.periodo))[0];
-// fn_wip_calcular: una fila por obra que entra en el mes (con _c: lo mismo en centavos, para el plan y la huella; no sale)
+const wRevAnt = (pid, periodo) => W.rev.filter(r => r.proyecto_id === pid && r.periodo < periodo && !r.sustituida_el && !r.excluida).sort((a, b) => b.periodo.localeCompare(a.periodo))[0];
+// la última revisión viva de un mes anterior, la que sea (también una exclusión: dice si la obra salió a propósito o si se cerró terminada)
+const wRevAntX = (pid, periodo) => W.rev.filter(r => r.proyecto_id === pid && r.periodo < periodo && !r.sustituida_el).sort((a, b) => b.periodo.localeCompare(a.periodo))[0];
+// fn_wip_calcular: una fila por obra que entra en el mes (con _c: lo mismo en centavos, para el plan y la huella; no sale). NINGUNA
+// obra que traía saldo sale sola: la que llevaba sub, sobre o provisión en el último ajuste vivo de un mes anterior entra, esté como
+// esté en la app, hasta que Edgar la revise o la excluya con su nota; y la terminada que sigue sin facturarse entera, también
 function wCalc(periodo) {
-  const nom = wMes(periodo), filas = [];
+  const per = wPer(periodo), nom = wMes(periodo), filas = [];
+  const ult = W.ajustes.filter(a => !a.deshecho_el && a.periodo < periodo).sort((a, b) => b.periodo.localeCompare(a.periodo))[0] || null;
   for (const pid of Object.keys(W_OB)) {
-    const ob = wObra(pid); if (!ob.lleva_wip) continue;
-    const rv = wRev(pid, periodo), ant = wRevAnt(pid, periodo), lb = wLibro(pid, periodo), an = W.antes[pid];
-    if (!(ob.activa || rv || (ob.terminada && ant && !ant.terminada))) continue;
-    const calc = !!rv && !(ob.de_antes && !an), mov = lb.costo !== 0 || lb.fact !== 0 || ob.de_antes || !!an || !!rv;
+    const ob = wObra(pid), contrato = W_OB[pid].contrato;
+    const rv = wRev(pid, periodo), ant = wRevAnt(pid, periodo), antx = wRevAntX(pid, periodo), lb = wLibro(pid, periodo), an = W.antes[pid];
+    const arr = ult ? ult.foto.find(x => x.proyecto_id === pid && x.en_ajuste && (x._c.sub || x._c.sobre || x._c.prov)) : null;
+    const arrastra = !!arr && !(antx && antx.excluida && antx.periodo >= ult.periodo);
+    const sigueTerm = !!antx && antx.terminada && !antx.excluida && lb.fact + (an ? an.facturado : 0) !== antx.precio;
+    const entra = (ob.lleva_wip && (ob.activa || (ob.terminada && antx && !antx.terminada && !antx.excluida))) || !!rv || arrastra || sigueTerm;
+    if (!entra) continue;
+    const excl = !!(rv && rv.excluida);
+    const calc = ob.lleva_wip && !!rv && !excl && !(ob.de_antes && !an), mov = lb.costo !== 0 || lb.fact !== 0 || ob.de_antes || !!an || !!rv || arrastra || sigueTerm;
     const term = !!(rv && rv.terminada), precio = rv ? rv.precio : null;
     const cF = calc ? lb.costo + (an ? an.costo : 0) : null, fF = calc ? lb.fact + (an ? an.facturado : 0) : null;
     const est = !calc ? null : term ? cF : rv.costo, tope = !calc ? null : term ? cF : Math.max(Math.min(cF, est), 0);
     const gan = !calc ? null : term ? precio : wRound(precio * tope, est), perd = !calc || term ? null : Math.max(est - precio, 0);
     const sub = calc ? Math.max(gan - fF, 0) : null, sobre = calc ? Math.max(fF - gan, 0) : null;
     const perdT = !calc ? null : term ? Math.max(cF - precio, 0) : perd, prov = !calc ? null : (term || perd === 0) ? 0 : Math.max(perd - (tope - gan), 0);
-    const falta = [!rv ? 'revision' : null, ob.de_antes && !an ? 'antes' : null, !ob.cuenta_ingreso ? 'cuenta_ingreso' : null].filter(Boolean);
-    const prop = rv ? rv.propuesta : ant && !ant.terminada ? ant.costo : null, propO = rv ? rv.propuesta_origen : ant && !ant.terminada ? 'mes_anterior' : null;
+    const falta = [!rv || (!ob.lleva_wip && !excl) ? 'revision' : null, ob.lleva_wip && !excl && ob.de_antes && !an ? 'antes' : null, ob.lleva_wip && !excl && !ob.cuenta_ingreso ? 'cuenta_ingreso' : null,
+      ob.lleva_wip && rv && !excl && contrato !== rv.precio && contrato !== rv.ficha ? 'precio' : null, calc && !term && cF > est ? 'estimado' : null].filter(Boolean);
+    const prop = !ob.lleva_wip ? null : rv ? rv.propuesta : ant && !ant.terminada ? ant.costo : null;
+    const propO = !ob.lleva_wip ? null : rv ? rv.propuesta_origen : ant && !ant.terminada ? 'mes_anterior' : null;
     const pctA = !calc ? null : term ? 100 : wPctN(tope, est);
+    const arrTxt = arr ? [arr._c.sub ? `${wUsd(arr._c.sub)} sub-facturados` : null, arr._c.sobre ? `${wUsd(arr._c.sobre)} sobre-facturados` : null, arr._c.prov ? `${wUsd(arr._c.prov)} de pérdida provisionada` : null].filter(Boolean).join(' y ') : '';
+    const arrFrase = arrastra ? `Traía ${arrTxt} en el ajuste de ${wMes(ult.periodo)}` : null;
+    const estado = !mov ? 'sin_movimiento' : excl ? 'excluida' : falta.length ? 'pendiente' : 'lista';
+    const faltaTxt = !mov ? 'Sin costo ni facturas todavía: no hay nada que medir.' : excl || !falta.length ? null : [
+      !ob.lleva_wip ? `${arrFrase || `Se revisó en ${nom}`} y hoy ya no lleva WIP (${ob.motivo}) Nada sale del WIP solo: exclúyela este mes con su nota (su ingreso vuelve a ser lo facturado), o, si sigue siendo de precio fijo, arregla su ficha o su marca y revísala.`
+        : !rv && contrato == null ? [arrFrase ? arrFrase + '.' : null, 'Su ficha no tiene contrato: ponlo (o dilo al revisar) para poder revisarla.'].filter(Boolean).join(' ')
+        : !rv && sigueTerm ? `Ya estaba terminada (se revisó así en ${wMes(antx.periodo)}) y sigue sin facturarse entera: lleva facturado ${wUsd(lb.fact + (an ? an.facturado : 0))} de ${wUsd(antx.precio)}. Se queda en el WIP hasta que lo facturado sea su precio: revísala como terminada otra vez (un toque)${ob.terminada ? '' : '; si volvió a abrirse, revisa su costo estimado'}, o exclúyela con su nota.`
+        : !rv && arrastra && !ob.activa && !ob.terminada ? `${arrFrase} y la app la tiene ahora como «${ob.obra_estado || 'sin estado'}». Nada sale del WIP solo: si sigue en pie, revisa su costo estimado; si se canceló, exclúyela con su nota (su ingreso vuelve a ser lo facturado).`
+        : !rv ? `Falta revisar su costo estimado en ${nom}.` : null,
+      falta.includes('antes') ? `Ya andaba antes del libro (tiene de antes: ${ob.de_antes_por}): falta confirmar su costo y lo facturado de antes; hasta entonces no entra en el ajuste. Si este mes no se puede, exclúyela con su nota.` : null,
+      falta.includes('cuenta_ingreso') ? `Su tipo de obra (${ob.tipo || 'sin tipo'}) no tiene cuenta de ingreso confirmada: sin ella no se sabe contra qué renglón va el ajuste.` : null,
+      falta.includes('precio') ? `El contrato de su ficha cambió después de revisarla (se revisó con ${wUsd(rv.precio)} y la ficha dice ahora ${contrato == null ? 'nada' : wUsd(contrato)}): si el cambio es de ${nom}, revísala otra vez con el precio nuevo; si es de después, dilo (un toque) y este mes se queda con el que tenía.` : null,
+      falta.includes('estimado') ? `Lleva ${wUsd(cF)} de costo y su costo estimado revisado es ${wUsd(est)} (${wPctT(cF, est)} %): ese estimado quedó viejo. Súbelo (el costo total no puede ser menos de lo que ya lleva) o, si terminó, márcala terminada; hasta entonces no entra en el ajuste.` : null
+    ].filter(Boolean).join(' ');
     filas.push({ periodo, proyecto_id: pid, obra: ob.obra, cliente: ob.cliente, tipo: ob.tipo, obra_estado: ob.obra_estado, fuente: 'calculado',
-      estado: !mov ? 'sin_movimiento' : falta.length ? 'pendiente' : 'lista', falta: !mov ? [] : falta,
-      falta_texto: !mov ? 'Sin costo ni facturas todavía: no hay nada que medir.' : !falta.length ? null : [
-        !rv && ob.contrato == null ? 'Su ficha no tiene contrato: ponlo (o dilo al revisar) para poder revisarla.' : !rv ? `Falta revisar su costo estimado en ${nom}.` : null,
-        ob.de_antes && !an ? `Ya andaba antes del libro (tiene de antes: ${ob.de_antes_por}): falta confirmar su costo y lo facturado de antes; hasta entonces no entra en el ajuste.` : null,
-        !ob.cuenta_ingreso ? `Su tipo de obra (${ob.tipo || 'sin tipo'}) no tiene cuenta de ingreso confirmada: sin ella no se sabe contra qué renglón va el ajuste.` : null].filter(Boolean).join(' '),
-      en_ajuste: mov && !falta.length, terminada: term, precio_contrato: wD(precio), precio_ficha: ob.contrato, costo_estimado: wD(est), utilidad_estimada: calc ? wD(precio - est) : null,
+      estado, falta: !mov || excl ? [] : falta, falta_texto: faltaTxt,
+      en_ajuste: mov && !excl && !falta.length, terminada: term, precio_contrato: wD(precio), precio_ficha: wD(contrato), costo_estimado: wD(est), utilidad_estimada: calc ? wD(precio - est) : null,
       costo_libro: wD(lb.costo), costo_antes: calc ? wD(an ? an.costo : 0) : an ? wD(an.costo) : null, costo_fecha: wD(cF), pct_avance: pctA,
       pct_real: !calc ? null : term ? 100 : wPctN(cF, est), pasa_de_100: calc && !term && cF > est, ingreso_ganado: wD(gan), facturado_libro: wD(lb.fact),
       facturado_antes: calc ? wD(an ? an.facturado : 0) : an ? wD(an.facturado) : null, facturado_fecha: wD(fF), sub_facturado: wD(sub), sobre_facturado: wD(sobre),
@@ -1902,15 +2070,18 @@ function wCalc(periodo) {
       cuenta_ingreso: ob.cuenta_ingreso, ingreso_otro: 0, de_antes: ob.de_antes, antes_confirmado: !!an, antes_id: an ? an.id : null,
       revision_id: rv ? rv.id : null, revisado_el: rv ? rv.el : null, revisado_por: rv ? UID : null, revision_origen: rv ? rv.origen : null, revision_nota: rv ? rv.nota : null,
       propuesta_costo_estimado: wD(prop), propuesta_origen: propO,
-      propuesta_nota: rv ? null : ob.terminada ? 'La app la tiene como terminada: si terminó en este mes, revísala como terminada (100 %); si seguía en obra al cierre del mes, revisa su costo estimado.'
+      propuesta_nota: rv || !ob.lleva_wip ? null : ob.terminada && sigueTerm ? `Ya estaba terminada en ${wMes(antx.periodo)}: sigue terminada (100 %) hasta que se facture entera.`
+        : ob.terminada ? 'La app la tiene como terminada: si terminó en este mes, revísala como terminada (100 %); si seguía en obra al cierre del mes, revisa su costo estimado.'
         : propO === 'mes_anterior' ? `Lo que revisaste en ${wMes(ant.periodo)}.` : 'Sin propuesta. No hay estimado: faltan las horas estimadas y el presupuesto de material.',
-      propuesta_terminada: !rv && ob.terminada,
+      propuesta_terminada: !rv && ob.lleva_wip && ob.terminada,
       avisos: !calc ? [] : [
-        !term && cF > est ? `Lleva ${wUsd(cF)} de costo y su costo estimado revisado es ${wUsd(est)} (${wPctT(cF, est)} %): el avance se topa en 100 %. Sube el costo estimado o deja escrito por qué.` : null,
+        !term && cF > est ? `Lleva ${wUsd(cF)} de costo y su costo estimado revisado es ${wUsd(est)} (${wPctT(cF, est)} %): no entra en el ajuste hasta que subas el costo estimado (o la marques terminada).` : null,
+        !term && cF === est ? `Va al 100 %: lleva justo su costo estimado (${wUsd(est)}) y con eso se gana el precio entero. Si todavía le falta trabajo, su costo total estimado tiene que ser mayor.` : null,
         !term && perd > 0 ? `Va con pérdida: el costo estimado (${wUsd(est)}) pasa del precio (${wUsd(precio)}) por ${wUsd(perd)}. De esa pérdida, ${wUsd(Math.min(tope - gan, perd))} ya está en su resultado por el avance y ${wUsd(prov)} se provisiona este mes: la pérdida completa queda reconocida.` : null,
         term && cF > precio ? `Terminó con pérdida: costó ${wUsd(cF)} y su precio es ${wUsd(precio)}.` : null,
+        term && fF !== precio ? `Terminada y sin facturar entera: lleva facturado ${wUsd(fF)} de ${wUsd(precio)}. Sigue en el WIP cada mes hasta que lo facturado sea su precio.` : null,
         fF > precio ? `Lo facturado (${wUsd(fF)}) pasa del contrato (${wUsd(precio)}): ¿falta una orden de cambio en el contrato de la ficha?` : null,
-        W_OB[pid].contrato !== precio ? `El contrato de la ficha (${W_OB[pid].contrato == null ? 'vacío' : wUsd(W_OB[pid].contrato)}) no es el que se usó al revisar (${wUsd(precio)}): si cambió en este mes, revísala otra vez.` : null].filter(Boolean),
+        contrato !== precio ? `El contrato de la ficha (${contrato == null ? 'vacío' : wUsd(contrato)}) no es el que se usó al revisar (${wUsd(precio)}).` : null].filter(Boolean),
       _c: { precio, est, term, cF, fF, gan, sub, sobre, perdT, prov, pct: pctA == null ? null : String(pctA) } });
   }
   return filas.sort((a, b) => a.obra.localeCompare(b.obra) || a.proyecto_id.localeCompare(b.proyecto_id));
@@ -1974,19 +2145,22 @@ function wResumen(periodo) {
     else puede = true;
   }
   const L = filas.filter(f => f.en_ajuste), s = k => L.reduce((a, f) => a + (f._c[k] || 0), 0);
-  const ob = { total: filas.length + (W.conteoMal ? 1 : 0), listas: filas.filter(f => f.estado === 'lista').length, pendientes: filas.filter(f => f.estado === 'pendiente').length,
-    por_revisar: filas.filter(f => f.estado === 'pendiente' && f.falta.includes('revision')).length, sin_movimiento: filas.filter(f => f.estado === 'sin_movimiento').length,
-    sin_cuenta_ingreso: filas.filter(f => f.estado === 'pendiente' && f.falta.includes('cuenta_ingreso')).length, por_confirmar_antes: filas.filter(f => f.estado === 'pendiente' && f.falta.includes('antes')).length };
+  const pend = filas.filter(f => f.estado === 'pendiente'), n = k => pend.filter(f => f.falta.includes(k)).length;
+  const ob = { total: filas.length + (W.conteoMal ? 1 : 0), listas: filas.filter(f => f.estado === 'lista').length, pendientes: pend.length, excluidas: filas.filter(f => f.estado === 'excluida').length,
+    por_revisar: n('revision'), sin_movimiento: filas.filter(f => f.estado === 'sin_movimiento').length, sin_cuenta_ingreso: n('cuenta_ingreso'), por_confirmar_antes: n('antes'), por_precio: n('precio'), por_estimado: n('estimado') };
   tot = { obras: L.length, pct_avance: s('precio') > 0 ? wPctN(s('gan'), s('precio')) : null, costo_fecha: wD(s('cF')), perdida_total: wD(s('perdT')), sub_facturado: wD(s('sub')), costo_estimado: wD(s('est')),
     ingreso_ganado: wD(s('gan')), utilidad_fecha: wD(s('gan') - s('cF')), facturado_fecha: wD(s('fF')), precio_contrato: wD(s('precio')), sobre_facturado: wD(s('sobre')), perdida_provision: wD(s('prov')),
     utilidad_estimada: wD(s('precio') - s('est')), costo_para_terminar: wD(L.reduce((a, f) => a + Math.max(f._c.est - f._c.cF, 0), 0)) };
-  const nota = cerr ? porq : est.vivo && !est.al_dia ? `El ajuste posteado de ${nom} (asiento ${est.numero}) ya no es el de hoy: ${est.cambios}. Vuelve a postearlo: se reversa y entra el nuevo.`
-    : ob.pendientes > 0 ? `${ob.pendientes} obra(s) no entran todavía: ${ob.por_revisar} por revisar y ${ob.por_confirmar_antes} sin lo de antes del libro confirmado.` : porq;
+  const queFalta = [ob.por_revisar ? `${ob.por_revisar} por revisar` : null, ob.por_confirmar_antes ? `${ob.por_confirmar_antes} sin lo de antes del libro confirmado` : null, ob.sin_cuenta_ingreso ? `${ob.sin_cuenta_ingreso} sin cuenta de ingreso` : null,
+    ob.por_precio ? `${ob.por_precio} con el contrato de la ficha cambiado después de revisarla` : null, ob.por_estimado ? `${ob.por_estimado} con más costo que su estimado` : null].filter(Boolean).join(', ');
+  const nota = cerr ? porq : est.vivo && !est.al_dia ? `El ajuste posteado de ${nom} (asiento ${est.numero}) ya no es el de hoy: ${est.cambios || 'cambió su cálculo'}. Vuelve a postearlo: se reversa y entra el nuevo.`
+    : ob.pendientes > 0 ? `${ob.pendientes} obra(s) no entran todavía: ${queFalta}.${ob.excluidas ? ` Y ${ob.excluidas} fuera a propósito, con su nota.` : ''}`
+    : ob.excluidas > 0 && porq == null ? `${ob.excluidas} obra(s) quedan fuera del WIP de ${nom} a propósito, con su nota.` : porq;
   return { nota, desde: per.desde, hasta: per.hasta, obras: ob, ajuste: est, fuente: cerr ? 'posteado' : 'calculado', lineas: lin, nombre: nom, cerrado: cerr, exigido: exig, periodo: per.periodo, totales: tot,
     terminado: term, por_que_no: porq, exigir_desde: W.cfg.exigir_desde, puede_postear: puede, reverso_fecha: wSig(per.hasta), puede_deshacer: !cerr && !!est.vivo };
 }
-// el schedule de un mes (v_wip_schedule / fn_wip_schedule): lo calculado hoy, o la foto del ajuste de un mes cerrado
-const wSchedule = periodo => (W.cerrados.has(periodo) ? (wVivo(periodo) ? wVivo(periodo).foto.map(f => ({ ...f, fuente: 'posteado', precio_ficha: null })) : []) : wCalc(periodo)).map(wSinInt);
+// el schedule de un mes (v_wip_schedule / fn_wip_schedule): lo calculado hoy, o la foto del ajuste de un mes cerrado (sin la ficha ni la propuesta)
+const wSchedule = periodo => (W.cerrados.has(periodo) ? (wVivo(periodo) ? wVivo(periodo).foto.map(f => ({ ...f, fuente: 'posteado', precio_ficha: null, propuesta_costo_estimado: null, propuesta_origen: null, propuesta_nota: null, propuesta_terminada: false })) : []) : wCalc(periodo)).map(wSinInt);
 // fn_wip_control: siempre 17 filas, con sus textos
 function wControl(periodo) {
   const per = wPer(periodo) || W_MESES[0], nom = wMes(per.periodo), mnom = wCap(nom), cerr = W.cerrados.has(per.periodo);
@@ -1997,57 +2171,79 @@ function wControl(periodo) {
   const plan = cerr ? null : wPlan(per.periodo), est = cerr ? null : wEstado(per.periodo, plan), filas = cerr ? [] : plan.filas, t = cerr ? null : plan.tot;
   const R = (orden, cuadre, nivel, ok, detalle) => ({ ok, nivel, orden, cuadre, detalle });
   const vivos = W.ajustes.filter(a => !a.deshecho_el).length;
-  const conMov = filas.filter(f => f.estado !== 'sin_movimiento'), sinRev = conMov.filter(f => f.falta.includes('revision'));
+  const porObra = (a, b) => a.obra.localeCompare(b.obra);
+  // lo que queda fuera del ajuste, para decirlo donde se postea y donde se cierra: las pendientes, las excluidas (con su nota) y las de horas sin costo
+  const pend = filas.filter(f => f.estado === 'pendiente').sort(porObra), excl = filas.filter(f => f.estado === 'excluida').sort(porObra), horasN = !cerr && W.horas170 ? 1 : 0;
+  const suf = [pend.length ? `OJO: ${pend.length} obra(s) NO entran en el ajuste porque les falta algo (${pend.map(f => f.obra).join(', ')}): su ingreso de ${nom} se queda en lo facturado hasta que se arregle.` : null,
+    excl.length ? `Fuera del ajuste a propósito, ${excl.length} obra(s): ${excl.map(f => `${f.obra} («${String(f.revision_nota || 'sin nota').slice(0, 120)}»)`).join('; ')}.` : null,
+    horasN ? `Y ${horasN} obra(s) tienen horas sin costo en el libro: su avance va corto.` : null].filter(Boolean).join(' ');
+  const conSuf = x => suf ? `${x} ${suf}` : x;
+  const conMov = filas.filter(f => f.estado !== 'sin_movimiento');
+  const F40 = ['revision', 'antes', 'cuenta_ingreso', 'precio'], sinRev = filas.filter(f => f.estado === 'pendiente' && f.falta.some(k => F40.includes(k))).sort(porObra);
+  const sinRevT = sinRev.map(f => { const q = [f.falta.includes('antes') ? 'falta confirmar lo de antes del libro' : null, f.falta.includes('cuenta_ingreso') ? 'su tipo no tiene cuenta de ingreso confirmada' : null, f.falta.includes('precio') ? 'el contrato de su ficha cambió después de revisarla' : null].filter(Boolean).join(', '); return f.obra + (q ? ` (${q})` : ''); }).join(', ');
   const vA = cerr ? wVivo(per.periodo) : null;
   let ok50 = true, d50;
   if (cerr) d50 = vA ? `${mnom} está cerrado con su ajuste de WIP (asiento ${vA.numero}): sub-facturado ${wUsd(vA.sub)}, sobre-facturado ${wUsd(vA.sobre)}, pérdida ${wUsd(vA.perdida)}.` : `${mnom} está cerrado sin ajuste de WIP.`;
-  else if (est.vivo && est.al_dia) d50 = `El ajuste de ${nom} está posteado y al día (asiento ${est.numero}, del ${fDia(est.fecha)}; se deshace solo el ${fDia(est.reverso_auto.fecha)}): sub-facturado ${wUsd(Math.round(est.sub_facturado * 100))}, sobre-facturado ${wUsd(Math.round(est.sobre_facturado * 100))} y pérdida ${wUsd(Math.round(est.perdida * 100))}, en ${est.obras} obra(s).`;
-  else if (est.vivo) { ok50 = false; d50 = `El ajuste posteado de ${nom} (asiento ${est.numero}) ya no es el que da el WIP de hoy: ${est.cambios}. Vuelve a postearlo: se reversa y entra el nuevo.`; }
-  else if (!plan.lineas.length) d50 = t.obras === 0 ? `En ${nom} no hay ninguna obra lista para el ajuste: nada que postear.` : `En ${nom} no hay nada que ajustar: en las ${t.obras} obra(s) listas lo ganado es lo facturado.`;
-  else { ok50 = !!cuando; d50 = `${cuando ? cuando + ' Hoy daría' : 'Falta postear'} el ajuste de WIP de ${nom}: sub-facturado ${wUsd(t.sub)} en ${t.obras_sub} obra(s), sobre-facturado ${wUsd(t.sobre)} en ${t.obras_sobre}, y pérdida por reconocer ${wUsd(t.prov)}.`; }
-  const p60 = filas.filter(f => f.pasa_de_100 && !String(f.revision_nota || '').trim()), p125 = filas.filter(f => f.pasa_de_100 && String(f.revision_nota || '').trim());
-  const sinAntes = filas.filter(f => f.falta.includes('antes')), conPerd = filas.filter(f => f.en_ajuste && f._c.perdT > 0);
+  else if (est.vivo && est.al_dia) d50 = conSuf(`El ajuste de ${nom} está posteado y al día (asiento ${est.numero}, del ${fDia(per.hasta)}; se deshace solo el ${fDia(wSig(per.hasta))}): sub-facturado ${wUsd(Math.round(est.sub_facturado * 100))}, sobre-facturado ${wUsd(Math.round(est.sobre_facturado * 100))} y pérdida ${wUsd(Math.round(est.perdida * 100))}, en ${est.obras} obra(s).`);
+  else if (est.vivo) { ok50 = false; d50 = `El ajuste posteado de ${nom} (asiento ${est.numero}) ya no es el que da el WIP de hoy: ${est.cambios || 'cambió su cálculo'}. Vuelve a postearlo: se reversa y entra el nuevo.`; }
+  else if (!plan.lineas.length) d50 = conSuf(t.obras === 0 ? `En ${nom} no hay ninguna obra lista para el ajuste: nada que postear.` : `En ${nom} no hay nada que ajustar: en las ${t.obras} obra(s) listas lo ganado es lo facturado.`);
+  else { ok50 = !!cuando; d50 = conSuf(`${cuando ? cuando + ' Hoy daría' : 'Falta postear'} el ajuste de WIP de ${nom}: sub-facturado ${wUsd(t.sub)} en ${t.obras_sub} obra(s), sobre-facturado ${wUsd(t.sobre)} en ${t.obras_sobre}, y pérdida por reconocer ${wUsd(t.prov)}.`); }
+  const p60 = filas.filter(f => f.pasa_de_100).sort(porObra), p125 = filas.filter(f => f.en_ajuste && !f.terminada && f.pct_real >= 100).sort(porObra);
+  const sinAntes = filas.filter(f => (f.estado === 'pendiente' && f.falta.includes('antes')) || (f.estado === 'excluida' && f.de_antes && !f.antes_confirmado)).sort(porObra);
+  const conPerd = filas.filter(f => f.en_ajuste && f._c.perdT > 0).sort(porObra);
+  const p130 = filas.filter(f => f.revision_id && f.estado !== 'excluida' && f.precio_ficha !== f.precio_contrato).sort(porObra);
+  const p140 = filas.filter(f => f.facturado_fecha != null && f.precio_contrato != null && f.facturado_fecha > f.precio_contrato).sort(porObra);
+  const p160 = cerr ? [] : Object.keys(W_OB).map(wObra).filter(o => o.lleva_wip && o.terminada && !filas.some(f => f.proyecto_id === o.proyecto_id) && ((W.libro[o.proyecto_id] || {}).costo || {})[per.periodo]).sort(porObra);
+  // (12-nov, la revisión final) y las que la app todavía no tiene en obra (en estimación, enviada, no aprobada) con facturas en el libro
+  const p160b = cerr ? [] : Object.keys(W_OB).map(wObra).filter(o => o.lleva_wip && !o.activa && !o.terminada && wLibro(o.proyecto_id, per.periodo).fact !== 0 && !filas.some(f => f.proyecto_id === o.proyecto_id)).sort(porObra);
+  const laTiene = e => ({ estimando: 'en estimación', enviado: 'con la propuesta enviada', no_aprobado: 'como no aprobada' })[e] || `como «${e || 'sin estado'}»`;
   return [
     R(10, 'wip: en las cuentas del WIP solo está el ajuste del mes', 'cuadre', !W.cuadre10, !W.cuadre10 ? 'En las cuentas del WIP (sub-facturado, sobre-facturado, la provisión por pérdida y su gasto) no hay más saldo que el de los ajustes del WIP.'
       : 'Hay saldo en las cuentas del WIP que no viene de un ajuste: $500.00 en la 1200 de C12 PRUEBA Obra A. Esas cuentas las lleva el ajuste del mes: si es un asiento a mano, revérsalo; si lo pidió el contador (un saldo inicial), avisa antes de cerrar.'),
     R(20, 'wip: cada ajuste es su asiento, y el saldo por obra es el del ajuste', 'cuadre', true, `${vivos} ajuste(s) vivo(s), cada uno con su asiento vivo y sus líneas iguales a su foto; y al ${fDia(per.hasta)} el saldo por obra de sub-facturado, sobre-facturado y provisión es el de su ajuste.`),
     R(30, 'wip: lo facturado a la fecha = las facturas del libro', 'cuadre', true, cerr ? noap : `En las ${filas.length} obra(s) del WIP de ${nom}, lo facturado que usa el WIP es lo que dicen sus facturas en el libro (las anuladas, con su nota de crédito restando), sin los ajustes.`),
     R(40, 'wip: cada obra con su costo estimado revisado en el mes', 'cuadre', cerr || !sinRev.length || !!cuando, cerr ? noap : !conMov.length ? `En ${nom} no hay obras de precio fijo con movimiento.`
-      : !sinRev.length ? `Las ${conMov.length} obra(s) de precio fijo con movimiento tienen su costo estimado revisado en ${nom}.` : cuando ? `${cuando} Hoy faltan por revisar ${sinRev.length} de ${conMov.length}: ${sinRev.map(f => f.obra).join(', ')}.`
-      : `Faltan por revisar ${sinRev.length} de las ${conMov.length} obra(s) de precio fijo con movimiento en ${nom}: ${sinRev.map(f => f.obra).join(', ')}.`),
+      : !sinRev.length ? `Las ${conMov.length} obra(s) de precio fijo con movimiento tienen su costo estimado revisado en ${nom}${excl.length ? ` (${excl.length} de ellas, fuera a propósito con su nota)` : ''}.`
+      : cuando ? `${cuando} Hoy faltan por revisar ${sinRev.length} de ${conMov.length}: ${sinRevT}.` : `Faltan por revisar ${sinRev.length} de las ${conMov.length} obra(s) de precio fijo con movimiento en ${nom}: ${sinRevT}.`),
     R(50, 'wip: el ajuste del mes posteado y al día', 'cuadre', ok50, d50),
-    R(60, 'wip: ninguna obra con más costo que su estimado sin nota', 'cuadre', cerr || !p60.length, cerr ? noap : !p60.length ? `En ${nom} ninguna obra lleva más costo que su estimado revisado sin que esté escrito por qué.`
-      : `${p60.length} obra(s) llevan más costo que su estimado revisado, sin nota: ${p60.map(f => `${f.obra} (lleva ${wUsd(f._c.cF)} y su estimado es ${wUsd(f._c.est)}: ${wPctT(f._c.cF, f._c.est)} %)`).join('; ')}. Sube su costo estimado (o escribe por qué): con el avance topado en 100 % se gana el precio entero y una pérdida no se ve.`),
+    R(60, 'wip: ninguna obra con más costo que su estimado revisado', 'cuadre', cerr || !p60.length, cerr ? noap : !p60.length ? `En ${nom} ninguna obra lleva más costo que su costo estimado revisado.`
+      : `${p60.length} obra(s) llevan más costo que su costo estimado revisado y no están terminadas: ${p60.map(f => `${f.obra} (lleva ${wUsd(f._c.cF)} y su estimado es ${wUsd(f._c.est)}: ${wPctT(f._c.cF, f._c.est)} %)`).join('; ')}. Ese estimado quedó viejo: no entran en el ajuste hasta que lo subas (el costo total no puede ser menos de lo que ya llevan) o las marques terminadas.`),
     R(90, 'wip: las protecciones de la capa', 'cuadre', true, 'Nada del WIP corre con permisos de más, nada es para la llave pública ni la de servicio, las tablas tienen su candado de solo-dueño y sus guardas encendidas, y las vistas leen con los permisos de quien mira.'),
     R(110, 'wip: obras que ya andaban sin lo de antes confirmado', 'aviso', cerr || !sinAntes.length, cerr ? noap : !sinAntes.length ? `En ${nom} ninguna obra del WIP espera que se confirme lo de antes del libro.`
-      : `${sinAntes.length} obra(s) ya andaban antes del libro y no tienen confirmado su costo y lo facturado de antes: ${sinAntes.map(f => f.obra).join(', ')}. Mientras tanto NO entran en el ajuste de ${nom} (su ingreso sigue siendo lo facturado). Confírmalo una vez por obra.`),
+      : `${sinAntes.length} obra(s) ya andaban antes del libro y no tienen confirmado su costo y lo facturado de antes: ${sinAntes.map(f => f.obra + (f.estado === 'excluida' ? ' (fuera este mes, con su nota)' : '')).join(', ')}. Mientras tanto NO entran en el ajuste de ${nom} (su ingreso sigue siendo lo facturado), y un mes que exige el WIP no cierra hasta que se confirme (una vez por obra) o se deje fuera ese mes con su nota.`),
     R(120, 'wip: obras con pérdida', 'aviso', cerr || !conPerd.length, cerr ? noap : !conPerd.length ? `En ${nom} ninguna obra del WIP va con pérdida.`
       : `${conPerd.length} obra(s) van con pérdida en ${nom}: ${conPerd.map(f => `${f.obra} (pérdida ${wUsd(f._c.perdT)}; provisionado ${wUsd(f._c.prov)})`).join('; ')}. La pérdida completa queda reconocida este mes.`),
-    R(125, 'wip: obras topadas en 100 %', 'aviso', cerr || !p125.length, cerr ? noap : !p125.length ? `En ${nom} ninguna obra está topada en 100 %.`
-      : `${p125.length} obra(s) llevan más costo que su estimado y van topadas en 100 %, con su nota: ${p125.map(f => `${f.obra} (${wPctT(f._c.cF, f._c.est)} %: ${f.revision_nota})`).join('; ')}.`),
-    R(130, 'wip: el contrato de la ficha cambió después de revisar', 'aviso', true, cerr ? noap : `En ${nom} cada obra revisada usa el contrato que hoy dice su ficha.`),
-    R(140, 'wip: facturado por encima del contrato', 'aviso', true, cerr ? noap : `En ${nom} ninguna obra del WIP tiene facturado más que su contrato.`),
+    R(125, 'wip: obras al 100 % sin estar terminadas', 'aviso', cerr || !p125.length, cerr ? noap : !p125.length ? `En ${nom} ninguna obra va al 100 % sin estar terminada.`
+      : `${p125.length} obra(s) van al 100 % sin estar terminadas: ${p125.map(f => `${f.obra} (lleva ${wUsd(f._c.cF)}, justo su estimado)`).join('; ')}. Con el costo igual a su estimado se gana el precio entero: si todavía les falta trabajo, su costo total estimado tiene que ser mayor; si terminaron, márcalas terminadas.`),
+    R(130, 'wip: el contrato de la ficha cambió después de revisar', 'aviso', cerr || !p130.length, cerr ? noap : !p130.length ? `En ${nom} cada obra revisada usa el contrato que hoy dice su ficha.`
+      : `En ${p130.length} obra(s) el precio con que se revisó no es el contrato que hoy dice la ficha: ${p130.map(f => `${f.obra} (revisada con ${wUsd(Math.round(f.precio_contrato * 100))}; la ficha dice ${f.precio_ficha == null ? 'nada' : wUsd(Math.round(f.precio_ficha * 100))}${f.falta.includes('precio') ? '; falta decir si el cambio es de este mes' : ''})`).join('; ')}. Si el cambio es de ${nom}, revísala otra vez con el precio nuevo; si es de después, dilo (un toque) y se queda como está.`),
+    R(140, 'wip: facturado por encima del contrato', 'aviso', cerr || !p140.length, cerr ? noap : !p140.length ? `En ${nom} ninguna obra del WIP tiene facturado más que su contrato.`
+      : `${p140.length} obra(s) tienen facturado más que su contrato: ${p140.map(f => `${f.obra} (facturado ${wUsd(Math.round(f.facturado_fecha * 100))}, contrato ${wUsd(Math.round(f.precio_contrato * 100))})`).join('; ')}. ¿Falta una orden de cambio en el contrato de la ficha? Lo que pasa del precio sale sobre-facturado.`),
     R(150, 'wip: ingreso de una obra que no es factura ni ajuste', 'aviso', true, cerr ? noap : `En ${nom} todo el ingreso de las obras del WIP viene de sus facturas.`),
-    R(160, 'wip: obras terminadas con movimiento en el mes, fuera del WIP', 'aviso', true, cerr ? noap : `En ${nom} ninguna obra terminada de precio fijo tiene costo o facturas fuera del WIP.`),
+    R(160, 'wip: obras terminadas o sin aprobar, con dinero fuera del WIP', 'aviso', cerr || (!p160.length && !p160b.length), cerr ? noap : !p160.length && !p160b.length ? `En ${nom} ninguna obra de precio fijo terminada o sin aprobar tiene costo o facturas fuera del WIP.`
+      : [p160.length ? `${p160.length} obra(s) terminadas de precio fijo tienen costo o facturas en ${nom} y no están en su WIP: ${p160.map(o => o.obra).join(', ')}. Si alguna terminó este mes y le falta facturar, revísala como terminada para que entre.` : null,
+        p160b.length ? `${p160b.length} obra(s) de precio fijo ya tienen facturas en el libro y la app todavía no las tiene en obra: ${p160b.map(o => `${o.obra} (la app la tiene ${laTiene(o.obra_estado)}; facturado ${wUsd(wLibro(o.proyecto_id, per.periodo).fact)})`).join('; ')}. No están en el WIP: lo que se les facturó (un depósito, por ejemplo) cuenta entero como ingreso, de una vez. Si ya se aprobó, pásala a aprobada o en ejecución en su ficha: entra al WIP y se revisa como las demás. Si no va a ser obra, márcala como que no lleva WIP, con su nota, y deja de salir aquí.` : null].filter(Boolean).join(' ')),
     R(165, 'wip: obras activas sin contrato que no son de servicio', 'aviso', true, cerr ? noap : 'Toda obra activa con movimiento que no es de servicio tiene su contrato en la ficha (o su marca).'),
     R(170, 'wip: horas sin costo en el libro', 'aviso', cerr || !W.horas170, cerr ? noap : !W.horas170 ? 'Ninguna obra del WIP tiene hoy horas sin costo en el libro.'
       : '1 obra(s) del WIP tienen hoy horas reportadas que no están en el libro (sin pago repartido): C12 PRUEBA Obra D (8 h). Su costo a la fecha va corto y su avance también. Reparte los pagos de mano de obra pendientes.'),
     R(180, 'wip: la suma de los hitos no es el contrato', 'aviso', true, cerr ? noap : 'En cada obra del WIP con hitos, sus hitos suman el contrato de la ficha.')
   ];
 }
-// fn_wip_cierre: las cuatro filas que pide el cierre (c9)
+// fn_wip_cierre: las cuatro filas que pide el cierre (c9). La 174 y la 177 dicen en su nombre cuáles están en rojo, y su detalle lleva el
+// principio de cada uno (presupuesto por control: c9 guarda 1500 letras por fila)
 function wCierre(periodo) {
   const c = wControl(periodo), cu = c.filter(f => f.nivel === 'cuadre' && f.orden !== 40 && f.orden !== 50), av = c.filter(f => f.nivel === 'aviso');
   const r1 = cu.filter(f => !f.ok), r4 = av.filter(f => !f.ok), f40 = c.find(f => f.orden === 40), f50 = c.find(f => f.orden === 50);
+  const corta = (rs, min) => { const lim = Math.max(min, Math.trunc(1380 / Math.max(rs.length, 1))); return rs.map(f => [...f.detalle].length > lim ? [...f.detalle].slice(0, lim - 1).join('') + '…' : f.detalle).join(' · '); };
   return [
-    { ok: !r1.length, ir_a: 'wip', nivel: 'detiene', orden: 174, control: 'wip: los cuadres del WIP (c12)', detalle: r1.length ? r1.map(f => f.detalle).join(' · ') : `Los ${cu.length}, en verde.`,
-      que_hacer: r1.length ? 'El detalle dice qué: Contabilidad → WIP. Un asiento a mano en las cuentas del WIP se reversa; un ajuste que no cuadra se vuelve a postear.' : null },
+    { ok: !r1.length, ir_a: 'wip', nivel: 'detiene', orden: 174, control: 'wip: los cuadres del WIP (c12)' + (r1.length ? ` — ${r1.length} en rojo: ${r1.map(f => f.orden).join(', ')}` : ''), detalle: r1.length ? corta(r1, 160) : `Los ${cu.length}, en verde.`,
+      que_hacer: r1.length ? 'El detalle dice qué: Contabilidad → WIP. Un asiento a mano en las cuentas del WIP se reversa; un ajuste que no cuadra se vuelve a postear; a una obra con más costo que su estimado se le sube el estimado (o se marca terminada).' : null },
     { ok: f40.ok, ir_a: 'wip', nivel: 'detiene', orden: 175, control: 'wip: cada obra con su costo estimado revisado', detalle: f40.detalle,
-      que_hacer: f40.ok ? null : 'En Contabilidad → WIP, revisa cada obra de la lista: confirma lo propuesto con un toque, o pon su costo total estimado con su nota.' },
+      que_hacer: f40.ok ? null : 'En Contabilidad → WIP, decide cada obra de la lista: confirma lo propuesto con un toque, pon su costo total estimado con su nota, confirma lo de antes del libro, o déjala fuera este mes con su nota.' },
     { ok: f50.ok, ir_a: 'wip', nivel: 'detiene', orden: 176, control: 'wip: el ajuste del mes posteado y al día', detalle: f50.detalle,
       que_hacer: f50.ok ? null : 'En Contabilidad → WIP, toca «Postear el ajuste» (si ya estaba posteado, lo rehace con lo de hoy).' },
-    { ok: !r4.length, ir_a: 'wip', nivel: 'aviso', orden: 177, control: 'wip: sus avisos (c12)', detalle: r4.length ? r4.map(f => f.detalle).join(' · ') : `Los ${av.length}, en verde.`,
-      que_hacer: r4.length ? 'No detienen el cierre. El detalle dice qué mirar: Contabilidad → WIP.' : null }
+    { ok: !r4.length, ir_a: 'wip', nivel: 'aviso', orden: 177, control: 'wip: sus avisos (c12)' + (r4.length ? ` — ${r4.length} en rojo: ${r4.map(f => f.orden).join(', ')}` : ''), detalle: r4.length ? corta(r4, 120) : `Los ${av.length}, en verde.`,
+      que_hacer: r4.length ? 'No detienen el cierre. Aquí va el principio de cada uno; entero, en Contabilidad → WIP.' : null }
   ];
 }
 // un monto que llega como texto (fn_wip_monto): MX005 con lo que está mal; devuelve centavos
@@ -2126,55 +2322,71 @@ const W_FN = {
   },
   fn_wip_revisar(a) {
     const p = a.p;
-    if (!p || typeof p !== 'object' || Array.isArray(p)) return wErr('22023', 'La revisión llega como un objeto JSON: {"confirmar": true}, {"costo_estimado": "…", "nota": "…"} o {"terminada": true}.');
-    const sob = wSobra(p, ['confirmar', 'costo_estimado', 'nota', 'terminada', 'precio_contrato']); if (sob) return wErr('22023', `Clave desconocida en la revisión: ${sob}.`);
+    if (!p || typeof p !== 'object' || Array.isArray(p)) return wErr('22023', 'La revisión llega como un objeto JSON: {"confirmar": true}, {"costo_estimado": "…", "nota": "…"}, {"terminada": true}, {"excluir": true, "nota": "…"} o {"precio_de_despues": true}.');
+    const sob = wSobra(p, ['confirmar', 'costo_estimado', 'nota', 'terminada', 'precio_contrato', 'excluir', 'precio_de_despues']); if (sob) return wErr('22023', `Clave desconocida en la revisión: ${sob}.`);
     const per = wPer(a.p_periodo); if (!per) return wErr('MX002', `No existe el mes «${a.p_periodo || ''}» (va como AAAA-MM).`);
     const nom = wMes(per.periodo), Nom = wCap(nom);
     if (W.cerrados.has(per.periodo)) return wErr('MX002', `${Nom} ya está cerrado: su WIP no se toca. Lo que haya cambiado se revisa en el mes abierto.`);
     if (per.desde > HOY) return wErr('MX002', `${Nom} todavía no empieza (hoy es ${fDia(HOY)} en Miami): una obra se revisa en el mes que se está cerrando.`);
     if (!W_OB[a.p_proyecto]) return wErr('MX008', `No existe la obra «${a.p_proyecto || ''}».`);
     const o = wObra(a.p_proyecto);
-    if (!o.lleva_wip) return wErr('MX008', `«${o.obra}» no lleva WIP. ${o.motivo} Si de verdad es de precio fijo, márcala antes (modo «contrato»).`);
-    const term = p.terminada === true, conf = p.confirmar === true, nota = String(p.nota || '').trim() || null;
+    let term = p.terminada === true;
+    const conf = p.confirmar === true, excl = p.excluir === true, pdd = p.precio_de_despues === true;
+    let nota = String(p.nota || '').trim() || null;
+    if (!o.lleva_wip && !excl) return wErr('MX008', `«${o.obra}» no lleva WIP. ${o.motivo} Si de verdad es de precio fijo, márcala antes (modo «contrato»); si traía saldo del WIP y ya no va, exclúyela con su nota.`);
     let dado = null;
     if (String(p.costo_estimado == null ? '' : p.costo_estimado).trim()) { dado = wMonto(p.costo_estimado, 'el costo total estimado'); if (wEsErr(dado)) return dado; }
     if (term && (conf || dado != null)) return wErr('22023', 'Una obra terminada no lleva costo estimado ni propuesta que confirmar: su costo final es el que lleva. Manda solo {"terminada": true}.');
-    const ficha = W_OB[a.p_proyecto].contrato;
-    let precio = ficha;
-    if (String(p.precio_contrato == null ? '' : p.precio_contrato).trim()) { precio = wMonto(p.precio_contrato, 'el precio del contrato'); if (wEsErr(precio)) return precio; }
-    if (precio == null) return wErr('MX008', `«${o.obra}» no tiene contrato en su ficha: ponlo en la obra, o dilo en la revisión (precio_contrato) con su nota.`);
-    if (ficha !== precio && !nota) return wErr('22023', `El precio que pones (${wUsd(precio)}) no es el contrato de la ficha (${ficha == null ? 'vacío' : wUsd(ficha)}): deja escrito por qué en la nota (por ejemplo, «orden de cambio 2 firmada, falta en la ficha»).`);
+    if ((excl || pdd) && (term || conf || dado != null || String(p.precio_contrato == null ? '' : p.precio_contrato).trim() || (excl && pdd)))
+      return wErr('22023', 'Excluir una obra del WIP del mes, o decir que el cambio de su contrato es de después, va solo: {"excluir": true, "nota": "…"} o {"precio_de_despues": true}.');
+    if (excl && !nota) return wErr('22023', `Dejar «${o.obra}» fuera del WIP de ${nom} pide su porqué en la nota (por ejemplo, «el cliente canceló el contrato» o «falta el costo de antes: lo pasa el contador en diciembre»): queda escrito con quién y cuándo.`);
     const f = wCalc(per.periodo).find(x => x.proyecto_id === a.p_proyecto) || null;
-    const prop = f && f.propuesta_costo_estimado != null ? Math.round(f.propuesta_costo_estimado * 100) : null;
-    let costo, origen;
-    if (term) {
-      if (!o.terminada) return wErr('MX008', `La app tiene «${o.obra}» como «${o.obra_estado}», no como terminada: márcala completada en su ficha y revísala como terminada, o revisa su costo estimado.`);
-      costo = null; origen = 'terminada';
-    } else if (conf) {
-      if (prop == null) return wErr('MX008', `No hay una propuesta que confirmar para «${o.obra}» en ${nom} (ni revisión anterior ni un estimado completo): escribe su costo total estimado.`);
-      if (dado != null && dado !== prop) return wErr('MX008', `La propuesta de «${o.obra}» ya no es la que viste (${wUsd(dado)}; ahora es ${wUsd(prop)}): vuelve a mirar antes de confirmar.`);
-      costo = prop; origen = f.propuesta_origen || 'a_mano';
+    let prop = f && f.propuesta_costo_estimado != null ? Math.round(f.propuesta_costo_estimado * 100) : null, propO = f ? f.propuesta_origen : null;
+    const viva = wRev(a.p_proyecto, per.periodo), ficha = W_OB[a.p_proyecto].contrato;
+    let costo, origen, precio;
+    if (excl) {
+      if (!f) return wErr('MX008', `«${o.obra}» no está en el WIP de ${nom} (no lleva WIP ni traía saldo del ajuste anterior): no hay nada que excluir.`);
+      precio = ficha; costo = null; origen = 'excluida';
+    } else if (pdd) {
+      if (!viva || viva.excluida) return wErr('MX008', `«${o.obra}» no tiene una revisión en ${nom} que conservar: revísala primero.`);
+      if (ficha === viva.precio || ficha === viva.ficha) return wErr('MX008', `El contrato de la ficha de «${o.obra}» no cambió desde que se revisó en ${nom}: no hay nada que decir.`);
+      precio = viva.precio; costo = viva.costo; term = viva.terminada; origen = viva.origen; prop = viva.propuesta; propO = viva.propuesta_origen;
+      nota = [viva.nota, `El contrato de la ficha pasó de ${viva.ficha == null ? 'vacío' : wUsd(viva.ficha)} a ${ficha == null ? 'vacío' : wUsd(ficha)} después de ${nom}: este mes se queda con ${wUsd(viva.precio)}.`].filter(Boolean).join(' · ').slice(0, 1000);
     } else {
-      if (dado == null) return wErr('22023', 'Falta el costo total estimado (costo_estimado), o confirmar lo propuesto (confirmar), o decir que la obra terminó (terminada).');
-      costo = dado; origen = prop != null && prop === costo ? (f.propuesta_origen || 'a_mano') : 'a_mano';
-      if (origen === 'a_mano' && prop != null && !nota) return wErr('22023', `Cambias el costo estimado de «${o.obra}» de ${wUsd(prop)} (${f.propuesta_origen === 'mes_anterior' ? 'lo del mes anterior' : f.propuesta_origen === 'estimado' ? 'su estimado' : 'lo propuesto'}) a ${wUsd(costo)}: deja escrito por qué en la nota.`);
+      precio = ficha;
+      if (String(p.precio_contrato == null ? '' : p.precio_contrato).trim()) { precio = wMonto(p.precio_contrato, 'el precio del contrato'); if (wEsErr(precio)) return precio; }
+      if (precio == null) return wErr('MX008', `«${o.obra}» no tiene contrato en su ficha: ponlo en la obra, o dilo en la revisión (precio_contrato) con su nota.`);
+      if (ficha !== precio && !nota) return wErr('22023', `El precio que pones (${wUsd(precio)}) no es el contrato de la ficha (${ficha == null ? 'vacío' : wUsd(ficha)}): deja escrito por qué en la nota (por ejemplo, «orden de cambio 2 firmada, falta en la ficha»).`);
+      if (term) {
+        if (!o.terminada) return wErr('MX008', `La app tiene «${o.obra}» como «${o.obra_estado}», no como terminada: márcala completada en su ficha y revísala como terminada, o revisa su costo estimado.`);
+        costo = null; origen = 'terminada';
+      } else if (conf) {
+        if (prop == null) return wErr('MX008', `No hay una propuesta que confirmar para «${o.obra}» en ${nom} (ni revisión anterior ni un estimado completo): escribe su costo total estimado.`);
+        if (dado != null && dado !== prop) return wErr('MX008', `La propuesta de «${o.obra}» ya no es la que viste (${wUsd(dado)}; ahora es ${wUsd(prop)}): vuelve a mirar antes de confirmar.`);
+        costo = prop; origen = propO || 'a_mano';
+      } else {
+        if (dado == null) return wErr('22023', 'Falta el costo total estimado (costo_estimado), o confirmar lo propuesto (confirmar), o decir que la obra terminó (terminada), o dejarla fuera este mes con su nota (excluir).');
+        costo = dado; origen = prop != null && prop === costo ? (propO || 'a_mano') : 'a_mano';
+        if (origen === 'a_mano' && prop != null && !nota) return wErr('22023', `Cambias el costo estimado de «${o.obra}» de ${wUsd(prop)} (${propO === 'mes_anterior' ? 'lo del mes anterior' : propO === 'estimado' ? 'su estimado' : 'lo propuesto'}) a ${wUsd(costo)}: deja escrito por qué en la nota.`);
+      }
+      // el costo total estimado no puede ser menor que lo que la obra ya lleva (con nota o sin ella)
+      if (!term) {
+        const lb = wLibro(a.p_proyecto, per.periodo), an = W.antes[a.p_proyecto], cf = lb.costo + (an ? an.costo : 0);
+        if (cf > costo) return wErr('MX005', `El costo total estimado (${wUsd(costo)}) es menor que lo que «${o.obra}» ya lleva al ${fDia(per.hasta)} (${wUsd(cf)}): daría ${wPctT(cf, costo)} % de avance. El costo total no puede ser menos de lo gastado: súbelo (por lo menos a ${wUsd(cf)}, más lo que falte por gastar) o, si la obra terminó, márcala terminada.`);
+      }
     }
-    if (!term) {
-      const lb = wLibro(a.p_proyecto, per.periodo), an = W.antes[a.p_proyecto], cf = lb.costo + (an ? an.costo : 0);
-      if (cf > costo && !nota) return wErr('22023', `El costo estimado (${wUsd(costo)}) es menor que lo que «${o.obra}» ya lleva al ${fDia(per.hasta)} (${wUsd(cf)}): daría ${wPctT(cf, costo)} % de avance. Súbelo, o deja escrito por qué en la nota.`);
-    }
-    const viva = wRev(a.p_proyecto, per.periodo);
     let id;
-    if (viva && viva.precio === precio && viva.costo === costo && viva.terminada === term && viva.nota === nota) id = viva.id;
+    if (viva && viva.precio === precio && viva.costo === costo && viva.terminada === term && !!viva.excluida === excl && viva.ficha === ficha && viva.nota === nota) id = viva.id;
     else {
       if (viva) viva.sustituida_el = new Date().toISOString();
       id = wId('b1200000');
-      W.rev.push({ id, proyecto_id: a.p_proyecto, periodo: per.periodo, precio, ficha, costo, terminada: term, origen, propuesta: f ? prop : null, propuesta_origen: f ? f.propuesta_origen : null, nota, el: new Date().toISOString(), sustituida_el: null });
+      W.rev.push({ id, proyecto_id: a.p_proyecto, periodo: per.periodo, precio, ficha, costo, terminada: term, excluida: excl, origen, propuesta: prop, propuesta_origen: propO, nota, el: new Date().toISOString(), sustituida_el: null });
     }
     const fila = wCalc(per.periodo).find(x => x.proyecto_id === a.p_proyecto);
     const est = wEstado(per.periodo, wPlan(per.periodo));
-    return { fila: fila ? wSinInt(fila) : null, nota: est.vivo && !est.al_dia ? `Revisada. El ajuste de ${nom} ya estaba posteado (asiento ${est.numero}) y con esto ya no está al día: vuelve a postearlo (se reversa y entra el nuevo).`
-        : fila && fila.estado === 'pendiente' ? 'Revisada. ' + (fila.falta_texto || '') : 'Revisada.',
+    return { fila: fila ? wSinInt(fila) : null, nota: (excl ? `«${o.obra}» queda fuera del WIP de ${nom}: su ingreso de ese mes es lo facturado.` : 'Revisada.')
+        + (est.vivo && !est.al_dia ? ` El ajuste de ${nom} ya estaba posteado (asiento ${est.numero}) y con esto ya no está al día: vuelve a postearlo (se reversa y entra el nuevo).`
+          : fila && fila.estado === 'pendiente' ? ' ' + (fila.falta_texto || '') : ''),
       ajuste: { vivo: est.vivo, al_dia: est.al_dia, numero: est.numero || null, cambios: est.cambios || null }, origen, periodo: per.periodo, ya_estaba: !!viva && viva.id === id, proyecto_id: a.p_proyecto, revision_id: id };
   },
   fn_wip_postear(a) {
@@ -2183,11 +2395,14 @@ const W_FN = {
     if (W.cerrados.has(per.periodo)) return wErr('MX002', `${Nom} ya está cerrado: su ajuste de WIP no se toca (si lo tuvo, ya se deshizo solo el día 1). Lo que haya cambiado entra en el ajuste del mes abierto.`);
     if (per.hasta >= HOY) return wErr('MX002', `${Nom} todavía no termina (su último día es el ${fDia(per.hasta)}; hoy es ${fDia(HOY)} en Miami): el ajuste del WIP se postea con el mes terminado, desde el ${fDia(wSig(per.hasta))}. Hasta entonces siguen entrando costos y facturas.`);
     const plan = wPlan(per.periodo), est = wEstado(per.periodo, plan), t = plan.tot;
-    const fuera = plan.filas.filter(f => f.estado === 'pendiente').map(f => ({ obra: f.obra, falta: f.falta, falta_texto: f.falta_texto, proyecto_id: f.proyecto_id }));
+    const porObra = (x, y) => x.obra.localeCompare(y.obra);
+    const fuera = plan.filas.filter(f => f.estado === 'pendiente').sort(porObra).map(f => ({ obra: f.obra, falta: f.falta, falta_texto: f.falta_texto, proyecto_id: f.proyecto_id }));
+    const excluidas = plan.filas.filter(f => f.estado === 'excluida').sort(porObra).map(f => ({ obra: f.obra, nota: f.revision_nota, proyecto_id: f.proyecto_id }));
+    const sufExcl = excluidas.length ? ` ${excluidas.length} obra(s) quedaron fuera a propósito, con su nota.` : '';
     let rehecho = null, sust = null;
     if (est.vivo) {
       const v = wVivo(per.periodo);
-      if (est.al_dia) return { nota: `El ajuste de WIP de ${nom} ya estaba posteado y sigue al día (asiento ${v.numero}): no se duplica.`, fuera, obras: v.obras, lineas: v.lineas,
+      if (est.al_dia) return { nota: `El ajuste de WIP de ${nom} ya estaba posteado y sigue al día (asiento ${v.numero}): no se duplica.`, fuera, excluidas, obras: v.obras, lineas: v.lineas,
         asiento: { id: v.asiento_id, fecha: v.fecha, numero: v.numero }, perdida: wD(v.perdida), periodo: per.periodo, reverso: { id: v.auto.id, fecha: v.auto.fecha, numero: v.auto.numero },
         posteado: true, ajuste_id: v.id, ya_estaba: true, sub_facturado: wD(v.sub), sobre_facturado: wD(v.sobre) };
       const motivo = `El WIP de ${nom} cambió después de postear su ajuste (${v.numero}): ${est.cambios || 'cambió su cálculo'}.${a.p_motivo ? ' ' + a.p_motivo : ''}`;
@@ -2195,14 +2410,14 @@ const W_FN = {
       Object.assign(v, { deshecho_el: new Date().toISOString(), deshecho_motivo: motivo, reverso_numero: rn, reverso_id: wId('c1200000') });
       sust = v.id; rehecho = { motivo, numero: v.numero, reverso: { id: v.reverso_id, numero: rn }, ajuste_id: v.id, por_fuera: false, anula_reverso_automatico: anula };
     }
-    if (!plan.lineas.length) return { nota: rehecho ? `El ajuste anterior de ${nom} (asiento ${rehecho.numero}) se deshizo, y hoy no hay nada que ajustar.` : t.obras === 0 ? `En ${nom} ninguna obra está lista para el ajuste${fuera.length ? ` (${fuera.length} pendiente(s): les falta su revisión o lo de antes del libro)` : ''}.` : `En ${nom} no hay nada que ajustar: en las ${t.obras} obra(s) listas lo ganado es lo facturado, al centavo.`,
-      fuera, obras: t.obras, periodo: per.periodo, rehecho, posteado: false, ya_estaba: false };
+    if (!plan.lineas.length) return { nota: (rehecho ? `El ajuste anterior de ${nom} (asiento ${rehecho.numero}) se deshizo, y hoy no hay nada que ajustar.` : t.obras === 0 ? `En ${nom} ninguna obra está lista para el ajuste${fuera.length ? ` (${fuera.length} pendiente(s): les falta su revisión o lo de antes del libro)` : ''}.` : `En ${nom} no hay nada que ajustar: en las ${t.obras} obra(s) listas lo ganado es lo facturado, al centavo.`) + sufExcl,
+      fuera, excluidas, obras: t.obras, periodo: per.periodo, rehecho, posteado: false, ya_estaba: false };
     const numero = wNum(), auto = { id: wId('d1200000'), numero: wNum(), fecha: wSig(per.hasta) };
     const aj = { id: wId('e1200000'), periodo: per.periodo, asiento_id: wId('f1200000'), numero, fecha: per.hasta, auto, obras: t.obras, lineas: plan.lineas.length, lineasAs: plan.lineas,
       sub: t.sub, sobre: t.sobre, perdida: t.prov, huella: plan.huella, foto: plan.filas, sustituye_a: sust, motivo: a.p_motivo || null, creado_el: new Date().toISOString(), deshecho_el: null };
     W.ajustes.push(aj);
-    return { nota: `${rehecho ? 'Rehecho' : 'Posteado'} el ajuste de WIP de ${nom}: asiento ${numero}, con ${t.obras} obra(s) (sub-facturado ${wUsd(t.sub)}, sobre-facturado ${wUsd(t.sobre)}, pérdida ${wUsd(t.prov)}). Se deshace solo el ${fDia(auto.fecha)} (asiento ${auto.numero}).${fuera.length ? ` ${fuera.length} obra(s) no entraron: les falta su revisión o lo de antes del libro.` : ''}`,
-      fuera, obras: t.obras, lineas: plan.lineas.length, asiento: { id: aj.asiento_id, fecha: per.hasta, numero }, perdida: wD(t.prov), periodo: per.periodo, rehecho, reverso: { id: auto.id, fecha: auto.fecha, numero: auto.numero },
+    return { nota: `${rehecho ? 'Rehecho' : 'Posteado'} el ajuste de WIP de ${nom}: asiento ${numero}, con ${t.obras} obra(s) (sub-facturado ${wUsd(t.sub)}, sobre-facturado ${wUsd(t.sobre)}, pérdida ${wUsd(t.prov)}). Se deshace solo el ${fDia(auto.fecha)} (asiento ${auto.numero}).${fuera.length ? ` ${fuera.length} obra(s) no entraron: les falta su revisión o lo de antes del libro.` : ''}${sufExcl}`,
+      fuera, excluidas, obras: t.obras, lineas: plan.lineas.length, asiento: { id: aj.asiento_id, fecha: per.hasta, numero }, perdida: wD(t.prov), periodo: per.periodo, rehecho, reverso: { id: auto.id, fecha: auto.fecha, numero: auto.numero },
       posteado: true, ajuste_id: aj.id, ya_estaba: false, sub_facturado: wD(t.sub), sobre_facturado: wD(t.sobre) };
   },
   fn_wip_deshacer(a) {
@@ -5087,8 +5302,8 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
       /Hasta el corte se factura por QuickBooks/.test(arriba) && /Hasta el 31-dic-2026 las facturas salen por QuickBooks \(el 🧾 de siempre\)\. Aquí se pueden preparar borradores para probar; se podrán emitir desde el 1-ene-2027\./.test(arriba) && /faltan \d+ días/.test(arriba), arriba);
     ok('…y lo que falta para emitir: «los datos de la empresa y el «How to pay»», con «Ponerlos en Ajustes»', /Para emitir faltan los datos de la empresa y el «How to pay»/.test(arriba) && (await q.locator('[data-fac-ir-ajustes]').count()) === 1, arriba);
     ok('…la lista vacía dice por dónde se empieza (sin pintar ceros) y el control no tiene rojos', /Todavía ninguna factura de la app\. Empieza en «Por facturar»/.test(await texto(q, '#ct-fac-filas')) && (await q.locator('#conta-raiz .ct-rojo').count()) === 0);
-    ok('…y antes del corte no promete un número (la base lo da con el año de hoy; la primera de verdad lleva el del corte): «se numeran desde el corte (1 ene 2027)»',
-      /se numeran desde el corte \(1 ene 2027\)/.test(await texto(q, '.ct-pag-sub')) && !/la siguiente/.test(await texto(q, '.ct-pag-sub')), await texto(q, '.ct-pag-sub'));
+    ok('…y antes del corte dice desde cuándo se numera y cuál será la primera (la base ya la da con el año del corte): «se numeran desde el corte (1 ene 2027): la primera, MXP-2027-0001»',
+      /se numeran desde el corte \(1 ene 2027\): la primera, MXP-2027-0001/.test(await texto(q, '.ct-pag-sub')) && !/la siguiente/.test(await texto(q, '.ct-pag-sub')), await texto(q, '.ct-pag-sub'));
     await foto(q, 'c11-0-antes-del-corte');
     // por facturar → el hito Rough-in → su borrador
     await toca(q, '[data-fac-sub="obras"]');
@@ -5122,7 +5337,8 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     await aj.locator('[name="como_pagar"]').fill(F_COMO_PAGAR);
     ok('Ajustes · el «How to pay» dice que sale en TODAS las facturas (con enlace y sin él) y avisa, mientras se escribe, si habla de un enlace («the secure link»); el de la casa no avisa',
       avisoLink && !(await q.locator('#ct-fac-como-aviso').isVisible()) && /Sale igual en TODAS las facturas/.test(await texto(q, '#ct-fac-ajustes-form')) && /habla de un enlace de pago/.test(await q.locator('#ct-fac-como-aviso').textContent()));
-    ok('Ajustes · la tarjeta sale apagada con su porqué (el recargo quedaría de anticipo; se confirma con Stripe y con el CPA) y el pago por cuenta de banco marcado', /La tarjeta está apagada/.test(await texto(q, '.ct-fac-tarjeta')) && /con Stripe y con el CPA/.test(await texto(q, '.ct-fac-tarjeta')) && await aj.locator('[name="ach"]').isChecked());
+    ok('Ajustes · la tarjeta sale apagada con el texto de la base (se enciende cuando el sistema de cobros sepa registrar el recargo; solo ACH; la factura no la ofrece) y el pago por cuenta de banco marcado',
+      (await texto(q, '.ct-fac-tarjeta')) === F_TARJETA && await aj.locator('[name="ach"]').isChecked(), await texto(q, '.ct-fac-tarjeta'));
     n0 = llamadas.length;
     await aj.locator('button[type="submit"]').click(); await pintado(q);
     const lc = ultima(n0, 'fn_emision_config');
@@ -5132,8 +5348,12 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     await q.locator('.ct-fac-avanzado summary').click();
     await q.locator('#ct-fac-ajustes-form [name="corte"]').fill(HOY);
     n0 = llamadas.length;
-    await q.locator('#ct-fac-ajustes-form button[type="submit"]').click(); await pintado(q);
-    ok('…mover el corte a hoy manda {corte} y arriba dice «Se factura aquí» con el texto de la base', JSON.stringify(ultima(n0, 'fn_emision_config').args) === JSON.stringify({ p: { corte: HOY } }) && /Se factura aquí/.test(await texto(q, '#ct-fac-corte')) && /las facturas se emiten aquí, con su número de la serie del año/.test(await texto(q, '#ct-fac-corte')));
+    await q.locator('#ct-fac-ajustes-form button[type="submit"]').click(); await q.waitForTimeout(150);
+    const fcorte = await texto(q, '#ct-fac-ajustes > .ct-form');
+    ok('…mover el corte a hoy (cambia HOY por dónde va el 🧾) se pregunta antes, en llano, sin llamar a la base', /desde HOY el 🧾 de cada hito abre la factura aquí y ya no la manda a QuickBooks/.test(fcorte) && !ultima(n0, 'fn_emision_config'), fcorte);
+    await q.locator('#ct-fac-ajustes > .ct-form button[type="submit"]').click(); await pintado(q);
+    ok('…«Sí, mover el corte» manda {corte}, arriba dice «Se factura aquí» con el texto de la base, y el aviso de la base queda en los ajustes', JSON.stringify(ultima(n0, 'fn_emision_config').args) === JSON.stringify({ p: { corte: HOY } }) && /Se factura aquí/.test(await texto(q, '#ct-fac-corte')) && /las facturas se emiten aquí, con su número de la serie del año/.test(await texto(q, '#ct-fac-corte')) &&
+      /Desde hoy el 🧾 de cada hito abre la factura aquí y ya NO manda a QuickBooks \(el corte estaba en el 1-ene-2027\)/.test(await texto(q, '#ct-fac-ajustes > .ct-aviso')), await texto(q, '#ct-fac-ajustes'));
 
     // ---- desde el corte: el borrador se puede emitir ----
     const idA = F.docs[0].id;
@@ -5186,9 +5406,10 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     ok('Emitir · con la casilla: fn_emision_emitir(documento, el visto de lo que se ve, {}) y la factura queda emitida: MXP-…-0001, «emitida», el asiento y «Ahora, el PDF y mandarla»',
       le2 && le2.args.p_visto === visto && JSON.stringify(le2.args.p_opciones) === '{}' && /MXP-\d{4}-0001/.test(await doc.locator('h2').textContent()) && /emitida/.test(await doc.locator('.ct-cab .ct-pill').textContent()) && /asiento 2026-000002/.test(await doc.textContent()) && /Ahora, el PDF y mandarla/.test(await doc.textContent()), le2 && JSON.stringify(le2.args));
     ok('…lo que debe hoy en el libro ($1,111.11 y $123.46 de retención), «Todavía sin PDF», «Sin mandar», y el pago en línea por cuenta de banco (la tarjeta, apagada)',
-      /Debe hoy\s*\$1,111\.11/.test(await doc.locator('.ct-kpis').textContent()) && /\$123\.46 de retención/.test(await doc.locator('.ct-kpis').textContent()) && /Todavía sin PDF/.test(await doc.textContent()) && /Sin mandar todavía/.test(await doc.textContent()) && /Se paga en línea por cuenta de banco \(ACH\)/.test(await doc.textContent()) && /La tarjeta, apagada/.test(await doc.textContent()));
+      /Debe hoy\s*\$1,111\.11/.test(await doc.locator('.ct-kpis').textContent()) && /\$123\.46 de retención/.test(await doc.locator('.ct-kpis').textContent()) && /Todavía sin PDF/.test(await doc.textContent()) && /Sin mandar todavía/.test(await doc.textContent()) && /Se paga en línea por cuenta de banco \(ACH\)/.test(await doc.textContent()) && (await texto(q, '#ct-fac-doc .ct-fac-tarjeta-txt')) === F_TARJETA);
     const congelado = await texto(q, '#ct-fac-previa .ct-fx');
-    ok('…y la vista es lo que recibió el cliente (el contenido congelado): «No. MXP-…-0001», ya sin DRAFT', /No\. MXP-\d{4}-0001/.test(congelado) && !/DRAFT/.test(congelado) && /Please reference invoice MXP-\d{4}-0001/.test(congelado), congelado.slice(0, 300));
+    ok('…y la vista es lo que recibió el cliente (el contenido congelado): «No. MXP-…-0001», ya sin DRAFT, «Online payment is by bank account (ACH) only.» y ninguna tarjeta', /No\. MXP-\d{4}-0001/.test(congelado) && !/DRAFT/.test(congelado) && /Please reference invoice MXP-\d{4}-0001\./.test(congelado) &&
+      /Online payment is by bank account \(ACH\) only\./.test(congelado) && !/card/i.test(congelado), congelado.slice(0, 300));
     await foto(q, 'c11-2-emitida');
     // el PDF: con su enlace de pago (solo cuenta de banco)
     n0 = llamadas.length;
@@ -5320,6 +5541,58 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     ok('…que llama a la función stripe (desactivar_enlace con el enlace y el motivo) y desaparece', ld && ld.args.enlace === F.enlaces.find(e => e.doc === idT).id && /se anuló/.test(ld.args.motivo) && !(await q.locator('#ct-fac-doc [data-fac-baja]').count()), ld && JSON.stringify(ld.args));
     await foto(q, 'c11-5-anulada');
 
+    // ---- (12-nov) la factura de la retención: su serie (MXP-R-…), lo que cita el cliente (las facturas que reclama) y que no
+    // se le ofrece pagar en línea; y A1, con su retención reclamada, ya no se anula sola (lo dice la base) ----
+    { const bX = C11_FN.fn_emision_borrador({ p: { forma: 'tm', proyecto_id: 'c11-prueba-a', lineas: [{ descripcion: 'Extra outlets', tipo: 'material', cantidad: '1', precio: '200.00' }] } });
+      C11_FN.fn_emision_emitir({ p_documento: bX.documento.id, p_visto: bX.visto, p_opciones: {} }); }
+    const idX = F.docs[F.docs.length - 1].id, numX = F.docs[F.docs.length - 1].numero;
+    await ve(q, 'facturas', { sub: 'obras' });
+    n0 = llamadas.length;
+    await toca(q, '.ct-fac-obra[data-obra="c11-prueba-a"] [data-fac-retencion]');
+    let prevR = await texto(q, '#ct-fac-previa .ct-fx');
+    ok('La de la retención · «La de la retención» llama a fn_emision_borrador({forma: retencion, proyecto_id}) y la vista previa reclama lo retenido de las DOS facturas, sin pago en línea, y cita las dos: «Please reference invoices MXP-…-0001 and MXP-…-0003.»',
+      JSON.stringify(ultima(n0, 'fn_emision_borrador').args) === JSON.stringify({ p: { forma: 'retencion', proyecto_id: 'c11-prueba-a' } }) && /Retainage release/.test(prevR) && /Retainage withheld on invoice MXP-\d{4}-0001/.test(prevR) && new RegExp(`Retainage withheld on invoice ${numX}`).test(prevR) &&
+      new RegExp(`Please reference invoices MXP-\\d{4}-0001 and ${numX}\\.`).test(prevR) && !/online by bank transfer/.test(prevR) && !/card/i.test(prevR), prevR.slice(-600));
+    await toca(q, '#ct-fac-doc [data-fac-emitir]');
+    ok('…emitirla dice que lleva su serie (MXP-R-…) y que no lleva asiento', /serie de la retención \(MXP-R-\d{4}-…\)/.test(await texto(q, '#ct-fac-doc .ct-form')) && /no lleva asiento/.test(await texto(q, '#ct-fac-doc .ct-form')), await texto(q, '#ct-fac-doc .ct-form'));
+    await q.locator('#ct-fac-doc .ct-form [name="si"]').check();
+    await q.locator('#ct-fac-doc .ct-form button[type="submit"]').click(); await pintado(q);
+    const idR = F.docs.find(d => d.forma === 'retencion').id;
+    ok('…emitida: MXP-R-…-0001 (su serie), «sin asiento: es la de la retención», y «Sin pago en línea» con el porqué de la base; la vista cita las dos facturas',
+      /MXP-R-\d{4}-0001/.test(await texto(q, '#ct-fac-doc h2')) && /sin asiento: es la de la retención/.test(await texto(q, '#ct-fac-doc')) && /Sin pago en línea: La factura de la retención no lleva enlace propio/.test(await texto(q, '#ct-fac-doc')) &&
+      new RegExp(`Please reference invoices MXP-\\d{4}-0001 and ${numX}\\.`).test(await texto(q, '#ct-fac-previa')), await texto(q, '#ct-fac-doc'));
+    await foto(q, 'c11-6-retencion');
+    await ve(q, 'facturas', { doc: idA });
+    await toca(q, '#ct-fac-doc [data-fac-anular]');
+    await q.locator('#ct-fac-doc .ct-form [name="motivo"]').fill('ZZ prueba: anular con la retención reclamada');
+    n0 = llamadas.length;
+    await q.locator('#ct-fac-doc .ct-form button[type="submit"]').click(); await pintado(q);
+    ok('…anular A1, cuya retención reclama la de la retención: la base no deja (MX008) y la forma lo dice con su texto, sin anular nada',
+      !!ultima(n0, 'fn_emision_anular') && !F.docs.find(d => d.id === idA).anulado_el && /Lo retenido de la factura MXP-\d{4}-0001 está reclamado en la factura de la retención MXP-R-\d{4}-0001: anula antes la de la retención/.test(await texto(q, '#ct-fac-doc .ct-form')), await texto(q, '#ct-fac-doc .ct-form'));
+    // un pago por cuenta de banco en camino: se dice, no se pide otro enlace y no se anula (en una factura cuya retención nadie
+    // reclama: la de B, «Final», sin retención)
+    { const bF = C11_FN.fn_emision_borrador({ p: { forma: 'hito', hito_id: -1110000004 } }); C11_FN.fn_emision_emitir({ p_documento: bF.documento.id, p_visto: bF.visto, p_opciones: {} }); }
+    const idF = F.docs[F.docs.length - 1].id;
+    F.camino[idF] = 18000;
+    await ve(q, 'facturas', { doc: idF });
+    ok('Un pago por cuenta de banco en camino · la factura lo dice ($180.00, en Cobros en línea) y el pago en línea dice por qué no hay otro enlace', /Hay un pago por cuenta de banco en camino por \$180\.00/.test(await texto(q, '#ct-fac-doc .ct-fac-camino')) && /Ya hay un pago por cuenta de banco en camino por esta factura/.test(await texto(q, '#ct-fac-doc')), await texto(q, '#ct-fac-doc'));
+    await toca(q, '#ct-fac-doc [data-fac-anular]');
+    await q.locator('#ct-fac-doc .ct-form [name="motivo"]').fill('ZZ prueba: anular con un pago en camino');
+    await q.locator('#ct-fac-doc .ct-form button[type="submit"]').click(); await pintado(q);
+    ok('…anularla: la base no deja (MX008) mientras el pago va en camino, y la forma lo dice en llano (espera a que entre o falle)', !F.docs.find(d => d.id === idF).anulado_el && /tiene un pago por cuenta de banco en camino \(\$180\.00\): no se anula ahora/.test(await texto(q, '#ct-fac-doc .ct-form')) && /Espera a que el pago entre o falle/.test(await texto(q, '#ct-fac-doc .ct-form')), await texto(q, '#ct-fac-doc .ct-form'));
+    delete F.camino[idF];
+    // el depósito con retención: el aviso que no frena, y «Sin retención en este depósito» la pone en 0 en ESE borrador
+    F.retObra['c11-prueba-b'] = 10;
+    const bDep = C11_FN.fn_emision_borrador({ p: { forma: 'hito', hito_id: -1110000003 } });
+    await ve(q, 'facturas', { doc: bDep.documento.id });
+    ok('El depósito con retención · el aviso de la base (no frena: «Es el depósito y lleva retención (10 %: se le retienen $120.00 y paga ahora $1,080.00)…») con «Sin retención en este depósito»',
+      (await q.locator('#ct-fac-doc [data-aviso="deposito_con_retencion"].warn').count()) === 1 && /Es el depósito y lleva retención \(10 %: se le retienen \$120\.00 y paga ahora \$1,080\.00\)/.test(await texto(q, '#ct-fac-doc [data-aviso="deposito_con_retencion"]')) && (await q.locator('#ct-fac-doc [data-fac-ret0]').count()) === 1);
+    n0 = llamadas.length;
+    await toca(q, '#ct-fac-doc [data-fac-ret0]');
+    ok('…un toque: fn_emision_borrador({documento, retencion_pct: "0"}) y el depósito queda sin retención (el aviso se va; la de la obra sigue en 10 %)', JSON.stringify(ultima(n0, 'fn_emision_borrador').args) === JSON.stringify({ p: { documento: bDep.documento.id, retencion_pct: '0' } }) &&
+      !(await q.locator('#ct-fac-doc [data-aviso="deposito_con_retencion"]').count()) && /0 % · la de este borrador/.test(await texto(q, '#ct-fac-doc .ct-kpis')) && F.retObra['c11-prueba-b'] === 10);
+    C11_FN.fn_emision_descartar({ p_documento: bDep.documento.id }); delete F.retObra['c11-prueba-b'];
+
     // ---- la del contratista desde la ficha (el contrato de MXP_CONTA.facturar): el borrador de su hito, con su aviso ----
     await q.evaluate(() => window.MXP_CONTA.facturar({ hito: -1110000005, proyecto: 'c11-prueba-c', obra: 'C11 PRUEBA Nave Tres' }));
     n0 = llamadas.length;
@@ -5330,9 +5603,33 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     await q.evaluate(() => window.MXP_CONTA.facturar({ hito: -1110000005 }));
     await ve(q, 'facturas');
     ok('…otra vez el mismo hito: el MISMO borrador (la base no hace otro)', F.docs.filter(d => d.hito_id === -1110000005).length === 1 && (await q.locator('#ct-fac-doc').getAttribute('data-doc')) === idC);
+    // (12-nov) el siguiente número ya lo lleva una factura hecha fuera de la app: la serie lo salta y la emisión lo dice
+    const numSec = k => `MXP-${HOY.slice(0, 4)}-${String(F.seq + k).padStart(4, '0')}`, nFuera = numSec(1), nLibre = numSec(2);
+    F.fuera.push({ num: nFuera, fecha: HOY, montoC: 5000, p: 'c11-prueba-b' });
+    await ve(q, 'facturas', { doc: idC });
+    await toca(q, '#ct-fac-doc [data-fac-emitir]');
+    ok(`El número que ya lleva una factura de fuera (${nFuera}) · la confirmación promete el siguiente LIBRE (la base ya lo salta): ${nLibre}`, (await texto(q, '#ct-fac-doc .ct-form')).includes(`el siguiente: ${nLibre}`), await texto(q, '#ct-fac-doc .ct-form'));
+    await q.locator('#ct-fac-doc .ct-form [name="si"]').check();
+    await q.locator('#ct-fac-doc .ct-form button[type="submit"]').click(); await pintado(q);
+    ok(`…emitida ${nLibre} y la nota (en ámbar) dice lo que dijo la base: «La serie saltó ${nFuera}: ya lo(s) llevaba una factura hecha fuera de la app…»`, (await texto(q, '#ct-fac-doc h2')).includes(nLibre) &&
+      (await texto(q, '#ct-fac-doc > .ct-aviso.warn')).includes(`La serie saltó ${nFuera}: ya lo(s) llevaba una factura hecha fuera de la app (un número no se da dos veces). El control de la facturación dice cuál.`), await texto(q, '#ct-fac-doc'));
+    ok(`…y arriba, el aviso 72 del control la nombra (#${nFuera}, «lleva un número con la forma de la serie: la serie lo salta»)`, new RegExp(`#${nFuera} \\(del .*; lleva un número con la forma de la serie: la serie lo salta\\)`).test(await texto(q, '#ct-fac-arriba')), await texto(q, '#ct-fac-arriba'));
     await q.evaluate(() => window.MXP_CONTA.facturar({ hito: -1110000001 }));
     await ve(q, 'facturas');
     ok('…un hito que ya se facturó: no se prepara nada y lo dice la base («ya se facturó: factura MXP-…-0001»), con «Ver la obra»', /ya se facturó: factura MXP-\d{4}-0001/.test(await texto(q, '#ct-fac-pedido')) && (await q.locator('#ct-fac-a-obras').count()) === 1);
+    // (12-nov, la revisión final) SOLO SE FACTURA UN HITO PENDIENTE: el que la ficha ya tiene como facturado y aquí no tiene
+    // factura (se facturó en QuickBooks a mano) sale en «Por facturar» sin botón, y pedido desde la ficha la base lo dice
+    { const hD = F.hitos.find(h => h.id === -1110000003); hD.estado = 'facturado';
+      await ve(q, 'facturas', { sub: 'obras' });
+      const selD = '.ct-fac-obra[data-obra="c11-prueba-b"] [data-hito="-1110000003"]', liD = q.locator(selD);
+      ok('Un hito que la ficha ya tiene como facturado y aquí no tiene factura (se facturó fuera de la app) · en «Por facturar» sale como «facturado», sin número de factura y SIN botón de facturar',
+        (await liD.count()) === 1 && /facturado/.test(await texto(q, selD)) && !/factura MXP/.test(await texto(q, selD)) && (await liD.locator('[data-fac-hito], [data-fac-abrir]').count()) === 0, await texto(q, selD));
+      await q.evaluate(() => window.MXP_CONTA.facturar({ hito: -1110000003 }));
+      await ve(q, 'facturas');
+      ok('…y pedido desde la ficha: no se prepara nada y lo dice la base («ya está marcado como facturado en la ficha… ponlo antes en pendiente»)',
+        /ya está marcado como facturado en la ficha de la obra y aquí no hay ninguna factura suya/.test(await texto(q, '#ct-fac-pedido')) && /ponlo antes en pendiente/.test(await texto(q, '#ct-fac-pedido')) &&
+        !F.docs.some(d => d.hito_id === -1110000003 && d.estado === 'borrador'), await texto(q, '#ct-fac-pedido'));
+      hD.estado = 'pendiente'; }
 
     // ---- el rojo del control y sin la función ----
     F.ctlRojo = true;
@@ -5425,7 +5722,11 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
       ok('…otro 500 con el corte visto ya pasado: NO va a QuickBooks (quedaría fuera de la serie): no se factura y lo dice', fue() === 'nada' && /no se facturó nada/.test(t), `${fue()} · ${t}`);
       estado.c11EstadoFalla = false; estado.c11 = false; n0 = llamadas.length;
       t = await tocar();
-      ok('…sin c11 en la base (la vista no existe: 404): QuickBooks, como antes de pegarla', fue() === 'qb', `${fue()} · ${t}`);
+      ok('…la vista ya no existe (404) y este teléfono vio un corte que ya llegó: c11 estaba y no contesta, así que no adivina (no factura y lo dice)', fue() === 'nada' && /no se facturó nada/.test(t), `${fue()} · ${t}`);
+      await q.evaluate(() => { try { localStorage.removeItem('mxp_factura_corte'); } catch { /* nada */ } });
+      n0 = llamadas.length;
+      t = await tocar();
+      ok('…sin c11 en la base (404) y sin ningún corte visto (la de antes de pegarla): QuickBooks, como siempre', fue() === 'qb', `${fue()} · ${t}`);
       estado.c11 = true;
       await cx.close();
     }
@@ -5503,7 +5804,7 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
       r0 && JSON.stringify(r0.args) === '{"p_periodo":null}' && lecturas.some(l => /^v_wip_schedule\?select=\*&periodo=eq\.2026-10/.test(l)) && c0 && JSON.stringify(c0.args) === '{"p_periodo":"2026-10"}', r0 && JSON.stringify(r0.args));
     let res = await txt(q.locator('#ct-wip-res'));
     ok('El mes que toca (Octubre de 2026): en llano cuántas obras y qué les falta, la nota de la base, «nada que postear», desde qué mes lo exige el cierre, y sin cifras (ninguna obra lista)',
-      /Octubre de 2026/.test(res) && /4 obras de precio fijo en el WIP: 4 por revisar, 1 sin lo de antes confirmado\. El cierre lo exige desde noviembre de 2026\./.test(res) && /4 obra\(s\) no entran todavía: 4 por revisar y 1 sin lo de antes del libro confirmado\./.test(res) &&
+      /Octubre de 2026/.test(res) && /4 obras de precio fijo en el WIP: 4 por revisar, 1 sin lo de antes confirmado\. El cierre lo exige desde noviembre de 2026\./.test(res) && /4 obra\(s\) no entran todavía: 4 por revisar, 1 sin lo de antes del libro confirmado\./.test(res) &&
       /nada que postear/.test(res) && /En octubre de 2026 hoy no hay nada que ajustar\./.test(res) && (await q.locator('#ct-wip-res .ct-kpi').count()) === 0 && /Ninguna obra lista todavía/.test(res), res);
     let tA = await txt(ob(q, 'c12-prueba-a')), tD = await txt(ob(q, 'c12-prueba-d'));
     ok('La revisión de octubre: las 4 obras de precio fijo (la de servicio no sale), cada una con lo que lleva gastado y lo que le falta; sin propuesta, «Poner su costo estimado» con la nota de la base; la que ya andaba, «Lo de antes del libro» con su porqué',
@@ -5538,9 +5839,9 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
       /con dos decimales como mucho/.test(await txt(ob(q, 'c12-prueba-a').locator('.ct-form'))));
     await fA.locator('[name="costo"]').fill('2,500'); await enviar(q, fA);
     let lr = ultima(n0, 'fn_wip_revisar');
-    ok('…menos de lo que ya lleva y sin nota: lo manda como texto («2500») y la base lo frena (22023) con su texto, sin revisar nada',
+    ok('…menos de lo que ya lleva: lo manda como texto («2500») y la base lo frena SIEMPRE (MX005, con nota o sin ella) con su texto, sin revisar nada; la forma ya decía cuánto lleva',
       lr && JSON.stringify(lr.args) === JSON.stringify({ p_proyecto: 'c12-prueba-a', p_periodo: '2026-10', p: { costo_estimado: '2500' } }) && !W.rev.length &&
-      /El costo estimado \(\$2,500\.00\) es menor que lo que «C12 PRUEBA Obra A» ya lleva al 31-oct-2026 \(\$3,000\.00\): daría 120 % de avance\. Súbelo, o deja escrito por qué en la nota\./.test(await txt(ob(q, 'c12-prueba-a').locator('.ct-form'))), lr && JSON.stringify(lr.args));
+      /El costo total estimado \(\$2,500\.00\) es menor que lo que «C12 PRUEBA Obra A» ya lleva al 31-oct-2026 \(\$3,000\.00\): daría 120 % de avance\. El costo total no puede ser menos de lo gastado: súbelo \(por lo menos a \$3,000\.00, más lo que falte por gastar\) o, si la obra terminó, márcala terminada\./.test(await txt(ob(q, 'c12-prueba-a').locator('.ct-form'))), lr && JSON.stringify(lr.args));
     await fA.locator('[name="costo"]').fill('6,000.00'); await enviar(q, fA);
     lr = ultima(n0, 'fn_wip_revisar'); tA = await txt(ob(q, 'c12-prueba-a'));
     ok('…con $6,000.00: fn_wip_revisar({p_proyecto, p_periodo: "2026-10", p: {costo_estimado: "6000.00"}}) y A queda revisada: lleva $3,000.00 · costo total estimado $6,000.00 · 50 % hecho; ganado $5,000.00, facturado $2,000.00 → vas $3,000.00 por detrás',
@@ -5641,13 +5942,59 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     ok('…«Sí, terminó»: fn_wip_revisar({…, p: {terminada: true}}) y queda «terminada: 100 % hecho», sin pérdida provisionada', JSON.stringify((ultima(n0, 'fn_wip_revisar') || {}).args) === JSON.stringify({ p_proyecto: 'c12-prueba-c', p_periodo: '2026-11', p: { terminada: true } }) &&
       /terminada: 100 % hecho/.test(await txt(ob(q, 'c12-prueba-c'))) && /Precio \$10,000\.00 · ganado \$10,000\.00 · facturado \$0\.00 → vas \$10,000\.00 por detrás/.test(await txt(ob(q, 'c12-prueba-c'))));
     W_OB['c12-prueba-c'].estado = 'ejecucion';
-    // la obra que lleva más de su estimado (con su nota): «pasa de 100 %», topada
+    // (12-nov) la obra que pasa de su estimado: revisada en noviembre con $1,100.00 (con su nota) y después le llega más costo
     await ob(q, 'c12-prueba-d').locator('[data-wip-otro]').click();
-    { const f = ob(q, 'c12-prueba-d').locator('.ct-form form'); await f.locator('[name="costo"]').fill('500'); await f.locator('[name="nota"]').fill('ZZ: casi terminada'); await enviar(q, f); }
+    { const f = ob(q, 'c12-prueba-d').locator('.ct-form form'); await f.locator('[name="costo"]').fill('1100'); await f.locator('[name="nota"]').fill('ZZ: casi terminada'); await enviar(q, f); }
+    W.libro['c12-prueba-d'].costo['2026-11'] = 10000;
+    await ve(q, 'wip', { periodo: '2026-11' });
     const tD2 = await txt(ob(q, 'c12-prueba-d'));
-    ok('Más costo que su estimado (con nota) · «pasa de 100 %», el avance topado en 100 % (de verdad 210 %) con la barra en rojo, y el aviso de la base', /pasa de 100 %/.test(tD2) && /100 % hecho \(de verdad 210 %\)/.test(tD2) &&
-      /Lleva \$1,050\.00 de costo y su costo estimado revisado es \$500\.00 \(210 %\): el avance se topa en 100 %\./.test(tD2) && (await ob(q, 'c12-prueba-d').locator('.ct-ob-barra-h.pasa').count()) === 1, tD2);
+    ok('Más costo que su estimado (le llegó después) · «pasa de su estimado» y «pasa de 100 %» (de verdad 104.55 %) con la barra en rojo, FUERA del ajuste, con el porqué de la base y «Subir el costo estimado»; arriba, el cuadre 60 en rojo',
+      /pasa de su estimado/.test(tD2) && /pasa de 100 %/.test(tD2) && /100 % hecho \(de verdad 104\.55 %\)/.test(tD2) && /no entra en el ajuste hasta que se arregle/.test(tD2) &&
+      /Lleva \$1,150\.00 de costo y su costo estimado revisado es \$1,100\.00 \(104\.55 %\): ese estimado quedó viejo\. Súbelo/.test(tD2) && (await ob(q, 'c12-prueba-d').locator('.ct-ob-barra-h.pasa').count()) === 1 &&
+      (await ob(q, 'c12-prueba-d').locator('[data-wip-otro]').textContent()) === 'Subir el costo estimado' && (await q.locator('#ct-wip-res [data-cuadre="60"].bad').count()) === 1, tD2);
+    await ob(q, 'c12-prueba-d').locator('[data-wip-otro]').click();
+    ok('…la forma dice cuánto lleva (el costo total no puede ser menos)', /Ya lleva \$1,150\.00 gastados: el costo total no puede ser menos\./.test(await txt(ob(q, 'c12-prueba-d').locator('.ct-form'))));
+    { const f = ob(q, 'c12-prueba-d').locator('.ct-form form'); await f.locator('[name="costo"]').fill('1500'); await f.locator('[name="nota"]').fill('ZZ: subió el material'); await enviar(q, f); }
+    ok('…«Subir el costo estimado» a $1,500.00 (con su nota): D vuelve a la lista y el cuadre 60 a verde', /revisada/.test(await txt(ob(q, 'c12-prueba-d'))) && !(await q.locator('#ct-wip-res [data-cuadre="60"]').count()));
+    // (12-nov) el contrato de la ficha cambió DESPUÉS de revisarla: «cambió el contrato», y «El cambio de contrato es de después» en un toque
+    W_OB['c12-prueba-a'].contrato = 1050000;
+    await ve(q, 'wip', { periodo: '2026-11' });
+    let tA2 = await txt(ob(q, 'c12-prueba-a'));
+    ok('El contrato de la ficha cambió después de revisar · A pendiente «cambió el contrato» con el texto de la base y dos salidas: «El cambio de contrato es de después» (un toque) y «Revisarla con el precio nuevo»',
+      /cambió el contrato/.test(tA2) && /El contrato de su ficha cambió después de revisarla \(se revisó con \$10,000\.00 y la ficha dice ahora \$10,500\.00\)/.test(tA2) && (await ob(q, 'c12-prueba-a').locator('[data-wip-despues]').count()) === 1 &&
+      (await ob(q, 'c12-prueba-a').locator('[data-wip-otro]').textContent()) === 'Revisarla con el precio nuevo', tA2);
+    n0 = llamadas.length;
+    await toca(q, '#ct-wip-rev [data-wip-obra="c12-prueba-a"] [data-wip-despues]');
+    tA2 = await txt(ob(q, 'c12-prueba-a'));
+    ok('…un toque: fn_wip_revisar({…, p: {precio_de_despues: true}}); A vuelve a la lista con su precio de antes y la nota de la base lo deja escrito («El contrato de la ficha pasó de $10,000.00 a $10,500.00 después de noviembre de 2026…»)',
+      JSON.stringify((ultima(n0, 'fn_wip_revisar') || {}).args) === JSON.stringify({ p_proyecto: 'c12-prueba-a', p_periodo: '2026-11', p: { precio_de_despues: true } }) && /revisada/.test(tA2) &&
+      /El contrato de la ficha pasó de \$10,000\.00 a \$10,500\.00 después de noviembre de 2026: este mes se queda con \$10,000\.00\./.test(tA2), tA2);
+    W_OB['c12-prueba-a'].contrato = 1000000;
+    // (12-nov) ninguna obra con saldo sale sola: B (sobre-facturada en octubre) pasa a «no_aprobado» y sigue en noviembre, con su porqué
+    W_OB['c12-prueba-b'].estado = 'no_aprobado';
+    await ve(q, 'wip', { periodo: '2026-11' });
+    let tB = await txt(ob(q, 'c12-prueba-b'));
+    ok('Una obra con saldo que ya no está activa · B sigue en el WIP de noviembre con el texto de la base («Traía $… sobre-facturados en el ajuste de octubre de 2026 y la app la tiene ahora como «no_aprobado». Nada sale del WIP solo…») y «Dejarla fuera este mes»',
+      /Traía \$[\d,.]+ sobre-facturados en el ajuste de octubre de 2026 y la app la tiene ahora como «no_aprobado»\. Nada sale del WIP solo/.test(tB) && (await ob(q, 'c12-prueba-b').locator('[data-wip-excluir]').count()) === 1, tB);
+    await ob(q, 'c12-prueba-b').locator('[data-wip-excluir]').click(); await q.waitForTimeout(150);
+    n0 = llamadas.length;
+    await enviar(q, ob(q, 'c12-prueba-b').locator('.ct-form form'));
+    ok('…«Dejarla fuera este mes» pide su porqué: sin nota no llama', !ultima(n0, 'fn_wip_revisar') && /Di por qué se queda fuera/.test(await txt(ob(q, 'c12-prueba-b').locator('.ct-form'))));
+    await ob(q, 'c12-prueba-b').locator('.ct-form [name="nota"]').fill('ZZ: el cliente canceló');
+    await enviar(q, ob(q, 'c12-prueba-b').locator('.ct-form form'));
+    tB = await txt(ob(q, 'c12-prueba-b'));
+    ok('…con la nota: fn_wip_revisar({…, p: {excluir: true, nota}}); B «fuera este mes» con su nota y la nota de la base arriba; el resumen la cuenta («1 fuera este mes a propósito»)',
+      JSON.stringify((ultima(n0, 'fn_wip_revisar') || {}).args) === JSON.stringify({ p_proyecto: 'c12-prueba-b', p_periodo: '2026-11', p: { excluir: true, nota: 'ZZ: el cliente canceló' } }) && /fuera este mes/.test(tB) && /«ZZ: el cliente canceló»/.test(tB) &&
+      /«C12 PRUEBA Obra B» queda fuera del WIP de noviembre de 2026: su ingreso de ese mes es lo facturado\./.test(await txt(q.locator('.ct-wip-nota'))) && /1 fuera este mes a propósito/.test(await txt(q.locator('#ct-wip-res'))) && (await ob(q, 'c12-prueba-b').locator('[data-wip-otro]').count()) === 1, tB);
+    // la que traía saldo y hoy ya no lleva WIP (marcada T&M): solo se decide dejarla fuera (o su marca, en «Obras»)
+    W.rev = W.rev.filter(r => !(r.proyecto_id === 'c12-prueba-b' && r.periodo === '2026-11')); W_OB['c12-prueba-b'].estado = 'ejecucion'; W.marca['c12-prueba-b'] = { modo: 'tm', nota: 'ZZ: se cobra por horas' };
+    await ve(q, 'wip', { periodo: '2026-11' });
+    tB = await txt(ob(q, 'c12-prueba-b'));
+    ok('…y si hoy ya no lleva WIP (marcada T&M) pero traía saldo: «… y hoy ya no lleva WIP (…)», solo «Dejarla fuera este mes» y «¿Lleva WIP? Su marca, en «Obras»» (sin números que revisar)',
+      /y hoy ya no lleva WIP \(Marcada como de servicio o por tiempo y material/.test(tB) && (await ob(q, 'c12-prueba-b').locator('[data-wip-excluir]').count()) === 1 && (await ob(q, 'c12-prueba-b').locator('[data-wip-ir-obras]').count()) === 1 &&
+      !(await ob(q, 'c12-prueba-b').locator('[data-wip-otro], [data-wip-igual]').count()), tB);
     await foto(q, 'c12-5-noviembre');
+    delete W.marca['c12-prueba-b'];
 
     // ---- un mes cerrado solo se lee ----
     W.cerrados.add('2026-10');
@@ -5717,7 +6064,7 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     const det = await txt(q.locator('#ct-cie-rev .ct-cie-lista'));
     ok('…y en la lista del cierre, como las demás, las filas del WIP que detienen (175 falta revisar E; 176 el ajuste ya no está al día), cada una con «Qué hacer» y su botón «WIP» al mismo mes',
       (await q.locator('#ct-cie-rev .ct-cie-item.detiene[data-orden="175"]').count()) === 1 && (await q.locator('#ct-cie-rev .ct-cie-item.detiene[data-orden="176"]').count()) === 1 &&
-      /Faltan por revisar 1 de las 5 obra\(s\) de precio fijo con movimiento en octubre de 2026: C12 PRUEBA Obra E\./.test(det) && /Qué hacer: En Contabilidad → WIP, revisa cada obra de la lista/.test(det) &&
+      /Faltan por revisar 1 de las 5 obra\(s\) de precio fijo con movimiento en octubre de 2026: C12 PRUEBA Obra E\./.test(det) && /Qué hacer: En Contabilidad → WIP, decide cada obra de la lista: confirma lo propuesto con un toque, pon su costo total estimado con su nota, confirma lo de antes del libro, o déjala fuera este mes con su nota\./.test(det) &&
       (await q.locator('#ct-cie-rev [data-orden="175"] [data-wip-ir="2026-10"]').textContent()) === 'WIP' && (await q.locator('#ct-cie-avisos .ct-cie-item[data-orden="174"].ok').count()) === 1, det.slice(0, 500));
     await foto(q, 'c12-6-cierre');
     // revisar E desde el cierre: la página que se repinta es el cierre (vuelve a revisar), y la 175 pasa a verde
@@ -5736,6 +6083,16 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     await ve(q, 'cierre', { sub: 'cierre', periodo: '2026-09-APERTURA' });
     ok('…en la apertura no hay tarjeta del WIP (va por mes)', (await q.locator('#ct-cie-rev').count()) === 1 && !(await q.locator('#ct-wip-cie').count()));
     delete W_OB['c12-prueba-e']; delete W.libro['c12-prueba-e']; W.rev = W.rev.filter(r => r.proyecto_id !== 'c12-prueba-e');
+    // (12-nov, la revisión final) una obra de precio fijo con su depósito facturado que la app todavía tiene como «enviado»: no
+    // entra en el WIP (su ingreso es lo facturado) y el aviso de la base la nombra abajo, con lo facturado y qué hacer, sin frenar
+    W_OB['c12-prueba-n'] = { obra: 'C12 PRUEBA Obra N', cliente: 'ZZ Cliente N', tipo: 'residencial', estado: 'enviado', contrato: 3000000 };
+    W.libro['c12-prueba-n'] = { costo: {}, fact: { '2026-10': 600000 } };
+    await ve(q, 'wip', { periodo: '2026-10' });
+    ok('Una obra con su depósito facturado que la app todavía tiene como «enviado» · no sale en el WIP y el aviso de la base la nombra abajo (con lo facturado y qué hacer), sin frenar',
+      !(await q.locator('#ct-wip-cuerpo [data-wip-obra="c12-prueba-n"]').count()) && !(await q.locator('#ct-wip-cuerpo .ct-rojo').count()) &&
+      /Obras terminadas o sin aprobar, con dinero fuera del WIP: 1 obra\(s\) de precio fijo ya tienen facturas en el libro y la app todavía no las tiene en obra: C12 PRUEBA Obra N \(la app la tiene con la propuesta enviada; facturado \$6,000\.00\)/.test(await txt(q.locator('#ct-wip-avisos'))) &&
+      /pásala a aprobada o en ejecución en su ficha/.test(await txt(q.locator('#ct-wip-avisos'))) && /márcala como que no lleva WIP, con su nota/.test(await txt(q.locator('#ct-wip-avisos'))), await txt(q.locator('#ct-wip-avisos')));
+    delete W_OB['c12-prueba-n']; delete W.libro['c12-prueba-n'];
 
     // ---- falla ruidosa: un cuadre en rojo; el resumen y el schedule contando distinto ----
     W.cuadre10 = true;

@@ -1050,6 +1050,9 @@ body[data-vista="conta"] .fab { display: none; }
 #conta-raiz .ct-wip-ob:first-child { border-top: 0; }
 #conta-raiz .ct-wip-ob.ct-wip-est-pendiente { border-left: 4px solid var(--mp-warn-bd); padding-left: .6rem; }
 #conta-raiz .ct-wip-ob.ct-wip-est-lista { border-left: 4px solid var(--ok); padding-left: .6rem; }
+/* (12-nov) la obra que Edgar dejó fuera este mes, con su nota: a la vista, sin el color de lo que falta ni de lo listo */
+#conta-raiz .ct-wip-ob.ct-wip-est-excluida { border-left: 4px dashed var(--mp-line); padding-left: .6rem; }
+#conta-raiz .ct-wip-ob.ct-wip-est-excluida .ct-wip-ob-d { color: var(--mp-ink-2); }
 #conta-raiz .ct-wip-ob-t { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .45rem; min-width: 0; }
 #conta-raiz .ct-wip-ob-t b { font-size: .98rem; overflow-wrap: anywhere; }
 #conta-raiz .ct-wip-ob-t small { flex-basis: 100%; font-size: .78rem; color: var(--mp-ink-3); }

@@ -7,7 +7,7 @@
 #   ./c11-concurrencia.sh [nombre_bd]      (por defecto c11_concurrencia)
 #
 # Crea su base con c1 + c2 + c3 + c11 (lo mínimo que c11 pide: sin c4, c6,
-# p1, c9 ni c10), dos obras de prueba con sus hitos, los ajustes de la
+# p1, c9 ni c10), diez obras de prueba con sus hitos, los ajustes de la
 # factura (el corte, hoy) y:
 #   1. EL MISMO BORRADOR, «EMITIR» DESDE DOS PESTAÑAS a la vez (o dos
 #      toques): la segunda espera a la primera (el candado del documento) y,
@@ -16,12 +16,17 @@
 #   2. EL BORRADOR DEL MISMO HITO, ABIERTO DESDE DOS PESTAÑAS a la vez: una
 #      lo crea; la otra lo encuentra (o para con MX008 «ya hay un borrador de
 #      ese hito»). Un solo borrador.
-#   3. OCHO EMISIONES A LA VEZ (ocho hitos) Y UNA QUE FALLA DESPUÉS DE TOMAR
-#      SU NÚMERO (su obra ya tiene, en facturas que no salieron de la app,
-#      todos los números que le podrían tocar): las ocho emiten con ocho
+#   3. OCHO EMISIONES A LA VEZ (ocho obras, un hito cada una) Y UNA QUE
+#      FALLA DESPUÉS DE TOMAR SU NÚMERO (el libro no la acepta: la cuenta de
+#      ingreso del tipo de su obra está inactiva): las ocho emiten con ocho
 #      números SEGUIDOS, sin huecos ni repetidos, el contador queda en el
 #      último, y la que falla da MX008 y no gasta número. Nadie muere por un
 #      bloqueo mortal (40P01).
+#   3b. DOS EMISIONES A LA VEZ EN LA MISMA OBRA (dos hitos): van de una en
+#      una (el candado de la obra). La segunda, cuando le toca, ya no es lo
+#      que la pantalla enseñó —entró otra factura de esa obra: cambiaron su
+#      ordinal y lo facturado antes—: MX011, limpio, sin número. Refrescada,
+#      emite con el número siguiente.
 #   4. ANULAR LA MISMA FACTURA desde dos pestañas a la vez: una la anula
 #      (su nota de crédito); la otra, MX008. Una sola nota, y el hito otra
 #      vez pendiente.
@@ -63,22 +68,29 @@ revisa() {  # revisa <descripción> <esperado> <obtenido>
   if [ "$2" = "$3" ]; then echo "ok   $1 ($3)"; else echo "FALLA: $1: esperaba «$2», salió «$3»"; malos=1; fi
 }
 
-# Dos obras de prueba: la A, con catorce hitos (montos que no dividen) y
-# retención del 10 %; la X, con uno. Las reglas de ingreso confirmadas, el
-# corte hoy, y una empresa y un «How to pay» de mentira.
+# Diez obras de prueba: la A, con catorce hitos (montos que no dividen) y
+# retención del 10 %; las B1 a B8, con uno cada una y retención del 10 %; y
+# la X (de otro tipo: «comercial»), con uno. Las reglas de ingreso
+# confirmadas, el corte hoy, y una empresa y un «How to pay» de mentira.
 cat > "$TMP/montar.sql" <<'SQL'
 insert into proyectos (id, tipo, nombre, estado, cliente) values
   ('c11-conc-a', 'servicio', 'C11 CONC Obra A', 'ejecucion', 'ZZ Cliente CONC A'),
-  ('c11-conc-x', 'servicio', 'C11 CONC Obra X', 'ejecucion', 'ZZ Cliente CONC X');
+  ('c11-conc-x', 'comercial', 'C11 CONC Obra X', 'ejecucion', 'ZZ Cliente CONC X');
+insert into proyectos (id, tipo, nombre, estado, cliente)
+select 'c11-conc-b' || g, 'servicio', 'C11 CONC Obra B' || g, 'ejecucion', 'ZZ Cliente CONC B' || g from generate_series(1, 8) g;
 insert into finanzas_proyecto (proyecto_id, contrato) values ('c11-conc-a', 24000.00), ('c11-conc-x', 1000.00);
+insert into finanzas_proyecto (proyecto_id, contrato) select 'c11-conc-b' || g, 2000.00 from generate_series(1, 8) g;
 insert into hitos (proyecto_id, titulo, monto, estado, orden)
 select 'c11-conc-a', 'C11 CONC Milestone ' || g, 1000.00 + g * 0.37, 'pendiente', g from generate_series(1, 14) g;
+insert into hitos (proyecto_id, titulo, monto, estado, orden)
+select 'c11-conc-b' || g, 'C11 CONC Milestone B' || g, 1000.00 + g * 0.37, 'pendiente', 1 from generate_series(1, 8) g;
 insert into hitos (proyecto_id, titulo, monto, estado, orden) values ('c11-conc-x', 'C11 CONC Milestone X', 500.00, 'pendiente', 1);
 select count(fn_mapeo_confirmar('tipo_proyecto', null));
 select fn_emision_config(jsonb_build_object('corte', fn_fecha_miami(now())::text,
          'empresa', jsonb_build_object('nombre', 'ZZ Electric C11 CONCURRENCIA, Inc.'),
          'como_pagar', 'Check payable to ZZ Electric C11 CONCURRENCIA, Inc.'))->>'corte';
 select fn_emision_obra('{"proyecto_id": "c11-conc-a", "retencion_pct": 10}')->'retencion'->>'pct';
+select count(fn_emision_obra(jsonb_build_object('proyecto_id', 'c11-conc-b' || g, 'retencion_pct', 10))) from generate_series(1, 8) g;
 SQL
 
 echo "== Base $BD: c1 + c2 + c3 + c11 y lo de este script"
@@ -131,33 +143,51 @@ revisa "la otra lo encuentra, o para limpio (MX008: ya hay un borrador de ese hi
 revisa "un solo borrador de ese hito" "1" "$(ed -c "select count(*) from emision_documentos where hito_id = $H2")"
 
 echo
-echo "== 3. Ocho emisiones a la vez, y una que falla después de tomar su número"
+echo "== 3. Ocho emisiones a la vez (ocho obras), y una que falla después de tomar su número"
 declare -a DOC=() VIS=()
-for g in 3 4 5 6 7 8 9 10; do
-  DOC[$g]="$(borrador "$(hito "$g")")"; VIS[$g]="$(visto "${DOC[$g]}")"
+for g in 1 2 3 4 5 6 7 8; do
+  DOC[$g]="$(borrador "$(hito "B$g")")"; VIS[$g]="$(visto "${DOC[$g]}")"
 done
 HX="$(ed -c "select id from hitos where titulo = 'C11 CONC Milestone X'")"; DX="$(borrador "$HX")"; VX="$(visto "$DX")"
-# la obra X ya tiene, en facturas que no salieron de la app (borradores: no entran al libro), todos los números que le podrían tocar
-ed -c "insert into facturas (proyecto_id, num, fecha, monto, estado)
-       select 'c11-conc-x', fn_emision_numero((select serie_formato from emision_config where id = 1), $ANIO, n), fn_fecha_miami(now()), 1, 'borrador'
-         from generate_series(1, 60) n" > /dev/null
+# el libro no va a aceptar la factura de la obra X: la cuenta de ingreso de su tipo (comercial), inactiva. El borrador no lo
+# sabe (su regla de ingreso está confirmada): la emisión toma su número, el puente de c3 no la asienta, y todo se deshace.
+ed -c "update cuentas set activa = false where codigo = (select cuenta from mapeo_tipo_proyecto where tipo = 'comercial')" > /dev/null
 N0="$(contador)"
-for g in 3 4 5 6 7 8 9 10; do
+for g in 1 2 3 4 5 6 7 8; do
   emitir "$TMP/3-$g.out" "${DOC[$g]}" "${VIS[$g]}" 0.2 &
-  [ "$g" = "6" ] && { emitir "$TMP/3-x.out" "$DX" "$VX" 0.2 & }
+  [ "$g" = "4" ] && { emitir "$TMP/3-x.out" "$DX" "$VX" 0.2 & }
 done
 wait
 revisa "las ocho emiten" "8" "$(cat "$TMP"/3-[0-9]*.out | grep -c 'RESULTADO [A-Z0-9]*-[0-9]*-[0-9]*')"
-revisa "la que choca con un número ya usado en su obra: MX008, y sigue en borrador" "1|borrador" \
-  "$(grep -c 'MX008: Esa obra ya tiene una factura con el número' "$TMP/3-x.out")|$(ed -c "select estado from emision_documentos where id = '$DX'")"
+revisa "la que el libro no acepta: MX008 (dice por qué), sin gastar número, y sigue en borrador" "1|borrador|0" \
+  "$(grep -c 'MX008: No se emitió nada (ni se gastó el número .*): el libro no aceptó la factura.*inactiva' "$TMP/3-x.out")|$(ed -c "select estado from emision_documentos where id = '$DX'")|$(ed -c "select count(*) from facturas where proyecto_id = 'c11-conc-x'")"
 revisa "ocho números seguidos, sin huecos ni repetidos, y el contador en el último" "8|$((N0 + 1))|$((N0 + 8))|$((N0 + 8))|8" \
   "$(ed -c "select format('%s|%s|%s|%s|%s', count(*), min(s.secuencia), max(s.secuencia), (select ultimo from contadores where serie = 'facturas-$ANIO'), count(distinct s.numero))
               from emision_serie s where s.anio = $ANIO and s.secuencia > $N0")"
 revisa "ocho facturas, cada una con su asiento al centavo (lo que se paga + lo retenido = su monto)" "8|8" \
-  "$(ed -c "select format('%s|%s', count(*), count(*) filter (where s.cxc = d.a_pagar and s.retencion = d.retencion and d.a_pagar + d.retencion = d.monto))
+  "$(ed -c "select format('%s|%s', count(*), count(*) filter (where s.cxc = d.a_pagar and s.retencion = d.retencion and d.a_pagar + d.retencion = d.monto and d.retencion > 0))
               from emision_documentos d cross join lateral fn_emision_saldo(d.factura_id) s
              where d.estado = 'emitida' and d.secuencia > $N0 and d.factura_id is not null")"
 revisa "nadie murió por un bloqueo mortal (40P01) ni por el tope de la API" "0" "$(cat "$TMP"/3-*.out | grep -c '40P01\|deadlock\|57014')"
+ed -c "update cuentas set activa = true where codigo = (select cuenta from mapeo_tipo_proyecto where tipo = 'comercial')" > /dev/null
+
+echo
+echo "== 3b. Dos emisiones a la vez en la MISMA obra (dos hitos)"
+H12="$(hito 12)"; D12="$(borrador "$H12")"; V12="$(visto "$D12")"
+H13="$(hito 13)"; D13="$(borrador "$H13")"; V13="$(visto "$D13")"
+N1="$(contador)"
+emitir "$TMP/3b-1.out" "$D12" "$V12" 0.6 &
+sleep 0.15
+emitir "$TMP/3b-2.out" "$D13" "$V13" 0 &
+wait
+revisa "la primera emite" "1" "$(grep -c 'RESULTADO [A-Z0-9]*-[0-9]*-[0-9]*' "$TMP/3b-1.out")"
+revisa "la segunda espera y, cuando le toca, ya no es lo que se vio: MX011, sin número y en borrador" "1|borrador|$((N1 + 1))" \
+  "$(grep -c 'MX011: El borrador ya no es el que viste' "$TMP/3b-2.out")|$(ed -c "select estado from emision_documentos where id = '$D13'")|$(contador)"
+V13="$(visto "$D13")"
+emitir "$TMP/3b-3.out" "$D13" "$V13" 0
+revisa "refrescada (con lo que se ve ahora), emite con el número siguiente, como la tercera factura de la obra" "1|$((N1 + 2))|3" \
+  "$(grep -c 'RESULTADO [A-Z0-9]*-[0-9]*-[0-9]*' "$TMP/3b-3.out")|$(contador)|$(ed -c "select contenido->>'ordinal' from emision_documentos where id = '$D13'")"
+revisa "nadie murió por un bloqueo mortal (40P01) ni por el tope de la API" "0" "$(cat "$TMP"/3b-*.out | grep -c '40P01\|deadlock\|57014')"
 
 echo
 echo "== 4. Anular la misma factura desde dos pestañas a la vez"
@@ -188,7 +218,7 @@ echo "     (el pegado $como en $seg s)"
 revisa "el pegado se rinde (55P03) o entra, en menos de 3 s" "1" "$( { [ "$como" != "OTRO error" ] && [ "$(echo "$seg < 3" | bc)" = "1" ]; } && echo 1 || echo 0)"
 revisa "nadie muere por un bloqueo mortal (40P01), y la lectura termina" "0|0" "$(cat "$TMP"/5p.out "$TMP"/5l.out | grep -c '40P01\|deadlock')|$(grep -c 'ERROR' "$TMP/5l.out")"
 PGPASSWORD=editor_sql psql -X -q -1 -v ON_ERROR_STOP=1 -h "${PGHOST:-127.0.0.1}" -p "${PGPORT:-5432}" -U editor_sql -d "$BD" -f "$DOCS/c11-emision.sql" > "$TMP/5p2.out" 2>&1
-revisa "sin nadie leyendo, entra (y no pisa nada: las mismas facturas y la misma serie)" "0|8" \
+revisa "sin nadie leyendo, entra (y no pisa nada: las mismas facturas y la misma serie)" "0|10" \
   "$?|$(ed -c "select count(*) from emision_serie s where s.anio = $ANIO and s.secuencia > $N0")"
 
 echo
@@ -213,11 +243,14 @@ revisa "después, el pegado entra" "0" "$?"
 echo
 echo "== Al final"
 revisa "v_emision_control: ningún cuadre en rojo" "0" "$(ed -c "select count(*) from v_emision_control where not ok and nivel = 'cuadre'")"
+revisa "cada número de la serie de las facturas es una fila de facturas (ninguno dos veces)" "0|0" \
+  "$(ed -c "select format('%s|%s', (select count(*) from emision_serie s where s.serie = 'facturas' and not exists (select 1 from facturas f where f.num = s.numero)),
+                          (select count(*) from (select num from facturas group by num having count(*) > 1) x))")"
 revisa "la serie del año, seguida desde el 1, sin repetidos, y el contador en el último" "1" \
   "$(ed -c "select (min(s.secuencia) = 1 and max(s.secuencia) = count(*) and count(distinct s.numero) = count(*)
                     and max(s.secuencia) = (select ultimo from contadores where serie = 'facturas-$ANIO'))::int
               from emision_serie s where s.anio = $ANIO")"
-revisa "cada número, de una factura emitida; y diez facturas emitidas por la app (una, anulada)" "0|10|1" \
+revisa "cada número, de una factura emitida; y doce facturas emitidas por la app (una, anulada)" "0|12|1" \
   "$(ed -c "select format('%s|%s|%s', (select count(*) from emision_serie s where not exists (select 1 from emision_documentos d where d.id = s.documento_id and d.estado = 'emitida' and d.numero = s.numero)),
                           (select count(*) from emision_documentos where estado = 'emitida'), (select count(*) from emision_documentos where anulado_el is not null))")"
 revisa "la cadena del libro, sin rojos (los permisos también)" "0" "$(ed -c "select count(*) from fn_verificar_cadena() where not ok")"

@@ -6,8 +6,11 @@
 //   Supabase → Edge Functions → Deploy a new function → «Via Editor» →
 //   nombre «facturas» → borrar el ejemplo y crear DOS archivos con lo de esta
 //   carpeta: index.ts (este) y pdf.ts (el que pinta la factura) → Deploy,
-//   con «Verify JWT» ENCENDIDO (aquí solo entra Edgar con su sesión; no hay
-//   avisos de fuera). Con la CLI: supabase functions deploy facturas.
+//   con «Verify JWT» APAGADO, como las otras funciones de la contabilidad
+//   (plaid, stripe, contador, notificar): la función comprueba ella misma la
+//   sesión con Auth, el código del teléfono (aal2) y que sea el dueño, y
+//   «salud» no enseña nada. Con la CLI:
+//   supabase functions deploy facturas --no-verify-jwt.
 //
 // Secretos (Edge Functions → Secrets). Ninguno es nuevo si ya están los
 // cobros en línea (stripe) y el cartero (correo):
@@ -43,7 +46,12 @@
 //          /v1/payment_links/{plink} con payment_method_types[0] =
 //          us_bank_account) ANTES de imprimir la dirección: la función stripe
 //          (sellada) lo crea con [us_bank_account, card] y la tarjeta está
-//          apagada (c11: el recargo no sabría a qué cuenta va);
+//          APAGADA (decisión de Edgar del 12-nov: solo ACH por ahora; se
+//          enciende cuando los cobros en línea sepan registrar el recargo
+//          como ingreso, en una versión futura de p1). La factura no ofrece
+//          tarjeta en ninguna parte (ni el PDF ni el correo): con el enlace
+//          dice lo que la base manda en pago_en_linea.texto («Online payment
+//          is by bank account (ACH) only.»);
 //       3. se le vuelve a preguntar a la base (fn_emision_pago) y se exige
 //          que ese enlace «vale» (activo, sin retención, por lo que el libro
 //          debe hoy). Si algo falla, no se imprime ningún enlace: el error lo
@@ -62,15 +70,20 @@
 //     de la factura queda encima («Invoice amount due»). Si el «How to pay»
 //     de la casa habla de un enlace y este PDF va sin él (la de la retención,
 //     sin enlace a propósito, el pago en línea apagado), lo avisa (avisos).
+//     Lo que el cliente cita al pagar sale abajo del «How to pay»: su número;
+//     en la de la retención (serie propia MXP-R-AAAA-NNNN, que no es una
+//     factura del libro), los números de las facturas cuya retención reclama
+//     (contenido.referencias), y el correo dice que la libera.
 //   · «enviar» {documento, para?, cc?, asunto?, mensaje?, sin_enlace?}: lo
 //     de «pdf» y, con ese PDF adjunto, el correo por Resend como lo manda el
 //     cartero: el remitente de la casa, COPIA A EDGAR (el correo de su
 //     sesión) y responder-a la empresa; en inglés, con el membrete, el
 //     resumen, el botón de pago (si hay enlace) y el «How to pay». Lo
 //     registra en la factura (fn_emision_envio, con el id de Resend: el
-//     mismo dos veces no entra dos veces) y en la tabla correos (tipo
-//     «factura_app»; si la base no deja, se avisa y sigue: lo que vale es
-//     el registro de la factura). Un reenvío es otro correo y otra fila.
+//     mismo dos veces no entra dos veces). La tabla correos es del cartero
+//     (otra sesión) y en producción el dueño no puede escribir en ella (solo
+//     leer, 12-nov): no se toca; el registro de los envíos de una factura es
+//     el suyo (emision_envios). Un reenvío es otro correo y otra fila.
 //     Si el correo sale y el registro falla, el error trae el id de Resend
 //     (datos.resend_id) para apuntarlo sin volver a mandarlo.
 //   · «ver» {documento, pdf_id?}: una dirección firmada (10 min) del último
@@ -102,7 +115,7 @@
 // ============================================================
 
 // deno-lint-ignore-file no-explicit-any
-import { pintarFactura, usd, dia, subtitulo, PDF_VERSION, type Librerias } from "./pdf.ts";
+import { pintarFactura, usd, dia, subtitulo, referenciaEn, listaEn, PDF_VERSION, type Librerias } from "./pdf.ts";
 
 type Json = Record<string, any>;
 const G = globalThis as any;
@@ -111,7 +124,7 @@ function env(k: string): string {
   return typeof v === "string" ? v : "";
 }
 
-const VERSION = "facturas 2026-11-12.2";
+const VERSION = "facturas 2026-11-12.4";
 const STRIPE_VERSION = "2026-09-30.endive"; // la misma que la función stripe
 const SITIO_DE_FABRICA = "https://edgararboleya-rgb.github.io/max-power-panel/";
 const MAX_CUERPO = 100_000;
@@ -320,7 +333,7 @@ async function enlaceAch(c: Conf, jwt: string, documento: string, numero: string
   if (typeof e.id !== "string" || typeof e.url !== "string" || typeof e.plink !== "string" || !/^plink_/.test(e.plink)) {
     throw new Fallo(502, "La función de los cobros en línea no devolvió el enlace entero (id, url, plink): no se imprimió ninguno.", "STRIPE_ENLACE");
   }
-  const link = await stripePost(c, `/v1/payment_links/${encodeURIComponent(e.plink)}`, { payment_method_types: ["us_bank_account"] }, `mxp-facturas-ach-${e.plink}`);
+  const link = await stripePost(c, `/v1/payment_links/${encodeURIComponent(e.plink)}`, { payment_method_types: ["us_bank_account"] }, `mxp-facturas-ach-${e.plink}-${crypto.randomUUID()}`);
   const tipos = Array.isArray(link.payment_method_types) ? link.payment_method_types : null;
   if (!tipos || tipos.length !== 1 || tipos[0] !== "us_bank_account") {
     throw new Fallo(502, `Stripe dejó el enlace de la factura ${numero} con [${(tipos ?? []).join(", ")}], no solo por cuenta de banco: no se imprimió.`, "STRIPE_ACH");
@@ -430,6 +443,12 @@ export function cuerpoCorreo(cont: Json, enlace: { url: string; monto?: unknown 
   const e = obj(cont.empresa), cl = obj(cont.cliente), t = obj(cont.totales), numero = String(cont.numero ?? "");
   const saludo = `Hello${cl.atencion || cl.nombre ? " " + (cl.atencion || cl.nombre) : ""},`;
   const intro = `Please find attached invoice ${numero} from ${e.nombre || "us"}${cont.obra?.nombre ? ` for ${cont.obra.nombre}` : ""}.`;
+  // (la de la retención no es una factura del libro: reclama lo retenido de otras, y esas son las que el cliente cita al pagar)
+  const refs = cont.forma === "retencion" && Array.isArray(cont.referencias) ? cont.referencias.map((x: unknown) => String(x ?? "").trim()).filter(Boolean) : [];
+  const libera = refs.length ? `It releases the retainage withheld on invoice${refs.length > 1 ? "s" : ""} ${listaEn(refs)}.` : "";
+  const cita = referenciaEn(cont);
+  // lo que la base le dice al cliente del pago en línea (solo por cuenta de banco; la tarjeta no se le ofrece)
+  const ach = String(cont.pago_en_linea?.texto ?? "").trim() || "Online payment is by bank account (ACH) only.";
   const vence = Number(cont.terminos?.dias) ? `${dia(cont.vence)} (${cont.terminos?.etiqueta ?? ""})` : "On receipt";
   // el botón dice lo que cobra el enlace (lo que el libro debe hoy). Si ya entró un pago, es menos que lo que pide la
   // factura: entonces, como en el PDF, la última fila (la grande) es «Balance due today» con lo que cobra el enlace, y lo
@@ -442,7 +461,7 @@ export function cuerpoCorreo(cont: Json, enlace: { url: string; monto?: unknown 
   const pie = [e.nombre, e.licencia, e.telefono, e.web].filter((x) => x && String(x).trim()).join(" · ");
   const saldo = saldoHoy ? "That is the balance due today: payments already received are deducted. " : "";
   const boton = enlace ? `<p style="margin:22px 0"><a href="${html(enlace.url)}" style="background:#2A5BD7;color:#ffffff;text-decoration:none;font-weight:700;padding:13px 22px;border-radius:12px;display:inline-block">Pay ${html(cobra)} by bank transfer</a></p>
-    <p style="font-size:13px;color:#4D6A83;margin:0 0 18px">${html(saldo)}Secure payment by bank account (ACH) through Stripe. Bank payments take a few business days to clear.</p>` : "";
+    <p style="font-size:13px;color:#4D6A83;margin:0 0 18px">${html(saldo)}${html(ach)} It goes securely through Stripe; bank payments take a few business days to clear.</p>` : "";
   const cuerpo = `<!doctype html><html lang="en"><body style="margin:0;background:#E8F3FA;font-family:Helvetica,Arial,sans-serif;color:#0B2036">
 <div style="max-width:600px;margin:0 auto;padding:24px 16px">
  <div style="background:#ffffff;border-radius:18px;overflow:hidden;border:1px solid #cfe0ee">
@@ -450,21 +469,22 @@ export function cuerpoCorreo(cont: Json, enlace: { url: string; monto?: unknown 
   <div style="height:3px;background:#B86A2E;margin:0 24px"></div>
   <div style="padding:20px 24px 8px;font-size:15px;line-height:1.55">
    <p style="margin:0 0 12px">${html(saludo)}</p>
-   <p style="margin:0 0 14px">${html(intro)}</p>
+   <p style="margin:0 0 14px">${html(intro)}${libera ? ` ${html(libera)}` : ""}</p>
    ${mensaje ? `<p style="margin:0 0 14px">${conSaltos(mensaje)}</p>` : ""}
    <table role="presentation" style="border-collapse:collapse;width:100%;font-size:14px;margin:6px 0 4px">
     ${filas.map(([a, b], i) => `<tr><td style="padding:7px 0;border-bottom:1px solid #cfe0ee;color:#4D6A83">${html(a)}</td><td style="padding:7px 0;border-bottom:1px solid #cfe0ee;text-align:right;${i === filas.length - 1 ? "font-weight:800;font-size:16px" : ""}">${html(b)}</td></tr>`).join("")}
    </table>
    ${boton}
    ${cont.como_pagar ? `<p style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#8F4F1F;font-weight:800;margin:18px 0 4px">How to pay</p><p style="margin:0 0 16px;font-size:14px">${conSaltos(cont.como_pagar)}</p>` : ""}
+   ${cita ? `<p style="margin:0 0 12px;font-size:13px;color:#4D6A83">${html(cita)}</p>` : ""}
    <p style="margin:0 0 18px;font-size:14px">Thank you for your business.</p>
   </div>
   <div style="padding:12px 24px 18px;font-size:12px;color:#4D6A83;border-top:1px solid #cfe0ee">${html(pie)}</div>
  </div>
 </div></body></html>`;
-  const texto = [saludo, "", intro, ...(mensaje ? ["", mensaje] : []), "", ...filas.map(([a, b]) => `${a}: ${b}`),
-    ...(enlace ? ["", `Pay ${cobra} by bank transfer (ACH): ${enlace.url}`, ...(saldo ? [saldo.trim()] : [])] : []), ...(cont.como_pagar ? ["", "How to pay:", String(cont.como_pagar)] : []),
-    "", "Thank you for your business.", "", pie].join("\n");
+  const texto = [saludo, "", intro + (libera ? " " + libera : ""), ...(mensaje ? ["", mensaje] : []), "", ...filas.map(([a, b]) => `${a}: ${b}`),
+    ...(enlace ? ["", `Pay ${cobra} by bank transfer (ACH): ${enlace.url}`, ...(saldo ? [saldo.trim()] : []), ach] : []), ...(cont.como_pagar ? ["", "How to pay:", String(cont.como_pagar)] : []),
+    ...(cita ? ["", cita] : []), "", "Thank you for your business.", "", pie].join("\n");
   return { html: cuerpo, texto };
 }
 async function enviar(c: Conf, jwt: string, yo: Yo, documento: string, cuerpo: Json): Promise<Json> {
@@ -513,10 +533,6 @@ async function enviar(c: Conf, jwt: string, yo: Yo, documento: string, cuerpo: J
     throw new Fallo(500, `El correo salió (Resend ${j.id}) pero no quedó apuntado en la factura: ${mensajeDe(err)} Toca «Apuntar el envío» (no se vuelve a mandar).`, "SIN_APUNTAR",
       { resend_id: j.id, para: para.join(", "), cc: cc.join(", ") || null, asunto, pdf_id: h.pdf.id });
   }
-  // la tabla del cartero (con tipo propio); si la base no deja, se avisa: lo que vale es el registro de la factura
-  try {
-    await api(c, jwt, "correos", { metodo: "POST", cabeceras: { Prefer: "return=minimal" }, cuerpo: { proyecto_id: cont.obra?.id ?? null, para: para.join(", "), asunto, tipo: "factura_app", resend_id: j.id, enviado_por: yo.id } });
-  } catch (err) { avisos.push(`El correo quedó apuntado en la factura, pero no en el registro de correos: ${mensajeDe(err)}`); }
   return { documento, numero, envio: obj(reg.envio), reenvio: reg.reenvio === true, ya_estaba: reg.ya_estaba === true, resend_id: j.id, para: para.join(", "), cc: cc.join(", ") || null, asunto, pdf: h.pdf, enlace: h.enlace, avisos };
 }
 
