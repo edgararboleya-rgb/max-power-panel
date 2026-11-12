@@ -84,6 +84,37 @@
    la computadora sin desplazamiento lateral. Una prueba de antes cambió: la
    de «Qué atender», que suponía la bandeja sin nada de más de 30 días y
    empezó a fallar sola el 2 nov (lo más viejo es del 2 oct).
+   Y las facturas (c11, fase 10): la base de mentira trae v_emision_estado,
+   v_emision_documentos, v_emision_obras, v_emision_control, emision_config y
+   las fn_emision_* con la forma y los textos de docs/conta/c11-emision.sql
+   (sacados del banco), y la función de borde `facturas` («pdf», «enviar»,
+   «ver») con la de supabase/functions/facturas; se comprueba antes del corte
+   (arriba lo dice, lo que falta, borradores para probar, «Emitir» apagado),
+   Ajustes, por facturar (hitos, retención de la obra, porcentaje, T&M), el
+   borrador con sus avisos y su vista previa en inglés, cambiar y refrescar,
+   emitir con el código del teléfono (la confirmación, el «visto», MX011),
+   el PDF con su enlace solo por cuenta de banco y sin enlace, mandar,
+   reenviar, apuntar un correo que no se apuntó, en mano, la lista, tirar,
+   el texto que parece español, anular con nota de crédito y desactivar su
+   enlace, el 🧾 de la ficha antes y desde el corte (js/app.js), sin la
+   función, sin c11, el rojo del control y 390/820/1280 px. Y (arreglo del
+   12-nov) el 🧾 ante la duda (v_emision_estado en 500: no factura, salvo
+   con un corte visto que aún no llega; sin c11, QuickBooks), antes del
+   corte sin prometer número, el «How to pay» que habla de un enlace (avisa)
+   y, tras un pago parcial, «Balance due today» igual al enlace. La forma y
+   los textos de la mentira se compararon con el banco (c11 y c12 pegadas
+   sobre g9a): solo difieren los ids, las huellas y el id del usuario.
+   Y el WIP por costo a costo (c12, fase 10): la base de mentira trae fn_wip_resumen,
+   v_wip_schedule (sus 47 columnas), fn_wip_control (17 filas), fn_wip_cierre (174 a
+   177), v_wip_obras, v_wip_ajustes, v_wip_revisiones, wip_config y las fn_wip_* con
+   la forma, el cálculo (en centavos, como la base) y los textos de docs/conta/c12-
+   wip.sql (sacados del banco); se comprueba la página «WIP» (el mes que toca, lo de
+   antes del libro, revisar, los totales de la base, el schedule, postear con el
+   código del teléfono, ya no está al día y rehacer, deshacer, otro mes con «Sigue
+   igual», la propuesta que cambió, terminada, pasada de 100 %, el mes cerrado), sus
+   apartados «Obras», «Historial» y «Ajustes», la misma revisión dentro de «Cierre
+   del mes» (las filas 174 a 177, revisar y postear desde ahí), la falla ruidosa,
+   sin c12, el equipo, sin el código del teléfono y 390/820/1280 px.
    Los datos son inventados (la forma es la de las vistas de c4, c6 y p1).
    Uso: NODE_PATH=/opt/node22/lib/node_modules node pruebas/conta/pantalla.js
    (con --fotos guarda capturas en el temporal del sistema, o en FOTOS_DIR:
@@ -776,6 +807,8 @@ function c9Revisar(periodo) {
       fila9(160, 'subs: COI vigente de cada sub pagado en el mes', 'aviso', true, 'Todavía no hay datos de COI en proveedores (llegan con f12a: W-9, COI y 1099): no se puede comprobar, y no frena.', 'Pide el certificado de seguro (COI) a cada sub antes de pagarle (f12a).', null)
     );
   }
+  // (fase 10) el bloque de c12 en fn_cierre_revisar (scratchpad f10/c9-bloque-c12.sql): las cuatro filas de fn_wip_cierre en un mes
+  if (!ap && estado.c12 && !estado.c12NoDueno && wPer(p.periodo)) for (const x of wCierre(p.periodo)) f.push(fila9(x.orden, x.control, x.nivel === 'aviso' ? 'aviso' : 'detiene', x.ok, x.detalle, x.que_hacer, x.ir_a));
   return f.sort((a, b) => a.orden - b.orden);
 }
 const rojo9 = x => x.ok !== true;
@@ -1395,6 +1428,809 @@ const C10_FN = {
   }
 };
 
+// ---- las facturas (c11, fase 10): la forma EXACTA de v_emision_estado, v_emision_documentos, v_emision_obras,
+// v_emision_control y emision_config, y de las respuestas de fn_emision_borrador, fn_emision_documento, fn_emision_emitir,
+// fn_emision_descartar, fn_emision_anular, fn_emision_obra, fn_emision_config, fn_emision_envio y fn_emision_pago, con sus
+// textos (docs/conta/c11-emision.sql; los ejemplos del banco u10a del 11-nov). La base de mentira calcula como la base (en
+// centavos enteros: la retención redondeada una vez por factura, lo que se paga es la resta) para que la pantalla tenga
+// algo que enseñar: la pantalla no calcula nada. Y la función de borde `facturas` («pdf», «enviar», «ver»), con la forma de
+// supabase/functions/facturas/index.ts. Datos inventados («C11 PRUEBA», «ZZ»). Sin estado.c11, 404 (PGRST205/PGRST202).
+const F_EMPRESA = { web: 'c11-pruebas.invalid', correo: 'billing@c11-pruebas.invalid', nombre: 'ZZ Electric C11 PRUEBA, Inc.', licencia: 'ZZ-0000', telefono: '(000) 000-0000', direccion: '100 ZZ Test Ave, Testville, FL 00000' };
+const F_COMO_PAGAR = 'Check payable to ZZ Electric C11 PRUEBA, Inc. Please write the invoice number on the check.';
+const F_OBRAS = {
+  'c11-prueba-a': { obra: 'C11 PRUEBA Oficina Uno', tipo: 'comercial', estado: 'ejecucion', cliente: 'ZZ Cliente Uno', direccion: '1 ZZ Test Rd, Testville, FL 00000', correo: 'zz.uno@c11-pruebas.invalid', contrato: 1850055, a_contratista: false },
+  'c11-prueba-b': { obra: 'C11 PRUEBA Casa Dos', tipo: 'residencial', estado: 'ejecucion', cliente: 'ZZ Cliente Dos', direccion: '2 ZZ Test Rd, Testville, FL 00000', correo: 'zz.dos@c11-pruebas.invalid', contrato: 400000, a_contratista: false },
+  'c11-prueba-c': { obra: 'C11 PRUEBA Nave Tres', tipo: 'comercial', estado: 'ejecucion', cliente: 'ZZ Contractor C11 PRUEBA, LLC', atencion: 'ZZ Project Manager', correo: 'zz.pm@c11-pruebas.invalid', contrato: 900000, a_contratista: true },
+  'c11-prueba-d': { obra: 'C11 PRUEBA Taller Cuatro', tipo: 'servicio', estado: 'completado', cliente: 'ZZ Cliente Cuatro', contrato: null, a_contratista: false }
+};
+const F = {};
+const c2s = c => { const n = Math.abs(c); return `${c < 0 ? '-' : ''}${Math.floor(n / 100)}.${String(n % 100).padStart(2, '0')}`; };   // centavos → «1234.57»
+const s2c = s => { const m = /^(-)?(\d+)(?:\.(\d{1,4}))?$/.exec(String(s).trim()); if (!m) return NaN; const v = Number(m[2]) * 10000 + Number(((m[3] || '') + '0000').slice(0, 4)); return (m[1] ? -1 : 1) * v; }; // diezmilésimos
+const redC = x => Math.sign(x) * Math.round(Math.abs(x));                       // redondeo de numeric: la mitad, lejos de cero
+const MES_C11 = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+const fDia = iso => { const [a, m, d] = iso.split('-').map(Number); return `${d}-${MES_C11[m - 1]}-${a}`; };   // fn_emision_dia
+const fMas = (iso, n) => { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const fUsd = c => usd(c / 100);
+function fReset({ antes = false, sinEmpresa = false } = {}) {
+  Object.assign(F, {
+    config: { id: 1, ach: true, corte: antes ? '2027-01-01' : HOY, empresa: sinEmpresa ? {} : { ...F_EMPRESA }, pdf_dias: 2, como_pagar: sinEmpresa ? '' : F_COMO_PAGAR, tarjeta_pct: null,
+      serie_formato: 'MXP-AAAA-NNNN', terminos_dias: 0, cuenta_recargo: null, terminos_texto: '', actualizado: '2026-11-11T14:00:00+00:00', actualizado_por: UID },
+    retObra: { 'c11-prueba-a': 10 },
+    hitos: [
+      { id: -1110000001, p: 'c11-prueba-a', titulo: 'C11 PRUEBA Rough-in', condicion: 'Due upon passing the rough-in inspection', monto: 123457, estado: 'pendiente', dep: false, orden: 1 },
+      { id: -1110000002, p: 'c11-prueba-a', titulo: 'C11 PRUEBA Trim-out', condicion: null, monto: 1726598, estado: 'pendiente', dep: false, orden: 2 },
+      { id: -1110000003, p: 'c11-prueba-b', titulo: 'C11 PRUEBA Deposit', condicion: 'Due at contract signing', monto: 120000, estado: 'pendiente', dep: true, orden: 0 },
+      { id: -1110000004, p: 'c11-prueba-b', titulo: 'C11 PRUEBA Final', condicion: null, monto: 280000, estado: 'pendiente', dep: false, orden: 1 },
+      { id: -1110000005, p: 'c11-prueba-c', titulo: 'C11 PRUEBA Mobilization', condicion: null, monto: 270000, estado: 'pendiente', dep: false, orden: 1 }
+    ],
+    docs: [], seq: 0, fid: 700, asi: 1, nc: 0, uuid: 0, ctlRojo: false, avisoSinPdf: false,
+    fnFalla: null, fnLlamadas: [], enlaces: [], pdfN: 0, resendN: 0
+  });
+}
+const fId = () => `f1100000-0000-4000-8000-${String(++F.uuid).padStart(12, '0')}`;
+const fObra = id => F_OBRAS[id];
+const fRetDe = p => F.retObra[p] != null ? { pct: F.retObra[p], origen: 'obra' } : { pct: 0, origen: 'ninguna' };
+const fDest = p => { const o = fObra(p); return { a_contratista: !!o.a_contratista, cliente: Object.fromEntries(Object.entries({ nombre: o.cliente, atencion: o.a_contratista ? o.atencion : undefined, direccion: o.a_contratista ? undefined : o.direccion, correo: o.correo }).filter(([, v]) => v)) }; };
+const fPareceEsp = t => !!t && /[ñ¿¡áéíóú]|\b(de la|del|los|las|obra|materiales|trabajo|factura|mano de obra)\b/i.test(t);
+// los totales del documento: las líneas suman el monto; la retención, una vez sobre el monto; lo que se paga, la resta
+function fTotales(d) {
+  d.monto = d.lineas.reduce((s, l) => s + l.importe, 0);
+  d.retencion = d.forma === 'retencion' ? 0 : redC(d.monto * d.retencion_pct / 100);
+  d.a_pagar = d.monto - d.retencion;
+}
+// fn_emision_revisar: los avisos con sus textos y su orden
+function fAvisos(d) {
+  const v = [], cfg = F.config, o = fObra(d.proyecto_id);
+  const av = (codigo, frena, texto) => v.push({ frena, texto, codigo });
+  if (HOY < cfg.corte) av('antes_del_corte', true, `Todavía no se factura por la app: hasta el ${fDia(fMas(cfg.corte, -1))} las facturas salen por QuickBooks (el 🧾 de siempre). Este borrador se queda guardado para probar; se podrá emitir desde el ${fDia(cfg.corte)}.`);
+  if (!String(cfg.empresa.nombre || '').trim()) av('falta_empresa', true, 'Faltan los datos de la empresa (por lo menos el nombre) en los ajustes de facturación: sin ellos la factura saldría sin membrete.');
+  if (!cfg.como_pagar.trim()) av('falta_como_pagar', true, 'Falta el texto «How to pay» en los ajustes de facturación: la factura tiene que decirle al cliente cómo pagar.');
+  if (!String((d.cliente || {}).nombre || '').trim()) av('falta_cliente', true, 'Falta a quién se le factura (el nombre del cliente o del contratista): ponlo en el borrador o en la obra.');
+  if (o.estado === 'completado') av('obra_cerrada', false, `La obra «${o.obra}» está terminada: se puede facturar igual; solo mira que sea lo que quieres.`);
+  if (!d.lineas.length || d.monto <= 0) av('sin_monto', true, 'El borrador no tiene líneas o suma cero: una factura tiene que sumar más de cero.');
+  if (d.forma === 'hito') {
+    const h = F.hitos.find(x => x.id === d.hito_id);
+    if (h.estado === 'cobrado') av('hito_cobrado', true, `El hito «${h.titulo}» ya está marcado como cobrado: no se factura otra vez. Si de verdad hay que facturarlo, ponlo antes en pendiente.`);
+    if (h.monto !== d.monto) av('hito_cambio', true, `El hito «${h.titulo}» ahora vale ${fUsd(h.monto)} y este borrador dice ${fUsd(d.monto)}: refresca el borrador y vuelve a mirarlo.`);
+  }
+  if (['porcentaje', 'tm'].includes(d.forma) && F.hitos.some(h => h.p === d.proyecto_id && h.estado === 'pendiente')) av('obra_con_hitos', false, 'Esta obra tiene hitos pendientes de facturar: una factura que no sale de un hito no mueve ninguno.');
+  if (d.forma !== 'retencion' && d.retencion_origen !== 'borrador' && fRetDe(d.proyecto_id).pct !== d.retencion_pct) av('retencion_cambio', true, `La retención de la obra ahora es ${fRetDe(d.proyecto_id).pct} % y este borrador dice ${d.retencion_pct} %: refresca el borrador y vuelve a mirarlo.`);
+  if (d.forma !== 'retencion' && d.a_contratista && !d.retencion_pct) av('contratista_sin_retencion', false, 'Es a un contratista y va sin retención: si él retiene un porcentaje, ponlo en la obra antes de emitir.');
+  const esp = [d.lineas.some(l => fPareceEsp(l.descripcion) || fPareceEsp(l.detalle)) ? 'una línea' : null, fPareceEsp(d.notas) ? 'las notas' : null].filter(Boolean);
+  if (esp.length) av('en_espanol', true, `Parece que hay texto en español (${esp.join(', ')}) y lo que ve el cliente va en inglés: cámbialo, o confirma que está bien así.`);
+  return v;
+}
+const fVisto = d => cripto.createHash('md5').update(JSON.stringify([d.forma, d.proyecto_id, d.hito_id, d.porcentaje, d.cliente, d.notas, d.retencion_pct, d.monto, d.lineas, F.config.empresa, F.config.como_pagar, F.config.terminos_dias, F.config.terminos_texto, F.config.ach])).digest('hex');
+const fLineaJ = l => ({ n: l.n, ref: l.ref, tipo: l.tipo, precio: l.precioD / 10000, unidad: l.unidad, detalle: l.detalle, importe: l.importe / 100, cantidad: l.cantD / 10000, descripcion: l.descripcion });
+const fNum = v => { const t = String(v); return t.includes('.') ? t.replace(/0+$/, '').replace(/\.$/, '') : t; };
+const fPrecioTxt = d => { const t = (d / 10000).toFixed(4).replace(/0{1,2}$/, ''); return t.split('.')[1].length < 2 ? (d / 10000).toFixed(2) : t; };
+function fContenido(d, numero, fecha) {
+  const cfg = F.config, o = fObra(d.proyecto_id), f = fecha || HOY;
+  const h = d.hito_id != null ? F.hitos.find(x => x.id === d.hito_id) : null;
+  const antes = F.docs.filter(x => x.proyecto_id === d.proyecto_id && x.estado === 'emitida' && !x.anulado_el && x !== d && x.forma !== 'retencion');
+  const antesC = antes.reduce((s, x) => s + x.monto, 0);
+  const ret = F.docs.filter(x => x.proyecto_id === d.proyecto_id && x.estado === 'emitida' && !x.anulado_el && x.forma !== 'retencion' && x !== d).reduce((s, x) => s + x.retencion, 0) + (d.forma !== 'retencion' ? d.retencion : 0);
+  const esta = d.forma === 'retencion' ? 0 : d.monto;
+  const limpio = x => JSON.parse(JSON.stringify(x, (k, v) => v === null ? undefined : v));
+  return limpio({
+    v: 1, forma: d.forma, numero: numero || null, fecha: f, vence: fMas(f, cfg.terminos_dias),
+    terminos: { dias: cfg.terminos_dias, etiqueta: cfg.terminos_dias ? `Net ${cfg.terminos_dias}` : 'Due on receipt', texto: cfg.terminos_texto.trim() || null },
+    empresa: cfg.empresa, cliente: d.cliente, a_contratista: d.a_contratista,
+    obra: { id: d.proyecto_id, nombre: o.obra, direccion: o.direccion || null, ref: null },
+    hito: h ? { id: h.id, titulo: h.titulo, es_deposito: h.dep } : null,
+    ordinal: d.forma !== 'retencion' ? antes.length + 1 : null,
+    lineas: d.lineas.map(l => ({ n: l.n, tipo: l.tipo, descripcion: l.descripcion, detalle: l.detalle, cantidad: fNum(l.cantD / 10000), unidad: l.unidad, precio: fPrecioTxt(l.precioD), importe: c2s(l.importe), ref: l.ref })),
+    totales: { subtotal: c2s(d.monto), retencion_pct: fNum(d.retencion_pct), retencion: c2s(d.retencion), a_pagar: c2s(d.a_pagar), retenido_a_la_fecha: c2s(ret) },
+    contrato: o.contrato ? { monto: c2s(o.contrato), facturado_antes: c2s(antesC), esta: c2s(esta), facturado_con_esta: c2s(antesC + esta), pct: (Math.round((antesC + esta) * 1000 / o.contrato) / 10).toFixed(1) } : null,
+    como_pagar: cfg.como_pagar.trim() || null, pago_en_linea: { ach: cfg.ach && d.forma !== 'retencion', tarjeta: false }, notas: d.notas || null
+  });
+}
+const fEstado = d => d.estado === 'borrador' ? 'borrador' : d.anulado_el ? 'anulada' : 'emitida';
+const fDocJ = d => ({ id: d.id, base: d.base == null ? null : d.base / 100, hito: d.hito_id != null ? F.hitos.find(x => x.id === d.hito_id).titulo : null, obra: fObra(d.proyecto_id).obra, fecha: d.fecha || null, forma: d.forma,
+  monto: d.monto / 100, notas: d.notas || null, vence: d.vence || null, estado: fEstado(d), numero: d.numero || null, a_pagar: d.a_pagar / 100, asiento: d.asiento || null, cliente: d.cliente, hito_id: d.hito_id,
+  creado_el: d.creado_el, retencion: d.retencion / 100, anulado_el: d.anulado_el || null, emitido_el: d.emitido_el || null, factura_id: d.factura_id || null, porcentaje: d.porcentaje, es_deposito: !!d.es_deposito,
+  proyecto_id: d.proyecto_id, nota_credito: d.nota_credito || null, a_contratista: d.a_contratista, retencion_pct: d.retencion_pct, actualizado_el: d.actualizado_el, anulado_motivo: d.anulado_motivo || null, retencion_origen: d.retencion_origen });
+function fDocumento(d) {
+  if (d.estado === 'borrador') {
+    const av = fAvisos(d), frena = av.find(a => a.frena);
+    return { visto: fVisto(d), avisos: av, lineas: d.lineas.map(fLineaJ), documento: fDocJ(d), por_que_no: frena ? frena.texto : null, puede_emitir: !frena, vista_previa: fContenido(d, null) };
+  }
+  return { pdfs: d.pdfs, libro: d.factura_id ? { saldo: d.saldoC / 100, factura_estado: d.anulado_el ? 'anulada' : 'emitida', saldo_retencion: d.saldoRetC / 100 } : null, envios: d.envios, huella: d.huella,
+    lineas: d.lineas.map(fLineaJ), contenido: d.contenido, documento: fDocJ(d) };
+}
+const errF = (code, message, status) => ({ status: status || 400, error: { code, message, hint: null, details: null } });
+// una línea T&M de la pantalla (texto) → la de la base; MX005 con el texto de c11 si no vale
+function fLineaTm(l, n) {
+  const cant = s2c(l.cantidad == null ? '1' : l.cantidad), pre = s2c(l.precio);
+  if (!(cant > 0) || !Number.isFinite(pre) || pre === 0 || (pre < 0 && (l.tipo || 'otro') !== 'otro')) return { error: errF('MX005', `Línea ${n}: la cantidad va de más de 0 y el precio no da cero, con cuatro decimales como mucho; un precio negativo (un descuento) va solo en una línea de tipo «otro».`) };
+  return { n, ref: null, tipo: l.tipo || 'otro', precioD: pre, unidad: l.unidad || null, detalle: l.detalle || null, importe: redC(cant * pre / 1e6), cantD: cant, descripcion: String(l.descripcion || '').trim() };
+}
+const C11_FN = {
+  fn_emision_borrador: a => {
+    const p = a.p || {};
+    const extra = Object.keys(p).filter(k => !['documento', 'forma', 'proyecto_id', 'hito_id', 'porcentaje', 'lineas', 'descripcion', 'detalle', 'retencion_pct', 'cliente', 'notas'].includes(k));
+    if (extra.length) return errF('22023', `Clave desconocida en el borrador: ${extra.join(', ')}.`);
+    let d, nuevo = false;
+    if (p.documento) {
+      d = F.docs.find(x => x.id === p.documento);
+      if (!d) return errF('22023', 'No existe ese borrador.');
+      if (d.estado !== 'borrador') return errF('MX008', `La factura ${d.numero} ya se emitió: no se cambia. Si está mal, se anula con su nota de crédito.`);
+    } else {
+      const forma = p.forma;
+      if (!['hito', 'porcentaje', 'tm', 'retencion'].includes(forma)) return errF('22023', 'Di qué factura es (forma): hito, porcentaje, tm o retencion.');
+      if (forma === 'hito') {
+        if (p.hito_id == null) return errF('22023', 'Di qué hito se factura (hito_id).');
+        const h = F.hitos.find(x => x.id === Number(p.hito_id)); if (!h) return errF('22023', 'No existe ese hito.');
+        const ya = F.docs.find(x => x.hito_id === h.id && x.estado === 'borrador');
+        if (ya) return { nuevo: false, ...fDocumento(ya) };
+        const em = F.docs.find(x => x.hito_id === h.id && x.estado === 'emitida' && !x.anulado_el);
+        if (em) return errF('MX008', `El hito «${h.titulo}» ya se facturó: factura ${em.numero} del ${fDia(em.fecha)}. No se hace otra; si aquella está mal, se anula con su nota de crédito.`);
+        if (h.estado === 'cobrado') return errF('MX008', `El hito «${h.titulo}» ya está marcado como cobrado: no se factura otra vez. Si de verdad hay que facturarlo, ponlo antes en pendiente.`);
+        d = { forma, proyecto_id: h.p, hito_id: h.id, es_deposito: h.dep, lineas: [{ n: 1, ref: { hito_id: h.id }, tipo: 'hito', precioD: h.monto * 100, unidad: null, detalle: h.condicion, importe: h.monto, cantD: 10000, descripcion: h.titulo }] };
+      } else {
+        if (!fObra(p.proyecto_id)) return errF('22023', 'No existe esa obra.');
+        d = { forma, proyecto_id: p.proyecto_id, hito_id: null, es_deposito: false, lineas: [] };
+        if (forma === 'retencion') {
+          const ya = F.docs.find(x => x.forma === 'retencion' && x.estado === 'borrador' && x.proyecto_id === p.proyecto_id);
+          if (ya) return { nuevo: false, ...fDocumento(ya) };
+          d.lineas = F.docs.filter(x => x.proyecto_id === p.proyecto_id && x.estado === 'emitida' && !x.anulado_el && x.saldoRetC > 0)
+            .map((x, i) => ({ n: i + 1, ref: { numero: x.numero, factura_id: x.factura_id }, tipo: 'retencion', precioD: x.saldoRetC * 100, unidad: null, detalle: null, importe: x.saldoRetC, cantD: 10000, descripcion: `Retainage withheld on invoice ${x.numero} (${MES_EN_F[Number(x.fecha.slice(5, 7)) - 1]} ${Number(x.fecha.slice(8))}, ${x.fecha.slice(0, 4)})` }));
+          if (!d.lineas.length) return errF('MX008', `La obra «${fObra(p.proyecto_id).obra}» no tiene retención por reclamar en el libro.`);
+        }
+      }
+      nuevo = true;
+      Object.assign(d, { id: fId(), estado: 'borrador', porcentaje: null, base: null, notas: null, creado_el: new Date().toISOString(), pdfs: [], envios: [] });
+      const dest = fDest(d.proyecto_id); d.a_contratista = dest.a_contratista; d.cliente = dest.cliente;
+      const r = fRetDe(d.proyecto_id); d.retencion_pct = d.forma === 'retencion' ? 0 : r.pct; d.retencion_origen = d.forma === 'retencion' ? 'ninguna' : r.origen;
+      F.docs.push(d);
+    }
+    // lo que llega (forma porcentaje: el % del contrato; tm: las líneas; las demás: el texto de su línea)
+    if (d.forma === 'porcentaje' && (p.porcentaje != null || nuevo)) {
+      const pc = s2c(p.porcentaje == null ? d.porcentaje : p.porcentaje);
+      if (!(pc > 0) || pc > 1000000) { if (nuevo) F.docs.pop(); return errF('MX005', 'El porcentaje va de más de 0 a 100 (30 = 30 %), con cuatro decimales como mucho.'); }
+      const o = fObra(d.proyecto_id); d.porcentaje = pc / 10000; d.base = o.contrato;
+      d.lineas = [{ n: 1, ref: null, tipo: 'porcentaje', precioD: redC(o.contrato * pc / 1e6) * 100, unidad: null, detalle: d.lineas[0] ? d.lineas[0].detalle : null, importe: redC(o.contrato * pc / 1e6), cantD: 10000,
+        descripcion: `Progress billing — ${fNum(pc / 10000)}% of contract amount (${fUsd(o.contrato)})` }];
+    }
+    if (d.forma === 'tm' && p.lineas) {
+      const ls = []; for (const [i, l] of p.lineas.entries()) { const x = fLineaTm(l, i + 1); if (x.error) { if (nuevo) F.docs.pop(); return x.error; } ls.push(x); }
+      d.lineas = ls;
+    }
+    if (p.descripcion !== undefined && d.lineas[0] && ['hito', 'porcentaje'].includes(d.forma)) d.lineas[0].descripcion = String(p.descripcion).trim() || d.lineas[0].descripcion;
+    if (p.detalle !== undefined && d.lineas[0] && ['hito', 'porcentaje'].includes(d.forma)) d.lineas[0].detalle = p.detalle || null;
+    if (p.retencion_pct !== undefined && d.forma !== 'retencion') {
+      if (p.retencion_pct === null) { const r = fRetDe(d.proyecto_id); d.retencion_pct = r.pct; d.retencion_origen = r.origen; }
+      else { const t = s2c(p.retencion_pct); if (!(t >= 0) || t >= 1000000) return errF('MX005', 'La retención va de 0 a menos de 100 (10 = 10 %), con dos decimales como mucho.'); d.retencion_pct = t / 10000; d.retencion_origen = 'borrador'; }
+    } else if (!p.documento || Object.keys(p).length === 1) {
+      // refrescar: lo de fuera otra vez (el hito, la retención de la obra)
+      if (d.forma === 'hito') { const h = F.hitos.find(x => x.id === d.hito_id); d.lineas[0].importe = h.monto; d.lineas[0].precioD = h.monto * 100; }
+      if (d.retencion_origen !== 'borrador' && d.forma !== 'retencion') { const r = fRetDe(d.proyecto_id); d.retencion_pct = r.pct; d.retencion_origen = r.origen; }
+    }
+    if (p.cliente !== undefined) d.cliente = p.cliente === null ? fDest(d.proyecto_id).cliente : Object.fromEntries(Object.entries(p.cliente).filter(([, v]) => v));
+    if (p.notas !== undefined) d.notas = p.notas || null;
+    fTotales(d);
+    d.actualizado_el = new Date().toISOString();
+    return { nuevo, ...fDocumento(d) };
+  },
+  fn_emision_documento: a => { const d = F.docs.find(x => x.id === a.p_documento); return d ? fDocumento(d) : errF('22023', 'No existe ese documento.'); },
+  fn_emision_descartar: a => {
+    const d = F.docs.find(x => x.id === a.p_documento); if (!d) return errF('22023', 'No existe ese borrador.');
+    if (d.estado !== 'borrador') return errF('MX008', `La factura ${d.numero} ya se emitió: no se tira. Si está mal, se anula con su nota de crédito.`);
+    F.docs = F.docs.filter(x => x !== d);
+    return { documento: d.id, descartado: true };
+  },
+  fn_emision_emitir: a => {
+    const d = F.docs.find(x => x.id === a.p_documento); if (!d) return errF('22023', 'No existe ese borrador.');
+    const op = a.p_opciones || {};
+    if (Object.keys(op).some(k => k !== 'idioma_revisado')) return errF('22023', `Opción desconocida: ${Object.keys(op).filter(k => k !== 'idioma_revisado').join(', ')}. La que hay: idioma_revisado.`);
+    if (d.estado === 'emitida') return errF('MX008', `Ese borrador ya se emitió: es la factura ${d.numero} del ${fDia(d.fecha)}. No se emite dos veces.`);
+    if (a.p_visto !== fVisto(d)) return errF('MX011', 'El borrador ya no es el que viste (cambió en otra pestaña, o cambiaron los ajustes de la factura): no se emitió nada. Vuelve a mirarlo y emite otra vez.');
+    for (const x of fAvisos(d)) if (x.frena && !(x.codigo === 'en_espanol' && op.idioma_revisado)) return errF(/_cambio$/.test(x.codigo) ? 'MX011' : 'MX008', x.texto);
+    F.seq += 1;
+    Object.assign(d, { estado: 'emitida', numero: `MXP-${HOY.slice(0, 4)}-${String(F.seq).padStart(4, '0')}`, fecha: HOY, vence: fMas(HOY, F.config.terminos_dias), factura_id: ++F.fid, asiento: `2026-${String(++F.asi).padStart(6, '0')}`,
+      emitido_el: new Date().toISOString(), saldoC: d.forma === 'retencion' ? 0 : d.a_pagar, saldoRetC: d.forma === 'retencion' ? 0 : d.retencion });
+    if (d.forma === 'retencion') { d.factura_id = null; d.asiento = null; }
+    d.contenido = fContenido(d, d.numero, d.fecha);
+    d.huella = sha(JSON.stringify(d.contenido));
+    const h = d.hito_id != null ? F.hitos.find(x => x.id === d.hito_id) : null; if (h) h.estado = 'facturado';
+    return { fecha: d.fecha, monto: d.monto / 100, sigue: 'El PDF y el envío: la función de facturas lo pinta con este contenido, lo sube y lo registra.', vence: d.vence, estado: 'emitida', huella: d.huella, numero: d.numero, a_pagar: d.a_pagar / 100,
+      ...(d.asiento ? { asiento: d.asiento } : {}), hito_id: d.hito_id, documento: d.id, retencion: d.retencion / 100, ...(d.factura_id ? { factura_id: d.factura_id } : {}), hito_estado: h ? 'facturado' : null, fecha_contable: d.fecha };
+  },
+  fn_emision_anular: a => {
+    if (!String(a.p_motivo || '').trim()) return errF('22023', 'Anular una factura dice por qué (el motivo): queda escrito con ella.');
+    const d = F.docs.find(x => x.id === a.p_documento); if (!d) return errF('22023', 'No existe esa factura.');
+    if (d.estado === 'borrador') return errF('MX008', 'Un borrador no se anula: se tira (todavía no es una factura).');
+    if (d.anulado_el) return errF('MX008', `La factura ${d.numero} ya estaba anulada (${d.nota_credito}).`);
+    if (d.cobradoC) return errF('MX008', `La factura #${d.numero} tiene cobros aplicados por ${fUsd(d.cobradoC)}: primero se deshacen los cobros (o se reversa el cobro) y después se anula.`);
+    F.nc += 1;
+    Object.assign(d, { anulado_el: new Date().toISOString(), anulado_motivo: String(a.p_motivo).trim(), nota_credito: d.factura_id ? `NC-2026-${String(F.nc).padStart(4, '0')}` : null, saldoC: 0, saldoRetC: 0 });
+    const h = d.hito_id != null ? F.hitos.find(x => x.id === d.hito_id) : null; if (h) h.estado = 'pendiente';
+    return { sigue: 'Si el cliente ya la recibió, avísale. La buena es un borrador nuevo, con número nuevo; su enlace de pago, si tenía, hay que desactivarlo.', numero: d.numero, anulada: true,
+      ...(d.factura_id ? { asiento: `2026-${String(++F.asi).padStart(6, '0')}`, nota_credito: d.nota_credito, fecha_contable: HOY } : { sin_asiento: true }), hito_id: d.hito_id, documento: d.id, hito_estado: h ? 'pendiente' : null };
+  },
+  fn_emision_obra: a => {
+    const p = a.p || {};
+    if (!fObra(p.proyecto_id)) return errF('22023', 'No existe esa obra.');
+    if (p.retencion_pct === null || p.retencion_pct === undefined) delete F.retObra[p.proyecto_id];
+    else { const t = s2c(p.retencion_pct); if (!(t >= 0) || t >= 1000000) return errF('MX005', 'La retención va de 0 a menos de 100 (10 = 10 %), con dos decimales como mucho.'); F.retObra[p.proyecto_id] = t / 10000; }
+    const r = fRetDe(p.proyecto_id);
+    return { nota: p.nota || null, retencion: { pct: r.pct, origen: r.origen }, actualizado: new Date().toISOString(), proyecto_id: p.proyecto_id, retencion_pct: F.retObra[p.proyecto_id] == null ? null : F.retObra[p.proyecto_id], actualizado_por: UID };
+  },
+  fn_emision_config: a => {
+    const p = a.p || {};
+    const sobra = Object.keys(p).filter(k => !['corte', 'serie_formato', 'terminos_dias', 'terminos_texto', 'empresa', 'como_pagar', 'ach', 'tarjeta_pct', 'cuenta_recargo', 'pdf_dias'].includes(k));
+    if (sobra.length) return errF('22023', `Clave desconocida en los ajustes: ${sobra.join(', ')}. Las que hay: corte, serie_formato, terminos_dias, terminos_texto, empresa, como_pagar, ach, tarjeta_pct, cuenta_recargo y pdf_dias.`);
+    if (p.corte !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(String(p.corte))) return errF('22007', 'El corte es una fecha AAAA-MM-DD (por ejemplo 2027-01-01).');
+    if (p.corte !== undefined && F.docs.some(d => d.estado === 'emitida') && p.corte > F.docs.filter(d => d.estado === 'emitida').map(d => d.fecha).sort()[0]) return errF('MX008', `Ya hay facturas emitidas por la app desde el ${fDia(F.docs.filter(d => d.estado === 'emitida').map(d => d.fecha).sort()[0])}: el corte no se pone después de esa fecha.`);
+    if (p.tarjeta_pct != null) return errF('MX008', 'La tarjeta todavía no se puede encender: lo que el cliente pagara de más por el recargo, los cobros en línea lo dejarían como un anticipo de la obra (un saldo a su favor), no como un ingreso, y el libro quedaría mal. Queda apagada hasta que eso se arregle y se confirmen con Stripe y con el CPA las reglas del recargo. Mientras, el pago en línea es por cuenta de banco (ACH).');
+    if (p.terminos_dias !== undefined && !(Number.isInteger(p.terminos_dias) && p.terminos_dias >= 0 && p.terminos_dias <= 120)) return errF('22023', 'Los términos van de 0 (al recibirla) a 120 días.');
+    for (const k of ['corte', 'serie_formato', 'terminos_dias', 'terminos_texto', 'como_pagar', 'ach', 'pdf_dias']) if (p[k] !== undefined) F.config[k] = p[k];
+    if (p.empresa !== undefined) F.config.empresa = p.empresa;
+    F.config.actualizado = new Date().toISOString();
+    return { ...F.config, tarjeta_lista: false };
+  },
+  fn_emision_envio: a => {
+    const d = F.docs.find(x => x.id === a.p_documento); if (!d) return errF('22023', 'No existe ese documento.');
+    const e = a.p_envio || {}, medio = e.medio || 'correo';
+    if (d.estado !== 'emitida') return errF('MX008', 'Un borrador no se manda: se emite primero.');
+    if (d.anulado_el) return errF('MX008', `La factura ${d.numero} está anulada: ya no se manda.`);
+    if (!String(e.para || '').trim()) return errF('22023', 'Di a quién se mandó (para): en un correo, su dirección (o varias, separadas por comas); en mano, quién la recibió.');
+    if (e.resend_id) { const ya = d.envios.find(x => x.resend_id === e.resend_id); if (ya) return { envio: { n: ya.n, id: ya.id, para: ya.para, medio: ya.medio, enviado_el: ya.enviado_el }, numero: d.numero, reenvio: ya.n > 1, documento: d.id, ya_estaba: true }; }
+    if (medio === 'correo' && !d.pdfs.length) return errF('MX008', `La factura ${d.numero} todavía no tiene su PDF registrado: primero el PDF, después el correo.`);
+    const x = { n: d.envios.length + 1, cc: e.cc || null, id: fId(), nota: e.nota || null, para: e.para, medio, asunto: e.asunto || null, pdf_id: medio === 'correo' ? (e.pdf_id || d.pdfs[d.pdfs.length - 1].id) : (d.pdfs.length ? d.pdfs[d.pdfs.length - 1].id : null), resend_id: e.resend_id || null, enviado_el: new Date().toISOString() };
+    d.envios.push(x);
+    return { envio: { n: x.n, id: x.id, para: x.para, medio: x.medio, enviado_el: x.enviado_el }, numero: d.numero, reenvio: x.n > 1, documento: d.id, ya_estaba: false };
+  },
+  fn_emision_pago: a => {
+    const d = F.docs.find(x => x.id === a.p_documento); if (!d) return errF('22023', 'No existe ese documento.');
+    if (d.estado !== 'emitida') return errF('MX008', 'Un borrador no tiene enlace de pago: se emite primero.');
+    const e = F.enlaces.filter(x => x.doc === d.id && ['creando', 'activo'].includes(x.estado)).pop();
+    const no = d.anulado_el ? 'La factura está anulada: no se cobra.' : d.forma === 'retencion' ? 'La factura de la retención no lleva enlace propio: se cobra por cheque o transferencia, o con el enlace «con la retención» de cada factura, desde Cobros en línea.'
+      : !F.config.ach ? 'El pago en línea está apagado en los ajustes de facturación.' : d.saldoC <= 0 ? 'La factura ya no debe nada en el libro.' : null;
+    const nombre = F.config.empresa.nombre || 'Invoice';
+    return Object.fromEntries(Object.entries({ saldo: d.saldoC / 100, numero: d.numero, stripe: no ? null : { monto: d.saldoC / 100, moneda: 'usd', nombre: `Invoice ${d.numero} · ${nombre}`, metodos: ['us_bank_account'], centavos: d.saldoC, descripcion: `Invoice ${d.numero} — ${nombre}`, un_solo_uso: true, con_retencion: false },
+      a_pagar: d.a_pagar / 100, enlace: e ? { id: e.id, url: e.url, vale: e.estado === 'activo' && e.monto === d.saldoC, monto: e.monto / 100, estado: e.estado, creado_el: e.creado_el, con_retencion: false } : null,
+      tarjeta: { por_que: 'La tarjeta está apagada: los cobros en línea dejarían el recargo como un anticipo de la obra, no como un ingreso. Se enciende cuando eso se arregle y se confirmen con Stripe y con el CPA las reglas del recargo.', ofrecida: false },
+      en_linea: !no, documento: d.id, por_que_no: no, factura_id: d.factura_id, saldo_retencion: d.saldoRetC / 100 }).filter(([, v]) => v !== null && v !== undefined));
+  }
+};
+const MES_EN_F = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// las vistas (security_invoker: solo el dueño ve filas)
+function fEstadoVista() {
+  const cfg = F.config, porApp = HOY >= cfg.corte, em = F.docs.filter(d => d.estado === 'emitida');
+  const falta = [!String(cfg.empresa.nombre || '').trim() ? 'empresa' : null, !cfg.como_pagar.trim() ? 'como_pagar' : null].filter(Boolean);
+  const diasCorte = Math.max(0, Math.round((new Date(cfg.corte + 'T12:00:00Z') - new Date(HOY + 'T12:00:00Z')) / 86400000));
+  // (como la base: el año de HOY, también antes del corte; fn_emision_pegado sí usa el año del corte)
+  const anioSig = HOY.slice(0, 4);
+  return [{ hoy: HOY, corte: cfg.corte, por_la_app: porApp, camino: porApp ? 'app' : 'quickbooks',
+    texto: porApp ? `Desde el ${fDia(cfg.corte)} las facturas se emiten aquí, con su número de la serie del año.` : `Hasta el ${fDia(fMas(cfg.corte, -1))} las facturas salen por QuickBooks (el 🧾 de siempre). Aquí se pueden preparar borradores para probar; se podrán emitir desde el ${fDia(cfg.corte)}.`,
+    dias_para_el_corte: diasCorte, serie_formato: cfg.serie_formato, siguiente_numero: `MXP-${anioSig}-${String(F.seq + 1).padStart(4, '0')}`, terminos_dias: cfg.terminos_dias, falta, puede_emitir: porApp && !falta.length,
+    pago_en_linea: cfg.ach, tarjeta: false, borradores: F.docs.filter(d => d.estado === 'borrador').length, emitidas: em.filter(d => !d.anulado_el).length, anuladas: em.filter(d => d.anulado_el).length,
+    sin_pdf: em.filter(d => !d.anulado_el && !d.pdfs.length).length, sin_mandar: em.filter(d => !d.anulado_el && !d.envios.length).length }];
+}
+const fDocsVista = () => F.docs.map(d => ({ id: d.id, estado: fEstado(d), forma: d.forma, proyecto_id: d.proyecto_id, obra: fObra(d.proyecto_id).obra, cliente: (d.cliente || {}).nombre || null, a_contratista: d.a_contratista,
+  hito_id: d.hito_id, hito: d.hito_id != null ? F.hitos.find(x => x.id === d.hito_id).titulo : null, es_deposito: !!d.es_deposito, numero: d.numero || null, fecha: d.fecha || null, vence: d.vence || null, monto: d.monto / 100,
+  retencion_pct: d.retencion_pct, retencion: d.retencion / 100, a_pagar: d.a_pagar / 100, factura_id: d.factura_id || null, asiento: d.asiento || null, saldo: d.estado === 'emitida' && d.factura_id ? d.saldoC / 100 : null,
+  saldo_retencion: d.estado === 'emitida' && d.factura_id ? d.saldoRetC / 100 : null, nota_credito: d.nota_credito || null, anulado_el: d.anulado_el || null, anulado_motivo: d.anulado_motivo || null, pdfs: d.pdfs.length,
+  pdf_ruta: d.pdfs.length ? d.pdfs[d.pdfs.length - 1].ruta : null, pdf_el: d.pdfs.length ? d.pdfs[d.pdfs.length - 1].creado_el : null, envios: d.envios.length, enviado_el: d.envios.length ? d.envios[d.envios.length - 1].enviado_el : null,
+  enviado_a: d.envios.length ? d.envios[d.envios.length - 1].para : null, visto: d.estado === 'borrador' ? fVisto(d) : null, creado_el: d.creado_el, actualizado_el: d.actualizado_el, emitido_el: d.emitido_el || null }));
+const fObrasVista = () => Object.entries(F_OBRAS).map(([id, o]) => {
+  const em = F.docs.filter(d => d.proyecto_id === id && d.estado === 'emitida' && !d.anulado_el && d.forma !== 'retencion');
+  const fac = em.reduce((s, d) => s + d.monto, 0), hs = F.hitos.filter(h => h.p === id).sort((x, y) => x.orden - y.orden), r = fRetDe(id);
+  return { proyecto_id: id, obra: o.obra, tipo: o.tipo, estado: o.estado, cliente: o.cliente, a_contratista: o.a_contratista, contrato: o.contrato == null ? null : o.contrato / 100, facturado: fac / 100, facturas: em.length,
+    por_facturar: o.contrato == null ? null : (o.contrato - fac) / 100, retencion_pct: r.pct, retencion_origen: r.origen, retenido: em.reduce((s, d) => s + d.saldoRetC, 0) / 100,
+    hitos_pendientes: hs.filter(h => h.estado === 'pendiente').length, hitos_pendientes_monto: hs.filter(h => h.estado === 'pendiente').reduce((s, h) => s + h.monto, 0) / 100,
+    hitos: hs.map(h => { const f = F.docs.find(d => d.hito_id === h.id && d.estado === 'emitida' && !d.anulado_el), b = F.docs.find(d => d.hito_id === h.id && d.estado === 'borrador');
+      return { id: h.id, monto: h.monto / 100, puede: h.estado === 'pendiente' && !f && !b, estado: h.estado, titulo: h.titulo, factura: f ? f.numero : null, borrador: b ? b.id : null, es_deposito: h.dep }; }),
+    borradores: F.docs.filter(d => d.proyecto_id === id && d.estado === 'borrador').length, ingreso_listo: true };
+});
+function fControl() {
+  const em = F.docs.filter(d => d.estado === 'emitida'), vivas = em.filter(d => !d.anulado_el && d.factura_id), cfg = F.config;
+  const faltaE = [!String(cfg.empresa.nombre || '').trim() ? 'los datos de la empresa' : null, !cfg.como_pagar.trim() ? 'el texto «How to pay»' : null].filter(Boolean).join(' y ');
+  const sinPdf = F.avisoSinPdf ? em.filter(d => !d.anulado_el) : [];
+  const f = (orden, cuadre, nivel, ok, detalle) => ({ ok, nivel, orden, cuadre, detalle });
+  return [
+    f(10, 'facturas: cada factura emitida por la app = su asiento, al centavo', 'cuadre', !F.ctlRojo, F.ctlRojo ? 'la factura MXP-2026-0001 (prueba): su asiento lleva $1,111.11 por cobrar y debía llevar $1,111.12 → el libro y la factura no dicen lo mismo: no la toques a mano; avisa.'
+      : `${vivas.length} factura(s) viva(s) emitida(s) por la app: cada una está en el libro con su asiento, al centavo (lo que se cobra ahora más lo retenido es su monto).`),
+    f(20, 'facturas: la serie de cada año, sin huecos ni repetidos', 'cuadre', true, em.length ? `Cada año va seguido desde el 1 y su contador está en el último: ${HOY.slice(0, 4)}, ${F.seq} número(s).` : 'Todavía no se ha emitido ninguna factura por la app: la serie empieza en el 1.'),
+    f(30, 'facturas: cada documento emitido sigue sellado', 'cuadre', true, `${em.length} documento(s) emitido(s): su contenido es el que se selló, sus líneas suman su monto y su fila de facturas dice lo mismo.`),
+    f(40, 'facturas: ningún hito facturado dos veces', 'cuadre', true, 'Ningún hito tiene dos facturas vivas con alguna emitida por la app.'),
+    f(50, 'facturas: cada PDF registrado sigue en su sitio', 'aviso', true, `${em.reduce((s, d) => s + d.pdfs.length, 0)} PDF registrado(s): todos siguen en el bucket facturas y miden lo que se registró (su sha256 queda guardado para comparar la copia que tenga el cliente).`),
+    f(60, `facturas: ninguna emitida hace más de ${cfg.pdf_dias} día(s) sin su PDF`, 'aviso', !sinPdf.length, sinPdf.length ? `${sinPdf.map(d => `${d.numero} (del ${fDia(d.fecha)})`).join(', ')} → están emitidas y en el libro, pero sin su PDF: ábrelas en Facturación y genera el PDF.` : 'Cada factura emitida tiene su PDF (o es de estos días).'),
+    f(62, `facturas: ninguna emitida hace más de ${cfg.pdf_dias} día(s) sin mandar`, 'aviso', true, 'Cada factura emitida se mandó o se entregó (o es de estos días).'),
+    f(70, 'facturas: ninguna retención que parezca un porcentaje', 'aviso', true, 'Ninguna factura hecha fuera de la app trae una retención entre 0 y 100 que no cuadre con el porcentaje de su obra.'),
+    f(72, 'facturas: desde el corte, todas salen de la app', 'aviso', true, `Ninguna factura fechada desde el ${fDia(cfg.corte)} se hizo fuera de la app.`),
+    f(75, 'facturas: ninguna anulación a medias, ningún hito con dos facturas de antes', 'aviso', true, 'Toda factura de la app anulada en el libro está cerrada aquí, ninguna factura de la retención reclama lo de una anulada, y ningún hito trae dos facturas vivas de antes.'),
+    f(80, 'facturas: el pago en línea, solo por cuenta de banco', 'aviso', true, 'Ninguna factura de la app se cobró con tarjeta, y el porcentaje de la tarjeta está vacío (apagada).'),
+    f(85, 'facturas: los datos de la empresa y el «How to pay»', 'aviso', !faltaE || HOY < fMas(cfg.corte, -14), !faltaE ? 'Los datos de la empresa y el «How to pay» están puestos.' : HOY < fMas(cfg.corte, -14) ? `Faltan ${faltaE} en los ajustes de facturación; se piden desde dos semanas antes del corte (${fDia(cfg.corte)}).`
+      : `Faltan ${faltaE} en los ajustes de facturación → sin eso no se puede emitir ninguna factura: ponlos en Facturación → Ajustes (en inglés: los ve el cliente).`),
+    f(90, 'facturas: protecciones de la capa', 'cuadre', true, 'Solo la función del número corre con los permisos del dueño de la base (es de trigger y nadie la ejecuta suelta); ninguna la ejecutan anon ni service_role; las tablas con RLS y su guarda; las vistas security_invoker.')
+  ];
+}
+const C11_VISTAS = { v_emision_estado: fEstadoVista, v_emision_documentos: fDocsVista, v_emision_obras: fObrasVista, v_emision_control: fControl, emision_config: () => [{ ...F.config }] };
+// el aviso de la función cuando el «How to pay» habla de un enlace y el PDF va sin él (index.ts: hablaDeEnlace)
+const F_HABLA_DE_ENLACE = /\b(link|links|click|button|stripe|qr)\b|\bpay(ing)? online\b|\bonline payment/i;
+const F_AVISO_ENLACE = 'El «How to pay» de esta factura habla de un enlace de pago y este PDF va sin él. Para las próximas, cámbialo en Facturas → Ajustes para que sirva con enlace y sin él: cuando una factura lo lleva, el PDF y el correo añaden solos el enlace, lo que cobra y su código QR.';
+// La función de borde `facturas` (supabase/functions/facturas), con la forma de sus respuestas: { ok, … } o { ok: false, codigo, error, datos? }.
+// Pide el dueño con aal2 (lo lee del JWT). F.fnFalla: la siguiente respuesta mala ({ estado, cuerpo }).
+function funcionFacturas(b, auth) {
+  let aal = null; try { aal = JSON.parse(Buffer.from(String(auth).replace(/^Bearer /, '').split('.')[1], 'base64url').toString()).aal; } catch { /* sin sesión */ }
+  const V = { version: 'facturas 2026-11-12.2' };
+  if (b.accion === 'salud') return { cuerpo: { ...V, ok: true, funcion: 'facturas', resend: true, stripe: 'real', falta: [] } };
+  if (aal !== 'aal2') return { estado: 403, cuerpo: { ...V, ok: false, codigo: 'MFA', error: 'Falta el código del teléfono: entra otra vez con él (las facturas lo piden).' } };
+  if (F.fnFalla) { const f = F.fnFalla; F.fnFalla = null; return { estado: f.estado, cuerpo: { ...V, ok: false, ...f.cuerpo } }; }
+  const d = F.docs.find(x => x.id === b.documento);
+  if (!d) return { estado: 409, cuerpo: { ...V, ok: false, codigo: '22023', error: 'No existe ese documento.' } };
+  if (d.estado === 'borrador') return { estado: 409, cuerpo: { ...V, ok: false, codigo: 'MX008', error: 'Es un borrador: el PDF es de la factura emitida. Emítela primero.' } };
+  if (d.anulado_el) return { estado: 409, cuerpo: { ...V, ok: false, codigo: 'MX008', error: `La factura ${d.numero} está anulada (nota de crédito ${d.nota_credito || '—'}): ya no se le hace PDF ni se manda.` } };
+  const hacerPdf = () => {
+    const conEnlace = F.config.ach && d.forma !== 'retencion' && d.saldoC > 0 && !b.sin_enlace;
+    let e = null;
+    if (conEnlace) {
+      e = F.enlaces.filter(x => x.doc === d.id && x.estado === 'activo').pop();
+      if (e && e.monto !== d.saldoC) { e.estado = 'desactivado'; e = null; }
+      if (!e) { F.pdfN += 1; e = { id: `e1100000-0000-4000-8000-${String(F.pdfN).padStart(12, '0')}`, doc: d.id, url: `https://buy.stripe.com/test_plink_C11PANTALLA${F.pdfN}`, monto: d.saldoC, estado: 'activo', creado_el: new Date().toISOString() }; F.enlaces.push(e); }
+    }
+    const firma = sha(`${d.huella}|${e ? e.url : ''}`), ya = d.pdfs.find(p => p.sha256 === firma);
+    if (ya) return { pdf: ya, ya_estaba: true, enlace: e };
+    const p = { n: d.pdfs.length + 1, id: fId(), pago: e ? { url: e.url, monto: e.monto / 100, metodos: ['us_bank_account'], enlace_id: e.id } : {}, ruta: `${d.fecha.slice(0, 4)}/${d.numero}/${d.numero}-${firma.slice(0, 12)}.pdf`, bytes: 148213 + d.pdfs.length, sha256: firma, creado_el: new Date().toISOString() };
+    d.pdfs.push(p);
+    return { pdf: p, ya_estaba: false, enlace: e };
+  };
+  const firmada = ruta => `https://zeogjvwcmstmkwxjvykz.supabase.co/storage/v1/object/sign/facturas/${ruta}?token=prueba`;
+  // como index.ts: el PDF recién registrado es lo que devuelve fn_emision_pdf (sin «pago»); el que ya estaba, la fila de fn_emision_documento
+  const fPdfResp = r => r.ya_estaba ? r.pdf : (({ pago, ...x }) => x)(r.pdf);
+  const fEnlaceResp = e => e ? { enlace_id: e.id, url: e.url, metodos: ['us_bank_account'], monto: e.monto / 100 } : null;
+  if (b.accion === 'pdf') {
+    const r = hacerPdf();
+    return { cuerpo: { ...V, ok: true, documento: d.id, numero: d.numero, pdf: fPdfResp(r), ya_estaba: r.ya_estaba, enlace: fEnlaceResp(r.enlace),
+      avisos: [...(b.sin_enlace ? ['Va sin enlace de pago en línea: lo pediste así.'] : []), ...(!r.enlace && F_HABLA_DE_ENLACE.test(String((d.contenido || {}).como_pagar || '')) ? [F_AVISO_ENLACE] : [])], url: firmada(r.pdf.ruta) } };
+  }
+  if (b.accion === 'ver') {
+    const p = b.pdf_id ? d.pdfs.find(x => x.id === b.pdf_id) : d.pdfs[d.pdfs.length - 1];
+    if (!p) return { estado: 409, cuerpo: { ...V, ok: false, codigo: 'MX008', error: 'Esa factura todavía no tiene PDF: hazlo primero.' } };
+    return { cuerpo: { ...V, ok: true, documento: d.id, numero: d.numero, pdf: p, url: firmada(p.ruta) } };
+  }
+  if (b.accion === 'enviar') {
+    const r = hacerPdf();
+    const para = String(b.para || (d.contenido.cliente || {}).correo || '').trim().toLowerCase();
+    if (!para) return { estado: 400, cuerpo: { ...V, ok: false, codigo: 'FORMA', error: 'Falta a quién mandarla: la factura no trae el correo del cliente. Escríbelo (para).' } };
+    const cc = ['zz.edgar@c11-pruebas.invalid', ...String(b.cc || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean)].join(', ');
+    const asunto = b.asunto || `Invoice ${d.numero} from ${F.config.empresa.nombre}`;
+    F.resendN += 1;
+    const rid = `re_c11_pantalla_${F.resendN}`;
+    if (F.sinApuntar) { F.sinApuntar = false; return { estado: 500, cuerpo: { ...V, ok: false, codigo: 'SIN_APUNTAR', error: `El correo salió (Resend ${rid}) pero no quedó apuntado en la factura: La base estaba ocupada (prueba). Toca «Apuntar el envío» (no se vuelve a mandar).`, datos: { resend_id: rid, para, cc, asunto, pdf_id: r.pdf.id } } }; }
+    const reg = C11_FN.fn_emision_envio({ p_documento: d.id, p_envio: { medio: 'correo', para, cc, asunto, resend_id: rid, pdf_id: r.pdf.id } });
+    return { cuerpo: { ...V, ok: true, documento: d.id, numero: d.numero, envio: reg.envio, reenvio: reg.reenvio, ya_estaba: false, resend_id: rid, para, cc, asunto, pdf: fPdfResp(r), enlace: fEnlaceResp(r.enlace), avisos: [] } };
+  }
+  return { estado: 400, cuerpo: { ...V, ok: false, codigo: 'ACCION', error: `Acción desconocida: «${b.accion}». Las que hay: pdf, enviar, ver y salud.` } };
+}
+
+
+// ---- el WIP (c12, fase 10): la forma EXACTA de fn_wip_resumen, v_wip_schedule (sus 47 columnas), fn_wip_control (17 filas),
+// fn_wip_cierre (174 a 177), v_wip_obras, v_wip_ajustes, v_wip_revisiones, wip_config y de las respuestas de fn_wip_revisar,
+// fn_wip_antes_propuesta, fn_wip_antes, fn_wip_obra, fn_wip_postear, fn_wip_deshacer y fn_wip_config, con sus textos y sus
+// errores (docs/conta/c12-wip.sql; sacados del banco u12a del 12-nov). La base de mentira calcula como la base, en centavos
+// enteros: el % sobre el costo topado, el ganado = precio × costo topado ÷ estimado redondeado UNA vez (medio centavo hacia
+// arriba), sub y sobre, la provisión = lo que falta por reconocer, las líneas del asiento con sus memos, la huella del ajuste y
+// «qué cambió» cuando ya no está al día. Datos inventados («C12 PRUEBA», «ZZ»): A sub-facturada, B sobre-facturada, C con
+// pérdida, D ya andaba antes del libro (tickets, horas y una factura de antes), S de servicio (no lleva WIP). Sin estado.c12,
+// 404 (PGRST205 en las vistas, PGRST202 en las funciones); con estado.c12NoDueno, el equipo: vistas vacías y 42501.
+const W_OB = {
+  'c12-prueba-a': { obra: 'C12 PRUEBA Obra A', cliente: 'ZZ Cliente A', tipo: 'comercial', estado: 'ejecucion', contrato: 1000000 },
+  'c12-prueba-b': { obra: 'C12 PRUEBA Obra B', cliente: 'ZZ Cliente B', tipo: 'residencial', estado: 'ejecucion', contrato: 2000000 },
+  'c12-prueba-c': { obra: 'C12 PRUEBA Obra C', cliente: 'ZZ Cliente C', tipo: 'comercial', estado: 'ejecucion', contrato: 1000000 },
+  'c12-prueba-d': { obra: 'C12 PRUEBA Obra D', cliente: 'ZZ Cliente D', tipo: 'residencial', estado: 'ejecucion', contrato: 1850000, deAntes: 'facturas, horas, tickets',
+    prop: { tickets: [1, 31000], externos: [0, 0], horas: [16, 42000], facturas: [1, 150000] } },
+  'c12-prueba-s': { obra: 'C12 PRUEBA Taller S', cliente: 'ZZ Cliente S', tipo: 'servicio', estado: 'ejecucion', contrato: null }
+};
+const W_INGRESO = { residencial: '4010', comercial: '4020', servicio: '4030' };
+const W_CNOM = { 1200: 'Costo y utilidad en exceso de facturación', 2400: 'Facturación en exceso de costo', 2410: 'Provisión por pérdida en contratos', 5950: 'Pérdida en contrato',
+  4010: 'Contrato — residencial', 4020: 'Contrato — comercial', 4030: 'Servicio y T&M' };
+const W_MESES = [{ periodo: '2026-10', desde: '2026-10-01', hasta: '2026-10-31' }, { periodo: '2026-11', desde: '2026-11-01', hasta: '2026-11-30' }, { periodo: '2026-12', desde: '2026-12-01', hasta: '2026-12-31' }];
+const W = {};
+function wReset() {
+  Object.assign(W, {
+    // el costo y lo facturado del libro de cada obra, por mes (centavos); a la fecha de un mes: la suma hasta ese mes
+    libro: { 'c12-prueba-a': { costo: { '2026-10': 300000 }, fact: { '2026-10': 200000 } }, 'c12-prueba-b': { costo: { '2026-10': 200000 }, fact: { '2026-10': 800000 } },
+      'c12-prueba-c': { costo: { '2026-10': 550000 }, fact: {} }, 'c12-prueba-d': { costo: { '2026-10': 32000 }, fact: {} }, 'c12-prueba-s': { costo: { '2026-10': 10000 }, fact: { '2026-10': 25000 } } },
+    rev: [], antes: {}, marca: {}, ajustes: [], cerrados: new Set(), n: 6, id: 0, cuadre10: false, conteoMal: false, horas170: false,
+    cfg: { id: 1, exigir_desde: '2026-11', actualizado: '2026-11-12T02:49:50.056895+00:00', actualizado_por: null }
+  });
+}
+wReset();
+const wId = pre => { W.id += 1; return `${pre}-0000-4000-8000-${String(W.id).padStart(12, '0')}`; };
+const wD = c => c == null ? null : c / 100;
+const wUsd = c => c == null ? '—' : `${c < 0 ? '-' : ''}$${(Math.abs(c) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const W_MESN = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+const wMes = p => { const m = /^(\d{4})-(\d{2})$/.exec(String(p || '')); return m ? `${W_MESN[Number(m[2]) - 1]} de ${m[1]}` : String(p); };
+const wCap = s => s.charAt(0).toUpperCase() + s.slice(1);
+const wSig = iso => { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0, 10); };
+// round(a × b ÷ c) en centavos, una vez, medio centavo hacia arriba (valores no negativos), y un % con dos decimales (round(100 × a ÷ b, 2))
+const wRound = (ab, c) => Number((2n * BigInt(ab) + BigInt(c)) / (2n * BigInt(c)));
+const wPctN = (a, b) => wRound(10000 * a, b) / 100;
+const wPctT = (a, b) => String(wPctN(a, b));   // trim_scale: 50, 66.67, 8.75
+const wErr = (code, message, status) => ({ status: status || 400, error: { code, message, hint: null, details: null } });
+const wPer = p => W_MESES.find(x => x.periodo === p);
+const W_ACTIVA = ['aprobado', 'ejecucion', 'pausa'], W_TERM = ['completado', 'cancelado', 'cerrado', 'terminado'];
+// v_wip_obras: la regla (de precio fijo con contrato; de servicio o sin contrato, no) y la marca de Edgar
+function wObra(pid) {
+  const o = W_OB[pid], mk = W.marca[pid], an = W.antes[pid];
+  const lleva = mk ? mk.modo === 'contrato' : o.tipo !== 'servicio' && o.contrato != null;
+  const motivo = mk && mk.modo === 'tm' ? 'Marcada como de servicio o por tiempo y material: no lleva WIP; su ingreso es lo facturado.'
+    : mk && mk.modo === 'contrato' && o.contrato == null ? 'Marcada como de precio fijo, pero su ficha no tiene contrato: ponlo para poder revisarla.'
+    : mk && mk.modo === 'contrato' ? 'Marcada como de precio fijo: lleva WIP.'
+    : o.tipo === 'servicio' ? 'Es de servicio: no lleva WIP; su ingreso es lo facturado.'
+    : o.contrato == null ? 'No tiene contrato en su ficha: sin precio fijo no hay avance que medir; su ingreso es lo facturado.'
+    : 'De precio fijo (residencial o comercial con contrato en su ficha): lleva WIP.';
+  return { proyecto_id: pid, obra: o.obra, cliente: o.cliente, tipo: o.tipo, obra_estado: o.estado, activa: W_ACTIVA.includes(o.estado), terminada: W_TERM.includes(o.estado), completado_el: null,
+    contrato: wD(o.contrato), marca: mk ? mk.modo : null, marca_nota: mk ? mk.nota : null, lleva_wip: lleva, motivo, cuenta_ingreso: W_INGRESO[o.tipo] || null,
+    de_antes: !!o.deAntes, de_antes_por: o.deAntes || null, antes_id: an ? an.id : null, antes_costo: an ? wD(an.costo) : null, antes_facturado: an ? wD(an.facturado) : null,
+    antes_confirmado_el: an ? an.el : null, antes_confirmado_por: an ? UID : null, antes_nota: an ? an.nota : null };
+}
+const wLibro = (pid, periodo) => { const L = W.libro[pid] || {}, s = o => Object.entries(o || {}).filter(([m]) => m <= periodo).reduce((a, [, v]) => a + v, 0); return { costo: s(L.costo), fact: s(L.fact) }; };
+const wRev = (pid, periodo) => W.rev.find(r => r.proyecto_id === pid && r.periodo === periodo && !r.sustituida_el);
+const wRevAnt = (pid, periodo) => W.rev.filter(r => r.proyecto_id === pid && r.periodo < periodo && !r.sustituida_el).sort((a, b) => b.periodo.localeCompare(a.periodo))[0];
+// fn_wip_calcular: una fila por obra que entra en el mes (con _c: lo mismo en centavos, para el plan y la huella; no sale)
+function wCalc(periodo) {
+  const nom = wMes(periodo), filas = [];
+  for (const pid of Object.keys(W_OB)) {
+    const ob = wObra(pid); if (!ob.lleva_wip) continue;
+    const rv = wRev(pid, periodo), ant = wRevAnt(pid, periodo), lb = wLibro(pid, periodo), an = W.antes[pid];
+    if (!(ob.activa || rv || (ob.terminada && ant && !ant.terminada))) continue;
+    const calc = !!rv && !(ob.de_antes && !an), mov = lb.costo !== 0 || lb.fact !== 0 || ob.de_antes || !!an || !!rv;
+    const term = !!(rv && rv.terminada), precio = rv ? rv.precio : null;
+    const cF = calc ? lb.costo + (an ? an.costo : 0) : null, fF = calc ? lb.fact + (an ? an.facturado : 0) : null;
+    const est = !calc ? null : term ? cF : rv.costo, tope = !calc ? null : term ? cF : Math.max(Math.min(cF, est), 0);
+    const gan = !calc ? null : term ? precio : wRound(precio * tope, est), perd = !calc || term ? null : Math.max(est - precio, 0);
+    const sub = calc ? Math.max(gan - fF, 0) : null, sobre = calc ? Math.max(fF - gan, 0) : null;
+    const perdT = !calc ? null : term ? Math.max(cF - precio, 0) : perd, prov = !calc ? null : (term || perd === 0) ? 0 : Math.max(perd - (tope - gan), 0);
+    const falta = [!rv ? 'revision' : null, ob.de_antes && !an ? 'antes' : null, !ob.cuenta_ingreso ? 'cuenta_ingreso' : null].filter(Boolean);
+    const prop = rv ? rv.propuesta : ant && !ant.terminada ? ant.costo : null, propO = rv ? rv.propuesta_origen : ant && !ant.terminada ? 'mes_anterior' : null;
+    const pctA = !calc ? null : term ? 100 : wPctN(tope, est);
+    filas.push({ periodo, proyecto_id: pid, obra: ob.obra, cliente: ob.cliente, tipo: ob.tipo, obra_estado: ob.obra_estado, fuente: 'calculado',
+      estado: !mov ? 'sin_movimiento' : falta.length ? 'pendiente' : 'lista', falta: !mov ? [] : falta,
+      falta_texto: !mov ? 'Sin costo ni facturas todavía: no hay nada que medir.' : !falta.length ? null : [
+        !rv && ob.contrato == null ? 'Su ficha no tiene contrato: ponlo (o dilo al revisar) para poder revisarla.' : !rv ? `Falta revisar su costo estimado en ${nom}.` : null,
+        ob.de_antes && !an ? `Ya andaba antes del libro (tiene de antes: ${ob.de_antes_por}): falta confirmar su costo y lo facturado de antes; hasta entonces no entra en el ajuste.` : null,
+        !ob.cuenta_ingreso ? `Su tipo de obra (${ob.tipo || 'sin tipo'}) no tiene cuenta de ingreso confirmada: sin ella no se sabe contra qué renglón va el ajuste.` : null].filter(Boolean).join(' '),
+      en_ajuste: mov && !falta.length, terminada: term, precio_contrato: wD(precio), precio_ficha: ob.contrato, costo_estimado: wD(est), utilidad_estimada: calc ? wD(precio - est) : null,
+      costo_libro: wD(lb.costo), costo_antes: calc ? wD(an ? an.costo : 0) : an ? wD(an.costo) : null, costo_fecha: wD(cF), pct_avance: pctA,
+      pct_real: !calc ? null : term ? 100 : wPctN(cF, est), pasa_de_100: calc && !term && cF > est, ingreso_ganado: wD(gan), facturado_libro: wD(lb.fact),
+      facturado_antes: calc ? wD(an ? an.facturado : 0) : an ? wD(an.facturado) : null, facturado_fecha: wD(fF), sub_facturado: wD(sub), sobre_facturado: wD(sobre),
+      costo_para_terminar: calc ? wD(Math.max(est - cF, 0)) : null, utilidad_fecha: calc ? wD(gan - cF) : null, perdida_total: wD(perdT), perdida_provision: wD(prov),
+      cuenta_ingreso: ob.cuenta_ingreso, ingreso_otro: 0, de_antes: ob.de_antes, antes_confirmado: !!an, antes_id: an ? an.id : null,
+      revision_id: rv ? rv.id : null, revisado_el: rv ? rv.el : null, revisado_por: rv ? UID : null, revision_origen: rv ? rv.origen : null, revision_nota: rv ? rv.nota : null,
+      propuesta_costo_estimado: wD(prop), propuesta_origen: propO,
+      propuesta_nota: rv ? null : ob.terminada ? 'La app la tiene como terminada: si terminó en este mes, revísala como terminada (100 %); si seguía en obra al cierre del mes, revisa su costo estimado.'
+        : propO === 'mes_anterior' ? `Lo que revisaste en ${wMes(ant.periodo)}.` : 'Sin propuesta. No hay estimado: faltan las horas estimadas y el presupuesto de material.',
+      propuesta_terminada: !rv && ob.terminada,
+      avisos: !calc ? [] : [
+        !term && cF > est ? `Lleva ${wUsd(cF)} de costo y su costo estimado revisado es ${wUsd(est)} (${wPctT(cF, est)} %): el avance se topa en 100 %. Sube el costo estimado o deja escrito por qué.` : null,
+        !term && perd > 0 ? `Va con pérdida: el costo estimado (${wUsd(est)}) pasa del precio (${wUsd(precio)}) por ${wUsd(perd)}. De esa pérdida, ${wUsd(Math.min(tope - gan, perd))} ya está en su resultado por el avance y ${wUsd(prov)} se provisiona este mes: la pérdida completa queda reconocida.` : null,
+        term && cF > precio ? `Terminó con pérdida: costó ${wUsd(cF)} y su precio es ${wUsd(precio)}.` : null,
+        fF > precio ? `Lo facturado (${wUsd(fF)}) pasa del contrato (${wUsd(precio)}): ¿falta una orden de cambio en el contrato de la ficha?` : null,
+        W_OB[pid].contrato !== precio ? `El contrato de la ficha (${W_OB[pid].contrato == null ? 'vacío' : wUsd(W_OB[pid].contrato)}) no es el que se usó al revisar (${wUsd(precio)}): si cambió en este mes, revísala otra vez.` : null].filter(Boolean),
+      _c: { precio, est, term, cF, fF, gan, sub, sobre, perdT, prov, pct: pctA == null ? null : String(pctA) } });
+  }
+  return filas.sort((a, b) => a.obra.localeCompare(b.obra) || a.proyecto_id.localeCompare(b.proyecto_id));
+}
+const wSinInt = f => Object.fromEntries(Object.entries(f).filter(([k]) => !k.startsWith('_')));
+const wFirma = f => [f.proyecto_id, f._c.precio, f._c.est, f._c.term, f._c.cF, f._c.fF, f._c.gan, f._c.sub, f._c.sobre, f._c.prov, f.cuenta_ingreso].join('|');
+// fn_wip_plan: las filas, las líneas del asiento (por obra, en su orden), la huella y los totales de las obras listas (centavos)
+function wPlan(periodo) {
+  const filas = wCalc(periodo), nom = wMes(periodo), lineas = [], listas = filas.filter(f => f.en_ajuste);
+  for (const f of listas) {
+    const c = f._c, L = (cuenta, monto, memo) => { if (monto) lineas.push({ cuenta, monto, proyecto_id: f.proyecto_id, memo }); };
+    L('1200', c.sub, `WIP de ${nom}: sub-facturado · ganado ${wUsd(c.gan)} (${c.pct} %) − facturado ${wUsd(c.fF)}`);
+    L(f.cuenta_ingreso, -c.sub, `WIP de ${nom}: ingreso ganado y todavía no facturado`);
+    L(f.cuenta_ingreso, c.sobre, `WIP de ${nom}: facturado por encima de lo ganado`);
+    L('2400', -c.sobre, `WIP de ${nom}: sobre-facturado · facturado ${wUsd(c.fF)} − ganado ${wUsd(c.gan)} (${c.pct} %)`);
+    L('5950', c.prov, `WIP de ${nom}: pérdida de la obra ${wUsd(c.perdT)} (costo estimado ${wUsd(c.est)} − precio ${wUsd(c.precio)}); falta por reconocer ${wUsd(c.prov)}`);
+    L('2410', -c.prov, `WIP de ${nom}: provisión por la pérdida que falta por reconocer`);
+  }
+  const s = k => listas.reduce((a, f) => a + (f._c[k] || 0), 0);
+  const tot = { obras: listas.length, precio: s('precio'), est: s('est'), cF: s('cF'), fF: s('fF'), gan: s('gan'), sub: s('sub'), sobre: s('sobre'), perdT: s('perdT'), prov: s('prov'),
+    obras_sub: listas.filter(f => f._c.sub > 0).length, obras_sobre: listas.filter(f => f._c.sobre > 0).length };
+  return { filas, listas, lineas, tot, huella: listas.map(wFirma).sort().join('\n') };
+}
+const wPos = c => [c.sub > 0 ? 'sub-facturado ' + wUsd(c.sub) : c.sobre > 0 ? 'sobre-facturado ' + wUsd(c.sobre) : 'sin diferencia', c.prov > 0 ? 'pérdida ' + wUsd(c.prov) : null].filter(Boolean).join(' y ');
+const wVivo = periodo => W.ajustes.find(x => x.periodo === periodo && !x.deshecho_el);
+// fn_wip_ajuste_estado: vivo, al día (su huella es la de hoy) y, si no, qué cambió obra por obra
+function wEstado(periodo, plan) {
+  const a = wVivo(periodo), nlin = plan.lineas.length;
+  if (!a) return { vivo: false, al_dia: nlin === 0, lineas_hoy: nlin, por_fuera: false };
+  const al = a.huella === plan.huella;
+  let cambios = null;
+  if (!al) {
+    const it = [];
+    for (const n of plan.listas) { const o = a.foto.find(x => x.proyecto_id === n.proyecto_id && x.en_ajuste); if (!o) it.push([n.obra, `entra ${n.obra} (${wPos(n._c)})`]); else if (wFirma(o) !== wFirma(n)) it.push([n.obra, wPos(o._c) !== wPos(n._c) ? `${n.obra} pasa de ${wPos(o._c)} a ${wPos(n._c)}` : `${n.obra} cambia su cálculo (${wPos(n._c)})`]); }
+    for (const o of a.foto.filter(x => x.en_ajuste)) if (!plan.listas.some(n => n.proyecto_id === o.proyecto_id)) it.push([o.obra, `sale ${o.obra} (estaba ${wPos(o._c)})`]);
+    cambios = it.sort((x, y) => x[0].localeCompare(y[0])).map(x => x[1]).join('; ');
+  }
+  return { id: a.id, vivo: true, fecha: a.fecha, obras: a.obras, al_dia: al, numero: a.numero, cambios, perdida: wD(a.perdida), reverso: null, creado_el: a.creado_el, por_fuera: false, asiento_id: a.asiento_id,
+    creado_por: UID, lineas_hoy: nlin, reverso_auto: { id: a.auto.id, fecha: a.auto.fecha, numero: a.auto.numero }, sub_facturado: wD(a.sub), sobre_facturado: wD(a.sobre) };
+}
+const wToca = () => (W_MESES.find(p => p.hasta < HOY && !W.cerrados.has(p.periodo)) || W_MESES.find(p => p.desde <= HOY && HOY <= p.hasta) || W_MESES[0]).periodo;
+const wNomObra = pid => (W_OB[pid] || {}).obra || pid;
+const wLineasOut = ls => ls.map(l => ({ memo: l.memo, obra: wNomObra(l.proyecto_id), monto: wD(l.monto), cuenta: l.cuenta, proyecto_id: l.proyecto_id, cuenta_nombre: W_CNOM[l.cuenta] }));
+// fn_wip_resumen
+function wResumen(periodo) {
+  const per = wPer(periodo); if (!per) return wErr('MX002', `No existe el mes «${periodo || ''}» (va como AAAA-MM).`);
+  const nom = wMes(per.periodo), cerr = W.cerrados.has(per.periodo), term = per.hasta < HOY, exig = !!W.cfg.exigir_desde && per.periodo >= W.cfg.exigir_desde;
+  let filas, est, lin, puede = false, porq = null, tot;
+  if (cerr) {
+    const a = wVivo(per.periodo);
+    filas = a ? a.foto : [];
+    est = a ? { id: a.id, vivo: true, fecha: a.fecha, obras: a.obras, al_dia: true, numero: a.numero, perdida: wD(a.perdida), creado_el: a.creado_el, por_fuera: false, asiento_id: a.asiento_id, creado_por: UID,
+      reverso_auto: { id: a.auto.id, fecha: a.auto.fecha, numero: a.auto.numero }, sub_facturado: wD(a.sub), sobre_facturado: wD(a.sobre) } : { vivo: false, al_dia: true, por_fuera: false, lineas_hoy: 0 };
+    lin = a ? wLineasOut(a.lineasAs) : [];
+    porq = `${wCap(nom)} ya está cerrado: su WIP es el que se posteó.`;
+  } else {
+    const plan = wPlan(per.periodo); filas = plan.filas; est = wEstado(per.periodo, plan); lin = wLineasOut(plan.lineas);
+    if (!term) porq = `${wCap(nom)} todavía no termina (su último día es el ${fDia(per.hasta)}): el ajuste se postea con el mes terminado.`;
+    else if (est.vivo && est.al_dia) porq = `El ajuste de ${nom} ya está posteado y al día (asiento ${est.numero}).`;
+    else if (!est.vivo && est.lineas_hoy === 0) porq = `En ${nom} hoy no hay nada que ajustar.`;
+    else puede = true;
+  }
+  const L = filas.filter(f => f.en_ajuste), s = k => L.reduce((a, f) => a + (f._c[k] || 0), 0);
+  const ob = { total: filas.length + (W.conteoMal ? 1 : 0), listas: filas.filter(f => f.estado === 'lista').length, pendientes: filas.filter(f => f.estado === 'pendiente').length,
+    por_revisar: filas.filter(f => f.estado === 'pendiente' && f.falta.includes('revision')).length, sin_movimiento: filas.filter(f => f.estado === 'sin_movimiento').length,
+    sin_cuenta_ingreso: filas.filter(f => f.estado === 'pendiente' && f.falta.includes('cuenta_ingreso')).length, por_confirmar_antes: filas.filter(f => f.estado === 'pendiente' && f.falta.includes('antes')).length };
+  tot = { obras: L.length, pct_avance: s('precio') > 0 ? wPctN(s('gan'), s('precio')) : null, costo_fecha: wD(s('cF')), perdida_total: wD(s('perdT')), sub_facturado: wD(s('sub')), costo_estimado: wD(s('est')),
+    ingreso_ganado: wD(s('gan')), utilidad_fecha: wD(s('gan') - s('cF')), facturado_fecha: wD(s('fF')), precio_contrato: wD(s('precio')), sobre_facturado: wD(s('sobre')), perdida_provision: wD(s('prov')),
+    utilidad_estimada: wD(s('precio') - s('est')), costo_para_terminar: wD(L.reduce((a, f) => a + Math.max(f._c.est - f._c.cF, 0), 0)) };
+  const nota = cerr ? porq : est.vivo && !est.al_dia ? `El ajuste posteado de ${nom} (asiento ${est.numero}) ya no es el de hoy: ${est.cambios}. Vuelve a postearlo: se reversa y entra el nuevo.`
+    : ob.pendientes > 0 ? `${ob.pendientes} obra(s) no entran todavía: ${ob.por_revisar} por revisar y ${ob.por_confirmar_antes} sin lo de antes del libro confirmado.` : porq;
+  return { nota, desde: per.desde, hasta: per.hasta, obras: ob, ajuste: est, fuente: cerr ? 'posteado' : 'calculado', lineas: lin, nombre: nom, cerrado: cerr, exigido: exig, periodo: per.periodo, totales: tot,
+    terminado: term, por_que_no: porq, exigir_desde: W.cfg.exigir_desde, puede_postear: puede, reverso_fecha: wSig(per.hasta), puede_deshacer: !cerr && !!est.vivo };
+}
+// el schedule de un mes (v_wip_schedule / fn_wip_schedule): lo calculado hoy, o la foto del ajuste de un mes cerrado
+const wSchedule = periodo => (W.cerrados.has(periodo) ? (wVivo(periodo) ? wVivo(periodo).foto.map(f => ({ ...f, fuente: 'posteado', precio_ficha: null })) : []) : wCalc(periodo)).map(wSinInt);
+// fn_wip_control: siempre 17 filas, con sus textos
+function wControl(periodo) {
+  const per = wPer(periodo) || W_MESES[0], nom = wMes(per.periodo), mnom = wCap(nom), cerr = W.cerrados.has(per.periodo);
+  const noap = `No aplica: ${nom} ya está cerrado; su WIP es el que se posteó.`;
+  const exige = !!W.cfg.exigir_desde && per.periodo >= W.cfg.exigir_desde, termino = per.hasta < HOY;
+  const cuando = !exige && !W.cfg.exigir_desde ? `En ${nom} el WIP todavía no se exige para cerrar (no se ha dicho desde qué mes).` : !exige ? `En ${nom} el WIP todavía no se exige para cerrar (se exige desde ${wMes(W.cfg.exigir_desde)}).`
+    : !termino ? `${mnom} termina el ${fDia(per.hasta)}: se hace al cerrar el mes.` : null;
+  const plan = cerr ? null : wPlan(per.periodo), est = cerr ? null : wEstado(per.periodo, plan), filas = cerr ? [] : plan.filas, t = cerr ? null : plan.tot;
+  const R = (orden, cuadre, nivel, ok, detalle) => ({ ok, nivel, orden, cuadre, detalle });
+  const vivos = W.ajustes.filter(a => !a.deshecho_el).length;
+  const conMov = filas.filter(f => f.estado !== 'sin_movimiento'), sinRev = conMov.filter(f => f.falta.includes('revision'));
+  const vA = cerr ? wVivo(per.periodo) : null;
+  let ok50 = true, d50;
+  if (cerr) d50 = vA ? `${mnom} está cerrado con su ajuste de WIP (asiento ${vA.numero}): sub-facturado ${wUsd(vA.sub)}, sobre-facturado ${wUsd(vA.sobre)}, pérdida ${wUsd(vA.perdida)}.` : `${mnom} está cerrado sin ajuste de WIP.`;
+  else if (est.vivo && est.al_dia) d50 = `El ajuste de ${nom} está posteado y al día (asiento ${est.numero}, del ${fDia(est.fecha)}; se deshace solo el ${fDia(est.reverso_auto.fecha)}): sub-facturado ${wUsd(Math.round(est.sub_facturado * 100))}, sobre-facturado ${wUsd(Math.round(est.sobre_facturado * 100))} y pérdida ${wUsd(Math.round(est.perdida * 100))}, en ${est.obras} obra(s).`;
+  else if (est.vivo) { ok50 = false; d50 = `El ajuste posteado de ${nom} (asiento ${est.numero}) ya no es el que da el WIP de hoy: ${est.cambios}. Vuelve a postearlo: se reversa y entra el nuevo.`; }
+  else if (!plan.lineas.length) d50 = t.obras === 0 ? `En ${nom} no hay ninguna obra lista para el ajuste: nada que postear.` : `En ${nom} no hay nada que ajustar: en las ${t.obras} obra(s) listas lo ganado es lo facturado.`;
+  else { ok50 = !!cuando; d50 = `${cuando ? cuando + ' Hoy daría' : 'Falta postear'} el ajuste de WIP de ${nom}: sub-facturado ${wUsd(t.sub)} en ${t.obras_sub} obra(s), sobre-facturado ${wUsd(t.sobre)} en ${t.obras_sobre}, y pérdida por reconocer ${wUsd(t.prov)}.`; }
+  const p60 = filas.filter(f => f.pasa_de_100 && !String(f.revision_nota || '').trim()), p125 = filas.filter(f => f.pasa_de_100 && String(f.revision_nota || '').trim());
+  const sinAntes = filas.filter(f => f.falta.includes('antes')), conPerd = filas.filter(f => f.en_ajuste && f._c.perdT > 0);
+  return [
+    R(10, 'wip: en las cuentas del WIP solo está el ajuste del mes', 'cuadre', !W.cuadre10, !W.cuadre10 ? 'En las cuentas del WIP (sub-facturado, sobre-facturado, la provisión por pérdida y su gasto) no hay más saldo que el de los ajustes del WIP.'
+      : 'Hay saldo en las cuentas del WIP que no viene de un ajuste: $500.00 en la 1200 de C12 PRUEBA Obra A. Esas cuentas las lleva el ajuste del mes: si es un asiento a mano, revérsalo; si lo pidió el contador (un saldo inicial), avisa antes de cerrar.'),
+    R(20, 'wip: cada ajuste es su asiento, y el saldo por obra es el del ajuste', 'cuadre', true, `${vivos} ajuste(s) vivo(s), cada uno con su asiento vivo y sus líneas iguales a su foto; y al ${fDia(per.hasta)} el saldo por obra de sub-facturado, sobre-facturado y provisión es el de su ajuste.`),
+    R(30, 'wip: lo facturado a la fecha = las facturas del libro', 'cuadre', true, cerr ? noap : `En las ${filas.length} obra(s) del WIP de ${nom}, lo facturado que usa el WIP es lo que dicen sus facturas en el libro (las anuladas, con su nota de crédito restando), sin los ajustes.`),
+    R(40, 'wip: cada obra con su costo estimado revisado en el mes', 'cuadre', cerr || !sinRev.length || !!cuando, cerr ? noap : !conMov.length ? `En ${nom} no hay obras de precio fijo con movimiento.`
+      : !sinRev.length ? `Las ${conMov.length} obra(s) de precio fijo con movimiento tienen su costo estimado revisado en ${nom}.` : cuando ? `${cuando} Hoy faltan por revisar ${sinRev.length} de ${conMov.length}: ${sinRev.map(f => f.obra).join(', ')}.`
+      : `Faltan por revisar ${sinRev.length} de las ${conMov.length} obra(s) de precio fijo con movimiento en ${nom}: ${sinRev.map(f => f.obra).join(', ')}.`),
+    R(50, 'wip: el ajuste del mes posteado y al día', 'cuadre', ok50, d50),
+    R(60, 'wip: ninguna obra con más costo que su estimado sin nota', 'cuadre', cerr || !p60.length, cerr ? noap : !p60.length ? `En ${nom} ninguna obra lleva más costo que su estimado revisado sin que esté escrito por qué.`
+      : `${p60.length} obra(s) llevan más costo que su estimado revisado, sin nota: ${p60.map(f => `${f.obra} (lleva ${wUsd(f._c.cF)} y su estimado es ${wUsd(f._c.est)}: ${wPctT(f._c.cF, f._c.est)} %)`).join('; ')}. Sube su costo estimado (o escribe por qué): con el avance topado en 100 % se gana el precio entero y una pérdida no se ve.`),
+    R(90, 'wip: las protecciones de la capa', 'cuadre', true, 'Nada del WIP corre con permisos de más, nada es para la llave pública ni la de servicio, las tablas tienen su candado de solo-dueño y sus guardas encendidas, y las vistas leen con los permisos de quien mira.'),
+    R(110, 'wip: obras que ya andaban sin lo de antes confirmado', 'aviso', cerr || !sinAntes.length, cerr ? noap : !sinAntes.length ? `En ${nom} ninguna obra del WIP espera que se confirme lo de antes del libro.`
+      : `${sinAntes.length} obra(s) ya andaban antes del libro y no tienen confirmado su costo y lo facturado de antes: ${sinAntes.map(f => f.obra).join(', ')}. Mientras tanto NO entran en el ajuste de ${nom} (su ingreso sigue siendo lo facturado). Confírmalo una vez por obra.`),
+    R(120, 'wip: obras con pérdida', 'aviso', cerr || !conPerd.length, cerr ? noap : !conPerd.length ? `En ${nom} ninguna obra del WIP va con pérdida.`
+      : `${conPerd.length} obra(s) van con pérdida en ${nom}: ${conPerd.map(f => `${f.obra} (pérdida ${wUsd(f._c.perdT)}; provisionado ${wUsd(f._c.prov)})`).join('; ')}. La pérdida completa queda reconocida este mes.`),
+    R(125, 'wip: obras topadas en 100 %', 'aviso', cerr || !p125.length, cerr ? noap : !p125.length ? `En ${nom} ninguna obra está topada en 100 %.`
+      : `${p125.length} obra(s) llevan más costo que su estimado y van topadas en 100 %, con su nota: ${p125.map(f => `${f.obra} (${wPctT(f._c.cF, f._c.est)} %: ${f.revision_nota})`).join('; ')}.`),
+    R(130, 'wip: el contrato de la ficha cambió después de revisar', 'aviso', true, cerr ? noap : `En ${nom} cada obra revisada usa el contrato que hoy dice su ficha.`),
+    R(140, 'wip: facturado por encima del contrato', 'aviso', true, cerr ? noap : `En ${nom} ninguna obra del WIP tiene facturado más que su contrato.`),
+    R(150, 'wip: ingreso de una obra que no es factura ni ajuste', 'aviso', true, cerr ? noap : `En ${nom} todo el ingreso de las obras del WIP viene de sus facturas.`),
+    R(160, 'wip: obras terminadas con movimiento en el mes, fuera del WIP', 'aviso', true, cerr ? noap : `En ${nom} ninguna obra terminada de precio fijo tiene costo o facturas fuera del WIP.`),
+    R(165, 'wip: obras activas sin contrato que no son de servicio', 'aviso', true, cerr ? noap : 'Toda obra activa con movimiento que no es de servicio tiene su contrato en la ficha (o su marca).'),
+    R(170, 'wip: horas sin costo en el libro', 'aviso', cerr || !W.horas170, cerr ? noap : !W.horas170 ? 'Ninguna obra del WIP tiene hoy horas sin costo en el libro.'
+      : '1 obra(s) del WIP tienen hoy horas reportadas que no están en el libro (sin pago repartido): C12 PRUEBA Obra D (8 h). Su costo a la fecha va corto y su avance también. Reparte los pagos de mano de obra pendientes.'),
+    R(180, 'wip: la suma de los hitos no es el contrato', 'aviso', true, cerr ? noap : 'En cada obra del WIP con hitos, sus hitos suman el contrato de la ficha.')
+  ];
+}
+// fn_wip_cierre: las cuatro filas que pide el cierre (c9)
+function wCierre(periodo) {
+  const c = wControl(periodo), cu = c.filter(f => f.nivel === 'cuadre' && f.orden !== 40 && f.orden !== 50), av = c.filter(f => f.nivel === 'aviso');
+  const r1 = cu.filter(f => !f.ok), r4 = av.filter(f => !f.ok), f40 = c.find(f => f.orden === 40), f50 = c.find(f => f.orden === 50);
+  return [
+    { ok: !r1.length, ir_a: 'wip', nivel: 'detiene', orden: 174, control: 'wip: los cuadres del WIP (c12)', detalle: r1.length ? r1.map(f => f.detalle).join(' · ') : `Los ${cu.length}, en verde.`,
+      que_hacer: r1.length ? 'El detalle dice qué: Contabilidad → WIP. Un asiento a mano en las cuentas del WIP se reversa; un ajuste que no cuadra se vuelve a postear.' : null },
+    { ok: f40.ok, ir_a: 'wip', nivel: 'detiene', orden: 175, control: 'wip: cada obra con su costo estimado revisado', detalle: f40.detalle,
+      que_hacer: f40.ok ? null : 'En Contabilidad → WIP, revisa cada obra de la lista: confirma lo propuesto con un toque, o pon su costo total estimado con su nota.' },
+    { ok: f50.ok, ir_a: 'wip', nivel: 'detiene', orden: 176, control: 'wip: el ajuste del mes posteado y al día', detalle: f50.detalle,
+      que_hacer: f50.ok ? null : 'En Contabilidad → WIP, toca «Postear el ajuste» (si ya estaba posteado, lo rehace con lo de hoy).' },
+    { ok: !r4.length, ir_a: 'wip', nivel: 'aviso', orden: 177, control: 'wip: sus avisos (c12)', detalle: r4.length ? r4.map(f => f.detalle).join(' · ') : `Los ${av.length}, en verde.`,
+      que_hacer: r4.length ? 'No detienen el cierre. El detalle dice qué mirar: Contabilidad → WIP.' : null }
+  ];
+}
+// un monto que llega como texto (fn_wip_monto): MX005 con lo que está mal; devuelve centavos
+function wMonto(t, que, cero) {
+  const Q = que.charAt(0).toUpperCase() + que.slice(1), s = String(t == null ? '' : t).trim();
+  if (!s) return wErr('MX005', `Falta ${que}.`);
+  if (!/^-?\d+(\.\d+)?$/.test(s)) return wErr('MX005', `${Q}: «${t}» no es un monto.`);
+  if ((s.split('.')[1] || '').replace(/0+$/, '').length > 2) return wErr('MX005', `${Q}: ${t} trae más de dos decimales; el libro va en centavos.`);
+  const c = Math.round(Number(s) * 100);
+  if (c < 0 || (c === 0 && !cero)) return wErr('MX005', `${Q}: ${t}. Va en positivo${cero ? ' (o cero)' : ', mayor que cero'}.`);
+  return c;
+}
+const wEsErr = x => x && typeof x === 'object' && x.error;
+const wSobra = (p, ok) => Object.keys(p).filter(k => !ok.includes(k)).sort().join(', ');
+// lo de antes del libro, propuesto desde los papeles de la app (fn_wip_antes_propuesta)
+function wAntesProp(pid) {
+  const o = W_OB[pid], pr = o.prop || { tickets: [0, 0], externos: [0, 0], horas: [0, 0], facturas: [0, 0] }, an = W.antes[pid];
+  const total = pr.tickets[1] + pr.externos[1] + pr.horas[1];
+  const notas = [];
+  if (pr.horas[0] > 0) notas.push(`Las ${pr.horas[0]} h de la cuadrilla de antes van a la tarifa de HOY de «Costos del equipo» (no guarda historia), sin carga encima.`);
+  notas.push('Lo que no pasó por la app (un pago sin ticket, la tarjeta, un sub pagado por fuera) no está aquí: compáralo con el costo y lo facturado de esa obra en QuickBooks al 30 de septiembre, y si no coincide pon lo de QuickBooks con su nota.');
+  return { obra: o.obra, costo: { horas: { horas: pr.horas[0], monto: wD(pr.horas[1]), del_dueno: 0, sin_tarifa: 0, de_antes_de_la_app: null }, total: wD(total), tickets: { n: pr.tickets[0], monto: wD(pr.tickets[1]) },
+      trabajos_externos: { n: pr.externos[0], monto: wD(pr.externos[1]) } }, hasta: '2026-09-30', notas, de_antes: !!o.deAntes,
+    facturado: { total: wD(pr.facturas[1]), facturas: { n: pr.facturas[0], monto: wD(pr.facturas[1]) } },
+    confirmado: an ? { id: an.id, nota: an.nota, costo: wD(an.costo), facturado: wD(an.facturado), confirmado_el: an.el, confirmado_por: UID } : null,
+    libro_desde: '2026-10-01', proyecto_id: pid, de_antes_por: o.deAntes || null, _c: { costo: total, fact: pr.facturas[1] } };
+}
+const wConfig = () => ({ nota: W.cfg.exigir_desde ? `El cierre exige el WIP (cada obra revisada y el ajuste posteado) desde ${wMes(W.cfg.exigir_desde)}; los meses anteriores no se frenan por él.` : 'El cierre todavía no exige el WIP en ningún mes: se puede revisar y postear, pero no detiene.',
+  actualizado: W.cfg.actualizado, exigir_desde: W.cfg.exigir_desde, actualizado_por: W.cfg.actualizado_por, exigir_desde_nombre: W.cfg.exigir_desde ? wMes(W.cfg.exigir_desde) : null });
+const wNum = () => { W.n += 1; return `2026-${String(W.n).padStart(6, '0')}`; };
+const W_FN = {
+  fn_wip_resumen: a => wResumen(a.p_periodo || wToca()),
+  fn_wip_control: a => wControl(a.p_periodo || wToca()),
+  fn_wip_cierre: a => wCierre(a.p_periodo),
+  fn_wip_schedule: a => wSchedule(a.p_periodo || wToca()),
+  fn_wip_config(a) {
+    const p = a.p;
+    if (p == null) return wConfig();
+    if (typeof p !== 'object' || Array.isArray(p)) return wErr('22023', 'La configuración llega como un objeto JSON: {"exigir_desde": "2026-11"}.');
+    const sob = wSobra(p, ['exigir_desde']); if (sob) return wErr('22023', `Clave desconocida en la configuración del WIP: ${sob}. La única es exigir_desde.`);
+    if ('exigir_desde' in p) {
+      const v = p.exigir_desde == null || p.exigir_desde === '' ? null : String(p.exigir_desde);
+      if (v && !/^\d{4}-(0[1-9]|1[0-2])$/.test(v)) return wErr('22023', `«${v}» no es un mes del libro: va como AAAA-MM (por ejemplo 2026-11), o vacío para no exigir el WIP todavía.`);
+      Object.assign(W.cfg, { exigir_desde: v, actualizado: new Date().toISOString(), actualizado_por: UID });
+    }
+    return wConfig();
+  },
+  fn_wip_antes_propuesta: a => W_OB[a.p_proyecto] ? wSinInt(wAntesProp(a.p_proyecto)) : wErr('MX008', `No existe la obra «${a.p_proyecto || ''}».`),
+  fn_wip_antes(a) {
+    const p = a.p;
+    if (!p || typeof p !== 'object' || Array.isArray(p)) return wErr('22023', 'Lo de antes llega como un objeto JSON: {"costo": "…", "facturado": "…", "nota": "…"}.');
+    const sob = wSobra(p, ['costo', 'facturado', 'nota']); if (sob) return wErr('22023', `Clave desconocida en lo de antes del libro: ${sob}.`);
+    if (!W_OB[a.p_proyecto]) return wErr('MX008', `No existe la obra «${a.p_proyecto || ''}».`);
+    const pr = wAntesProp(a.p_proyecto), c = wMonto(p.costo, 'el costo de antes del libro', true); if (wEsErr(c)) return c;
+    const f = wMonto(p.facturado, 'lo facturado antes del libro', true); if (wEsErr(f)) return f;
+    const nota = String(p.nota || '').trim() || null;
+    if ((c !== pr._c.costo || f !== pr._c.fact) && !nota) return wErr('22023', `Estos números (costo ${wUsd(c)}, facturado ${wUsd(f)}) no son los que salen de los papeles de la app (costo ${wUsd(pr._c.costo)}, facturado ${wUsd(pr._c.fact)}): di de dónde salen en la nota (por ejemplo, «costo por obra de QuickBooks al 30 de septiembre»).`);
+    const viva = W.antes[a.p_proyecto];
+    if (viva && viva.costo === c && viva.facturado === f && viva.nota === nota) return { nota: 'Lo de antes del libro ya estaba confirmado con esos mismos números.', costo: wD(c), antes_id: viva.id, facturado: wD(f), ya_estaba: true, proyecto_id: a.p_proyecto };
+    W.antes[a.p_proyecto] = { id: wId('a1200000'), costo: c, facturado: f, nota, el: new Date().toISOString() };
+    const abiertos = W.ajustes.filter(x => !x.deshecho_el && !W.cerrados.has(x.periodo)).map(x => wMes(x.periodo)).join(', ');
+    return { nota: `Confirmado lo de antes del libro de «${pr.obra}»: costo ${wUsd(c)} y facturado ${wUsd(f)}.${abiertos ? ` El ajuste de ${abiertos} ya estaba posteado: mira si sigue al día y, si no, vuelve a postearlo.` : ''}`,
+      costo: wD(c), antes_id: W.antes[a.p_proyecto].id, facturado: wD(f), propuesta: (({ confirmado, ...x }) => x)(wSinInt(pr)), sustituye: viva ? viva.id : null, ya_estaba: false, proyecto_id: a.p_proyecto };
+  },
+  fn_wip_obra(a) {
+    const p = a.p;
+    if (!p || typeof p !== 'object' || Array.isArray(p)) return wErr('22023', 'La marca llega como un objeto JSON: {"modo": "contrato" | "tm" | "auto", "nota": "…"}.');
+    const sob = wSobra(p, ['modo', 'nota']); if (sob) return wErr('22023', `Clave desconocida en la marca de la obra: ${sob}.`);
+    if (!['contrato', 'tm', 'auto'].includes(p.modo)) return wErr('22023', 'El modo es «contrato» (de precio fijo: lleva WIP), «tm» (de servicio o por tiempo y material: no lo lleva) o «auto» (la regla).');
+    if (!W_OB[a.p_proyecto]) return wErr('MX008', `No existe la obra «${a.p_proyecto || ''}».`);
+    const nota = String(p.nota || '').trim() || null;
+    if (p.modo !== 'auto' && !nota) return wErr('22023', 'Di por qué en la nota (por ejemplo, «servicio con precio cerrado» o «se factura por horas»): queda escrito con la marca.');
+    if (p.modo === 'auto') delete W.marca[a.p_proyecto]; else W.marca[a.p_proyecto] = { modo: p.modo, nota };
+    const o = wObra(a.p_proyecto);
+    return { nota: `${o.motivo} Si el ajuste de un mes abierto ya estaba posteado, vuelve a postearlo.`, obra: o, proyecto_id: a.p_proyecto };
+  },
+  fn_wip_revisar(a) {
+    const p = a.p;
+    if (!p || typeof p !== 'object' || Array.isArray(p)) return wErr('22023', 'La revisión llega como un objeto JSON: {"confirmar": true}, {"costo_estimado": "…", "nota": "…"} o {"terminada": true}.');
+    const sob = wSobra(p, ['confirmar', 'costo_estimado', 'nota', 'terminada', 'precio_contrato']); if (sob) return wErr('22023', `Clave desconocida en la revisión: ${sob}.`);
+    const per = wPer(a.p_periodo); if (!per) return wErr('MX002', `No existe el mes «${a.p_periodo || ''}» (va como AAAA-MM).`);
+    const nom = wMes(per.periodo), Nom = wCap(nom);
+    if (W.cerrados.has(per.periodo)) return wErr('MX002', `${Nom} ya está cerrado: su WIP no se toca. Lo que haya cambiado se revisa en el mes abierto.`);
+    if (per.desde > HOY) return wErr('MX002', `${Nom} todavía no empieza (hoy es ${fDia(HOY)} en Miami): una obra se revisa en el mes que se está cerrando.`);
+    if (!W_OB[a.p_proyecto]) return wErr('MX008', `No existe la obra «${a.p_proyecto || ''}».`);
+    const o = wObra(a.p_proyecto);
+    if (!o.lleva_wip) return wErr('MX008', `«${o.obra}» no lleva WIP. ${o.motivo} Si de verdad es de precio fijo, márcala antes (modo «contrato»).`);
+    const term = p.terminada === true, conf = p.confirmar === true, nota = String(p.nota || '').trim() || null;
+    let dado = null;
+    if (String(p.costo_estimado == null ? '' : p.costo_estimado).trim()) { dado = wMonto(p.costo_estimado, 'el costo total estimado'); if (wEsErr(dado)) return dado; }
+    if (term && (conf || dado != null)) return wErr('22023', 'Una obra terminada no lleva costo estimado ni propuesta que confirmar: su costo final es el que lleva. Manda solo {"terminada": true}.');
+    const ficha = W_OB[a.p_proyecto].contrato;
+    let precio = ficha;
+    if (String(p.precio_contrato == null ? '' : p.precio_contrato).trim()) { precio = wMonto(p.precio_contrato, 'el precio del contrato'); if (wEsErr(precio)) return precio; }
+    if (precio == null) return wErr('MX008', `«${o.obra}» no tiene contrato en su ficha: ponlo en la obra, o dilo en la revisión (precio_contrato) con su nota.`);
+    if (ficha !== precio && !nota) return wErr('22023', `El precio que pones (${wUsd(precio)}) no es el contrato de la ficha (${ficha == null ? 'vacío' : wUsd(ficha)}): deja escrito por qué en la nota (por ejemplo, «orden de cambio 2 firmada, falta en la ficha»).`);
+    const f = wCalc(per.periodo).find(x => x.proyecto_id === a.p_proyecto) || null;
+    const prop = f && f.propuesta_costo_estimado != null ? Math.round(f.propuesta_costo_estimado * 100) : null;
+    let costo, origen;
+    if (term) {
+      if (!o.terminada) return wErr('MX008', `La app tiene «${o.obra}» como «${o.obra_estado}», no como terminada: márcala completada en su ficha y revísala como terminada, o revisa su costo estimado.`);
+      costo = null; origen = 'terminada';
+    } else if (conf) {
+      if (prop == null) return wErr('MX008', `No hay una propuesta que confirmar para «${o.obra}» en ${nom} (ni revisión anterior ni un estimado completo): escribe su costo total estimado.`);
+      if (dado != null && dado !== prop) return wErr('MX008', `La propuesta de «${o.obra}» ya no es la que viste (${wUsd(dado)}; ahora es ${wUsd(prop)}): vuelve a mirar antes de confirmar.`);
+      costo = prop; origen = f.propuesta_origen || 'a_mano';
+    } else {
+      if (dado == null) return wErr('22023', 'Falta el costo total estimado (costo_estimado), o confirmar lo propuesto (confirmar), o decir que la obra terminó (terminada).');
+      costo = dado; origen = prop != null && prop === costo ? (f.propuesta_origen || 'a_mano') : 'a_mano';
+      if (origen === 'a_mano' && prop != null && !nota) return wErr('22023', `Cambias el costo estimado de «${o.obra}» de ${wUsd(prop)} (${f.propuesta_origen === 'mes_anterior' ? 'lo del mes anterior' : f.propuesta_origen === 'estimado' ? 'su estimado' : 'lo propuesto'}) a ${wUsd(costo)}: deja escrito por qué en la nota.`);
+    }
+    if (!term) {
+      const lb = wLibro(a.p_proyecto, per.periodo), an = W.antes[a.p_proyecto], cf = lb.costo + (an ? an.costo : 0);
+      if (cf > costo && !nota) return wErr('22023', `El costo estimado (${wUsd(costo)}) es menor que lo que «${o.obra}» ya lleva al ${fDia(per.hasta)} (${wUsd(cf)}): daría ${wPctT(cf, costo)} % de avance. Súbelo, o deja escrito por qué en la nota.`);
+    }
+    const viva = wRev(a.p_proyecto, per.periodo);
+    let id;
+    if (viva && viva.precio === precio && viva.costo === costo && viva.terminada === term && viva.nota === nota) id = viva.id;
+    else {
+      if (viva) viva.sustituida_el = new Date().toISOString();
+      id = wId('b1200000');
+      W.rev.push({ id, proyecto_id: a.p_proyecto, periodo: per.periodo, precio, ficha, costo, terminada: term, origen, propuesta: f ? prop : null, propuesta_origen: f ? f.propuesta_origen : null, nota, el: new Date().toISOString(), sustituida_el: null });
+    }
+    const fila = wCalc(per.periodo).find(x => x.proyecto_id === a.p_proyecto);
+    const est = wEstado(per.periodo, wPlan(per.periodo));
+    return { fila: fila ? wSinInt(fila) : null, nota: est.vivo && !est.al_dia ? `Revisada. El ajuste de ${nom} ya estaba posteado (asiento ${est.numero}) y con esto ya no está al día: vuelve a postearlo (se reversa y entra el nuevo).`
+        : fila && fila.estado === 'pendiente' ? 'Revisada. ' + (fila.falta_texto || '') : 'Revisada.',
+      ajuste: { vivo: est.vivo, al_dia: est.al_dia, numero: est.numero || null, cambios: est.cambios || null }, origen, periodo: per.periodo, ya_estaba: !!viva && viva.id === id, proyecto_id: a.p_proyecto, revision_id: id };
+  },
+  fn_wip_postear(a) {
+    const per = wPer(a.p_periodo); if (!per) return wErr('MX002', `No existe el mes «${a.p_periodo || ''}» (va como AAAA-MM).`);
+    const nom = wMes(per.periodo), Nom = wCap(nom);
+    if (W.cerrados.has(per.periodo)) return wErr('MX002', `${Nom} ya está cerrado: su ajuste de WIP no se toca (si lo tuvo, ya se deshizo solo el día 1). Lo que haya cambiado entra en el ajuste del mes abierto.`);
+    if (per.hasta >= HOY) return wErr('MX002', `${Nom} todavía no termina (su último día es el ${fDia(per.hasta)}; hoy es ${fDia(HOY)} en Miami): el ajuste del WIP se postea con el mes terminado, desde el ${fDia(wSig(per.hasta))}. Hasta entonces siguen entrando costos y facturas.`);
+    const plan = wPlan(per.periodo), est = wEstado(per.periodo, plan), t = plan.tot;
+    const fuera = plan.filas.filter(f => f.estado === 'pendiente').map(f => ({ obra: f.obra, falta: f.falta, falta_texto: f.falta_texto, proyecto_id: f.proyecto_id }));
+    let rehecho = null, sust = null;
+    if (est.vivo) {
+      const v = wVivo(per.periodo);
+      if (est.al_dia) return { nota: `El ajuste de WIP de ${nom} ya estaba posteado y sigue al día (asiento ${v.numero}): no se duplica.`, fuera, obras: v.obras, lineas: v.lineas,
+        asiento: { id: v.asiento_id, fecha: v.fecha, numero: v.numero }, perdida: wD(v.perdida), periodo: per.periodo, reverso: { id: v.auto.id, fecha: v.auto.fecha, numero: v.auto.numero },
+        posteado: true, ajuste_id: v.id, ya_estaba: true, sub_facturado: wD(v.sub), sobre_facturado: wD(v.sobre) };
+      const motivo = `El WIP de ${nom} cambió después de postear su ajuste (${v.numero}): ${est.cambios || 'cambió su cálculo'}.${a.p_motivo ? ' ' + a.p_motivo : ''}`;
+      const rn = wNum(), anula = v.auto.numero;
+      Object.assign(v, { deshecho_el: new Date().toISOString(), deshecho_motivo: motivo, reverso_numero: rn, reverso_id: wId('c1200000') });
+      sust = v.id; rehecho = { motivo, numero: v.numero, reverso: { id: v.reverso_id, numero: rn }, ajuste_id: v.id, por_fuera: false, anula_reverso_automatico: anula };
+    }
+    if (!plan.lineas.length) return { nota: rehecho ? `El ajuste anterior de ${nom} (asiento ${rehecho.numero}) se deshizo, y hoy no hay nada que ajustar.` : t.obras === 0 ? `En ${nom} ninguna obra está lista para el ajuste${fuera.length ? ` (${fuera.length} pendiente(s): les falta su revisión o lo de antes del libro)` : ''}.` : `En ${nom} no hay nada que ajustar: en las ${t.obras} obra(s) listas lo ganado es lo facturado, al centavo.`,
+      fuera, obras: t.obras, periodo: per.periodo, rehecho, posteado: false, ya_estaba: false };
+    const numero = wNum(), auto = { id: wId('d1200000'), numero: wNum(), fecha: wSig(per.hasta) };
+    const aj = { id: wId('e1200000'), periodo: per.periodo, asiento_id: wId('f1200000'), numero, fecha: per.hasta, auto, obras: t.obras, lineas: plan.lineas.length, lineasAs: plan.lineas,
+      sub: t.sub, sobre: t.sobre, perdida: t.prov, huella: plan.huella, foto: plan.filas, sustituye_a: sust, motivo: a.p_motivo || null, creado_el: new Date().toISOString(), deshecho_el: null };
+    W.ajustes.push(aj);
+    return { nota: `${rehecho ? 'Rehecho' : 'Posteado'} el ajuste de WIP de ${nom}: asiento ${numero}, con ${t.obras} obra(s) (sub-facturado ${wUsd(t.sub)}, sobre-facturado ${wUsd(t.sobre)}, pérdida ${wUsd(t.prov)}). Se deshace solo el ${fDia(auto.fecha)} (asiento ${auto.numero}).${fuera.length ? ` ${fuera.length} obra(s) no entraron: les falta su revisión o lo de antes del libro.` : ''}`,
+      fuera, obras: t.obras, lineas: plan.lineas.length, asiento: { id: aj.asiento_id, fecha: per.hasta, numero }, perdida: wD(t.prov), periodo: per.periodo, rehecho, reverso: { id: auto.id, fecha: auto.fecha, numero: auto.numero },
+      posteado: true, ajuste_id: aj.id, ya_estaba: false, sub_facturado: wD(t.sub), sobre_facturado: wD(t.sobre) };
+  },
+  fn_wip_deshacer(a) {
+    const per = wPer(a.p_periodo); if (!per) return wErr('MX002', `No existe el mes «${a.p_periodo || ''}» (va como AAAA-MM).`);
+    const nom = wMes(per.periodo), Nom = wCap(nom), motivo = String(a.p_motivo || '').trim();
+    if (!motivo) return wErr('22023', 'Deshacer un ajuste de WIP pide su motivo: queda escrito en el reverso.');
+    if (W.cerrados.has(per.periodo)) return wErr('MX002', `${Nom} ya está cerrado: su ajuste de WIP ya se deshizo solo el día 1 y no hay nada que deshacer.`);
+    const v = wVivo(per.periodo); if (!v) return wErr('MX008', `${Nom} no tiene un ajuste de WIP vivo que deshacer.`);
+    const rn = wNum();
+    Object.assign(v, { deshecho_el: new Date().toISOString(), deshecho_motivo: motivo, reverso_numero: rn, reverso_id: wId('c1200000') });
+    return { nota: `Deshecho el ajuste de WIP de ${nom}: el asiento ${v.numero} se reversó con ${rn}, y su reverso del día 1 quedó anulado. El libro vuelve a lo facturado.`,
+      asiento: { id: v.asiento_id, numero: v.numero }, periodo: per.periodo, reverso: { id: v.reverso_id, numero: rn }, ajuste_id: v.id, por_fuera: false, anula_reverso_automatico: v.auto.numero };
+  }
+};
+const W_VISTAS = {
+  v_wip_schedule: () => W_MESES.filter(p => p.desde <= HOY).flatMap(p => wSchedule(p.periodo)),
+  v_wip_obras: () => Object.keys(W_OB).map(wObra).sort((a, b) => a.obra.localeCompare(b.obra)),
+  v_wip_control: () => wControl(wToca()),
+  v_wip_ajustes: () => W.ajustes.map(x => ({ vivo: !x.deshecho_el, fecha: x.fecha, obras: x.obras, lineas: x.lineas, motivo: x.motivo, numero: x.numero, perdida: wD(x.perdida), periodo: x.periodo, ajuste_id: x.id,
+    creado_el: x.creado_el, por_fuera: false, asiento_id: x.asiento_id, creado_por: UID, reverso_id: x.reverso_id || null, deshecho_el: x.deshecho_el, sustituye_a: x.sustituye_a, deshecho_por: x.deshecho_el ? UID : null,
+    sub_facturado: wD(x.sub), periodo_nombre: wMes(x.periodo), reverso_numero: x.reverso_numero || null, deshecho_motivo: x.deshecho_motivo || null, reverso_auto_id: x.auto.id, sobre_facturado: wD(x.sobre),
+    creado_por_nombre: 'Edgar Prueba', reverso_auto_fecha: x.auto.fecha, deshecho_por_nombre: x.deshecho_el ? 'Edgar Prueba' : null, reverso_auto_numero: x.auto.numero })),
+  v_wip_revisiones: () => W.rev.map(r => ({ nota: r.nota, obra: wNomObra(r.proyecto_id), origen: r.origen, periodo: r.periodo, vigente: !r.sustituida_el, propuesta: wD(r.propuesta), terminada: r.terminada,
+    proyecto_id: r.proyecto_id, revisado_el: r.el, revision_id: r.id, precio_ficha: wD(r.ficha), revisado_por: UID, sustituida_el: r.sustituida_el, costo_estimado: wD(r.costo), periodo_nombre: wMes(r.periodo),
+    precio_contrato: wD(r.precio), propuesta_origen: r.propuesta_origen, revisado_por_nombre: 'Edgar Prueba' })),
+  wip_config: () => [{ id: 1, actualizado: W.cfg.actualizado, exigir_desde: W.cfg.exigir_desde, actualizado_por: W.cfg.actualizado_por }]
+};
+const W_NO_DUENO = 'El WIP (lo ganado, lo facturado y el margen de cada obra) lo ve y lo toca solo Edgar (el dueño).';
 const estado = { controlMal: false, controlFilas: null, fallar: false, casarRondas: 0, concNueva: false, plaidFijada: false, plaidSinVista: false, plaidSinFijar: false, mfaFactores: [], sesionAal: undefined,
   // los interruptores de los estados: el control en rojo, el conteo distinto para una vista, el «Sigue» del tope por reloj (cuenta llamadas; 90 o más = nunca termina),
   // el equipo (no dueño), la apertura sin postear, el balance descuadrado, una vista que no existe en la base, un mayor que no termina donde dice la balanza
@@ -1413,7 +2249,13 @@ const estado = { controlMal: false, controlFilas: null, fallar: false, casarRond
   // (fase 8) c9 pegado o no: sin él, sus vistas contestan 404 (PGRST205), sus funciones también (PGRST202) y el bucket «cierres» no existe
   c9: false,
   // (fase 9) c10 pegado o no: sin él, sus vistas y jornal_config contestan 404 (PGRST205) y sus funciones también (PGRST202)
-  c10: false };
+  c10: false,
+  // (fase 10) c11 pegado o no (sin él, sus vistas y emision_config 404 y sus funciones también); la función de borde `facturas`
+  // desplegada o no (sin ella, 404); y c11App: la obra de prueba con sus hitos también en la app (proyectos, hitos) para el 🧾
+  // y c11EstadoFalla: v_emision_estado contesta 500 (un statement timeout) para ver que el 🧾 no adivina
+  c11: false, c11Fn: true, c11App: false, c11EstadoFalla: false,
+  // (fase 10) c12 pegado o no (sin él, sus vistas y wip_config 404 y sus funciones también); y el equipo (no dueño): vistas vacías y 42501
+  c12: false, c12NoDueno: false };
 const llamadas = [], lecturas = []; // lecturas: cada GET a /rest/v1/<vista>?… tal como lo pidió la pantalla
 function tabla(nombre, q) {
   let filas = T[nombre] || [];
@@ -1421,6 +2263,13 @@ function tabla(nombre, q) {
   if (C9_VISTAS[nombre]) filas = C9_VISTAS[nombre]();
   // (fase 9) las vistas de c10; con c10 la bandeja trae los cuatro Zelle de la cuadrilla (los repartidos salen) y el libro las líneas de la obra A
   if (C10_VISTAS[nombre]) filas = estado.c10 ? C10_VISTAS[nombre]() : [];
+  // (fase 10) las vistas de c11 y su configuración; con c11App, la obra A de las facturas y sus hitos también en la app
+  if (C11_VISTAS[nombre]) filas = estado.c11 ? C11_VISTAS[nombre]() : [];
+  // (fase 10) las vistas del WIP (c12) y su configuración: el equipo las ve vacías
+  if (W_VISTAS[nombre]) filas = estado.c12 && !estado.c12NoDueno ? W_VISTAS[nombre]() : [];
+  if (nombre === 'proyectos' && estado.c11App) filas = filas.concat([{ id: 'c11-prueba-a', nombre: 'C11 PRUEBA Oficina Uno', estado: 'ejecucion', tipo: 'comercial', cliente: 'ZZ Cliente Uno', cliente_email: 'zz.uno@c11-pruebas.invalid' }]);
+  if (nombre === 'hitos' && estado.c11App) filas = F.hitos.filter(h => h.p === 'c11-prueba-a').map(h => ({ id: h.id, proyecto_id: h.p, titulo: h.titulo, condicion: h.condicion, monto: h.monto / 100, estado: h.estado, orden: h.orden, es_deposito: h.dep }));
+  if (nombre === 'finanzas_proyecto' && estado.c11App) filas = filas.concat([{ proyecto_id: 'c11-prueba-a', contrato: 18500.55, cobrado: 0 }]);
   if (nombre === 'v_banco_bandeja' && estado.c10) filas = filas.concat(J.movs.filter(m => !J.fuera.has(m.movimiento_id)));
   if (nombre === 'v_libro' && estado.c10) filas = filas.concat(J.libro);
   if (nombre === 'cuentas' && estado.c10) filas = filas.concat([['5200', 'Subcontratos', 'costo', 'obligatoria'], ['5010', 'Mano de obra (nómina)', 'costo', 'opcional'], ['7900', 'Otros gastos', 'otro_gasto', 'prohibida']].map(([codigo, nombre, tipo, regla_obra]) => ({ codigo, nombre, tipo, regla_obra, imputable: true, activa: true })));
@@ -1470,6 +2319,11 @@ function tabla(nombre, q) {
 function rpc(fn, a) {
   // (fase 8) las funciones de c9: sin c9 pegado, PostgREST no las encuentra
   if (C9_FN[fn]) return estado.c9 ? C9_FN[fn](a) : { status: 404, error: { code: 'PGRST202', message: `Could not find the function public.${fn} in the schema cache`, details: null, hint: null } };
+  // (fase 10) las funciones de c11: sin c11 pegado, PostgREST no las encuentra
+  if (C11_FN[fn]) return estado.c11 ? C11_FN[fn](a) : { status: 404, error: { code: 'PGRST202', message: `Could not find the function public.${fn} in the schema cache`, details: null, hint: null } };
+  // (fase 10) las funciones del WIP (c12): sin c12 pegado, PostgREST no las encuentra; al equipo, 42501
+  if (W_FN[fn]) return !estado.c12 ? { status: 404, error: { code: 'PGRST202', message: `Could not find the function public.${fn} in the schema cache`, details: null, hint: null } }
+    : estado.c12NoDueno ? { status: 403, error: { code: '42501', message: W_NO_DUENO, details: null, hint: null } } : W_FN[fn](a);
   // (fase 9) las funciones de c10: sin c10 pegado, PostgREST no las encuentra
   if (C10_FN[fn]) return estado.c10 ? C10_FN[fn](a) : { status: 404, error: { code: 'PGRST202', message: `Could not find the function public.${fn} in the schema cache`, details: null, hint: null } };
   if (estado.fallar && /^fn_banco_(casar_con|clasificar|transferencia|ignorar|duplicado)$/.test(fn)) return { error: { code: 'MX008', message: 'La base dijo que no (prueba)' } };
@@ -1598,10 +2452,28 @@ async function simular(ctx, rol) {
       const r = funcionPlaid(b);
       return route.fulfill({ status: r.estado || 200, headers: CORS, contentType: 'application/json', body: JSON.stringify(r.cuerpo) });
     }
+    // (fase 10) la función de borde `facturas` (el PDF, el correo, ver); sin desplegar, 404 como Supabase
+    if (u.pathname === '/functions/v1/facturas') {
+      let b = {}; try { b = JSON.parse(req.postData() || '{}'); } catch { /* vacío */ }
+      const auth = req.headers()['authorization'] || '';
+      llamadas.push({ fn: 'facturas:' + b.accion, args: b, auth });
+      if (!estado.c11Fn) return route.fulfill({ status: 404, headers: CORS, contentType: 'application/json', body: JSON.stringify({ code: 'NOT_FOUND', message: 'Requested function was not found' }) });
+      const r = funcionFacturas(b, auth);
+      return route.fulfill({ status: r.estado || 200, headers: CORS, contentType: 'application/json', body: JSON.stringify(r.cuerpo) });
+    }
+    // (fase 10) el 🧾 por QuickBooks (la función qb, de la otra sesión): se apunta y contesta como si la hubiera creado
+    if (u.pathname === '/functions/v1/qb') {
+      let b = {}; try { b = JSON.parse(req.postData() || '{}'); } catch { /* vacío */ }
+      llamadas.push({ fn: 'qb:' + b.accion, args: b });
+      return route.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify({ ok: true, doc: '1201', enviada: false }) });
+    }
     if (u.pathname === '/functions/v1/stripe') {
       let b = {}; try { b = JSON.parse(req.postData() || '{}'); } catch { /* vacío */ }
       const auth = req.headers()['authorization'] || '';
       llamadas.push({ fn: 'stripe:' + b.accion, args: b, auth });
+      // (fase 10) desactivar el enlace de una factura de la app que se anuló
+      const fe = estado.c11 && b.accion === 'desactivar_enlace' ? F.enlaces.find(x => x.id === b.enlace) : null;
+      if (fe) { fe.estado = 'desactivado'; return route.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify({ ok: true, enlace: { id: fe.id, estado: 'desactivado' } }) }); }
       const r = funcionStripe(b, auth);
       return route.fulfill({ status: r.estado || 200, headers: CORS, contentType: 'application/json', body: JSON.stringify(r.cuerpo) });
     }
@@ -1675,6 +2547,23 @@ async function simular(ctx, rol) {
       lecturas.push(v + u.search);
       return route.fulfill({ status: 404, headers: CORS, contentType: 'application/json', body: JSON.stringify({ code: 'PGRST205', message: `Could not find the table 'public.${v}' in the schema cache`, details: null, hint: null }) });
     }
+    // (fase 10) c11 sin pegar: sus vistas y emision_config no existen (la lectura se anota igual)
+    if (!estado.c11 && /^\/rest\/v1\/(v_emision_estado|v_emision_documentos|v_emision_obras|v_emision_control|emision_config)$/.test(u.pathname)) {
+      const v = u.pathname.slice('/rest/v1/'.length);
+      lecturas.push(v + u.search);
+      return route.fulfill({ status: 404, headers: CORS, contentType: 'application/json', body: JSON.stringify({ code: 'PGRST205', message: `Could not find the table 'public.${v}' in the schema cache`, details: null, hint: null }) });
+    }
+    // (fase 10) v_emision_estado que contesta 500 (la base ocupada: un statement timeout)
+    if (estado.c11 && estado.c11EstadoFalla && u.pathname === '/rest/v1/v_emision_estado') {
+      lecturas.push('v_emision_estado' + u.search);
+      return route.fulfill({ status: 500, headers: CORS, contentType: 'application/json', body: JSON.stringify({ code: '57014', message: 'canceling statement due to statement timeout', details: null, hint: null }) });
+    }
+    // (fase 10) c12 sin pegar: sus vistas y wip_config no existen (la lectura se anota igual)
+    if (!estado.c12 && /^\/rest\/v1\/(v_wip_schedule|v_wip_obras|v_wip_control|v_wip_ajustes|v_wip_revisiones|wip_config)$/.test(u.pathname)) {
+      const v = u.pathname.slice('/rest/v1/'.length);
+      lecturas.push(v + u.search);
+      return route.fulfill({ status: 404, headers: CORS, contentType: 'application/json', body: JSON.stringify({ code: 'PGRST205', message: `Could not find the table 'public.${v}' in the schema cache`, details: null, hint: null }) });
+    }
     if (!estado.c9 && /^\/rest\/v1\/(v_cierre_estado|v_cierres|v_ronda_ultima|v_activos_fijos|v_reserva_impuestos|v_dr15_mes|cierre_config|reserva_estimados)$/.test(u.pathname)) {
       const v = u.pathname.slice('/rest/v1/'.length);
       lecturas.push(v + u.search);
@@ -1711,8 +2600,8 @@ if (FOTOS) fs.mkdirSync(FOTOS, { recursive: true });
 // animations: 'disabled' porque el fullPage encoge el viewport un instante, la media query del lateral cambia y la transición de .15 s salía a medias en la imagen
 const foto = async (p, nombre) => { if (FOTOS) await p.screenshot({ path: path.join(FOTOS, nombre + '.png'), fullPage: true, animations: 'disabled' }); };
 const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' ');
-const PAGS = ['resumen', 'bancos', 'bandeja', 'conciliar', 'movimientos', 'estados', 'obras', 'cierre', 'cobros', 'conexiones'];
-// (fase 8) la lista de respaldo de js/app.js (CONTA_PAGINAS_FIJAS, por si conta.js no cargó) trae las mismas diez, «cierre» y (fase 9) «obras» incluidas
+const PAGS = ['resumen', 'bancos', 'bandeja', 'conciliar', 'movimientos', 'estados', 'obras', 'wip', 'cierre', 'facturas', 'cobros', 'conexiones'];
+// (fase 8) la lista de respaldo de js/app.js (CONTA_PAGINAS_FIJAS, por si conta.js no cargó) trae las mismas doce, «cierre», (fase 9) «obras» y (fase 10) «facturas» y «wip» incluidas
 const PAGS_APP = PAGS;
 // cambiar de página por su pestaña: en la computadora (≥ 1024 px) las pestañas están escondidas (las enseña el lateral de app.js), así que el clic es del DOM
 const titulo2 = async pg => (await pg.locator('#titulo-vista').textContent()).trim();
@@ -1766,16 +2655,16 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
   await p.waitForSelector('#conta-raiz .ct-ficha', { timeout: 8000 });
   ok('Al entrar, la vista de la contabilidad se ve, la página es «Resumen» (la portada) y la pestaña «resumen» está marcada', await p.locator('#vista-conta').isVisible() && (await p.locator('#titulo-vista').textContent()).trim() === 'Resumen' && (await p.locator('.ct-tab[data-pag="resumen"][aria-current="page"]').count()) === 1, await p.locator('#titulo-vista').textContent());
   const pags = await p.evaluate(() => window.MXP_CONTA.paginas().map(x => [x.k, x.nombre, /^<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"/.test(x.svg) && /<\/svg>$/.test(x.svg)]));
-  ok('MXP_CONTA.paginas() da las 10 páginas en su orden (Costo por obra después de Estados, y Cierre del mes), con su nombre y un svg del estilo del menú', JSON.stringify(pags.map(x => x[0])) === JSON.stringify(PAGS) && pags.every(x => x[2]) && pags.map(x => x[1]).join('|') === 'Resumen|Bancos y tarjetas|Bandeja|Conciliar|Movimientos|Estados financieros|Costo por obra|Cierre del mes|Cobros en línea|Conexiones y seguridad', JSON.stringify(pags));
+  ok('MXP_CONTA.paginas() da las 12 páginas en su orden (Costo por obra después de Estados y, desde la fase 10, el WIP entre Costo por obra y Cierre del mes, y Facturas antes de Cobros en línea), con su nombre y un svg del estilo del menú', JSON.stringify(pags.map(x => x[0])) === JSON.stringify(PAGS) && pags.every(x => x[2]) && pags.map(x => x[1]).join('|') === 'Resumen|Bancos y tarjetas|Bandeja|Conciliar|Movimientos|Estados financieros|Costo por obra|WIP (obra en curso)|Cierre del mes|Facturas|Cobros en línea|Conexiones y seguridad', JSON.stringify(pags));
   ok('La página no repite el título que ya pone la barra de la app: la cabecera trae la línea de cifras y, como aria-label, el nombre', (await p.locator('.ct-pag-h').count()) === 0 && (await p.locator('.ct-pag-cab').getAttribute('aria-label')) === 'Resumen' && (await p.locator('.ct-pag-sub').count()) === 1);
   {
     // la lista de respaldo de app.js (por si conta.js no cargó) lleva los mismos trazos que ICONOS de conta.js: el lateral y las pestañas nunca enseñan iconos distintos para la misma página
     const appJs = fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8'), contaJs = fs.readFileSync(path.join(ROOT, 'js', 'conta.js'), 'utf8');
     const fijos = Object.fromEntries([...appJs.matchAll(/\{ k: "(\w+)", nombre: "[^"]+", svg: SVG_MENU\('([^']*)'\) \}/g)].map(m => [m[1], m[2]]));
     const iconos = Object.fromEntries([...contaJs.matchAll(/^\s+(\w+): svgMenu\('([^']*)'\),?$/gm)].map(m => [m[1], m[2]]));
-    ok('La lista de respaldo CONTA_PAGINAS_FIJAS de app.js trae las 10 páginas en el mismo orden y con los mismos trazos que ICONOS de conta.js («Costo por obra» y «Cierre del mes» incluidas)', JSON.stringify(Object.keys(fijos)) === JSON.stringify(PAGS_APP) && PAGS_APP.every(k => fijos[k] && fijos[k] === iconos[k]), PAGS_APP.filter(k => fijos[k] !== iconos[k]).join(',') || Object.keys(fijos).join(','));
+    ok('La lista de respaldo CONTA_PAGINAS_FIJAS de app.js trae las 12 páginas en el mismo orden y con los mismos trazos que ICONOS de conta.js («Costo por obra», «WIP», «Cierre del mes» y «Facturas» incluidas)', JSON.stringify(Object.keys(fijos)) === JSON.stringify(PAGS_APP) && PAGS_APP.every(k => fijos[k] && fijos[k] === iconos[k]), PAGS_APP.filter(k => fijos[k] !== iconos[k]).join(',') || Object.keys(fijos).join(','));
   }
-  ok('En la computadora (1280 px) las pestañas de arriba van escondidas (las enseña el lateral), pero siguen en el DOM con sus 10 páginas', (await p.locator('.ct-tabs').evaluate(e => getComputedStyle(e).display)) === 'none' && (await p.locator('.ct-tab').count()) === PAGS.length && JSON.stringify(await p.locator('.ct-tab').evaluateAll(bs => bs.map(b => b.dataset.pag))) === JSON.stringify(PAGS));
+  ok('En la computadora (1280 px) las pestañas de arriba van escondidas (las enseña el lateral), pero siguen en el DOM con sus 12 páginas', (await p.locator('.ct-tabs').evaluate(e => getComputedStyle(e).display)) === 'none' && (await p.locator('.ct-tab').count()) === PAGS.length && JSON.stringify(await p.locator('.ct-tab').evaluateAll(bs => bs.map(b => b.dataset.pag))) === JSON.stringify(PAGS));
   await espiar(p);
   const ctrlR0 = desde(n).find(l => l.fn === 'fn_banco_control');
   ok('La portada pidió fn_banco_control(hoy) con las cuatro vistas del banco (v_banco_saldos manda) y fn_estados_control con v_resultados del mes de hoy', !!ctrlR0 && ctrlR0.args.p_periodo === 'hoy' && JSON.stringify(ctrlR0.args.p_vistas) === '["v_banco_saldos","v_banco_bandeja","v_conciliacion","v_banco_movimientos"]' &&
@@ -2020,7 +2909,7 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
   const esperarTexto = (sel, re) => p.waitForFunction(([s, r]) => { const e = document.querySelector(s); return e && new RegExp(r).test(e.textContent); }, [sel, re.source], { timeout: 8000 });
   const nBal = T.v_balance_general.filter(f => f.periodo === '2026-10').length;
   nLect = lecturas.length; n = llamadas.length;
-  ok('Las pestañas van en el orden del menú: Resumen, Bancos, Bandeja, Conciliar, Movimientos, Estados, Obras, Cierre, Cobros, Conexiones (cada una con su icono)', JSON.stringify(await p.locator('.ct-tab').evaluateAll(bs => bs.map(b => b.dataset.pag))) === JSON.stringify(PAGS) && (await p.locator('.ct-tab svg').count()) === PAGS.length && /Estados/.test(await p.locator('.ct-tab').nth(5).textContent()) && /Obras/.test(await p.locator('.ct-tab').nth(6).textContent()) && /Cierre/.test(await p.locator('.ct-tab').nth(7).textContent()));
+  ok('Las pestañas van en el orden del menú: Resumen, Bancos, Bandeja, Conciliar, Movimientos, Estados, Obras, WIP, Cierre, Facturas, Cobros, Conexiones (cada una con su icono)', JSON.stringify(await p.locator('.ct-tab').evaluateAll(bs => bs.map(b => b.dataset.pag))) === JSON.stringify(PAGS) && (await p.locator('.ct-tab svg').count()) === PAGS.length && /Estados/.test(await p.locator('.ct-tab').nth(5).textContent()) && /Obras/.test(await p.locator('.ct-tab').nth(6).textContent()) && /WIP/.test(await p.locator('.ct-tab').nth(7).textContent()) && /Cierre/.test(await p.locator('.ct-tab').nth(8).textContent()));
   await tab(p, 'estados'); await p.waitForSelector('#ct-est-resultados', { timeout: 8000 });
   ok('Al tocarla el título es «Estados financieros» y aparece la barra de chips', (await titulo()) === 'Estados financieros' && (await p.locator('#ct-est-barra').count()) === 1, await titulo());
   const est0 = await estEst();
@@ -2218,7 +3107,7 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     await q.evaluate(() => document.querySelectorAll('dialog[open]').forEach(d => d.close()));
     await q.locator('#btn-conta').evaluate(b => b.click()); await q.waitForSelector('.ct-tab', { timeout: 8000 });
     const tabsTel = await q.evaluate(() => { const t = document.querySelector('.ct-tabs'); return { display: getComputedStyle(t).display, snap: getComputedStyle(t).scrollSnapType, desliza: t.scrollWidth > t.clientWidth, n: t.querySelectorAll('.ct-tab').length }; });
-    ok('Teléfono (390 px): las 9 pestañas van arriba, a la vista, deslizan con tope (scroll-snap)', tabsTel.display !== 'none' && tabsTel.n === PAGS.length && tabsTel.desliza && /x/.test(tabsTel.snap), JSON.stringify(tabsTel));
+    ok('Teléfono (390 px): las 12 pestañas van arriba, a la vista, deslizan con tope (scroll-snap)', tabsTel.display !== 'none' && tabsTel.n === PAGS.length && tabsTel.desliza && /x/.test(tabsTel.snap), JSON.stringify(tabsTel));
     await tab(q, 'estados'); await q.waitForSelector('#ct-est-resultados', { timeout: 8000 });
     const tabVis = await q.evaluate(() => { const t = document.querySelector('.ct-tabs'), a = t.querySelector('.ct-tab[aria-current="page"]'), T = t.getBoundingClientRect(), A = a.getBoundingClientRect();
       return { pag: a.dataset.pag, izq: Math.round(A.left - T.left), der: Math.round(T.right - A.right), tira: [Math.round(T.left), Math.round(T.right)], iw: window.innerWidth, sw: document.documentElement.scrollWidth }; });
@@ -4161,6 +5050,753 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     conCodigo(false);
   }
 
+  // ---- Las facturas (c11, fase 10): antes del corte (arriba lo dice, lo que falta, borradores para probar y «Emitir»
+  // apagado), Ajustes (la empresa y el «How to pay»), desde el corte: por facturar (los hitos, la retención de la obra,
+  // por porcentaje, T&M), el borrador con sus avisos y su vista previa EN INGLÉS, cambiarlo y refrescarlo, emitir con el
+  // código del teléfono (la confirmación escrita, el «visto», MX011), la emitida (lo que debe hoy, el PDF con su enlace solo
+  // por cuenta de banco, el PDF sin enlace si Stripe no deja, mandar, reenviar, el correo que no se apuntó, en mano), la
+  // lista, tirar un borrador, el texto que parece español, anular con nota de crédito y desactivar su enlace, el 🧾 de un
+  // hito desde la ficha de la obra (antes del corte, a QuickBooks; desde el corte, aquí), sin la función, sin c11, el rojo
+  // del control, y el teléfono, el iPad y la computadora sin desplazamiento lateral ----
+  {
+    estado.c11 = true; estado.c11Fn = true; fReset({ antes: true, sinEmpresa: true });
+    const conCodigo = si => { estado.mfaFactores = si ? [{ id: 'f-1', friendly_name: 'Teléfono de Edgar', factor_type: 'totp', status: 'verified' }] : []; estado.sesionAal = si ? 'aal2' : undefined; };
+    const abrirCtx = async (w, codigo) => {
+      conCodigo(codigo);
+      const cx = await b.newContext({ viewport: { width: w, height: w < 700 ? 844 : 1000 }, deviceScaleFactor: w < 1024 ? 2 : 1, isMobile: w < 1024, hasTouch: w < 1024, serviceWorkers: 'block' });
+      await simular(cx, 'dueno');
+      const q = await cx.newPage(); q.on('pageerror', e => errs.push(`c11 ${w}: ` + String(e).slice(0, 160)));
+      await q.goto('http://localhost:8873/index.html'); await q.waitForSelector('#vista-app:not([hidden])', { timeout: 15000 }); await q.waitForTimeout(800);
+      await q.evaluate(() => document.querySelectorAll('dialog[open]').forEach(d => d.close()));
+      await q.locator('#btn-conta').evaluate(x => x.click()); await q.waitForSelector('#conta-raiz .ct-ficha', { timeout: 8000 }); await pintado(q);
+      return { cx, q };
+    };
+    const ve = async (q, k, op) => { await q.evaluate(([k, o]) => window.MXP_CONTA.ir(k, o || {}), [k, op || null]); await pintado(q); };
+    const ultima = (n0, fn) => desde(n0).filter(l => l.fn === fn).pop();
+    const docCard = q => q.locator('#ct-fac-doc');
+    const toca = async (q, sel) => { await q.locator(sel).first().evaluate(x => x.click()); await pintado(q); };
+    let { cx, q } = await abrirCtx(1280, true);
+
+    // ---- antes del corte, sin los datos de la empresa ----
+    let n0 = llamadas.length;
+    await ve(q, 'facturas');
+    ok('Facturas · está en el menú (pestaña y lateral) y la página lee el estado del corte y el control antes de pintar', (await q.locator('.ct-tab[data-pag="facturas"]').count()) === 1 && (await q.locator('#lateral [data-lat="conta-facturas"]').count()) === 1 &&
+      lecturas.some(l => l.startsWith('v_emision_estado')) && lecturas.some(l => l.startsWith('v_emision_control')) && (await titulo2(q)) === 'Facturas');
+    let arriba = await texto(q, '#ct-fac-corte');
+    ok('Antes del corte · arriba, en llano: «Hasta el corte se factura por QuickBooks», el texto de la base (hasta el 31-dic-2026 por QuickBooks, borradores para probar, se emitirá desde el 1-ene-2027) y cuántos días faltan',
+      /Hasta el corte se factura por QuickBooks/.test(arriba) && /Hasta el 31-dic-2026 las facturas salen por QuickBooks \(el 🧾 de siempre\)\. Aquí se pueden preparar borradores para probar; se podrán emitir desde el 1-ene-2027\./.test(arriba) && /faltan \d+ días/.test(arriba), arriba);
+    ok('…y lo que falta para emitir: «los datos de la empresa y el «How to pay»», con «Ponerlos en Ajustes»', /Para emitir faltan los datos de la empresa y el «How to pay»/.test(arriba) && (await q.locator('[data-fac-ir-ajustes]').count()) === 1, arriba);
+    ok('…la lista vacía dice por dónde se empieza (sin pintar ceros) y el control no tiene rojos', /Todavía ninguna factura de la app\. Empieza en «Por facturar»/.test(await texto(q, '#ct-fac-filas')) && (await q.locator('#conta-raiz .ct-rojo').count()) === 0);
+    ok('…y antes del corte no promete un número (la base lo da con el año de hoy; la primera de verdad lleva el del corte): «se numeran desde el corte (1 ene 2027)»',
+      /se numeran desde el corte \(1 ene 2027\)/.test(await texto(q, '.ct-pag-sub')) && !/la siguiente/.test(await texto(q, '.ct-pag-sub')), await texto(q, '.ct-pag-sub'));
+    await foto(q, 'c11-0-antes-del-corte');
+    // por facturar → el hito Rough-in → su borrador
+    await toca(q, '[data-fac-sub="obras"]');
+    const obraA = q.locator('.ct-fac-obra[data-obra="c11-prueba-a"]');
+    ok('Por facturar · cada obra con su contrato, lo facturado, lo que falta y su retención (10 %, de la obra), sus hitos con «Facturar», y por porcentaje / T&M',
+      (await q.locator('.ct-fac-obra').count()) === 3 && /\$18,500\.55/.test(await obraA.textContent()) && /Retención: 10 %/.test(await obraA.locator('.ct-fac-ret').textContent()) && /la de la obra/.test(await obraA.locator('.ct-fac-ret').textContent()) &&
+      (await obraA.locator('[data-fac-hito]').count()) === 2 && (await obraA.locator('[data-fac-pct]').count()) === 1 && (await obraA.locator('[data-fac-tm]').count()) === 1, await obraA.textContent());
+    ok('…la obra terminada (Taller Cuatro) sale solo con «Todas», y la del contratista lo dice', !(await q.locator('.ct-fac-obra[data-obra="c11-prueba-d"]').count()) && /se le factura al contratista/.test(await texto(q, '.ct-fac-obra[data-obra="c11-prueba-c"]')));
+    n0 = llamadas.length;
+    await obraA.locator('[data-fac-hito="-1110000001"]').click(); await pintado(q);
+    let lb = ultima(n0, 'fn_emision_borrador');
+    ok('Facturar un hito llama a fn_emision_borrador({forma: hito, hito_id}) y abre el borrador', lb && JSON.stringify(lb.args) === JSON.stringify({ p: { forma: 'hito', hito_id: -1110000001 } }) && (await docCard(q).count()) === 1 && /^Borrador/.test(await docCard(q).locator('h2').textContent()), lb && JSON.stringify(lb.args));
+    let doc = docCard(q);
+    ok('Borrador antes del corte · sus avisos con el texto de la base (el corte y lo que falta frenan, en rojo) y «Emitir la factura» apagado diciendo por qué',
+      (await doc.locator('[data-aviso="antes_del_corte"].bad').count()) === 1 && /se podrá emitir desde el 1-ene-2027/.test(await doc.locator('[data-aviso="antes_del_corte"]').textContent()) &&
+      (await doc.locator('[data-aviso="falta_empresa"].bad').count()) === 1 && (await doc.locator('[data-aviso="falta_como_pagar"].bad').count()) === 1 && await doc.locator('[data-fac-emitir]').isDisabled() && /No se emite todavía: lo que está en rojo lo frena \(3 cosas\)/.test(await doc.locator('.ct-fac-porque').textContent()));
+    ok('…los montos los da la base: $1,234.57, retención $123.46 (10 % · la de la obra), a pagar $1,111.11', /\$1,234\.57/.test(await doc.locator('.ct-kpis').textContent()) && /\$123\.46/.test(await doc.locator('.ct-kpis').textContent()) && /10 % · la de la obra/.test(await doc.locator('.ct-kpis').textContent()) && /\$1,111\.11/.test(await doc.locator('.ct-kpis').textContent()));
+    let previa = await texto(q, '#ct-fac-previa .ct-fx');
+    ok('…y la vista previa EN INGLÉS (lang="en"), como el PDF: INVOICE, DRAFT (sin número), Due on receipt, Progress billing #1, Bill to / Project / Contract status, la línea, «Less retainage held (10%) -$123.46» y «Amount due $1,111.11»',
+      (await q.locator('#ct-fac-previa .ct-fx[lang="en"]').count()) === 1 && /INVOICE/.test(previa) && /DRAFT/.test(previa) && /Due on receipt/.test(previa) && /Progress billing #1/.test(previa) && /Bill to/i.test(previa) && /ZZ Cliente Uno/.test(previa) &&
+      /Contract status/i.test(previa) && /C11 PRUEBA Rough-in/.test(previa) && /Due upon passing the rough-in inspection/.test(previa) && /Less retainage held \(10%\)\s*-\$123\.46/.test(previa) && /Amount due\s*\$1,111\.11/.test(previa) && /falta el «How to pay» en Ajustes/.test(previa), previa.slice(0, 900));
+    await foto(q, 'c11-1-borrador-antes');
+    // Ajustes: la empresa y el How to pay
+    await ve(q, 'facturas', { sub: 'ajustes' });
+    const aj = q.locator('#ct-fac-ajustes-form');
+    await aj.locator('[name="e_nombre"]').fill(F_EMPRESA.nombre); await aj.locator('[name="e_licencia"]').fill(F_EMPRESA.licencia); await aj.locator('[name="e_direccion"]').fill(F_EMPRESA.direccion);
+    await aj.locator('[name="e_telefono"]').fill(F_EMPRESA.telefono); await aj.locator('[name="e_correo"]').fill(F_EMPRESA.correo); await aj.locator('[name="e_web"]').fill(F_EMPRESA.web);
+    // el «How to pay» que habla de un enlace avisa mientras se escribe (en las facturas sin enlace apuntaría a nada); el de la casa, no
+    await aj.locator('[name="como_pagar"]').fill('Bank transfer (ACH): use the secure link in the email.');
+    const avisoLink = await q.locator('#ct-fac-como-aviso').isVisible();
+    await aj.locator('[name="como_pagar"]').fill(F_COMO_PAGAR);
+    ok('Ajustes · el «How to pay» dice que sale en TODAS las facturas (con enlace y sin él) y avisa, mientras se escribe, si habla de un enlace («the secure link»); el de la casa no avisa',
+      avisoLink && !(await q.locator('#ct-fac-como-aviso').isVisible()) && /Sale igual en TODAS las facturas/.test(await texto(q, '#ct-fac-ajustes-form')) && /habla de un enlace de pago/.test(await q.locator('#ct-fac-como-aviso').textContent()));
+    ok('Ajustes · la tarjeta sale apagada con su porqué (el recargo quedaría de anticipo; se confirma con Stripe y con el CPA) y el pago por cuenta de banco marcado', /La tarjeta está apagada/.test(await texto(q, '.ct-fac-tarjeta')) && /con Stripe y con el CPA/.test(await texto(q, '.ct-fac-tarjeta')) && await aj.locator('[name="ach"]').isChecked());
+    n0 = llamadas.length;
+    await aj.locator('button[type="submit"]').click(); await pintado(q);
+    const lc = ultima(n0, 'fn_emision_config');
+    ok('…«Guardar los ajustes» manda SOLO lo que cambió a fn_emision_config: la empresa entera y el «How to pay»', lc && JSON.stringify(Object.keys(lc.args.p).sort()) === '["como_pagar","empresa"]' && lc.args.p.empresa.nombre === F_EMPRESA.nombre && lc.args.p.como_pagar === F_COMO_PAGAR, lc && JSON.stringify(lc.args));
+    ok('…y arriba ya no dice que falte nada', !/Para emitir falta/.test(await texto(q, '#ct-fac-corte')));
+    // el corte: desde hoy (Ajustes → El corte y el número)
+    await q.locator('.ct-fac-avanzado summary').click();
+    await q.locator('#ct-fac-ajustes-form [name="corte"]').fill(HOY);
+    n0 = llamadas.length;
+    await q.locator('#ct-fac-ajustes-form button[type="submit"]').click(); await pintado(q);
+    ok('…mover el corte a hoy manda {corte} y arriba dice «Se factura aquí» con el texto de la base', JSON.stringify(ultima(n0, 'fn_emision_config').args) === JSON.stringify({ p: { corte: HOY } }) && /Se factura aquí/.test(await texto(q, '#ct-fac-corte')) && /las facturas se emiten aquí, con su número de la serie del año/.test(await texto(q, '#ct-fac-corte')));
+
+    // ---- desde el corte: el borrador se puede emitir ----
+    const idA = F.docs[0].id;
+    await ve(q, 'facturas', { doc: idA });
+    doc = docCard(q);
+    ok('Desde el corte · el mismo borrador ya no tiene frenos: «Nada lo frena» y «Emitir la factura» encendido', /Nada lo frena: se puede emitir/.test(await doc.textContent()) && !(await doc.locator('[data-fac-emitir]').isDisabled()));
+    ok('«←» de la app cierra la factura y vuelve a donde se estaba (aquí, Ajustes)', await q.evaluate(() => window.MXP_CONTA.atras()) === true && (await (async () => { await pintado(q); return q.locator('#ct-fac-doc').count(); })()) === 0 && (await q.locator('#ct-fac-ajustes').count()) === 1 && (await titulo2(q)) === 'Facturas');
+    await ve(q, 'facturas', { doc: idA });
+    // cambiar: la descripción, la retención y las notas (en inglés)
+    await toca(q, '#ct-fac-doc [data-fac-cambiar]');
+    const fb = q.locator('#ct-fac-doc .ct-form form');
+    await fb.locator('[name="descripcion"]').fill('Rough-in, first floor'); await fb.locator('[name="notas"]').fill('Thank you for your business.');
+    n0 = llamadas.length;
+    await fb.locator('button[type="submit"]').click(); await pintado(q);
+    lb = ultima(n0, 'fn_emision_borrador');
+    ok('Cambiar · solo lo que cambió va a fn_emision_borrador (documento, descripcion, notas) y la vista previa lo enseña', lb && JSON.stringify(lb.args) === JSON.stringify({ p: { documento: idA, descripcion: 'Rough-in, first floor', notas: 'Thank you for your business.' } }) &&
+      /Rough-in, first floor/.test(await texto(q, '#ct-fac-previa')) && /Thank you for your business\./.test(await texto(q, '#ct-fac-previa')), lb && JSON.stringify(lb.args));
+    // con el código: la confirmación escrita
+    await toca(q, '#ct-fac-doc [data-fac-emitir]');
+    const fe = q.locator('#ct-fac-doc .ct-form');
+    ok('Emitir · pide confirmarlo por escrito y dice en llano que después no se cambia (el siguiente número, el monto, la nota de crédito si sale mal)', /Después ya no se cambia/.test(await fe.textContent()) && /MXP-\d{4}-0001/.test(await fe.textContent()) && /nota de crédito/.test(await fe.textContent()) && (await fe.locator('[name="si"]').count()) === 1, await fe.textContent());
+    n0 = llamadas.length;
+    await fe.locator('button[type="submit"]').click(); await q.waitForTimeout(150);
+    ok('…sin marcar «La revisé y se emite así» no llama a la base y lo dice', !ultima(n0, 'fn_emision_emitir') && /Marca que la revisaste/.test(await fe.textContent()));
+    // MX011: el hito cambió entre que se vio y se tocó
+    const hA = F.hitos.find(h => h.id === -1110000001); hA.monto = 123500;
+    await fe.locator('[name="si"]').check(); await fe.locator('button[type="submit"]').click(); await pintado(q);
+    const le = ultima(n0, 'fn_emision_emitir');
+    ok('MX011 · el hito cambió entre que se vio y se tocó: se mandó el «visto» que se enseñó, la base no emitió nada (lo dice con su texto) y la pantalla se vuelve a leer con el aviso «hito_cambio» y «Refrescar el borrador»',
+      le && le.args.p_documento === idA && /^[0-9a-f]{32}$/.test(le.args.p_visto) && F.docs[0].estado === 'borrador' && /ahora vale \$1,235\.00 y este borrador dice \$1,234\.57/.test(await texto(q, '#ct-fac-doc > .ct-aviso')) && (await q.locator('#ct-fac-doc [data-aviso="hito_cambio"]').count()) === 1 && (await q.locator('#ct-fac-doc [data-fac-refrescar]').count()) === 1, await texto(q, '#ct-fac-doc .ct-aviso'));
+    hA.monto = 123457;
+    n0 = llamadas.length;
+    await toca(q, '#ct-fac-doc [data-fac-refrescar]');
+    ok('…«Refrescar el borrador» llama a fn_emision_borrador solo con el documento y el aviso se va', JSON.stringify(ultima(n0, 'fn_emision_borrador').args) === JSON.stringify({ p: { documento: idA } }) && !(await q.locator('#ct-fac-doc [data-aviso="hito_cambio"]').count()));
+    // MX011 de verdad: los ajustes que salen en la factura cambian (otra pestaña) entre que se ve y se toca
+    await toca(q, '#ct-fac-doc [data-fac-emitir]');
+    await q.locator('#ct-fac-doc .ct-form [name="si"]').check();
+    F.config.terminos_texto = 'Balances past due accrue 1.5% per month.';
+    n0 = llamadas.length;
+    await q.locator('#ct-fac-doc .ct-form button[type="submit"]').click(); await pintado(q);
+    ok('MX011 · cambiaron los ajustes en otra pestaña: «El borrador ya no es el que viste…» y no se emitió nada; la vista previa ya trae los términos nuevos',
+      !!ultima(n0, 'fn_emision_emitir') && F.docs[0].estado === 'borrador' && /El borrador ya no es el que viste/.test(await texto(q, '#ct-fac-doc > .ct-aviso')) && /Balances past due accrue 1\.5% per month\./.test(await texto(q, '#ct-fac-previa')));
+    await toca(q, '#ct-fac-doc [data-fac-emitir]');
+    const visto = await q.evaluate(id => fetch('https://zeogjvwcmstmkwxjvykz.supabase.co/rest/v1/rpc/fn_emision_documento', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ p_documento: id }) }).then(r => r.json()).then(j => j.visto), idA);
+    await q.locator('#ct-fac-doc .ct-form [name="si"]').check();
+    n0 = llamadas.length;
+    await q.locator('#ct-fac-doc .ct-form button[type="submit"]').click(); await pintado(q);
+    const le2 = ultima(n0, 'fn_emision_emitir');
+    doc = docCard(q);
+    ok('Emitir · con la casilla: fn_emision_emitir(documento, el visto de lo que se ve, {}) y la factura queda emitida: MXP-…-0001, «emitida», el asiento y «Ahora, el PDF y mandarla»',
+      le2 && le2.args.p_visto === visto && JSON.stringify(le2.args.p_opciones) === '{}' && /MXP-\d{4}-0001/.test(await doc.locator('h2').textContent()) && /emitida/.test(await doc.locator('.ct-cab .ct-pill').textContent()) && /asiento 2026-000002/.test(await doc.textContent()) && /Ahora, el PDF y mandarla/.test(await doc.textContent()), le2 && JSON.stringify(le2.args));
+    ok('…lo que debe hoy en el libro ($1,111.11 y $123.46 de retención), «Todavía sin PDF», «Sin mandar», y el pago en línea por cuenta de banco (la tarjeta, apagada)',
+      /Debe hoy\s*\$1,111\.11/.test(await doc.locator('.ct-kpis').textContent()) && /\$123\.46 de retención/.test(await doc.locator('.ct-kpis').textContent()) && /Todavía sin PDF/.test(await doc.textContent()) && /Sin mandar todavía/.test(await doc.textContent()) && /Se paga en línea por cuenta de banco \(ACH\)/.test(await doc.textContent()) && /La tarjeta, apagada/.test(await doc.textContent()));
+    const congelado = await texto(q, '#ct-fac-previa .ct-fx');
+    ok('…y la vista es lo que recibió el cliente (el contenido congelado): «No. MXP-…-0001», ya sin DRAFT', /No\. MXP-\d{4}-0001/.test(congelado) && !/DRAFT/.test(congelado) && /Please reference invoice MXP-\d{4}-0001/.test(congelado), congelado.slice(0, 300));
+    await foto(q, 'c11-2-emitida');
+    // el PDF: con su enlace de pago (solo cuenta de banco)
+    n0 = llamadas.length;
+    await toca(q, '#ct-fac-doc [data-fac-pdf]');
+    const lp = ultima(n0, 'facturas:pdf');
+    doc = docCard(q);
+    ok('Hacer el PDF · llama a la función facturas («pdf» con el documento, con la sesión en aal2) y queda «PDF 1 · el que vale», con enlace de pago (solo cuenta de banco) por $1,111.11, y «ver el PDF»',
+      lp && JSON.stringify(lp.args) === JSON.stringify({ accion: 'pdf', documento: idA }) && /^Bearer /.test(lp.auth) && /PDF 1/.test(await doc.locator('#ct-fac-pdfs').textContent()) && /el que vale/.test(await doc.locator('#ct-fac-pdfs').textContent()) &&
+      /con enlace de pago \(solo cuenta de banco\) por \$1,111\.11/.test(await doc.locator('#ct-fac-pdfs').textContent()) && /token=prueba/.test(await doc.locator('.ct-fac-enlace').getAttribute('href')), lp && JSON.stringify(lp.args));
+    // Stripe no deja dejar el enlace solo por cuenta de banco: el error en llano y «Hacer el PDF sin enlace de pago»
+    F.fnFalla = { estado: 502, cuerpo: { codigo: 'STRIPE_ACH', error: 'Stripe no dejó el enlace solo por cuenta de banco (prueba): no se imprimió ningún enlace.' } };
+    await toca(q, '#ct-fac-doc [data-fac-pdf]');
+    ok('Stripe no deja el enlace solo por cuenta de banco · el error en llano y «Hacer el PDF sin enlace de pago»', /no se imprimió ningún enlace/.test(await texto(q, '#ct-fac-doc .ct-fac-res')) && (await q.locator('#ct-fac-doc [data-fac-sinenlace]').count()) === 1);
+    n0 = llamadas.length;
+    await toca(q, '#ct-fac-doc [data-fac-sinenlace]');
+    ok('…que pide el PDF con sin_enlace: true (PDF 2, «sin enlace de pago») y lo dice arriba', JSON.stringify(ultima(n0, 'facturas:pdf').args) === JSON.stringify({ accion: 'pdf', documento: idA, sin_enlace: true }) && /PDF 2/.test(await texto(q, '#ct-fac-pdfs')) && /sin enlace de pago/.test(await texto(q, '#ct-fac-pdfs')) && /lo pediste así/.test(await texto(q, '#ct-fac-doc')));
+    // mandar por correo
+    await toca(q, '#ct-fac-doc [data-fac-mandar]');
+    const fm = q.locator('#ct-fac-doc .ct-form');
+    ok('Mandar · la forma trae el correo del cliente, el asunto en inglés y dice que a Edgar le llega copia', (await fm.locator('[name="para"]').inputValue()) === 'zz.uno@c11-pruebas.invalid' && /^Invoice MXP-\d{4}-0001 from ZZ Electric C11 PRUEBA, Inc\.$/.test(await fm.locator('[name="asunto"]').inputValue()) && /A ti te llega copia/.test(await fm.textContent()));
+    await fm.locator('[name="mensaje"]').fill('The rough-in inspection passed today.');
+    n0 = llamadas.length;
+    await fm.locator('button[type="submit"]').click(); await pintado(q);
+    const lm = ultima(n0, 'facturas:enviar');
+    ok('…llama a la función facturas («enviar» con para, asunto y el mensaje) y el envío queda: «Correo a zz.uno@…» con la copia a Edgar y el id de Resend', lm && lm.args.para === 'zz.uno@c11-pruebas.invalid' && lm.args.mensaje === 'The rough-in inspection passed today.' &&
+      /Correo a zz\.uno@c11-pruebas\.invalid/.test(await texto(q, '#ct-fac-envios')) && /copia zz\.edgar@c11-pruebas\.invalid/.test(await texto(q, '#ct-fac-envios')) && /Resend re_c11_pantalla_1/.test(await texto(q, '#ct-fac-envios')) && /Reenviar por correo/.test(await texto(q, '#ct-fac-envios')), lm && JSON.stringify(lm.args));
+    // el correo sale y no se apunta: «Apuntar el envío» con su id de Resend
+    F.sinApuntar = true;
+    await toca(q, '#ct-fac-doc [data-fac-mandar]');
+    await q.locator('#ct-fac-doc .ct-form button[type="submit"]').click(); await pintado(q);
+    ok('El correo salió y no se apuntó · el error lo dice y ofrece «Apuntar el envío» (no se vuelve a mandar)', /no quedó apuntado/.test(await texto(q, '#ct-fac-doc .ct-fac-res')) && (await q.locator('#ct-fac-doc [data-fac-apuntar]').count()) === 1);
+    n0 = llamadas.length;
+    await toca(q, '#ct-fac-doc [data-fac-apuntar]');
+    const la = ultima(n0, 'fn_emision_envio');
+    ok('…«Apuntar el envío» llama a fn_emision_envio con el id de Resend que dio la función (medio correo) y sale «Reenvío»', la && la.args.p_envio.resend_id === 're_c11_pantalla_2' && la.args.p_envio.medio === 'correo' && /Reenvío a zz\.uno@/.test(await texto(q, '#ct-fac-envios')) && !desde(n0).some(l => l.fn === 'facturas:enviar'), la && JSON.stringify(la.args));
+    // en mano
+    await toca(q, '#ct-fac-doc [data-fac-mano]');
+    await q.locator('#ct-fac-doc .ct-form [name="para"]').fill('ZZ Recepción C11 PRUEBA');
+    n0 = llamadas.length;
+    await q.locator('#ct-fac-doc .ct-form button[type="submit"]').click(); await pintado(q);
+    ok('Entregada en mano · fn_emision_envio({medio: en_mano, para}) y sale «En mano a …»', JSON.stringify(ultima(n0, 'fn_emision_envio').args.p_envio) === JSON.stringify({ medio: 'en_mano', para: 'ZZ Recepción C11 PRUEBA' }) && /En mano a ZZ Recepción C11 PRUEBA/.test(await texto(q, '#ct-fac-envios')));
+    await foto(q, 'c11-3-pdf-y-envios');
+    // ya entró un pago de $100.00: el PDF nuevo trae un enlace que cobra lo que el libro debe hoy ($1,011.11), y la vista (como el
+    // PDF) dice en grande «Balance due today $1,011.11» —lo mismo que el enlace— y deja la factura como «Invoice amount due»
+    const dP = F.docs.find(d => d.id === idA); dP.saldoC -= 10000;
+    await toca(q, '#ct-fac-doc [data-fac-pdf]');
+    let fxP = await texto(q, '#ct-fac-previa .ct-fx');
+    ok('Un pago parcial y otro PDF · el enlace nuevo cobra $1,011.11 y la vista dice «Balance due today $1,011.11», «Invoice amount due $1,111.11» y «Pay $1,011.11 online…», sin otro «Amount due»',
+      /con enlace de pago \(solo cuenta de banco\) por \$1,011\.11/.test(await texto(q, '#ct-fac-pdfs')) && /Balance due today\s*\$1,011\.11/.test(fxP) && /Invoice amount due\s*\$1,111\.11/.test(fxP) && /Pay \$1,011\.11 online by bank transfer \(ACH\)/.test(fxP) &&
+      /payments already received are deducted/.test(fxP) && !/Amount due\s*\$/.test(fxP.replace(/Invoice amount due/g, '')), fxP.slice(-700));
+    await foto(q, 'c11-3b-saldo-de-hoy');
+    dP.saldoC += 10000;
+    await toca(q, '#ct-fac-doc [data-fac-pdf]');
+    fxP = await texto(q, '#ct-fac-previa .ct-fx');
+    ok('…y con el pago deshecho, el PDF de después vuelve a «Amount due $1,111.11» (enlace por lo mismo que la factura)', /Amount due\s*\$1,111\.11/.test(fxP) && !/Balance due today/.test(fxP), fxP.slice(-500));
+    // la lista
+    await ve(q, 'facturas', { sub: 'facturas' });
+    const filaA = q.locator(`.ct-fac-fila[data-doc="${idA}"]`);
+    ok('La lista · la emitida con su número, obra y cliente, «Hito «…»», monto $1,234.57 con su retención, a pagar $1,111.11, «debe $1,111.11», PDF y «mandada a …» (3 envíos)',
+      /MXP-\d{4}-0001/.test(await filaA.textContent()) && /C11 PRUEBA Oficina Uno · ZZ Cliente Uno/.test(await filaA.textContent()) && /\$1,234\.57/.test(await filaA.textContent()) && /retención \$123\.46/.test(await filaA.textContent()) &&
+      /debe \$1,111\.11/.test(await filaA.textContent()) && /PDF/.test(await filaA.locator('[data-col="PDF y envío"]').textContent()) && /\(3 envíos\)/.test(await filaA.textContent()), await filaA.textContent());
+    ok('…arriba la cuenta de la base (1 emitida · 0 borradores · la siguiente MXP-…-0002) y «Emitidas (1)»', /1 emitida · 0 borradores · la siguiente, MXP-\d{4}-0002/.test(await texto(q, '.ct-pag-sub')) && /Emitidas \(1\)/.test(await texto(q, '[data-fac-filtro="emitida"]')));
+
+    // ---- por porcentaje: el % del contrato; y la retención de la obra ----
+    await ve(q, 'facturas', { sub: 'obras' });
+    await q.locator('.ct-fac-obra[data-obra="c11-prueba-a"] [data-fac-pct]').click();
+    await q.locator('.ct-fac-obra[data-obra="c11-prueba-a"] .ct-form [name="porcentaje"]').fill('30');
+    n0 = llamadas.length;
+    await q.locator('.ct-fac-obra[data-obra="c11-prueba-a"] .ct-form button[type="submit"]').click(); await pintado(q);
+    doc = docCard(q);
+    ok('Por porcentaje · fn_emision_borrador({forma: porcentaje, proyecto_id, porcentaje: "30"}) y el borrador: 30 % del contrato ($18,500.55), $5,550.17 con su retención, y el aviso de la base que no frena (la obra tiene hitos)',
+      JSON.stringify(ultima(n0, 'fn_emision_borrador').args) === JSON.stringify({ p: { forma: 'porcentaje', proyecto_id: 'c11-prueba-a', porcentaje: '30' } }) && /30 % del contrato \(\$18,500\.55\)/.test(await doc.textContent()) && /\$5,550\.17/.test(await doc.locator('.ct-kpis').textContent()) &&
+      (await doc.locator('[data-aviso="obra_con_hitos"].warn').count()) === 1 && !(await doc.locator('[data-fac-emitir]').isDisabled()) && /Progress billing — 30% of contract amount \(\$18,500\.55\)/.test(await texto(q, '#ct-fac-previa')));
+    const idP = F.docs[F.docs.length - 1].id;
+    await toca(q, '#ct-fac-doc [data-fac-tirar]');
+    n0 = llamadas.length;
+    await q.locator('#ct-fac-doc .ct-form button[type="submit"]').click(); await pintado(q);
+    ok('Tirar el borrador · pregunta, llama a fn_emision_descartar y vuelve a la lista sin él', JSON.stringify(ultima(n0, 'fn_emision_descartar').args) === JSON.stringify({ p_documento: idP }) && (await q.locator('#ct-fac-lista').count()) === 1 && !F.docs.some(d => d.id === idP));
+    await ve(q, 'facturas', { sub: 'obras' });
+    await q.locator('.ct-fac-obra[data-obra="c11-prueba-c"] [data-fac-ret]').click();
+    await q.locator('.ct-fac-obra[data-obra="c11-prueba-c"] .ct-form [name="retencion_pct"]').fill('5');
+    n0 = llamadas.length;
+    await q.locator('.ct-fac-obra[data-obra="c11-prueba-c"] .ct-form button[type="submit"]').click(); await pintado(q);
+    ok('La retención de la obra · fn_emision_obra({proyecto_id, retencion_pct: "5", nota: null}) y la obra dice «5 % (la de la obra)»', JSON.stringify(ultima(n0, 'fn_emision_obra').args) === JSON.stringify({ p: { proyecto_id: 'c11-prueba-c', retencion_pct: '5', nota: null } }) && /Retención: 5 %/.test(await texto(q, '.ct-fac-obra[data-obra="c11-prueba-c"] .ct-fac-ret')));
+
+    // ---- T&M: dos líneas, una en español (la base lo frena hasta confirmarlo) ----
+    await q.locator('.ct-fac-obra[data-obra="c11-prueba-b"] [data-fac-tm]').click();
+    const ft = q.locator('.ct-fac-obra[data-obra="c11-prueba-b"] .ct-form form');
+    await ft.locator('.ct-fac-linea').first().locator('[name="descripcion"]').fill('Electrician labor');
+    await ft.locator('.ct-fac-linea').first().locator('[name="cantidad"]').fill('8');
+    await ft.locator('.ct-fac-linea').first().locator('[name="precio"]').fill('$85.00');
+    await ft.locator('[data-otra-linea]').click();
+    const l2 = ft.locator('.ct-fac-linea').nth(1);
+    await l2.locator('[name="descripcion"]').fill('Materiales de la obra'); await l2.locator('[name="tipo"]').selectOption('material'); await l2.locator('[name="cantidad"]').fill('1'); await l2.locator('[name="precio"]').fill('412.37');
+    n0 = llamadas.length;
+    await ft.locator('button[type="submit"]').click(); await pintado(q);
+    lb = ultima(n0, 'fn_emision_borrador');
+    doc = docCard(q);
+    ok('T&M · las líneas van como TEXTO, sin «$» (la base valida y calcula): 8 hr × 85.00 y 1 × 412.37; el borrador suma $1,092.37 (lo dice la base)',
+      lb && JSON.stringify(lb.args.p.lineas) === JSON.stringify([{ descripcion: 'Electrician labor', tipo: 'horas', cantidad: '8', precio: '85.00', unidad: 'hr' }, { descripcion: 'Materiales de la obra', tipo: 'material', cantidad: '1', precio: '412.37' }]) && /\$1,092\.37/.test(await doc.locator('.ct-kpis').textContent()), lb && JSON.stringify(lb.args));
+    ok('…la vista previa T&M en inglés (QTY / RATE / AMOUNT: «8 hr», $85.00, $680.00) y «Time & materials»', /Time & materials/.test(await texto(q, '#ct-fac-previa')) && /8 hr/.test(await texto(q, '#ct-fac-previa .ct-fx-lineas')) && /\$85\.00/.test(await texto(q, '#ct-fac-previa .ct-fx-lineas')) && /\$680\.00/.test(await texto(q, '#ct-fac-previa .ct-fx-lineas')));
+    ok('…el texto que parece español frena con el aviso de la base, pero «Emitir» se deja tocar para confirmarlo', (await doc.locator('[data-aviso="en_espanol"].bad').count()) === 1 && !(await doc.locator('[data-fac-emitir]').isDisabled()));
+    await foto(q, 'c11-4-tm-espanol');
+    await toca(q, '#ct-fac-doc [data-fac-emitir]');
+    ok('…y la confirmación pide además «Lo que parece español está bien así»', (await q.locator('#ct-fac-doc .ct-form [name="idioma"]').count()) === 1);
+    await q.locator('#ct-fac-doc .ct-form [name="si"]').check(); await q.locator('#ct-fac-doc .ct-form [name="idioma"]').check();
+    n0 = llamadas.length;
+    await q.locator('#ct-fac-doc .ct-form button[type="submit"]').click(); await pintado(q);
+    ok('…con las dos casillas: p_opciones = {idioma_revisado: true} y se emite la MXP-…-0002', JSON.stringify(ultima(n0, 'fn_emision_emitir').args.p_opciones) === '{"idioma_revisado":true}' && /MXP-\d{4}-0002/.test(await texto(q, '#ct-fac-doc h2')));
+    const idT = F.docs.find(d => d.forma === 'tm').id;
+    await toca(q, '#ct-fac-doc [data-fac-pdf]');
+
+    // ---- anular con nota de crédito, y desactivar su enlace ----
+    await toca(q, '#ct-fac-doc [data-fac-anular]');
+    n0 = llamadas.length;
+    await q.locator('#ct-fac-doc .ct-form [name="motivo"]').fill('x');
+    await q.locator('#ct-fac-doc .ct-form button[type="submit"]').click(); await q.waitForTimeout(150);
+    ok('Anular · dice que no se borra (nota de crédito) y pide el motivo (tres letras)', /no se borra; se hace su nota de crédito/.test(await texto(q, '#ct-fac-doc .ct-form')) && /al menos tres letras/.test(await texto(q, '#ct-fac-doc .ct-form')) && !ultima(n0, 'fn_emision_anular'));
+    await q.locator('#ct-fac-doc .ct-form [name="motivo"]').fill('ZZ prueba: se facturó a la obra equivocada');
+    await q.locator('#ct-fac-doc .ct-form button[type="submit"]').click(); await pintado(q);
+    doc = docCard(q);
+    ok('…fn_emision_anular(documento, motivo, null) y la factura sale «anulada» con su nota de crédito, su motivo y lo que sigue (avisar al cliente; la buena, con número nuevo)',
+      JSON.stringify(ultima(n0, 'fn_emision_anular').args) === JSON.stringify({ p_documento: idT, p_motivo: 'ZZ prueba: se facturó a la obra equivocada', p_fecha: null }) && /anulada/.test(await doc.locator('.ct-cab .ct-pill').textContent()) &&
+      /nota de crédito NC-2026-0001/.test(await doc.textContent()) && /se facturó a la obra equivocada/.test(await doc.textContent()) && /La buena es un borrador nuevo, con número nuevo/.test(await doc.textContent()) && !(await doc.locator('[data-fac-pdf], [data-fac-mandar], [data-fac-anular]').count()));
+    ok('…su enlace de pago seguía activo: lo dice y ofrece «Desactivar el enlace»', (await doc.locator('[data-fac-baja]').count()) === 1);
+    n0 = llamadas.length;
+    await toca(q, '#ct-fac-doc [data-fac-baja]');
+    const ld = ultima(n0, 'stripe:desactivar_enlace');
+    ok('…que llama a la función stripe (desactivar_enlace con el enlace y el motivo) y desaparece', ld && ld.args.enlace === F.enlaces.find(e => e.doc === idT).id && /se anuló/.test(ld.args.motivo) && !(await q.locator('#ct-fac-doc [data-fac-baja]').count()), ld && JSON.stringify(ld.args));
+    await foto(q, 'c11-5-anulada');
+
+    // ---- la del contratista desde la ficha (el contrato de MXP_CONTA.facturar): el borrador de su hito, con su aviso ----
+    await q.evaluate(() => window.MXP_CONTA.facturar({ hito: -1110000005, proyecto: 'c11-prueba-c', obra: 'C11 PRUEBA Nave Tres' }));
+    n0 = llamadas.length;
+    await ve(q, 'facturas');
+    ok('MXP_CONTA.facturar({hito}) + ir("facturas") (lo que hace el 🧾 desde el corte) abre el borrador de ese hito, a nombre del contratista y con su retención (5 %)', JSON.stringify(ultima(n0, 'fn_emision_borrador').args) === JSON.stringify({ p: { forma: 'hito', hito_id: -1110000005 } }) &&
+      /C11 PRUEBA Nave Tres/.test(await texto(q, '#ct-fac-doc h2')) && /ZZ Contractor C11 PRUEBA, LLC \(el contratista\)/.test(await texto(q, '#ct-fac-doc')) && /5 % · la de la obra/.test(await texto(q, '#ct-fac-doc .ct-kpis')) && /Attn: ZZ Project Manager/.test(await texto(q, '#ct-fac-previa')));
+    const idC = F.docs.find(d => d.hito_id === -1110000005).id;
+    await q.evaluate(() => window.MXP_CONTA.facturar({ hito: -1110000005 }));
+    await ve(q, 'facturas');
+    ok('…otra vez el mismo hito: el MISMO borrador (la base no hace otro)', F.docs.filter(d => d.hito_id === -1110000005).length === 1 && (await q.locator('#ct-fac-doc').getAttribute('data-doc')) === idC);
+    await q.evaluate(() => window.MXP_CONTA.facturar({ hito: -1110000001 }));
+    await ve(q, 'facturas');
+    ok('…un hito que ya se facturó: no se prepara nada y lo dice la base («ya se facturó: factura MXP-…-0001»), con «Ver la obra»', /ya se facturó: factura MXP-\d{4}-0001/.test(await texto(q, '#ct-fac-pedido')) && (await q.locator('#ct-fac-a-obras').count()) === 1);
+
+    // ---- el rojo del control y sin la función ----
+    F.ctlRojo = true;
+    await ve(q, 'facturas');
+    ok('Falla ruidosa · un cuadre del control en rojo: la página no pinta ninguna cifra y dice cuál y por qué', /La facturación no cuadra/.test(await texto(q, '#ct-fac-cuerpo .ct-rojo h2')) && /su asiento lleva \$1,111\.11 por cobrar/.test(await texto(q, '#ct-fac-cuerpo .ct-rojo')) && !(await q.locator('#ct-fac-lista').count()));
+    F.ctlRojo = false; F.avisoSinPdf = true;
+    await ve(q, 'facturas', { sub: 'facturas' });
+    ok('…un aviso del control (sin PDF) sale arriba, en ámbar, y la lista se pinta igual', /ninguna emitida hace más de 2 día\(s\) sin su PDF/i.test(await texto(q, '#ct-fac-arriba')) && (await q.locator('#ct-fac-lista').count()) === 1);
+    F.avisoSinPdf = false;
+    estado.c11Fn = false;
+    await ve(q, 'facturas', { doc: idA });
+    await toca(q, '#ct-fac-doc [data-fac-pdf]');
+    ok('Sin la función «facturas» desplegada · lo dice en llano (y que se puede entregar en mano)', /no está desplegada/.test(await texto(q, '#ct-fac-doc .ct-fac-res')) && /en mano/.test(await texto(q, '#ct-fac-doc .ct-fac-res')));
+    estado.c11Fn = true;
+    await cx.close();
+
+    // ---- sin el código del teléfono: se ve todo, pero emitir, el PDF, mandar y anular lo piden ----
+    ({ cx, q } = await abrirCtx(1280, false));
+    const bS = C11_FN.fn_emision_borrador({ p: { forma: 'hito', hito_id: -1110000002 } });
+    await ve(q, 'facturas', { doc: bS.documento.id });
+    await toca(q, '#ct-fac-doc [data-fac-emitir]');
+    ok('Sin el código del teléfono · el borrador se ve, pero «Emitir» lo pide (no abre la confirmación)', /pide el código del teléfono/.test(await texto(q, '#ct-fac-doc .ct-form')) && !(await q.locator('#ct-fac-doc .ct-form [name="si"]').count()));
+    n0 = llamadas.length;
+    await ve(q, 'facturas', { doc: idA });
+    await toca(q, '#ct-fac-doc [data-fac-pdf]');
+    ok('…y el PDF tampoco llama a la función: lo dice', /activa el código del teléfono/.test(await texto(q, '#ct-fac-doc .ct-fac-res')) && !desde(n0).some(l => /^facturas:/.test(l.fn)));
+    await cx.close();
+
+    // ---- el 🧾 de un hito en la ficha de la obra (js/app.js): antes del corte, a QuickBooks; desde el corte, aquí ----
+    estado.c11App = true;
+    for (const [corte, va] of [['2027-01-01', 'qb'], [HOY, 'app']]) {
+      F.config.corte = corte;
+      ({ cx, q } = await abrirCtx(390, true));
+      await q.evaluate(() => { window.confirm = () => true; });
+      n0 = llamadas.length;
+      // la ficha de la obra (la de la app: proyectos e hitos de la base de mentira): Proyectos → la obra → «Abrir la ficha completa» → su pestaña de dinero
+      await q.locator('#nav-abajo [data-nav="proyectos"]').evaluate(x => x.click()); await q.waitForTimeout(400);
+      await q.locator('#proy-chips .chipb[data-obra="c11-prueba-a"]').evaluate(x => x.click()).catch(() => {}); await q.waitForTimeout(300);
+      await q.locator('#proy-ficha').evaluate(x => x.click()).catch(() => {}); await q.waitForTimeout(400);
+      const btn = q.locator('#detalle .hito-facturar[data-hito="-1110000002"]');
+      if (!(await btn.count())) { await q.locator('#detalle .ficha-tab[data-pestana="dinero"]').evaluate(x => x.click()).catch(() => {}); await q.waitForTimeout(300); }
+      if (!(await btn.count())) { ok(`El 🧾 de la ficha (${va === 'qb' ? 'antes' : 'desde'} del corte) · la prueba no llegó al hito en la ficha de la obra`, false, await q.evaluate(() => (document.querySelector('#detalle') || {}).textContent || '').then(t => t.slice(0, 300))); await cx.close(); continue; }
+      await btn.evaluate(x => x.click()); await q.waitForTimeout(500);
+      // (QuickBooks pregunta antes de crear la factura: se acepta la ventana de la app)
+      if (va === 'qb') { await q.locator('dialog[open] button[value="si"]').click({ timeout: 3000 }).catch(() => {}); await q.waitForTimeout(800); }
+      if (va === 'qb') {
+        ok('El 🧾 de la ficha antes del corte · lee el camino (v_emision_estado) y va a QuickBooks como siempre (la función qb), sin abrir Contabilidad', lecturas.some(l => l.startsWith('v_emision_estado?select=camino')) && desde(n0).some(l => l.fn === 'qb:factura') && !desde(n0).some(l => l.fn === 'fn_emision_borrador'), desde(n0).map(l => l.fn).join(','));
+      } else {
+        await pintado(q);
+        ok('El 🧾 de la ficha desde el corte · no llama a qb: abre Contabilidad → Facturas con el borrador de ese hito (fn_emision_borrador con su hito_id)', !desde(n0).some(l => l.fn === 'qb:factura') && JSON.stringify((ultima(n0, 'fn_emision_borrador') || {}).args) === JSON.stringify({ p: { forma: 'hito', hito_id: -1110000002 } }) &&
+          (await q.locator('#ct-fac-doc').count()) === 1 && /C11 PRUEBA Trim-out/.test(await texto(q, '#ct-fac-doc')), desde(n0).map(l => l.fn).join(','));
+      }
+      await cx.close();
+    }
+    // ---- el 🧾 ANTE LA DUDA: la base no contesta bien (un 500 en v_emision_estado). Sin un corte ya visto en este teléfono,
+    // no se factura (ni QuickBooks ni la app); con un corte visto que todavía no llega, QuickBooks como siempre; con uno visto
+    // que ya pasó, tampoco se factura. Y sin c11 (la vista no existe, 404), QuickBooks como antes de pegarla ----
+    {
+      ({ cx, q } = await abrirCtx(390, true));
+      await q.evaluate(() => { window.confirm = () => true; });
+      const tocar = async () => {
+        await q.evaluate(() => { const t = document.getElementById('toast'); if (t) { t.textContent = ''; t.hidden = true; } });
+        await q.locator('#nav-abajo [data-nav="proyectos"]').evaluate(x => x.click()); await q.waitForTimeout(400);
+        await q.locator('#proy-chips .chipb[data-obra="c11-prueba-a"]').evaluate(x => x.click()).catch(() => {}); await q.waitForTimeout(300);
+        await q.locator('#proy-ficha').evaluate(x => x.click()).catch(() => {}); await q.waitForTimeout(400);
+        const btn = q.locator('#detalle .hito-facturar[data-hito="-1110000002"]');
+        if (!(await btn.count())) { await q.locator('#detalle .ficha-tab[data-pestana="dinero"]').evaluate(x => x.click()).catch(() => {}); await q.waitForTimeout(300); }
+        if (!(await btn.count())) return null;
+        await btn.evaluate(x => x.click()); await q.waitForTimeout(500);
+        await q.locator('dialog[open] button[value="si"]').click({ timeout: 1500 }).catch(() => {}); await q.waitForTimeout(600);
+        return await q.evaluate(() => { const t = document.getElementById('toast'); return t && !t.hidden ? t.textContent : ''; });
+      };
+      const corteVisto = () => q.evaluate(() => { try { return localStorage.getItem('mxp_factura_corte'); } catch { return 'sin almacenamiento'; } });
+      const fue = () => { const d = desde(n0); return d.some(l => l.fn === 'qb:factura') ? 'qb' : d.some(l => l.fn === 'fn_emision_borrador') ? 'app' : 'nada'; };
+      estado.c11EstadoFalla = true; F.config.corte = '2027-01-01'; n0 = llamadas.length;
+      let t = await tocar();
+      ok('El 🧾 ante la duda · v_emision_estado contesta 500 y este teléfono no ha visto ningún corte: no se factura (ni QuickBooks ni la app) y lo dice', t !== null && fue() === 'nada' && /no se facturó nada/.test(t) && (await corteVisto()) === null, `${fue()} · ${t}`);
+      estado.c11EstadoFalla = false; n0 = llamadas.length;
+      t = await tocar();
+      ok('…la base contesta: antes del corte va a QuickBooks y el teléfono apunta el corte que vio (2027-01-01)', fue() === 'qb' && (await corteVisto()) === '2027-01-01', `${fue()} · ${await corteVisto()}`);
+      estado.c11EstadoFalla = true; n0 = llamadas.length;
+      t = await tocar();
+      ok('…otro 500 con el corte visto todavía por llegar: QuickBooks como siempre (antes del corte no hay duda)', fue() === 'qb', `${fue()} · ${t}`);
+      estado.c11EstadoFalla = false; F.config.corte = HOY; n0 = llamadas.length;
+      t = await tocar();
+      await pintado(q);
+      ok('…el corte movido a hoy: el 🧾 abre el borrador en Contabilidad y el teléfono apunta el corte nuevo', fue() === 'app' && (await corteVisto()) === HOY, `${fue()} · ${await corteVisto()}`);
+      estado.c11EstadoFalla = true; n0 = llamadas.length;
+      t = await tocar();
+      ok('…otro 500 con el corte visto ya pasado: NO va a QuickBooks (quedaría fuera de la serie): no se factura y lo dice', fue() === 'nada' && /no se facturó nada/.test(t), `${fue()} · ${t}`);
+      estado.c11EstadoFalla = false; estado.c11 = false; n0 = llamadas.length;
+      t = await tocar();
+      ok('…sin c11 en la base (la vista no existe: 404): QuickBooks, como antes de pegarla', fue() === 'qb', `${fue()} · ${t}`);
+      estado.c11 = true;
+      await cx.close();
+    }
+    estado.c11App = false;
+
+    // ---- el teléfono (390), el iPad (820) y la computadora (1280): sin desplazamiento lateral ----
+    for (const w of [390, 820, 1280]) {
+      ({ cx, q } = await abrirCtx(w, true));
+      const mal = [];
+      const mide = async nombre => { const m = await q.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth, rojo: !!document.querySelector('#conta-raiz .ct-rojo') })); if (m.sw > m.iw + 1 || m.rojo) mal.push(`${nombre}: ${m.sw} > ${m.iw}${m.rojo ? ' (rojo)' : ''}`); await foto(q, `c11-${w}-${nombre}`); };
+      await ve(q, 'facturas', { sub: 'facturas' }); await mide('lista');
+      await ve(q, 'facturas', { sub: 'obras' }); await mide('obras');
+      await q.locator('.ct-fac-obra[data-obra="c11-prueba-b"] [data-fac-tm]').click(); await q.waitForTimeout(150); await mide('obras-tm');
+      await ve(q, 'facturas', { sub: 'ajustes' }); await mide('ajustes');
+      await ve(q, 'facturas', { doc: F.docs.find(d => d.estado === 'borrador').id }); await mide('borrador');
+      await ve(q, 'facturas', { doc: idA }); await mide('emitida');
+      await toca(q, '#ct-fac-doc [data-fac-mandar]'); await mide('mandar');
+      await ve(q, 'facturas', { doc: idT }); await mide('anulada');
+      if (w === 390) {
+        const fx = await q.evaluate(() => { const a = document.querySelector('#ct-fac-previa .ct-fx'), r = a.getBoundingClientRect(); return { der: Math.round(r.right), iw: window.innerWidth, sw: a.scrollWidth, cw: a.clientWidth }; });
+        ok('Teléfono · la factura en inglés cabe en 390 px (las tres cajas apiladas, la tabla sin salirse)', fx.der <= fx.iw && fx.sw <= fx.cw + 1, JSON.stringify(fx));
+        const tv = await q.evaluate(() => { const t = document.querySelector('.ct-tabs'), a = t.querySelector('.ct-tab[aria-current="page"]'), T = t.getBoundingClientRect(), A = a.getBoundingClientRect(); return { pag: a.dataset.pag, izq: Math.round(A.left - T.left), der: Math.round(T.right - A.right) }; });
+        ok('Teléfono · la pestaña «Facturas» se ve entera dentro de la tira de pestañas', tv.pag === 'facturas' && tv.izq >= 14 && tv.der >= 14, JSON.stringify(tv));
+      }
+      ok(`Facturas · ${w} px: la lista, por facturar (con la forma T&M), ajustes, el borrador, la emitida (y mandar) y la anulada, sin desplazamiento lateral ni rojos`, !mal.length, mal.join(' | '));
+      await cx.close();
+    }
+
+    // ---- sin c11: lo dice en llano ----
+    estado.c11 = false;
+    ({ cx, q } = await abrirCtx(1280, true));
+    await ve(q, 'facturas');
+    ok('Sin c11 · «Facturas» dice en llano que falta c11-emision.sql (y que hasta entonces se factura por QuickBooks), con «Reintentar»', /Falta la facturación en la base/.test(await texto(q, '#ct-fac-cuerpo .ct-rojo h2')) && /c11-emision\.sql/.test(await texto(q, '#ct-fac-cuerpo .ct-rojo')) && /QuickBooks/.test(await texto(q, '#ct-fac-cuerpo .ct-rojo')) && (await q.locator('#ct-reintentar').count()) === 1);
+    await cx.close();
+    conCodigo(false);
+  }
+
+  // ---- El WIP (c12, fase 10): la página «WIP» (el mes que toca y lo que le falta, lo de antes del libro de la obra que ya
+  // andaba —el desglose de dónde sale cada número, confirmarlo—, revisar cada obra —un monto mal escrito, la nota que pide la
+  // base, el número nuevo—, el resumen con los totales de la base, el schedule con su total, POSTEAR con el código del teléfono
+  // diciendo qué va por obra y que se deshace solo el día 1, «ya no está al día» y rehacerlo, deshacer con su motivo, otro mes
+  // con «Sigue igual» en un toque, la propuesta que cambió en otra pestaña (MX008), terminada, la obra pasada de su estimado, un
+  // mes cerrado que solo se lee), «Obras» (cuáles llevan WIP, la marca con su nota, lo de antes con otros números), «Historial»,
+  // «Ajustes» (desde qué mes lo exige el cierre), la misma revisión dentro de «Cierre del mes» (las filas 174 a 177 en su
+  // lista con su botón al WIP del mes, revisar y postear desde ahí), la falla ruidosa (un cuadre en rojo; el resumen y el
+  // schedule contando distinto), sin c12, el equipo (42501), sin el código del teléfono, y 390/820/1280 sin desplazamiento lateral ----
+  {
+    estado.c12 = true; estado.c12NoDueno = false; wReset();
+    const conCodigo = si => { estado.mfaFactores = si ? [{ id: 'f-1', friendly_name: 'Teléfono de Edgar', factor_type: 'totp', status: 'verified' }] : []; estado.sesionAal = si ? 'aal2' : undefined; };
+    const abrirCtx = async (w, codigo) => {
+      conCodigo(codigo);
+      const cx = await b.newContext({ viewport: { width: w, height: w < 700 ? 844 : 1000 }, deviceScaleFactor: w < 1024 ? 2 : 1, isMobile: w < 1024, hasTouch: w < 1024, serviceWorkers: 'block' });
+      await simular(cx, 'dueno');
+      const q = await cx.newPage(); q.on('pageerror', e => errs.push(`c12 ${w}: ` + String(e).slice(0, 160)));
+      await q.goto('http://localhost:8873/index.html'); await q.waitForSelector('#vista-app:not([hidden])', { timeout: 15000 }); await q.waitForTimeout(800);
+      await q.evaluate(() => document.querySelectorAll('dialog[open]').forEach(d => d.close()));
+      await q.locator('#btn-conta').evaluate(x => x.click()); await q.waitForSelector('#conta-raiz .ct-ficha', { timeout: 8000 }); await pintado(q);
+      return { cx, q };
+    };
+    const ve = async (q, k, op) => { await q.evaluate(([k, o]) => window.MXP_CONTA.ir(k, o || {}), [k, op || null]); await pintado(q); };
+    const ultima = (n0, fn) => desde(n0).filter(l => l.fn === fn).pop();
+    const toca = async (q, sel) => { await q.locator(sel).first().evaluate(x => x.click()); await pintado(q); };
+    const ob = (q, id) => q.locator(`#ct-wip-rev [data-wip-obra="${id}"]`);
+    // el texto como se lee (innerText: las celdas y los bloques separados; lo plegado no cuenta), en una línea
+    const txt = async loc => (await loc.evaluateAll(es => es.map(x => x.innerText).join(' '))).replace(/\s+/g, ' ').trim();
+    const enviar = async (q, form) => { await form.locator('button[type="submit"]').evaluate(x => x.click()); await pintado(q); };
+    let { cx, q } = await abrirCtx(1280, true);
+
+    // ---- el mes que toca, sin nada revisado ----
+    let n0 = llamadas.length;
+    await ve(q, 'wip');
+    let r0 = ultima(n0, 'fn_wip_resumen'), c0 = ultima(n0, 'fn_wip_control');
+    ok('WIP · está en el menú entre «Costo por obra» y «Cierre del mes» (pestaña y lateral) y la página pide fn_wip_resumen sin mes (el que toca), v_wip_schedule FILTRADA por ese mes y fn_wip_control del mes antes de pintar',
+      /"obras","wip","cierre"/.test(JSON.stringify(await q.locator('.ct-tab').evaluateAll(bs => bs.map(x => x.dataset.pag)))) && (await q.locator('#lateral [data-lat="conta-wip"]').count()) === 1 && (await titulo2(q)) === 'WIP (obra en curso)' &&
+      r0 && JSON.stringify(r0.args) === '{"p_periodo":null}' && lecturas.some(l => /^v_wip_schedule\?select=\*&periodo=eq\.2026-10/.test(l)) && c0 && JSON.stringify(c0.args) === '{"p_periodo":"2026-10"}', r0 && JSON.stringify(r0.args));
+    let res = await txt(q.locator('#ct-wip-res'));
+    ok('El mes que toca (Octubre de 2026): en llano cuántas obras y qué les falta, la nota de la base, «nada que postear», desde qué mes lo exige el cierre, y sin cifras (ninguna obra lista)',
+      /Octubre de 2026/.test(res) && /4 obras de precio fijo en el WIP: 4 por revisar, 1 sin lo de antes confirmado\. El cierre lo exige desde noviembre de 2026\./.test(res) && /4 obra\(s\) no entran todavía: 4 por revisar y 1 sin lo de antes del libro confirmado\./.test(res) &&
+      /nada que postear/.test(res) && /En octubre de 2026 hoy no hay nada que ajustar\./.test(res) && (await q.locator('#ct-wip-res .ct-kpi').count()) === 0 && /Ninguna obra lista todavía/.test(res), res);
+    let tA = await txt(ob(q, 'c12-prueba-a')), tD = await txt(ob(q, 'c12-prueba-d'));
+    ok('La revisión de octubre: las 4 obras de precio fijo (la de servicio no sale), cada una con lo que lleva gastado y lo que le falta; sin propuesta, «Poner su costo estimado» con la nota de la base; la que ya andaba, «Lo de antes del libro» con su porqué',
+      (await q.locator('#ct-wip-rev [data-wip-obra]').count()) === 4 && !(await q.locator('[data-wip-obra="c12-prueba-s"]').count()) && /Lleva \$3,000\.00 en el libro · sin costo estimado todavía/.test(tA) && /falta revisar/.test(tA) &&
+      (await ob(q, 'c12-prueba-a').locator('[data-wip-otro]').textContent()) === 'Poner su costo estimado' && /Sin propuesta\. No hay estimado: faltan las horas estimadas y el presupuesto de material\./.test(tA) &&
+      (await ob(q, 'c12-prueba-d').locator('[data-wip-antes]').count()) === 1 && /Lleva \$320\.00 en el libro y lo de antes del libro, sin confirmar/.test(tD) && /falta revisar · falta lo de antes/.test(tD) &&
+      /Ya andaba antes del libro \(tiene de antes: facturas, horas, tickets\): falta confirmar su costo y lo facturado de antes; hasta entonces no entra en el ajuste\./.test(tD), tA + ' || ' + tD);
+    ok('…y los avisos de la base que no frenan van abajo (la obra que ya andaba sin lo de antes)', /Obras que ya andaban sin lo de antes confirmado: 1 obra\(s\) ya andaban antes del libro/.test(await txt(q.locator('#ct-wip-avisos'))));
+    await foto(q, 'c12-0-mes-sin-revisar');
+
+    // ---- lo de antes del libro de D: el desglose y confirmarlo ----
+    n0 = llamadas.length;
+    await ob(q, 'c12-prueba-d').locator('[data-wip-antes]').click(); await q.waitForSelector('[data-wip-obra="c12-prueba-d"] .ct-wip-antes', { timeout: 5000 });
+    const ant = await txt(ob(q, 'c12-prueba-d').locator('.ct-wip-antes'));
+    ok('Lo de antes del libro · fn_wip_antes_propuesta({p_proyecto}) y de dónde sale cada número: 1 ticket $310.00, 0 trabajos externos, 16 h a la tarifa de hoy $420.00 → costo $730.00; 1 factura $1,500.00 → facturado $1,500.00; con las notas de la base',
+      JSON.stringify((ultima(n0, 'fn_wip_antes_propuesta') || {}).args) === '{"p_proyecto":"c12-prueba-d"}' && /hasta el 30 sep 2026 \(el libro empieza el 1 oct 2026\)/.test(ant) && /Tickets · 1 ticket \$310\.00/.test(ant) && /Trabajos externos · 0 \$0\.00/.test(ant) &&
+      /Horas de la cuadrilla · 16 h a la tarifa de hoy \$420\.00/.test(ant) && /Costo de antes \$730\.00/.test(ant) && /Facturas · 1 factura \$1,500\.00/.test(ant) && /Facturado antes \$1,500\.00/.test(ant) &&
+      /tarifa de HOY de «Costos del equipo»/.test(ant) && /QuickBooks al 30 de septiembre/.test(ant) && /Confirmar: costo \$730\.00 y facturado \$1,500\.00/.test(ant), ant);
+    await foto(q, 'c12-1-lo-de-antes');
+    await ob(q, 'c12-prueba-d').locator('[data-antes-si]').click(); await pintado(q);
+    let la = ultima(n0, 'fn_wip_antes');
+    tD = await txt(ob(q, 'c12-prueba-d'));
+    ok('…«Confirmar» manda los números de la propuesta como texto: fn_wip_antes({p_proyecto, p: {costo: "730.00", facturado: "1500.00"}}); arriba la nota de la base, y D ya solo pide su revisión (lleva $320.00 en el libro y $730.00 de antes)',
+      la && JSON.stringify(la.args) === JSON.stringify({ p_proyecto: 'c12-prueba-d', p: { costo: '730.00', facturado: '1500.00' } }) && /Confirmado lo de antes del libro de «C12 PRUEBA Obra D»: costo \$730\.00 y facturado \$1,500\.00\./.test(await txt(q.locator('.ct-wip-nota'))) &&
+      !(await ob(q, 'c12-prueba-d').locator('[data-wip-antes]').count()) && /Lleva \$320\.00 en el libro y \$730\.00 de antes del libro/.test(tD), la && JSON.stringify(la.args));
+
+    // ---- revisar A: un monto mal escrito, menos de lo que lleva sin nota (la base), y su número ----
+    await ob(q, 'c12-prueba-a').locator('[data-wip-otro]').click();
+    let fA = ob(q, 'c12-prueba-a').locator('.ct-form form');
+    await fA.locator('[name="costo"]').fill('abc'); await fA.locator('button[type="submit"]').click(); await q.waitForTimeout(150);
+    ok('Revisar · la forma pide el costo TOTAL estimado (desde el inicio hasta terminarla); un monto mal escrito no se manda', !ultima(n0, 'fn_wip_revisar') && /costo TOTAL estimado de «C12 PRUEBA Obra A» en octubre de 2026/.test(await txt(fA)) &&
+      /con dos decimales como mucho/.test(await txt(ob(q, 'c12-prueba-a').locator('.ct-form'))));
+    await fA.locator('[name="costo"]').fill('2,500'); await enviar(q, fA);
+    let lr = ultima(n0, 'fn_wip_revisar');
+    ok('…menos de lo que ya lleva y sin nota: lo manda como texto («2500») y la base lo frena (22023) con su texto, sin revisar nada',
+      lr && JSON.stringify(lr.args) === JSON.stringify({ p_proyecto: 'c12-prueba-a', p_periodo: '2026-10', p: { costo_estimado: '2500' } }) && !W.rev.length &&
+      /El costo estimado \(\$2,500\.00\) es menor que lo que «C12 PRUEBA Obra A» ya lleva al 31-oct-2026 \(\$3,000\.00\): daría 120 % de avance\. Súbelo, o deja escrito por qué en la nota\./.test(await txt(ob(q, 'c12-prueba-a').locator('.ct-form'))), lr && JSON.stringify(lr.args));
+    await fA.locator('[name="costo"]').fill('6,000.00'); await enviar(q, fA);
+    lr = ultima(n0, 'fn_wip_revisar'); tA = await txt(ob(q, 'c12-prueba-a'));
+    ok('…con $6,000.00: fn_wip_revisar({p_proyecto, p_periodo: "2026-10", p: {costo_estimado: "6000.00"}}) y A queda revisada: lleva $3,000.00 · costo total estimado $6,000.00 · 50 % hecho; ganado $5,000.00, facturado $2,000.00 → vas $3,000.00 por detrás',
+      lr && JSON.stringify(lr.args) === JSON.stringify({ p_proyecto: 'c12-prueba-a', p_periodo: '2026-10', p: { costo_estimado: '6000.00' } }) && /revisada/.test(tA) && /Lleva \$3,000\.00 gastados · costo total estimado \$6,000\.00 · 50 % hecho/.test(tA) &&
+      /Precio \$10,000\.00 · ganado \$5,000\.00 · facturado \$2,000\.00 → vas \$3,000\.00 por detrás: hecho y todavía sin facturar/.test(tA) && /un número a mano/.test(tA) && (await ob(q, 'c12-prueba-a').locator('[data-wip-otro]').textContent()) === 'Cambiar la revisión', tA);
+    const revisa = async (id, costo, nota) => { await ob(q, id).locator('[data-wip-otro]').click(); const f = ob(q, id).locator('.ct-form form'); await f.locator('[name="costo"]').fill(costo); if (nota) await f.locator('[name="nota"]').fill(nota); await enviar(q, f); };
+    await revisa('c12-prueba-b', '10000', 'ZZ: el bid'); await revisa('c12-prueba-c', '11000', 'ZZ: subió el material'); await revisa('c12-prueba-d', '12000', 'ZZ: estimado de prueba');
+    const tC = await txt(ob(q, 'c12-prueba-c'));
+    ok('B, C y D revisadas con su nota · C (costo estimado sobre el precio) se marca «con pérdida» con el aviso de la base; B «vas $4,000.00 por delante»',
+      W.rev.length === 4 && /con pérdida/.test(tC) && /Va con pérdida: el costo estimado \(\$11,000\.00\) pasa del precio \(\$10,000\.00\) por \$1,000\.00\. De esa pérdida, \$500\.00 ya está en su resultado por el avance y \$500\.00 se provisiona este mes/.test(tC) &&
+      /vas \$4,000\.00 por delante: facturado de más/.test(await txt(ob(q, 'c12-prueba-b'))) && /«ZZ: subió el material»/.test(tC), tC);
+    res = await txt(q.locator('#ct-wip-res'));
+    ok('El resumen con los totales DE LA BASE (la pantalla no suma): precio $58,500.00, costo a la fecha $11,550.00 de $39,000.00, ganado $15,618.75 (26.7 % hecho), facturado $11,500.00; por detrás $8,118.75 (3 obras · 1200), por delante $4,000.00 (1 obra · 2400), la pérdida $1,000.00 (se provisionan $500.00) y «Postear el ajuste de WIP»',
+      /Precio de los contratos \$58,500\.00 4 obras listas/.test(res) && /Costo a la fecha \$11,550\.00 de \$39,000\.00 estimados/.test(res) && /Ganado \$15,618\.75 26\.7 % hecho/.test(res) && /Facturado \$11,500\.00/.test(res) &&
+      /Vas por detrás \(hecho y sin facturar\) \$8,118\.75 3 obras · va a 1200/.test(res) && /Vas por delante \(facturado de más\) \$4,000\.00 1 obra · va a 2400/.test(res) && /Pérdida de las obras que pierden \$1,000\.00 este mes se provisionan \$500\.00/.test(res) &&
+      /sin postear/.test(res) && (await q.locator('#ct-wip-posteo [data-wip-postear]').textContent()) === 'Postear el ajuste de WIP', res);
+    const sch = await q.locator('#ct-wip-sch > .ct-ob-tabla-env tbody tr').evaluateAll(trs => trs.map(t => t.innerText.replace(/\s+/g, ' ').trim()));
+    ok('El schedule (formato de la afianzadora): una fila por obra —precio, costo estimado, costo a la fecha, % hecho, ganado, facturado y de qué lado va— y el total de la base',
+      sch.length === 5 && /C12 PRUEBA Obra A.*\$10,000\.00 \$6,000\.00 \$3,000\.00 50 % \$5,000\.00 \$2,000\.00 \$3,000\.00 por detrás/.test(sch[0]) && /C12 PRUEBA Obra B.*\$4,000\.00 por delante/.test(sch[1]) && /C12 PRUEBA Obra C.*pierde \$1,000\.00/.test(sch[2]) &&
+      /C12 PRUEBA Obra D.*\$18,500\.00 \$12,000\.00 \$1,050\.00 8\.75 % \$1,618\.75 \$1,500\.00 \$118\.75 por detrás/.test(sch[3]) && /^Total · 4 obras en el ajuste \$58,500\.00 \$39,000\.00 \$11,550\.00 26\.7 % \$15,618\.75 \$11,500\.00 \$8,118\.75 por detrás \$4,000\.00 por delante/.test(sch[4]), sch.join(' | '));
+    ok('…y plegado, «Lo que iría al libro hoy (10 líneas)», por obra, con Debe y Haber', /Lo que iría al libro hoy \(10 líneas\)/.test(await txt(q.locator('#ct-wip-libro summary'))) && (await q.locator('#ct-wip-libro .ct-wip-asl ul li').count()) === 10);
+    await foto(q, 'c12-2-mes-revisado');
+
+    // ---- postear: qué va por obra, que se deshace solo el día 1, y el asiento ----
+    n0 = llamadas.length;
+    await q.locator('#ct-wip-posteo [data-wip-postear]').click(); await q.waitForTimeout(200);
+    const fp = await txt(q.locator('#ct-wip-posteo .ct-form')), fpTodo = (await q.locator('#ct-wip-posteo .ct-form').textContent()).replace(/\s+/g, ' ');
+    ok('Postear · antes de mandar dice en llano qué va por obra (A: vas $3,000.00 por detrás…; B: por delante…; C: …y pierde $1,000.00: se provisionan $500.00), las líneas (Debe / Haber), que es UN asiento del 31 oct 2026 y que se deshace solo el 1 nov 2026; todavía no llama',
+      /Se postea un asiento del 31 oct 2026, con 4 obras:/.test(fp) && /C12 PRUEBA Obra A: vas \$3,000\.00 por detrás: hecho y todavía sin facturar\./.test(fp) && /C12 PRUEBA Obra B: vas \$4,000\.00 por delante: facturado de más\./.test(fp) &&
+      /C12 PRUEBA Obra C: vas \$5,000\.00 por detrás: hecho y todavía sin facturar; y pierde \$1,000\.00: se provisionan \$500\.00\./.test(fp) && /Se deshace solo el 1 nov 2026/.test(fp) && /Las 10 líneas del asiento/.test(fp) && /1200 Costo y utilidad en exceso de facturación/.test(fpTodo) &&
+      /Debe \$3,000\.00/.test(fpTodo) && /2400 Facturación en exceso de costo/.test(fpTodo) && /Haber \$4,000\.00/.test(fpTodo) && !ultima(n0, 'fn_wip_postear'), fp);
+    await foto(q, 'c12-3-postear');
+    await enviar(q, q.locator('#ct-wip-posteo .ct-form form'));
+    let lp = ultima(n0, 'fn_wip_postear');
+    res = await txt(q.locator('#ct-wip-res'));
+    ok('…«Postear el ajuste»: fn_wip_postear({p_periodo: "2026-10", p_motivo: null}); arriba la nota de la base (asiento 2026-000007, se deshace solo el 1-nov-2026 con 2026-000008) y el resumen «ajuste posteado» con su asiento y «Deshacer» (ya no «Postear»)',
+      lp && JSON.stringify(lp.args) === JSON.stringify({ p_periodo: '2026-10', p_motivo: null }) &&
+      /Posteado el ajuste de WIP de octubre de 2026: asiento 2026-000007, con 4 obra\(s\) \(sub-facturado \$8,118\.75, sobre-facturado \$4,000\.00, pérdida \$500\.00\)\. Se deshace solo el 1-nov-2026 \(asiento 2026-000008\)\./.test(await txt(q.locator('.ct-wip-nota'))) &&
+      /ajuste posteado/.test(res) && /Ajuste posteado: asiento 2026-000007 del 31 oct 2026; se deshace solo el 1 nov 2026 \(2026-000008\)\./.test(res) && /El ajuste de octubre de 2026 ya está posteado y al día \(asiento 2026-000007\)\./.test(res) &&
+      (await q.locator('#ct-wip-posteo [data-wip-deshacer]').count()) === 1 && !(await q.locator('#ct-wip-posteo [data-wip-postear]').count()), lp && JSON.stringify(lp.args));
+    await foto(q, 'c12-4-posteado');
+    // el número del asiento lleva al asiento en Estados
+    await q.locator('#ct-wip-posteo .ct-asiento-btn').first().evaluate(x => x.click()); await q.waitForTimeout(400);
+    ok('…el número del asiento abre ese asiento en «Estados financieros»', (await q.evaluate(() => [window.MXP_CONTA._estado.pagina, window.MXP_CONTA._estado.est.asiento])).join() === 'estados,' + W.ajustes[0].asiento_id);
+
+    // ---- después de postear llega un costo: ya no está al día, y «Volver a postear» lo rehace ----
+    W.libro['c12-prueba-a'].costo['2026-10'] += 100000;
+    n0 = llamadas.length;
+    await ve(q, 'wip');
+    res = await txt(q.locator('#ct-wip-res'));
+    ok('Llega un costo a A después de postear · en rojo, con lo que cambió (A pasa de sub-facturado $3,000.00 a sub-facturado $4,666.67), sin repetirlo, y «Volver a postear el ajuste»',
+      /el ajuste ya no está al día/.test(res) && (await q.locator('#ct-wip-res [data-cuadre="50"].bad').count()) === 1 &&
+      /El ajuste posteado de octubre de 2026 \(asiento 2026-000007\) ya no es el que da el WIP de hoy: C12 PRUEBA Obra A pasa de sub-facturado \$3,000\.00 a sub-facturado \$4,666\.67\. Vuelve a postearlo: se reversa y entra el nuevo\./.test(res) &&
+      !(await q.locator('#ct-wip-res .ct-wip-rnota').count()) && (await q.locator('#ct-wip-posteo [data-wip-postear]').textContent()) === 'Volver a postear el ajuste', res);
+    await q.locator('#ct-wip-posteo [data-wip-postear]').click(); await q.waitForTimeout(200);
+    ok('…la confirmación dice que el posteado se reversa y entra este', /El ajuste que está posteado \(asiento 2026-000007\) ya no es el de hoy: se reversa dentro de octubre de 2026 y entra este\./.test(await txt(q.locator('#ct-wip-posteo .ct-form'))) && /Volver a postear/.test(await txt(q.locator('#ct-wip-posteo .ct-form button[type="submit"]'))));
+    await enviar(q, q.locator('#ct-wip-posteo .ct-form form'));
+    ok('…fn_wip_postear lo rehace y la nota de la base lo dice (asiento 2026-000010, sub-facturado $9,785.42)', !!ultima(n0, 'fn_wip_postear') && /Rehecho el ajuste de WIP de octubre de 2026: asiento 2026-000010, con 4 obra\(s\) \(sub-facturado \$9,785\.42, sobre-facturado \$4,000\.00, pérdida \$500\.00\)/.test(await txt(q.locator('.ct-wip-nota'))) && /ajuste posteado/.test(await txt(q.locator('#ct-wip-res .ct-cab'))));
+
+    // ---- deshacer: con su motivo ----
+    n0 = llamadas.length;
+    await q.locator('#ct-wip-posteo [data-wip-deshacer]').click(); await q.waitForTimeout(150);
+    let fx = q.locator('#ct-wip-posteo .ct-form form');
+    await fx.locator('[name="motivo"]').fill('no'); await fx.locator('button[type="submit"]').click(); await q.waitForTimeout(150);
+    ok('Deshacer · dice que se reversa (no se borra) y pide el motivo: dos letras no bastan y no llama', !ultima(n0, 'fn_wip_deshacer') && /se reversa con otro asiento \(no se borra\), su reverso del día 1 queda anulado/.test(await txt(q.locator('#ct-wip-posteo .ct-form'))) && /al menos tres letras/.test(await txt(q.locator('#ct-wip-posteo .ct-form'))));
+    await fx.locator('[name="motivo"]').fill('ZZ prueba: deshacer el ajuste'); await enviar(q, fx);
+    const ld = ultima(n0, 'fn_wip_deshacer');
+    ok('…con su motivo: fn_wip_deshacer({p_periodo, p_motivo}); la nota de la base (2026-000010 reversado con 2026-000012) y el mes otra vez «sin postear»',
+      ld && JSON.stringify(ld.args) === JSON.stringify({ p_periodo: '2026-10', p_motivo: 'ZZ prueba: deshacer el ajuste' }) && /Deshecho el ajuste de WIP de octubre de 2026: el asiento 2026-000010 se reversó con 2026-000012, y su reverso del día 1 quedó anulado\. El libro vuelve a lo facturado\./.test(await txt(q.locator('.ct-wip-nota'))) &&
+      /sin postear/.test(await txt(q.locator('#ct-wip-res .ct-cab'))) && (await q.locator('#ct-wip-posteo [data-wip-postear]').count()) === 1, ld && JSON.stringify(ld.args));
+    await toca(q, '#ct-wip-posteo [data-wip-postear]'); await enviar(q, q.locator('#ct-wip-posteo .ct-form form'));   // (otra vez posteado: el cierre lo mira)
+
+    // ---- noviembre (no ha terminado): «Sigue igual» en un toque; la propuesta que cambió en otra pestaña ----
+    n0 = llamadas.length;
+    await q.selectOption('#ct-wip-mes', '2026-11'); await pintado(q);
+    tA = await txt(ob(q, 'c12-prueba-a'));
+    ok('Otro mes · el selector trae los meses ya empezados y pide fn_wip_resumen({p_periodo: "2026-11"}); cada obra propone lo del mes anterior («Sigue igual: $6,000.00», «Lo que revisaste en octubre de 2026.») y, sin terminar el mes, no hay «Postear» y dice por qué',
+      JSON.stringify((ultima(n0, 'fn_wip_resumen') || {}).args) === '{"p_periodo":"2026-11"}' && JSON.stringify(await q.locator('#ct-wip-mes option').evaluateAll(os => os.map(o => o.value))) === '["2026-11","2026-10"]' &&
+      /la vez pasada: \$6,000\.00/.test(tA) && (await ob(q, 'c12-prueba-a').locator('[data-wip-igual]').textContent()) === 'Sigue igual: $6,000.00' && /Lo que revisaste en octubre de 2026\./.test(tA) &&
+      !(await q.locator('#ct-wip-posteo [data-wip-postear]').count()) && /Noviembre de 2026 todavía no termina \(su último día es el 30-nov-2026\): el ajuste se postea con el mes terminado\./.test(await txt(q.locator('#ct-wip-posteo'))) && /en curso/.test(await txt(q.locator('#ct-wip-res .ct-cab'))), tA);
+    await ob(q, 'c12-prueba-a').locator('[data-wip-igual]').click(); await pintado(q);
+    lr = ultima(n0, 'fn_wip_revisar');
+    ok('…«Sigue igual» es un toque: fn_wip_revisar({p_proyecto, p_periodo: "2026-11", p: {confirmar: true, costo_estimado: "6000.00"}}) (con el número que se vio) y A queda revisada («confirmó lo del mes anterior»)',
+      lr && JSON.stringify(lr.args) === JSON.stringify({ p_proyecto: 'c12-prueba-a', p_periodo: '2026-11', p: { confirmar: true, costo_estimado: '6000.00' } }) && /confirmó lo del mes anterior/.test(await txt(ob(q, 'c12-prueba-a'))), lr && JSON.stringify(lr.args));
+    W_FN.fn_wip_revisar({ p_proyecto: 'c12-prueba-b', p_periodo: '2026-10', p: { costo_estimado: '12000.00', nota: 'ZZ: subió (en otra pestaña)' } });
+    await ob(q, 'c12-prueba-b').locator('[data-wip-igual]').click(); await pintado(q);
+    ok('…si la propuesta cambió entretanto (otra pestaña), la base dice MX008 y la página se vuelve a leer con el aviso arriba y el número de hoy («Sigue igual: $12,000.00»), sin revisar nada',
+      /La propuesta de «C12 PRUEBA Obra B» ya no es la que viste \(\$10,000\.00; ahora es \$12,000\.00\): vuelve a mirar antes de confirmar\./.test(await txt(q.locator('.ct-wip-nota.warn'))) &&
+      (await ob(q, 'c12-prueba-b').locator('[data-wip-igual]').textContent()) === 'Sigue igual: $12,000.00' && !W.rev.some(r => r.proyecto_id === 'c12-prueba-b' && r.periodo === '2026-11'));
+    // terminada: la app la tiene completada → «Terminó en noviembre» (100 %)
+    W_OB['c12-prueba-c'].estado = 'completado';
+    await ve(q, 'wip', { periodo: '2026-11' });
+    ok('Una obra que la app ya tiene terminada · «Terminó en noviembre» con el porqué de la base', (await ob(q, 'c12-prueba-c').locator('[data-wip-terminada]').textContent()) === 'Terminó en noviembre' && /La app la tiene como terminada: si terminó en este mes, revísala como terminada \(100 %\)/.test(await txt(ob(q, 'c12-prueba-c'))));
+    await ob(q, 'c12-prueba-c').locator('[data-wip-terminada]').click(); await q.waitForTimeout(150);
+    ok('…pregunta antes (100 % hecho, su costo final es el que lleva, lo que falte por facturar queda por detrás)', /¿«C12 PRUEBA Obra C» terminó en noviembre de 2026\? Se revisa como terminada: 100 % hecho/.test(await txt(ob(q, 'c12-prueba-c').locator('.ct-form'))));
+    n0 = llamadas.length;
+    await enviar(q, ob(q, 'c12-prueba-c').locator('.ct-form form'));
+    ok('…«Sí, terminó»: fn_wip_revisar({…, p: {terminada: true}}) y queda «terminada: 100 % hecho», sin pérdida provisionada', JSON.stringify((ultima(n0, 'fn_wip_revisar') || {}).args) === JSON.stringify({ p_proyecto: 'c12-prueba-c', p_periodo: '2026-11', p: { terminada: true } }) &&
+      /terminada: 100 % hecho/.test(await txt(ob(q, 'c12-prueba-c'))) && /Precio \$10,000\.00 · ganado \$10,000\.00 · facturado \$0\.00 → vas \$10,000\.00 por detrás/.test(await txt(ob(q, 'c12-prueba-c'))));
+    W_OB['c12-prueba-c'].estado = 'ejecucion';
+    // la obra que lleva más de su estimado (con su nota): «pasa de 100 %», topada
+    await ob(q, 'c12-prueba-d').locator('[data-wip-otro]').click();
+    { const f = ob(q, 'c12-prueba-d').locator('.ct-form form'); await f.locator('[name="costo"]').fill('500'); await f.locator('[name="nota"]').fill('ZZ: casi terminada'); await enviar(q, f); }
+    const tD2 = await txt(ob(q, 'c12-prueba-d'));
+    ok('Más costo que su estimado (con nota) · «pasa de 100 %», el avance topado en 100 % (de verdad 210 %) con la barra en rojo, y el aviso de la base', /pasa de 100 %/.test(tD2) && /100 % hecho \(de verdad 210 %\)/.test(tD2) &&
+      /Lleva \$1,050\.00 de costo y su costo estimado revisado es \$500\.00 \(210 %\): el avance se topa en 100 %\./.test(tD2) && (await ob(q, 'c12-prueba-d').locator('.ct-ob-barra-h.pasa').count()) === 1, tD2);
+    await foto(q, 'c12-5-noviembre');
+
+    // ---- un mes cerrado solo se lee ----
+    W.cerrados.add('2026-10');
+    await ve(q, 'wip', { periodo: '2026-10' });
+    res = await txt(q.locator('#ct-wip-res'));
+    ok('Un mes cerrado · «cerrado · solo se lee», la foto de lo que se posteó (fuente «posteado»), sin botones de revisar, postear ni deshacer',
+      /cerrado · solo se lee/.test(res) && /Octubre de 2026 ya está cerrado: su WIP es el que se posteó\./.test(res) && /lo que se posteó/.test(await txt(q.locator('#ct-wip-sch .ct-cab'))) && /Lo que se posteó \(\d+ líneas\)/.test(await txt(q.locator('#ct-wip-libro summary'))) &&
+      !(await q.locator('#ct-wip-rev [data-wip-otro], #ct-wip-rev [data-wip-igual], #ct-wip-rev [data-wip-antes], #ct-wip-posteo [data-wip-postear], #ct-wip-posteo [data-wip-deshacer]').count()) && (await q.locator('#ct-wip-rev [data-wip-obra]').count()) === 4, res);
+    W.cerrados.delete('2026-10');
+
+    // ---- Obras: cuáles llevan WIP, la marca con su nota, lo de antes con otros números ----
+    n0 = llamadas.length;
+    await ve(q, 'wip', { sub: 'obras' });
+    ok('Obras · v_wip_obras: «Llevan WIP (4)», «No llevan (1)», «Todas (5)»; D dice lo de antes confirmado (costo $730.00, facturado $1,500.00)', lecturas.some(l => l.startsWith('v_wip_obras')) &&
+      /Llevan WIP \(4\)/.test(await txt(q.locator('[data-wip-filtro="llevan"]'))) && /No llevan \(1\)/.test(await txt(q.locator('[data-wip-filtro="no"]'))) && /Todas \(5\)/.test(await txt(q.locator('[data-wip-filtro="todas"]'))) &&
+      /Lo de antes del libro, confirmado el .*: costo \$730\.00 y facturado \$1,500\.00\./.test(await txt(q.locator('[data-wip-ob="c12-prueba-d"]'))));
+    await toca(q, '[data-wip-filtro="no"]');
+    ok('…«No llevan»: el taller de servicio con el porqué de la base', (await q.locator('[data-wip-ob]').count()) === 1 && /Es de servicio: no lleva WIP; su ingreso es lo facturado\./.test(await txt(q.locator('[data-wip-ob="c12-prueba-s"]'))));
+    await q.locator('[data-wip-ob="c12-prueba-s"] [data-wip-marca]').click(); await q.waitForTimeout(150);
+    let fm = q.locator('[data-wip-ob="c12-prueba-s"] .ct-form form');
+    await fm.locator('[name="modo"]').selectOption('contrato'); await enviar(q, fm);
+    ok('La marca · «Lleva WIP» sin nota: la base pide la nota (22023) y la forma lo dice', JSON.stringify((ultima(n0, 'fn_wip_obra') || {}).args) === JSON.stringify({ p_proyecto: 'c12-prueba-s', p: { modo: 'contrato' } }) && /Di por qué en la nota/.test(await txt(q.locator('[data-wip-ob="c12-prueba-s"] .ct-form'))));
+    await fm.locator('[name="nota"]').fill('ZZ: precio cerrado'); await enviar(q, fm);
+    ok('…con la nota: fn_wip_obra({p_proyecto, p: {modo: "contrato", nota}}) y la nota de la base (su ficha no tiene contrato: hay que ponerlo)', JSON.stringify((ultima(n0, 'fn_wip_obra') || {}).args) === JSON.stringify({ p_proyecto: 'c12-prueba-s', p: { modo: 'contrato', nota: 'ZZ: precio cerrado' } }) &&
+      /Marcada como de precio fijo, pero su ficha no tiene contrato: ponlo para poder revisarla\. Si el ajuste de un mes abierto ya estaba posteado, vuelve a postearlo\./.test(await txt(q.locator('.ct-wip-nota'))));
+    W_FN.fn_wip_obra({ p_proyecto: 'c12-prueba-s', p: { modo: 'auto' } });
+    await ve(q, 'wip', { sub: 'obras' }); await toca(q, '[data-wip-filtro="llevan"]');
+    await q.locator('[data-wip-ob="c12-prueba-d"] [data-wip-antes]').click(); await q.waitForSelector('[data-wip-ob="c12-prueba-d"] .ct-wip-antes', { timeout: 5000 });
+    ok('…D: «Lo de antes del libro» enseña lo confirmado (el ok) junto a la propuesta', /Confirmado el .*: costo \$730\.00 y facturado \$1,500\.00/.test(await txt(q.locator('[data-wip-ob="c12-prueba-d"] .ct-wip-antes'))));
+    await q.locator('[data-wip-ob="c12-prueba-d"] [data-antes-otro]').click(); await q.waitForTimeout(150);
+    fm = q.locator('[data-wip-ob="c12-prueba-d"] .ct-form form');
+    await fm.locator('[name="costo"]').fill('950'); await fm.locator('button[type="submit"]').click(); await q.waitForTimeout(150);
+    ok('…«Poner otros números» trae los de la propuesta y pide de dónde salen: sin la nota no se manda', /Di de dónde salen esos números/.test(await txt(q.locator('[data-wip-ob="c12-prueba-d"] .ct-form'))) && (await fm.locator('[name="facturado"]').inputValue()) === '1500.00');
+    n0 = llamadas.length;
+    await fm.locator('[name="nota"]').fill('ZZ: lo de QuickBooks al 30-sep'); await enviar(q, fm);
+    la = ultima(n0, 'fn_wip_antes');
+    ok('…con la nota: fn_wip_antes({p_proyecto, p: {costo: "950", facturado: "1500.00", nota}}) y la nota de la base (con el aviso de que el ajuste posteado ya no está al día)', la && JSON.stringify(la.args) === JSON.stringify({ p_proyecto: 'c12-prueba-d', p: { costo: '950', facturado: '1500.00', nota: 'ZZ: lo de QuickBooks al 30-sep' } }) &&
+      /Confirmado lo de antes del libro de «C12 PRUEBA Obra D»: costo \$950\.00 y facturado \$1,500\.00\. El ajuste de octubre de 2026 ya estaba posteado: mira si sigue al día y, si no, vuelve a postearlo\./.test(await txt(q.locator('.ct-wip-nota'))), la && JSON.stringify(la.args));
+    W_FN.fn_wip_antes({ p_proyecto: 'c12-prueba-d', p: { costo: '730.00', facturado: '1500.00' } });
+
+    // ---- Historial y Ajustes ----
+    await ve(q, 'wip', { sub: 'historial' });
+    const hi = await txt(q.locator('#ct-wip-ajustes')), hr = await txt(q.locator('#ct-wip-revisiones'));
+    ok('Historial · los ajustes (el vivo y los deshechos, con su reverso y su motivo) y las revisiones (vigentes y sustituidas)', (await q.locator('#ct-wip-ajustes .ct-wip-hi').count()) === 3 && /vivo/.test(hi) && /deshecho/.test(hi) && /«ZZ prueba: deshacer el ajuste»/.test(hi) && /reverso 2026-000012/.test(hi) &&
+      /se deshace solo el 1 nov 2026/.test(hi) && /C12 PRUEBA Obra B · octubre de 2026 sustituida/.test(hr) && /vigente/.test(hr) && (await q.locator('#ct-wip-revisiones .ct-wip-hi').count()) === W.rev.length, hi.slice(0, 400));
+    n0 = llamadas.length;
+    await ve(q, 'wip', { sub: 'ajustes' });
+    ok('Ajustes · lee fn_wip_config() y dice desde qué mes lo exige el cierre (noviembre de 2026), con la nota de la base', JSON.stringify((ultima(n0, 'fn_wip_config') || {}).args) === '{}' && /El cierre exige el WIP \(cada obra revisada y el ajuste posteado\) desde noviembre de 2026/.test(await txt(q.locator('#ct-wip-cfg'))) && (await q.locator('#ct-wip-cfg-form select').inputValue()) === '2026-11');
+    await q.locator('#ct-wip-cfg-form select').selectOption('2026-10'); await enviar(q, q.locator('#ct-wip-cfg-form'));
+    const cfgEscrita = () => (desde(n0).filter(l => l.fn === 'fn_wip_config' && l.args.p).pop() || {}).args;   // (después de guardar, la página vuelve a leer con fn_wip_config({}))
+    ok('…«desde octubre» manda fn_wip_config({p: {exigir_desde: "2026-10"}}) y la nota de la base lo dice', JSON.stringify(cfgEscrita()) === JSON.stringify({ p: { exigir_desde: '2026-10' } }) && /desde octubre de 2026; los meses anteriores no se frenan por él/.test(await txt(q.locator('.ct-wip-nota'))));
+    await q.locator('#ct-wip-cfg-form select').selectOption(''); await enviar(q, q.locator('#ct-wip-cfg-form'));
+    ok('…«Todavía no lo exige» manda {exigir_desde: null}', JSON.stringify(cfgEscrita()) === JSON.stringify({ p: { exigir_desde: null } }) && /El cierre todavía no exige el WIP en ningún mes/.test(await txt(q.locator('.ct-wip-nota'))));
+    W_FN.fn_wip_config({ p: { exigir_desde: '2026-10' } });
+
+    // ---- en «Cierre del mes»: la misma revisión, las filas 174 a 177 y postear desde ahí ----
+    estado.c9 = true; c9Reset();
+    W_OB['c12-prueba-e'] = { obra: 'C12 PRUEBA Obra E', cliente: 'ZZ Cliente E', tipo: 'comercial', estado: 'ejecucion', contrato: 500000 };
+    W.libro['c12-prueba-e'] = { costo: { '2026-10': 100000 }, fact: {} };
+    n0 = llamadas.length;
+    await ve(q, 'cierre', { sub: 'cierre', periodo: '2026-10' });
+    const orden = await q.evaluate(() => [...document.querySelectorAll('#ct-cie-cuerpo > section')].map(x => x.id));
+    let cie = await txt(q.locator('#ct-wip-cie'));
+    ok('Cierre del mes (octubre, que lo exige) · la tarjeta «El WIP de octubre de 2026» va entre lo que detiene y los avisos, con la misma revisión (E, nueva, por revisar) y «Volver a postear» (el posteado ya no está al día)',
+      orden.indexOf('ct-wip-cie') === orden.indexOf('ct-cie-rev') + 1 && orden.indexOf('ct-cie-avisos') === orden.indexOf('ct-wip-cie') + 1 && /Para cerrar octubre de 2026: cada obra de precio fijo con su costo estimado revisado, y el ajuste posteado\./.test(cie) &&
+      (await q.locator('#ct-wip-cie [data-wip-obra]').count()) === 5 && (await q.locator('#ct-wip-cie [data-wip-obra="c12-prueba-e"] [data-wip-otro]').count()) === 1 && (await q.locator('#ct-wip-cie [data-wip-postear]').count()) === 1, orden.join(',') + ' || ' + cie.slice(0, 300));
+    const det = await txt(q.locator('#ct-cie-rev .ct-cie-lista'));
+    ok('…y en la lista del cierre, como las demás, las filas del WIP que detienen (175 falta revisar E; 176 el ajuste ya no está al día), cada una con «Qué hacer» y su botón «WIP» al mismo mes',
+      (await q.locator('#ct-cie-rev .ct-cie-item.detiene[data-orden="175"]').count()) === 1 && (await q.locator('#ct-cie-rev .ct-cie-item.detiene[data-orden="176"]').count()) === 1 &&
+      /Faltan por revisar 1 de las 5 obra\(s\) de precio fijo con movimiento en octubre de 2026: C12 PRUEBA Obra E\./.test(det) && /Qué hacer: En Contabilidad → WIP, revisa cada obra de la lista/.test(det) &&
+      (await q.locator('#ct-cie-rev [data-orden="175"] [data-wip-ir="2026-10"]').textContent()) === 'WIP' && (await q.locator('#ct-cie-avisos .ct-cie-item[data-orden="174"].ok').count()) === 1, det.slice(0, 500));
+    await foto(q, 'c12-6-cierre');
+    // revisar E desde el cierre: la página que se repinta es el cierre (vuelve a revisar), y la 175 pasa a verde
+    await q.locator('#ct-wip-cie [data-wip-obra="c12-prueba-e"] [data-wip-otro]').click();
+    { const f = q.locator('#ct-wip-cie [data-wip-obra="c12-prueba-e"] .ct-form form'); await f.locator('[name="costo"]').fill('4000'); await enviar(q, f); }
+    ok('…revisar E desde el cierre: fn_wip_revisar y el cierre vuelve a revisar (fn_cierre_revisar): la 175 ya no detiene', JSON.stringify((ultima(n0, 'fn_wip_revisar') || {}).args) === JSON.stringify({ p_proyecto: 'c12-prueba-e', p_periodo: '2026-10', p: { costo_estimado: '4000' } }) &&
+      desde(n0).filter(l => l.fn === 'fn_cierre_revisar').length >= 2 && (await q.locator('#ct-cie-rev .ct-cie-item[data-orden="175"]').count()) === 0 && (await q.locator('#ct-cie-avisos .ct-cie-item.ok[data-orden="175"]').count()) === 1 && (await q.evaluate(() => window.MXP_CONTA._estado.pagina)) === 'cierre');
+    await q.locator('#ct-wip-cie [data-wip-postear]').click(); await q.waitForTimeout(150);
+    ok('…«Volver a postear» desde el cierre dice qué entra (E, nueva) y que se deshace solo el día 1', /C12 PRUEBA Obra E: vas \$1,250\.00 por detrás/.test(await txt(q.locator('#ct-wip-cie .ct-form'))) && /Se deshace solo el 1 nov 2026/.test(await txt(q.locator('#ct-wip-cie .ct-form'))));
+    await enviar(q, q.locator('#ct-wip-cie .ct-form form'));
+    ok('…posteado desde el cierre: fn_wip_postear, el cierre vuelve a revisar y la 176 queda en verde; la tarjeta del WIP dice «ajuste posteado» con la nota de la base', !!ultima(n0, 'fn_wip_postear') && (await q.locator('#ct-cie-rev .ct-cie-item[data-orden="176"]').count()) === 0 &&
+      (await q.locator('#ct-cie-avisos .ct-cie-item.ok[data-orden="176"]').count()) === 1 && /ajuste posteado/.test(await txt(q.locator('#ct-wip-cie .ct-cab'))) && /Rehecho el ajuste de WIP de octubre de 2026/.test(await txt(q.locator('#ct-wip-cie .ct-wip-nota'))));
+    // la 177 (los avisos: la pérdida de C) lleva al WIP de octubre
+    await q.locator('#ct-cie-avisos [data-orden="177"] [data-wip-ir]').evaluate(x => x.click()); await pintado(q);
+    ok('…la fila 177 (sus avisos) lleva a «WIP» del MISMO mes (octubre)', (await titulo2(q)) === 'WIP (obra en curso)' && JSON.stringify((ultima(n0, 'fn_wip_resumen') || {}).args) === '{"p_periodo":"2026-10"}');
+    await ve(q, 'cierre', { sub: 'cierre', periodo: '2026-09-APERTURA' });
+    ok('…en la apertura no hay tarjeta del WIP (va por mes)', (await q.locator('#ct-cie-rev').count()) === 1 && !(await q.locator('#ct-wip-cie').count()));
+    delete W_OB['c12-prueba-e']; delete W.libro['c12-prueba-e']; W.rev = W.rev.filter(r => r.proyecto_id !== 'c12-prueba-e');
+
+    // ---- falla ruidosa: un cuadre en rojo; el resumen y el schedule contando distinto ----
+    W.cuadre10 = true;
+    await ve(q, 'wip', { periodo: '2026-10' });
+    ok('Falla ruidosa · un cuadre del WIP en rojo (saldo a mano en 1200): «El WIP no cuadra» con su detalle y NINGUNA cifra ni obra', /El WIP no cuadra/.test(await txt(q.locator('#ct-wip-cuerpo .ct-rojo h2'))) && /Hay saldo en las cuentas del WIP que no viene de un ajuste: \$500\.00 en la 1200 de C12 PRUEBA Obra A/.test(await txt(q.locator('#ct-wip-cuerpo .ct-rojo'))) &&
+      !(await q.locator('#ct-wip-cuerpo .ct-kpi, #ct-wip-cuerpo [data-wip-obra], #ct-wip-sch').count()));
+    await ve(q, 'cierre', { sub: 'cierre', periodo: '2026-10' });
+    ok('…en el cierre: la tarjeta del WIP en rojo sin cifras, y la 174 detiene en la lista', /no cuadra/.test(await txt(q.locator('#ct-wip-cie .ct-cab'))) && !(await q.locator('#ct-wip-cie [data-wip-obra]').count()) && (await q.locator('#ct-cie-rev .ct-cie-item.detiene[data-orden="174"]').count()) === 1);
+    W.cuadre10 = false; W.conteoMal = true;
+    await ve(q, 'wip', { periodo: '2026-10' });
+    ok('…el resumen cuenta una obra más que el schedule: rojo («no cuentan lo mismo»), sin cifras', /El resumen y el schedule del WIP no cuentan lo mismo/.test(await txt(q.locator('#ct-wip-cuerpo .ct-rojo h2'))) && !(await q.locator('#ct-wip-cuerpo .ct-kpi').count()));
+    W.conteoMal = false;
+    // sin c12 y el equipo
+    estado.c12 = false;
+    await ve(q, 'wip');
+    ok('Sin c12 · «WIP» dice en llano que falta c12-wip.sql (y volver a pegar c9), con «Reintentar»', /Falta el WIP en la base/.test(await txt(q.locator('#ct-wip-cuerpo .ct-rojo h2'))) && /c12-wip\.sql/.test(await txt(q.locator('#ct-wip-cuerpo .ct-rojo'))) && (await q.locator('#ct-reintentar').count()) === 1);
+    await ve(q, 'cierre', { sub: 'cierre', periodo: '2026-10' });
+    ok('…y el cierre sigue como antes: sin tarjeta del WIP y sin rojo', (await q.locator('#ct-cie-rev').count()) === 1 && !(await q.locator('#ct-wip-cie').count()) && !(await q.locator('#ct-cie-cuerpo > .ct-rojo').count()));
+    estado.c12 = true; estado.c12NoDueno = true;
+    await ve(q, 'wip');
+    ok('El equipo (no dueño) · la base dice 42501: «El WIP es solo del dueño» con su texto, sin cifras', /El WIP es solo del dueño/.test(await txt(q.locator('#ct-wip-cuerpo .ct-rojo h2'))) && new RegExp(W_NO_DUENO.replace(/[()]/g, '\\$&')).test(await txt(q.locator('#ct-wip-cuerpo .ct-rojo'))) && !(await q.locator('#ct-wip-cuerpo .ct-kpi').count()));
+    estado.c12NoDueno = false;
+    await cx.close();
+
+    // ---- sin el código del teléfono: postear y deshacer no se mandan ----
+    W.libro['c12-prueba-c'].costo['2026-10'] += 50000;   // (otro costo: el ajuste vuelve a estar desfasado y hay que volver a postear)
+    ({ cx, q } = await abrirCtx(820, false));
+    n0 = llamadas.length;
+    await ve(q, 'wip', { periodo: '2026-10' });
+    await q.locator('#ct-wip-posteo [data-wip-postear]').click(); await q.waitForTimeout(150);
+    ok('Sin el código del teléfono · «Volver a postear» dice que lo pide y no llama', /pide el código del teléfono/.test(await txt(q.locator('#ct-wip-posteo .ct-form'))) && !ultima(n0, 'fn_wip_postear'));
+    await q.locator('#ct-wip-posteo [data-wip-deshacer]').click(); await q.waitForTimeout(150);
+    ok('…«Deshacer» tampoco', /Deshacer el ajuste toca el libro: pide el código del teléfono/.test(await txt(q.locator('#ct-wip-posteo .ct-form'))) && !ultima(n0, 'fn_wip_deshacer'));
+    await cx.close();
+
+    // ---- el teléfono (390), el iPad (820) y la computadora (1280): sin desplazamiento lateral ----
+    for (const w of [390, 820, 1280]) {
+      ({ cx, q } = await abrirCtx(w, true));
+      const mal = [];
+      const mide = async nombre => { const m = await q.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth, rojo: !!document.querySelector('#conta-raiz .ct-rojo') })); if (m.sw > m.iw + 1 || m.rojo) mal.push(`${nombre}: ${m.sw} > ${m.iw}${m.rojo ? ' (rojo)' : ''}`); await foto(q, `c12-${w}-${nombre}`); };
+      await ve(q, 'wip', { sub: 'mes', periodo: '2026-10' }); await mide('mes');
+      await q.locator('#ct-wip-posteo [data-wip-postear]').click(); await q.waitForTimeout(150); await q.locator('#ct-wip-posteo .ct-wip-lineas').evaluate(d => { d.open = true; }); await mide('postear');
+      await q.locator('#ct-wip-libro details').evaluate(d => { d.open = true; }).catch(() => {}); await q.locator('#ct-wip-sch details').evaluate(d => { d.open = true; }).catch(() => {}); await mide('mes-abierto');
+      await ve(q, 'wip', { sub: 'mes', periodo: '2026-11' }); await ob(q, 'c12-prueba-b').locator('[data-wip-otro]').click(); await q.waitForTimeout(150); await mide('noviembre-revisar');
+      await ve(q, 'wip', { sub: 'obras' }); await q.locator('[data-wip-ob="c12-prueba-d"] [data-wip-antes]').click(); await q.waitForSelector('[data-wip-ob="c12-prueba-d"] .ct-wip-antes', { timeout: 5000 }); await mide('obras-antes');
+      await ve(q, 'wip', { sub: 'historial' }); await mide('historial');
+      await ve(q, 'wip', { sub: 'ajustes' }); await mide('ajustes');
+      await ve(q, 'cierre', { sub: 'cierre', periodo: '2026-10' }); await mide('cierre');
+      if (w === 390) {
+        await ve(q, 'wip', { sub: 'mes', periodo: '2026-10' });
+        const tv = await q.evaluate(() => { const t = document.querySelector('.ct-tabs'), a = t.querySelector('.ct-tab[aria-current="page"]'), T = t.getBoundingClientRect(), A = a.getBoundingClientRect(); return { pag: a.dataset.pag, izq: Math.round(A.left - T.left), der: Math.round(T.right - A.right) }; });
+        ok('Teléfono · la pestaña «WIP» se ve entera dentro de la tira de pestañas', tv.pag === 'wip' && tv.izq >= 14 && tv.der >= 14, JSON.stringify(tv));
+        const tb = await q.evaluate(() => { const t = document.querySelector('#ct-wip-sch table'), r = t.getBoundingClientRect(); return { der: Math.round(r.right), iw: window.innerWidth, apilada: getComputedStyle(t.querySelector('thead')).display === 'none' }; });
+        ok('Teléfono · el schedule se apila (cada cifra con su etiqueta) y cabe en 390 px', tb.apilada && tb.der <= tb.iw, JSON.stringify(tb));
+      }
+      ok(`WIP · ${w} px: el mes (con postear abierto y lo plegado abierto), otro mes revisando, obras con lo de antes, historial, ajustes y el cierre con su WIP, sin desplazamiento lateral ni rojos`, !mal.length, mal.join(' | '));
+      await cx.close();
+    }
+    estado.c9 = false; c9Reset(); estado.c12 = false; wReset(); conCodigo(false);
+  }
+
   // ---- Sin señal ----
   await ctx.setOffline(true);
   await tab(p, 'bancos'); await p.waitForSelector('.ct-rojo', { timeout: 8000 });
@@ -4179,6 +5815,16 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     estado.c9 = true;
     // (fase 9) c10 pegado: la Bandeja con los Zelle de la cuadrilla y «Costo por obra» con sus obras
     estado.c10 = true; jReset();
+    // (fase 10) c11 pegado: «Facturas» con una emitida (con su PDF y su envío) y un borrador
+    estado.c11 = true; fReset();
+    // (fase 10) c12 pegado: «WIP» con octubre revisado (lo de antes de D confirmado) y su ajuste posteado
+    estado.c12 = true; wReset();
+    W_FN.fn_wip_antes({ p_proyecto: 'c12-prueba-d', p: { costo: '730.00', facturado: '1500.00' } });
+    for (const [id, c, n] of [['c12-prueba-a', '6000', null], ['c12-prueba-b', '10000', 'ZZ: el bid'], ['c12-prueba-c', '11000', 'ZZ: subió el material'], ['c12-prueba-d', '12000', 'ZZ: estimado de prueba']])
+      W_FN.fn_wip_revisar({ p_proyecto: id, p_periodo: '2026-10', p: n ? { costo_estimado: c, nota: n } : { costo_estimado: c } });
+    W_FN.fn_wip_postear({ p_periodo: '2026-10' });
+    { const bF = C11_FN.fn_emision_borrador({ p: { forma: 'hito', hito_id: -1110000001 } }); C11_FN.fn_emision_emitir({ p_documento: bF.documento.id, p_visto: bF.visto, p_opciones: {} });
+      funcionFacturas({ accion: 'enviar', documento: bF.documento.id }, 'Bearer x.' + b64({ aal: 'aal2' }) + '.y'); C11_FN.fn_emision_borrador({ p: { forma: 'porcentaje', proyecto_id: 'c11-prueba-a', porcentaje: '30' } }); }
     for (const w of [390, 820, 1280]) {
       const cx = await b.newContext({ viewport: { width: w, height: w < 700 ? 844 : 1000 }, deviceScaleFactor: w < 1024 ? 2 : 1, isMobile: w < 1024, hasTouch: w < 1024, serviceWorkers: 'block' });
       await simular(cx, 'dueno');
@@ -4197,7 +5843,7 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
       }
       await cx.close();
     }
-    estado.mfaFactores = []; estado.sesionAal = undefined; estado.stripeDeposito = false; estado.c8 = false; estado.c9 = false; estado.c10 = false; iaReset();
+    estado.mfaFactores = []; estado.sesionAal = undefined; estado.stripeDeposito = false; estado.c8 = false; estado.c9 = false; estado.c10 = false; estado.c11 = false; estado.c12 = false; wReset(); iaReset();
   }
   ok('Sin errores de JavaScript en la página', errs.length === 0, errs.join(' | '));
   await b.close(); srv.close();

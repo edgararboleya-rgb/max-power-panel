@@ -52,11 +52,35 @@
 // el estimado contra el real de cada obra, con la mano de obra real y la
 // estándar separadas. La cabecera de su sección lo cuenta.
 //
+// Y las facturas (c11, fase 10: v_emision_estado, v_emision_documentos,
+// v_emision_obras, v_emision_control, emision_config; fn_emision_borrador,
+// fn_emision_documento, fn_emision_emitir, fn_emision_anular, fn_emision_obra,
+// fn_emision_config, fn_emision_envio y fn_emision_pago; la función de borde
+// `facturas` con la sesión del dueño para el PDF, el correo y verlo): la
+// página «Facturas» prepara los borradores (por hito, por porcentaje, T&M y
+// la de la retención), enseña la factura en inglés antes de emitirla, la
+// emite con el código del teléfono, hace su PDF con el enlace de pago (solo
+// cuenta de banco), la manda y la anula con nota de crédito. Antes del corte
+// (1-ene-2027) solo se preparan borradores; el 🧾 de un hito lo desvía app.js
+// con v_emision_estado.camino. La cabecera de su sección lo cuenta.
+//
+// Y el WIP por costo a costo (c12, fase 10: fn_wip_resumen, v_wip_schedule,
+// fn_wip_control, v_wip_obras, v_wip_ajustes, v_wip_revisiones; fn_wip_revisar,
+// fn_wip_antes_propuesta, fn_wip_antes, fn_wip_obra, fn_wip_postear,
+// fn_wip_deshacer y fn_wip_config): la página «WIP» enseña el mes obra por obra
+// (precio, costo estimado, costo a la fecha, % hecho, ganado, facturado, «vas
+// $X por detrás / por delante», la pérdida), con su total, y la revisión de
+// cada obra (un toque si sigue igual, o el número nuevo con su nota; lo de
+// antes del libro de las que ya andaban); y «Postear el ajuste» con el código
+// del teléfono. La misma revisión sale en «Cierre del mes». La cabecera de su
+// sección lo cuenta.
+//
 // Cómo está organizada (v290, «que se parezca a un programa de contabilidad»):
 // una portada («Resumen») con las cifras y lo que hay que atender, y una
 // página por tarea: Bancos y tarjetas, Bandeja (el bank feed), Conciliar,
-// Movimientos, Estados financieros, Cierre del mes (desde la fase 8), Cobros
-// en línea y Conexiones y seguridad
+// Movimientos, Estados financieros, Costo por obra (fase 9), WIP (fase 10),
+// Cierre del mes (desde la fase 8), Facturas (fase 10), Cobros en línea y
+// Conexiones y seguridad
 // (el código del teléfono, Plaid y la conexión con Stripe). En el teléfono y
 // el iPad las pestañas van arriba; en la computadora las enseña el lateral de
 // la app (js/app.js) con MXP_CONTA.paginas() y los hooks pagina() y volver().
@@ -112,14 +136,22 @@
     jr: { instalado: false, pend: new Map(), no: new Set(), personas: null, cfg: null, control: null, err: null,
       ia: { abiertas: [], mal: [], cerrando: false, sinCodigo: false, err: null }, saltarIA: false },
     // «Costo por obra»: qué apartado, qué obra abierta, lo que se baja a sus asientos, el buscador, el filtro y la serie
-    obras: { sub: "obras", sel: null, bajar: null, q: "", filtro: "activas", serie: 0, piezas: [] }
+    obras: { sub: "obras", sel: null, bajar: null, q: "", filtro: "activas", serie: 0, piezas: [] },
+    // (fase 10) «Facturas»: qué apartado, qué factura abierta, el 🧾 de un hito que manda app.js (pedido), los buscadores y filtros,
+    // la serie contra el doble pintado, el estado del corte (v_emision_estado), la nota de la última acción y el último PDF hecho
+    fac: { sub: "facturas", doc: null, pedido: null, filtro: "todas", q: "", obraQ: "", obrasFiltro: "activas", serie: 0, estado: null, nota: null, ultimo: null, sinEnlace: null },
+    // (fase 10) «WIP»: qué apartado, qué mes (nulo = el que toca), la serie contra el doble pintado, la nota de la última acción
+    // (la que devolvió la base, con su mes), los meses de v_cortes, y el filtro y el buscador de «Obras»
+    wip: { sub: "mes", periodo: null, serie: 0, nota: null, meses: null, filtro: "llevan", q: "" }
   };
   // Las páginas, en el orden del menú. TITULOS va en el membrete de la app y en el lateral; PESTANAS, corto, en las pestañas del teléfono
   // (fase 8) «Cierre del mes» va después de los estados: es lo último del mes, con lo de arriba ya hecho
   // (fase 9) «Costo por obra» va junto a los estados: es el otro informe que sale del libro
-  const ORDEN = ["resumen", "bancos", "bandeja", "conciliar", "movimientos", "estados", "obras", "cierre", "cobros", "conexiones"];
-  const TITULOS = { resumen: "Resumen", bancos: "Bancos y tarjetas", bandeja: "Bandeja", conciliar: "Conciliar", movimientos: "Movimientos", estados: "Estados financieros", obras: "Costo por obra", cierre: "Cierre del mes", cobros: "Cobros en línea", conexiones: "Conexiones y seguridad" };
-  const PESTANAS = { resumen: "Resumen", bancos: "Bancos", bandeja: "Bandeja", conciliar: "Conciliar", movimientos: "Movimientos", estados: "Estados", obras: "Obras", cierre: "Cierre", cobros: "Cobros", conexiones: "Conexiones" };
+  // (fase 10) «Facturas» va junto a «Cobros en línea»: facturar y cobrar
+  // (fase 10) «WIP» va entre «Costo por obra» y «Cierre del mes»: sale del costo de cada obra y se hace al cerrar
+  const ORDEN = ["resumen", "bancos", "bandeja", "conciliar", "movimientos", "estados", "obras", "wip", "cierre", "facturas", "cobros", "conexiones"];
+  const TITULOS = { resumen: "Resumen", bancos: "Bancos y tarjetas", bandeja: "Bandeja", conciliar: "Conciliar", movimientos: "Movimientos", estados: "Estados financieros", obras: "Costo por obra", wip: "WIP (obra en curso)", cierre: "Cierre del mes", facturas: "Facturas", cobros: "Cobros en línea", conexiones: "Conexiones y seguridad" };
+  const PESTANAS = { resumen: "Resumen", bancos: "Bancos", bandeja: "Bandeja", conciliar: "Conciliar", movimientos: "Movimientos", estados: "Estados", obras: "Obras", wip: "WIP", cierre: "Cierre", facturas: "Facturas", cobros: "Cobros", conexiones: "Conexiones" };
   // el icono de cada página, del mismo trazo que los del menú de la app (24 × 24, línea de 1.8)
   const svgMenu = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
   const ICONOS = {
@@ -130,7 +162,9 @@
     movimientos: svgMenu('<path d="M4 8h14M15 5l3 3-3 3"/><path d="M20 16H6M9 13l-3 3 3 3"/>'),
     estados: svgMenu('<path d="M5 3h9l5 5v13H5z"/><path d="M14 3v5h5"/><path d="M8.5 17v-3M12 17v-6M15.5 17v-4"/>'),
     obras: svgMenu('<path d="M3 11l9-7 9 7"/><path d="M5 9.5V20h14V9.5"/><path d="M9.5 20v-5.5h5V20"/>'),
+    wip: svgMenu('<rect x="3" y="8.5" width="18" height="7" rx="3.5"/><path d="M6.5 12h6"/><path d="M15.5 4.5v2.5M15.5 17v2.5"/>'),
     cierre: svgMenu('<rect x="4" y="10.5" width="16" height="10.5" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><path d="M12 14.5v2.5"/>'),
+    facturas: svgMenu('<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/>'),
     cobros: svgMenu('<circle cx="12" cy="12" r="9"/><path d="M12 6.5v11M9.5 9.5h3.5a1.75 1.75 0 0 1 0 3.5h-2a1.75 1.75 0 0 0 0 3.5H15"/>'),
     conexiones: svgMenu('<path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6z"/><path d="M9.5 12l2 2 3.5-3.5"/>')
   };
@@ -159,7 +193,7 @@
     });
   }
   // «←» de la app: solo cuando hay algo interno que cerrar (una conciliación abierta, el mayor o el asiento de los estados). Se avisa en cada pintada
-  const hayAtras = () => !!S.conc || (S.pagina === "estados" && !!(S.est.cuenta || S.est.asiento)) || (S.pagina === "obras" && !!(S.obras.sel || S.obras.bajar));
+  const hayAtras = () => !!S.conc || (S.pagina === "estados" && !!(S.est.cuenta || S.est.asiento)) || (S.pagina === "obras" && !!(S.obras.sel || S.obras.bajar)) || (S.pagina === "facturas" && !!S.fac.doc);
   const marcarVolver = () => S.hooks.volver(hayAtras());
   // La cabecera común de cada página: una línea con sus cifras (o lo que explica la página), los selectores si los hay y la acción principal a la derecha.
   // El título no se repite: ya lo pone la barra de la app (hooks.titulo); queda como aria-label de la cabecera
@@ -186,6 +220,8 @@
     if (!PAGINAS[pag]) pag = "resumen";
     S.pagina = pag;
     S.conc = null;
+    // (fase 10) la nota de la última acción del WIP es de la página en que se hizo: al cambiar de página se va
+    S.wip.nota = null;
     if (opciones.cuenta !== undefined) {
       if (pag === "bandeja") S.filtroCuenta = opciones.cuenta;
       if (pag === "conciliar") S.concCuenta = opciones.cuenta;
@@ -207,6 +243,13 @@
       if (opciones.sel === undefined) S.obras.sel = null;
       S.obras.bajar = null;
     }
+    // (fase 10) las facturas: qué apartado y qué factura; la pestaña tocada sin más vuelve a la lista (la factura abierta se cierra)
+    if (pag === "facturas") {
+      if (opciones.sub !== undefined) S.fac.sub = opciones.sub;
+      S.fac.doc = opciones.doc !== undefined ? opciones.doc : null;
+    }
+    // (fase 10) el WIP: qué apartado y qué mes (sin opciones, el último que se miró; nulo, el que toca)
+    if (pag === "wip") for (const k of ["sub", "periodo"]) if (opciones[k] !== undefined) S.wip[k] = opciones[k];
     marcarPestana();
     S.hooks.titulo(KICKER, TITULOS[pag]);
     S.hooks.pagina(pag);
@@ -3933,6 +3976,11 @@
   //     fn_cierre_config con el %, fn_reserva_estimado_marcar/anular), DR-15
   //     (v_dr15_mes: lo que aún no se sabe, dicho), HISTORIAL (v_cierres) y
   //     AJUSTES (cierre_config; fn_cierre_config).
+  //   · (fase 10) EL WIP DEL MES que se revisa (c12, si está): la misma
+  //     revisión de cada obra que la página «WIP» (un toque si sigue igual,
+  //     otro número con su nota, terminada, lo de antes del libro) y «Postear
+  //     el ajuste de WIP», entre lo que detiene y los avisos; sus filas 174 a
+  //     177 van en la lista como las demás, con su botón al WIP del mismo mes.
   // Sin c9 pegado (las vistas no existen) la página lo dice en llano; el
   // Resumen sigue igual. Ninguna cifra se calcula aquí: vienen listas.
   // ============================================================
@@ -4295,8 +4343,10 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
   }
   // a qué página lleva un control (ir_a de la base). «cierre» se queda aquí: los activos, la reserva, el historial; el 10
   // (los anteriores sin cerrar) lleva al período que toca
-  const PAG_IR = ["bandeja", "conciliar", "movimientos", "estados", "cobros", "conexiones"];
+  // (fase 10) «wip» (las filas 174 a 177 de c12) lleva al WIP del mismo mes que se está revisando
+  const PAG_IR = ["bandeja", "conciliar", "movimientos", "estados", "wip", "facturas", "cobros", "conexiones"];
   function destinoCie(x, sig) {
+    if (x.ir_a === "wip") return { txt: PESTANAS.wip, attr: `data-wip-ir="${/^\d{4}-\d{2}$/.test(String(S.cie.periodo || "")) ? esc(S.cie.periodo) : ""}"` };
     if (PAG_IR.includes(x.ir_a)) return { txt: PESTANAS[x.ir_a], attr: `data-ir="${x.ir_a}"` };
     if (x.ir_a !== "cierre") return null;
     const o = Number(x.orden);
@@ -4321,6 +4371,7 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
   // los botones de dentro del cuerpo: otra página (ir_a), otro apartado, otro período, exportar, descargar, imprimir
   function wireCie(c) {
     c.querySelectorAll("[data-ir]").forEach(b => b.addEventListener("click", () => ir(b.dataset.ir)));
+    c.querySelectorAll("[data-wip-ir]").forEach(b => b.addEventListener("click", () => ir("wip", { sub: "mes", periodo: b.dataset.wipIr || null })));
     c.querySelectorAll("[data-cie-ir]").forEach(b => b.addEventListener("click", () => ir("cierre", { sub: b.dataset.cieIr })));
     c.querySelectorAll("[data-cie-per]").forEach(b => b.addEventListener("click", () => ir("cierre", { sub: "cierre", periodo: b.dataset.ciePer })));
     c.querySelectorAll("[data-cie-exportar]").forEach(b => b.addEventListener("click", () => exportarDesde(b.dataset.cieExportar)));
@@ -4353,7 +4404,7 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
   async function pintarCieCierre(mia) {
     cargandoCie("Revisando con la base: el banco, las conciliaciones, el libro, los estados…");
     const errPrevio = S.cie.error; S.cie.error = null; // el MX010 se explica una vez, en la pintada que sigue al intento
-    let filas, fila, rev = null, cierre = null, ronda = null;
+    let filas, fila, rev = null, cierre = null, ronda = null, wip = null;
     try {
       filas = await leerCieEstado();
       if (!vivaCie(mia)) return;
@@ -4376,6 +4427,9 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
           throw errorControl("La revisión guardada no coincide con la que acaba de correr", [{ vista: "v_cierre_estado", filas: fila ? `${fila.detienen} / ${fila.avisos}` : "—", esperadas: `${det} / ${avi}`,
             detalle: "Lo que detiene / los avisos. v_cierre_estado enseña la foto que fn_cierre_revisar acaba de guardar: si no dicen lo mismo, no se pinta el botón de cerrar." }]);
         }
+        // (fase 10) el WIP del mes que se revisa (c12): cada obra con su revisión y el ajuste, aquí mismo (sin c12, nada)
+        if (fila.tipo === "mes") wip = await leerWipCierre(fila.periodo);
+        if (!vivaCie(mia)) return;
       }
       ronda = await DB._leer("v_ronda_ultima?select=*&order=periodo.asc,orden.asc").catch(e => { if (esFalloDeRed(e)) throw e; return null; });
       await leerMfa();
@@ -4394,10 +4448,12 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
         <div class="ct-cie-pers">${vis.map(periodoCieHTML).join("")}</div>
         ${ayudaHTML(`<p class="ct-nota">Se cierra en orden: primero la apertura (el 30-sep, lo que trajo QuickBooks) y después cada mes, cuando ya terminó. Un período cerrado no se reabre nunca: lo que llegue tarde entra al mes abierto (docs/conta/OPERACION.md, la regla A). Toca un período para ver su revisión o su cierre.</p>`, "¿Cómo va esto?")}
       </section>` +
-      (fila.estado === "cerrado" ? cerradoHTML(fila, cierre) : revisionHTML(fila, rev, sig, errPrevio) + avisosHTML(rev, sig)) +
+      (fila.estado === "cerrado" ? cerradoHTML(fila, cierre) : revisionHTML(fila, rev, sig, errPrevio) + wipCieHTML(wip, fila) + avisosHTML(rev, sig)) +
       rondaHTML(ronda);
-    c.querySelectorAll("[data-cie-periodo]").forEach(b => b.addEventListener("click", () => { if (S.ocupado) return; S.cie.periodo = b.dataset.ciePeriodo; pintarCierre(); }));
+    c.querySelectorAll("[data-cie-periodo]").forEach(b => b.addEventListener("click", () => { if (S.ocupado) return; S.cie.periodo = b.dataset.ciePeriodo; S.wip.nota = null; pintarCierre(); }));
     wireCie(c);
+    const wc = $("ct-wip-cie");
+    if (wc && wip && !wip.error) wireWip(wc, wip);
     const cerrar = $("ct-cie-cerrar");
     if (cerrar) cerrar.addEventListener("click", () => abrirConfirmacion($("ct-cie-rev"), fila));
     const otra = $("ct-cie-revisar");
@@ -5228,7 +5284,1293 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     </article>`;
   }
 
-  const PAGINAS = { resumen: pintarResumen, bancos: pintarBancos, bandeja: pintarBandeja, conciliar: pintarConciliar, movimientos: pintarMovimientos, estados: pintarEstados, obras: pintarObras, cierre: pintarCierre, cobros: pintarCobros, conexiones: pintarConexiones };
+  // ============================================================
+  // EL WIP POR OBRA (c12, fase 10) — docs/conta/c12-wip.sql
+  //
+  // El trabajo en curso por COSTO A COSTO (lo decidió Edgar el 11-nov): el %
+  // hecho de cada obra de precio fijo es su costo a la fecha ÷ su costo total
+  // estimado REVISADO; lo ganado es su precio × ese %; contra lo facturado,
+  // la obra va por detrás (sub-facturada: 1200) o por delante (sobre-
+  // facturada: 2400), y si su costo estimado pasa del precio, la pérdida
+  // queda reconocida entera (5950 / 2410). La base calcula todo; aquí solo se
+  // pinta lo que manda y se llama a sus funciones. Cuatro apartados:
+  //   · EL MES (el que toca, o el que se elija): fn_wip_resumen (los totales
+  //     vienen de ahí: la pantalla no suma), v_wip_schedule SIEMPRE filtrada
+  //     por el mes (una fila por obra: el formato de la afianzadora) y
+  //     fn_wip_control del mes. Arriba el resumen, con «Postear el ajuste»
+  //     (fn_wip_postear: con el código del teléfono, diciendo en llano qué
+  //     postea por obra y que se deshace solo el día 1) o «Deshacer»
+  //     (fn_wip_deshacer, con su motivo). Debajo, LA REVISIÓN DEL MES: cada
+  //     obra con lo que lleva gastado y su costo estimado de la vez pasada;
+  //     «Sigue igual» en un toque (fn_wip_revisar {confirmar} con el número
+  //     que se vio: si ya no es ese, MX008 y se vuelve a mirar), otro número
+  //     con su nota, o «terminada»; y lo de antes del libro de las obras que
+  //     ya andaban (fn_wip_antes_propuesta: de dónde sale cada número;
+  //     fn_wip_antes: confirmarlo o poner los de QuickBooks con su nota).
+  //     Después el schedule con su total y, plegado, lo que va al libro. Un
+  //     mes cerrado solo se lee (la foto de su ajuste).
+  //   · OBRAS (v_wip_obras): cuáles llevan WIP y por qué, lo de antes de cada
+  //     una y su marca (fn_wip_obra: «contrato», «tm» o «auto», con su nota).
+  //   · HISTORIAL (v_wip_ajustes y v_wip_revisiones).
+  //   · AJUSTES (fn_wip_config): desde qué mes lo exige el cierre.
+  // LA REVISIÓN Y EL POSTEO SALEN TAMBIÉN EN «CIERRE DEL MES» (el mes abierto
+  // que se revisa): la misma lista de obras y el mismo botón, y las filas
+  // 174 a 177 de c12 en la lista del cierre, como las demás, con su botón a
+  // esta página (ir_a «wip»).
+  // FALLA RUIDOSA: antes de pintar una cifra, el control del mes: un cuadre
+  // de los que dicen si los números son de fiar (10, 20, 30, 90) en rojo y no
+  // se pinta ningún número; los que son trabajo por hacer (40 revisar, 50
+  // postear, 60 la nota de una obra pasada de su estimado) salen en rojo
+  // arriba, sin tapar la página, que es donde se arreglan. Y el resumen y el
+  // schedule tienen que contar las mismas obras. Sin c12, la página lo dice
+  // en llano. Los montos que se escriben van como texto (dos decimales como
+  // mucho); los que se enseñan, tal como los da la base.
+  // ============================================================
+  const SUBS_WIP = { mes: "El mes", obras: "Obras", historial: "Historial", ajustes: "Ajustes" };
+  const wipCuerpo = () => $("ct-wip-cuerpo");
+  const vivaWip = mia => mia === S.wip.serie && S.pagina === "wip" && !!wipCuerpo();
+  const subWip = html => { const s = main() && main().querySelector(".ct-pag-sub"); if (s) s.innerHTML = html; };
+  const faltaC12 = err => !!err && (err.status === 404 || ["PGRST205", "PGRST202", "42P01", "42883"].includes(String(err.codigo || "")));
+  const mensajeWip = err => esFalloDeRed(err) || !navigator.onLine ? "Sin señal: no se hizo nada. Vuelve a intentarlo con señal."
+    : err.codigo === "MFA" ? "Falta el código del teléfono: sal y vuelve a entrar con él."
+    : err.codigo === "55P03" ? "La base estaba ocupada (se estaba pegando un SQL): no se hizo nada. Vuelve a intentarlo en un momento."
+    : /^(MX\d+|22023|22007|42501)$/.test(String(err.codigo || "")) ? err.message
+    : faltaC12(err) ? "A la base le falta el WIP: pega docs/conta/c12-wip.sql en Supabase (SQL Editor → pegar → Run)."
+    : `La base contestó con un error que no es de las reglas del WIP: ${err.message || "sin texto"}. Recarga la app; si sigue, avisa.`;
+  // los cuadres del control que son trabajo por hacer: se enseñan en rojo, pero no tapan la página (aquí es donde se arreglan)
+  const CUADRES_TAREA = [40, 50, 60];
+  const ORIGEN_REV = { a_mano: "un número a mano", mes_anterior: "confirmó lo del mes anterior", estimado: "confirmó su estimado", terminada: "terminada" };
+  const FALTA_WIP = { revision: "falta revisar", antes: "falta lo de antes", cuenta_ingreso: "sin cuenta de ingreso" };
+  const MODO_WIP = { auto: "Lo que diga la regla (residencial o comercial con contrato: sí; de servicio: no)", contrato: "Lleva WIP: es de precio fijo", tm: "No lleva WIP: se cobra por horas o por lo hecho (T&M)" };
+  // un % como lo da la base (0–100, dos decimales); un monto que se escribe: dólares con dos decimales como mucho
+  const pctW = v => { const n = num(v); return n == null || Number.isNaN(n) ? "—" : `${n.toLocaleString("en-US", { maximumFractionDigits: 2 })} %`; };
+  const montoWipOk = t => /^\d{1,11}(\.\d{1,2})?$/.test(t);
+  const MONTO_MAL = "Escribe el monto en dólares, con dos decimales como mucho (por ejemplo 12500 o 12500.50).";
+  // comparar con cero no es sumar: lo que la base trae distinto de cero
+  const noCero = v => { const n = num(v); return n != null && !Number.isNaN(n) && n !== 0; };
+  // por detrás (sub-facturada), por delante (sobre-facturada) o al día: lo dice la base (sub o sobre mayor que cero)
+  function ladoWip(f) {
+    if (f.sub_facturado == null && f.sobre_facturado == null) return null;
+    if (num(f.sub_facturado) > 0) return { clase: "detras", corto: `${fmt(f.sub_facturado)} por detrás`, txt: `vas ${fmt(f.sub_facturado)} por detrás: hecho y todavía sin facturar` };
+    if (num(f.sobre_facturado) > 0) return { clase: "delante", corto: `${fmt(f.sobre_facturado)} por delante`, txt: `vas ${fmt(f.sobre_facturado)} por delante: facturado de más` };
+    return { clase: "igual", corto: "al día", txt: "al día: lo facturado es lo ganado" };
+  }
+  // cómo está el ajuste del mes, en una píldora
+  function estadoWipPill(r) {
+    const a = r.ajuste || {};
+    if (r.cerrado) return pill("cerrado · solo se lee");
+    if (a.vivo && a.al_dia) return pill("ajuste posteado", "ok");
+    if (a.vivo) return pill("el ajuste ya no está al día", "bad");
+    if (!r.terminado) return pill("en curso");
+    if (r.puede_postear) return pill("sin postear", "warn");
+    return pill("nada que postear");
+  }
+  // la nota del resumen (la de la base): la del ajuste que ya no está al día no se repite si el control (50) ya lo dice en rojo
+  function notaResumenHTML(d) {
+    const r = d.res, a = r.ajuste || {}, desfasado = a.vivo && !a.al_dia;
+    // (y la que solo repite el porqué de no poder postear, que ya va debajo del botón)
+    if (!r.nota || r.nota === r.por_que_no || d.tareas.some(f => f.detalle === r.nota) || (desfasado && d.tareas.some(f => Number(f.orden) === 50))) return "";
+    return `<p class="ct-aviso ${desfasado ? "bad" : "warn"} ct-wip-rnota">${esc(r.nota)}</p>`;
+  }
+  // la nota de la última acción (la de la base), si es de este mes
+  const notaWipHTML = periodo => S.wip.nota && (!S.wip.nota.periodo || S.wip.nota.periodo === periodo)
+    ? `<p class="ct-aviso ${S.wip.nota.tipo || "ok"} ct-wip-nota" role="status">${esc(S.wip.nota.texto)}</p>` : "";
+
+  async function pintarWip() {
+    const mia = ++S.wip.serie;
+    if (!navigator.onLine) return sinSenal(pintarWip);
+    if (!SUBS_WIP[S.wip.sub]) S.wip.sub = "mes";
+    S.hooks.titulo(KICKER, TITULOS.wip);
+    main().innerHTML = cabPagina(TITULOS.wip, "Leyendo con la base…") +
+      `<section class="ct-card ct-ob-barra"><div class="ct-chips ct-wip-subs" aria-label="Qué parte">${Object.keys(SUBS_WIP).map(k =>
+        `<button type="button" class="ct-chip" data-wip-sub="${k}" aria-pressed="${k === S.wip.sub ? "true" : "false"}">${esc(SUBS_WIP[k])}</button>`).join("")}</div></section>
+      <div id="ct-wip-cuerpo" class="ct-wip-cuerpo"><div class="ct-card ct-cargando">Cargando…</div></div>`;
+    main().querySelectorAll("[data-wip-sub]").forEach(b => b.addEventListener("click", () => { if (!S.ocupado) ir("wip", { sub: b.dataset.wipSub }); }));
+    marcarVolver();
+    return ({ mes: pintarWipMes, obras: pintarWipObras, historial: pintarWipHistorial, ajustes: pintarWipAjustes })[S.wip.sub](mia);
+  }
+  function errorWip(err, reintentar) {
+    const c = wipCuerpo(); if (!c) return;
+    if (faltaC12(err) && !esFalloDeRed(err)) {
+      c.innerHTML = `<section class="ct-card ct-rojo" role="alert"><h2>Falta el WIP en la base</h2>
+        <p>Esta página lee lo que deja <span class="ct-num">docs/conta/c12-wip.sql</span>, y la base todavía no lo tiene. Pégalo entero en Supabase (SQL Editor → pegar → Run), después de c1 a c10; después vuelve a pegar c9-cierre.sql (el cierre mira el WIP) y vuelve aquí. Hasta entonces el ingreso de cada obra es lo facturado, como en QuickBooks.</p>
+        <div class="ct-acciones"><button type="button" class="accion secundaria" id="ct-reintentar">Reintentar</button></div></section>`;
+      $("ct-reintentar").addEventListener("click", reintentar);
+      return;
+    }
+    pintarError(err, reintentar, err.codigo === "42501" ? "El WIP es solo del dueño" : undefined, c);
+  }
+  // Los meses del libro (v_cortes, c4): para elegir cuál se mira y desde cuál se exige. Sin c4, solo el que toca
+  async function mesesWip() {
+    if (S.wip.meses) return S.wip.meses;
+    try {
+      const c = await DB._leer("v_cortes?select=periodo,tipo,desde,estado&tipo=eq.mes&order=desde.desc");
+      S.wip.meses = (Array.isArray(c) ? c : []).filter(x => x.tipo === "mes" && /^\d{4}-\d{2}$/.test(String(x.periodo)));
+    } catch (err) { if (esFalloDeRed(err)) throw err; S.wip.meses = []; }
+    return S.wip.meses;
+  }
+  // EL MES: el resumen (sin período, el que toca), su schedule y su control. FALLA RUIDOSA aquí: un cuadre de los que dicen si
+  // los números son de fiar en rojo, o el resumen y el schedule contando obras distintas, y no se pinta ninguna cifra
+  async function leerWipMes(periodo) {
+    const res = await DB._rpc("fn_wip_resumen", { p_periodo: periodo || null });
+    if (!res || typeof res !== "object" || !res.periodo) throw errorControl("El WIP no devolvió su resumen", [{ vista: "resumen del WIP", filas: 0, esperadas: 1, detalle: "Vacío: la sesión no es la del dueño (el equipo no ve nada del WIP) o a la base le falta el WIP." }]);
+    const [filas, ctl] = await Promise.all([
+      DB._leer(`v_wip_schedule?select=*&periodo=eq.${enc(res.periodo)}&order=obra.asc,proyecto_id.asc`),
+      DB._rpc("fn_wip_control", { p_periodo: res.periodo })
+    ]);
+    if (!Array.isArray(ctl) || !ctl.length) throw errorControl("El control del WIP no devolvió nada", [{ vista: "control del WIP", filas: 0, esperadas: 17, detalle: "Vacío: la sesión no es la del dueño o a la base le falta el WIP." }]);
+    const rojos = ctl.filter(f => f.nivel === "cuadre" && f.ok !== true && !CUADRES_TAREA.includes(Number(f.orden)));
+    if (rojos.length) throw errorControl("El WIP no cuadra", rojos.map(f => ({ vista: cap(String(f.cuadre || "").replace(/^wip: /, "")), filas: null, esperadas: null, detalle: f.detalle })));
+    const total = num(res.obras && res.obras.total);
+    if (!Array.isArray(filas) || filas.length !== total) {
+      throw errorControl("El resumen y el schedule del WIP no cuentan lo mismo", [{ vista: "schedule del mes", filas: Array.isArray(filas) ? filas.length : "—", esperadas: total,
+        detalle: `El resumen de ${res.nombre} cuenta ${total == null ? "—" : total} obra(s) y el schedule trae ${Array.isArray(filas) ? filas.length : "otra cosa"}: no se pinta nada hasta que digan lo mismo.` }]);
+    }
+    return { res, filas, ctl,
+      tareas: ctl.filter(f => f.nivel === "cuadre" && f.ok !== true && CUADRES_TAREA.includes(Number(f.orden))),
+      avisos: ctl.filter(f => f.nivel === "aviso" && f.ok !== true) };
+  }
+  // Una escritura del WIP (RPC con la sesión del dueño): la tarjeta se apaga, el error va a su forma; si salió, la nota de la base
+  // arriba, el aviso y se vuelve a pintar la página en la que se está (el WIP o el cierre). Con releer, un MX008 (la propuesta que
+  // se vio ya no es la de hoy) vuelve a leer la página con el aviso a la vista
+  async function accionWip(card, fn, args, exito, opciones = {}) {
+    if (S.ocupado) return;
+    if (!navigator.onLine) { mostrarErrorForma(card, "Sin señal: no se hizo nada."); return; }
+    if (opciones.mfa && !mfaActivo()) { mostrarErrorForma(card, opciones.mfa); return; }
+    S.ocupado = true;
+    const apagados = [...card.querySelectorAll("button, input, select, textarea")].filter(b => !b.disabled);
+    apagados.forEach(b => { b.disabled = true; });
+    const btn = opciones.boton || null;
+    if (btn) { btn.classList.add("ct-girando"); btn.setAttribute("aria-busy", "true"); }
+    let r;
+    try { r = await DB._rpc(fn, args); }
+    catch (err) {
+      apagados.forEach(b => { b.disabled = false; });
+      if (btn) { btn.classList.remove("ct-girando"); btn.removeAttribute("aria-busy"); }
+      S.ocupado = false;
+      if (opciones.releer && err.codigo === "MX008") { S.wip.nota = { periodo: opciones.periodo || null, tipo: "warn", texto: err.message }; await repintar(); return; }
+      mostrarErrorForma(card, mensajeWip(err));
+      return;
+    }
+    S.ocupado = false;
+    const n = exito(r) || null;
+    if (n) S.wip.nota = { periodo: opciones.periodo || null, tipo: n.tipo || "ok", texto: n.texto };
+    S.hooks.avisar(opciones.aviso || "Hecho");
+    await repintar();
+  }
+
+  // ---------- El mes ----------
+  async function pintarWipMes(mia) {
+    let d, meses;
+    try {
+      [d, meses] = await Promise.all([leerWipMes(S.wip.periodo), mesesWip(), leerMfa()]);
+      if (!vivaWip(mia)) return;
+    } catch (err) { if (!vivaWip(mia)) return; return errorWip(err, pintarWip); }
+    const r = d.res, o = r.obras || {};
+    S.wip.periodo = r.periodo;
+    subWip(`<b>${esc(cap(r.nombre))}</b> · ${plural(num(o.listas) || 0, "obra lista", "obras listas")} de ${esc(o.total)}${num(o.pendientes) ? ` · <span class="bad-txt">${plural(o.pendientes, "pendiente", "pendientes")}</span>` : ""}${r.cerrado ? " · cerrado" : ""}`);
+    // los meses que se pueden mirar: los ya empezados (y el que se mira, aunque v_cortes no lo traiga)
+    const hoy = hoyMiami(), ops = meses.filter(m => String(m.desde) <= hoy).map(m => m.periodo);
+    if (!ops.includes(r.periodo)) ops.unshift(r.periodo);
+    const c = wipCuerpo();
+    c.innerHTML = notaWipHTML(r.periodo) + resumenWipHTML(d, ops) +
+      `<section class="ct-card ct-wip-rev" id="ct-wip-rev">${revisionWipHTML(d)}</section>` +
+      scheduleWipHTML(d) + lineasWipHTML(d) + avisosWipHTML(d);
+    const sel = $("ct-wip-mes");
+    if (sel) sel.addEventListener("change", ev => { if (S.ocupado) { ev.target.value = r.periodo; return; } S.wip.periodo = ev.target.value; S.wip.nota = null; pintarWip(); });
+    wireWip(c, d);
+  }
+  // El resumen del mes: cuántas obras, lo que falta (en rojo), la nota de la base, los totales de la base, por detrás / por
+  // delante / la pérdida, y postear o deshacer
+  function resumenWipHTML(d, ops) {
+    const r = d.res, t = r.totales || {}, o = r.obras || {};
+    const nSub = d.filas.filter(f => f.en_ajuste && num(f.sub_facturado) > 0).length;
+    const nSobre = d.filas.filter(f => f.en_ajuste && num(f.sobre_facturado) > 0).length;
+    const desglose = [num(o.listas) ? plural(o.listas, "lista", "listas") : "", num(o.por_revisar) ? `${o.por_revisar} por revisar` : "",
+      num(o.por_confirmar_antes) ? `${o.por_confirmar_antes} sin lo de antes confirmado` : "", num(o.sin_cuenta_ingreso) ? `${o.sin_cuenta_ingreso} sin cuenta de ingreso` : "",
+      num(o.sin_movimiento) ? `${o.sin_movimiento} sin movimiento` : ""].filter(Boolean).join(", ");
+    const exige = r.exigido ? "El cierre de este mes lo exige." : r.exigir_desde ? `El cierre lo exige desde ${esc(nombrePer(r.exigir_desde))}.` : "El cierre todavía no lo exige.";
+    return `<section class="ct-card ct-wip-res" id="ct-wip-res">
+        <div class="ct-cab"><h2>${esc(cap(r.nombre))}</h2>${estadoWipPill(r)}</div>
+        ${ops && ops.length > 1 ? `<div class="ct-herr-fila"><label class="ct-campo ct-wip-mes">Mes<select id="ct-wip-mes">${ops.map(p => `<option value="${esc(p)}"${p === r.periodo ? " selected" : ""}>${esc(cap(nombrePer(p)))}</option>`).join("")}</select></label></div>` : ""}
+        <p class="ct-nota">${plural(num(o.total) || 0, "obra de precio fijo", "obras de precio fijo")} en el WIP${desglose ? `: ${esc(desglose)}` : ""}. ${exige}${r.cerrado ? " Un mes cerrado solo se lee: es lo que se posteó." : ""}</p>
+        ${d.tareas.map(f => `<p class="ct-aviso bad" data-cuadre="${esc(f.orden)}">${esc(f.detalle || "")}</p>`).join("")}
+        ${notaResumenHTML(d)}
+        ${num(t.obras) ? `<div class="ct-kpis cuatro">
+            ${kpiHTML("Precio de los contratos", fmt(t.precio_contrato), plural(t.obras, "obra lista", "obras listas"))}
+            ${kpiHTML("Costo a la fecha", fmt(t.costo_fecha), `de ${fmt(t.costo_estimado)} estimados`)}
+            ${kpiHTML("Ganado", fmt(t.ingreso_ganado), `${pctW(t.pct_avance)} hecho`)}
+            ${kpiHTML("Facturado", fmt(t.facturado_fecha), "a la fecha")}
+          </div>
+          <div class="ct-wip-ver">
+            <p class="ct-wip-lado detras"><span>Vas por detrás (hecho y sin facturar)</span><b class="ct-num">${fmt(t.sub_facturado)}</b><small>${plural(nSub, "obra", "obras")} · va a 1200</small></p>
+            <p class="ct-wip-lado delante"><span>Vas por delante (facturado de más)</span><b class="ct-num">${fmt(t.sobre_facturado)}</b><small>${plural(nSobre, "obra", "obras")} · va a 2400</small></p>
+            ${noCero(t.perdida_total) ? `<p class="ct-wip-lado perdida"><span>Pérdida de las obras que pierden</span><b class="ct-num">${fmt(t.perdida_total)}</b><small>este mes se provisionan ${fmt(t.perdida_provision)} · 5950 / 2410</small></p>` : ""}
+          </div>` : `<p class="ct-vacio ct-wip-vacio">Ninguna obra lista todavía: cuando cada una tenga su revisión (y lo de antes del libro, si ya andaba), aquí salen sus cifras.</p>`}
+        ${posteoWipHTML(d)}
+      </section>`;
+  }
+  // Postear / volver a postear / deshacer: el estado del ajuste, sus botones y por qué no se puede
+  function posteoWipHTML(d) {
+    const r = d.res, a = r.ajuste || {};
+    const auto = a.reverso_auto || null;
+    const estado = a.vivo ? `<p class="ct-nota ct-wip-asiento">Ajuste posteado: asiento ${asientoBtn(a.asiento_id, a.numero)} del ${esc(fechaLarga(a.fecha))}${auto ? `; se deshace solo el ${esc(fechaLarga(auto.fecha))} (${asientoBtn(auto.id, auto.numero)})` : ""}.</p>` : "";
+    const botones = [
+      r.puede_postear ? `<button type="button" class="accion" data-wip-postear>${a.vivo ? "Volver a postear el ajuste" : "Postear el ajuste de WIP"}</button>` : "",
+      r.puede_deshacer ? `<button type="button" class="accion secundaria" data-wip-deshacer>Deshacer el ajuste</button>` : ""
+    ].join("");
+    return `<div class="ct-wip-posteo" id="ct-wip-posteo">${estado}
+        ${botones ? `<div class="ct-acciones">${botones}</div>` : ""}
+        ${r.por_que_no ? `<p class="ct-sub ct-wip-porque">${esc(r.por_que_no)}</p>` : ""}
+        <div class="ct-form" hidden></div>
+      </div>`;
+  }
+  // LA REVISIÓN DEL MES (también en «Cierre del mes»): cada obra con lo que lleva gastado, su costo estimado de la vez pasada y
+  // lo que se puede hacer; lo pendiente primero
+  function revisionWipHTML(d, enCierre) {
+    const r = d.res, filas = d.filas;
+    const rango = f => f.estado === "pendiente" ? 0 : f.estado === "lista" ? 1 : 2;
+    const orden = [...filas].sort((x, y) => rango(x) - rango(y));
+    const pend = filas.filter(f => f.estado === "pendiente").length;
+    return `<div class="ct-cab"><h2>La revisión de ${esc(r.nombre)}</h2>${r.cerrado ? pill("cerrado") : pend ? pill(`${pend} por hacer`, "warn") : filas.length ? pill("todo revisado", "ok") : pill("ninguna obra")}</div>
+      <p class="ct-nota">${r.cerrado ? "Así quedó cada obra al cerrar el mes." : `Cada obra de precio fijo, con lo que lleva gastado y su costo TOTAL estimado (desde el inicio hasta terminarla). Si no cambió, «Sigue igual» en un toque; si cambió, el número nuevo con su nota.${enCierre ? "" : " Las que ya andaban antes del libro piden una vez lo de antes."}`}</p>
+      ${orden.length ? `<ul class="ct-wip-lista">${orden.map(f => obraRevHTML(f, r)).join("")}</ul>` : `<p class="ct-vacio">Ninguna obra de precio fijo activa en ${esc(r.nombre)}.</p>`}`;
+  }
+  function obraRevHTML(f, r) {
+    const falta = Array.isArray(f.falta) ? f.falta : [];
+    const sePuede = !r.cerrado && String(r.desde) <= hoyMiami();
+    const pills = (f.estado === "lista" ? pill(f.terminada ? "terminada" : "revisada", "ok")
+      : f.estado === "pendiente" ? pill(falta.map(k => FALTA_WIP[k] || k).join(" · ") || "pendiente", "warn") : pill("sin movimiento"))
+      + (f.pasa_de_100 ? pill("pasa de 100 %", "bad") : "") + (noCero(f.perdida_total) ? pill("con pérdida", "bad") : "");
+    // lo que lleva gastado: la base lo da sumado cuando la obra ya se calcula; si no, sus partes (aquí no se suman)
+    const gastado = f.costo_fecha != null
+      ? `Lleva <b class="ct-num">${fmt(f.costo_fecha)}</b> gastados${noCero(f.costo_antes) ? ` (<span class="ct-num">${fmt(f.costo_libro)}</span> en el libro y <span class="ct-num">${fmt(f.costo_antes)}</span> de antes)` : ""}`
+      : `Lleva <b class="ct-num">${fmt(f.costo_libro)}</b> en el libro${f.de_antes ? (f.costo_antes != null ? ` y <b class="ct-num">${fmt(f.costo_antes)}</b> de antes del libro` : " y lo de antes del libro, sin confirmar") : ""}`;
+    const estim = f.terminada ? "terminada: <b>100 %</b> hecho"
+      : f.costo_estimado != null ? `costo total estimado <b class="ct-num">${fmt(f.costo_estimado)}</b> · <b>${pctW(f.pct_avance)}</b> hecho${f.pasa_de_100 ? ` (de verdad ${pctW(f.pct_real)})` : ""}`
+      : f.propuesta_costo_estimado != null ? `${f.propuesta_origen === "estimado" ? "su estimado" : "la vez pasada"}: <b class="ct-num">${fmt(f.propuesta_costo_estimado)}</b>`
+      : "sin costo estimado todavía";
+    const lado = ladoWip(f);
+    const cifras = f.ingreso_ganado != null ? `<p class="ct-wip-ob-c">Precio <span class="ct-num">${fmt(f.precio_contrato)}</span> · ganado <span class="ct-num">${fmt(f.ingreso_ganado)}</span> · facturado <span class="ct-num">${fmt(f.facturado_fecha)}</span>${lado ? ` → <b class="ct-wip-l ${lado.clase}">${esc(lado.txt)}</b>` : ""}</p>` : "";
+    const barra = f.pct_avance != null ? `<div class="ct-ob-barra-h${f.pasa_de_100 ? " pasa" : ""}" role="img" aria-label="${esc(pctW(f.pct_avance))} hecho"><span style="width:${Math.max(0, Math.min(100, num(f.pct_avance) || 0))}%"></span></div>` : "";
+    const revisada = f.revision_id ? `<p class="ct-sub">Revisada el ${esc(fechaHora(f.revisado_el))} · ${esc(ORIGEN_REV[f.revision_origen] || f.revision_origen || "")}${f.revision_nota ? ` · «${esc(f.revision_nota)}»` : ""}</p>` : "";
+    const avisos = (Array.isArray(f.avisos) ? f.avisos : []).map(t => `<li class="ct-aviso warn">${esc(t)}</li>`).join("");
+    // lo que se puede hacer (un mes abierto y ya empezado): lo de antes, la revisión (un toque, otro número, terminada)
+    const acc = [];
+    if (sePuede && falta.includes("antes")) acc.push(`<button type="button" class="accion chica" data-wip-antes>Lo de antes del libro</button>`);
+    if (sePuede && falta.includes("revision")) {
+      if (f.propuesta_terminada) acc.push(`<button type="button" class="accion chica" data-wip-terminada>Terminó en ${esc(nombrePer(r.periodo).replace(/ de \d{4}$/, ""))}</button>`);
+      if (f.propuesta_costo_estimado != null) acc.push(`<button type="button" class="accion chica" data-wip-igual>Sigue igual: ${fmt(f.propuesta_costo_estimado)}</button>`);
+      acc.push(`<button type="button" class="accion secundaria chica" data-wip-otro>${f.propuesta_costo_estimado != null ? "Otro número" : "Poner su costo estimado"}</button>`);
+    } else if (sePuede && f.revision_id) {
+      acc.push(`<button type="button" class="ct-jr-link" data-wip-otro>Cambiar la revisión</button>`);
+      if (!f.terminada && f.obra_estado === "completado") acc.push(`<button type="button" class="ct-jr-link" data-wip-terminada>Terminó en ${esc(nombrePer(r.periodo).replace(/ de \d{4}$/, ""))}</button>`);
+    }
+    const propNota = sePuede && falta.includes("revision") && f.propuesta_nota ? `<p class="ct-sub ct-wip-prop">${esc(f.propuesta_nota)}</p>` : "";
+    // (la clase del estado lleva su prefijo: «lista» suelta es una rejilla de la app, en css/styles.css)
+    return `<li class="ct-wip-ob ct-wip-est-${esc(f.estado)}" data-wip-obra="${esc(f.proyecto_id)}">
+        <div class="ct-wip-ob-t"><b>${esc(f.obra || f.proyecto_id)}</b>${pills}<small>${esc([f.cliente, f.de_antes ? "ya andaba antes del libro" : ""].filter(Boolean).join(" · "))}</small></div>
+        <p class="ct-wip-ob-d">${gastado} · ${estim}</p>
+        ${barra}${cifras}${revisada}
+        ${f.estado === "pendiente" && f.falta_texto ? `<p class="ct-aviso warn ct-wip-falta">${esc(f.falta_texto)}</p>` : ""}
+        ${avisos ? `<ul class="ct-jr-avisos">${avisos}</ul>` : ""}
+        ${propNota}
+        ${acc.length ? `<div class="ct-acciones ct-wip-acc">${acc.join("")}</div>` : ""}
+        <div class="ct-form" hidden></div>
+      </li>`;
+  }
+  // El schedule (el formato de la afianzadora), con su total (de la base)
+  function scheduleWipHTML(d) {
+    const r = d.res, t = r.totales || {};
+    if (!d.filas.length) return "";
+    const cols = [{ t: "Obra" }, { t: "Precio", r: true }, { t: "Costo estimado", r: true }, { t: "Costo a la fecha", r: true }, { t: "% hecho", r: true },
+      { t: "Ganado", r: true }, { t: "Facturado", r: true }, { t: "Por detrás o por delante", r: true }];
+    const filas = d.filas.map(f => {
+      const lado = ladoWip(f);
+      const marcas = (f.estado === "pendiente" ? pill((Array.isArray(f.falta) ? f.falta : []).map(k => FALTA_WIP[k] || k).join(" · ") || "pendiente", "warn") : f.estado === "sin_movimiento" ? pill("sin movimiento") : "")
+        + (f.pasa_de_100 ? pill("pasa de 100 %", "bad") : "") + (noCero(f.perdida_total) ? pill(`pierde ${fmt(f.perdida_total)}`, "bad") : "") + (f.terminada ? pill("terminada", "ok") : "");
+      return { clase: f.en_ajuste ? "" : "ct-wip-fuera", celdas: [`<b>${esc(f.obra || f.proyecto_id)}</b>${f.cliente ? `<small>${esc(f.cliente)}</small>` : ""}${marcas ? `<span class="ct-wip-marcas">${marcas}</span>` : ""}`,
+        fmt(f.precio_contrato), fmt(f.costo_estimado), fmt(f.costo_fecha), pctW(f.pct_avance), fmt(f.ingreso_ganado), fmt(f.facturado_fecha),
+        lado ? `<span class="ct-wip-l ${lado.clase}">${esc(lado.corto)}</span>` : "—"] };
+    });
+    if (num(t.obras)) filas.push({ clase: "ct-ob-total", celdas: [`Total · ${plural(t.obras, "obra en el ajuste", "obras en el ajuste")}`, fmt(t.precio_contrato), fmt(t.costo_estimado), fmt(t.costo_fecha), pctW(t.pct_avance),
+      fmt(t.ingreso_ganado), fmt(t.facturado_fecha), `<span class="ct-wip-l detras">${fmt(t.sub_facturado)} por detrás</span><small><span class="ct-wip-l delante">${fmt(t.sobre_facturado)} por delante</span></small>`] });
+    const mas = d.filas.filter(f => f.ingreso_ganado != null).map(f => ({ celdas: [`<b>${esc(f.obra || f.proyecto_id)}</b>`, fmtNeg(f.utilidad_estimada), fmt(f.costo_para_terminar), fmtNeg(f.utilidad_fecha), fmt(f.perdida_total), fmt(f.perdida_provision)] }));
+    if (mas.length && num(t.obras)) mas.push({ clase: "ct-ob-total", celdas: ["Total", fmtNeg(t.utilidad_estimada), fmt(t.costo_para_terminar), fmtNeg(t.utilidad_fecha), fmt(t.perdida_total), fmt(t.perdida_provision)] });
+    return `<section class="ct-card ct-wip-sch" id="ct-wip-sch">
+        <div class="ct-cab"><h2>El WIP de ${esc(r.nombre)}, obra por obra</h2>${r.fuente === "posteado" ? pill("lo que se posteó") : pill("calculado hoy")}</div>
+        ${tablaOb(cols, filas, "ct-wip-tabla")}
+        ${mas.length ? `<details class="ct-wip-mas"><summary>Las demás cifras: utilidad, costo para terminar, pérdida</summary>${tablaOb([{ t: "Obra" }, { t: "Utilidad estimada", r: true }, { t: "Costo para terminar", r: true }, { t: "Utilidad a la fecha", r: true }, { t: "Pérdida", r: true }, { t: "Se provisiona", r: true }], mas, "ct-wip-tabla")}</details>` : ""}
+        ${ayudaHTML(`<p class="ct-nota">Por costo a costo: el % hecho es lo gastado a la fecha entre el costo total estimado que revisaste este mes (se queda en 100 % aunque se pase); lo ganado es el precio por ese %. Si lo ganado pasa de lo facturado vas por detrás (te falta facturar: 1200); si lo facturado pasa de lo ganado vas por delante (2400). Una obra con más costo estimado que precio reconoce su pérdida entera el mes en que se ve. Lo gastado y lo facturado cuentan desde el inicio de la obra: lo de antes del libro, confirmado.</p>
+          <p class="ct-nota">Para la afianzadora (en inglés): contract price = precio · estimated cost = costo estimado · estimated profit = utilidad estimada · cost to date = costo a la fecha · % complete = % hecho · earned revenue = ganado · billed to date = facturado · underbillings = por detrás · overbillings = por delante · cost to complete = costo para terminar · gross profit to date = utilidad a la fecha · loss provision = se provisiona.</p>`, "¿Cómo se calcula?")}
+      </section>`;
+  }
+  // Lo que va al libro (o lo que se posteó, en un mes cerrado): las líneas del asiento, por obra, plegadas
+  function lineasWipHTML(d) {
+    const r = d.res, ls = Array.isArray(r.lineas) ? r.lineas : [];
+    if (!ls.length) return "";
+    return `<section class="ct-card ct-wip-libro" id="ct-wip-libro"><details class="ct-wip-lineas"><summary>${r.cerrado ? "Lo que se posteó" : "Lo que iría al libro hoy"} (${plural(ls.length, "línea", "líneas")})</summary>
+        ${lineasPorObraHTML(ls)}</details></section>`;
+  }
+  // las líneas de un asiento agrupadas por obra, en el orden en que vienen: Debe / Haber, cuenta y su nombre (el memo, pequeño)
+  function lineasPorObraHTML(ls) {
+    const grupos = [];
+    for (const l of ls) { let g = grupos.find(x => x.id === l.proyecto_id); if (!g) grupos.push(g = { id: l.proyecto_id, obra: l.obra || l.proyecto_id, ls: [] }); g.ls.push(l); }
+    return `<ul class="ct-wip-asl">${grupos.map(g => `<li><b>${esc(g.obra || "Sin obra")}</b><ul>${g.ls.map(l =>
+      `<li><span><span class="ct-num">${esc(l.cuenta)}</span> ${esc(l.cuenta_nombre || "")}${l.memo ? `<small>${esc(l.memo)}</small>` : ""}</span><span class="ct-num">${num(l.monto) > 0 ? "Debe" : "Haber"} ${fmtAbs(l.monto)}</span></li>`).join("")}</ul></li>`).join("")}</ul>`;
+  }
+  // Los avisos del control en rojo (no frenan): abajo, como en las demás páginas
+  const avisosWipHTML = d => d.avisos.length ? `<section class="ct-card ct-wip-avisos" id="ct-wip-avisos"><ul class="ct-jr-avisos">${d.avisos.map(f => `<li class="ct-aviso warn">${esc(cap(String(f.cuadre || "").replace(/^wip: /, "")))}: ${esc(f.detalle || "")}</li>`).join("")}</ul></section>` : "";
+
+  // Los botones de la revisión y del posteo (en esta página y en «Cierre del mes»): cada obra tiene su forma (.ct-form)
+  function wireWip(cont, d) {
+    const r = d.res;
+    cont.querySelectorAll(".ct-asiento-btn").forEach(b => b.addEventListener("click", () => ir("estados", { cuenta: null, asiento: b.dataset.asiento })));
+    cont.querySelectorAll("[data-wip-obra]").forEach(li => {
+      const f = d.filas.find(x => x.proyecto_id === li.dataset.wipObra); if (!f) return;
+      const mes = nombrePer(r.periodo);
+      const igual = li.querySelector("[data-wip-igual]");
+      if (igual) igual.addEventListener("click", () => accionWip(li, "fn_wip_revisar", { p_proyecto: f.proyecto_id, p_periodo: r.periodo, p: { confirmar: true, costo_estimado: dos(f.propuesta_costo_estimado) } },
+        x => notaRevision(x), { aviso: `${f.obra}: revisada`, releer: true, periodo: r.periodo, boton: igual }));
+      const otro = li.querySelector("[data-wip-otro]");
+      if (otro) otro.addEventListener("click", () => formaRevision(li, f, r));
+      const term = li.querySelector("[data-wip-terminada]");
+      if (term) term.addEventListener("click", () => montarForma(li, formaHTML(`¿«${esc(f.obra)}» terminó en ${esc(mes)}? Se revisa como terminada: <b>100 % hecho</b>, su costo final es el que lleva y lo que le falte por facturar queda por detrás este mes. Después ya no entra en el WIP.`, "", "Sí, terminó"),
+        () => accionWip(li, "fn_wip_revisar", { p_proyecto: f.proyecto_id, p_periodo: r.periodo, p: { terminada: true } }, x => notaRevision(x), { aviso: `${f.obra}: terminada`, periodo: r.periodo })));
+      const antes = li.querySelector("[data-wip-antes]");
+      if (antes) antes.addEventListener("click", () => abrirAntes(li, f.proyecto_id, r.periodo));
+    });
+    const posteo = cont.querySelector("#ct-wip-posteo");
+    if (posteo) {
+      const p = posteo.querySelector("[data-wip-postear]"); if (p) p.addEventListener("click", () => abrirPostear(posteo, d));
+      const x = posteo.querySelector("[data-wip-deshacer]"); if (x) x.addEventListener("click", () => abrirDeshacer(posteo, d));
+    }
+  }
+  // la nota que devuelve la revisión: si con ella el ajuste ya posteado dejó de estar al día, en ámbar (hay que volver a postear)
+  const notaRevision = x => x ? { texto: x.nota || "Revisada.", tipo: x.ajuste && x.ajuste.vivo && !x.ajuste.al_dia ? "warn" : "ok" } : null;
+  // OTRO NÚMERO: el costo total estimado (texto), su nota y, si este mes el precio no es el de la ficha, el precio con su nota
+  function formaRevision(li, f, r) {
+    const prop = f.propuesta_costo_estimado != null;
+    montarForma(li, formaHTML(`El costo TOTAL estimado de «${esc(f.obra)}» en ${esc(nombrePer(r.periodo))}: lo que costará entera, desde el inicio hasta terminarla (no lo que falta).${prop ? ` La vez pasada: <span class="ct-num">${fmt(f.propuesta_costo_estimado)}</span>; si lo cambias, di por qué.` : ""}`,
+      `${campoHTML("costo", "Costo total estimado ($)", "monto", `required value="${f.costo_estimado != null && !f.terminada ? esc(dos(f.costo_estimado)) : ""}" data-falta="Falta el costo total estimado."`)}
+       ${campoHTML("nota", prop ? "Por qué cambia (queda escrito con la revisión)" : "Nota (opcional; queda con la revisión)", "textarea")}
+       <details class="ct-wip-precio"><summary>¿Este mes el precio no es el de la ficha (${fmt(f.precio_ficha)})?</summary>
+         ${campoHTML("precio", "Precio del contrato este mes ($) · vacío = el de la ficha", "monto")}
+         <p class="ct-nota">Por ejemplo, una orden de cambio firmada que todavía no está en la ficha. Pide su nota.</p></details>`, "Guardar la revisión"), v => {
+      const t = montoTxt(v.costo);
+      if (!montoWipOk(t)) { mostrarErrorForma(li, MONTO_MAL); return; }
+      const p = { costo_estimado: t };
+      if (v.nota) p.nota = v.nota;
+      const tp = montoTxt(v.precio);
+      if (tp) { if (!montoWipOk(tp)) { mostrarErrorForma(li, MONTO_MAL); return; } p.precio_contrato = tp; }
+      accionWip(li, "fn_wip_revisar", { p_proyecto: f.proyecto_id, p_periodo: r.periodo, p }, x => notaRevision(x), { aviso: `${f.obra}: revisada`, periodo: r.periodo });
+    });
+  }
+  // LO DE ANTES DEL LIBRO: lo que proponen los papeles de la app, de dónde sale cada número, y confirmarlo o poner otros
+  async function abrirAntes(card, proyecto, periodo) {
+    if (S.ocupado) return;
+    const caja = card.querySelector(".ct-form"); if (!caja) return;
+    caja.hidden = false;
+    caja.innerHTML = `<p class="ct-aviso ct-espera" role="status">Leyendo lo de antes del libro…</p>`;
+    let pr;
+    try { pr = await DB._rpc("fn_wip_antes_propuesta", { p_proyecto: proyecto }); }
+    catch (err) { caja.innerHTML = `<p class="ct-aviso bad">${esc(mensajeWip(err))}</p>`; return; }
+    if (!pr || !pr.costo || !pr.facturado) { caja.innerHTML = `<p class="ct-aviso bad">La base no devolvió lo de antes de esta obra: vuelve a intentarlo; si sigue, avisa.</p>`; return; }
+    const c = pr.costo, fa = pr.facturado, h = c.horas || {}, tk = c.tickets || {}, te = c.trabajos_externos || {}, fx = fa.facturas || {}, cf = pr.confirmado;
+    const fila = (txt, v, cl) => `<li${cl ? ` class="${cl}"` : ""}><span>${txt}</span><span class="ct-num">${fmt(v)}</span></li>`;
+    caja.innerHTML = `<div class="ct-wip-antes">
+        <p class="ct-form-t">Lo de antes del libro de «${esc(pr.obra)}»: hasta el ${esc(fechaLarga(pr.hasta))} (el libro empieza el ${esc(fechaLarga(pr.libro_desde))})</p>
+        <p class="ct-nota">Lo que dicen los papeles de la app${pr.de_antes_por ? ` (tiene ${esc(pr.de_antes_por)})` : ""}. Si en QuickBooks esa obra dice otra cosa, pon lo de QuickBooks con su nota.</p>
+        <ul class="ct-wip-desglose">
+          ${fila(`Tickets · ${plural(num(tk.n) || 0, "ticket", "tickets")}`, tk.monto)}
+          ${fila(`Trabajos externos · ${num(te.n) || 0}`, te.monto)}
+          ${fila(`Horas de la cuadrilla · ${horasTxt(h.horas)} a la tarifa de hoy`, h.monto)}
+          ${fila("<b>Costo de antes</b>", c.total, "t")}
+          ${fila(`Facturas · ${plural(num(fx.n) || 0, "factura", "facturas")}`, fx.monto)}
+          ${fila("<b>Facturado antes</b>", fa.total, "t")}
+        </ul>
+        ${(Array.isArray(pr.notas) ? pr.notas : []).map(t => `<p class="ct-sub">${esc(t)}</p>`).join("")}
+        ${cf ? `<p class="ct-aviso ok">Confirmado el ${esc(fechaHora(cf.confirmado_el))}: costo ${fmt(cf.costo)} y facturado ${fmt(cf.facturado)}${cf.nota ? ` · «${esc(cf.nota)}»` : ""}.</p>` : ""}
+        <div class="ct-acciones">
+          <button type="button" class="accion" data-antes-si>Confirmar: costo ${fmt(c.total)} y facturado ${fmt(fa.total)}</button>
+          <button type="button" class="accion secundaria" data-antes-otro>Poner otros números</button>
+          <button type="button" class="accion secundaria" data-antes-no>Cancelar</button>
+        </div>
+      </div>`;
+    caja.querySelector("[data-antes-no]").addEventListener("click", () => { caja.hidden = true; caja.innerHTML = ""; });
+    const si = caja.querySelector("[data-antes-si]");
+    si.addEventListener("click", () => accionWip(card, "fn_wip_antes", { p_proyecto: proyecto, p: { costo: dos(c.total), facturado: dos(fa.total) } },
+      x => x ? { texto: x.nota } : null, { aviso: "Lo de antes, confirmado", periodo, boton: si }));
+    caja.querySelector("[data-antes-otro]").addEventListener("click", () => montarForma(card, formaHTML(`Lo de antes del libro de «${esc(pr.obra)}», hasta el ${esc(fechaLarga(pr.hasta))}: los números de QuickBooks (el cero vale).`,
+      `<div class="ct-fila">${campoHTML("costo", "Costo de antes ($)", "monto", `required value="${esc(dos(c.total))}"`)}${campoHTML("facturado", "Facturado antes ($)", "monto", `required value="${esc(dos(fa.total))}"`)}</div>
+       ${campoHTML("nota", "De dónde salen (por ejemplo, «costo por obra de QuickBooks al 30 de septiembre»)", "textarea", `required data-falta="Di de dónde salen esos números: queda escrito."`)}`, "Confirmar estos números"), v => {
+      const tc = montoTxt(v.costo), tf = montoTxt(v.facturado);
+      if (!montoWipOk(tc) || !montoWipOk(tf)) { mostrarErrorForma(card, MONTO_MAL); return; }
+      accionWip(card, "fn_wip_antes", { p_proyecto: proyecto, p: { costo: tc, facturado: tf, nota: v.nota } }, x => x ? { texto: x.nota } : null, { aviso: "Lo de antes, confirmado", periodo });
+    }));
+  }
+  // POSTEAR: con el código del teléfono, diciendo por obra qué va al libro, qué obras no entran y que se deshace solo el día 1
+  function abrirPostear(card, d) {
+    const r = d.res, a = r.ajuste || {};
+    if (!mfaActivo()) { mostrarErrorForma(card, "Postear el ajuste pone un asiento en el libro: pide el código del teléfono. Actívalo en Conexiones y seguridad y entra con él."); return; }
+    const ls = Array.isArray(r.lineas) ? r.lineas : [];
+    const ids = [...new Set(ls.map(l => l.proyecto_id))];
+    const porObra = ids.map(id => {
+      const f = d.filas.find(x => x.proyecto_id === id) || {}, lado = ladoWip(f);
+      return `<li><b>${esc(f.obra || id)}</b>: ${lado ? esc(lado.txt) : "—"}${noCero(f.perdida_provision) ? `; y pierde ${fmt(f.perdida_total)}: se provisionan ${fmt(f.perdida_provision)}` : ""}.</li>`;
+    }).join("");
+    const fuera = d.filas.filter(f => f.estado === "pendiente");
+    montarForma(card, formaHTML(`${a.vivo ? `El ajuste que está posteado (asiento ${esc(a.numero)}) ya no es el de hoy: se reversa dentro de ${esc(r.nombre)} y entra este. ` : ""}Se postea <b>un asiento</b> del ${esc(fechaLarga(r.hasta))}, con ${plural(ids.length, "obra", "obras")}:`,
+      `<ul class="ct-wip-postea">${porObra}</ul>
+       <details class="ct-wip-lineas"><summary>Las ${plural(ls.length, "línea", "líneas")} del asiento</summary>${lineasPorObraHTML(ls)}</details>
+       ${fuera.length ? `<p class="ct-aviso warn">No entran (les falta algo): ${esc(fuera.map(f => f.obra).join(", "))}. Su ingreso sigue siendo lo facturado.</p>` : ""}
+       <p class="ct-nota">Se deshace solo el <b>${esc(fechaLarga(r.reverso_fecha))}</b>: ese día el libro vuelve a lo facturado, y el mes que viene se ajusta otra vez con lo de entonces. Mientras ${esc(r.nombre)} siga abierto, si algo cambia se vuelve a postear.</p>
+       ${campoHTML("nota", "Nota (opcional; queda con el ajuste)", "textarea")}`, a.vivo ? "Volver a postear" : "Postear el ajuste"), v =>
+      accionWip(card, "fn_wip_postear", { p_periodo: r.periodo, p_motivo: v.nota || null }, x => x ? { texto: x.nota, tipo: x.posteado ? "ok" : "warn" } : null,
+        { aviso: a.vivo ? "Ajuste de WIP rehecho" : "Ajuste de WIP posteado", periodo: r.periodo, mfa: "Postear el ajuste pide el código del teléfono: actívalo en Conexiones y seguridad y entra con él.", boton: card.querySelector(".ct-form button[type=submit]") }));
+  }
+  // DESHACER: con el código del teléfono y su motivo
+  function abrirDeshacer(card, d) {
+    const r = d.res, a = r.ajuste || {};
+    if (!mfaActivo()) { mostrarErrorForma(card, "Deshacer el ajuste toca el libro: pide el código del teléfono. Actívalo en Conexiones y seguridad y entra con él."); return; }
+    montarForma(card, formaHTML(`Deshacer el ajuste de ${esc(r.nombre)} (asiento ${esc(a.numero || "")}): se reversa con otro asiento (no se borra), su reverso del día 1 queda anulado y el libro vuelve a lo facturado. No se postea otro.`,
+      campoHTML("motivo", "Por qué (queda escrito en el reverso)", "textarea", `required data-falta="Di por qué: queda escrito en el reverso."`), "Deshacer el ajuste"), v => {
+      if (String(v.motivo || "").length < 3) { mostrarErrorForma(card, "Di por qué en unas palabras (al menos tres letras)."); return; }
+      accionWip(card, "fn_wip_deshacer", { p_periodo: r.periodo, p_motivo: v.motivo }, x => x ? { texto: x.nota } : null,
+        { aviso: "Ajuste de WIP deshecho", periodo: r.periodo, mfa: "Deshacer el ajuste pide el código del teléfono: actívalo en Conexiones y seguridad y entra con él." });
+    });
+  }
+
+  // ---------- En «Cierre del mes»: el WIP del mes que se revisa ----------
+  // Sin c12 (la base no lo tiene), nada: el cierre sigue como antes. Un error que no es de red se enseña en su tarjeta
+  async function leerWipCierre(periodo) {
+    try { return await leerWipMes(periodo); }
+    catch (err) {
+      if (esFalloDeRed(err)) throw err;
+      if (faltaC12(err)) return null;
+      return { error: err };
+    }
+  }
+  // (lo que detiene del WIP —revisar, postear— ya va en la lista de arriba, en sus filas 174 a 177: aquí no se repite)
+  function wipCieHTML(w, fila) {
+    if (!w) return "";
+    if (w.error) {
+      const e = w.error;
+      return `<section class="ct-card ct-wip-cie rojo" id="ct-wip-cie"><div class="ct-cab"><h2>El WIP de ${esc(fila.nombre)}</h2>${pill("no cuadra", "bad")}</div>
+        <p class="ct-aviso bad">${esc(e.control ? `${e.message}: ${e.control.map(x => x.detalle).filter(Boolean).join(" · ")}` : mensajeWip(e))}</p>
+        <p class="ct-nota">No se enseña ninguna cifra del WIP hasta que cuadre (la lista de arriba lo dice en la fila del WIP).</p>
+        <div class="ct-acciones"><button type="button" class="accion secundaria chica" data-wip-ir="${esc(fila.periodo)}">WIP</button></div></section>`;
+    }
+    const r = w.res, t = r.totales || {}, a = r.ajuste || {};
+    const exige = r.exigido ? `Para cerrar ${esc(r.nombre)}: cada obra de precio fijo con su costo estimado revisado, y el ajuste posteado.`
+      : `Todavía no detiene el cierre de ${esc(r.nombre)} (${r.exigir_desde ? `se exige desde ${esc(nombrePer(r.exigir_desde))}` : "no se exige"}), pero se puede hacer ya.`;
+    return `<section class="ct-card ct-wip-cie" id="ct-wip-cie">
+        <div class="ct-cab"><h2>El WIP de ${esc(r.nombre)}</h2>${estadoWipPill(r)}</div>
+        <p class="ct-nota">${exige}</p>
+        ${notaWipHTML(r.periodo)}
+        <div class="ct-wip-rev">${revisionWipHTML(w, true)}</div>
+        ${num(t.obras) ? `<p class="ct-wip-hoy">Hoy, en ${plural(t.obras, "obra lista", "obras listas")}: <b class="ct-wip-l detras">${fmt(t.sub_facturado)} por detrás</b> · <b class="ct-wip-l delante">${fmt(t.sobre_facturado)} por delante</b>${noCero(t.perdida_provision) ? ` · <b class="ct-wip-l perdida">pérdida por reconocer ${fmt(t.perdida_provision)}</b>` : ""}.</p>` : ""}
+        ${posteoWipHTML(w)}
+        <div class="ct-acciones"><button type="button" class="accion secundaria chica" data-wip-ir="${esc(r.periodo)}">Ver el WIP entero</button></div>
+      </section>`;
+  }
+
+  // ---------- Obras: cuáles llevan WIP, por qué, lo de antes y la marca ----------
+  async function pintarWipObras(mia) {
+    let filas;
+    try {
+      filas = await DB._leer("v_wip_obras?select=*&order=obra.asc");
+      if (!vivaWip(mia)) return;
+    } catch (err) { if (!vivaWip(mia)) return; return errorWip(err, pintarWip); }
+    const llevan = filas.filter(o => o.lleva_wip), no = filas.filter(o => !o.lleva_wip);
+    const sinAntes = llevan.filter(o => o.activa && o.de_antes && !o.antes_id).length;
+    subWip(`${plural(llevan.length, "obra lleva", "obras llevan")} WIP${sinAntes ? ` · <span class="bad-txt">${plural(sinAntes, "sin lo de antes confirmado", "sin lo de antes confirmado")}</span>` : ""}`);
+    if (!["llevan", "no", "todas"].includes(S.wip.filtro)) S.wip.filtro = "llevan";
+    wipCuerpo().innerHTML = notaWipHTML(null) + `<section class="ct-card ct-wip-obras" id="ct-wip-obras">
+        <div class="ct-herr-fila"><label class="ct-campo ct-buscar">Buscar<input id="ct-wip-buscar" type="search" placeholder="Obra o cliente" value="${esc(S.wip.q)}" autocomplete="off"></label></div>
+        <div class="ct-chips" aria-label="Qué obras">${[["llevan", "Llevan WIP", llevan.length], ["no", "No llevan", no.length], ["todas", "Todas", filas.length]].map(([k, t, n]) =>
+          `<button type="button" class="ct-chip" data-wip-filtro="${k}" aria-pressed="${S.wip.filtro === k ? "true" : "false"}">${t} (${n})</button>`).join("")}</div>
+        <div id="ct-wip-obs" class="ct-wip-obs"></div>
+        ${ayudaHTML(`<p class="ct-nota">Llevan WIP las de precio fijo: residenciales o comerciales con contrato en su ficha. Las de servicio y las que no tienen contrato no: su ingreso es lo facturado. Si la regla no acierta con una obra, márcala una vez con su nota. Una obra que ya andaba antes del libro (el 1-oct-2026) pide una vez lo de antes: su costo y lo facturado hasta el 30-sep, porque el % hecho se mide desde el inicio de la obra.</p>`, "¿Qué obras llevan WIP?")}
+      </section>`;
+    const pinta = () => {
+      const q = sinAcentos(S.wip.q).trim();
+      let l = S.wip.filtro === "llevan" ? llevan : S.wip.filtro === "no" ? no : filas;
+      if (q) l = l.filter(o => sinAcentos(`${o.obra || ""} ${o.cliente || ""} ${o.proyecto_id || ""}`).includes(q));
+      const cont = $("ct-wip-obs");
+      cont.innerHTML = l.length ? l.map(obraWipCardHTML).join("") : `<p class="ct-vacio">${q ? `Ninguna obra con «${esc(S.wip.q)}».` : "Ninguna."}</p>`;
+      cont.querySelectorAll("[data-wip-ob]").forEach(card => {
+        const o = filas.find(x => x.proyecto_id === card.dataset.wipOb); if (!o) return;
+        const an = card.querySelector("[data-wip-antes]"); if (an) an.addEventListener("click", () => abrirAntes(card, o.proyecto_id, null));
+        const mk = card.querySelector("[data-wip-marca]"); if (mk) mk.addEventListener("click", () => formaMarca(card, o));
+      });
+    };
+    $("ct-wip-buscar").addEventListener("input", ev => { S.wip.q = ev.target.value; pinta(); });
+    wipCuerpo().querySelectorAll("[data-wip-filtro]").forEach(b => b.addEventListener("click", () => {
+      S.wip.filtro = b.dataset.wipFiltro;
+      wipCuerpo().querySelectorAll("[data-wip-filtro]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+      pinta();
+    }));
+    pinta();
+  }
+  function obraWipCardHTML(o) {
+    const antes = o.de_antes ? (o.antes_id
+      ? `<p class="ct-sub">Lo de antes del libro, confirmado el ${esc(fechaHora(o.antes_confirmado_el))}: costo <span class="ct-num">${fmt(o.antes_costo)}</span> y facturado <span class="ct-num">${fmt(o.antes_facturado)}</span>${o.antes_nota ? ` · «${esc(o.antes_nota)}»` : ""}.</p>`
+      : `<p class="ct-aviso warn">Ya andaba antes del libro (tiene ${esc(o.de_antes_por || "papeles de antes")}): falta confirmar lo de antes. Hasta entonces no entra en el ajuste.</p>`) : "";
+    return `<article class="ct-card ct-wip-obc" data-wip-ob="${esc(o.proyecto_id)}">
+        <div class="ct-cab"><h2>${esc(o.obra || o.proyecto_id)}</h2>${o.lleva_wip ? pill("lleva WIP", "ok") : pill("no lleva WIP")}</div>
+        <p class="ct-nota">${esc([o.cliente, o.tipo, ESTADO_OBRA[o.obra_estado] || o.obra_estado].filter(Boolean).join(" · "))}${o.contrato != null ? ` · contrato <span class="ct-num">${fmt(o.contrato)}</span>` : " · sin contrato en la ficha"}${o.cuenta_ingreso ? ` · ingreso a ${esc(o.cuenta_ingreso)}` : ""}</p>
+        <p class="ct-sub">${esc(o.motivo || "")}${o.marca ? ` Marcada «${esc(o.marca)}»${o.marca_nota ? `: «${esc(o.marca_nota)}»` : ""}.` : ""}</p>
+        ${antes}
+        <div class="ct-acciones">${o.de_antes ? `<button type="button" class="accion${o.antes_id ? " secundaria" : ""} chica" data-wip-antes>Lo de antes del libro</button>` : ""}<button type="button" class="accion secundaria chica" data-wip-marca>¿Lleva WIP?</button></div>
+        <div class="ct-form" hidden></div>
+      </article>`;
+  }
+  // LA MARCA de una obra (fn_wip_obra): contrato / tm / auto, con su nota (la base la pide salvo «auto»)
+  function formaMarca(card, o) {
+    const actual = o.marca || "auto";
+    montarForma(card, formaHTML(`¿«${esc(o.obra)}» lleva WIP? Hoy: ${esc(o.motivo || "")}`,
+      `<label class="ct-campo">Lo que es<select name="modo">${Object.keys(MODO_WIP).map(k => `<option value="${k}"${k === actual ? " selected" : ""}>${esc(MODO_WIP[k])}</option>`).join("")}</select></label>
+       ${campoHTML("nota", "Por qué (queda escrito con la marca; no hace falta para «lo que diga la regla»)", "textarea")}`, "Guardar"), v => {
+      if (v.modo === actual && !v.nota) { mostrarErrorForma(card, "No cambiaste nada."); return; }
+      const p = { modo: v.modo }; if (v.nota) p.nota = v.nota;
+      accionWip(card, "fn_wip_obra", { p_proyecto: o.proyecto_id, p }, x => x ? { texto: x.nota } : null, { aviso: "Marca guardada" });
+    });
+  }
+
+  // ---------- Historial: los ajustes y las revisiones ----------
+  async function pintarWipHistorial(mia) {
+    let aj, rv;
+    try {
+      [aj, rv] = await Promise.all([DB._leer("v_wip_ajustes?select=*&order=creado_el.desc"), DB._leer("v_wip_revisiones?select=*&order=revisado_el.desc")]);
+      if (!vivaWip(mia)) return;
+    } catch (err) { if (!vivaWip(mia)) return; return errorWip(err, pintarWip); }
+    const vivos = aj.filter(a => a.vivo);
+    subWip(`${plural(aj.length, "ajuste", "ajustes")} (${plural(vivos.length, "vivo", "vivos")}) · ${plural(rv.length, "revisión", "revisiones")}`);
+    const ajHTML = a => `<li class="ct-wip-hi${a.vivo ? "" : " deshecho"}">
+        <p><b>${esc(cap(a.periodo_nombre || nombrePer(a.periodo)))}</b> · asiento ${asientoBtn(a.asiento_id, a.numero)} del ${esc(fechaLarga(a.fecha))} ${a.vivo ? pill("vivo", "ok") : pill("deshecho")}</p>
+        <p class="ct-sub">${plural(num(a.obras) || 0, "obra", "obras")} · por detrás <span class="ct-num">${fmt(a.sub_facturado)}</span> · por delante <span class="ct-num">${fmt(a.sobre_facturado)}</span> · pérdida <span class="ct-num">${fmt(a.perdida)}</span>${a.reverso_auto_numero ? ` · se deshace solo el ${esc(fechaLarga(a.reverso_auto_fecha))} (${a.reverso_auto_id ? asientoBtn(a.reverso_auto_id, a.reverso_auto_numero) : esc(a.reverso_auto_numero)})` : ""}</p>
+        <p class="ct-sub">Posteado el ${esc(fechaHora(a.creado_el))}${a.creado_por_nombre ? ` por ${esc(a.creado_por_nombre)}` : ""}${a.motivo ? ` · «${esc(a.motivo)}»` : ""}</p>
+        ${a.vivo ? "" : `<p class="ct-sub">${a.por_fuera ? "Su asiento se reversó en el libro por fuera del WIP" : `Deshecho el ${esc(fechaHora(a.deshecho_el))}${a.deshecho_por_nombre ? ` por ${esc(a.deshecho_por_nombre)}` : ""}`}${a.reverso_numero ? ` (reverso ${a.reverso_id ? asientoBtn(a.reverso_id, a.reverso_numero) : esc(a.reverso_numero)})` : ""}${a.deshecho_motivo ? `: «${esc(a.deshecho_motivo)}»` : ""}</p>`}
+      </li>`;
+    const rvHTML = x => `<li class="ct-wip-hi${x.vigente ? "" : " deshecho"}">
+        <p><b>${esc(x.obra || x.proyecto_id)}</b> · ${esc(x.periodo_nombre || nombrePer(x.periodo))} ${x.vigente ? pill("vigente", "ok") : pill("sustituida")}</p>
+        <p class="ct-sub">${x.terminada ? "Terminada (100 %)" : `Costo total estimado <span class="ct-num">${fmt(x.costo_estimado)}</span>`} · precio <span class="ct-num">${fmt(x.precio_contrato)}</span>${x.precio_ficha != null && num(x.precio_ficha) !== num(x.precio_contrato) ? ` (la ficha decía ${fmt(x.precio_ficha)})` : ""} · ${esc(ORIGEN_REV[x.origen] || x.origen || "")}${x.nota ? ` · «${esc(x.nota)}»` : ""}</p>
+        <p class="ct-sub">El ${esc(fechaHora(x.revisado_el))}${x.revisado_por_nombre ? ` por ${esc(x.revisado_por_nombre)}` : ""}${x.sustituida_el ? ` · sustituida el ${esc(fechaHora(x.sustituida_el))}` : ""}</p>
+      </li>`;
+    const c = wipCuerpo();
+    c.innerHTML = `<section class="ct-card ct-wip-hist" id="ct-wip-ajustes"><div class="ct-cab"><h2>Los ajustes posteados</h2></div>
+        ${aj.length ? `<ul class="ct-wip-his">${aj.map(ajHTML).join("")}</ul>` : `<p class="ct-vacio">Todavía no se ha posteado ningún ajuste de WIP.</p>`}</section>
+      <section class="ct-card ct-wip-hist" id="ct-wip-revisiones"><div class="ct-cab"><h2>Las revisiones</h2></div>
+        <p class="ct-nota">Una revisión no se edita ni se borra: otra la sustituye y la de antes queda.</p>
+        ${rv.length ? `<ul class="ct-wip-his">${rv.map(rvHTML).join("")}</ul>` : `<p class="ct-vacio">Todavía no se ha revisado ninguna obra.</p>`}</section>`;
+    c.querySelectorAll(".ct-asiento-btn").forEach(b => b.addEventListener("click", () => ir("estados", { cuenta: null, asiento: b.dataset.asiento })));
+  }
+
+  // ---------- Ajustes: desde qué mes lo exige el cierre ----------
+  async function pintarWipAjustes(mia) {
+    let cfg, meses;
+    try {
+      [cfg, meses] = await Promise.all([DB._rpc("fn_wip_config", {}), mesesWip()]);
+      if (!vivaWip(mia)) return;
+      if (!cfg || typeof cfg !== "object" || !("exigir_desde" in cfg)) throw errorControl("La configuración del WIP no apareció", [{ vista: "configuración del WIP", filas: 0, esperadas: 1, detalle: "La base pone esa fila al instalar el WIP: si no está, la sesión no es la del dueño o no se instaló entero." }]);
+    } catch (err) { if (!vivaWip(mia)) return; return errorWip(err, pintarWip); }
+    const ops = [...meses].map(m => m.periodo).sort();
+    if (cfg.exigir_desde && !ops.includes(cfg.exigir_desde)) ops.push(cfg.exigir_desde);
+    subWip(cfg.exigir_desde ? `El cierre lo exige desde ${esc(cfg.exigir_desde_nombre || nombrePer(cfg.exigir_desde))}` : "El cierre todavía no lo exige");
+    wipCuerpo().innerHTML = notaWipHTML(null) + `<section class="ct-card ct-wip-cfg" id="ct-wip-cfg"><h2>Desde qué mes lo exige el cierre</h2>
+        <p class="ct-nota">${esc(cfg.nota || "")}</p>
+        <form class="ct-pide" id="ct-wip-cfg-form" novalidate>
+          <label class="ct-campo">El cierre exige el WIP desde<select name="exigir_desde"><option value="">Todavía no lo exige</option>${ops.map(p => `<option value="${esc(p)}"${p === cfg.exigir_desde ? " selected" : ""}>${esc(cap(nombrePer(p)))}</option>`).join("")}</select>
+            <span class="ct-sub">Desde ese mes, para cerrar hace falta cada obra de precio fijo revisada y el ajuste posteado. Los meses de antes no se frenan por él (se pueden revisar y postear igual).</span></label>
+          <div class="ct-acciones"><button type="submit" class="accion">Guardar</button></div>
+        </form><div class="ct-form" hidden></div>
+        ${cfg.actualizado ? `<p class="ct-sub">Cambiado ${esc(fechaHora(cfg.actualizado))}.</p>` : ""}
+      </section>`;
+    const card = $("ct-wip-cfg"), form = $("ct-wip-cfg-form");
+    form.addEventListener("submit", ev => {
+      ev.preventDefault();
+      const v = form.elements.exigir_desde.value || null;
+      if (v === (cfg.exigir_desde || null)) { mostrarErrorForma(card, "No cambiaste nada."); return; }
+      accionWip(card, "fn_wip_config", { p: { exigir_desde: v } }, x => x ? { texto: x.nota } : null, { aviso: "Guardado" });
+    });
+  }
+
+  // ============================================================
+  // FACTURAS (c11, fase 10: docs/conta/c11-emision.sql y la función de borde
+  // supabase/functions/facturas). Desde el corte (1-ene-2027, configurable)
+  // Max Power factura aquí y no en QuickBooks; antes, aquí se preparan y se
+  // prueban borradores (el 🧾 de un hito sigue yendo a QuickBooks: lo decide
+  // v_emision_estado.camino, que también lee js/app.js).
+  //   · FACTURAS: las de la app (v_emision_documentos): borradores, emitidas
+  //     y anuladas, con su número, obra, monto, retención, lo que debe hoy en
+  //     el libro, su PDF y sus envíos.
+  //   · POR FACTURAR: cada obra (v_emision_obras) con sus hitos; un borrador
+  //     por hito, por porcentaje del contrato, T&M o, al final, el de la
+  //     retención; y la retención de la obra (fn_emision_obra).
+  //   · AJUSTES: lo que sale en la factura (emision_config → fn_emision_config):
+  //     la empresa, el «How to pay», los términos, el pago en línea, el corte.
+  //   · UNA FACTURA: el borrador con lo que lo frena o avisa (fn_emision_
+  //     documento: avisos, puede_emitir, visto) y su vista previa EN INGLÉS
+  //     (vista_previa: lo mismo que se congela al emitir, sin el número), se
+  //     cambia (fn_emision_borrador), se refresca, se tira, y se EMITE con el
+  //     código del teléfono (fn_emision_emitir con el «visto» de lo que se
+  //     enseñó: si cambió, MX011 y se vuelve a mirar). Emitida: su contenido
+  //     congelado, lo que debe hoy, el PDF y los envíos (la función de borde
+  //     facturas: «pdf», «enviar», «ver»), entregarla en mano (fn_emision_
+  //     envio), y anularla con nota de crédito (fn_emision_anular) —y, si
+  //     tenía, desactivar su enlace de pago (la función stripe).
+  // FALLA RUIDOSA: antes de pintar una cifra, v_emision_control; un cuadre en
+  // rojo y la página no pinta números; sus avisos salen arriba. Sin c11, la
+  // página lo dice en llano. Ningún monto se suma aquí: vienen de la base (y
+  // los del contenido, como texto de dos decimales, solo se escriben).
+  // ============================================================
+  const SUBS_FAC = { facturas: "Facturas", obras: "Por facturar", ajustes: "Ajustes" };
+  const FORMA_FAC = { hito: "Hito", porcentaje: "Porcentaje del contrato", tm: "T&M (horas y material)", retencion: "Retención" };
+  const ESTADO_FAC = { borrador: ["borrador", "warn"], emitida: ["emitida", "ok"], anulada: ["anulada", "bad"] };
+  const RETENCION_DE = { obra: "la de la obra", estimado: "la del estimado", borrador: "la de este borrador", ninguna: "sin retención" };
+  const facCuerpo = () => $("ct-fac-cuerpo");
+  const vivaFac = mia => mia === S.fac.serie && S.pagina === "facturas" && !!facCuerpo();
+  const subFac = html => { const s = main() && main().querySelector(".ct-pag-sub"); if (s) s.innerHTML = html; };
+  const faltaC11 = err => !!err && (err.status === 404 || ["PGRST205", "PGRST202", "42P01", "42883"].includes(String(err.codigo || "")));
+  const mensajeFac = err => esFalloDeRed(err) || !navigator.onLine ? "Sin señal: no se hizo nada. Vuelve a intentarlo con señal."
+    : err.codigo === "MFA" ? "Falta el código del teléfono: sal y vuelve a entrar con él."
+    : err.codigo === "55P03" ? "La base estaba ocupada (se estaba pegando un SQL): no se hizo nada. Vuelve a intentarlo en un momento."
+    : /^(MX\d+|22023|22007|42501)$/.test(String(err.codigo || "")) ? err.message
+    : faltaC11(err) ? "A la base le falta la facturación: pega docs/conta/c11-emision.sql en Supabase (SQL Editor → pegar → Run)."
+    : `La base contestó con un error que no es de las reglas de la facturación: ${err.message || "sin texto"}. Recarga la app; si sigue, avisa.`;
+  // Lo que ve el CLIENTE (la vista previa) va en inglés: el dinero escrito desde el texto de la base («1234.5» → «$1,234.50»), sin hacer cuentas
+  const usdTxt = v => {
+    const m = /^(-)?(\d+)(?:\.(\d+))?$/.exec(String(v == null ? "" : v).trim());
+    if (!m) return String(v == null ? "" : v);
+    let dec = (m[3] || "").replace(/0+$/, ""); if (dec.length < 2) dec = (dec + "00").slice(0, 2);
+    return `${m[1] ? "-" : ""}$${m[2].replace(/^0+(?=\d)/, "").replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${dec}`;
+  };
+  const MES_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const diaEn = iso => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || "")); return m ? `${MES_EN[Number(m[2]) - 1]} ${Number(m[3])}, ${m[1]}` : "—"; };
+  const cantTxt = v => String(v == null ? "" : v).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
+  const conSaltos = s => esc(s).replace(/\r?\n/g, "<br>");
+  const subtituloEn = c => c.forma === "retencion" ? "Retainage release" : c.forma === "tm" ? "Time & materials" : c.hito && c.hito.es_deposito ? "Deposit"
+    : Number(c.ordinal) > 0 ? `Progress billing #${Number(c.ordinal)}` : "Progress billing";
+  const terminosEn = c => { const t = c.terminos || {}, d = Number(t.dias); return [!d ? "Payment is due on receipt." : `Payment is due within ${d} days of the invoice date (by ${diaEn(c.vence)}).`, t.texto].filter(Boolean).join(" "); };
+  const hayCifra = v => /[1-9]/.test(String(v == null ? "" : v));
+  // ¿El «How to pay» habla de un enlace de pago (que una factura sin enlace no lleva)? La misma regla que la función facturas
+  const hablaDeEnlace = s => /\b(link|links|click|button|stripe|qr)\b|\bpay(ing)? online\b|\bonline payment/i.test(String(s == null ? "" : s));
+
+  // LA FACTURA COMO LA RECIBE EL CLIENTE (docs/conta/f10-factura-vista-previa.html; el PDF de la función de borde la pinta igual):
+  // del contenido de la base y de nada más. Sin número (borrador): «DRAFT»
+  function facturaHTML(c, op = {}) {
+    c = c || {};
+    const e = c.empresa || {}, cl = c.cliente || {}, o = c.obra || {}, t = c.totales || {}, k = c.contrato, tm = c.forma === "tm", esRet = c.forma === "retencion";
+    const vence = Number(c.terminos && c.terminos.dias) ? `Due ${diaEn(c.vence)} (${esc(c.terminos.etiqueta || "")})` : "Due on receipt";
+    const datos = [e.licencia ? `Licensed Electrical Contractor · ${e.licencia}` : "", [e.direccion, e.telefono, e.correo].filter(Boolean).join(" · ")].filter(Boolean);
+    const caja = (et, filas) => `<div class="ct-fx-caja"><p class="ct-fx-et">${esc(et)}</p>${filas}</div>`;
+    const kfilas = k ? [["Contract amount", usdTxt(k.monto)], ["Billed before", usdTxt(k.facturado_antes)], ["This invoice", usdTxt(k.esta)], ["Billed to date", usdTxt(k.facturado_con_esta), true]]
+      : [["Terms", (c.terminos && c.terminos.etiqueta) || ""], ["Due", Number(c.terminos && c.terminos.dias) ? diaEn(c.vence) : "On receipt"]];
+    const pct = k ? Math.max(0, Math.min(100, Number(k.pct) || 0)) : 0;
+    const lineas = (c.lineas || []).map(l => `<tr><td><b>${esc(l.descripcion)}</b>${l.detalle ? `<small>${esc(l.detalle)}</small>` : ""}${tm ? `<small class="ct-fx-tel">${esc(cantTxt(l.cantidad))}${l.unidad ? " " + esc(l.unidad) : ""} × ${esc(usdTxt(l.precio))}</small>` : ""}</td>
+      ${tm ? `<td class="r ct-fx-pc">${esc(cantTxt(l.cantidad))}${l.unidad ? " " + esc(l.unidad) : ""}</td><td class="r ct-fx-pc">${esc(usdTxt(l.precio))}</td>` : ""}<td class="r">${esc(usdTxt(l.importe))}</td></tr>`).join("");
+    const tot = [[esRet ? "Retainage released" : "Subtotal", usdTxt(t.subtotal), ""]];
+    if (!esRet && hayCifra(t.retencion)) tot.push([`Less retainage held (${t.retencion_pct}%)`, `-${usdTxt(t.retencion)}`, "ret"]);
+    if (!esRet && hayCifra(t.retenido_a_la_fecha)) tot.push(["Retainage held to date", usdTxt(t.retenido_a_la_fecha), ""]);
+    // como el PDF: si el enlace del último PDF cobra otra cosa que la factura (ya entró un pago), lo grande es lo que debe hoy
+    // (lo que cobra el enlace, de la base) y la factura queda como «Invoice amount due»; comparar dos textos no es sumar
+    const cobra = op.enlace && op.cobra != null && String(op.cobra).trim() !== "" ? usdTxt(op.cobra) : null;
+    const saldoHoy = cobra && cobra !== usdTxt(t.a_pagar);
+    if (saldoHoy) tot.push(["Invoice amount due", usdTxt(t.a_pagar), ""]);
+    const pie = [e.nombre, e.web, e.licencia].filter(Boolean).join(" · ");
+    // (data-no-i18n: ya va en inglés —es lo que lee el cliente—; el traductor de la app no lo toca)
+    return `<article class="ct-fx" lang="en" data-no-i18n aria-label="${esc(op.etiqueta || "Invoice")}">
+      <header class="ct-fx-cab">
+        <div class="ct-fx-casa"><img src="assets/lockup.png" alt="${esc(e.nombre || "")}" class="ct-fx-logo">${datos.map(x => `<small>${esc(x)}</small>`).join("")}</div>
+        <div class="ct-fx-doc"><p class="ct-fx-tipo">INVOICE</p>
+          <p class="ct-fx-num">${c.numero ? `No. ${esc(c.numero)}` : `<span class="ct-fx-borrador">DRAFT · the number is set when issued</span>`}</p>
+          <p class="ct-fx-f">Date ${esc(diaEn(c.fecha))} · ${vence}</p><p class="ct-fx-sub">${esc(subtituloEn(c))}</p></div>
+      </header>
+      <div class="ct-fx-cable" aria-hidden="true"></div>
+      <div class="ct-fx-tres">
+        ${caja("Bill to", `<b>${esc(cl.nombre || "—")}</b>${cl.atencion ? `<span>Attn: ${esc(cl.atencion)}</span>` : ""}${cl.direccion ? `<span>${esc(cl.direccion)}</span>` : ""}${cl.correo ? `<span class="ct-fx-gris">${esc(cl.correo)}</span>` : ""}`)}
+        ${caja("Project", `<b>${esc(o.nombre || "—")}</b>${o.direccion ? `<span>${esc(o.direccion)}</span>` : ""}${o.ref ? `<span class="ct-fx-gris">Ref. ${esc(o.ref)}</span>` : ""}${c.hito && c.hito.titulo ? `<span class="ct-fx-gris">Milestone: ${esc(c.hito.titulo)}</span>` : ""}`)}
+        ${caja(k ? "Contract status" : "Invoice terms", `<dl class="ct-fx-k">${kfilas.map(([a, b, f]) => `<div${f ? ` class="f"` : ""}><dt>${esc(a)}</dt><dd>${esc(b)}</dd></div>`).join("")}</dl>${k ? `<div class="ct-fx-barra"><span class="ct-fx-pista"><i style="width:${pct}%"></i></span><b>${esc(k.pct)}%</b></div>` : ""}`)}
+      </div>
+      <table class="ct-fx-lineas"><thead><tr><th>Description</th>${tm ? `<th class="r ct-fx-pc">Qty</th><th class="r ct-fx-pc">Rate</th>` : ""}<th class="r">Amount</th></tr></thead><tbody>${lineas || `<tr><td colspan="${tm ? 4 : 2}" class="ct-fx-gris">No lines yet.</td></tr>`}</tbody></table>
+      <div class="ct-fx-abajo">
+        <div class="ct-fx-pago"><p class="ct-fx-et">How to pay</p><p>${c.como_pagar ? conSaltos(c.como_pagar) : `<span class="ct-fx-falta">(falta el «How to pay» en Ajustes)</span>`}</p>
+          ${c.pago_en_linea && c.pago_en_linea.ach ? `<p><b>Pay ${cobra ? esc(cobra) + " " : ""}online by bank transfer (ACH)${op.enlace ? ":" : ""}</b><br><span class="ct-fx-gris">${op.enlace ? esc(op.enlace) : "The secure payment link goes in the PDF and the email."}</span>${saldoHoy ? `<br><span class="ct-fx-gris">That is the balance due today: payments already received are deducted.</span>` : ""}</p>` : ""}
+          ${c.numero ? `<p class="ct-fx-gris">Please reference invoice ${esc(c.numero)}.</p>` : ""}</div>
+        <div class="ct-fx-tot">${tot.map(([a, b, cl2]) => `<div class="ct-fx-fila ${cl2}"><span>${esc(a)}</span><span>${esc(b)}</span></div>`).join("")}
+          <div class="ct-fx-fila debe"><span>${saldoHoy ? "Balance due today" : "Amount due"}</span><span>${esc(saldoHoy ? cobra : usdTxt(t.a_pagar))}</span></div></div>
+      </div>
+      <div class="ct-fx-notas">${c.notas ? `<div><p class="ct-fx-et">Notes</p><p>${conSaltos(c.notas)}</p></div>` : ""}<div><p class="ct-fx-et">Terms</p><p>${esc(terminosEn(c))}</p></div></div>
+      <footer class="ct-fx-pie"><b>${esc(pie)}</b><span>Thank you for your business${c.numero ? ` · Invoice ${esc(c.numero)}` : ""}</span></footer>
+    </article>`;
+  }
+
+  async function pintarFacturas() {
+    const mia = ++S.fac.serie;
+    if (!navigator.onLine) return sinSenal(pintarFacturas);
+    if (!SUBS_FAC[S.fac.sub]) S.fac.sub = "facturas";
+    main().innerHTML = cabPagina(TITULOS.facturas, "Leyendo con la base…") +
+      `<div id="ct-fac-arriba" class="ct-fac-arriba"></div>
+      <section class="ct-card ct-ob-barra"><div class="ct-chips ct-fac-subs" aria-label="Qué parte">${Object.keys(SUBS_FAC).map(k =>
+        `<button type="button" class="ct-chip" data-fac-sub="${k}" aria-pressed="${k === S.fac.sub && !S.fac.doc ? "true" : "false"}">${esc(SUBS_FAC[k])}</button>`).join("")}</div></section>
+      <div id="ct-fac-cuerpo" class="ct-fac-cuerpo"><div class="ct-card ct-cargando">Cargando…</div></div>`;
+    main().querySelectorAll("[data-fac-sub]").forEach(b => b.addEventListener("click", () => { if (!S.ocupado) ir("facturas", { sub: b.dataset.facSub }); }));
+    marcarVolver();
+    let est, avisos;
+    try {
+      [est, avisos] = await Promise.all([leerFacEstado(), controlFac(), leerMfa()]);
+      if (!vivaFac(mia)) return;
+    } catch (err) { if (!vivaFac(mia)) return; return errorFac(err, pintarFacturas); }
+    S.fac.estado = est;
+    pintarFacArriba(est, avisos);
+    // (el siguiente número, solo desde el corte: antes, la base lo da con el año de hoy y la primera de verdad lleva el del corte)
+    subFac(`${plural(num(est.emitidas) || 0, "emitida", "emitidas")} · ${plural(num(est.borradores) || 0, "borrador", "borradores")}${num(est.anuladas) ? ` · ${plural(est.anuladas, "anulada", "anuladas")}` : ""}${est.camino === "app" ? ` · la siguiente, <span class="ct-num">${esc(est.siguiente_numero || "—")}</span>` : ` · se numeran desde el corte (${esc(fechaLarga(est.corte))})`}`);
+    // el 🧾 de un hito (desde el corte, js/app.js manda aquí): su borrador (el que ya hubiera, o uno nuevo)
+    if (S.fac.pedido) { const p = S.fac.pedido; S.fac.pedido = null; return abrirHitoFac(p, mia); }
+    if (S.fac.doc) return pintarFacDoc(S.fac.doc, mia);
+    if (S.fac.sub === "obras") return pintarFacObras(mia);
+    if (S.fac.sub === "ajustes") return pintarFacAjustes(mia);
+    return pintarFacLista(mia);
+  }
+  async function leerFacEstado() {
+    const f = await DB._leer("v_emision_estado?select=*");
+    if (!Array.isArray(f) || f.length !== 1) throw errorControl("La facturación no devolvió su estado", [{ vista: "estado de la facturación", filas: Array.isArray(f) ? f.length : 0, esperadas: 1, detalle: "Vacío: la sesión no es la del dueño (el equipo no ve nada de esto) o a la base le falta la facturación." }]);
+    // el corte que se vio, para el 🧾 de js/app.js: si un día la base no contesta, solo va a QuickBooks si este corte todavía no llega
+    try { if (/^\d{4}-\d{2}-\d{2}$/.test(String(f[0].corte || ""))) localStorage.setItem("mxp_factura_corte", String(f[0].corte)); } catch { /* sin almacenamiento */ }
+    return f[0];
+  }
+  // FALLA RUIDOSA: los cuadres de la facturación en verde antes de pintar una cifra; sus avisos se devuelven para enseñarlos
+  async function controlFac() {
+    const ctl = await DB._leer("v_emision_control?select=*&order=orden.asc");
+    if (!Array.isArray(ctl) || !ctl.length) throw errorControl("El control de la facturación no devolvió nada", [{ vista: "control de las facturas", filas: 0, esperadas: "13", detalle: "Vacío: la sesión no es la del dueño o a la base le falta la facturación." }]);
+    const rojos = ctl.filter(f => f.nivel === "cuadre" && f.ok !== true);
+    if (rojos.length) throw errorControl("La facturación no cuadra", rojos.map(f => ({ vista: cap(String(f.cuadre || "").replace(/^facturas: /, "")), filas: null, esperadas: null, detalle: f.detalle })));
+    return ctl.filter(f => f.ok !== true);
+  }
+  function errorFac(err, reintentar) {
+    const c = facCuerpo(); if (!c) return;
+    if (faltaC11(err) && !esFalloDeRed(err)) {
+      c.innerHTML = `<section class="ct-card ct-rojo" role="alert"><h2>Falta la facturación en la base</h2>
+        <p>Esta página lee lo que deja <span class="ct-num">docs/conta/c11-emision.sql</span>, y la base todavía no lo tiene. Pégalo entero en Supabase (SQL Editor → pegar → Run), después de c1 a c10. Hasta entonces las facturas siguen saliendo por QuickBooks, como siempre.</p>
+        <div class="ct-acciones"><button type="button" class="accion secundaria" id="ct-reintentar">Reintentar</button></div></section>`;
+      $("ct-reintentar").addEventListener("click", reintentar);
+      return;
+    }
+    pintarError(err, reintentar, err.codigo === "42501" ? "Las facturas son solo del dueño" : undefined, c);
+  }
+  // Arriba: por dónde se factura hoy (el corte), lo que falta para emitir y los avisos del control
+  function pintarFacArriba(est, avisos) {
+    const a = $("ct-fac-arriba"); if (!a) return;
+    const falta = Array.isArray(est.falta) ? est.falta : [];
+    const QUE_FALTA = { empresa: "los datos de la empresa", como_pagar: "el «How to pay»" };
+    a.innerHTML = `<section class="ct-card ct-fac-corte ${est.camino === "app" ? "app" : "qb"}" id="ct-fac-corte">
+        <div class="ct-cab"><h2>${est.camino === "app" ? "Se factura aquí" : "Hasta el corte se factura por QuickBooks"}</h2>${est.camino === "app" ? pill("por la app", "ok") : pill(`faltan ${plural(num(est.dias_para_el_corte) || 0, "día", "días")}`, "warn")}</div>
+        <p class="ct-nota">${esc(est.texto || "")}</p>
+        ${falta.length ? `<p class="ct-aviso warn">Para emitir falta${falta.length > 1 ? "n" : ""} ${esc(falta.map(x => QUE_FALTA[x] || x).join(" y "))} (lo que sale en la factura, en inglés). <button type="button" class="accion secundaria chica" data-fac-ir-ajustes>Ponerlos en Ajustes</button></p>` : ""}
+        ${num(est.sin_pdf) || num(est.sin_mandar) ? `<p class="ct-aviso warn">${[num(est.sin_pdf) ? plural(est.sin_pdf, "factura emitida sin su PDF", "facturas emitidas sin su PDF") : "", num(est.sin_mandar) ? plural(est.sin_mandar, "sin mandar", "sin mandar") : ""].filter(Boolean).join(" · ")}.</p>` : ""}
+      </section>` + (avisos.length ? `<section class="ct-card"><ul class="ct-jr-avisos">${avisos.map(f => `<li class="ct-aviso warn">${esc(cap(String(f.cuadre || "").replace(/^facturas: /, "")))}: ${esc(f.detalle || "")}</li>`).join("")}</ul></section>` : "");
+    a.querySelectorAll("[data-fac-ir-ajustes]").forEach(b => b.addEventListener("click", () => ir("facturas", { sub: "ajustes" })));
+  }
+  const cargandoFac = txt => { const c = facCuerpo(); if (c) c.innerHTML = `<div class="ct-card ct-cargando">${esc(txt || "Cargando…")}</div>`; };
+  // Una escritura de la página (RPC con la sesión del dueño): la tarjeta se apaga, el error va a su forma; si salió, aviso y repintar
+  async function accionFac(card, fn, args, exito, opciones = {}) {
+    if (S.ocupado) return;
+    if (!navigator.onLine) { mostrarErrorForma(card, "Sin señal: no se hizo nada."); return; }
+    if (opciones.mfa && !mfaActivo()) { mostrarErrorForma(card, opciones.mfa); return; }
+    S.ocupado = true;
+    const apagados = [...card.querySelectorAll("button, input, select, textarea")].filter(b => !b.disabled);
+    apagados.forEach(b => { b.disabled = true; });
+    let r;
+    try { r = await DB._rpc(fn, args); }
+    catch (err) {
+      apagados.forEach(b => { b.disabled = false; });
+      S.ocupado = false;
+      mostrarErrorForma(card, mensajeFac(err));
+      // MX011 (ya no es lo que viste): se vuelve a leer, con el aviso a la vista
+      if (err.codigo === "MX011") { S.fac.nota = { doc: S.fac.doc, tipo: "warn", texto: err.message }; await pintarFacturas(); }
+      return;
+    }
+    S.ocupado = false;
+    const aviso = exito(r);
+    if (aviso) S.hooks.avisar(...(Array.isArray(aviso) ? aviso : [aviso]));
+    if (S.pagina === "facturas") await pintarFacturas();
+  }
+
+  // ---------- Facturas: la lista ----------
+  const FILTROS_FAC = [["todas", "Todas"], ["borrador", "Borradores"], ["emitida", "Emitidas"], ["anulada", "Anuladas"]];
+  async function pintarFacLista(mia) {
+    let filas;
+    try {
+      filas = await DB._leer("v_emision_documentos?select=*&order=creado_el.desc");
+      if (!vivaFac(mia)) return;
+    } catch (err) { if (!vivaFac(mia)) return; return errorFac(err, pintarFacturas); }
+    if (!FILTROS_FAC.some(([k]) => k === S.fac.filtro)) S.fac.filtro = "todas";
+    facCuerpo().innerHTML = `<section class="ct-card ct-fac-lista" id="ct-fac-lista">
+        <div class="ct-herr-fila"><label class="ct-campo ct-buscar">Buscar<input id="ct-fac-buscar" type="search" placeholder="Número, obra o cliente" value="${esc(S.fac.q)}" autocomplete="off"></label>
+          <div class="ct-acciones"><button type="button" class="accion" id="ct-fac-nueva">Nueva factura</button></div></div>
+        <div class="ct-chips" aria-label="Qué facturas">${FILTROS_FAC.map(([k, t]) => `<button type="button" class="ct-chip" data-fac-filtro="${k}" aria-pressed="${S.fac.filtro === k ? "true" : "false"}">${t} (${k === "todas" ? filas.length : filas.filter(f => f.estado === k).length})</button>`).join("")}</div>
+        <div class="ct-fac-cab" aria-hidden="true"><span>Factura</span><span class="r">Monto</span><span class="r">A pagar</span><span>Cobro</span><span>PDF y envío</span></div>
+        <div id="ct-fac-filas" class="ct-fac-filas"></div>
+      </section>`;
+    $("ct-fac-nueva").addEventListener("click", () => ir("facturas", { sub: "obras" }));
+    const pinta = () => {
+      const q = sinAcentos(S.fac.q).trim();
+      let l = S.fac.filtro === "todas" ? filas : filas.filter(f => f.estado === S.fac.filtro);
+      if (q) l = l.filter(f => sinAcentos(`${f.numero || ""} ${f.obra || ""} ${f.cliente || ""} ${f.hito || ""}`).includes(q));
+      $("ct-fac-filas").innerHTML = l.length ? l.map(facFilaHTML).join("")
+        : `<p class="ct-vacio">${q ? `Ninguna factura con «${esc(S.fac.q)}».` : filas.length ? "Ninguna así." : "Todavía ninguna factura de la app. Empieza en «Por facturar»."}</p>`;
+      $("ct-fac-filas").querySelectorAll("[data-doc]").forEach(b => b.addEventListener("click", () => ir("facturas", { doc: b.dataset.doc })));
+    };
+    $("ct-fac-buscar").addEventListener("input", ev => { S.fac.q = ev.target.value; pinta(); });
+    facCuerpo().querySelectorAll("[data-fac-filtro]").forEach(b => b.addEventListener("click", () => {
+      S.fac.filtro = b.dataset.facFiltro;
+      facCuerpo().querySelectorAll("[data-fac-filtro]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+      pinta();
+    }));
+    pinta();
+  }
+  const queFactura = f => f.forma === "hito" ? `${f.es_deposito ? "Depósito" : "Hito"} «${f.hito || "—"}»` : f.forma === "porcentaje" ? "Porcentaje del contrato" : FORMA_FAC[f.forma] || f.forma;
+  // el cobro, en palabras: lo dice la base (lo que la factura debe HOY en el libro); aquí solo se compara con cero
+  function cobroFac(f) {
+    if (f.estado === "borrador") return `<span class="ct-ob-sinfac">sin emitir</span>`;
+    if (f.estado === "anulada") return `${pill("anulada", "bad")}${f.nota_credito ? `<small>nota de crédito ${esc(f.nota_credito)}</small>` : ""}`;
+    const s = num(f.saldo), r = num(f.saldo_retencion);
+    if (s == null) return "—";
+    if (s <= 0 && !(r > 0)) return pill("cobrada", "ok");
+    if (s <= 0) return `${pill("falta la retención", "warn")}<small><span class="ct-num">${fmt(r)}</span> retenidos</small>`;
+    return `${pill(`debe ${fmt(s)}`, "")}${r > 0 ? `<small>y <span class="ct-num">${fmt(r)}</span> de retención</small>` : ""}`;
+  }
+  function facFilaHTML(f) {
+    const [et, cl] = ESTADO_FAC[f.estado] || [f.estado, ""];
+    return `<button type="button" class="ct-fac-fila" data-doc="${esc(f.id)}">
+      <span class="ct-ob-n"><b class="ct-num">${f.numero ? esc(f.numero) : "Borrador"}</b>${f.estado !== "emitida" ? pill(et, cl) : ""}<small>${esc([f.obra, f.cliente].filter(Boolean).join(" · "))}</small><small>${esc(queFactura(f))}${f.fecha ? ` · ${esc(fechaLarga(f.fecha))}` : ""}</small></span>
+      <span class="ct-ob-v r" data-col="Monto"><span class="ct-num">${fmt(f.monto)}</span>${num(f.retencion) ? `<small>retención <span class="ct-num">${fmt(f.retencion)}</span></small>` : ""}</span>
+      <span class="ct-ob-v r" data-col="A pagar"><span class="ct-num">${fmt(f.a_pagar)}</span></span>
+      <span class="ct-ob-senal" data-col="Cobro">${cobroFac(f)}</span>
+      <span class="ct-ob-senal" data-col="PDF y envío">${f.estado !== "emitida" ? "—" : `${num(f.pdfs) ? pill("PDF", "ok") : pill("sin PDF", "warn")}<small>${num(f.envios) ? `mandada a ${esc(f.enviado_a || "—")}${f.enviado_el ? ` el ${esc(fechaHora(f.enviado_el))}` : ""}${num(f.envios) > 1 ? ` (${plural(f.envios, "envío", "envíos")})` : ""}` : "sin mandar"}</small>`}</span>
+    </button>`;
+  }
+
+  // ---------- Por facturar: las obras y sus hitos ----------
+  const OBRA_CERRADA_FAC = ["completado", "cancelado", "no_aprobado"];
+  async function pintarFacObras(mia) {
+    let obras;
+    try {
+      obras = await DB._leer("v_emision_obras?select=*&order=obra.asc");
+      if (!vivaFac(mia)) return;
+    } catch (err) { if (!vivaFac(mia)) return; return errorFac(err, pintarFacturas); }
+    const act = obras.filter(o => !OBRA_CERRADA_FAC.includes(o.estado));
+    if (!["activas", "todas"].includes(S.fac.obrasFiltro)) S.fac.obrasFiltro = "activas";
+    facCuerpo().innerHTML = `<section class="ct-card ct-fac-herr">
+        <div class="ct-herr-fila"><label class="ct-campo ct-buscar">Buscar<input id="ct-fac-obuscar" type="search" placeholder="Obra o cliente" value="${esc(S.fac.obraQ)}" autocomplete="off"></label></div>
+        <div class="ct-chips" aria-label="Qué obras">${[["activas", "Activas", act.length], ["todas", "Todas", obras.length]].map(([k, t, n]) =>
+          `<button type="button" class="ct-chip" data-fac-ofiltro="${k}" aria-pressed="${S.fac.obrasFiltro === k ? "true" : "false"}">${t} (${n})</button>`).join("")}</div>
+        ${ayudaHTML(`<p class="ct-nota">Cada hito se factura por su monto (un hito, una factura). Si la obra no factura por hitos: por un porcentaje del contrato, o T&M (horas y material, línea por línea). Al final de la obra, la factura de la retención cobra lo retenido. La retención de cada factura sale de la obra (la pones aquí) o de su estimado. Todo lo que escribes para el cliente va en inglés.</p>`, "¿Cómo se factura?")}
+      </section><div id="ct-fac-obras" class="ct-fac-obras"></div>`;
+    const pinta = () => {
+      const q = sinAcentos(S.fac.obraQ).trim();
+      let l = S.fac.obrasFiltro === "activas" ? act : obras;
+      if (q) l = l.filter(o => sinAcentos(`${o.obra || ""} ${o.cliente || ""} ${o.proyecto_id || ""}`).includes(q));
+      $("ct-fac-obras").innerHTML = l.length ? l.map(obraFacHTML).join("") : `<section class="ct-card ct-vacio">${q ? `Ninguna obra con «${esc(S.fac.obraQ)}».` : "Ninguna obra activa."}</section>`;
+      $("ct-fac-obras").querySelectorAll(".ct-fac-obra").forEach(card => wireObraFac(card, obras.find(o => o.proyecto_id === card.dataset.obra)));
+    };
+    $("ct-fac-obuscar").addEventListener("input", ev => { S.fac.obraQ = ev.target.value; pinta(); });
+    facCuerpo().querySelectorAll("[data-fac-ofiltro]").forEach(b => b.addEventListener("click", () => {
+      S.fac.obrasFiltro = b.dataset.facOfiltro;
+      facCuerpo().querySelectorAll("[data-fac-ofiltro]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+      pinta();
+    }));
+    pinta();
+  }
+  function obraFacHTML(o) {
+    const hitos = Array.isArray(o.hitos) ? o.hitos : [];
+    const estH = h => h.estado === "cobrado" ? pill("cobrado", "ok") : h.estado === "facturado" ? pill("facturado", "") : pill(h.estado || "—", "warn");
+    return `<article class="ct-card ct-fac-obra" data-obra="${esc(o.proyecto_id)}">
+      <div class="ct-cab"><h2>${esc(o.obra || o.proyecto_id)}</h2>${pill(ESTADO_OBRA[o.estado] || o.estado || "—", OBRA_CERRADA_FAC.includes(o.estado) ? "" : "ok")}</div>
+      <p class="ct-nota">${esc([o.cliente, o.tipo].filter(Boolean).join(" · "))}${o.a_contratista ? ` · ${pill("se le factura al contratista", "cu")}` : ""}</p>
+      <div class="ct-kpis cuatro">
+        ${kpiHTML("Contrato", fmt(o.contrato))}
+        ${kpiHTML("Facturado", fmt(o.facturado), plural(num(o.facturas) || 0, "factura", "facturas"))}
+        ${kpiHTML("Por facturar", fmt(o.por_facturar))}
+        ${kpiHTML("Retenido", fmt(o.retenido), "por cobrar")}
+      </div>
+      <p class="ct-fac-ret">Retención: <b class="ct-num">${esc(String(num(o.retencion_pct) || 0))} %</b> <span class="ct-sub">(${esc(RETENCION_DE[o.retencion_origen] || o.retencion_origen || "")})</span> <button type="button" class="accion secundaria chica" data-fac-ret>Cambiar</button></p>
+      ${o.ingreso_listo === false ? `<p class="ct-aviso warn">La regla de ingreso de su tipo de obra${o.tipo ? ` («${esc(o.tipo)}»)` : ""} no está confirmada: se puede preparar el borrador, pero el libro no aceptaría la factura.</p>` : ""}
+      ${hitos.length ? `<ul class="ct-fac-hitos">${hitos.map(h => `<li class="ct-fac-hito" data-hito="${esc(h.id)}">
+          <span class="ct-fac-hn"><b>${esc(h.titulo || "—")}</b>${h.es_deposito ? ` ${pill("depósito", "cu")}` : ""}<small>${estH(h)}${h.factura ? ` factura <span class="ct-num">${esc(h.factura)}</span>` : ""}</small></span>
+          <span class="ct-num ct-fac-hm">${fmt(h.monto)}</span>
+          <span class="ct-fac-hb">${h.borrador ? `<button type="button" class="accion secundaria chica" data-fac-abrir="${esc(h.borrador)}">Abrir el borrador</button>` : h.puede ? `<button type="button" class="accion chica" data-fac-hito="${esc(h.id)}">Facturar</button>` : ""}</span>
+        </li>`).join("")}</ul>` : `<p class="ct-vacio ct-fac-sinhitos">Sin hitos de pago: se factura por porcentaje o T&M.</p>`}
+      <div class="ct-acciones">
+        <button type="button" class="accion secundaria chica" data-fac-pct${o.contrato == null ? " disabled" : ""}>Por porcentaje…</button>
+        <button type="button" class="accion secundaria chica" data-fac-tm>T&amp;M…</button>
+        ${num(o.retenido) > 0 ? `<button type="button" class="accion secundaria chica" data-fac-retencion>La de la retención</button>` : ""}
+        ${num(o.borradores) ? `<span class="ct-sub">${plural(o.borradores, "borrador abierto", "borradores abiertos")} (en Facturas)</span>` : ""}
+      </div>
+      <div class="ct-form" hidden></div>
+    </article>`;
+  }
+  // abrir el borrador que devolvió la base (uno nuevo, o el que ya había de ese hito o de esa retención)
+  const alBorrador = r => { if (r && r.documento) S.fac.doc = r.documento.id; return r && r.nuevo === false ? "Ya había un borrador: es este" : "Borrador listo: míralo antes de emitir"; };
+  const TIPOS_LINEA = { horas: "Horas", material: "Material", otro: "Otro" };
+  const lineaTmHTML = (l, i) => `<fieldset class="ct-fac-linea" data-linea="${i}"><legend>Línea ${i + 1}</legend>
+      <label class="ct-campo ct-fac-desc">Descripción (en inglés)<input name="descripcion" value="${esc(l.descripcion || "")}" autocomplete="off" placeholder="Electrician labor"></label>
+      <label class="ct-campo">Tipo<select name="tipo">${Object.keys(TIPOS_LINEA).map(k => `<option value="${k}"${(l.tipo || "horas") === k ? " selected" : ""}>${TIPOS_LINEA[k]}</option>`).join("")}</select></label>
+      <label class="ct-campo">Cantidad<input name="cantidad" inputmode="decimal" value="${esc(l.cantidad == null ? "" : cantTxt(l.cantidad))}" autocomplete="off" placeholder="8"></label>
+      <label class="ct-campo">Unidad<input name="unidad" value="${esc(l.unidad || "")}" autocomplete="off" placeholder="hr"></label>
+      <label class="ct-campo">Precio<input name="precio" inputmode="decimal" value="${esc(l.precio == null ? "" : l.precio)}" autocomplete="off" placeholder="85.00"></label>
+      <label class="ct-campo ct-fac-desc">Detalle (opcional, en inglés)<input name="detalle" value="${esc(l.detalle || "")}" autocomplete="off"></label>
+      <button type="button" class="accion secundaria chica" data-quitar-linea>Quitar esta línea</button>
+    </fieldset>`;
+  // lee las líneas T&M de una forma: los montos van como TEXTO, tal cual (sin «$» ni comas): la base los valida y calcula
+  function leerLineasTm(form) {
+    return [...form.querySelectorAll(".ct-fac-linea")].map(fs => {
+      const v = n => String((fs.querySelector(`[name="${n}"]`) || {}).value || "").trim();
+      const l = { descripcion: v("descripcion"), tipo: v("tipo") || "horas", cantidad: montoTxt(v("cantidad")) || "1", precio: montoTxt(v("precio")) };
+      if (v("unidad")) l.unidad = v("unidad");
+      if (v("detalle")) l.detalle = v("detalle");
+      return l;
+    }).filter(l => l.descripcion || l.precio);
+  }
+  function wireLineasTm(form) {
+    const caja = form.querySelector(".ct-fac-lineas-ed");
+    const renumerar = () => caja.querySelectorAll(".ct-fac-linea").forEach((fs, i) => { fs.dataset.linea = i; fs.querySelector("legend").textContent = `Línea ${i + 1}`; });
+    caja.addEventListener("click", ev => { const b = ev.target.closest("[data-quitar-linea]"); if (!b) return; if (caja.querySelectorAll(".ct-fac-linea").length > 1) { b.closest(".ct-fac-linea").remove(); renumerar(); } });
+    form.querySelector("[data-otra-linea]").addEventListener("click", () => { caja.insertAdjacentHTML("beforeend", lineaTmHTML({}, caja.querySelectorAll(".ct-fac-linea").length)); });
+  }
+  function wireObraFac(card, o) {
+    if (!o) return;
+    card.querySelectorAll("[data-fac-hito]").forEach(b => b.addEventListener("click", () =>
+      accionFac(card, "fn_emision_borrador", { p: { forma: "hito", hito_id: Number(b.dataset.facHito) } }, alBorrador)));
+    card.querySelectorAll("[data-fac-abrir]").forEach(b => b.addEventListener("click", () => ir("facturas", { doc: b.dataset.facAbrir })));
+    const ret = card.querySelector("[data-fac-ret]");
+    if (ret) ret.addEventListener("click", () => montarForma(card, formaHTML(`La retención de «${esc(o.obra)}»: el porcentaje que el cliente retiene de cada factura (va descontado y queda por cobrar en el libro).`,
+      `${campoHTML("retencion_pct", "Retención (%) · vacío = la del estimado (o ninguna); 0 = sin retención", "texto", `inputmode="decimal" value="${o.retencion_origen === "obra" ? esc(String(num(o.retencion_pct))) : ""}" placeholder="10"`)}
+       ${campoHTML("nota", "Nota (opcional)", "textarea")}`, "Guardar la retención"), v => {
+      const t = montoTxt(v.retencion_pct);
+      if (t !== "" && !/^\d{1,2}(\.\d{1,2})?$/.test(t)) { mostrarErrorForma(card, "La retención va de 0 a 99, con dos decimales como mucho (10, o 7.5); vacío = la del estimado."); return; }
+      accionFac(card, "fn_emision_obra", { p: { proyecto_id: o.proyecto_id, retencion_pct: t === "" ? null : t, nota: v.nota || null } },
+        r => `Retención de ${o.obra}: ${r && r.retencion ? `${num(r.retencion.pct)} % (${RETENCION_DE[r.retencion.origen] || r.retencion.origen})` : "guardada"}`);
+    }));
+    const pct = card.querySelector("[data-fac-pct]");
+    if (pct) pct.addEventListener("click", () => montarForma(card, formaHTML(`Factura por porcentaje del contrato (<span class="ct-num">${esc(fmt(o.contrato))}</span>): la base calcula el monto.`,
+      `${campoHTML("porcentaje", "Porcentaje (%)", "texto", `inputmode="decimal" required placeholder="30" data-falta="Di el porcentaje (30 = 30 %)."`)}`, "Preparar el borrador"), v => {
+      const t = montoTxt(v.porcentaje);
+      if (!/^\d{1,3}(\.\d{1,4})?$/.test(t) || Number(t) <= 0 || Number(t) > 100) { mostrarErrorForma(card, "El porcentaje va de más de 0 a 100 (30, o 12.5)."); return; }
+      accionFac(card, "fn_emision_borrador", { p: { forma: "porcentaje", proyecto_id: o.proyecto_id, porcentaje: t } }, alBorrador);
+    }));
+    const tm = card.querySelector("[data-fac-tm]");
+    if (tm) tm.addEventListener("click", () => {
+      const f = card.querySelector(".ct-form");
+      montarForma(card, `<form class="ct-pide" novalidate><p class="ct-form-t">Factura T&amp;M de «${esc(o.obra)}»: una línea por cosa (horas, material…), en inglés. Después se pueden añadir más.</p>
+          <div class="ct-fac-lineas-ed">${lineaTmHTML({ tipo: "horas", unidad: "hr" }, 0)}</div>
+          <div class="ct-acciones"><button type="button" class="accion secundaria chica" data-otra-linea>Otra línea</button></div>
+          <div class="ct-acciones"><button class="accion" type="submit">Preparar el borrador</button><button class="accion secundaria" type="button" data-cerrar>Cancelar</button></div></form>`, () => {
+        const lineas = leerLineasTm(f.querySelector("form"));
+        if (!lineas.length || lineas.some(l => !l.descripcion || !l.precio)) { mostrarErrorForma(card, "Cada línea lleva su descripción y su precio."); return; }
+        accionFac(card, "fn_emision_borrador", { p: { forma: "tm", proyecto_id: o.proyecto_id, lineas } }, alBorrador);
+      });
+      wireLineasTm(f.querySelector("form"));
+    });
+    const r = card.querySelector("[data-fac-retencion]");
+    if (r) r.addEventListener("click", () => accionFac(card, "fn_emision_borrador", { p: { forma: "retencion", proyecto_id: o.proyecto_id } }, alBorrador));
+  }
+  // el 🧾 de un hito: su borrador (si la base dice que no se puede —ya facturado, cobrado—, lo dice con «Ir a la obra»)
+  async function abrirHitoFac(p, mia) {
+    cargandoFac("Preparando el borrador del hito…");
+    let r;
+    try {
+      r = await DB._rpc("fn_emision_borrador", { p: { forma: "hito", hito_id: Number(p.hito) } });
+      if (!vivaFac(mia)) return;
+    } catch (err) {
+      if (!vivaFac(mia)) return;
+      if (esFalloDeRed(err)) return sinSenal(pintarFacturas);
+      facCuerpo().innerHTML = `<section class="ct-card" id="ct-fac-pedido"><h2>No se preparó el borrador del hito</h2><p class="ct-aviso bad">${esc(mensajeFac(err))}</p>
+        <div class="ct-acciones"><button type="button" class="accion secundaria" id="ct-fac-a-obras">Ver la obra en «Por facturar»</button></div></section>`;
+      $("ct-fac-a-obras").addEventListener("click", () => { S.fac.obraQ = p.obra || ""; ir("facturas", { sub: "obras" }); });
+      return;
+    }
+    S.fac.doc = r.documento.id;
+    S.hooks.avisar(r.nuevo === false ? "Ese hito ya tenía su borrador: es este" : "Borrador del hito listo: míralo antes de emitir");
+    return pintarFacturas();
+  }
+
+  // ---------- Una factura: el borrador o la emitida ----------
+  async function pintarFacDoc(id, mia) {
+    let d, pago = null;
+    try {
+      d = await DB._rpc("fn_emision_documento", { p_documento: id });
+      if (d && d.documento && d.documento.estado !== "borrador" && d.documento.factura_id != null) pago = await DB._rpc("fn_emision_pago", { p_documento: id }).catch(e => { if (esFalloDeRed(e)) throw e; return { error: mensajeFac(e) }; });
+      if (!vivaFac(mia)) return;
+      if (!d || !d.documento) throw errorControl("La factura no apareció", [{ vista: "documento", filas: 0, esperadas: 1, detalle: `La base no devolvió ${id}.` }]);
+    } catch (err) {
+      if (!vivaFac(mia)) return;
+      if (err.codigo === "22023") { S.fac.doc = null; S.hooks.avisar("Esa factura ya no está (se tiró el borrador)", true); return pintarFacturas(); }
+      return errorFac(err, pintarFacturas);
+    }
+    const dd = d.documento;
+    S.hooks.titulo(KICKER, dd.numero ? `Factura ${dd.numero}` : "Borrador de factura");
+    main().querySelectorAll("[data-fac-sub]").forEach(x => x.setAttribute("aria-pressed", "false"));
+    return dd.estado === "borrador" ? pintarBorrador(d, mia) : pintarEmitida(d, pago, mia);
+  }
+  const notaFacHTML = id => { const n = S.fac.nota; if (!n || n.doc !== id) return ""; S.fac.nota = null; return `<p class="ct-aviso ${n.tipo || "ok"}" role="status">${esc(n.texto)}</p>`; };
+  const CODIGOS_REFRESCAR = ["hito_cambio", "contrato_cambio", "retencion_cambio", "destinatario_cambio"];
+  function pintarBorrador(d, mia) {
+    const dd = d.documento, avisos = Array.isArray(d.avisos) ? d.avisos : [];
+    const frenan = avisos.filter(a => a.frena), espanol = avisos.some(a => a.codigo === "en_espanol");
+    const soloEspanol = frenan.length === 1 && espanol;
+    const refrescar = avisos.some(a => CODIGOS_REFRESCAR.includes(a.codigo));
+    const que = dd.forma === "hito" ? `${dd.es_deposito ? "Depósito" : "Hito"} «${esc(dd.hito || "—")}»` : dd.forma === "porcentaje" ? `${esc(String(num(dd.porcentaje)))} % del contrato (<span class="ct-num">${fmt(dd.base)}</span>)` : esc(FORMA_FAC[dd.forma] || dd.forma);
+    facCuerpo().innerHTML = `<section class="ct-card ct-fac-doc" id="ct-fac-doc" data-doc="${esc(dd.id)}">
+        <div class="ct-cab"><h2>Borrador · ${esc(dd.obra || dd.proyecto_id)}</h2>${pill("borrador", "warn")}</div>
+        <p class="ct-nota">${que} · a ${esc((dd.cliente && dd.cliente.nombre) || "—")}${dd.a_contratista ? " (el contratista)" : ""}</p>
+        ${notaFacHTML(dd.id)}
+        <div class="ct-kpis tres">
+          ${kpiHTML("Monto", fmt(dd.monto))}
+          ${kpiHTML("Retención", fmt(dd.retencion), `${esc(String(num(dd.retencion_pct) || 0))} % · ${esc(RETENCION_DE[dd.retencion_origen] || dd.retencion_origen || "")}`)}
+          ${kpiHTML("A pagar ahora", fmt(dd.a_pagar))}
+        </div>
+        ${avisos.length ? `<ul class="ct-jr-avisos ct-fac-avisos">${avisos.map(a => `<li class="ct-aviso ${a.frena ? "bad" : "warn"}" data-aviso="${esc(a.codigo)}">${esc(a.texto)}</li>`).join("")}</ul>` : `<p class="ct-aviso ok">Nada lo frena: se puede emitir.</p>`}
+        <div class="ct-acciones">
+          <button type="button" class="accion" data-fac-emitir${d.puede_emitir || soloEspanol ? "" : " disabled"}>Emitir la factura</button>
+          <button type="button" class="accion secundaria" data-fac-cambiar>Cambiar</button>
+          ${refrescar ? `<button type="button" class="accion secundaria" data-fac-refrescar>Refrescar el borrador</button>` : ""}
+          <button type="button" class="accion secundaria" data-fac-tirar>Tirar el borrador</button>
+          <button type="button" class="accion secundaria" data-fac-volver>‹ Todas las facturas</button>
+        </div>
+        ${!d.puede_emitir && !soloEspanol ? `<p class="ct-sub ct-fac-porque">No se emite todavía: lo que está en rojo lo frena${frenan.length > 1 ? ` (${frenan.length} cosas)` : ""}.</p>` : ""}
+        <div class="ct-form" hidden></div>
+      </section>
+      <section class="ct-card ct-fac-previa" id="ct-fac-previa"><p class="ct-nota">Así la recibe el cliente (en inglés). El número se pone al emitir; el enlace de pago, al hacer el PDF.</p>${facturaHTML(d.vista_previa, { etiqueta: "Invoice preview (draft)" })}</section>`;
+    const card = $("ct-fac-doc");
+    card.querySelector("[data-fac-volver]").addEventListener("click", () => ir("facturas", { sub: "facturas" }));
+    const rf = card.querySelector("[data-fac-refrescar]");
+    if (rf) rf.addEventListener("click", () => accionFac(card, "fn_emision_borrador", { p: { documento: dd.id } }, () => "Borrador refrescado con lo de hoy: vuelve a mirarlo"));
+    card.querySelector("[data-fac-tirar]").addEventListener("click", () => montarForma(card, formaHTML("¿Tirar este borrador? No tiene número ni está en el libro: no queda nada.", "", "Tirarlo"),
+      () => accionFac(card, "fn_emision_descartar", { p_documento: dd.id }, () => { S.fac.doc = null; S.fac.sub = "facturas"; return "Borrador tirado"; })));
+    card.querySelector("[data-fac-cambiar]").addEventListener("click", () => formaBorrador(card, d));
+    card.querySelector("[data-fac-emitir]").addEventListener("click", () => {
+      if (!mfaActivo()) { mostrarErrorForma(card, "Emitir pone la factura en el libro: pide el código del teléfono. Actívalo en Conexiones y seguridad y entra con él."); return; }
+      const est = S.fac.estado || {};
+      montarForma(card, formaHTML(`Vas a emitir la factura a <b>${esc((dd.cliente && dd.cliente.nombre) || "—")}</b> por <b class="ct-num">${fmt(dd.monto)}</b>${num(dd.retencion) ? ` (retenidos <span class="ct-num">${fmt(dd.retencion)}</span>; a pagar ahora <span class="ct-num">${fmt(dd.a_pagar)}</span>)` : ""}.
+          Recibe su número (el siguiente: <span class="ct-num">${esc(est.siguiente_numero || "—")}</span>), la fecha de hoy y entra al libro. <b>Después ya no se cambia</b>: si sale mal, se anula con una nota de crédito y se hace otra.`,
+        `<label class="ct-check"><input type="checkbox" name="si" required data-falta="Marca que la revisaste: después de emitirla no se cambia."> La revisé y se emite así</label>
+         ${espanol ? `<label class="ct-check"><input type="checkbox" name="idioma" required data-falta="La base ve texto que parece español: cámbialo o confirma que está bien así."> Lo que parece español está bien así (el cliente lo lee en inglés)</label>` : ""}`, "Emitir"), v => {
+        accionFac(card, "fn_emision_emitir", { p_documento: dd.id, p_visto: d.visto, p_opciones: v.idioma ? { idioma_revisado: true } : {} }, r => {
+          S.fac.nota = { doc: dd.id, tipo: r.tardio ? "warn" : "ok", texto: `Emitida ${r.numero} (asiento ${r.asiento || "—"}).${r.tardio ? ` ${typeof r.tardio === "string" ? r.tardio : "El mes de hoy estaba cerrado: el asiento entró con otra fecha contable (" + (r.fecha_contable || "—") + ")."}` : ""} Ahora, el PDF y mandarla.` };
+          return `Emitida la factura ${r.numero}`;
+        }, { mfa: "Emitir pide el código del teléfono: actívalo en Conexiones y seguridad y entra con él." });
+      });
+    });
+  }
+  // CAMBIAR un borrador: solo lo que cambió va a fn_emision_borrador (la base vuelve a leer lo de fuera y devuelve el borrador entero)
+  function formaBorrador(card, d) {
+    const dd = d.documento, l0 = (d.lineas || [])[0] || {}, cl = dd.cliente || {};
+    const tm = dd.forma === "tm", conLinea = dd.forma === "hito" || dd.forma === "porcentaje";
+    const f = card.querySelector(".ct-form");
+    montarForma(card, `<form class="ct-pide" novalidate><p class="ct-form-t">Cambiar el borrador. Lo que lee el cliente va en inglés.</p>
+        ${dd.forma === "porcentaje" ? campoHTML("porcentaje", "Porcentaje del contrato (%)", "texto", `inputmode="decimal" value="${esc(String(num(dd.porcentaje)))}"`) : ""}
+        ${conLinea ? `${campoHTML("descripcion", "Descripción de la línea (en inglés)", "texto", `value="${esc(l0.descripcion || "")}"`)}${campoHTML("detalle", "Detalle (opcional, en inglés)", "texto", `value="${esc(l0.detalle || "")}"`)}` : ""}
+        ${tm ? `<div class="ct-fac-lineas-ed">${(d.lineas || []).map((l, i) => lineaTmHTML(l, i)).join("") || lineaTmHTML({}, 0)}</div><div class="ct-acciones"><button type="button" class="accion secundaria chica" data-otra-linea>Otra línea</button></div>` : ""}
+        ${dd.forma !== "retencion" ? campoHTML("retencion_pct", `Retención de este borrador (%) · vacío = ${dd.retencion_origen === "borrador" ? "la de la obra" : `la de la obra (${esc(String(num(dd.retencion_pct) || 0))} %)`}`, "texto", `inputmode="decimal" value="${dd.retencion_origen === "borrador" ? esc(String(num(dd.retencion_pct))) : ""}"`) : ""}
+        <fieldset class="ct-fac-cliente"><legend>A quién se factura (vacío todo = el de la obra)</legend>
+          ${campoHTML("c_nombre", "Nombre", "texto", `value="${esc(cl.nombre || "")}"`)}${campoHTML("c_atencion", "Atención (persona)", "texto", `value="${esc(cl.atencion || "")}"`)}
+          ${campoHTML("c_direccion", "Dirección", "texto", `value="${esc(cl.direccion || "")}"`)}${campoHTML("c_correo", "Correo", "texto", `inputmode="email" value="${esc(cl.correo || "")}"`)}</fieldset>
+        <label class="ct-campo">Notas al cliente (en inglés)<textarea name="notas" rows="2">${esc(dd.notas || "")}</textarea></label>
+        <div class="ct-acciones"><button class="accion" type="submit">Guardar el borrador</button><button class="accion secundaria" type="button" data-cerrar>Cancelar</button></div></form>`, v => {
+      const p = { documento: dd.id };
+      if (dd.forma === "porcentaje" && montoTxt(v.porcentaje) !== String(num(dd.porcentaje))) p.porcentaje = montoTxt(v.porcentaje);
+      if (conLinea && v.descripcion !== (l0.descripcion || "")) p.descripcion = v.descripcion;
+      if (conLinea && v.detalle !== (l0.detalle || "")) p.detalle = v.detalle || null;
+      if (tm) {
+        const lineas = leerLineasTm(f.querySelector("form"));
+        if (!lineas.length || lineas.some(l => !l.descripcion || !l.precio)) { mostrarErrorForma(card, "Cada línea lleva su descripción y su precio."); return; }
+        p.lineas = lineas;
+      }
+      if (dd.forma !== "retencion") {
+        const t = montoTxt(v.retencion_pct), antes = dd.retencion_origen === "borrador" ? String(num(dd.retencion_pct)) : "";
+        if (t !== antes) p.retencion_pct = t === "" ? null : t;
+      }
+      const nuevo = { nombre: v.c_nombre, atencion: v.c_atencion, direccion: v.c_direccion, correo: v.c_correo };
+      const vacio = !Object.values(nuevo).some(Boolean);
+      const igual = ["nombre", "atencion", "direccion", "correo"].every(k => (nuevo[k] || "") === (cl[k] || ""));
+      if (!igual) p.cliente = vacio ? null : Object.fromEntries(Object.entries(nuevo).filter(([, x]) => x));
+      if ((v.notas || "") !== (dd.notas || "")) p.notas = v.notas || null;
+      if (Object.keys(p).length === 1 && !tm) { mostrarErrorForma(card, "No cambiaste nada."); return; }
+      accionFac(card, "fn_emision_borrador", { p }, () => "Borrador guardado: mira cómo queda");
+    });
+    if (tm) wireLineasTm(f.querySelector("form"));
+  }
+  const tamTxt = b => { const n = num(b) || 0; return n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`; };
+  function pintarEmitida(d, pago, mia) {
+    const dd = d.documento, c = d.contenido || {}, libro = d.libro || {}, anulada = dd.estado === "anulada";
+    const pdfs = Array.isArray(d.pdfs) ? d.pdfs : [], envios = Array.isArray(d.envios) ? d.envios : [];
+    const ult = S.fac.ultimo && S.fac.ultimo.doc === dd.id ? S.fac.ultimo : null;
+    const enlaceVivo = pago && pago.enlace && pago.enlace.estado === "activo" ? pago.enlace : null;
+    const pagoTxt = !pago ? "" : pago.error ? `<p class="ct-aviso warn">No se pudo leer el pago en línea: ${esc(pago.error)}</p>`
+      : pago.en_linea ? `<p class="ct-nota">Se paga en línea por cuenta de banco (ACH): ${enlaceVivo ? `el enlace vivo cobra <b class="ct-num">${fmt(enlaceVivo.monto)}</b>${enlaceVivo.vale ? "" : " (ya no es lo que debe: el PDF nuevo pide otro)"}` : "el enlace se pide al hacer el PDF"}. La tarjeta, apagada.</p>`
+      : `<p class="ct-nota">Sin pago en línea: ${esc(pago.por_que_no || "—")}</p>`;
+    facCuerpo().innerHTML = `<section class="ct-card ct-fac-doc" id="ct-fac-doc" data-doc="${esc(dd.id)}">
+        <div class="ct-cab"><h2><span class="ct-num">${esc(dd.numero)}</span> · ${esc(dd.obra || dd.proyecto_id)}</h2>${anulada ? pill("anulada", "bad") : pill("emitida", "ok")}</div>
+        <p class="ct-nota">${esc(FORMA_FAC[dd.forma] || dd.forma)}${dd.hito ? ` «${esc(dd.hito)}»` : ""} · del ${esc(fechaLarga(dd.fecha))} · vence el ${esc(fechaLarga(dd.vence))} · a ${esc((dd.cliente && dd.cliente.nombre) || "—")}${dd.asiento ? ` · asiento <span class="ct-num">${esc(dd.asiento)}</span>` : ""}</p>
+        ${anulada ? `<p class="ct-aviso bad">Anulada${dd.anulado_el ? ` el ${esc(fechaHora(dd.anulado_el))}` : ""}${dd.nota_credito ? ` con la nota de crédito <span class="ct-num">${esc(dd.nota_credito)}</span>` : ""}${dd.anulado_motivo ? `: «${esc(dd.anulado_motivo)}»` : ""}.</p>` : ""}
+        ${notaFacHTML(dd.id)}
+        <div class="ct-kpis cuatro">
+          ${kpiHTML("Monto", fmt(dd.monto))}
+          ${kpiHTML("Retención", fmt(dd.retencion), `${esc(String(num(dd.retencion_pct) || 0))} %`)}
+          ${kpiHTML("A pagar", fmt(dd.a_pagar))}
+          ${libro.saldo != null ? kpiHTML("Debe hoy", fmt(libro.saldo), `en el libro${num(libro.saldo_retencion) ? ` · y ${fmt(libro.saldo_retencion)} de retención` : ""}`) : kpiHTML("Debe hoy", "—", "la de la retención: ver sus facturas")}
+        </div>
+        ${anulada ? "" : pagoTxt}
+        <div class="ct-fac-bloque" id="ct-fac-pdfs"><h3>El PDF</h3>
+          ${pdfs.length ? `<ul class="ct-fac-items">${pdfs.slice().reverse().map((p, i) => `<li><span><b>PDF ${esc(p.n)}</b>${i === 0 ? ` ${pill("el que vale", "ok")}` : ""}<small>${esc(fechaHora(p.creado_el))} · ${tamTxt(p.bytes)} · ${p.pago && p.pago.url ? `con enlace de pago (solo cuenta de banco) por <span class="ct-num">${fmt(p.pago.monto)}</span>` : "sin enlace de pago"}</small></span><button type="button" class="accion secundaria chica" data-fac-ver="${esc(p.id)}">Ver</button></li>`).join("")}</ul>` : `<p class="ct-vacio ct-fac-sinpdf">Todavía sin PDF.</p>`}
+          ${ult && ult.url ? `<p class="ct-aviso ok" role="status">PDF listo: <a href="${esc(ult.url)}" target="_blank" rel="noopener" class="ct-fac-enlace">ver el PDF</a> (el enlace dura 10 minutos).</p>` : ""}
+          ${anulada ? "" : `<div class="ct-acciones"><button type="button" class="accion${pdfs.length ? " secundaria" : ""}" data-fac-pdf>${pdfs.length ? "Volver a hacer el PDF" : "Hacer el PDF"}</button></div>`}
+        </div>
+        <div class="ct-fac-bloque" id="ct-fac-envios"><h3>Envíos</h3>
+          ${envios.length ? `<ul class="ct-fac-items">${envios.slice().reverse().map(e => `<li><span><b>${e.medio === "en_mano" ? "En mano" : e.n > 1 ? "Reenvío" : "Correo"}</b> a ${esc(e.para)}<small>${esc(fechaHora(e.enviado_el))}${e.cc ? ` · copia ${esc(e.cc)}` : ""}${e.nota ? ` · ${esc(e.nota)}` : ""}${e.resend_id ? ` · Resend <span class="ct-num">${esc(e.resend_id)}</span>` : ""}</small></span></li>`).join("")}</ul>` : `<p class="ct-vacio">Sin mandar todavía.</p>`}
+          ${anulada ? "" : `<div class="ct-acciones"><button type="button" class="accion${pdfs.length && !envios.length ? "" : " secundaria"}" data-fac-mandar>${envios.length ? "Reenviar por correo" : "Mandar por correo"}</button><button type="button" class="accion secundaria" data-fac-mano>Entregada en mano</button></div>`}
+        </div>
+        ${anulada && enlaceVivo ? `<p class="ct-aviso warn">Su enlace de pago sigue activo en Stripe: desactívalo para que nadie la pague. <button type="button" class="accion secundaria chica" data-fac-baja="${esc(enlaceVivo.id)}">Desactivar el enlace</button></p>` : ""}
+        <div class="ct-acciones">${anulada ? "" : `<button type="button" class="accion secundaria" data-fac-anular>Anular con nota de crédito</button>`}<button type="button" class="accion secundaria" data-fac-volver>‹ Todas las facturas</button></div>
+        <div class="ct-form" hidden></div>
+        <div class="ct-fac-res"></div>
+      </section>
+      <section class="ct-card ct-fac-previa" id="ct-fac-previa"><p class="ct-nota">Lo que recibió el cliente (congelado al emitir; el PDF se pinta de esto).</p>${facturaHTML(c, { etiqueta: `Invoice ${dd.numero}`, enlace: pdfs.length && pdfs[pdfs.length - 1].pago && pdfs[pdfs.length - 1].pago.url, cobra: pdfs.length && pdfs[pdfs.length - 1].pago ? pdfs[pdfs.length - 1].pago.monto : null })}</section>`;
+    const card = $("ct-fac-doc");
+    card.querySelector("[data-fac-volver]").addEventListener("click", () => ir("facturas", { sub: "facturas" }));
+    card.querySelectorAll("[data-fac-ver]").forEach(b => b.addEventListener("click", () => funcionFac(card, { accion: "ver", documento: dd.id, pdf_id: b.dataset.facVer }, r => {
+      S.fac.ultimo = { doc: dd.id, url: r.url };
+      return "PDF listo para ver";
+    }, { espera: "Pidiendo el PDF…", repintar: false, mostrar: r => `<p class="ct-aviso ok" role="status"><a href="${esc(r.url)}" target="_blank" rel="noopener" class="ct-fac-enlace">Abrir el PDF ${esc(r.pdf && r.pdf.n)}</a> (el enlace dura 10 minutos).</p>` })));
+    const hacerPdf = sinEnlace => funcionFac(card, { accion: "pdf", documento: dd.id, ...(sinEnlace ? { sin_enlace: true } : {}) }, r => {
+      S.fac.ultimo = { doc: dd.id, url: r.url };
+      S.fac.nota = (r.avisos || []).length ? { doc: dd.id, tipo: "warn", texto: r.avisos.join(" ") } : null;
+      return r.ya_estaba ? "El PDF ya estaba hecho así: es el mismo" : `PDF ${r.pdf && r.pdf.n} listo${r.enlace ? " con su enlace de pago (solo cuenta de banco)" : ""}`;
+    }, { espera: "Haciendo el PDF (y el enlace de pago)…" });
+    const pdfB = card.querySelector("[data-fac-pdf]"); if (pdfB) pdfB.addEventListener("click", () => hacerPdf(false));
+    S.fac.sinEnlace = () => hacerPdf(true);
+    const mandar = card.querySelector("[data-fac-mandar]");
+    if (mandar) mandar.addEventListener("click", () => {
+      if (!mfaActivo()) { mostrarErrorForma(card, "Mandar la factura pide el código del teléfono: actívalo en Conexiones y seguridad y entra con él."); return; }
+      montarForma(card, formaHTML(`${envios.length ? "Reenviar" : "Mandar"} la factura <span class="ct-num">${esc(dd.numero)}</span> por correo, con el PDF adjunto${c.pago_en_linea && c.pago_en_linea.ach ? " y el enlace de pago (solo cuenta de banco)" : ""}. A ti te llega copia.`,
+        `${campoHTML("para", "Para (uno o varios, separados por comas)", "texto", `inputmode="email" required value="${esc((c.cliente && c.cliente.correo) || "")}" data-falta="Di a quién se manda (su correo)."`)}
+         ${campoHTML("cc", "Copia a alguien más (opcional)", "texto", `inputmode="email"`)}
+         ${campoHTML("asunto", "Asunto (en inglés)", "texto", `value="${esc(`Invoice ${dd.numero} from ${(c.empresa && c.empresa.nombre) || ""}`.trim())}"`)}
+         ${campoHTML("mensaje", "Mensaje (opcional, en inglés)", "textarea")}`, envios.length ? "Reenviar" : "Mandar"), v => {
+        funcionFac(card, { accion: "enviar", documento: dd.id, para: v.para, ...(v.cc ? { cc: v.cc } : {}), ...(v.asunto ? { asunto: v.asunto } : {}), ...(v.mensaje ? { mensaje: v.mensaje } : {}) }, r => {
+          S.fac.nota = { doc: dd.id, tipo: (r.avisos || []).length ? "warn" : "ok", texto: `${r.reenvio ? "Reenviada" : "Mandada"} a ${r.para}${r.cc ? ` (copia ${r.cc})` : ""}.${(r.avisos || []).length ? " " + r.avisos.join(" ") : ""}` };
+          return `${r.reenvio ? "Reenviada" : "Mandada"} la ${dd.numero}`;
+        }, { espera: "Mandando el correo (con el PDF)…" });
+      });
+    });
+    const mano = card.querySelector("[data-fac-mano]");
+    if (mano) mano.addEventListener("click", () => montarForma(card, formaHTML("La entregaste en mano (o la mandaste por otro lado): queda apuntado quién la recibió.",
+      `${campoHTML("para", "Quién la recibió", "texto", `required data-falta="Di quién la recibió."`)}${campoHTML("nota", "Nota (opcional)", "textarea")}`, "Apuntarlo"), v =>
+      accionFac(card, "fn_emision_envio", { p_documento: dd.id, p_envio: { medio: "en_mano", para: v.para, ...(v.nota ? { nota: v.nota } : {}) } }, () => "Entrega apuntada")));
+    const anular = card.querySelector("[data-fac-anular]");
+    if (anular) anular.addEventListener("click", () => {
+      if (!mfaActivo()) { mostrarErrorForma(card, "Anular toca el libro: pide el código del teléfono. Actívalo en Conexiones y seguridad y entra con él."); return; }
+      montarForma(card, formaHTML(`Anular la <span class="ct-num">${esc(dd.numero)}</span>: no se borra; se hace su nota de crédito (el espejo del asiento) y ${dd.hito_id ? "el hito vuelve a pendiente para hacer la buena, con número nuevo" : "la buena se hace aparte, con número nuevo"}. Lo que el cliente recibió no cambia: avísale.`,
+        `${campoHTML("motivo", "Por qué (queda escrito en la nota de crédito)", "textarea", `required data-falta="Di por qué se anula."`)}
+         ${campoHTML("fecha", "Fecha contable (vacía = hoy)", "texto", `type="date"`)}`, "Anular"), v => {
+        if (String(v.motivo || "").length < 3) { mostrarErrorForma(card, "Di por qué en unas palabras (al menos tres letras)."); return; }
+        accionFac(card, "fn_emision_anular", { p_documento: dd.id, p_motivo: v.motivo, p_fecha: v.fecha || null }, r => {
+          S.fac.nota = { doc: dd.id, tipo: "warn", texto: `Anulada ${r.numero}${r.nota_credito ? ` con la nota de crédito ${r.nota_credito}` : ""}${r.asiento ? ` (asiento ${r.asiento})` : ""}.${r.ya_estaba_en_el_libro ? " Ya estaba anulada en el libro: aquí quedó cerrada." : ""} ${r.sigue || ""}` };
+          return `Anulada la ${r.numero}`;
+        }, { mfa: "Anular pide el código del teléfono: actívalo en Conexiones y seguridad y entra con él." });
+      });
+    });
+    const baja = card.querySelector("[data-fac-baja]");
+    if (baja) baja.addEventListener("click", () => accionFuncion("stripe", card, { accion: "desactivar_enlace", enlace: baja.dataset.facBaja, motivo: `La factura ${dd.numero} se anuló` },
+      () => "Enlace de pago desactivado", { res: "ct-fac-res", pide: "los cobros en línea lo piden", errorHTML: errorStripeHTML, espera: "Desactivando el enlace en Stripe…" }));
+  }
+  // La función de borde «facturas» (el PDF, el correo, ver): su caja (.ct-fac-res), sus errores en llano y, si conviene, la salida:
+  // el PDF sin enlace de pago (si Stripe no dejó el enlace solo por cuenta de banco) o apuntar un correo que salió y no quedó apuntado
+  function funcionFac(card, cuerpo, exito, opciones = {}) {
+    return accionFuncion("facturas", card, cuerpo, exito, Object.assign({
+      res: "ct-fac-res", ms: 120000, pide: "la factura lo pide", girar: true, errorHTML: errorFacFuncHTML,
+      alFallar: err => {
+        const b = card.querySelector("[data-fac-sinenlace]"); if (b) b.addEventListener("click", () => S.fac.sinEnlace && S.fac.sinEnlace());
+        const a = card.querySelector("[data-fac-apuntar]");
+        if (a && err.datos && err.datos.datos) a.addEventListener("click", () => {
+          const x = err.datos.datos;
+          accionFac(card, "fn_emision_envio", { p_documento: cuerpo.documento, p_envio: { medio: "correo", para: x.para, cc: x.cc || null, asunto: x.asunto || null, resend_id: x.resend_id, pdf_id: x.pdf_id || null } }, () => "Envío apuntado (no se volvió a mandar)");
+        });
+      }
+    }, opciones));
+  }
+  const ENLACE_FALLA = ["STRIPE_ACH", "STRIPE_PERMISO", "STRIPE_CAIDO", "STRIPE_ENLACE", "STRIPE", "ENLACE", "CONFIG", "MX008"];
+  function errorFacFuncHTML(err, cuerpo) {
+    if (esFalloDeRed(err) || !navigator.onLine) return `<p class="ct-aviso bad">Sin señal: no se hizo nada.</p>`;
+    if (err.estado === 404 && !err.codigo) return `<p class="ct-aviso bad">La función «facturas» no está desplegada en Supabase (Edge Functions → facturas): sin ella no hay PDF ni correo. Mientras, la factura se puede entregar en mano.</p>`;
+    if (err.codigo === "MFA") return `<p class="ct-aviso warn">Falta el código del teléfono: entra otra vez con él.</p>`;
+    if (err.codigo === "SIN_APUNTAR") return `<p class="ct-aviso bad">${esc(err.message)} <button type="button" class="accion secundaria chica" data-fac-apuntar>Apuntar el envío</button></p>`;
+    const conPdf = cuerpo && (cuerpo.accion === "pdf" || cuerpo.accion === "enviar") && !cuerpo.sin_enlace && /^STRIPE|^ENLACE$/.test(String(err.codigo || ""));
+    const tipo = /^MX|^22/.test(String(err.codigo || "")) || err.estado === 409 ? "warn" : "bad";
+    return `<p class="ct-aviso ${ENLACE_FALLA.includes(String(err.codigo || "")) || tipo === "warn" ? "warn" : "bad"}">${esc(err.message)}${conPdf ? ` <button type="button" class="accion secundaria chica" data-fac-sinenlace>Hacer el PDF sin enlace de pago</button>` : ""}</p>`;
+  }
+
+  // ---------- Ajustes: lo que sale en la factura ----------
+  async function pintarFacAjustes(mia) {
+    let cfg;
+    try {
+      cfg = await DB._leer("emision_config?select=*");
+      if (!vivaFac(mia)) return;
+      if (!Array.isArray(cfg) || cfg.length !== 1) throw errorControl("Los ajustes de la facturación no aparecieron", [{ vista: "ajustes", filas: Array.isArray(cfg) ? cfg.length : 0, esperadas: 1, detalle: "La base pone esa fila al instalar la facturación: si no está, la sesión no es la del dueño o no se instaló entera." }]);
+    } catch (err) { if (!vivaFac(mia)) return; return errorFac(err, pintarFacturas); }
+    const c = cfg[0], e = c.empresa || {};
+    const EMP = [["nombre", "Nombre de la empresa (como sale en la factura)"], ["licencia", "Licencia"], ["direccion", "Dirección"], ["telefono", "Teléfono"], ["correo", "Correo (el de las facturas)"], ["web", "Web"]];
+    facCuerpo().innerHTML = `<section class="ct-card ct-fac-ajustes" id="ct-fac-ajustes"><h2>Lo que sale en la factura</h2>
+        <form class="ct-pide" id="ct-fac-ajustes-form" novalidate>
+          <p class="ct-nota">Todo lo que lee el cliente va en inglés. Sin el nombre de la empresa y el «How to pay» no se emite.</p>
+          <fieldset class="ct-fac-cliente"><legend>La empresa</legend>${EMP.map(([k, t]) => campoHTML(`e_${k}`, t, "texto", `value="${esc(e[k] || "")}"`)).join("")}</fieldset>
+          <label class="ct-campo">How to pay (en inglés)<textarea name="como_pagar" rows="3" placeholder="Check payable to … · Bank wire: call us for the details.">${esc(c.como_pagar || "")}</textarea>
+            <span class="ct-sub">Sale igual en TODAS las facturas, también en las que no llevan enlace de pago (la de la retención, o un PDF hecho sin enlace). No hables aquí del enlace: cuando una factura lo lleva, el PDF y el correo añaden solos «Pay $… online by bank transfer (ACH)» con su enlace y su código QR.</span></label>
+          <p class="ct-aviso warn ct-fac-como-aviso" id="ct-fac-como-aviso"${hablaDeEnlace(c.como_pagar) ? "" : " hidden"}>Este «How to pay» habla de un enlace de pago: en las facturas que no lo llevan (la de la retención, o un PDF sin enlace) el cliente lo buscará y no estará. Escríbelo para que sirva con enlace y sin él.</p>
+          <div class="ct-fila">
+            ${campoHTML("terminos_dias", "Días para pagar (0 = Due on receipt)", "texto", `inputmode="numeric" value="${esc(c.terminos_dias)}"`)}
+            ${campoHTML("pdf_dias", "Avisar de una factura sin PDF o sin mandar a los … días", "texto", `inputmode="numeric" value="${esc(c.pdf_dias)}"`)}
+          </div>
+          <label class="ct-campo">Términos (opcional, en inglés)<textarea name="terminos_texto" rows="2">${esc(c.terminos_texto || "")}</textarea></label>
+          <label class="ct-check"><input type="checkbox" name="ach"${c.ach ? " checked" : ""}> Ofrecer el pago en línea por cuenta de banco (ACH, con Stripe)</label>
+          <p class="ct-aviso warn ct-fac-tarjeta">La tarjeta está apagada${c.tarjeta_pct != null ? ` (${esc(c.tarjeta_pct)} %)` : ""}: lo que el cliente pagara de más por el recargo, los cobros en línea lo dejarían como un anticipo de la obra y no como un ingreso. Se enciende cuando eso se arregle y se confirmen con Stripe y con el CPA las reglas del recargo.</p>
+          <details class="ct-fac-avanzado"><summary>El corte y el número</summary>
+            <div class="ct-fila">
+              ${campoHTML("corte", "Desde qué día se factura aquí (antes, por QuickBooks)", "texto", `type="date" value="${esc(c.corte || "")}"`)}
+              ${campoHTML("serie_formato", "Formato del número (no cambia con la serie empezada)", "texto", `value="${esc(c.serie_formato || "")}"`)}
+            </div>
+          </details>
+          <div class="ct-acciones"><button type="submit" class="accion">Guardar los ajustes</button></div>
+        </form><div class="ct-form" hidden></div>
+        <p class="ct-sub">Cambiado ${esc(fechaHora(c.actualizado))}.</p>
+      </section>`;
+    const card = $("ct-fac-ajustes"), form = $("ct-fac-ajustes-form");
+    // el aviso del «How to pay» que habla de un enlace, mientras se escribe
+    form.elements.como_pagar.addEventListener("input", ev => { $("ct-fac-como-aviso").hidden = !hablaDeEnlace(ev.target.value); });
+    form.addEventListener("submit", ev => {
+      ev.preventDefault();
+      const v = k => String((form.elements[k] || {}).value || "").trim();
+      const p = {};
+      const emp = Object.fromEntries(EMP.map(([k]) => [k, v(`e_${k}`)]).filter(([, x]) => x));
+      if (JSON.stringify(emp) !== JSON.stringify(Object.fromEntries(EMP.map(([k]) => [k, e[k] || ""]).filter(([, x]) => x)))) p.empresa = emp;
+      if (v("como_pagar") !== (c.como_pagar || "")) p.como_pagar = v("como_pagar");
+      if (v("terminos_texto") !== (c.terminos_texto || "")) p.terminos_texto = v("terminos_texto");
+      for (const k of ["terminos_dias", "pdf_dias"]) {
+        if (v(k) === String(c[k])) continue;
+        if (!/^\d{1,3}$/.test(v(k))) { mostrarErrorForma(card, k === "terminos_dias" ? "Los días para pagar van de 0 a 120 (0 = Due on receipt)." : "Los días del aviso van de 0 a 60."); return; }
+        p[k] = Number(v(k));
+      }
+      if (form.elements.ach.checked !== !!c.ach) p.ach = form.elements.ach.checked;
+      if (v("corte") && v("corte") !== c.corte) p.corte = v("corte");
+      if (v("serie_formato") && v("serie_formato") !== c.serie_formato) p.serie_formato = v("serie_formato");
+      if (!Object.keys(p).length) { mostrarErrorForma(card, "No cambiaste nada."); return; }
+      accionFac(card, "fn_emision_config", { p }, () => "Ajustes de la factura guardados");
+    });
+  }
+
+  const PAGINAS = { resumen: pintarResumen, bancos: pintarBancos, bandeja: pintarBandeja, conciliar: pintarConciliar, movimientos: pintarMovimientos, estados: pintarEstados, obras: pintarObras, wip: pintarWip, cierre: pintarCierre, facturas: pintarFacturas, cobros: pintarCobros, conexiones: pintarConexiones };
 
   // ---------- Lo que la app llama (el contrato con js/app.js) ----------
   window.MXP_CONTA = {
@@ -5258,7 +6600,16 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
       // (fase 9) el costo por obra: lo bajado a los asientos → la obra → la lista
       if (S.pagina === "obras" && S.obras.bajar) { S.obras.bajar = null; pintarObras(); return true; }
       if (S.pagina === "obras" && S.obras.sel) { S.obras.sel = null; pintarObras(); return true; }
+      // (fase 10) la factura abierta → la lista
+      if (S.pagina === "facturas" && S.fac.doc) { S.fac.doc = null; S.hooks.titulo(KICKER, TITULOS.facturas); pintarFacturas(); return true; }
       return false;
+    },
+    // (fase 10) el 🧾 de un hito desde el corte (js/app.js): deja pedido su borrador; app.js abre después «Facturas» (irConta("facturas"))
+    facturar(p) {
+      if (!p || p.hito == null) return false;
+      S.fac.pedido = { hito: p.hito, proyecto: p.proyecto || null, obra: p.obra || "" };
+      S.fac.doc = null;
+      return true;
     },
     ir,
     _estado: S

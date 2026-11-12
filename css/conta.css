@@ -869,3 +869,238 @@ body[data-vista="conta"] .fab { display: none; }
 }
 @media (min-width: 700px) and (max-width: 1023px) { #conta-raiz .ct-tabla.ct-ob-tabla tbody tr { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 #conta-raiz .ct-ob-tabla-env { overflow-x: auto; min-width: 0; }
+
+/* ============================================================
+   FACTURAS (c11, fase 10): la lista, por facturar, una factura y su vista
+   previa EN INGLÉS (la misma que pinta el PDF: docs/conta/f10-factura-
+   vista-previa.html). Solo tokens de css/styles.css. Teléfono primero.
+   ============================================================ */
+#conta-raiz .ct-fac-cuerpo, #conta-raiz .ct-fac-arriba, #conta-raiz .ct-fac-obras { display: grid; gap: .8rem; min-width: 0; }
+#conta-raiz .ct-fac-arriba:empty { display: none; }
+#conta-raiz .ct-fac-corte { border-left: 4px solid var(--mp-warn-bd); }
+#conta-raiz .ct-fac-corte.app { border-left-color: var(--ok); }
+#conta-raiz .ct-fac-corte .ct-cab .ct-pill, #conta-raiz .ct-fac-obra .ct-cab .ct-pill { white-space: nowrap; }
+#conta-raiz .ct-fac-corte .ct-aviso .accion.chica { margin-top: .35rem; }
+#conta-raiz .ct-fac-lista .ct-herr-fila .ct-acciones { margin: 0; justify-content: flex-end; }
+@media (max-width: 699px) { #conta-raiz .ct-fac-lista .ct-herr-fila .ct-acciones { grid-column: 1 / -1; justify-content: flex-start; } }
+/* la lista: cada factura es una fila que en el teléfono se apila (la de «Costo por obra») */
+#conta-raiz .ct-fac-cab { display: none; }
+#conta-raiz .ct-fac-filas { display: grid; margin-top: .5rem; }
+#conta-raiz .ct-fac-fila { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .3rem .7rem; width: 100%; text-align: left; font: inherit; color: var(--mp-ink);
+  background: none; border: 0; border-top: 1px solid var(--mp-line); padding: .75rem .2rem; cursor: pointer; min-height: var(--tap); }
+#conta-raiz .ct-fac-fila:first-child { border-top: 0; }
+#conta-raiz .ct-fac-fila:hover { background: var(--mp-sky-1); }
+#conta-raiz .ct-fac-fila:focus-visible { outline: 3px solid var(--mp-blue); outline-offset: -3px; }
+#conta-raiz .ct-fac-fila .ct-ob-n .ct-pill { margin-left: .2rem; }
+@media (min-width: 1024px) {
+  #conta-raiz { --ct-fac-cols: minmax(0, 1fr) 8.5rem 8rem 11rem 13rem; }
+  #conta-raiz .ct-fac-cab { display: grid; grid-template-columns: var(--ct-fac-cols); gap: .7rem; padding: .45rem .2rem; margin-top: .5rem; border-bottom: 1px solid var(--mp-line);
+    font-size: .68rem; letter-spacing: .05em; text-transform: uppercase; color: var(--mp-ink-2); font-weight: 700; }
+  #conta-raiz .ct-fac-cab .r { text-align: right; }
+  #conta-raiz .ct-fac-filas { margin-top: 0; }
+  #conta-raiz .ct-fac-fila { grid-template-columns: var(--ct-fac-cols); align-items: center; }
+  #conta-raiz .ct-fac-fila .ct-ob-n { grid-column: auto; }
+  #conta-raiz .ct-fac-fila .ct-ob-v.r { text-align: right; }
+  #conta-raiz .ct-fac-fila .ct-ob-v::before, #conta-raiz .ct-fac-fila .ct-ob-senal::before { display: none; }
+}
+/* por facturar: la obra, su retención, sus hitos */
+#conta-raiz .ct-fac-obra .ct-cab h2 { overflow-wrap: anywhere; }
+#conta-raiz .ct-fac-ret { margin: .2rem 0 .4rem; font-size: .92rem; display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .5rem; }
+#conta-raiz .ct-fac-hitos { list-style: none; margin: .3rem 0 .5rem; padding: 0; display: grid; }
+#conta-raiz .ct-fac-hito { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .2rem .7rem; align-items: center; padding: .55rem 0; border-top: 1px solid var(--mp-line); }
+#conta-raiz .ct-fac-hn { display: grid; gap: .15rem; min-width: 0; }
+#conta-raiz .ct-fac-hn b { overflow-wrap: anywhere; }
+#conta-raiz .ct-fac-hn > .ct-pill { justify-self: start; }
+#conta-raiz .ct-fac-hn small { font-size: .8rem; color: var(--mp-ink-3); display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; }
+#conta-raiz .ct-fac-hm { font-weight: 700; text-align: right; }
+#conta-raiz .ct-fac-hb { grid-column: 1 / -1; display: flex; justify-content: flex-end; }
+#conta-raiz .ct-fac-hb:empty { display: none; }
+@media (min-width: 700px) {
+  #conta-raiz .ct-fac-hito { grid-template-columns: minmax(0, 1fr) 8rem 10rem; }
+  #conta-raiz .ct-fac-hb { grid-column: auto; }
+}
+#conta-raiz .ct-fac-sinhitos { text-align: left; }
+/* las formas: las líneas T&M, a quién se factura, las casillas */
+#conta-raiz .ct-fac-linea, #conta-raiz .ct-fac-cliente { border: 1px solid var(--mp-line); border-radius: 12px; padding: .6rem .7rem .7rem; margin: .4rem 0; min-width: 0;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .45rem .6rem; }
+#conta-raiz .ct-fac-linea legend, #conta-raiz .ct-fac-cliente legend { font-size: .8rem; font-weight: 800; color: var(--cu-dark); padding: 0 .3rem; }
+#conta-raiz .ct-fac-linea .ct-fac-desc, #conta-raiz .ct-fac-linea [data-quitar-linea] { grid-column: 1 / -1; }
+#conta-raiz .ct-fac-linea [data-quitar-linea] { justify-self: start; }
+@media (min-width: 900px) {
+  #conta-raiz .ct-fac-linea { grid-template-columns: minmax(0, 3fr) repeat(4, minmax(0, 1fr)); }
+  #conta-raiz .ct-fac-linea .ct-fac-desc:first-of-type { grid-column: auto; }
+  #conta-raiz .ct-fac-cliente { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+#conta-raiz .ct-check { display: flex; align-items: flex-start; gap: .55rem; font-size: .92rem; font-weight: 600; color: var(--mp-ink); min-height: var(--tap); padding: .45rem 0; cursor: pointer; }
+#conta-raiz .ct-check input { width: 22px; height: 22px; margin: .05rem 0 0; flex: none; accent-color: var(--cu-dark); }
+#conta-raiz .ct-fac-ajustes .ct-fila { margin: .3rem 0; }
+#conta-raiz .ct-fac-avanzado summary { cursor: pointer; font-weight: 700; color: var(--mp-ink-2); padding: .4rem 0; min-height: var(--tap); }
+/* una factura: el borrador o la emitida */
+#conta-raiz .ct-fac-doc .ct-cab h2 { overflow-wrap: anywhere; }
+#conta-raiz .ct-fac-doc .ct-nota { overflow-wrap: anywhere; }
+#conta-raiz .ct-fac-porque { margin: .2rem 0 0; }
+#conta-raiz .ct-fac-bloque { border-top: 1px solid var(--mp-line); margin-top: .7rem; padding-top: .6rem; }
+#conta-raiz .ct-fac-bloque h3 { margin: 0 0 .3rem; font-size: .95rem; font-weight: 800; }
+#conta-raiz .ct-fac-items { list-style: none; margin: 0; padding: 0; display: grid; gap: .1rem; }
+#conta-raiz .ct-fac-items li { display: flex; justify-content: space-between; align-items: center; gap: .6rem; padding: .45rem 0; border-bottom: 1px dashed var(--mp-line); min-width: 0; }
+#conta-raiz .ct-fac-items li > span { display: grid; gap: .1rem; min-width: 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-fac-items small { font-size: .8rem; color: var(--mp-ink-3); }
+#conta-raiz .ct-fac-items li > span > .ct-pill { justify-self: start; }
+#conta-raiz .ct-fac-sinpdf { text-align: left; }
+#conta-raiz .ct-fac-enlace { font-weight: 700; color: var(--mp-blue); overflow-wrap: anywhere; }
+#conta-raiz .ct-fac-res:empty { display: none; }
+#conta-raiz .ct-fac-previa { background: var(--mp-sky-2); padding: .7rem; }
+#conta-raiz .ct-fac-previa > .ct-nota { margin: 0 .2rem .6rem; }
+
+/* LA FACTURA (en inglés), como el PDF: la hoja blanca con el borde navy, el cable de cobre, las tres cajas, las líneas,
+   «How to pay» y los totales con la banda noche (la cifra en cian solo sobre fondo oscuro), y el pie con el degradado */
+#conta-raiz .ct-fx { background: var(--mp-white); border-top: 4px solid var(--mp-navy); border-radius: 12px; box-shadow: var(--mp-shadow);
+  max-width: 816px; margin: 0 auto; padding: 1rem .9rem 1.1rem; color: var(--mp-ink); font-size: .84rem; line-height: 1.45; min-width: 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-fx-cab { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: .7rem 1.2rem; padding-bottom: .6rem; }
+#conta-raiz .ct-fx-casa { display: grid; gap: .15rem; min-width: 0; }
+#conta-raiz .ct-fx-logo { width: 190px; max-width: 70vw; height: auto; display: block; margin-bottom: .2rem; }
+#conta-raiz .ct-fx-casa small { color: var(--mp-ink-2); font-size: .74rem; }
+#conta-raiz .ct-fx-doc { text-align: left; }
+#conta-raiz .ct-fx-doc p { margin: 0; }
+#conta-raiz .ct-fx-tipo { font-size: 1.7rem; font-weight: 800; letter-spacing: .04em; color: var(--mp-navy); line-height: 1; }
+#conta-raiz .ct-fx-num { font-size: 1rem; font-weight: 700; margin-top: .3rem !important; font-family: var(--mono); }
+#conta-raiz .ct-fx-borrador { display: inline-block; font-family: var(--font); font-size: .74rem; font-weight: 800; letter-spacing: .04em; padding: .2rem .55rem; border-radius: 999px;
+  background: var(--mp-warn-bg); color: var(--mp-warn-tx); border: 1px solid var(--mp-warn-bd); }
+#conta-raiz .ct-fx-f { font-size: .76rem; color: var(--mp-ink-2); margin-top: .3rem !important; }
+#conta-raiz .ct-fx-sub { font-size: .76rem; font-weight: 700; color: var(--mp-teal-text); }
+#conta-raiz .ct-fx-cable { height: 3px; border-radius: 2px; background: linear-gradient(90deg, var(--cu-light), var(--cu-deep) 55%, var(--cu-dark)); }
+#conta-raiz .ct-fx-tres { display: grid; grid-template-columns: minmax(0, 1fr); gap: .6rem; margin: .8rem 0 .8rem; }
+#conta-raiz .ct-fx-caja { background: var(--mp-sky-1); border: 1px solid var(--mp-line); border-radius: 14px; padding: .6rem .75rem; display: grid; gap: .1rem; align-content: start; min-width: 0; }
+#conta-raiz .ct-fx-caja b { font-size: .9rem; }
+#conta-raiz .ct-fx-et { font-size: .66rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--cu-dark); margin: 0 0 .2rem; }
+#conta-raiz .ct-fx-gris { color: var(--mp-ink-2); }
+#conta-raiz .ct-fx-k { margin: 0; display: grid; gap: .1rem; }
+#conta-raiz .ct-fx-k div { display: flex; justify-content: space-between; gap: .6rem; }
+#conta-raiz .ct-fx-k dt, #conta-raiz .ct-fx-k dd { margin: 0; }
+#conta-raiz .ct-fx-k dt { min-width: 0; }
+#conta-raiz .ct-fx-k dd { font-variant-numeric: tabular-nums; white-space: nowrap; }
+#conta-raiz .ct-fx-k .f { font-weight: 800; }
+#conta-raiz .ct-fx-barra { display: flex; align-items: center; gap: .5rem; margin-top: .3rem; font-size: .74rem; }
+#conta-raiz .ct-fx-pista { flex: 1; height: 7px; border-radius: 999px; background: var(--mp-sky-3); overflow: hidden; }
+#conta-raiz .ct-fx-pista i { display: block; height: 100%; background: var(--mp-grad); }
+#conta-raiz .ct-fx-lineas { width: 100%; border-collapse: collapse; font-size: .84rem; table-layout: fixed; }
+#conta-raiz .ct-fx-lineas th { text-align: left; font-size: .64rem; letter-spacing: .07em; text-transform: uppercase; color: var(--mp-ink-2); padding: .4rem .3rem; border-bottom: 2px solid var(--mp-navy); }
+#conta-raiz .ct-fx-lineas td { padding: .5rem .3rem; border-bottom: 1px solid var(--mp-line); vertical-align: top; overflow-wrap: anywhere; }
+#conta-raiz .ct-fx-lineas td small { display: block; color: var(--mp-ink-2); font-size: .76rem; margin-top: .1rem; }
+#conta-raiz .ct-fx-lineas .r { text-align: right; font-variant-numeric: tabular-nums; }
+#conta-raiz .ct-fx-lineas th.r:last-child, #conta-raiz .ct-fx-lineas td.r:last-child { width: 7.2rem; }
+#conta-raiz .ct-fx-lineas .ct-fx-pc { display: none; }
+#conta-raiz .ct-fx-abajo { display: grid; grid-template-columns: minmax(0, 1fr); gap: .8rem; margin-top: .8rem; align-items: start; }
+#conta-raiz .ct-fx-pago p { margin: 0 0 .35rem; }
+#conta-raiz .ct-fx-falta { color: var(--mp-warn-tx); font-weight: 700; }
+#conta-raiz .ct-fx-tot { border: 1px solid var(--mp-line); border-radius: 14px; overflow: hidden; }
+#conta-raiz .ct-fx-fila { display: flex; justify-content: space-between; gap: .6rem; padding: .45rem .75rem; border-bottom: 1px solid var(--mp-line); color: var(--mp-ink-2); font-variant-numeric: tabular-nums; }
+#conta-raiz .ct-fx-fila.ret { color: var(--cu-dark); }
+#conta-raiz .ct-fx-fila.debe { background: var(--night); color: var(--mp-white); font-size: 1.02rem; font-weight: 800; border: 0; padding: .65rem .75rem; }
+#conta-raiz .ct-fx-fila.debe span:last-child { color: var(--mp-cyan); }
+#conta-raiz .ct-fx-notas { display: grid; grid-template-columns: minmax(0, 1fr); gap: .6rem; margin-top: .9rem; color: var(--mp-ink-2); font-size: .8rem; }
+#conta-raiz .ct-fx-notas p { margin: 0; }
+#conta-raiz .ct-fx-pie { position: relative; margin-top: 1.1rem; padding-top: .55rem; display: flex; flex-wrap: wrap; justify-content: space-between; gap: .2rem .8rem; font-size: .72rem; color: var(--mp-ink-2); }
+#conta-raiz .ct-fx-pie::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px; border-radius: 2px; background: var(--mp-grad); }
+#conta-raiz .ct-fx-pie b { color: var(--mp-navy); }
+@media (min-width: 700px) {
+  #conta-raiz .ct-fx { padding: 1.6rem 1.8rem 1.4rem; font-size: .86rem; }
+  #conta-raiz .ct-fx-doc { text-align: right; }
+  #conta-raiz .ct-fx-tres { grid-template-columns: 1.2fr 1.2fr 1fr; }
+  #conta-raiz .ct-fx-lineas .ct-fx-pc { display: table-cell; width: 6.5rem; }
+  #conta-raiz .ct-fx-lineas .ct-fx-tel { display: none; }
+  #conta-raiz .ct-fx-abajo { grid-template-columns: 1.1fr .9fr; gap: 1.1rem; }
+  #conta-raiz .ct-fx-notas { grid-template-columns: 1fr 1fr; }
+}
+
+/* ============================================================
+   WIP (c12, fase 10): el mes (el resumen con por detrás / por delante, la
+   revisión de cada obra, el schedule), las obras, el historial y los
+   ajustes; y la misma revisión dentro de «Cierre del mes». Solo tokens de
+   css/styles.css. Teléfono primero: nada ensancha la página.
+   ============================================================ */
+#conta-raiz .ct-wip-cuerpo { display: grid; gap: .8rem; min-width: 0; }
+#conta-raiz .ct-wip-nota { margin: 0; }
+#conta-raiz .ct-wip-res .ct-cab h2, #conta-raiz .ct-wip-cie .ct-cab h2, #conta-raiz .ct-wip-rev .ct-cab h2 { overflow-wrap: anywhere; }
+#conta-raiz .ct-wip-res .ct-cab .ct-pill, #conta-raiz .ct-wip-cie .ct-cab .ct-pill, #conta-raiz .ct-wip-rev .ct-cab .ct-pill { white-space: nowrap; }
+#conta-raiz .ct-wip-mes { grid-column: 1 / -1; max-width: 20rem; }
+#conta-raiz .ct-wip-res .ct-herr-fila { margin: .2rem 0 .3rem; }
+#conta-raiz .ct-wip-res .ct-aviso, #conta-raiz .ct-wip-cie > .ct-aviso { overflow-wrap: anywhere; }
+/* por detrás / por delante / la pérdida: tres fichas con su borde (no son errores: dicen de qué lado va cada obra) */
+#conta-raiz .ct-wip-ver { display: grid; grid-template-columns: minmax(0, 1fr); gap: .5rem; margin: .7rem 0 .2rem; }
+@media (min-width: 700px) { #conta-raiz .ct-wip-ver { grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); } }
+#conta-raiz .ct-wip-lado { margin: 0; display: grid; gap: .1rem; padding: .55rem .75rem; border-radius: 12px; background: var(--mp-sky-1); border: 1px solid var(--mp-line); border-left: 4px solid var(--mp-blue); min-width: 0; }
+#conta-raiz .ct-wip-lado span { font-size: .78rem; font-weight: 700; color: var(--mp-ink-2); }
+#conta-raiz .ct-wip-lado b { font-size: var(--fs-6); font-weight: 800; color: var(--mp-ink); }
+#conta-raiz .ct-wip-lado small { font-size: .76rem; color: var(--mp-ink-3); }
+#conta-raiz .ct-wip-lado.delante { border-left-color: var(--cu); }
+#conta-raiz .ct-wip-lado.perdida { border-left-color: var(--bad); background: var(--mp-danger-bg); }
+#conta-raiz .ct-wip-l { font-weight: 700; white-space: nowrap; }
+#conta-raiz .ct-wip-l.detras { color: var(--mp-blue); }
+#conta-raiz .ct-wip-l.delante { color: var(--cu-dark); }
+#conta-raiz .ct-wip-l.perdida { color: var(--bad); }
+#conta-raiz .ct-wip-l.igual { color: var(--ok-ink); }
+#conta-raiz .ct-wip-posteo { margin-top: .6rem; border-top: 1px solid var(--mp-line); padding-top: .5rem; }
+#conta-raiz .ct-wip-posteo .ct-acciones { margin-top: .3rem; }
+#conta-raiz .ct-wip-asiento, #conta-raiz .ct-wip-porque { margin: .2rem 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-wip-vacio { text-align: left; }
+/* la revisión: una obra por renglón, lo pendiente con su borde ámbar */
+#conta-raiz .ct-wip-lista { list-style: none; margin: .4rem 0 0; padding: 0; display: grid; }
+#conta-raiz .ct-wip-ob { display: grid; gap: .3rem; padding: .7rem .1rem .75rem; border-top: 1px solid var(--mp-line); min-width: 0; }
+#conta-raiz .ct-wip-ob:first-child { border-top: 0; }
+#conta-raiz .ct-wip-ob.ct-wip-est-pendiente { border-left: 4px solid var(--mp-warn-bd); padding-left: .6rem; }
+#conta-raiz .ct-wip-ob.ct-wip-est-lista { border-left: 4px solid var(--ok); padding-left: .6rem; }
+#conta-raiz .ct-wip-ob-t { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .45rem; min-width: 0; }
+#conta-raiz .ct-wip-ob-t b { font-size: .98rem; overflow-wrap: anywhere; }
+#conta-raiz .ct-wip-ob-t small { flex-basis: 100%; font-size: .78rem; color: var(--mp-ink-3); }
+#conta-raiz .ct-wip-ob-d, #conta-raiz .ct-wip-ob-c { margin: 0; font-size: .92rem; line-height: 1.5; overflow-wrap: anywhere; }
+#conta-raiz .ct-wip-ob-c .ct-wip-l { white-space: normal; }
+#conta-raiz .ct-wip-ob .ct-sub, #conta-raiz .ct-wip-ob .ct-aviso { margin: 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-wip-ob .ct-jr-avisos { margin: 0; }
+#conta-raiz .ct-wip-acc { margin-top: .15rem; }
+#conta-raiz .ct-wip-ob .ct-form:not([hidden]) { margin-top: .2rem; }
+#conta-raiz .ct-wip-precio summary { cursor: pointer; font-weight: 700; color: var(--mp-ink-2); padding: .35rem 0; min-height: var(--tap); overflow-wrap: anywhere; }
+/* lo de antes del libro: el desglose, cada cosa con su monto a la derecha */
+/* (va dentro de la forma de la obra, que ya lo enmarca) */
+#conta-raiz .ct-wip-antes { display: grid; gap: .35rem; min-width: 0; }
+#conta-raiz .ct-wip-antes .ct-form-t, #conta-raiz .ct-wip-antes .ct-nota, #conta-raiz .ct-wip-antes .ct-sub { margin: 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-wip-desglose { list-style: none; margin: 0; padding: 0; display: grid; }
+#conta-raiz .ct-wip-desglose li { display: flex; justify-content: space-between; gap: .6rem; padding: .3rem 0; border-bottom: 1px dashed var(--mp-line); font-size: .9rem; min-width: 0; }
+#conta-raiz .ct-wip-desglose li > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-wip-desglose li > span:last-child { white-space: nowrap; }
+#conta-raiz .ct-wip-desglose li.t { border-bottom: 2px solid var(--cu); font-weight: 700; }
+/* el schedule: la tabla de «Costo por obra» (apilada hasta el iPad) con sus marcas */
+#conta-raiz .ct-wip-tabla .ct-wip-marcas { display: flex; flex-wrap: wrap; gap: .2rem; margin-top: .2rem; }
+#conta-raiz .ct-wip-tabla tr.ct-wip-fuera td { color: var(--mp-ink-2); }
+#conta-raiz .ct-wip-tabla td small .ct-wip-l { font-family: var(--font); }
+#conta-raiz .ct-wip-mas summary, #conta-raiz .ct-wip-lineas summary { cursor: pointer; font-weight: 700; color: var(--cu-dark); padding: .4rem 0; min-height: var(--tap); overflow-wrap: anywhere; }
+@media (min-width: 1024px) { #conta-raiz .ct-tabla.ct-wip-tabla { font-size: .86rem; } #conta-raiz .ct-tabla.ct-wip-tabla th { white-space: normal; } #conta-raiz .ct-tabla.ct-wip-tabla td.r { white-space: nowrap; } }
+/* lo que va al libro: por obra, cada línea con Debe / Haber a la derecha */
+#conta-raiz .ct-wip-asl { list-style: none; margin: .3rem 0 0; padding: 0; display: grid; gap: .5rem; }
+#conta-raiz .ct-wip-asl > li > b { overflow-wrap: anywhere; }
+#conta-raiz .ct-wip-asl ul { list-style: none; margin: .2rem 0 0; padding: 0; display: grid; }
+#conta-raiz .ct-wip-asl ul li { display: flex; justify-content: space-between; align-items: flex-start; gap: .6rem; padding: .3rem 0; border-bottom: 1px dashed var(--mp-line); font-size: .88rem; min-width: 0; }
+#conta-raiz .ct-wip-asl ul li > span:first-child { display: grid; min-width: 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-wip-asl ul li > span:last-child { white-space: nowrap; }
+#conta-raiz .ct-wip-asl small { font-size: .76rem; color: var(--mp-ink-3); }
+#conta-raiz .ct-wip-postea { margin: .2rem 0 .4rem; padding-left: 1.1rem; display: grid; gap: .25rem; font-size: .92rem; overflow-wrap: anywhere; }
+/* en «Cierre del mes» */
+#conta-raiz .ct-wip-cie { border-left: 4px solid var(--cu); }
+#conta-raiz .ct-wip-cie.rojo { border-left-color: var(--bad); }
+#conta-raiz .ct-wip-cie .ct-wip-rev { margin-top: .4rem; }
+#conta-raiz .ct-wip-cie .ct-wip-rev .ct-cab h2 { font-size: 1rem; }
+#conta-raiz .ct-wip-hoy { margin: .5rem 0 0; font-size: .92rem; line-height: 1.5; overflow-wrap: anywhere; }
+#conta-raiz .ct-wip-hoy .ct-wip-l { white-space: normal; }
+/* obras, historial, ajustes */
+#conta-raiz .ct-wip-obras .ct-chips { margin-top: .5rem; }
+#conta-raiz .ct-wip-obs { display: grid; gap: .7rem; margin-top: .6rem; }
+@media (min-width: 900px) { #conta-raiz .ct-wip-obs { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; } }
+#conta-raiz .ct-wip-obc { box-shadow: none; border: 1px solid var(--mp-line); }
+#conta-raiz .ct-wip-obc .ct-cab h2 { overflow-wrap: anywhere; }
+#conta-raiz .ct-wip-obc .ct-nota, #conta-raiz .ct-wip-obc .ct-sub, #conta-raiz .ct-wip-obc .ct-aviso { overflow-wrap: anywhere; }
+#conta-raiz .ct-wip-his { list-style: none; margin: .3rem 0 0; padding: 0; display: grid; }
+#conta-raiz .ct-wip-hi { padding: .6rem 0; border-top: 1px solid var(--mp-line); min-width: 0; }
+#conta-raiz .ct-wip-hi:first-child { border-top: 0; }
+#conta-raiz .ct-wip-hi p { margin: .1rem 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-wip-hi.deshecho { opacity: .85; }
+#conta-raiz .ct-wip-cfg .ct-campo .ct-sub { font-weight: 500; line-height: 1.4; }

@@ -573,7 +573,9 @@ function esFalloDeRed(err) {
     { k: "movimientos", nombre: "Movimientos", svg: SVG_MENU('<path d="M4 8h14M15 5l3 3-3 3"/><path d="M20 16H6M9 13l-3 3 3 3"/>') },
     { k: "estados", nombre: "Estados financieros", svg: SVG_MENU('<path d="M5 3h9l5 5v13H5z"/><path d="M14 3v5h5"/><path d="M8.5 17v-3M12 17v-6M15.5 17v-4"/>') },
     { k: "obras", nombre: "Costo por obra", svg: SVG_MENU('<path d="M3 11l9-7 9 7"/><path d="M5 9.5V20h14V9.5"/><path d="M9.5 20v-5.5h5V20"/>') },
+    { k: "wip", nombre: "WIP (obra en curso)", svg: SVG_MENU('<rect x="3" y="8.5" width="18" height="7" rx="3.5"/><path d="M6.5 12h6"/><path d="M15.5 4.5v2.5M15.5 17v2.5"/>') },
     { k: "cierre", nombre: "Cierre del mes", svg: SVG_MENU('<rect x="4" y="10.5" width="16" height="10.5" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><path d="M12 14.5v2.5"/>') },
+    { k: "facturas", nombre: "Facturas", svg: SVG_MENU('<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/>') },
     { k: "cobros", nombre: "Cobros en línea", svg: SVG_MENU('<circle cx="12" cy="12" r="9"/><path d="M12 6.5v11M9.5 9.5h3.5a1.75 1.75 0 0 1 0 3.5h-2a1.75 1.75 0 0 0 0 3.5H15"/>') },
     { k: "conexiones", nombre: "Conexiones y seguridad", svg: SVG_MENU('<path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6z"/><path d="M9.5 12l2 2 3.5-3.5"/>') }
   ];
@@ -3239,6 +3241,39 @@ function esFalloDeRed(err) {
     return p.hitos.find(h => h.estado !== "cobrado") || null;
   }
 
+  // (f10, c11) ¿Por dónde se factura hoy? v_emision_estado (solo la ve el dueño, que es quien tiene el 🧾): «app» desde el
+  // corte de la facturación (1-ene-2027, configurable en Contabilidad → Facturas → Ajustes); «quickbooks» antes. Sin c11 en
+  // la base (la vista no existe: 404 / PGRST205 / 42P01): «quickbooks», como siempre. Sin señal («sin_senal») o sin el
+  // código del teléfono («mfa») no se adivina. Y ANTE LA DUDA NO SE FACTURA: si la base contesta otra cosa (un 500, un
+  // statement timeout, la vista vacía…), solo se va a QuickBooks si el último corte que este teléfono leyó de la base es
+  // posterior a hoy (en Miami); si no, «duda»: se avisa y no se factura (una factura de QuickBooks después del corte quedaría
+  // fuera de la serie y solo lo diría más tarde el aviso 72).
+  const CORTE_VISTO = "mxp_factura_corte";
+  const hoyMiamiFac = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  function corteRecordado() {
+    try { const c = localStorage.getItem(CORTE_VISTO); return /^\d{4}-\d{2}-\d{2}$/.test(c || "") ? c : null; } catch { return null; }
+  }
+  async function caminoFactura() {
+    if (!DB || typeof DB._leer !== "function") return "quickbooks";
+    let f;
+    try {
+      f = await DB._leer("v_emision_estado?select=camino,corte");
+    } catch (e) {
+      if (e && e.mfa) return "mfa";
+      const m = String((e && e.message) || "");
+      if (e instanceof TypeError || /failed to fetch|load failed|networkerror|network request failed/i.test(m)) return "sin_senal";
+      if (e && (e.status === 404 || e.codigo === "PGRST205" || e.codigo === "42P01")) return "quickbooks";
+      const c = corteRecordado();
+      return c && hoyMiamiFac() < c ? "quickbooks" : "duda";
+    }
+    const x = Array.isArray(f) ? f[0] : null;
+    if (x && (x.camino === "app" || x.camino === "quickbooks")) {
+      try { if (/^\d{4}-\d{2}-\d{2}$/.test(String(x.corte || ""))) localStorage.setItem(CORTE_VISTO, String(x.corte)); } catch { /* sin almacenamiento: la próxima duda no factura */ }
+      return x.camino;
+    }
+    const c = corteRecordado();
+    return c && hoyMiamiFac() < c ? "quickbooks" : "duda";
+  }
   // Candado que NO depende de la pantalla: el hito que se está facturando o
   // cobrando se apunta aquí hasta que termine. Si la ficha se repinta mientras
   // tanto (una palomita, la cola de reportes al volver la señal), el botón nuevo
@@ -6972,6 +7007,19 @@ function esFalloDeRed(err) {
     });
     $detalle.querySelectorAll(".hito-facturar").forEach(btn => {
       btn.addEventListener("click", async () => {
+        // (f10, c11) Desde el corte de la facturación (v_emision_estado.camino = «app») el 🧾 ya no va a QuickBooks:
+        // abre Contabilidad → Facturas con el borrador de este hito. Antes del corte (o sin c11 en la base), como siempre.
+        const camino = await caminoFactura();
+        if (camino === "sin_senal") { avisar("Sin señal: no pude saber si se factura aquí o en QuickBooks. Vuelve a intentarlo con señal.", true); return; }
+        if (camino === "mfa") { avisar("Falta el código del teléfono: entra con él y vuelve a tocar Facturar.", true); return; }
+        if (camino === "duda") { avisar("La base no dijo si hoy se factura aquí o en QuickBooks: no se facturó nada. Vuelve a tocar Facturar en un momento; si sigue, abre Contabilidad → Facturas.", true); return; }
+        if (camino === "app") {
+          const pA = proyectos().find(x => x.id === btn.dataset.proyecto);
+          if (window.MXP_CONTA && typeof window.MXP_CONTA.facturar === "function" &&
+              window.MXP_CONTA.facturar({ hito: Number(btn.dataset.hito), proyecto: btn.dataset.proyecto, obra: pA ? pA.nombre : "" })) irConta("facturas");
+          else avisar("La contabilidad no cargó (js/conta.js): recarga la app y vuelve a tocar Facturar.", true);
+          return;
+        }
         const planB = async () => {
           const texto = btn.dataset.texto;
           try {
