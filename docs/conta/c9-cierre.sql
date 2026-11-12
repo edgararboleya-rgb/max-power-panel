@@ -69,8 +69,13 @@
 --      145+ ia (c8, si está): v_contador_control (cuadre: detiene; alarma: aviso)
 --      150  cambios: cuántos reversos y cuántos asientos de la IA hubo en el
 --           mes y cuánto suman (informativo, siempre en verde)                aviso
---      160  subs: COI vigente de cada sub pagado en el mes (sin datos de COI
---           todavía —llegan con f12a— lo dice, en verde)                      aviso
+--      160  subs: COI vigente de cada sub pagado en el mes. Con la capa de
+--           los subs (c14) la arma ella (fn_subs_cierre): cada uno CON
+--           NOMBRE y servicio pagado o devengado en el mes, con su COI
+--           vigente el día de su trabajo o de su pago (el servicio que el
+--           libro no dice de quién es se dice aparte, sin contarlo como un
+--           sub). Sin ella, la de antes (proveedores.coi_vence, si
+--           existiera; si no, lo dice en verde)                              aviso
 --      170  mano de obra y costo por obra (c10, si está): los cuadres de
 --           v_jornal_control y v_margen_control, en una fila               detiene
 --      171  mano de obra y costo por obra (c10, si está): sus avisos, en
@@ -86,10 +91,19 @@
 --           (las cuatro del WIP las arma c12, fn_wip_cierre; la 175 y la
 --           176 salen en verde mientras el mes no termine o el WIP no se
 --           exija todavía: wip_config.exigir_desde)
+--      178  cédula (c13, si está): cada saldo del balance al último día del
+--           período con su auxiliar cuadrado o explicado, en una fila     aviso
+--           (la arma c13, fn_cedula_cierre; no detiene: es de corte de año.
+--           Lo que sale del propio libro —patrimonio, use tax— no pide
+--           nada. Sale en verde mientras el período no termine o antes del
+--           mes desde el que la cédula avisa: cedula_config.avisar_desde)
+--      179  subs (c14, si está): W-9 y TIN de cada sub con un pago de
+--           servicio en el mes (la arma c14, fn_subs_cierre; a quien su
+--           ficha dice que no se le reporta no se le pide)                  aviso
 --     En verde cada capa deja UN renglón resumen; en rojo, un renglón por
 --     control, con el detalle que esa capa escribió. Cada renglón dice qué
 --     hacer y a qué página ir (ir_a: bandeja, conciliar, movimientos,
---     estados, cobros, conexiones, cierre, o nulo). La revisión de un
+--     estados, cobros, conexiones, cierre, cedula, subs, o nulo). La revisión de un
 --     período también se guarda (cierre_revisiones: la última, con su hora)
 --     para que v_cierre_estado diga cuántos detienen sin volver a correrla.
 --   · LA RONDA NOCTURNA (fn_ronda, SQL puro, sin API): corre la revisión
@@ -1542,6 +1556,27 @@ begin
     end;
   end if;
 
+  -- 178. La cédula de corte (c13), si está: cada saldo del balance al último
+  -- día del período con su auxiliar cuadrado o explicado. Es un AVISO: no
+  -- detiene nada (es de corte de año). La fila la arma c13 (fn_cedula_cierre),
+  -- con su detalle en llano, qué hacer y a qué página ir; aquí solo se pide,
+  -- y su nivel lo fija este archivo: aviso. Sale en verde, diciendo por qué,
+  -- mientras el período no termine o antes del mes desde el que la cédula
+  -- avisa. Una fila fija, con un nombre fijo (la ronda avisa de un rojo nuevo
+  -- por el nombre), en un número que nadie más usa.
+  if to_regprocedure('public.fn_cedula_cierre(text)') is not null then
+    begin
+      for r in execute 'select x.control, x.ok is true as k, x.detalle, x.que_hacer, x.ir_a '
+                    || 'from public.fn_cedula_cierre($1) x where x.orden = 178 limit 1' using p.periodo loop
+        v_rows := v_rows || fn_cierre_fila(178, r.control, 'aviso', r.k, coalesce(r.detalle, 'en rojo, sin detalle'), r.que_hacer, r.ir_a);
+      end loop;
+    exception when others then
+      v_rows := v_rows || fn_cierre_fila(178, 'cédula: cada saldo del balance con su auxiliar cuadrado o explicado (c13)', 'aviso', false,
+        format('No se pudo revisar la cédula: %s %s.', sqlstate, sqlerrm),
+        'Avisa: el control de la cédula (c13) no responde.', 'cedula');
+    end;
+  end if;
+
   -- 150. Cambios del período (informativo): reversos y asientos de la IA.
   select count(*) filter (where a.camino in ('reverso', 'reverso_automatico')),
          coalesce(sum(d.deb) filter (where a.camino in ('reverso', 'reverso_automatico')), 0),
@@ -1556,26 +1591,50 @@ begin
            v_nom, v_n, fn_cierre_usd(v_s), v_n2, fn_cierre_usd(v_s2), v_n3, v_i),
     null, 'movimientos');
 
-  -- 160. Los subs pagados en el mes, con su COI vigente (f12a trae los datos).
+  -- 160 y 179. Los subs (f12a). Con la capa de los subs (c14) pegada, sus dos
+  -- filas las arma ella (fn_subs_cierre), con su detalle en llano, qué hacer y
+  -- a qué página ir: 160 el COI de cada uno con nombre y servicio (pagado o
+  -- devengado) en el mes, vigente el día de su trabajo o de su pago; y 179 el
+  -- W-9 y el TIN de cada uno con un pago de servicio en el mes. Aquí solo se
+  -- piden, y su nivel lo fija este archivo: aviso (no detienen nada). Dos
+  -- filas fijas, con nombres fijos (la ronda avisa de un rojo nuevo por el
+  -- nombre). Sin esa capa, la 160 de antes (proveedores.coi_vence, si
+  -- existiera) y ninguna 179.
   if v_mes then
-    v_sub := coalesce((select pc.cuenta from puente_cuentas pc where pc.rol = 'subcontratos'), '5200');
-    if exists (select 1 from information_schema.columns
-                where table_schema = 'public' and table_name = 'proveedores' and column_name = 'coi_vence') then
-      execute format($q$
-        select count(*), string_agg(format('%%s (%%s)', pr.nombre, case when pr.coi_vence is null then 'sin COI' else 'COI vencido el ' || pr.coi_vence end), '; ')
-          from (select distinct l.tercero_id
-                  from public.asiento_lineas l join public.asientos a on a.id = l.asiento_id
-                 where a.periodo = $1 and l.cuenta = $2 and l.tercero_tipo = 'proveedor') x
-          join public.proveedores pr on pr.id = x.tercero_id::uuid
-         where pr.coi_vence is null or pr.coi_vence < $3 $q$) into v_n, v_txt using p.periodo, v_sub, p.hasta;
-      v_rows := v_rows || fn_cierre_fila(160, 'subs: COI vigente de cada sub pagado en el mes', 'aviso', v_n = 0,
-        case when v_n = 0 then format('Todos los subs con costo en %s en %s tienen su COI vigente.', v_sub, v_nom)
-             else format('%s sub(s) con costo en %s en %s sin COI vigente: %s.', v_n, v_sub, v_nom, v_txt) end,
-        case when v_n > 0 then 'Pide el certificado de seguro (COI) al sub y guárdalo en su ficha (f12a).' end, null);
+    if to_regprocedure('public.fn_subs_cierre(text)') is not null then
+      declare
+        v_subs jsonb := '[]'::jsonb;
+      begin
+        for r in execute 'select x.orden as o, x.control, x.ok is true as k, x.detalle, x.que_hacer, x.ir_a '
+                      || 'from public.fn_subs_cierre($1) x where x.orden in (160, 179) order by x.orden' using p.periodo loop
+          v_subs := v_subs || fn_cierre_fila(r.o, r.control, 'aviso', r.k, coalesce(r.detalle, 'en rojo, sin detalle'), r.que_hacer, r.ir_a);
+        end loop;
+        v_rows := v_rows || v_subs;
+      exception when others then
+        v_rows := v_rows || fn_cierre_fila(160, 'subs: COI vigente de cada sub pagado en el mes', 'aviso', false,
+          format('No se pudieron revisar los subs: %s %s.', sqlstate, sqlerrm),
+          'Avisa: el control de los subs (c14) no responde.', 'subs');
+      end;
     else
-      v_rows := v_rows || fn_cierre_fila(160, 'subs: COI vigente de cada sub pagado en el mes', 'aviso', true,
-        'Todavía no hay datos de COI en proveedores (llegan con f12a: W-9, COI y 1099): no se puede comprobar, y no frena.',
-        'Pide el certificado de seguro (COI) a cada sub antes de pagarle (f12a).', null);
+      v_sub := coalesce((select pc.cuenta from puente_cuentas pc where pc.rol = 'subcontratos'), '5200');
+      if exists (select 1 from information_schema.columns
+                  where table_schema = 'public' and table_name = 'proveedores' and column_name = 'coi_vence') then
+        execute format($q$
+          select count(*), string_agg(format('%%s (%%s)', pr.nombre, case when pr.coi_vence is null then 'sin COI' else 'COI vencido el ' || pr.coi_vence end), '; ')
+            from (select distinct l.tercero_id
+                    from public.asiento_lineas l join public.asientos a on a.id = l.asiento_id
+                   where a.periodo = $1 and l.cuenta = $2 and l.tercero_tipo = 'proveedor') x
+            join public.proveedores pr on pr.id = x.tercero_id::uuid
+           where pr.coi_vence is null or pr.coi_vence < $3 $q$) into v_n, v_txt using p.periodo, v_sub, p.hasta;
+        v_rows := v_rows || fn_cierre_fila(160, 'subs: COI vigente de cada sub pagado en el mes', 'aviso', v_n = 0,
+          case when v_n = 0 then format('Todos los subs con costo en %s en %s tienen su COI vigente.', v_sub, v_nom)
+               else format('%s sub(s) con costo en %s en %s sin COI vigente: %s.', v_n, v_sub, v_nom, v_txt) end,
+          case when v_n > 0 then 'Pide el certificado de seguro (COI) al sub y guárdalo en su ficha (f12a).' end, null);
+      else
+        v_rows := v_rows || fn_cierre_fila(160, 'subs: COI vigente de cada sub pagado en el mes', 'aviso', true,
+          'Todavía no hay datos de COI en proveedores (llegan con f12a: W-9, COI y 1099): no se puede comprobar, y no frena.',
+          'Pide el certificado de seguro (COI) a cada sub antes de pagarle (f12a).', null);
+      end if;
     end if;
   end if;
 
@@ -1611,7 +1670,7 @@ begin
 end $$;
 revoke execute on function public.fn_cierre_revisar(text) from public, anon, service_role;
 grant  execute on function public.fn_cierre_revisar(text) to authenticated;
-comment on function public.fn_cierre_revisar(text) is 'c9: la revisión de un período antes de cerrarlo: una fila por control, en orden (orden), con su nivel (detiene o aviso), ok, detalle en llano con números, qué hacer e ir_a (bandeja, conciliar, movimientos, estados, cobros, conexiones, cierre o nulo). Reutiliza los controles de c2, c3, c4, c6, p1 y c8. Guarda la última revisión del período abierto en cierre_revisiones. Solo el dueño; con POST.';
+comment on function public.fn_cierre_revisar(text) is 'c9: la revisión de un período antes de cerrarlo: una fila por control, en orden (orden), con su nivel (detiene o aviso), ok, detalle en llano con números, qué hacer e ir_a (bandeja, conciliar, movimientos, estados, cobros, conexiones, cierre, cedula, subs o nulo). Reutiliza los controles de c2, c3, c4, c6, p1 y c8. Guarda la última revisión del período abierto en cierre_revisiones. Solo el dueño; con POST.';
 
 
 -- ---------------------------------------------------------------------

@@ -136,11 +136,19 @@ arriba.
    después de postear, se vuelve a postear (la lista del cierre lo pide).
 5. Facturas (con c11, desde el corte): las que el aviso 64 dice cobradas en el
    libro se marcan pagadas en la ficha de la obra (todavía nada lo marca solo).
-6. Cierre: la lista en verde → «CERRAR OCTUBRE 2026» → «Exportar» (el mayor y el
+6. Subs y 1099 (con c14): a cada pago «sin nombre» decirle de quién es, de lo
+   «sin clasificar» decir si fue servicio o no, y tener al día el COI de quien
+   trabajó en el mes (filas 160 y 179 del cierre: avisan, no detienen).
+   **Nunca se teclea un TIN en el SQL Editor**: va en la ficha, con el código
+   del teléfono.
+7. Cédula de corte (con c13): al último día del mes, lo que salga «no cuadra»
+   o «sin auxiliar» se explica ahí mismo o se le escribe su renglón a mano
+   (fila 178 del cierre: avisa desde noviembre de 2026).
+8. Cierre: la lista en verde → «CERRAR OCTUBRE 2026» → «Exportar» (el mayor y el
    PDF al bucket `cierres`, y por correo). El bucket pide el código del
    teléfono.
-7. Si hay activos: «Postear depreciación» antes de cerrar (la lista lo pide).
-8. Comparar con QuickBooks mientras dure el paralelo (Estados → QuickBooks).
+9. Si hay activos: «Postear depreciación» antes de cerrar (la lista lo pide).
+10. Comparar con QuickBooks mientras dure el paralelo (Estados → QuickBooks).
 
 ## 7. Lo que apagar y encender, si hace falta
 
