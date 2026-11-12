@@ -2,9 +2,12 @@
 -- c11-pruebas.sql — la emisión de facturas se prueba a sí misma
 -- (c11-emision.sql). 12-nov-2026.
 --
--- CÓMO SE CORRE. En el SQL Editor de Supabase: DESPUÉS de c11-emision.sql,
--- pegar este archivo entero → Run. Sale la tabla _pruebas: 51 filas, todas
--- con ok = true (las que salen «omitida» dicen por qué y no son un fallo).
+-- CÓMO SE CORRE. En el SQL Editor de Supabase: DESPUÉS de c11-emision.sql
+-- (el de ahora: el que trae la tabla emision_soltados y dice en cada
+-- documento a cuál sustituyó; con uno anterior este archivo para al empezar
+-- y lo dice), pegar este archivo entero → Run. Sale la tabla _pruebas: 57
+-- filas, todas con ok = true (las que salen «omitida» dicen por qué y no son
+-- un fallo).
 -- Si el editor se cansa antes del final, la corrida sigue en el servidor y
 -- se lee después en pruebas.c11_resultado (ver el final).
 -- En el banco de pruebas (Postgres 17 en el puerto 5433, con la cadena
@@ -16,11 +19,11 @@
 -- nada queda (ni las obras de prueba, ni sus hitos, ni sus facturas, ni sus
 -- asientos, ni el contador de la serie, ni los ajustes); la 42 lo
 -- comprueba. Lo único que no vuelve atrás es el número interno (id) que
--- Postgres le habría dado a la siguiente fila de facturas (unos 70 por
--- corrida) y, en las pruebas 30 a 32, a los avisos y cobros de los cobros
--- en línea: la emisión inserta en facturas como la app, y una secuencia no
--- se deshace. No es el número de la factura (ese sí vuelve: lo lleva
--- contadores) y no deja fila.
+-- Postgres le habría dado a la siguiente fila de facturas (algo más de cien
+-- por corrida: medido, 107) y, en las pruebas 30 a 32, a los avisos y cobros
+-- de los cobros en línea: la emisión inserta en facturas como la app, y una
+-- secuencia no se deshace. No es el número de la factura (ese sí vuelve: lo
+-- lleva contadores) y no deja fila.
 --
 -- VALEN CON DATOS REALES, SIN SUPONER NADA DE PRODUCCIÓN. Lo que siembran es
 -- suyo y se deshace:
@@ -47,8 +50,65 @@
 -- El reloj fingido de la 18 (el cambio de año) es el de c2-pruebas: rehace
 -- fn_fecha_miami dentro de su subtransacción y el MXT00 la deshace.
 --
+-- COMO PRODUCCIÓN (lo que el banco no tenía y allá hizo fallar siete de
+-- estas pruebas el 12-nov; el banco lo trae ahora con
+-- pruebas/conta/06-produccion-facturas.sql, y esta suite pasa con él y sin
+-- él):
+--   · LOS ÍNDICES ÚNICOS DE facturas POR HITO (de la app, de la otra sesión:
+--     ux_facturas_hito, que cuenta también las anuladas, y
+--     ux_facturas_hito_viva). Con ellos dos filas de facturas vivas con el
+--     mismo hito no caben: la 36 y la 41, que fabricaban ese caso a mano,
+--     miran qué índice tiene la base (pg_temp.c11_candado_hito, por su
+--     forma, no por su nombre) y van por el único camino que queda (la fila
+--     de la factura de la app sin su hito). Y volver a facturar un hito
+--     anulado (la 20 y la 43) pasa porque la capa suelta la anulada. La 52,
+--     la 53 y la 54 lo prueban a fondo con el índice que la base tenga (el
+--     banco con 06-produccion-facturas.sql y producción: el que cuenta las
+--     anuladas, que es con el que fallaba; sin él prueban lo mismo —la capa
+--     suelta siempre— y lo dicen). La 55 es al revés: su caso (dos anuladas,
+--     o una viva y una anulada, con el mismo hito) solo se da SIN ese
+--     índice; con él, comprueba que no se puede dar.
+--   · EL CANDADO DE BORRADO DE STORAGE (de Supabase: un DELETE directo a
+--     storage.objects da 42501 salvo con la marca de la transacción
+--     storage.allow_delete_query, que es la que pone la API de Storage). La
+--     28 y la 37 ponen esa marca dentro de su subtransacción antes de
+--     borrar; en una base sin el candado no hace nada. (La 46 ya no borra
+--     nada: no le hacía falta.) Lo que sigue a esos borrados NO se había
+--     corrido nunca en producción (las tres morían en el DELETE): si allá la
+--     base no deja borrar el archivo de prueba por otra razón, la 37 sale
+--     «omitida» y la dice, y la 28 mira lo que le importa (que el archivo
+--     sigue ahí, igual).
+--
+-- NO FRENA A LA APP (la revisión del 12-nov; lo prueba, con dos sesiones de
+-- verdad, pruebas/conta/c11-concurrencia.sh, 7 y 8):
+--   · LO PRIMERO QUE HACE ES PONER lock_timeout A MEDIO SEGUNDO para toda la
+--     corrida, como el pegado de la capa. Si algo que una prueba necesita lo
+--     tiene tomado la app (u otra sesión) y no lo suelta en medio segundo,
+--     la prueba no espera más: sale «omitida» y dice por qué (no es un
+--     fallo: se vuelve a pegar en un momento más tranquilo). Quien espera un
+--     candado fuerte deja esperando detrás de sí a todos los que llegan
+--     después. Importa sobre todo en la 46, que pone y quita policies de
+--     prueba en storage.objects —la tabla de TODOS los archivos de la app—
+--     dentro de bloques que se deshacen: sin tope, con una lectura larga de
+--     Storage abierta en otra sesión, la suite se quedaba esperando y todas
+--     las lecturas de archivos de la app, detrás de ella (medido en el
+--     banco: paradas mientras duró la otra sesión, 20 s y más, en vez de
+--     milisegundos). Con el tope, la 46 prueba
+--     solo su primera mitad y lo dice. (Si lo que no se suelta lo necesita
+--     el arranque del archivo —alguien pegando otra capa a la vez—, la
+--     corrida entera para con 55P03, no cambia nada, y se vuelve a pegar.)
+--   · NO CREA NI QUITA ÍNDICES EN LAS TABLAS DE LA APP. Las pruebas 52, 53 y
+--     54 corren con el índice único de facturas por hito que la base tenga
+--     (y lo dicen). Antes, si faltaba el que cuenta las anuladas, ponían uno
+--     igual dentro de sí mismas: crear un índice para toda escritura en
+--     facturas mientras dura la prueba (medido en el banco, con la cadena
+--     entera: «marcar cobrada» esperando casi 8 s, que es el tope de la
+--     API). Hoy producción lo tiene; el día
+--     que la otra sesión lo quite, estas pruebas siguen valiendo sin tocar
+--     nada.
+--
 -- Lo que mira, una prueba cada una:
---  1 el pegado (precondiciones, 7 tablas, 4 vistas, las 37 funciones por su
+--  1 el pegado (precondiciones, 8 tablas, 4 vistas, las 37 funciones por su
 --    nombre exacto, los ajustes, cada objeto con su comentario «c11: …»);
 --  2 las precondiciones en rojo (desde la app; sin una función de c3; una
 --    función con nombre de c11 que no es de c11; una vista ajena colgada);
@@ -59,7 +119,8 @@
 --    policies justas, vistas security_invoker que no cuelgan de vistas de
 --    otras capas; «permisos» (c2), «protecciones del banco» (c6) y las de
 --    c4 en verde con c11 pegado;
---  5 la guarda de las tablas (a mano, MX003: también el dueño por la API);
+--  5 la guarda de las tablas (a mano, MX003: también el dueño por la API;
+--    lo soltado se apunta y ni se cambia ni se borra);
 --  6 los ajustes (fn_emision_config) y sus frenos; la tarjeta no se enciende;
 --  7 el corte: v_emision_estado dice QuickBooks o la app; antes del corte
 --    el borrador sí y emitir no (MX008, en llano);
@@ -109,7 +170,8 @@
 -- 33 el control 10 (la factura es su asiento) en rojo y de vuelta;
 -- 34 el control 20 (la serie) en rojo y de vuelta;
 -- 35 el control 30 (el sello) en rojo y de vuelta;
--- 36 los controles 40 y 75 (un hito con dos facturas);
+-- 36 los controles 40 y 75 (un hito con dos facturas; con el índice único
+--    de facturas por hito, por el camino que queda);
 -- 37 los controles 50, 60 y 62 (el PDF que ya no está; sin PDF; sin mandar);
 -- 38 los controles 70 y 72 (la retención que parece un porcentaje; una
 --    factura de después del corte hecha fuera de la app);
@@ -130,18 +192,75 @@
 -- 51 SOLO SE FACTURA UN HITO PENDIENTE: el que la ficha ya tiene como
 --    facturado y aquí no tiene factura (se facturó en QuickBooks a mano) no
 --    se ofrece, su borrador no se abre y uno ya abierto no se emite;
+-- Lo que falló en producción (12-nov; en una base con el índice único de
+-- facturas por hito, FALLAN si la emisión no suelta la anulada, como la de
+-- antes):
+-- 52 VOLVER A FACTURAR UN HITO CUYA FACTURA SE ANULÓ: el borrador lo avisa
+--    sin frenar; al emitir, la anulada suelta el hito y en lo demás no
+--    cambia (ni su nota, ni su asiento, ni lo cobrado; su puente no asienta
+--    nada); queda apuntado en emision_soltados; otra vuelta hace lo mismo;
+--    ningún control se enciende; y el pegado lo dice;
+-- 53 una factura de QuickBooks anulada en Contabilidad (c3) y su hito
+--    facturado por la app: mientras la ficha lo tenga como facturado no se
+--    abre (y dice por qué factura); devuelto a pendiente, la de QuickBooks
+--    suelta el hito y queda apuntada como de fuera de la app;
+-- 54 dos a la vez por dos caminos, la red: si la fila de facturas de la
+--    emisión choca con un índice único de la base, MX011 en llano —y qué
+--    índice, en el detalle del error— y no queda nada;
+-- 55 dos anuladas apuntando al mismo hito, y una viva con una anulada (solo
+--    en una base sin el índice que cuenta las anuladas): con la viva el
+--    borrador dice solo que ya se facturó; con las dos anuladas las nombra
+--    y la emisión suelta a las dos; con ese índice, se comprueba que el
+--    caso no se puede dar;
+-- Lo que encontró la revisión de ese arreglo (12-nov; FALLAN con la capa de
+-- antes de esa revisión):
+-- 56 EL HITO QUE SIGUE COMO FACTURADO CON SU FACTURA ANULADA (anulada desde
+--    Contabilidad, por c3: de QuickBooks, o de la app y sin cerrar aquí):
+--    el control 75 lo avisa; pedir su borrador dice cuál es la anulada, con
+--    su nota de crédito, y qué hacer (antes: «aquí no hay ninguna factura
+--    suya»); un borrador ya abierto dice lo mismo y no añade «esta la
+--    sustituye»; devuelto el hito a pendiente (o cerrada aquí la de la
+--    app), se factura;
+-- 57 LO SUSTITUIDO SE VE: el documento de la factura nueva dice a cuál
+--    sustituyó (de la app o de QuickBooks) y el de la anulada, cuál la
+--    sustituyó; el que no sustituyó a nadie, nada;
 -- Y el cierre:
 -- 41 el cierre del mes (c9) mira la facturación: las filas 172 y 173;
--- 42 nada queda al deshacer;
+-- 42 nada queda al deshacer (tampoco la revisión guardada del cierre del
+--    mes: las lecturas de «lo que está en rojo» de antes y de después de las
+--    pruebas van en bloques que se deshacen);
 -- 43 con facturas emitidas, anuladas, vueltas a emitir, por porcentaje,
 --    T&M, cobradas y con su factura de la retención, NINGÚN control de c2,
 --    c3, c4, c6, p1, c8, c9 ni c10 pasa a rojo;
 -- 44 el cierre de la suite: c2, c3, c6 y c4 como estaban, c8 y c10 sin
 --    cuadres rojos nuevos, nada de c11 en la API de anon o service_role, y
---    fn_emision_pegado responde (pegar dos veces no hace daño: lo corre el
---    banco).
+--    fn_emision_pegado responde con sus doce filas (pegar dos veces no hace
+--    daño: lo corre el banco).
 -- Última sentencia: select * from _pruebas order by n;
 -- =====================================================================
+-- (Lo primero, como el pegado de la capa: esta corrida espera un candado
+-- como mucho medio segundo. Si la app —u otra sesión— tiene tomado algo que
+-- una prueba necesita, la prueba no se queda esperando (ni deja esperando
+-- detrás de ella a quien llegue después): sale «omitida» y lo dice. Dura lo
+-- que dura la corrida, una transacción. Ver «No frena a la app».)
+set local lock_timeout = '500ms';
+
+-- (Estas pruebas son las del c11-emision.sql de ahora: el que trae la tabla
+-- emision_soltados y dice en cada documento a cuál sustituyó. Con uno
+-- anterior —o sin c11—, paran aquí, sin tocar nada, y dicen qué pegar.)
+do $$
+begin
+  if to_regclass('public.emision_soltados') is null or to_regprocedure('public.fn_emision_pegado()') is null
+     or not exists (select 1 from pg_proc p
+                     where p.oid = to_regprocedure('public.fn_emision_documento(uuid)') and p.prosrc like '%sustituida_por%') then
+    raise exception using errcode = 'MX000',
+      message = 'c11-pruebas NO se corrió, no se tocó nada: esta base no tiene el c11-emision.sql de ahora ('
+                || case when to_regclass('public.emision_soltados') is null then 'le falta la tabla emision_soltados'
+                        else 'es el de antes de su última revisión' end || ').',
+      hint    = 'Pega antes docs/conta/c11-emision.sql entero (encima del anterior: no pisa nada) y después vuelve a pegar este archivo.';
+  end if;
+end $$;
+
 create temp table if not exists _pruebas(n int, prueba text, esperado text, obtenido text, ok boolean);
 truncate _pruebas;
 
@@ -191,7 +310,7 @@ create or replace function pg_temp.c11_es_suya(p_nombre text) returns boolean la
 $$;
 create or replace function pg_temp.c11_tablas() returns text[] language sql immutable as $$
   select array['emision_config', 'emision_obras', 'emision_documentos', 'emision_lineas', 'emision_serie', 'emision_pdfs',
-               'emision_envios']
+               'emision_envios', 'emision_soltados']
 $$;
 create or replace function pg_temp.c11_vistas() returns text[] language sql immutable as $$
   select array['v_emision_estado', 'v_emision_documentos', 'v_emision_obras', 'v_emision_control']
@@ -392,6 +511,24 @@ begin
   return v;
 end $$;
 
+-- (y con el DETALLE del error, que la pantalla no enseña: {codigo, mensaje, detalle}; {codigo: 'entró'} si no falló)
+create or replace function pg_temp.c11_err_det(p_sql text, p_quien text default 'dueno') returns jsonb language plpgsql as $$
+declare
+  v jsonb;
+  v_det text;
+begin
+  perform pg_temp.c11_ser(p_quien);
+  begin
+    execute p_sql;
+    v := jsonb_build_object('codigo', 'entró');
+  exception when others then
+    get stacked diagnostics v_det = pg_exception_detail;
+    v := jsonb_build_object('codigo', sqlstate, 'mensaje', sqlerrm, 'detalle', coalesce(v_det, ''));
+  end;
+  perform pg_temp.c11_ser('editor');
+  return v;
+end $$;
+
 -- El siguiente número de la serie de hoy (el que le tocaría a la próxima
 -- emisión), y el k-ésimo después del último.
 create or replace function pg_temp.c11_num(p_k int default 1) returns text language sql as $$
@@ -437,6 +574,58 @@ create or replace function pg_temp.c11_ctl(p_orden int) returns text language sq
   select case when c.ok then 'verde' else 'rojo: ' || c.detalle end from v_emision_control c where c.orden = p_orden
 $$;
 create or replace function pg_temp.c11_color(p text) returns text language sql immutable as $$ select split_part(p, ':', 1) $$;
+
+-- EL ÍNDICE ÚNICO DE facturas POR HITO que tenga esta base. No es de c11: es
+-- de la app (de la otra sesión). En producción hay dos (leídos el 12-nov):
+-- ux_facturas_hito, que cuenta TODAS las filas, también las anuladas, y
+-- ux_facturas_hito_viva, solo las vivas; el banco los trae con
+-- pruebas/conta/06-produccion-facturas.sql. Devuelve 'todas' (hay uno que
+-- cuenta también las anuladas), 'vivas' (solo de los que cuentan las vivas)
+-- o 'ninguno'. Se lee del catálogo por su forma (único, de una sola columna,
+-- hito_id), no por su nombre.
+create or replace function pg_temp.c11_candado_hito() returns text language sql as $$
+  select case when count(*) = 0 then 'ninguno'
+              when bool_or(coalesce(pg_get_expr(i.indpred, i.indrelid), '') !~* '\mestado\M') then 'todas'
+              else 'vivas' end
+    from pg_index i
+   where i.indrelid = 'public.facturas'::regclass and i.indisunique and i.indisvalid and i.indnkeyatts = 1 and i.indexprs is null
+     and i.indkey[0] = (select a.attnum from pg_attribute a where a.attrelid = i.indrelid and a.attname = 'hito_id' and not a.attisdropped)
+$$;
+-- (ESTE ARCHIVO NO CREA ESE ÍNDICE SI FALTA. Antes, la 52, la 53 y la 54
+-- ponían uno igual dentro de sí mismas en una base que no lo trajera: crear
+-- un índice para toda escritura en facturas hasta que la prueba se deshace
+-- —segundos—, y eso en producción es la app esperando. Ahora corren con lo
+-- que la base tenga y lo dicen: cómo se llama el caso de cada una, aquí.)
+create or replace function pg_temp.c11_con_que_indice(p_caso text) returns text language sql as $$
+  select case pg_temp.c11_candado_hito()
+           when 'todas' then p_caso || ', con el índice único de producción (un hito, una sola fila de facturas, también las anuladas)'
+           when 'vivas' then p_caso || ' (en esta base, que no deja dos facturas VIVAS del mismo hito y no cuenta las anuladas: sin el '
+                             'índice con el que falló en producción, se prueba lo mismo, que la capa suelta siempre)'
+           else p_caso || ' (en esta base, sin índice único de facturas por hito —producción sí lo tiene—: se prueba lo mismo, que la '
+                'capa suelta siempre; el choque con el índice se prueba donde lo hay)' end
+$$;
+-- Los índices únicos de facturas por hito de esta base, por su nombre (para
+-- reconocer el que nombre un error): '' si no hay.
+create or replace function pg_temp.c11_indices_hito() returns text[] language sql as $$
+  select coalesce(array_agg(c.relname::text order by c.relname), '{}')
+    from pg_index i
+    join pg_class c on c.oid = i.indexrelid
+   where i.indrelid = 'public.facturas'::regclass and i.indisunique and i.indisvalid and i.indnkeyatts = 1 and i.indexprs is null
+     and i.indkey[0] = (select a.attnum from pg_attribute a where a.attrelid = i.indrelid and a.attname = 'hito_id' and not a.attisdropped)
+$$;
+
+-- Los controles del WIP (c12) en rojo, cuadres y avisos, si c12 está en
+-- esta base ('sin c12' si no): la 52 mira que soltar un hito no los mueva.
+create or replace function pg_temp.c11_wip_rojos() returns text language plpgsql as $$
+declare
+  v text;
+begin
+  if to_regclass('public.v_wip_control') is null then
+    return 'sin c12';
+  end if;
+  execute $q$ select coalesce(string_agg(k.orden::text, ',' order by k.orden), 'ninguno') from public.v_wip_control k where not k.ok $q$ into v;
+  return v;
+end $$;
 
 -- LO QUE ESTÁ EN ROJO en las otras capas, como una lista («capa: control»):
 -- la cadena y «permisos» de c2, los puentes (c3), el banco (c6), los
@@ -536,14 +725,15 @@ declare
   v text;
   x text := '';
 begin
-  select format('ajustes %s · obras %s · documentos %s · líneas %s · serie %s · pdfs %s · envíos %s · facturas %s (%s) · hitos %s · '
+  select format('ajustes %s · obras %s · documentos %s · líneas %s · serie %s · pdfs %s · envíos %s · soltados %s · facturas %s (%s) · hitos %s · '
                 'notas de crédito %s · contadores %s · asientos %s · líneas del libro %s · papeles de los puentes %s · cobros %s · '
                 'obras %s · finanzas %s · estimados %s · perfiles %s · usuarios %s · reglas de ingreso %s · períodos %s (%s cerrados) · '
-                'funciones %s',
+                'funciones %s · índices de facturas %s · triggers de la serie %s',
                 (select md5(to_jsonb(c)::text) from emision_config c where c.id = 1), (select count(*) from emision_obras),
                 (select count(*) from emision_documentos), (select count(*) from emision_lineas), (select count(*) from emision_serie),
-                (select count(*) from emision_pdfs), (select count(*) from emision_envios),
-                (select count(*) from facturas), (select md5(coalesce(string_agg(f.id || ':' || f.estado, ',' order by f.id), '')) from facturas f),
+                (select count(*) from emision_pdfs), (select count(*) from emision_envios), (select count(*) from emision_soltados),
+                (select count(*) from facturas),
+                (select md5(coalesce(string_agg(f.id || ':' || f.estado || ':' || coalesce(f.hito_id::text, '-'), ',' order by f.id), '')) from facturas f),
                 (select md5(coalesce(string_agg(h.id || ':' || coalesce(h.estado, ''), ',' order by h.id), '')) from hitos h),
                 (select count(*) from notas_credito),
                 (select md5(coalesce(string_agg(k.serie || ':' || k.ultimo, ',' order by k.serie), '')) from contadores k),
@@ -553,7 +743,9 @@ begin
                 (select md5(coalesce(string_agg(m.tipo || ':' || coalesce(m.confirmado_el::text, '-'), ',' order by m.tipo), ''))
                    from mapeo_tipo_proyecto m),
                 (select count(*) from periodos), (select count(*) from periodos p where to_jsonb(p)->>'estado' = 'cerrado'),
-                (select count(*) from pg_proc where pronamespace = 'public'::regnamespace))
+                (select count(*) from pg_proc where pronamespace = 'public'::regnamespace),
+                (select count(*) from pg_index i where i.indrelid = 'public.facturas'::regclass),
+                (select count(*) from pg_trigger t where t.tgrelid = 'public.emision_serie'::regclass and not t.tgisinternal))
     into v;
   if pg_temp.c11('hay_storage') = 'true' then
     execute 'select '' · archivos '' || count(*) from storage.objects' into x;
@@ -569,12 +761,32 @@ begin
     execute 'select '' · contratistas '' || count(*) from public.contratistas' into x;
     v := v || x;
   end if;
+  -- (la revisión guardada del cierre de cada período: mirar «lo que detiene el cierre» la reescribe. Las pruebas la miran
+  -- dentro de bloques que se deshacen: tiene que quedar la que había, con su hora)
+  if to_regclass('public.cierre_revisiones') is not null then
+    execute 'select format('' · revisiones del cierre %s (%s)'', count(*), '
+            'md5(coalesce(string_agg(r.periodo || '':'' || r.revisado_el, '','' order by r.periodo), ''''))) '
+            'from public.cierre_revisiones r' into x;
+    v := v || x;
+  end if;
   return v;
 end $$;
 insert into _c11 values ('conteos', pg_temp.c11_conteos());
 
--- (lo de c3, c4 y c6 que ya estaba en rojo ANTES de las pruebas: la 44 lo dice y no lo cuenta)
-insert into _c11 select 'rojos_antes', array_to_string(pg_temp.c11_rojos(), '; ');
+-- (lo de c3, c4 y c6 que ya estaba en rojo ANTES de las pruebas: la 44 lo dice y no lo cuenta. Se lee dentro de un bloque
+-- que se deshace: mirar lo que detiene el cierre del mes guarda su revisión —como abrir la pantalla Cierre—, y estas
+-- pruebas no dejan nada)
+do $$
+declare
+  v text;
+begin
+  begin
+    v := array_to_string(pg_temp.c11_rojos(), '; ');
+    raise exception using errcode = 'MXT00';
+  exception when sqlstate 'MXT00' then null;
+  end;
+  insert into _c11 values ('rojos_antes', v);
+end $$;
 -- (las funciones AJENAS a c11 que «permisos» de c2 ya marcaba ANTES de las
 -- pruebas —en producción, una función de otra parte de la app—: la 4 y la 44
 -- las dicen y no las cuentan como fallo de c11. Una función de c11 nunca
@@ -694,13 +906,14 @@ end $$;
 -- Las pruebas
 -- =====================================================================
 
--- 1. El pegado: precondiciones, tablas, vistas, las 37 funciones por su
---    nombre exacto, los ajustes (una fila, con un formato de número que
---    vale) y cada objeto con su comentario «c11: …».
+-- 1. El pegado: precondiciones, las ocho tablas (con emision_soltados), las
+--    vistas, las 37 funciones por su nombre exacto, los ajustes (una fila,
+--    con un formato de número que vale) y cada objeto con su comentario
+--    «c11: …».
 do $$
 declare
   v_obt text; v_pre text; v_tab int; v_vis int; v_fn int; v_fn2 int; v_sin text; v_cfg text;
-  v_esp text := 'nada falta | 7 tablas | 4 vistas | 37 funciones (37 nombres) | sin comentario c11: ninguno | '
+  v_esp text := 'nada falta | 8 tablas | 4 vistas | 37 funciones (37 nombres) | sin comentario c11: ninguno | '
                 'ajustes: 1 fila, id 1, con un formato de número que vale';
 begin
   begin
@@ -726,7 +939,7 @@ begin
                     v_pre, v_tab, v_vis, v_fn, v_fn2, v_sin, v_cfg);
   exception when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (1, 'el pegado: nada falta, 7 tablas, 4 vistas, las 37 funciones por su nombre exacto, los ajustes (una fila) y cada objeto con su comentario «c11: …»',
+  insert into _pruebas values (1, 'el pegado: nada falta, 8 tablas, 4 vistas, las 37 funciones por su nombre exacto, los ajustes (una fila) y cada objeto con su comentario «c11: …»',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
@@ -785,7 +998,7 @@ end $$;
 --    anon y service_role no ejecutan ni leen nada; EL EQUIPO (una persona de
 --    prueba, rol campo), con una factura emitida y su PDF en el bucket,
 --    recibe 42501 de las diez funciones de la pantalla y cero filas de las
---    siete tablas, las cuatro vistas, las seis auxiliares de lectura y el
+--    ocho tablas, las cuatro vistas, las seis auxiliares de lectura y el
 --    bucket;
 --    el dueño entra y ve.
 do $$
@@ -793,7 +1006,7 @@ declare
   v_obt text; v_r jsonb; v_doc uuid; v_fid bigint; v_num text;
   v_api text; v_sin text; v_anon text; v_srv text; v_n int := 0; v_filas bigint := 0; v_k bigint; v_vacio text; v_due text; v_sube text;
   v_esp text := 'pantalla mal: ninguna | internas con API: ninguna | anon 42501 y 42501 | service_role 42501 y 42501 | '
-                'equipo: 10 de 10 funciones 42501, 0 filas en 7 tablas, 4 vistas, 6 auxiliares y el bucket, lo demás vacío, y no sube al '
+                'equipo: 10 de 10 funciones 42501, 0 filas en 8 tablas, 4 vistas, 6 auxiliares y el bucket, lo demás vacío, y no sube al '
                 'bucket | dueño: su factura, 1 documento de prueba, 4 obras de prueba, 16 controles y 1 fila de estado';
 begin
   if pg_temp.c11_omitir(3, 'la API por rol', v_esp) then return; end if;
@@ -847,6 +1060,7 @@ begin
     select count(*) into v_k from emision_serie;         v_filas := v_filas + v_k;
     select count(*) into v_k from emision_pdfs;          v_filas := v_filas + v_k;
     select count(*) into v_k from emision_envios;        v_filas := v_filas + v_k;
+    select count(*) into v_k from emision_soltados;      v_filas := v_filas + v_k;
     select count(*) into v_k from v_emision_estado;      v_filas := v_filas + v_k;
     select count(*) into v_k from v_emision_documentos;  v_filas := v_filas + v_k;
     select count(*) into v_k from v_emision_obras;       v_filas := v_filas + v_k;
@@ -887,7 +1101,7 @@ begin
                   (select count(*) from v_emision_control), (select count(*) from v_emision_estado))
       into v_due;
     perform pg_temp.c11_ser('editor');
-    v_obt := format('pantalla mal: %s | internas con API: %s | anon %s | service_role %s | equipo: %s de 10 funciones 42501, %s filas en 7 '
+    v_obt := format('pantalla mal: %s | internas con API: %s | anon %s | service_role %s | equipo: %s de 10 funciones 42501, %s filas en 8 '
                     'tablas, 4 vistas, 6 auxiliares y el bucket, %s, y %s | dueño: %s',
                     v_api, v_sin, v_anon, v_srv, v_n, v_filas, v_vacio, v_sube, v_due);
     raise exception using errcode = 'MXT00';
@@ -911,7 +1125,7 @@ declare
   v_obt text; v_def text; v_pref text; v_rls text; v_pol text; v_vis text; v_fij int; v_dep text;
   v_c2 text; v_c6 text := 'verde'; v_c4 text := 'verde';
   v_esp text := 'definer: solo fn_emision_numerar (de trigger, sin EXECUTE para nadie) | prefijos ajenos: ninguno | sin rls o policy: ninguna | '
-                'policies que no son las suyas: ninguna (19) | sin security_invoker: ninguna | columnas de c2 fijadas: 0 | vistas de otras '
+                'policies que no son las suyas: ninguna (21) | sin security_invoker: ninguna | columnas de c2 fijadas: 0 | vistas de otras '
                 'capas debajo: ninguna | c2 permisos verde | c6 protecciones verde | c4 protecciones verde';
 begin
   begin
@@ -940,8 +1154,8 @@ begin
        and (not t.rowsecurity
             or not exists (select 1 from pg_policies pl where pl.schemaname = 'public' and pl.tablename = t.tablename
                               and pl.cmd = 'SELECT' and pl.qual ~ 'es_dueno'));
-    -- las policies justas: leer (las 7), editar (ajustes, obras, documentos, líneas), añadir (todas menos los ajustes) y
-    -- borrar (solo un borrador y sus líneas)
+    -- las policies justas: leer (las 8), editar (ajustes, obras, documentos, líneas), añadir (todas menos los ajustes) y
+    -- borrar (solo un borrador y sus líneas): 8 + 4 + 7 + 2 = 21
     select coalesce(string_agg(pl.tablename || '.' || pl.policyname, ', ' order by 1)
                       filter (where not ((pl.policyname = pl.tablename || '_dueno' and pl.cmd = 'SELECT')
                                          or (pl.policyname = pl.tablename || '_dueno_edita' and pl.cmd = 'UPDATE'
@@ -1002,15 +1216,18 @@ end $$;
 -- 5. La guarda: las tablas de c11 solo las escriben sus funciones. A mano,
 --    MX003: el dueño por la API (la policy le deja; la marca no), el SQL
 --    Editor sin la marca, y —con la marca— lo emitido ni se edita ni se
---    borra: solo se le apunta su anulación, una vez.
+--    borra: solo se le apunta su anulación, una vez. Lo soltado (qué
+--    factura anulada dejó de figurar en qué hito) tampoco se escribe a mano,
+--    y una vez apuntado ni se cambia ni se borra.
 do $$
 declare
   v_obt text; v_r jsonb; v_doc uuid; v_bor uuid;
   a text; b text; c text;
   v_esp text := 'el dueño por la API: crear a mano MX003, los ajustes a mano MX003, borrar un borrador a mano MX003, borrar la serie 42501, '
-                'cambiar una emitida MX003 | el editor sin la marca: un número MX003, truncar MX003, borrar los ajustes MX003 | con la '
-                'marca: cambiar una emitida MX003, borrarla MX003, sus líneas MX003 y MX003, su número MX003 y MX003, los ajustes no se '
-                'borran MX003, y la anulación se apunta una vez (entró) y no dos (MX003)';
+                'cambiar una emitida MX003, apuntar algo soltado a mano MX003 | el editor sin la marca: un número MX003, truncar MX003, '
+                'borrar los ajustes MX003, algo soltado MX003 | con la marca: cambiar una emitida MX003, borrarla MX003, sus líneas MX003 '
+                'y MX003, su número MX003 y MX003, los ajustes no se borran MX003, la anulación se apunta una vez (entró) y no dos '
+                '(MX003), y lo soltado se apunta (entró) y ni se cambia ni se borra (MX003 y MX003)';
 begin
   if pg_temp.c11_omitir(5, 'la guarda de las tablas de c11', v_esp) then return; end if;
   begin
@@ -1018,16 +1235,21 @@ begin
     v_r := pg_temp.c11_hito(-1110000001);
     v_doc := (v_r->>'documento')::uuid;
     v_bor := (pg_temp.c11_borrador(jsonb_build_object('forma', 'hito', 'hito_id', -1110000002))->'documento'->>'id')::uuid;
-    a := format('crear a mano %s, los ajustes a mano %s, borrar un borrador a mano %s, borrar la serie %s, cambiar una emitida %s',
+    a := format('crear a mano %s, los ajustes a mano %s, borrar un borrador a mano %s, borrar la serie %s, cambiar una emitida %s, '
+                'apuntar algo soltado a mano %s',
                 pg_temp.c11_cod($q$ insert into emision_documentos (forma, proyecto_id) values ('tm', 'c11-prueba-a') $q$),
                 pg_temp.c11_cod($q$ update emision_config set ach = false where id = 1 $q$),
                 pg_temp.c11_cod(format('delete from emision_documentos where id = %L', v_bor)),
                 pg_temp.c11_cod('delete from emision_serie'),
-                pg_temp.c11_cod(format('update emision_documentos set notas = ''x'' where id = %L', v_doc)));
-    b := format('un número %s, truncar %s, borrar los ajustes %s',
+                pg_temp.c11_cod(format('update emision_documentos set notas = ''x'' where id = %L', v_doc)),
+                pg_temp.c11_cod(format('insert into emision_soltados (factura_id, num, hito_id, documento_id) values (%s, ''ZZ-X'', -1110000001, %L)',
+                                       v_r->>'factura_id', v_doc)));
+    b := format('un número %s, truncar %s, borrar los ajustes %s, algo soltado %s',
                 pg_temp.c11_cod(format('insert into emision_serie (anio, documento_id) values (2026, %L)', v_bor), 'editor'),
                 pg_temp.c11_cod('truncate emision_envios', 'editor'),
-                pg_temp.c11_cod('delete from emision_config', 'editor'));
+                pg_temp.c11_cod('delete from emision_config', 'editor'),
+                pg_temp.c11_cod(format('insert into emision_soltados (factura_id, num, hito_id, documento_id) values (%s, ''ZZ-X'', -1110000001, %L)',
+                                       v_r->>'factura_id', v_doc), 'editor'));
     -- con la marca puesta a mano (el dueño de la base puede): lo emitido, ni así
     perform set_config('mx_emision.escribe', 'emision_documentos', true);
     c := format('cambiar una emitida %s, borrarla %s',
@@ -1044,9 +1266,15 @@ begin
     perform set_config('mx_emision.escribe', 'emision_config', true);
     c := c || format(', los ajustes no se borran %s', pg_temp.c11_cod('delete from emision_config', 'editor'));
     perform set_config('mx_emision.escribe', 'emision_documentos', true);
-    c := c || format(', y la anulación se apunta una vez (%s) y no dos (%s)',
+    c := c || format(', la anulación se apunta una vez (%s) y no dos (%s)',
                 pg_temp.c11_cod(format('update emision_documentos set anulado_el = now(), anulado_motivo = ''c11-pruebas'' where id = %L', v_doc), 'editor'),
                 pg_temp.c11_cod(format('update emision_documentos set anulado_motivo = ''otra vez'' where id = %L', v_doc), 'editor'));
+    perform set_config('mx_emision.escribe', 'emision_soltados', true);
+    c := c || format(', y lo soltado se apunta (%s) y ni se cambia ni se borra (%s y %s)',
+                pg_temp.c11_cod(format('insert into emision_soltados (factura_id, num, hito_id, documento_id) values (%s, ''ZZ-X'', -1110000001, %L)',
+                                       v_r->>'factura_id', v_doc), 'editor'),
+                pg_temp.c11_cod('update emision_soltados set num = ''ZZ-Y'' where num = ''ZZ-X''', 'editor'),
+                pg_temp.c11_cod('delete from emision_soltados where num = ''ZZ-X''', 'editor'));
     perform set_config('mx_emision.escribe', '', true);
     v_obt := format('el dueño por la API: %s | el editor sin la marca: %s | con la marca: %s', a, b, c);
     raise exception using errcode = 'MXT00';
@@ -1054,7 +1282,7 @@ begin
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (5, 'la guarda: a mano no se escribe (MX003: el dueño por la API y el SQL Editor sin la marca), la serie no se borra por la API (42501), y con la marca una factura emitida, sus líneas y su número ni se editan ni se borran; su anulación se apunta una sola vez',
+  insert into _pruebas values (5, 'la guarda: a mano no se escribe (MX003: el dueño por la API y el SQL Editor sin la marca), la serie no se borra por la API (42501), y con la marca una factura emitida, sus líneas y su número ni se editan ni se borran; su anulación se apunta una sola vez; lo soltado se apunta y ni se cambia ni se borra',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
@@ -2729,9 +2957,21 @@ begin
          || case when jsonb_array_length(v_d->'pdfs') = 2 and v_d->'pdfs'->1->>'ruta' = v_r2
                       and (select x.pdfs = 2 and x.pdf_ruta = v_r2 from v_emision_documentos x where x.id = v_doc)
                  then ', y la pantalla ve los dos (el último es el que vale)' else ', y la pantalla NO los ve' end;
-    -- en el bucket: ni borrar ni cambiar
-    delete from storage.objects where bucket_id = 'facturas' and name = v_r1;
-    update storage.objects set metadata = '{"size": 1}'::jsonb where bucket_id = 'facturas' and name = v_r1;
+    -- en el bucket: ni borrar ni cambiar. (El borrado va como lo manda la API de Storage: en Supabase un DELETE directo
+    -- a storage.objects da 42501 «Direct deletion from storage tables is not allowed», toque filas o no —el trigger
+    -- protect_objects_delete, por sentencia—, salvo con esta marca de la transacción, que es la que pone la API. Con ella, quien
+    -- decide es el candado del bucket. En una base sin ese trigger no hace nada. Se deshace con la prueba. Cada intento va
+    -- en su bloque: si la base lo rechaza con un error en vez de no tocar ninguna fila, tampoco lo borró ni lo cambió; lo
+    -- que se mira después es el archivo.)
+    begin
+      perform set_config('storage.allow_delete_query', 'true', true);
+      delete from storage.objects where bucket_id = 'facturas' and name = v_r1;
+    exception when others then null;
+    end;
+    begin
+      update storage.objects set metadata = '{"size": 1}'::jsonb where bucket_id = 'facturas' and name = v_r1;
+    exception when others then null;
+    end;
     perform pg_temp.c11_ser('editor');
     select (o.metadata->>'size')::bigint into v_k from storage.objects o where o.bucket_id = 'facturas' and o.name = v_r1;
     k := case when v_k = 1234 then 'sigue ahí, igual' when v_k is null then 'lo BORRÓ' else 'lo CAMBIÓ' end;
@@ -3246,9 +3486,16 @@ end $$;
 
 -- 36. El 40 (un cuadre: ningún hito con dos facturas vivas si alguna salió
 --     de la app) y el 75 (un aviso: hitos con dos facturas vivas de antes).
+--     EN UNA BASE CON EL ÍNDICE ÚNICO DE facturas POR HITO (producción: es de
+--     la app; el banco, con 06-produccion-facturas.sql) dos filas de facturas
+--     vivas con el mismo hito no caben, y el caso se fabrica por el único
+--     camino que queda: la fila de la factura de la app deja de apuntar a su
+--     hito y entra otra de ese hito (para el 40 es lo mismo: el hito de una
+--     factura de la app es el de su documento). Y dos de FUERA con el mismo
+--     hito no se pueden dar: se dice, y el 75 no tiene de qué avisar.
 do $$
 declare
-  v_obt text; v_r jsonb; v_x text;
+  v_obt text; v_r jsonb; v_x text; v_hu text := pg_temp.c11_candado_hito();
   a text; b text; c text; d text; e text;
   v_nom text := 'los controles 40 (un hito con dos facturas vivas y alguna de la app: en rojo, detiene, con el hito y las dos facturas) y 75 '
                 '(un hito con dos facturas vivas de antes de la app: un aviso); cada uno se enciende solo con lo suyo; de vuelta a verde';
@@ -3256,6 +3503,12 @@ declare
                 'verde | de vuelta: verde y verde | un hito con dos facturas de fuera: el 75 avisa (de antes) y el 40 verde | de vuelta: '
                 'verde y verde';
 begin
+  if v_hu <> 'ninguno' then
+    v_nom := v_nom || ' (en esta base, con su índice único de facturas por hito: la segunda factura del hito entra con la fila de la de '
+                      'la app sin su hito, y dos de fuera con el mismo hito no caben)';
+    v_esp := replace(v_esp, 'un hito con dos facturas de fuera: el 75 avisa (de antes) y el 40 verde',
+                     'un hito con dos facturas de fuera: no caben (23505: el índice único de facturas por hito), el 75 verde y el 40 verde');
+  end if;
   if pg_temp.c11_omitir(36, v_nom, v_esp) then return; end if;
   if pg_temp.c11_omitir_rojo(36, v_nom, v_esp, array[40, 75]) then return; end if;
   begin
@@ -3263,6 +3516,9 @@ begin
     v_r := pg_temp.c11_hito(-1110000001);
     a := pg_temp.c11_color(pg_temp.c11_ctl(40)) || ' y ' || pg_temp.c11_color(pg_temp.c11_ctl(75));
     begin
+      if v_hu <> 'ninguno' then
+        update facturas set hito_id = null where id = (v_r->>'factura_id')::bigint;
+      end if;
       insert into facturas (proyecto_id, num, fecha, monto, hito_id, estado)
       values ('c11-prueba-a', 'ZZ-905', pg_temp.c11('hoy')::date, 3333.33, -1110000001, 'emitida');
       v_x := pg_temp.c11_ctl(40);
@@ -3274,13 +3530,19 @@ begin
     end;
     c := pg_temp.c11_color(pg_temp.c11_ctl(40)) || ' y ' || pg_temp.c11_color(pg_temp.c11_ctl(75));
     begin
-      insert into facturas (proyecto_id, num, fecha, monto, hito_id, estado) values
-        ('c11-prueba-a', 'ZZ-906', pg_temp.c11('hoy')::date, 3333.33, -1110000002, 'emitida'),
-        ('c11-prueba-a', 'ZZ-907', pg_temp.c11('hoy')::date, 3333.33, -1110000002, 'emitida');
-      v_x := pg_temp.c11_ctl(75);
-      d := case when v_x like 'rojo: el hito «C11 PRUEBA Milestone 2» de C11 PRUEBA Uno tiene 2 facturas vivas de antes (ZZ-906, ZZ-907) →%'
-                then 'el 75 avisa (de antes)' else 'el 75: ' || v_x end
-           || ' y el 40 ' || pg_temp.c11_color(pg_temp.c11_ctl(40));
+      begin
+        insert into facturas (proyecto_id, num, fecha, monto, hito_id, estado) values
+          ('c11-prueba-a', 'ZZ-906', pg_temp.c11('hoy')::date, 3333.33, -1110000002, 'emitida'),
+          ('c11-prueba-a', 'ZZ-907', pg_temp.c11('hoy')::date, 3333.33, -1110000002, 'emitida');
+        v_x := pg_temp.c11_ctl(75);
+        d := case when v_x like 'rojo: el hito «C11 PRUEBA Milestone 2» de C11 PRUEBA Uno tiene 2 facturas vivas de antes (ZZ-906, ZZ-907) →%'
+                  then 'el 75 avisa (de antes)' else 'el 75: ' || v_x end
+             || ' y el 40 ' || pg_temp.c11_color(pg_temp.c11_ctl(40));
+      exception when unique_violation then
+        -- (la base no deja dos filas de facturas con el mismo hito: su índice único, de la app)
+        d := format('no caben (23505: el índice único de facturas por hito), el 75 %s y el 40 %s',
+                    pg_temp.c11_color(pg_temp.c11_ctl(75)), pg_temp.c11_color(pg_temp.c11_ctl(40)));
+      end;
       raise exception using errcode = 'MXT01';
     exception when sqlstate 'MXT01' then null;
     end;
@@ -3300,7 +3562,7 @@ end $$;
 --     Los días pasan con el reloj fingido, dentro de un bloque que se deshace.
 do $$
 declare
-  v_obt text; r1 jsonb; r2 jsonb; r3 jsonb; v_doc uuid; v_doc2 uuid; v_ruta text; v_ruta2 text; v_x text; v_y text;
+  v_obt text; r1 jsonb; r2 jsonb; r3 jsonb; v_doc uuid; v_doc2 uuid; v_ruta text; v_ruta2 text; v_x text; v_y text; v_por text;
   a text; b text; c text; d text; e text; f text; g text;
   v_nom text := 'los controles 50 (un PDF registrado que ya no está en el bucket, o mide otra cosa), 60 (una factura emitida hace más de N '
                 'días sin PDF: la de la retención, como lo que es, sin decir que está en el libro) y 62 (sin mandar ni entregar): avisan '
@@ -3332,7 +3594,19 @@ begin
     perform fn_emision_pdf(v_doc, jsonb_build_object('ruta', v_ruta, 'sha256', repeat('a', 64), 'bytes', 4321, 'huella', r1->>'huella'));
     perform pg_temp.c11_ser('editor');
     begin
-      delete from storage.objects where bucket_id = 'facturas' and name = v_ruta;
+      -- (en Supabase un DELETE directo a storage.objects da 42501 salvo con esta marca de la transacción; se deshace con el
+      -- bloque. Es el SQL Editor quitando el archivo, para imitar «ya no está»: si esta base no lo deja por otra razón, no
+      -- hay cómo imitarlo aquí y la prueba sale omitida con lo que dijo la base)
+      begin
+        perform set_config('storage.allow_delete_query', 'true', true);
+        delete from storage.objects where bucket_id = 'facturas' and name = v_ruta;
+      exception when others then
+        v_por := 'esta base no dejó quitar del bucket el archivo de prueba (' || sqlstate || ': ' || left(sqlerrm, 200)
+                 || '): que el control 50 avise de un PDF que ya no está no se puede probar aquí';
+      end;
+      if v_por is not null then
+        raise exception using errcode = 'MXT02';
+      end if;
       v_x := pg_temp.c11_ctl(50);
       b := case when v_x like 'rojo: el PDF 1 de la factura ' || (r1->>'numero') || ' (' || v_ruta || ') ya no está → vuelve a pintar el PDF%'
                 then 'el 50 avisa (ya no está)' else v_x end;
@@ -3377,10 +3651,14 @@ begin
                     'PDF y las dos sin mandar: %s | con su PDF: %s | entregadas en mano: %s', a, b, c, d, e, f, g);
     raise exception using errcode = 'MXT00';
   exception
-    when sqlstate 'MXT00' then null;
+    when sqlstate 'MXT00' or sqlstate 'MXT02' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (37, v_nom, v_esp, v_obt, v_obt = v_esp);
+  if v_por is not null then
+    insert into _pruebas values (37, v_nom, v_esp, 'omitida: ' || v_por, null);
+  else
+    insert into _pruebas values (37, v_nom, v_esp, v_obt, v_obt = v_esp);
+  end if;
 end $$;
 
 -- 38. El 70 (una factura que no salió de la app con una «retención» que
@@ -3815,66 +4093,98 @@ begin
     end;
     b := format('ve %s y %s', v_k, v_x);
     perform pg_temp.c11_ser('editor');
-    execute 'delete from storage.objects where bucket_id = ''facturas'' and name = $1' using v_ruta || 'c11-prueba-46-aal2.pdf';
+    -- LA SEGUNDA MITAD pone y quita policies de prueba en storage.objects, dentro de bloques que se deshacen. Cada una
+    -- toma, un instante, el candado más fuerte de la tabla de TODOS los archivos de la app: va con el tope de espera de
+    -- esta corrida (medio segundo). Si la app tiene la tabla tomada y no la suelta (una lectura larga, un respaldo), no se
+    -- espera más —detrás de quien espera ese candado se quedan esperando todas las lecturas de archivos que lleguen—: se
+    -- prueba solo la primera mitad, y se dice. Lo mismo si esta base no deja poner policies en Storage desde aquí, o si
+    -- tiene otros candados de Storage con los que la comparación no dice nada.
     -- ¿deja esta base poner y quitar policies de Storage desde aquí? (en el banco, sí)
     begin
       execute 'create policy "c11 prueba: sonda" on storage.objects for select to authenticated using (false)';
       raise exception using errcode = 'MXT01';
     exception
       when sqlstate 'MXT01' then null;
-      when others then v_puede := false; v_por := sqlstate || ': ' || left(sqlerrm, 200);
+      when lock_not_available then
+        v_puede := false;
+        v_por := 'la app (u otra sesión) estaba usando los archivos de Storage y no soltó la tabla en medio segundo: no se esperó más, '
+                 'para no dejar esperando a la app; vuelve a pegar el archivo en otro momento para probar la segunda mitad';
+      when others then
+        v_puede := false;
+        v_por := 'la base no deja poner policies de prueba en Storage (' || sqlstate || ': ' || left(sqlerrm, 200) || ')';
     end;
     if v_puede then
-      -- otra policy de Storage, de otra parte de la app, que deja leer y subir TODO
       begin
-        execute 'create policy "c11 prueba: todo" on storage.objects for all to authenticated, anon using (true) with check (true)';
-        execute 'insert into storage.buckets (id, name) values (''c11-prueba-otro'', ''c11-prueba-otro'') on conflict (id) do nothing';
-        execute 'insert into storage.objects (bucket_id, name) values (''c11-prueba-otro'', ''c11-prueba-46.txt'')';
-        perform pg_temp.c11_ser_aal1();
-        execute 'select count(*) from storage.objects where bucket_id = ''facturas'' and name like $1' into v_k using v_ruta || '%';
-        execute 'select count(*) from storage.objects where bucket_id = ''c11-prueba-otro''' into v_k2;
+        -- otra policy de Storage, de otra parte de la app, que deja leer y subir TODO
         begin
-          execute 'insert into storage.objects (bucket_id, name, owner) values (''facturas'', $1, $2)' using v_ruta || 'c11-prueba-46-aal1.pdf', pg_temp.c11('dueno')::uuid;
-          v_x := 'SUBE';
-        exception when insufficient_privilege then v_x := 'no sube';
+          execute 'create policy "c11 prueba: todo" on storage.objects for all to authenticated, anon using (true) with check (true)';
+          execute 'insert into storage.buckets (id, name) values (''c11-prueba-otro'', ''c11-prueba-otro'') on conflict (id) do nothing';
+          execute 'insert into storage.objects (bucket_id, name) values (''c11-prueba-otro'', ''c11-prueba-46.txt'')';
+          perform pg_temp.c11_ser_aal1();
+          execute 'select count(*) from storage.objects where bucket_id = ''facturas'' and name like $1' into v_k using v_ruta || '%';
+          execute 'select count(*) from storage.objects where bucket_id = ''c11-prueba-otro''' into v_k2;
+          if v_k2 <> 1 then
+            -- (con una policy que deja leer TODO, la sesión sin código tampoco ve el archivo del otro bucket: aquí cierra
+            -- algo que no es de c11, y que en «facturas» vea 0 no diría nada)
+            raise exception using errcode = 'MXT02';
+          end if;
+          begin
+            execute 'insert into storage.objects (bucket_id, name, owner) values (''facturas'', $1, $2)' using v_ruta || 'c11-prueba-46-aal1.pdf', pg_temp.c11('dueno')::uuid;
+            v_x := 'SUBE';
+          exception when insufficient_privilege then v_x := 'no sube';
+          end;
+          c := format('aal1 sigue viendo %s en facturas (y %s en otro bucket) y %s', v_k, v_k2, v_x);
+          perform pg_temp.c11_ser('p1');
+          execute 'select count(*) from storage.objects where bucket_id = ''facturas''' into v_k;
+          c := c || format('; el equipo ve %s', v_k);
+          perform pg_temp.c11_ser('anon');
+          execute 'select count(*) from storage.objects where bucket_id = ''facturas''' into v_k;
+          c := c || format('; la llave pública ve %s', v_k);
+          perform pg_temp.c11_ser('editor');
+          raise exception using errcode = 'MXT01';
+        exception when sqlstate 'MXT01' then null;
         end;
-        c := format('aal1 sigue viendo %s en facturas (y %s en otro bucket) y %s', v_k, v_k2, v_x);
-        perform pg_temp.c11_ser('p1');
-        execute 'select count(*) from storage.objects where bucket_id = ''facturas''' into v_k;
-        c := c || format('; el equipo ve %s', v_k);
-        perform pg_temp.c11_ser('anon');
-        execute 'select count(*) from storage.objects where bucket_id = ''facturas''' into v_k;
-        c := c || format('; la llave pública ve %s', v_k);
         perform pg_temp.c11_ser('editor');
-        raise exception using errcode = 'MXT01';
-      exception when sqlstate 'MXT01' then null;
+        -- el control 90
+        begin
+          execute 'drop policy "facturas: solo el dueno con su codigo lee" on storage.objects';
+          v_si := case when pg_temp.c11_ctl(90) like 'rojo: %el bucket de las facturas: falta el candado «facturas: solo el dueno con su codigo lee»%'
+                       then 'se quita un candado (sí)' else 'se quita un candado (NO)' end;
+          raise exception using errcode = 'MXT01';
+        exception when sqlstate 'MXT01' then null;
+        end;
+        begin
+          execute 'drop policy "facturas: el dueno lee" on storage.objects';
+          execute 'create policy "facturas: el dueno lee" on storage.objects for select to authenticated using (bucket_id = ''facturas'' and public.es_dueno())';
+          v_si := v_si || case when pg_temp.c11_ctl(90) like 'rojo: %el bucket de las facturas: el candado «facturas: el dueno lee» no pide el código del teléfono%'
+                               then ', uno deja de pedir el código (sí)' else ', uno deja de pedir el código (NO)' end;
+          raise exception using errcode = 'MXT01';
+        exception when sqlstate 'MXT01' then null;
+        end;
+        begin
+          execute 'drop policy "facturas: no se borra" on storage.objects';
+          execute 'create policy "facturas: no se borra" on storage.objects for delete to anon, authenticated using (bucket_id is distinct from ''facturas'')';
+          v_si := v_si || case when pg_temp.c11_ctl(90) like 'rojo: %el bucket de las facturas: el candado «facturas: no se borra» ya no es de los que cierran%'
+                               then ', uno deja de cerrar (sí)' else ', uno deja de cerrar (NO)' end;
+          raise exception using errcode = 'MXT01';
+        exception when sqlstate 'MXT01' then null;
+        end;
+        d := v_si || '; deshecho, ' || pg_temp.c11_ctl(90);
+      exception
+        when lock_not_available then
+          v_puede := false;
+          v_por := 'la app (u otra sesión) empezó a usar los archivos de Storage a media prueba y no soltó la tabla en medio segundo: no se '
+                   'esperó más, para no dejar esperando a la app; vuelve a pegar el archivo en otro momento para probar la segunda mitad';
+        when sqlstate 'MXT02' then
+          v_puede := false;
+          v_por := 'con una policy de prueba que deja leer todo, la sesión sin el código tampoco ve el archivo de OTRO bucket: esta base '
+                   'tiene otros candados de Storage que no son de aquí, y con ellos la comparación no dice nada';
+        when others then
+          -- (lo que se monta para comparar —otra policy, otro bucket, un archivo— no entró en esta base: no es de la capa)
+          v_puede := false;
+          v_por := 'esta base no dejó montar la comparación de la segunda mitad (' || sqlstate || ': ' || left(sqlerrm, 200) || ')';
       end;
       perform pg_temp.c11_ser('editor');
-      -- el control 90
-      begin
-        execute 'drop policy "facturas: solo el dueno con su codigo lee" on storage.objects';
-        v_si := case when pg_temp.c11_ctl(90) like 'rojo: %el bucket de las facturas: falta el candado «facturas: solo el dueno con su codigo lee»%'
-                     then 'se quita un candado (sí)' else 'se quita un candado (NO)' end;
-        raise exception using errcode = 'MXT01';
-      exception when sqlstate 'MXT01' then null;
-      end;
-      begin
-        execute 'drop policy "facturas: el dueno lee" on storage.objects';
-        execute 'create policy "facturas: el dueno lee" on storage.objects for select to authenticated using (bucket_id = ''facturas'' and public.es_dueno())';
-        v_si := v_si || case when pg_temp.c11_ctl(90) like 'rojo: %el bucket de las facturas: el candado «facturas: el dueno lee» no pide el código del teléfono%'
-                             then ', uno deja de pedir el código (sí)' else ', uno deja de pedir el código (NO)' end;
-        raise exception using errcode = 'MXT01';
-      exception when sqlstate 'MXT01' then null;
-      end;
-      begin
-        execute 'drop policy "facturas: no se borra" on storage.objects';
-        execute 'create policy "facturas: no se borra" on storage.objects for delete to anon, authenticated using (bucket_id is distinct from ''facturas'')';
-        v_si := v_si || case when pg_temp.c11_ctl(90) like 'rojo: %el bucket de las facturas: el candado «facturas: no se borra» ya no es de los que cierran%'
-                             then ', uno deja de cerrar (sí)' else ', uno deja de cerrar (NO)' end;
-        raise exception using errcode = 'MXT01';
-      exception when sqlstate 'MXT01' then null;
-      end;
-      d := v_si || '; deshecho, ' || pg_temp.c11_ctl(90);
     end if;
     v_obt := format('el dueño solo con su contraseña (aal1): %s | con el código del teléfono (aal2): %s', a, b)
              || case when v_puede then format(' | con otra policy de Storage que deja leer y subir todo: %s | el control 90, en rojo si: %s', c, d)
@@ -3885,11 +4195,9 @@ begin
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
   if not v_puede then
-    -- (esta base no deja poner policies de prueba en Storage: se prueba lo que se puede, y se dice)
+    -- (aquí la segunda mitad no se pudo probar: se prueba lo que se puede, y se dice por qué)
     v_esp := split_part(v_esp, ' | con otra policy de Storage', 1);
-    v_obt := v_obt;
-    insert into _pruebas values (46, v_nom || ' (aquí, solo lo primero: la base no deja poner policies de prueba en Storage: ' || coalesce(v_por, '') || ')',
-      v_esp, v_obt, v_obt = v_esp);
+    insert into _pruebas values (46, v_nom || ' (aquí, solo lo primero: ' || coalesce(v_por, '') || ')', v_esp, v_obt, v_obt = v_esp);
   else
     insert into _pruebas values (46, v_nom, v_esp, v_obt, v_obt = v_esp);
   end if;
@@ -4177,7 +4485,8 @@ begin
     -- (b) su borrador no se abre
     v_x := pg_temp.c11_err($q$ select fn_emision_borrador('{"forma": "hito", "hito_id": -1110000001}') $q$);
     b := case when v_x like 'MX008: El hito «C11 PRUEBA Milestone 1» ya está marcado como facturado en la ficha de la obra y aquí no hay '
-                            'ninguna factura suya%no se factura otra vez. Si de verdad falta facturarlo, ponlo antes en pendiente.'
+                            'ninguna factura suya%no se factura otra vez. Si de verdad falta facturarlo, ponlo antes en pendiente (la '
+                            'ficha no tiene botón para eso: avisa y se hace).'
               then 'MX008 (ya está marcado como facturado; ponlo antes en pendiente)' else v_x end;
     -- (c) el borrador que ya estaba abierto
     perform pg_temp.c11_ser('dueno');
@@ -4212,6 +4521,827 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------
+-- LO QUE FALLÓ EN PRODUCCIÓN (12-nov-2026). La base de la app admite UNA
+-- sola fila de facturas por hito, también contando las anuladas (el índice
+-- único ux_facturas_hito; es de la app, de la otra sesión): con la capa de
+-- antes, después de anular la factura de un hito no entraba la buena (23505
+-- en la 20 y en la 43 de entonces). Cada cosa con su prueba: con una emisión
+-- que no suelte la anulada (la de antes), en una base con ese índice, la
+-- 20, la 43, la 52 y la 53 fallan, y sin la red, la 54 (se comprobó
+-- quitándole a la capa de ahora el soltado y la red); con la de ahora,
+-- pasan. Corren con el índice que la base tenga, sin poner ni quitar
+-- ninguno (un índice nuevo para toda escritura en facturas mientras se
+-- crea y hasta que la prueba se deshace: eso no se le hace a la app): en
+-- el banco con pruebas/conta/06-produccion-facturas.sql y en producción,
+-- con el que falló; sin él prueban lo mismo —la capa suelta siempre— y
+-- cada una dice con qué corrió.
+-- ---------------------------------------------------------------------
+-- 52. VOLVER A FACTURAR UN HITO CUYA FACTURA SE ANULÓ. La anulada conserva
+--     su hito hasta que entra la que la sustituye; el borrador de la buena
+--     lo dice con un aviso que NO frena; al emitirla, la anulada SUELTA el
+--     hito (facturas.hito_id a nulo) y en lo demás no cambia: sigue anulada,
+--     con su nota de crédito, su asiento y lo cobrado como estaban, y su
+--     puente no asienta nada; queda apuntado en emision_soltados (qué
+--     factura, de qué hito, por qué documento, quién); quien lea facturas
+--     por su hito ve una sola fila, la viva; y otra vuelta (anular y
+--     facturar otra vez) hace lo mismo. Ningún control se enciende: tampoco
+--     el aviso de «una factura de hito que ya no apunta a su hito». Y
+--     SOLTAR POR SÍ SOLO (el mismo cambio en la anulada, sin emitir nada,
+--     dentro de un bloque que se deshace) no mueve ningún control: ni de la
+--     facturación, ni de c2, c3, c4, c6, p1, c8, c9 y c10, ni del WIP (c12).
+do $$
+declare
+  v_obt text; s0 text[]; r1 jsonb; r2 jsonb; r3 jsonb; ra jsonb; ra2 jsonb; v_b jsonb; v_b3 jsonb;
+  v_f1 bigint; v_f2 bigint; v_f3 bigint; v_d2 uuid; e1 text; e2 text; e3 text; v_nc text; v_nc2 text; v_x text; v_42 text; v_peg text;
+  j0 jsonb; j1 jsonb; pd0 jsonb; v_as0 bigint; v_asf0 bigint; v_sol0 bigint; v_k bigint; v_k2 bigint; x record; v_av jsonb;
+  c0 text[]; p0 text; w0 text; v_solo text;
+  a text; b text; c text; d text; e text; f text; g text; h text; i text; j text;
+  v_hu text := pg_temp.c11_candado_hito();
+  v_nom text := pg_temp.c11_con_que_indice('VOLVER A FACTURAR UN HITO CUYA FACTURA SE ANULÓ')
+                || ': el borrador de la buena lo avisa sin frenar; al emitirla, la anulada suelta el hito y en lo demás '
+                'no cambia (sigue anulada, con su nota de crédito y su asiento; su puente no asienta nada); queda apuntado qué factura '
+                'soltó qué hito y por qué documento; y ningún control se enciende';
+  v_esp text := 'la base: una sola fila de facturas por hito, contando las anuladas | anulada la primera: sigue apuntando a su hito y el '
+                'hito vuelve a pendiente | soltar el hito de la anulada, por sí solo (sin emitir): la facturación igual, las otras capas '
+                'igual, el WIP (c12, si está) igual, y el libro igual | el borrador de la buena: avisa sin frenar (hito_factura_anulada: '
+                'nombra la anulada y su nota de crédito) y se puede emitir | al emitirla: sale con el número siguiente, con su asiento, el hito facturado, y dice lo que '
+                'soltó; otra vez el mismo borrador MX008 | la anulada: soltó el hito y en lo demás no cambió (sigue anulada, con su nota de '
+                'crédito, su asiento y lo cobrado como estaban; su puente no asentó nada: el libro solo ganó el asiento de la nueva) | la '
+                'nueva lleva el hito: cxc 3333.33 | ingreso -3333.33 | lo soltado: apuntado (la factura, su número, su nota, el hito, la '
+                'obra, que salió de la app, el documento que la soltó y quién); el equipo ve 0 y el dueño 1 | quien lea facturas por su '
+                'hito (la función de QuickBooks): una sola fila, la viva | anulada y facturada otra vez: número siguiente, suelta la '
+                'segunda (el aviso nombra solo a esa) y quedan 2 apuntes | los controles: de la facturación, nada nuevo (el de «factura de '
+                'hito que ya no apunta a su hito» no nombra a ninguna); de las otras capas, ninguno | el pegado lo dice: una sola fila por '
+                'hito contando las anuladas, y 2 soltadas más';
+begin
+  -- (lo que se espera de «la base» y de lo que dice el pegado, según el índice único de facturas por hito que tenga)
+  if v_hu = 'vivas' then
+    v_esp := replace(v_esp, 'la base: una sola fila de facturas por hito, contando las anuladas |',
+                            'la base: no deja dos facturas vivas del mismo hito y no cuenta las anuladas |');
+    v_esp := replace(v_esp, 'el pegado lo dice: una sola fila por hito contando las anuladas, y 2 soltadas más',
+                            'el pegado lo dice: no deja dos vivas del mismo hito y no cuenta las anuladas, y 2 soltadas más');
+  elsif v_hu = 'ninguno' then
+    v_esp := replace(v_esp, 'la base: una sola fila de facturas por hito, contando las anuladas |',
+                            'la base: sin índice único de facturas por hito |');
+    v_esp := replace(v_esp, 'el pegado lo dice: una sola fila por hito contando las anuladas, y 2 soltadas más',
+                            'el pegado lo dice: sin índice único de facturas por hito, y 2 soltadas más');
+  end if;
+  if pg_temp.c11_omitir(52, v_nom, v_esp) then return; end if;
+  begin
+    perform pg_temp.c11_sembrar();
+    a := case v_hu when 'todas' then 'una sola fila de facturas por hito, contando las anuladas'
+                   when 'vivas' then 'no deja dos facturas vivas del mismo hito y no cuenta las anuladas'
+                   else 'sin índice único de facturas por hito' end;
+    s0 := pg_temp.c11_rojos();
+    select count(*) into v_sol0 from emision_soltados;
+    e1 := pg_temp.c11_num(1); e2 := pg_temp.c11_num(2); e3 := pg_temp.c11_num(3);
+    -- (1) emitida y anulada: la anulada conserva su hito
+    r1 := pg_temp.c11_hito(-1110000001);
+    v_f1 := (r1->>'factura_id')::bigint;
+    ra := pg_temp.c11_anular((r1->>'documento')::uuid, 'c11-pruebas: monto equivocado');
+    v_nc := ra->>'nota_credito';
+    b := case when (select f.estado = 'anulada' and f.hito_id = -1110000001 from facturas f where f.id = v_f1) then 'sigue apuntando a su hito'
+              else 'YA NO apunta a su hito' end
+         || format(' y el hito vuelve a %s', (select hh.estado from hitos hh where hh.id = -1110000001));
+    -- (1b) SOLTAR POR SÍ SOLO: el mismo cambio que hará la emisión en la anulada (su hito a nulo), sin emitir nada, y su puente
+    --      corrido ya. Ningún control se mueve, y el libro no gana nada. Se deshace.
+    begin
+      c0 := pg_temp.c11_rojos();
+      select coalesce(string_agg(k.orden::text, ',' order by k.orden), 'ninguno') into p0 from v_emision_control k where not k.ok;
+      w0 := pg_temp.c11_wip_rojos();
+      select count(*) into v_as0 from asientos;
+      update facturas set hito_id = null where id = v_f1;
+      set constraints public.trg_puente_facturas_despues immediate;
+      set constraints public.trg_puente_facturas_despues deferred;
+      v_solo := format('la facturación %s, las otras capas %s, el WIP (c12, si está) %s, y el libro %s',
+                       case when (select coalesce(string_agg(k.orden::text, ',' order by k.orden), 'ninguno') from v_emision_control k where not k.ok) = p0
+                            then 'igual' else 'CAMBIÓ' end,
+                       case when pg_temp.c11_nuevos(c0, pg_temp.c11_rojos()) = 'ninguno' and pg_temp.c11_nuevos(pg_temp.c11_rojos(), c0) = 'ninguno'
+                            then 'igual' else 'CAMBIARON: ' || pg_temp.c11_nuevos(c0, pg_temp.c11_rojos()) end,
+                       case when pg_temp.c11_wip_rojos() = w0 then 'igual' else format('CAMBIÓ (%s → %s)', w0, pg_temp.c11_wip_rojos()) end,
+                       case when (select count(*) from asientos) = v_as0 then 'igual' else 'GANÓ asientos' end);
+      raise exception using errcode = 'MXT01';
+    exception when sqlstate 'MXT01' then null;
+    end;
+    -- (2) el borrador de la buena: lo dice, y no frena
+    v_b := pg_temp.c11_borrador(jsonb_build_object('forma', 'hito', 'hito_id', -1110000001));
+    v_d2 := (v_b->'documento'->>'id')::uuid;
+    select y.value into v_av from jsonb_array_elements(v_b->'avisos') y where y.value->>'codigo' = 'hito_factura_anulada';
+    c := case when v_av is null then 'NO avisa: ' || left((v_b->'avisos')::text, 300)
+              when (v_av->>'frena')::boolean then 'avisa y FRENA'
+              when v_av->>'texto' like 'El hito «C11 PRUEBA Milestone 1» ya tuvo una factura que se anuló: ' || e1 || ' del % (nota de crédito '
+                                       || v_nc || '). Esta la sustituye: al emitirla, la anulada deja de figurar como la factura de este hito (en '
+                                       || 'lo demás no cambia: sigue anulada) y queda apuntado.'
+                then 'avisa sin frenar (hito_factura_anulada: nombra la anulada y su nota de crédito)'
+              else 'avisa con otro texto: ' || (v_av->>'texto') end
+         || case when (v_b->>'puede_emitir')::boolean and (v_b->>'nuevo')::boolean then ' y se puede emitir' else ' y NO se puede emitir' end;
+    -- (3) lo de la anulada y lo del libro, justo antes
+    select to_jsonb(ff) - 'hito_id' into j0 from facturas ff where ff.id = v_f1;
+    select to_jsonb(pd) into pd0 from puente_documentos pd where pd.tabla = 'facturas' and pd.documento_id = v_f1::text;
+    select count(*) into v_as0 from asientos;
+    select count(*) into v_asf0 from asientos z where z.origen_tabla = 'facturas' and z.origen_id = v_f1::text;
+    -- (4) se emite
+    r2 := pg_temp.c11_emitir(v_d2);
+    v_f2 := (r2->>'factura_id')::bigint;
+    d := case when r2->>'estado' = 'emitida' and r2->>'numero' = e2 and r2->>'asiento' is not null and r2->>'hito_estado' = 'facturado'
+              then 'sale con el número siguiente, con su asiento, el hito facturado' else 'MAL: ' || r2::text end
+         || case when r2->'soltadas' = jsonb_build_array(jsonb_build_object('factura_id', v_f1, 'numero', e1, 'nota_credito', v_nc, 'de_la_app', true))
+                 then ', y dice lo que soltó' else ', y de lo soltado dice ' || coalesce((r2->'soltadas')::text, 'nada') end
+         || '; otra vez el mismo borrador ' || pg_temp.c11_cod(format('select fn_emision_emitir(%L, %L)', v_d2, v_b->>'visto'));
+    -- (5) la anulada: soltó el hito y nada más
+    select to_jsonb(ff) - 'hito_id' into j1 from facturas ff where ff.id = v_f1;
+    e := case when (select ff.hito_id is null and ff.estado = 'anulada' from facturas ff where ff.id = v_f1) then 'soltó el hito'
+              else 'NO soltó el hito' end
+         || case when j1 = j0 and (select count(*) from notas_credito n where n.anula_a = v_f1 and n.numero = v_nc) = 1
+                      and (select count(*) from asientos z where z.origen_tabla = 'facturas' and z.origen_id = v_f1::text) = v_asf0
+                      and (select sx.cxc = 0 and sx.retencion = 0 from fn_emision_saldo(v_f1) sx)
+                 then ' y en lo demás no cambió (sigue anulada, con su nota de crédito, su asiento y lo cobrado como estaban;'
+                 else format(' y CAMBIÓ algo más (antes %s; ahora %s);', j0, j1) end
+         || case when (select to_jsonb(pd) from puente_documentos pd where pd.tabla = 'facturas' and pd.documento_id = v_f1::text) = pd0
+                      and (select count(*) from asientos) = v_as0 + 1
+                 then ' su puente no asentó nada: el libro solo ganó el asiento de la nueva)'
+                 else format(' su puente SE MOVIÓ, o el libro ganó %s asientos)', (select count(*) from asientos) - v_as0) end;
+    f := case when (select ff.hito_id = -1110000001 and ff.estado = 'emitida' from facturas ff where ff.id = v_f2) then pg_temp.c11_asiento(v_f2)
+              else 'la nueva NO lleva el hito' end;
+    -- (6) lo soltado, apuntado; el equipo no lo ve
+    select count(*) into v_k from emision_soltados so where so.documento_id = v_d2;
+    select * into x from emision_soltados so where so.documento_id = v_d2 limit 1;
+    g := case when v_k = 1 and x.factura_id = v_f1 and x.num = e1 and x.nota_credito = v_nc and x.hito_id = -1110000001
+                   and x.proyecto_id = 'c11-prueba-a' and x.de_la_app and x.soltado_por = pg_temp.c11('dueno')::uuid and x.soltado_el is not null
+              then 'apuntado (la factura, su número, su nota, el hito, la obra, que salió de la app, el documento que la soltó y quién)'
+              else format('MAL (%s filas): %s', v_k, to_jsonb(x)) end;
+    perform pg_temp.c11_ser('p1');
+    select count(*) into v_k from emision_soltados;
+    perform pg_temp.c11_ser('dueno');
+    select count(*) into v_k2 from emision_soltados so where so.documento_id = v_d2;
+    perform pg_temp.c11_ser('editor');
+    g := g || format('; el equipo ve %s y el dueño %s', v_k, v_k2);
+    -- (7) quien lea facturas por su hito, sin mirar el estado
+    select format('%s, %s', case count(*) when 1 then 'una sola fila' else count(*) || ' filas' end,
+                  case when bool_and(ff.estado = 'emitida') then 'la viva' else 'y alguna NO está viva' end)
+      into h from facturas ff where ff.hito_id = -1110000001;
+    -- (8) otra vuelta: se anula la buena y se factura otra vez
+    ra2 := pg_temp.c11_anular(v_d2, 'c11-pruebas: otra vez');
+    v_nc2 := ra2->>'nota_credito';
+    v_b3 := pg_temp.c11_borrador(jsonb_build_object('forma', 'hito', 'hito_id', -1110000001));
+    select y.value into v_av from jsonb_array_elements(v_b3->'avisos') y where y.value->>'codigo' = 'hito_factura_anulada';
+    r3 := pg_temp.c11_emitir((v_b3->'documento'->>'id')::uuid);
+    v_f3 := (r3->>'factura_id')::bigint;
+    select count(*) into v_k from emision_soltados;
+    i := case when r3->>'numero' = e3 and r3->>'estado' = 'emitida' then 'número siguiente' else 'MAL: ' || r3::text end
+         || case when r3->'soltadas' = jsonb_build_array(jsonb_build_object('factura_id', v_f2, 'numero', e2, 'nota_credito', v_nc2, 'de_la_app', true))
+                      and (select count(*) from facturas ff where ff.id in (v_f1, v_f2) and ff.hito_id is null and ff.estado = 'anulada') = 2
+                      and (select ff.hito_id from facturas ff where ff.id = v_f3) = -1110000001
+                 then ', suelta la segunda' else ', NO suelta la segunda: ' || coalesce((r3->'soltadas')::text, 'nada') end
+         || case when v_av->>'texto' like '%ya tuvo una factura que se anuló: ' || e2 || ' del %' and position(e1 in v_av->>'texto') = 0
+                 then ' (el aviso nombra solo a esa)' else ' (el aviso: ' || coalesce(v_av->>'texto', 'no hay') || ')' end
+         || format(' y quedan %s apuntes', v_k - v_sol0);
+    -- (9) los controles
+    v_42 := pg_temp.c11_ctl(42);
+    j := format('de la facturación, %s (el de «factura de hito que ya no apunta a su hito» %s); de las otras capas, %s',
+                pg_temp.c11_propios(),
+                case when position(e1 in v_42) = 0 and position(e2 in v_42) = 0 and position(e3 in v_42) = 0 then 'no nombra a ninguna'
+                     else 'NOMBRA a alguna: ' || left(v_42, 300) end,
+                pg_temp.c11_nuevos(s0, pg_temp.c11_rojos()));
+    -- (10) el pegado lo dice
+    select p.detalle into v_peg from fn_emision_pegado() p where p.que = 'volver a facturar un hito';
+    v_x := case when v_peg like 'esta base admite UNA sola fila de facturas por hito, contando las anuladas (%' then 'una sola fila por hito contando las anuladas'
+                when v_peg like 'esta base no deja dos facturas vivas del mismo hito (%' then 'no deja dos vivas del mismo hito y no cuenta las anuladas'
+                when v_peg like 'esta base no tiene un índice único de facturas por hito (%' then 'sin índice único de facturas por hito'
+                else 'otra cosa: ' || coalesce(left(v_peg, 200), '(sin esa fila)') end
+           || case when v_peg like '%· soltadas hasta hoy: ' || (v_sol0 + 2) then ', y 2 soltadas más' else ', y NO cuenta las dos soltadas' end;
+    v_obt := format('la base: %s | anulada la primera: %s | soltar el hito de la anulada, por sí solo (sin emitir): %s | el borrador de la '
+                    'buena: %s | al emitirla: %s | la anulada: %s | la nueva lleva el hito: %s | lo soltado: %s | quien lea facturas por su '
+                    'hito (la función de QuickBooks): %s | anulada y facturada otra vez: %s | los controles: %s | el pegado lo dice: %s',
+                    a, b, v_solo, c, d, e, f, g, h, i, j, v_x);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (52, v_nom, v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 53. UNA FACTURA DE QUICKBOOKS ANULADA EN CONTABILIDAD, Y SU HITO FACTURADO
+--     POR LA APP. La fila de facturas como la deja la función de QuickBooks
+--     (su número, su hito, su id de QuickBooks; el hito a «facturado») entra
+--     al libro por su puente; se anula desde Contabilidad (por c3, sin pasar
+--     por la facturación): queda anulada con su nota de crédito, apuntando a
+--     su hito, y la ficha sigue con el hito «facturado». Aquí: la lista de
+--     la obra no lo ofrece y su borrador no se abre hasta que vuelva a
+--     pendiente (solo se factura un hito pendiente), y lo dice nombrando la
+--     anulada (la 56 lo mira a fondo). La ficha no tiene botón para eso: es
+--     el segundo paso de la consulta con que se anula una de QuickBooks, y
+--     aquí lo hace la prueba. Entonces el borrador lo
+--     avisa sin frenar, y al emitir la de QuickBooks suelta el hito —sigue
+--     anulada, con su nota, su asiento y su id de QuickBooks— y queda
+--     apuntado como «de fuera de la app». Y UNA QUE NUNCA ENTRÓ AL LIBRO
+--     (esperaba en la bandeja de los puentes: es a un contratista y no dice
+--     su retención) y se anuló sin nota de crédito: también suelta su hito,
+--     queda apuntada sin nota y su puente sigue donde estaba. Ningún control
+--     se enciende.
+do $$
+declare
+  v_obt text; s0 text[]; v_fq bigint; v_nc text; v_h jsonb; v_x text; v_b jsonb; v_av jsonb; r jsonb; x record; v_k bigint;
+  j0 jsonb; j1 jsonb; v_asf0 bigint; v_as0 bigint; e1 text; v_fq2 bigint; v_ra jsonb; r2 jsonb; pd0 jsonb; v_b2 jsonb;
+  a text; b text; c text; d text; e text; f text; g text; h text; i text; k text;
+  v_nom text := pg_temp.c11_con_que_indice('UNA FACTURA DE QUICKBOOKS ANULADA EN CONTABILIDAD (por c3) Y SU HITO FACTURADO POR LA APP')
+                || ': la anulada conserva su hito; devuelto el hito a pendiente, el borrador lo avisa sin frenar y, al emitir, la '
+                'de QuickBooks suelta el hito (sigue anulada, con su nota de crédito, su asiento y su id de QuickBooks) y queda apuntada '
+                'como de fuera de la app; ningún control se enciende';
+  v_esp text := 'como la deja QuickBooks, entra al libro por su puente: cxc 3333.33 | ingreso -3333.33 | anulada en Contabilidad: con su '
+                'nota de crédito; sigue apuntando a su hito y la ficha lo tiene como facturado | aquí: la lista de la obra no lo ofrece y '
+                'su borrador no se abre (MX008: dice que su factura de QuickBooks está anulada, con su nota, y que el hito tiene que '
+                'volver antes a pendiente) | puesto en pendiente: el borrador avisa sin frenar (nombra la '
+                'de QuickBooks y su nota de crédito) y se puede emitir | emitida por la app: con su número de la serie, su asiento y el '
+                'hito facturado, y dice lo que soltó | la de QuickBooks: soltó el hito y en lo demás no cambió (sigue anulada, con su nota '
+                'de crédito, su asiento y su id de QuickBooks; el libro solo ganó el asiento de la nueva) | lo soltado: apuntado como de '
+                'fuera de la app, con su número y su nota | quien lea facturas por su hito: una sola fila, la viva | una de fuera que '
+                'nunca entró al libro, anulada sin nota de crédito: el borrador la nombra (sin nota), al emitir suelta su hito, queda '
+                'apuntada sin nota y su puente sigue donde estaba | los controles: de la facturación, nada nuevo; de las otras capas, '
+                'ninguno';
+begin
+  if pg_temp.c11_omitir(53, v_nom, v_esp) then return; end if;
+  begin
+    perform pg_temp.c11_sembrar();
+    s0 := pg_temp.c11_rojos();
+    e1 := pg_temp.c11_num(1);
+    -- (1) como la deja la función de QuickBooks: la fila de facturas con su hito y su id de QuickBooks, y el hito a facturado
+    insert into facturas (proyecto_id, num, fecha, monto, pagada, hito_id, qb_id)
+    values ('c11-prueba-a', 'ZZ-QB-5301', pg_temp.c11('hoy')::date, 3333.33, false, -1110000002, 'ZZ-QBID-5301')
+    returning id into v_fq;
+    update hitos set estado = 'facturado' where id = -1110000002;
+    set constraints public.trg_puente_facturas_despues immediate;
+    set constraints public.trg_puente_facturas_despues deferred;
+    a := pg_temp.c11_asiento(v_fq);
+    -- (2) se anula desde Contabilidad (c3 directo)
+    perform pg_temp.c11_ser('dueno');
+    perform fn_factura_anular(v_fq, 'c11-pruebas: se anula en Contabilidad', null);
+    perform pg_temp.c11_ser('editor');
+    select n.numero into v_nc from notas_credito n where n.anula_a = v_fq;
+    b := case when v_nc ~ '^NC-[0-9]{4}-[0-9]{4}$' and (select ff.estado from facturas ff where ff.id = v_fq) = 'anulada' then 'con su nota de crédito'
+              else 'SIN su nota de crédito' end
+         || case when (select ff.hito_id from facturas ff where ff.id = v_fq) = -1110000002 then '; sigue apuntando a su hito' else '; YA NO apunta a su hito' end
+         || format(' y la ficha lo tiene como %s', (select hh.estado from hitos hh where hh.id = -1110000002));
+    -- (3) aquí, mientras la ficha lo tenga como facturado: ni se ofrece ni se abre
+    perform pg_temp.c11_ser('dueno');
+    select o.hitos->1 into v_h from v_emision_obras o where o.proyecto_id = 'c11-prueba-a';
+    perform pg_temp.c11_ser('editor');
+    v_x := pg_temp.c11_err($q$ select fn_emision_borrador('{"forma": "hito", "hito_id": -1110000002}') $q$);
+    c := case when (v_h->>'id')::bigint = -1110000002 and not (v_h->>'puede')::boolean and v_h->>'factura' is null then 'la lista de la obra no lo ofrece'
+              else 'la lista de la obra: ' || v_h::text end
+         || case when v_x like 'MX008: El hito «C11 PRUEBA Milestone 2» sigue marcado como facturado en la ficha de la obra y su factura '
+                                 'ZZ-QB-5301 del % (nota de crédito ' || v_nc || ') está anulada: hoy no tiene ninguna factura viva.%el hito '
+                                 'tiene que volver antes a pendiente (la ficha no tiene botón para eso: avisa y se hace).'
+                 then ' y su borrador no se abre (MX008: dice que su factura de QuickBooks está anulada, con su nota, y que el hito tiene '
+                      'que volver antes a pendiente)' else ' y su borrador: ' || v_x end;
+    -- (4) el hito vuelve a pendiente (la ficha no tiene botón para eso: es el segundo paso de la consulta con que se anula
+    --     una de QuickBooks): el borrador lo avisa, y no frena
+    update hitos set estado = 'pendiente' where id = -1110000002;
+    v_b := pg_temp.c11_borrador(jsonb_build_object('forma', 'hito', 'hito_id', -1110000002));
+    select y.value into v_av from jsonb_array_elements(v_b->'avisos') y where y.value->>'codigo' = 'hito_factura_anulada';
+    d := case when v_av is null then 'el borrador NO avisa: ' || left((v_b->'avisos')::text, 300)
+              when (v_av->>'frena')::boolean then 'el borrador avisa y FRENA'
+              when v_av->>'texto' like 'El hito «C11 PRUEBA Milestone 2» ya tuvo una factura que se anuló: ZZ-QB-5301 del % (nota de crédito '
+                                       || v_nc || '). Esta la sustituye:%'
+                then 'el borrador avisa sin frenar (nombra la de QuickBooks y su nota de crédito)'
+              else 'el borrador avisa con otro texto: ' || (v_av->>'texto') end
+         || case when (v_b->>'puede_emitir')::boolean then ' y se puede emitir' else ' y NO se puede emitir' end;
+    -- (5) se emite
+    select to_jsonb(ff) - 'hito_id' into j0 from facturas ff where ff.id = v_fq;
+    select count(*) into v_asf0 from asientos z where z.origen_tabla = 'facturas' and z.origen_id = v_fq::text;
+    select count(*) into v_as0 from asientos;
+    r := pg_temp.c11_emitir((v_b->'documento'->>'id')::uuid);
+    e := case when r->>'estado' = 'emitida' and r->>'numero' = e1 and r->>'asiento' is not null and r->>'hito_estado' = 'facturado'
+                   and (select ff.hito_id from facturas ff where ff.id = (r->>'factura_id')::bigint) = -1110000002
+              then 'con su número de la serie, su asiento y el hito facturado' else 'MAL: ' || r::text end
+         || case when r->'soltadas' = jsonb_build_array(jsonb_build_object('factura_id', v_fq, 'numero', 'ZZ-QB-5301', 'nota_credito', v_nc, 'de_la_app', false))
+                 then ', y dice lo que soltó' else ', y de lo soltado dice ' || coalesce((r->'soltadas')::text, 'nada') end;
+    -- (6) la de QuickBooks: soltó el hito y nada más
+    select to_jsonb(ff) - 'hito_id' into j1 from facturas ff where ff.id = v_fq;
+    f := case when (select ff.hito_id is null and ff.estado = 'anulada' and ff.qb_id = 'ZZ-QBID-5301' from facturas ff where ff.id = v_fq)
+              then 'soltó el hito' else 'NO soltó el hito' end
+         || case when j1 = j0 and (select count(*) from notas_credito n where n.anula_a = v_fq and n.numero = v_nc) = 1
+                      and (select count(*) from asientos z where z.origen_tabla = 'facturas' and z.origen_id = v_fq::text) = v_asf0
+                      and (select count(*) from asientos) = v_as0 + 1
+                 then ' y en lo demás no cambió (sigue anulada, con su nota de crédito, su asiento y su id de QuickBooks; el libro solo ganó '
+                      'el asiento de la nueva)'
+                 else format(' y CAMBIÓ algo más (antes %s; ahora %s; asientos de más: %s)', j0, j1, (select count(*) from asientos) - v_as0 - 1) end;
+    -- (7) lo soltado
+    select count(*) into v_k from emision_soltados so where so.documento_id = (r->>'documento')::uuid;
+    select * into x from emision_soltados so where so.documento_id = (r->>'documento')::uuid limit 1;
+    g := case when v_k = 1 and x.factura_id = v_fq and x.num = 'ZZ-QB-5301' and x.nota_credito = v_nc and x.hito_id = -1110000002
+                   and not x.de_la_app and x.proyecto_id = 'c11-prueba-a' and x.soltado_por = pg_temp.c11('dueno')::uuid
+              then 'apuntado como de fuera de la app, con su número y su nota' else format('MAL (%s filas): %s', v_k, to_jsonb(x)) end;
+    select format('%s, %s', case count(*) when 1 then 'una sola fila' else count(*) || ' filas' end,
+                  case when bool_and(ff.estado = 'emitida') then 'la viva' else 'y alguna NO está viva' end)
+      into h from facturas ff where ff.hito_id = -1110000002;
+    -- (8) una de fuera que NUNCA entró al libro: a un contratista y sin decir su retención, espera en la bandeja de los puentes;
+    --     anulada desde Contabilidad queda sin nota de crédito (no hay asiento que compensar)
+    insert into facturas (proyecto_id, num, fecha, monto, pagada, hito_id, qb_id, a_contratista)
+    values ('c11-prueba-a', 'ZZ-QB-5302', pg_temp.c11('hoy')::date, 3333.34, false, -1110000003, 'ZZ-QBID-5302', true)
+    returning id into v_fq2;
+    set constraints public.trg_puente_facturas_despues immediate;
+    set constraints public.trg_puente_facturas_despues deferred;
+    perform pg_temp.c11_ser('dueno');
+    v_ra := fn_factura_anular(v_fq2, 'c11-pruebas: nunca entró al libro', null);
+    perform pg_temp.c11_ser('editor');
+    select to_jsonb(pd) into pd0 from puente_documentos pd where pd.tabla = 'facturas' and pd.documento_id = v_fq2::text;
+    v_b2 := pg_temp.c11_borrador(jsonb_build_object('forma', 'hito', 'hito_id', -1110000003));
+    select y.value into v_av from jsonb_array_elements(v_b2->'avisos') y where y.value->>'codigo' = 'hito_factura_anulada';
+    r2 := pg_temp.c11_emitir((v_b2->'documento'->>'id')::uuid);
+    select * into x from emision_soltados so where so.documento_id = (r2->>'documento')::uuid limit 1;
+    k := case when (select ff.contabilizado_en is null and ff.estado = 'anulada' from facturas ff where ff.id = v_fq2)
+                   and v_ra->>'nota_credito' is null and not exists (select 1 from notas_credito n where n.anula_a = v_fq2)
+              then '' else 'NO es el caso (entró al libro o tiene nota): ' end
+         || case when not (v_av->>'frena')::boolean and v_av->>'texto' like '%ya tuvo una factura que se anuló: ZZ-QB-5302 del %. Esta la sustituye:%'
+                      and position('nota de crédito' in v_av->>'texto') = 0
+                 then 'el borrador la nombra (sin nota)' else 'el borrador: ' || coalesce(v_av->>'texto', 'no avisa') end
+         || case when r2->>'estado' = 'emitida' and (select ff.hito_id is null and ff.estado = 'anulada' from facturas ff where ff.id = v_fq2)
+                      and r2->'soltadas' = jsonb_build_array(jsonb_build_object('factura_id', v_fq2, 'numero', 'ZZ-QB-5302', 'de_la_app', false))
+                 then ', al emitir suelta su hito' else ', al emitir NO suelta su hito: ' || coalesce(r2::text, '') end
+         || case when x.factura_id = v_fq2 and x.nota_credito is null and not x.de_la_app then ', queda apuntada sin nota'
+                 else ', el apunte: ' || coalesce(to_jsonb(x)::text, 'no hay') end
+         || case when (select to_jsonb(pd) from puente_documentos pd where pd.tabla = 'facturas' and pd.documento_id = v_fq2::text) = pd0
+                      and not exists (select 1 from asientos z where z.origen_tabla = 'facturas' and z.origen_id = v_fq2::text)
+                 then ' y su puente sigue donde estaba' else ' y su puente SE MOVIÓ' end;
+    i := format('de la facturación, %s; de las otras capas, %s', pg_temp.c11_propios(), pg_temp.c11_nuevos(s0, pg_temp.c11_rojos()));
+    v_obt := format('como la deja QuickBooks, entra al libro por su puente: %s | anulada en Contabilidad: %s | aquí: %s | puesto en pendiente: '
+                    '%s | emitida por la app: %s | la de QuickBooks: %s | lo soltado: %s | quien lea facturas por su hito: %s | una de '
+                    'fuera que nunca entró al libro, anulada sin nota de crédito: %s | los controles: %s', a, b, c, d, e, f, g, h, k, i);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (53, v_nom, v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 54. DOS A LA VEZ POR DOS CAMINOS: LA RED. Durante el paralelo la función
+--     de QuickBooks puede facturar un hito en el mismo instante en que la
+--     app lo emite. Lo normal es que la emisión ESPERE a la otra (la fila de
+--     fuera sujeta su hito por la llave de facturas) y pare antes de
+--     insertar: «ya no es lo que viste» (MX011) o «ya se facturó» (MX008);
+--     eso lo prueba, con dos sesiones de verdad, c11-concurrencia.sh (4c).
+--     Aquí se prueba LA RED que queda debajo: si aun así la fila de
+--     facturas de la emisión choca con un índice único de la base (el del
+--     hito o el del número), no sale el error del índice: se dice en llano
+--     (MX011: entró por otro lado una factura de este mismo hito, o con ese
+--     número) y no queda nada —ni el número—. QUÉ índice chocó va en el
+--     DETALLE del error (la pantalla no lo enseña; queda en la respuesta de
+--     la API y en el registro de la base): si un día la base tuviera otro
+--     índice único que la emisión no cumple, ese MX011 saldría siempre, y
+--     así se sabe cuál es. Se imita con un disparo de
+--     prueba que mete la otra factura justo cuando la emisión toma su número
+--     (después de mirar que el hito estaba libre). Y si la otra había
+--     entrado ANTES de emitir, el borrador ya lo frena. (Dos emisiones del
+--     mismo borrador desde dos pestañas, con una anulada que soltar: también
+--     en c11-concurrencia.sh, 4b.) En una base SIN ningún índice único de
+--     facturas por hito no hay choque que parar: ahí se comprueba que la
+--     emisión para igual, por el sello (lo que se congela ya no es lo que
+--     se vio: entró otra factura de la obra), y que tampoco queda nada.
+do $$
+declare
+  v_obt text; v_b jsonb; v_doc uuid; v_n0 bigint; e1 text; v_x text; v_d jsonb; v_av jsonb; v_e jsonb;
+  v_hu text := pg_temp.c11_candado_hito();
+  a text; b text; c text;
+  v_nom text := 'DOS A LA VEZ POR DOS CAMINOS (la app y QuickBooks), con el índice único de facturas por hito de la base, LA RED: si la '
+                'fila de facturas de la emisión choca con un índice único porque entró por otro lado una factura de ese mismo hito, la '
+                'emisión para en llano (MX011), sin el error del índice en el texto y con el índice en el detalle del error, sin gastar '
+                'número y sin dejar nada; y si la otra ya había entrado, el borrador lo frena';
+  v_esp text := 'mientras se emite entra por otro lado una factura del mismo hito: MX011 en llano (dice que entró otra del mismo hito y '
+                'qué hacer; ni el índice ni «duplicate»), y el detalle del error dice qué índice la paró | no queda nada: el número sin '
+                'gastar, el borrador en borrador, ninguna factura '
+                'de ese hito y el hito pendiente | y si la otra ya había entrado antes: el borrador lo frena (hito_facturado: nombra la '
+                'ZZ-QB-5401) y no se ofrece emitir';
+begin
+  if v_hu = 'ninguno' then
+    -- (esta base no tiene ningún índice único de facturas por hito: no hay choque que parar. Lo que para a la emisión es su
+    -- sello —lo que se congela ya no es lo que se vio: entró otra factura de la obra—, y eso es lo que se mira)
+    v_nom := 'DOS A LA VEZ POR DOS CAMINOS (la app y QuickBooks) en una base SIN índice único de facturas por hito (producción lo tiene; '
+             'ahí se prueba la red del índice): si a media emisión entra por otro lado una factura de ese mismo hito, la emisión para '
+             'igual en llano (MX011: algo de la obra cambió mientras se emitía), sin gastar número y sin dejar nada; y si la otra ya '
+             'había entrado, el borrador lo frena';
+    v_esp := replace(v_esp, 'MX011 en llano (dice que entró otra del mismo hito y qué hacer; ni el índice ni «duplicate»), y el detalle '
+                            'del error dice qué índice la paró |',
+                            'MX011 en llano (la para el sello: algo de la obra cambió mientras se emitía) |');
+  end if;
+  if pg_temp.c11_omitir(54, v_nom, v_esp) then return; end if;
+  begin
+    perform pg_temp.c11_sembrar();
+    v_b := pg_temp.c11_borrador(jsonb_build_object('forma', 'hito', 'hito_id', -1110000003));
+    v_doc := (v_b->'documento'->>'id')::uuid;
+    v_n0 := pg_temp.c11_contador(); e1 := pg_temp.c11_num(1);
+    -- (1) la otra factura entra a media emisión (un disparo de prueba en la serie: se deshace con este bloque)
+    begin
+      create function pg_temp.c11_otro_lado() returns trigger language plpgsql as $f$
+      begin
+        insert into public.facturas (proyecto_id, num, fecha, monto, pagada, hito_id, qb_id)
+        values ('c11-prueba-a', 'ZZ-QB-5401', public.fn_fecha_miami(now()), 3333.34, false, -1110000003, 'ZZ-QBID-5401');
+        return null;
+      end $f$;
+      create trigger zz_c11_prueba_otro_lado after insert on public.emision_serie
+        for each row execute function pg_temp.c11_otro_lado();
+      v_e := pg_temp.c11_err_det(format('select fn_emision_emitir(%L, %L)', v_doc, v_b->>'visto'));
+      v_x := (v_e->>'codigo') || coalesce(': ' || (v_e->>'mensaje'), '');
+      if v_hu = 'ninguno' then
+        a := case when v_x like 'MX011: Algo de la obra cambió mientras se emitía (otra factura, un cobro, el contrato): no se emitió nada.%'
+                  then 'MX011 en llano (la para el sello: algo de la obra cambió mientras se emitía)' else v_x end;
+      else
+        a := case when v_x like 'MX011: No se emitió nada (ni se gastó el número ' || e1 || '): mientras se emitía entró por otro lado una '
+                                'factura de este mismo hito, o con ese número (¿se facturó a la vez en QuickBooks?). Vuelve a mirar el '
+                                'borrador: si el hito ya quedó facturado, tíralo.'
+                       and v_x !~* 'ux_|zz_c11|duplicate|unique|constraint'
+                  then 'MX011 en llano (dice que entró otra del mismo hito y qué hacer; ni el índice ni «duplicate»)' else v_x end
+             -- (el detalle, que la pantalla no enseña, nombra el índice de la base que la paró: uno de los únicos por hito)
+             || case when exists (select 1 from unnest(pg_temp.c11_indices_hito()) i(n)
+                                   where position('el índice único «' || i.n || '»' in v_e->>'detalle') > 0)
+                     then ', y el detalle del error dice qué índice la paró'
+                     else ', y el detalle del error NO dice qué índice: ' || coalesce(nullif(v_e->>'detalle', ''), '(vacío)') end;
+      end if;
+      b := format('el número %s, el borrador en %s, %s y el hito %s',
+                  case when pg_temp.c11_contador() = v_n0 and not exists (select 1 from emision_serie se where se.documento_id = v_doc)
+                       then 'sin gastar' else 'GASTADO' end,
+                  (select dd.estado from emision_documentos dd where dd.id = v_doc),
+                  case when not exists (select 1 from facturas ff where ff.hito_id = -1110000003) then 'ninguna factura de ese hito'
+                       else 'QUEDÓ una factura de ese hito' end,
+                  (select hh.estado from hitos hh where hh.id = -1110000003));
+      raise exception using errcode = 'MXT01';
+    exception when sqlstate 'MXT01' then null;
+    end;
+    -- (2) la otra ya había entrado antes de emitir: el borrador lo frena
+    insert into facturas (proyecto_id, num, fecha, monto, pagada, hito_id, qb_id)
+    values ('c11-prueba-a', 'ZZ-QB-5401', pg_temp.c11('hoy')::date, 3333.34, false, -1110000003, 'ZZ-QBID-5401');
+    perform pg_temp.c11_ser('dueno');
+    v_d := fn_emision_documento(v_doc);
+    perform pg_temp.c11_ser('editor');
+    select y.value into v_av from jsonb_array_elements(v_d->'avisos') y where y.value->>'codigo' = 'hito_facturado';
+    c := case when (v_av->>'frena')::boolean and v_av->>'texto' like 'El hito «C11 PRUEBA Milestone 3» ya se facturó: factura ZZ-QB-5401 del %'
+              then 'el borrador lo frena (hito_facturado: nombra la ZZ-QB-5401)' else 'el borrador: ' || left((v_d->'avisos')::text, 300) end
+         || case when not (v_d->>'puede_emitir')::boolean then ' y no se ofrece emitir' else ' y SE OFRECE emitir' end;
+    v_obt := format('mientras se emite entra por otro lado una factura del mismo hito: %s | no queda nada: %s | y si la otra ya había entrado '
+                    'antes: %s', a, b, c);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (54, v_nom, v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 55. DOS ANULADAS APUNTANDO AL MISMO HITO, Y UNA VIVA CON UNA ANULADA. Solo
+--     puede darse en una base SIN el índice único de facturas por hito que
+--     cuenta las anuladas (el banco
+--     sin 06-produccion-facturas.sql; o producción, si un día la otra sesión
+--     lo quita y deja el de las vivas): una factura de fuera de un hito se
+--     anula, entra otra de fuera del mismo hito y también se anula. Al
+--     facturarlo la app, el borrador nombra a las dos y la emisión suelta a
+--     las dos (dos apuntes). Y EN MEDIO, con la segunda todavía VIVA y la
+--     primera anulada apuntando las dos al hito, un borrador que ya estaba
+--     abierto dice UNA sola cosa: que el hito ya se facturó (antes añadía
+--     además «esta la sustituye», por la anulada: las dos cosas a la vez).
+--     Con ese índice puesto el caso no se puede dar,
+--     y eso es lo que se comprueba: con una anulada apuntando al hito, otra
+--     fila de facturas de ese hito no entra.
+do $$
+declare
+  v_obt text; v_f1 bigint; v_f2 bigint; v_n1 text; v_n2 text; v_b jsonb; v_av jsonb; r jsonb; v_k bigint; v_d jsonb;
+  v_todas boolean := pg_temp.c11_candado_hito() = 'todas';
+  a text; b text; c text; d text; e text; f text;
+  v_nom text := 'DOS ANULADAS APUNTANDO AL MISMO HITO, Y UNA VIVA CON UNA ANULADA (solo en una base sin el índice único de facturas por '
+                'hito que cuenta las anuladas): con la viva, el borrador dice solo que ya se facturó; con las dos anuladas las nombra sin '
+                'frenar, y al emitir las dos sueltan el hito y quedan dos apuntes';
+  v_esp text := 'con la primera de fuera anulada apuntando al hito, un borrador abierto y otra de fuera, viva, del mismo hito: el borrador '
+                'dice solo que ya se facturó (nombra la viva y frena; no añade «esta la sustituye») | anulada también la segunda: las dos '
+                'apuntan al hito | el borrador: las nombra a las dos, sin '
+                'frenar, y se puede emitir | al emitir: suelta las dos y dice cuáles; quedan 2 apuntes | una sola fila de facturas con '
+                'ese hito, la viva | los controles de la facturación: nada nuevo';
+begin
+  if v_todas then
+    -- (esta base tiene el índice que cuenta también las anuladas: el caso no se puede dar, y eso es lo que se mira)
+    v_nom := v_nom || ' (en esta base, con el índice único de facturas por hito que cuenta también las anuladas, el caso no se puede '
+                      'dar: se comprueba que, con una anulada apuntando al hito, otra fila de ese hito no entra)';
+    v_esp := 'con una de fuera anulada apuntando al hito, otra fila de facturas de ese hito: no entra (23505), y sigue habiendo una sola '
+             'fila con ese hito';
+  end if;
+  if pg_temp.c11_omitir(55, v_nom, v_esp) then return; end if;
+  begin
+    perform pg_temp.c11_sembrar();
+    -- (como las dejaría la función de QuickBooks: una, anulada desde Contabilidad; después otra del mismo hito, anulada también)
+    insert into facturas (proyecto_id, num, fecha, monto, pagada, hito_id, qb_id)
+    values ('c11-prueba-a', 'ZZ-QB-5501', pg_temp.c11('hoy')::date, 3333.33, false, -1110000002, 'ZZ-QBID-5501') returning id into v_f1;
+    set constraints public.trg_puente_facturas_despues immediate;
+    set constraints public.trg_puente_facturas_despues deferred;
+    perform pg_temp.c11_ser('dueno');
+    perform fn_factura_anular(v_f1, 'c11-pruebas: la primera', null);
+    perform pg_temp.c11_ser('editor');
+    if v_todas then
+      begin
+        insert into facturas (proyecto_id, num, fecha, monto, pagada, hito_id, qb_id)
+        values ('c11-prueba-a', 'ZZ-QB-5502', pg_temp.c11('hoy')::date, 3333.33, false, -1110000002, 'ZZ-QBID-5502');
+        a := 'ENTRÓ';
+      exception when unique_violation then
+        a := 'no entra (23505)';
+      end;
+      v_obt := format('con una de fuera anulada apuntando al hito, otra fila de facturas de ese hito: %s, y sigue habiendo %s con ese hito', a,
+                      (select case count(*) when 1 then 'una sola fila' else count(*) || ' filas' end from facturas ff where ff.hito_id = -1110000002));
+      raise exception using errcode = 'MXT00';
+    end if;
+    -- (el borrador de la buena se abre ahora, con la primera anulada apuntando al hito; y entonces entra otra de fuera, VIVA)
+    v_b := pg_temp.c11_borrador(jsonb_build_object('forma', 'hito', 'hito_id', -1110000002));
+    insert into facturas (proyecto_id, num, fecha, monto, pagada, hito_id, qb_id)
+    values ('c11-prueba-a', 'ZZ-QB-5502', pg_temp.c11('hoy')::date, 3333.33, false, -1110000002, 'ZZ-QBID-5502') returning id into v_f2;
+    set constraints public.trg_puente_facturas_despues immediate;
+    set constraints public.trg_puente_facturas_despues deferred;
+    perform pg_temp.c11_ser('dueno');
+    v_d := fn_emision_documento((v_b->'documento'->>'id')::uuid);
+    perform pg_temp.c11_ser('editor');
+    f := case when exists (select 1 from jsonb_array_elements(v_d->'avisos') y
+                            where y->>'codigo' = 'hito_facturado' and (y->>'frena')::boolean
+                              and y->>'texto' like 'El hito «C11 PRUEBA Milestone 2» ya se facturó: factura ZZ-QB-5502 del %')
+                   and not (v_d->>'puede_emitir')::boolean
+              then 'el borrador dice solo que ya se facturó (nombra la viva y frena;'
+              else 'el borrador NO dice que ya se facturó (' || left((v_d->'avisos')::text, 200) || ';' end
+         || case when not exists (select 1 from jsonb_array_elements(v_d->'avisos') y where y->>'codigo' = 'hito_factura_anulada')
+                 then ' no añade «esta la sustituye»)' else ' y AÑADE «esta la sustituye»)' end;
+    perform pg_temp.c11_ser('dueno');
+    perform fn_factura_anular(v_f2, 'c11-pruebas: la segunda', null);
+    perform pg_temp.c11_ser('editor');
+    select n.numero into v_n1 from notas_credito n where n.anula_a = v_f1;
+    select n.numero into v_n2 from notas_credito n where n.anula_a = v_f2;
+    a := case when (select count(*) from facturas ff where ff.hito_id = -1110000002 and ff.estado = 'anulada') = 2 then 'las dos apuntan al hito'
+              else 'NO apuntan las dos al hito' end;
+    v_b := pg_temp.c11_borrador(jsonb_build_object('forma', 'hito', 'hito_id', -1110000002));
+    select y.value into v_av from jsonb_array_elements(v_b->'avisos') y where y.value->>'codigo' = 'hito_factura_anulada';
+    b := case when v_av->>'texto' like 'El hito «C11 PRUEBA Milestone 2» ya tuvo facturas que se anularon: ZZ-QB-5501 del % (nota de crédito ' || v_n1
+                                       || '), ZZ-QB-5502 del % (nota de crédito ' || v_n2 || '). Esta las sustituye: al emitirla, las anuladas '
+                                       || 'dejan de figurar como la factura de este hito (en lo demás no cambian: siguen anuladas) y queda apuntado.'
+              then 'las nombra a las dos' else 'dice: ' || coalesce(v_av->>'texto', '(no avisa)') end
+         || case when not (v_av->>'frena')::boolean then ', sin frenar' else ', y FRENA' end
+         || case when (v_b->>'puede_emitir')::boolean then ', y se puede emitir' else ', y NO se puede emitir' end;
+    r := pg_temp.c11_emitir((v_b->'documento'->>'id')::uuid);
+    select count(*) into v_k from emision_soltados so where so.documento_id = (r->>'documento')::uuid and not so.de_la_app
+       and so.hito_id = -1110000002 and so.factura_id in (v_f1, v_f2);
+    c := case when r->>'estado' = 'emitida'
+                   and r->'soltadas' = jsonb_build_array(
+                         jsonb_build_object('factura_id', v_f1, 'numero', 'ZZ-QB-5501', 'nota_credito', v_n1, 'de_la_app', false),
+                         jsonb_build_object('factura_id', v_f2, 'numero', 'ZZ-QB-5502', 'nota_credito', v_n2, 'de_la_app', false))
+                   and (select count(*) from facturas ff where ff.id in (v_f1, v_f2) and ff.hito_id is null and ff.estado = 'anulada') = 2
+              then 'suelta las dos y dice cuáles' else 'NO: ' || r::text end
+         || format('; quedan %s apuntes', v_k);
+    select format('%s, %s', case count(*) when 1 then 'una sola fila de facturas con ese hito' else count(*) || ' filas de facturas con ese hito' end,
+                  case when bool_and(ff.estado = 'emitida' and ff.id = (r->>'factura_id')::bigint) then 'la viva' else 'y NO es la viva' end)
+      into d from facturas ff where ff.hito_id = -1110000002;
+    e := pg_temp.c11_propios();
+    v_obt := format('con la primera de fuera anulada apuntando al hito, un borrador abierto y otra de fuera, viva, del mismo hito: %s | '
+                    'anulada también la segunda: %s | el borrador: %s | al emitir: %s | %s | los controles de la '
+                    'facturación: %s', f, a, b, c, d, e);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (55, v_nom, v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- ---------------------------------------------------------------------
+-- LO QUE ENCONTRÓ LA REVISIÓN DE ESE ARREGLO (12-nov-2026). Cada cosa con su
+-- prueba: con la capa de antes de esa revisión fallan la 56 y la 57; la 54,
+-- por el detalle del error; y, en una base sin el índice que cuenta las
+-- anuladas, la 55, por los dos avisos a la vez. (Lo que era de ESTE archivo
+-- —que no frene a la app— lo prueba c11-concurrencia.sh, 7 y 8; y que no
+-- deje nada, la 42 y la 44.)
+-- ---------------------------------------------------------------------
+-- 56. EL HITO QUE SIGUE COMO «FACTURADO» CON SU FACTURA ANULADA. Anular desde
+--     Contabilidad (por c3, que no sabe de hitos: así se anula hoy una de
+--     QuickBooks, con una consulta) deja la ficha con el hito «facturado» y
+--     sin ninguna factura viva, y la ficha no tiene botón para devolverlo a
+--     pendiente. Solo se factura un hito pendiente, así que ese hito no se
+--     ofrece y su borrador no se abre: eso no cambia. Lo que cambia es que
+--     SE DICE: el control 75 lo avisa (el hito, la obra, la factura anulada
+--     y su nota de crédito, y qué hacer); pedir su borrador ya no contesta
+--     «aquí no hay ninguna factura suya (¿se facturó en QuickBooks…?)»:
+--     nombra la anulada y dice qué hacer; y un borrador que ya estaba
+--     abierto lo frena con ese mismo texto, sin añadir «esta la sustituye».
+--     Devuelto el hito a pendiente (el segundo paso de la consulta con que
+--     se anula), el aviso se apaga y se factura; y si en realidad ya se
+--     había vuelto a facturar por fuera, enlazada esa factura a su hito el
+--     aviso se apaga también. Y SI LA ANULADA ES DE LA
+--     APP y aquí sigue sin cerrar: lo dice así y manda a cerrarla aquí
+--     (Anular: termina lo de aquí y el hito vuelve a pendiente); el control
+--     75 la nombra una vez, como anulada sin cerrar, sin repetir el hito.
+do $$
+declare
+  v_obt text; v_fq bigint; v_nc text; v_x text; v_y text; v_75 text; v_b jsonb; v_doc uuid; v_d jsonb; v_h jsonb; r jsonb;
+  r1 jsonb; v_doc1 uuid; v_f1 bigint; v_nc1 text; v_ra jsonb; v_b2 jsonb; v_av jsonb; v_txt text;
+  a text; b text; c text; d text; e text; f text; g text; h text;
+  v_nom text := 'EL HITO QUE SIGUE COMO FACTURADO CON SU FACTURA ANULADA (anulada desde Contabilidad, por c3, que no sabe de hitos: una de '
+                'QuickBooks, o una de la app sin cerrar aquí): el control 75 lo avisa; pedir su borrador dice cuál es la anulada, con su '
+                'nota de crédito, y qué hacer; un borrador ya abierto lo frena con ese mismo texto y no añade «esta la sustituye»; '
+                'devuelto el hito a pendiente (o cerrada aquí la de la app), el aviso se apaga y se factura';
+  v_esp text := 'una de QuickBooks anulada desde Contabilidad, con un borrador de su hito ya abierto: el control 75 lo avisa (el hito, su '
+                'factura anulada con su nota de crédito, y qué hacer) y la lista de la obra no lo ofrece | pedir su borrador: MX008, '
+                'nombra la anulada con su nota de crédito y dice qué hacer (el hito tiene que volver antes a pendiente; la ficha no tiene '
+                'botón) | el borrador que ya estaba abierto: lo frena con ese mismo texto, sin «esta la sustituye», no se ofrece y '
+                'emitirlo da MX008 | si ya se había vuelto a facturar por fuera y esa factura se enlaza a su hito (la anulada lo suelta '
+                'antes): el control 75 verde | devuelto el hito a pendiente: el control 75 verde, el borrador avisa sin frenar y se emite '
+                '(suelta la de QuickBooks) | una de la app anulada desde Contabilidad y sin cerrar aquí: el control 75 la nombra como anulada sin '
+                'cerrar (una vez: no repite el hito) | pedir el borrador de su hito: MX008, nombra la factura con su nota de crédito y '
+                'manda a cerrarla aquí | cerrada aquí: ya estaba en el libro, el hito a pendiente, el control 75 verde, y el borrador se '
+                'abre y avisa sin frenar';
+begin
+  if pg_temp.c11_omitir(56, v_nom, v_esp) then return; end if;
+  if pg_temp.c11_omitir_rojo(56, v_nom, v_esp, array[75]) then return; end if;
+  begin
+    perform pg_temp.c11_sembrar();
+    -- (A) UNA DE QUICKBOOKS. El borrador del hito 2 se abre mientras está pendiente; después entra su factura de fuera (como
+    --     la deja la función de QuickBooks: su fila con el hito, y el hito a facturado) y se anula desde Contabilidad (c3)
+    v_b := pg_temp.c11_borrador(jsonb_build_object('forma', 'hito', 'hito_id', -1110000002));
+    v_doc := (v_b->'documento'->>'id')::uuid;
+    insert into facturas (proyecto_id, num, fecha, monto, pagada, hito_id, qb_id)
+    values ('c11-prueba-a', 'ZZ-QB-5601', pg_temp.c11('hoy')::date, 3333.33, false, -1110000002, 'ZZ-QBID-5601')
+    returning id into v_fq;
+    update hitos set estado = 'facturado' where id = -1110000002;
+    set constraints public.trg_puente_facturas_despues immediate;
+    set constraints public.trg_puente_facturas_despues deferred;
+    perform pg_temp.c11_ser('dueno');
+    perform fn_factura_anular(v_fq, 'c11-pruebas: se anula en Contabilidad', null);
+    select o.hitos->1 into v_h from v_emision_obras o where o.proyecto_id = 'c11-prueba-a';
+    perform pg_temp.c11_ser('editor');
+    select n.numero into v_nc from notas_credito n where n.anula_a = v_fq;
+    v_75 := pg_temp.c11_ctl(75);
+    a := case when v_75 like 'rojo: el hito «C11 PRUEBA Milestone 2» de C11 PRUEBA Uno sigue como facturado en la ficha y su factura ZZ-QB-5601 '
+                             '(nota de crédito ' || v_nc || ') está anulada: no tiene ninguna factura viva →%'
+                   and v_75 like '%El hito que sigue como facturado con su factura anulada: si no se volvió a facturar por otro lado, está '
+                                 'SIN FACTURAR, y para hacer la buena tiene que volver antes a pendiente; si sí se volvió a facturar (en '
+                                 'QuickBooks), esa factura tiene que quedar enlazada a su hito. La ficha no tiene botón para ninguna de las '
+                                 'dos cosas: avisa y se hace.'
+              then 'el control 75 lo avisa (el hito, su factura anulada con su nota de crédito, y qué hacer)' else 'el control 75: ' || v_75 end
+         || case when (v_h->>'id')::bigint = -1110000002 and v_h->>'estado' = 'facturado' and not (v_h->>'puede')::boolean and v_h->>'factura' is null
+                 then ' y la lista de la obra no lo ofrece' else ' y la lista de la obra: ' || v_h::text end;
+    -- pedir su borrador (el 🧾, o «Facturar» en la lista)
+    v_x := pg_temp.c11_err($q$ select fn_emision_borrador('{"forma": "hito", "hito_id": -1110000002}') $q$);
+    v_txt := 'El hito «C11 PRUEBA Milestone 2» sigue marcado como facturado en la ficha de la obra y su factura ZZ-QB-5601 del '
+             || fn_emision_dia(pg_temp.c11('hoy')::date) || ' (nota de crédito ' || v_nc || ') está anulada: hoy no tiene ninguna factura viva. '
+             || 'Si no se volvió a facturar por otro lado (en QuickBooks), está sin facturar: para hacer aquí la buena, el hito tiene que '
+             || 'volver antes a pendiente (la ficha no tiene botón para eso: avisa y se hace).';
+    b := case when v_x = 'MX008: ' || v_txt
+              then 'MX008, nombra la anulada con su nota de crédito y dice qué hacer (el hito tiene que volver antes a pendiente; la ficha '
+                   'no tiene botón)' else v_x end;
+    -- el borrador que ya estaba abierto
+    perform pg_temp.c11_ser('dueno');
+    v_d := fn_emision_documento(v_doc);
+    perform pg_temp.c11_ser('editor');
+    v_y := pg_temp.c11_err(format('select fn_emision_emitir(%L, %L)', v_doc, v_d->>'visto'));
+    select y.value into v_av from jsonb_array_elements(v_d->'avisos') y where y.value->>'codigo' = 'hito_marcado_facturado';
+    c := case when (v_av->>'frena')::boolean and v_av->>'texto' = v_txt then 'lo frena con ese mismo texto'
+              else 'el aviso: ' || coalesce(v_av::text, 'no hay (' || left((v_d->'avisos')::text, 200) || ')') end
+         || case when not exists (select 1 from jsonb_array_elements(v_d->'avisos') y where y->>'codigo' = 'hito_factura_anulada')
+                 then ', sin «esta la sustituye»' else ', y AÑADE «esta la sustituye»' end
+         || case when not (v_d->>'puede_emitir')::boolean then ', no se ofrece' else ', SE OFRECE emitir' end
+         || case when v_y = 'MX008: ' || v_txt then ' y emitirlo da MX008' else ' y emitirlo: ' || v_y end;
+    -- (y si SÍ se había vuelto a facturar por fuera: lo que toca es enlazar esa factura a su hito —la anulada lo suelta
+    -- antes: con el índice de producción no caben las dos—, y el aviso también se apaga. Se deshace)
+    begin
+      update facturas set hito_id = null where id = v_fq;
+      insert into facturas (proyecto_id, num, fecha, monto, pagada, hito_id, qb_id)
+      values ('c11-prueba-a', 'ZZ-QB-5602', pg_temp.c11('hoy')::date, 3333.33, false, -1110000002, 'ZZ-QBID-5602');
+      h := 'el control 75 ' || pg_temp.c11_color(pg_temp.c11_ctl(75));
+      raise exception using errcode = 'MXT01';
+    exception when sqlstate 'MXT01' then null;
+    end;
+    -- devuelto a pendiente (la ficha no tiene botón: es el segundo paso de la consulta con que se anula una de QuickBooks)
+    update hitos set estado = 'pendiente' where id = -1110000002;
+    v_75 := pg_temp.c11_ctl(75);
+    perform pg_temp.c11_ser('dueno');
+    v_d := fn_emision_documento(v_doc);
+    perform pg_temp.c11_ser('editor');
+    select y.value into v_av from jsonb_array_elements(v_d->'avisos') y where y.value->>'codigo' = 'hito_factura_anulada';
+    r := pg_temp.c11_emitir(v_doc);
+    d := format('el control 75 %s', pg_temp.c11_color(v_75))
+         || case when not (v_av->>'frena')::boolean and v_av->>'texto' like 'El hito «C11 PRUEBA Milestone 2» ya tuvo una factura que se anuló: ZZ-QB-5601 del %'
+                      and (v_d->>'puede_emitir')::boolean
+                 then ', el borrador avisa sin frenar' else ', el borrador: ' || left((v_d->'avisos')::text, 200) end
+         || case when r->>'estado' = 'emitida'
+                      and r->'soltadas' = jsonb_build_array(jsonb_build_object('factura_id', v_fq, 'numero', 'ZZ-QB-5601', 'nota_credito', v_nc, 'de_la_app', false))
+                 then ' y se emite (suelta la de QuickBooks)' else ' y al emitir: ' || r::text end;
+    -- (B) UNA DE LA APP, anulada desde Contabilidad (c3 directo) y sin cerrar aquí: el hito 1 sigue facturado
+    r1 := pg_temp.c11_hito(-1110000001);
+    v_doc1 := (r1->>'documento')::uuid; v_f1 := (r1->>'factura_id')::bigint;
+    perform pg_temp.c11_ser('dueno');
+    perform fn_factura_anular(v_f1, 'c11-pruebas: desde Contabilidad', null);
+    perform pg_temp.c11_ser('editor');
+    select n.numero into v_nc1 from notas_credito n where n.anula_a = v_f1;
+    v_75 := pg_temp.c11_ctl(75);
+    e := case when v_75 like 'rojo: la factura ' || (r1->>'numero') || ' está anulada en el libro y aquí sigue como emitida →%'
+              then 'el control 75 la nombra como anulada sin cerrar' else 'el control 75: ' || v_75 end
+         || case when position('C11 PRUEBA Milestone 1' in v_75) = 0 then ' (una vez: no repite el hito)' else ' (y REPITE el hito)' end;
+    v_x := pg_temp.c11_err($q$ select fn_emision_borrador('{"forma": "hito", "hito_id": -1110000001}') $q$);
+    f := case when v_x = 'MX008: El hito «C11 PRUEBA Milestone 1» sigue marcado como facturado en la ficha de la obra porque su factura '
+                         || (r1->>'numero') || ' (nota de crédito ' || v_nc1 || ') está anulada en el libro y aquí sigue sin cerrar. Hay que '
+                         || 'cerrar esa anulación aquí (Facturación → la factura → Anular; si ya sale anulada y no ofrece el botón, avisa y '
+                         || 'se hace): el hito vuelve a pendiente y entonces se hace la buena.'
+              then 'MX008, nombra la factura con su nota de crédito y manda a cerrarla aquí' else v_x end;
+    v_ra := pg_temp.c11_anular(v_doc1, 'c11-pruebas: se anuló en Contabilidad');
+    v_b2 := pg_temp.c11_borrador(jsonb_build_object('forma', 'hito', 'hito_id', -1110000001));
+    select y.value into v_av from jsonb_array_elements(v_b2->'avisos') y where y.value->>'codigo' = 'hito_factura_anulada';
+    g := case when (v_ra->>'ya_estaba_en_el_libro')::boolean then 'ya estaba en el libro' else 'NO dice que ya estaba' end
+         || format(', el hito a %s, el control 75 %s', v_ra->>'hito_estado', pg_temp.c11_color(pg_temp.c11_ctl(75)))
+         || case when (v_b2->>'nuevo')::boolean and (v_b2->>'puede_emitir')::boolean and not (v_av->>'frena')::boolean
+                      and v_av->>'texto' like '%ya tuvo una factura que se anuló: ' || (r1->>'numero') || ' del % (nota de crédito ' || v_nc1 || ')%'
+                 then ', y el borrador se abre y avisa sin frenar' else ', y el borrador: ' || left(v_b2::text, 300) end;
+    v_obt := format('una de QuickBooks anulada desde Contabilidad, con un borrador de su hito ya abierto: %s | pedir su borrador: %s | el '
+                    'borrador que ya estaba abierto: %s | si ya se había vuelto a facturar por fuera y esa factura se enlaza a su hito (la '
+                    'anulada lo suelta antes): %s | devuelto el hito a pendiente: %s | una de la app anulada desde Contabilidad y sin '
+                    'cerrar aquí: %s | pedir el borrador de su hito: %s | cerrada aquí: %s', a, b, c, h, d, e, f, g);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (56, v_nom, v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 57. LO SUSTITUIDO SE VE. Lo soltado quedaba apuntado (emision_soltados) y
+--     no se veía en ningún sitio: el documento de la factura nueva no decía
+--     a cuál sustituyó, y de una de QuickBooks, que fue de ese hito solo
+--     quedaba en esa tabla. Ahora el documento entero de una factura emitida
+--     (lo que lee la pantalla) trae «sustituye» —las anuladas a las que
+--     sustituyó en su hito: su número, su nota de crédito, si era de la app
+--     o de fuera, y cuándo— y, si es una anulada de la app que soltó su
+--     hito, «sustituida_por» —el número y la fecha de la buena—. La que no
+--     sustituyó a ninguna, nada. Un borrador no trae esas claves (lo suyo es
+--     el aviso), y el equipo no lee nada de esto.
+do $$
+declare
+  v_obt text; r1 jsonb; r2 jsonb; r3 jsonb; r4 jsonb; ra jsonb; d1 jsonb; d2 jsonb; d3 jsonb; d4 jsonb; v_b jsonb; v_fq bigint; v_ncq text;
+  a text; b text; c text; d text; e text;
+  v_nom text := 'LO SUSTITUIDO SE VE: el documento de la factura que sustituye a una anulada dice a cuál (su número, su nota de crédito, '
+                'si era de la app o de fuera, y cuándo), y el de la anulada de la app, cuál la sustituyó; la que no sustituyó a ninguna, '
+                'nada; un borrador no trae esas claves y el equipo no lo lee';
+  v_esp text := 'la buena de una de la app: su documento dice a cuál sustituyó (la anulada, su número, su nota de crédito, que era de la '
+                'app y cuándo), y a ella no la sustituyó nadie | la anulada: su documento dice cuál la sustituyó (el documento, el número '
+                'y la fecha de la buena, y cuándo), y ella no sustituyó a ninguna | la que sustituye a una de QuickBooks: lo dice, como '
+                'de fuera de la app | la que no sustituyó a ninguna: nada | un borrador no trae esas claves, y el equipo no lo lee '
+                '(42501)';
+begin
+  if pg_temp.c11_omitir(57, v_nom, v_esp) then return; end if;
+  begin
+    perform pg_temp.c11_sembrar();
+    -- (1) de la app: emitida, anulada, y la buena
+    r1 := pg_temp.c11_hito(-1110000001);
+    ra := pg_temp.c11_anular((r1->>'documento')::uuid, 'c11-pruebas: monto equivocado');
+    r2 := pg_temp.c11_hito(-1110000001);
+    -- (2) de QuickBooks: su fila con el hito 2, anulada desde Contabilidad, y el hito facturado por la app (aquí la ficha
+    --     no llegó a marcarlo: lo del hito que sigue como facturado lo miran la 53 y la 56)
+    insert into facturas (proyecto_id, num, fecha, monto, pagada, hito_id, qb_id)
+    values ('c11-prueba-a', 'ZZ-QB-5701', pg_temp.c11('hoy')::date, 3333.33, false, -1110000002, 'ZZ-QBID-5701')
+    returning id into v_fq;
+    set constraints public.trg_puente_facturas_despues immediate;
+    set constraints public.trg_puente_facturas_despues deferred;
+    perform pg_temp.c11_ser('dueno');
+    perform fn_factura_anular(v_fq, 'c11-pruebas: se anula en Contabilidad', null);
+    perform pg_temp.c11_ser('editor');
+    select n.numero into v_ncq from notas_credito n where n.anula_a = v_fq;
+    r3 := pg_temp.c11_hito(-1110000002);
+    -- (3) una que no sustituye a ninguna, y un borrador
+    r4 := pg_temp.c11_hito(-1110000003);
+    v_b := pg_temp.c11_borrador(jsonb_build_object('forma', 'hito', 'hito_id', -1110000006));
+    perform pg_temp.c11_ser('dueno');
+    d1 := fn_emision_documento((r1->>'documento')::uuid); d2 := fn_emision_documento((r2->>'documento')::uuid);
+    d3 := fn_emision_documento((r3->>'documento')::uuid); d4 := fn_emision_documento((r4->>'documento')::uuid);
+    perform pg_temp.c11_ser('editor');
+    a := case when jsonb_typeof(d2->'sustituye') = 'array' and jsonb_array_length(d2->'sustituye') = 1
+                   and (d2->'sustituye'->0) - 'soltado_el' = jsonb_build_object('factura_id', (r1->>'factura_id')::bigint, 'numero', r1->>'numero',
+                                                                               'nota_credito', ra->>'nota_credito', 'de_la_app', true)
+                   and (d2->'sustituye'->0->>'soltado_el')::timestamptz is not null
+              then 'su documento dice a cuál sustituyó (la anulada, su número, su nota de crédito, que era de la app y cuándo)'
+              else 'su documento dice: ' || coalesce((d2->'sustituye')::text, '(no trae la clave)') end
+         || case when d2 ? 'sustituida_por' and jsonb_typeof(d2->'sustituida_por') = 'null' then ', y a ella no la sustituyó nadie'
+                 else ', y de quién la sustituyó dice: ' || coalesce((d2->'sustituida_por')::text, '(no trae la clave)') end;
+    b := case when (d1->'sustituida_por') - 'soltado_el' = jsonb_build_object('documento', r2->>'documento', 'numero', r2->>'numero', 'fecha', pg_temp.c11('hoy'))
+                   and (d1->'sustituida_por'->>'soltado_el')::timestamptz is not null and d1->'documento'->>'estado' = 'anulada'
+              then 'su documento dice cuál la sustituyó (el documento, el número y la fecha de la buena, y cuándo)'
+              else 'su documento dice: ' || coalesce((d1->'sustituida_por')::text, '(no trae la clave)') end
+         || case when d1->'sustituye' = '[]'::jsonb then ', y ella no sustituyó a ninguna' else ', y de lo que sustituyó dice: ' || coalesce((d1->'sustituye')::text, '(no trae la clave)') end;
+    c := case when jsonb_array_length(d3->'sustituye') = 1
+                   and (d3->'sustituye'->0) - 'soltado_el' = jsonb_build_object('factura_id', v_fq, 'numero', 'ZZ-QB-5701', 'nota_credito', v_ncq, 'de_la_app', false)
+              then 'lo dice, como de fuera de la app' else 'dice: ' || coalesce((d3->'sustituye')::text, '(no trae la clave)') end;
+    d := case when d4->'sustituye' = '[]'::jsonb and d4 ? 'sustituida_por' and jsonb_typeof(d4->'sustituida_por') = 'null' then 'nada'
+              else format('dice %s y %s', coalesce((d4->'sustituye')::text, '(sin clave)'), coalesce((d4->'sustituida_por')::text, '(sin clave)')) end;
+    e := case when not (v_b ? 'sustituye') and not (v_b ? 'sustituida_por') then 'un borrador no trae esas claves' else 'un borrador TRAE esas claves' end
+         || format(', y el equipo no lo lee (%s)', pg_temp.c11_cod(format('select fn_emision_documento(%L)', r2->>'documento'), 'p1'));
+    v_obt := format('la buena de una de la app: %s | la anulada: %s | la que sustituye a una de QuickBooks: %s | la que no sustituyó a '
+                    'ninguna: %s | %s', a, b, c, d, e);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (57, v_nom, v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- ---------------------------------------------------------------------
 -- EL CIERRE
 -- ---------------------------------------------------------------------
 -- 41. EL CIERRE DEL MES (c9) MIRA LA FACTURACIÓN, con su bloque de c11: las
@@ -4223,9 +5353,13 @@ end $$;
 --     teléfono de un rojo NUEVO por el nombre de la fila, y con un nombre
 --     fijo un rojo nuevo quedaba tapado por otro que ya estuviera. Si el c9
 --     de esta base es el de antes (sin el bloque), se omite y dice qué pegar.
+--     (En una base con el índice único de facturas por hito —producción—, el
+--     hito facturado dos veces se fabrica como en la 36: la fila de la
+--     factura de la app sin su hito, y otra de ese hito.)
 do $$
 declare
   v_obt text; v_r jsonb; v_per text := pg_temp.c11('mes'); v_rc int; v_ra int; v_ok172 boolean; v_ok173 boolean; v_corte date;
+  v_hu text := pg_temp.c11_candado_hito();
   f record; g record;
   a text; b text; c text; d text; e text;
   v_nom text := 'EL CIERRE DEL MES (c9) MIRA LA FACTURACIÓN: la fila 172 de su revisión (detiene) dice lo que los cuadres de la facturación '
@@ -4271,6 +5405,9 @@ begin
          || case when f.control = pg_temp.c11_nombre_fila('cuadre') and g.control = pg_temp.c11_nombre_fila('aviso')
                  then '; y sus nombres dicen cuáles están en rojo' else format('; y sus nombres son «%s» y «%s»', f.control, g.control) end;
     begin
+      if v_hu <> 'ninguno' then
+        update facturas set hito_id = null where id = (v_r->>'factura_id')::bigint;
+      end if;
       insert into facturas (proyecto_id, num, fecha, monto, hito_id, estado)
       values ('c11-prueba-a', 'ZZ-908', v_corte - 1, 3333.33, -1110000001, 'emitida');
       perform pg_temp.c11_ser('dueno');
@@ -4321,7 +5458,11 @@ begin
 end $$;
 
 -- 42. Nada queda: lo que c11 toca (y lo que sus pruebas sembraron) está
---     como antes de la primera prueba.
+--     como antes de la primera prueba. También la revisión guardada del
+--     cierre del mes (cierre_revisiones, de c9): mirar «lo que detiene el
+--     cierre» la reescribe, y antes la primera lectura de estas pruebas se
+--     hacía fuera de todo bloque y la dejaba cambiada (como abrir la
+--     pantalla Cierre).
 do $$
 declare
   v_obt text;
@@ -4331,7 +5472,7 @@ begin
     v_obt := case when pg_temp.c11_conteos() = pg_temp.c11('conteos') then 'igual que antes' else 'antes: ' || pg_temp.c11('conteos') || ' · ahora: ' || pg_temp.c11_conteos() end;
   exception when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (42, 'nada queda de las pruebas: los ajustes, las obras y sus retenciones, los documentos, las líneas, la serie y su contador, los PDF y los envíos, las facturas y los hitos, las notas de crédito, los asientos, los cobros, los estimados, los perfiles y usuarios, las reglas de ingreso, los períodos, los archivos del bucket, lo de los cobros en línea y las funciones, como antes',
+  insert into _pruebas values (42, 'nada queda de las pruebas: los ajustes, las obras y sus retenciones, los documentos, las líneas, la serie y su contador, los PDF, los envíos y lo soltado, las facturas (con su estado y su hito) y los hitos, las notas de crédito, los asientos, los cobros, los estimados, los perfiles y usuarios, las reglas de ingreso, los períodos, los archivos del bucket, los índices de facturas, lo de los cobros en línea, las funciones y la revisión guardada del cierre del mes, como antes',
     'igual que antes', v_obt, v_obt = 'igual que antes');
 end $$;
 
@@ -4417,18 +5558,24 @@ end $$;
 --     antes de la primera prueba (lo que ya estaba en rojo se dice y no
 --     cuenta); los de la facturación, igual; nada de c11 para anon o
 --     service_role ni más SECURITY DEFINER que la del número; y
---     fn_emision_pegado responde con sus once filas y los ajustes siguen
+--     fn_emision_pegado responde con sus doce filas y los ajustes siguen
 --     siendo UNA fila (pegar dos veces no los pisa: lo corre el banco, con
 --     dos pegados seguidos antes de esta suite).
 do $$
 declare
-  v_obt text; v_otras text; v_c11 text; v_perm text; v_api text; v_n int; v_cfg int;
+  v_obt text; v_otras text; v_c11 text; v_perm text; v_api text; v_n int; v_cfg int; v_fin text;
   v_esp text := 'controles de las otras capas en rojo que no lo estaban: ninguno | de la facturación: nada nuevo | c2 permisos verde | c11 para '
-                'anon o service_role, o definer de más: ninguna | el pegado: 11 filas, y los ajustes 1 fila (id 1)';
+                'anon o service_role, o definer de más: ninguna | el pegado: 12 filas, y los ajustes 1 fila (id 1) | y después de todo, lo '
+                'que c11 toca: igual que antes';
 begin
   begin
     perform pg_temp.c11_ser('editor');
-    v_otras := pg_temp.c11_nuevos(coalesce(string_to_array(nullif(pg_temp.c11('rojos_antes'), ''), '; '), '{}'::text[]), pg_temp.c11_rojos());
+    -- (dentro de un bloque que se deshace: mirar lo que detiene el cierre del mes guarda su revisión, y aquí no queda nada)
+    begin
+      v_otras := pg_temp.c11_nuevos(coalesce(string_to_array(nullif(pg_temp.c11('rojos_antes'), ''), '; '), '{}'::text[]), pg_temp.c11_rojos());
+      raise exception using errcode = 'MXT01';
+    exception when sqlstate 'MXT01' then null;
+    end;
     v_c11 := pg_temp.c11_propios();
     v_perm := pg_temp.c11_permisos();
     select coalesce(string_agg(p.proname, ', ' order by p.proname), 'ninguna') into v_api
@@ -4438,12 +5585,15 @@ begin
             or has_function_privilege('anon', p.oid, 'execute') or has_function_privilege('service_role', p.oid, 'execute'));
     select count(*) into v_n from fn_emision_pegado();
     select count(*) into v_cfg from emision_config;
+    v_fin := case when pg_temp.c11_conteos() = pg_temp.c11('conteos') then 'igual que antes'
+                  else 'CAMBIÓ: antes ' || pg_temp.c11('conteos') || ' · ahora ' || pg_temp.c11_conteos() end;
     v_obt := format('controles de las otras capas en rojo que no lo estaban: %s | de la facturación: %s | c2 permisos %s | c11 para anon o '
-                    'service_role, o definer de más: %s | el pegado: %s filas, y los ajustes %s fila (id %s)',
-                    v_otras, v_c11, v_perm, v_api, v_n, v_cfg, (select id from emision_config limit 1));
+                    'service_role, o definer de más: %s | el pegado: %s filas, y los ajustes %s fila (id %s) | y después de todo, lo que c11 '
+                    'toca: %s',
+                    v_otras, v_c11, v_perm, v_api, v_n, v_cfg, (select id from emision_config limit 1), v_fin);
   exception when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (44, 'el cierre de la suite: los controles de c2, c3, c6, c4, p1, c8, c10 y del cierre (c9) como estaban antes de las pruebas, y los de la facturación también; nada de c11 para anon o service_role ni más SECURITY DEFINER que la del número; fn_emision_pegado responde y los ajustes son una fila (pegar dos veces no los pisa: lo corre el banco)',
+  insert into _pruebas values (44, 'el cierre de la suite: los controles de c2, c3, c6, c4, p1, c8, c10 y del cierre (c9) como estaban antes de las pruebas, y los de la facturación también; nada de c11 para anon o service_role ni más SECURITY DEFINER que la del número; fn_emision_pegado responde y los ajustes son una fila (pegar dos veces no los pisa: lo corre el banco); y al terminar no queda nada (tampoco la revisión guardada del cierre)',
     v_esp,
     v_obt || case when pg_temp.c11('rojos_antes') <> '' then ' (ya en rojo antes de las pruebas: ' || pg_temp.c11('rojos_antes') || ')' else '' end
           || case when pg_temp.c11('ctl_rojos') <> '' then ' (de la facturación, ya en rojo antes: ' || pg_temp.c11('ctl_rojos') || ')' else '' end
@@ -4455,6 +5605,18 @@ end $$;
 reset c4.control_tope;
 reset mxp.cierre_sin_push;
 reset mxp.stripe_sin_push;
+
+-- UNA PRUEBA QUE NO PUDO TOMAR UN CANDADO EN MEDIO SEGUNDO NO ES UN FALLO:
+-- la app (u otra sesión) tenía tomado algo que necesitaba, y esta corrida no
+-- espera más (el tope de arriba, para no dejar esperando a la app). Sale
+-- «omitida», con lo que dijo la base, y se vuelve a pegar el archivo en un
+-- momento más tranquilo.
+update _pruebas
+   set ok = null,
+       obtenido = 'omitida: mientras corría, la app (u otra sesión) tenía tomado algo que esta prueba necesita y no lo soltó en medio '
+                  || 'segundo (55P03); no se esperó más, para no dejar esperando a la app. No es un fallo: vuelve a pegar el archivo en un '
+                  || 'momento en que nadie esté usando la app. Lo que dio: ' || left(obtenido, 300)
+ where ok is false and obtenido like '%55P03%';
 
 -- =====================================================================
 -- EL RESULTADO TAMBIÉN QUEDA EN UNA TABLA DE VERDAD (como c2, c3, c4, c6,

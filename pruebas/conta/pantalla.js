@@ -136,6 +136,42 @@
    contrato es de después», «Dejarla fuera este mes» (con su nota), la obra
    con saldo cancelada o pasada a T&M, y el 🧾 ante un 404 con un corte ya
    visto (no adivina).
+   Y la cédula de corte (c13) y los subs con su 1099 (c14), fase 12a: aquí NO hay
+   mentira escrita a mano. La base simulada de las dos páginas es lo que contestó
+   el banco (pruebas/conta/pantalla-f12.json, que arma pruebas/conta/f12-capturar.js
+   sobre g10a con c13, c14 y f12-semilla.sql): cada lectura sale de la escena en
+   que va su cadena, cada escritura que es el paso siguiente pasa a su escena y
+   contesta lo del banco, y los errores (texto corto, monto en cero, ZIP mal, sin
+   el código del teléfono, el equipo…) los elige la mentira con la regla de la base
+   y contesta el del banco tal cual. Se comprueba la cédula al último día del mes
+   pasado (los totales de la base, una fila por cuenta con su píldora, los
+   filtros), bajar a una cuenta (las facturas y lo suelto, la conciliación con sus
+   partidas en tránsito y, a otro día, lo de después), explicar (lo que la base no
+   deja, la nueva, la vieja, retirarla), el renglón a mano (el monto mal que no
+   sale, añadir, corregir, anular), «A mano», «Explicaciones», QuickBooks, los
+   ajustes y la 178 del cierre con su botón; y los subs: las fichas con sus chips,
+   «Darle su ficha», el TIN en un campo de contraseña que se vacía y nunca está
+   entero en la página ni en la memoria de la pantalla, el W-9 y el COI al bucket
+   «subs» con su sha256, «Decir de quién es» un Zelle sin nombre, el umbral del
+   año, el 1099 de 2026 con su aviso fijo y cada pago, la hoja (pide el código,
+   avisa del TIN entero y se baja como archivo con lo que mandó la base), el COI,
+   los ajustes, retirar un papel, la 160 y la 179 del cierre; la falla ruidosa,
+   sin c13 ni c14, el equipo, sin el código y 390/820/1280 px.
+   Y los arreglos de la revisión (fase 12a, con la base arreglada): la cédula con
+   el resultado sin cerrar (Activo = Pasivo + Patrimonio + Resultado), «del libro»
+   en neutro y sin «Explicar», con qué cuadra cada cuenta (un papel o sus
+   partidas), el préstamo que solo falla en el reparto (aparte, con su par), «Se
+   sostendría con» sin auxiliar, el OJO del origen (el efectivo de c3 apuntado a
+   un banco: una lectura aparte del banco, que se deshizo), el renglón del propio
+   libro con su importe y «Con saldo» de fábrica en el teléfono; y los subs: la
+   base pide «desde» o «corrige» (MX008 con su pista: el ayudante «estaba mal desde
+   el principio», el sub uno «no» desde el 1-nov) y la pantalla ofrece las dos
+   salidas, los tramos con «Retirar», el TIN cambiado por otro («era un error de
+   dedo»), lo pagado de su bolsillo marcado «pagado», lo que deja corta la hoja
+   antes y después de bajarla, la fecha del pago y las cuentas que no son servicio
+   en los ajustes, un TIN pegado en un campo de texto (no sale) y el ZIP+4 sin
+   guion, la ayuda de la LLC de un socio, las 18 filas del control y el 23505 de
+   dos pestañas en llano.
    Los datos son inventados (la forma es la de las vistas de c4, c6 y p1).
    Uso: NODE_PATH=/opt/node22/lib/node_modules node pruebas/conta/pantalla.js
    (con --fotos guarda capturas en el temporal del sistema, o en FOTOS_DIR:
@@ -838,6 +874,13 @@ function c9Revisar(periodo) {
     f.push(fila9(n === 'aviso' ? 173 : 172, (n === 'aviso' ? 'facturas: sus avisos (c11)' : 'facturas: sus cuadres (c11)') + (rs.length ? ` — ${rs.length} en rojo: ${rs.map(x => x.orden).join(', ')}` : ''),
       n === 'aviso' ? 'aviso' : 'detiene', !rs.length, rs.length ? det : `Los ${xs.length}, en verde.`,
       rs.length ? 'Aquí va el principio de cada uno (con su número); entero, en el control de la facturación (Facturación: las facturas emitidas, su PDF y su envío, y sus ajustes).' : null, 'facturas'));
+  }
+  // (fase 12a) los bloques de c13 y c14 en fn_cierre_revisar (scratchpad f12/c9-bloque-c13.sql y c9-bloque-c14.sql): la 178 de la cédula en
+  // cualquier período y, en un mes, la 160 y la 179 de los subs en lugar de la 160 de antes; las arma su capa (del banco) y c9 las pone en aviso
+  if (estado.c13 && !estado.c13NoDueno) for (const x of (xLeer('c13', `fn_cedula_cierre|${p.periodo}`) || [])) f.push(fila9(178, x.control, 'aviso', x.ok === true, x.detalle, x.que_hacer, x.ir_a));
+  if (!ap && estado.c14 && !estado.c14NoDueno) {
+    const xs = xLeer('c14', `fn_subs_cierre|${p.periodo}`) || [];
+    if (xs.length) { for (let i = f.length - 1; i >= 0; i--) if (f[i].orden === 160) f.splice(i, 1); for (const x of xs) f.push(fila9(x.orden, x.control, 'aviso', x.ok === true, x.detalle, x.que_hacer, x.ir_a)); }
   }
   return f.sort((a, b) => a.orden - b.orden);
 }
@@ -2446,6 +2489,167 @@ const W_VISTAS = {
   wip_config: () => [{ id: 1, actualizado: W.cfg.actualizado, exigir_desde: W.cfg.exigir_desde, actualizado_por: W.cfg.actualizado_por }]
 };
 const W_NO_DUENO = 'El WIP (lo ganado, lo facturado y el margen de cada obra) lo ve y lo toca solo Edgar (el dueño).';
+// ---- la cédula de corte (c13) y los subs (c14), fase 12a: SACADOS DEL BANCO. No hay mentira escrita a mano para estas dos capas:
+// pruebas/conta/pantalla-f12.json es lo que contestó el banco (g10a + 06 + c13 + c14 + f12-semilla.sql) a cada lectura de la pantalla
+// y a cada escritura en el orden de esta prueba (lo arma pruebas/conta/f12-capturar.js). Una lectura sale de la escena en que va su
+// cadena (c13 y c14 por separado); una escritura que es el paso siguiente (por su función y sus llaves) pasa a su escena y contesta lo
+// que contestó el banco; los errores los elige la mentira con la regla de la base (texto corto, monto en cero, sin el código…) y
+// contesta el del banco, tal cual. Lo que la pantalla sube a Storage se guarda aquí (su ruta y su sha256 sustituyen a los del banco).
+const F12 = JSON.parse(fs.readFileSync(path.join(__dirname, 'pantalla-f12.json'), 'utf8'));
+const X = {};
+function xReset() { X.e13 = 0; X.e14 = 0; X.cambios = []; X.objetos = new Map(); X.anulados = new Set(); X.retirados = new Set(); }
+xReset();
+const xCopia = v => v === undefined ? undefined : JSON.parse(JSON.stringify(v));
+function xParchar(v) {
+  if (v === undefined) return undefined;
+  let s = JSON.stringify(v);
+  for (const [a, b] of X.cambios) s = s.split(a).join(b);
+  return JSON.parse(s);
+}
+const xVal = l => xParchar(l.filas ? l.filas.map(h => F12.filas[h]) : l.valor);
+// lo que dijo el banco a una lectura, en la escena en que va esa cadena (lo que no cambió, de la escena anterior)
+function xLeer(capa, k) {
+  const c = F12[capa], e0 = capa === 'c13' ? X.e13 : X.e14;
+  for (let i = e0; i >= 0; i--) { const l = c.escenas[i].lecturas[k]; if (l) return xVal(l); }
+  return undefined;
+}
+const X_FECHAS = ['2026-09-30', '2026-10-31', '2026-11-12'];
+// (el texto de la píldora de cada estado de la cédula, el de la pantalla)
+const ESTADO_X = { cuadra: 'cuadra', del_libro: 'del libro', explicada: 'explicada', no_cuadra: 'no cuadra', sin_auxiliar: 'sin auxiliar' };
+// un día que el banco no leyó (la prueba corre otro día: el «último día del mes pasado» ya no es el 31-oct) sale como el 31-oct
+const xDia = f => !f ? '' : X_FECHAS.includes(f) ? f : '2026-10-31';
+const xErr = (capa, nombre, cambia) => { const e = F12[capa].errores[nombre]; let m = e.error.message; if (cambia) m = m.split(cambia[0]).join(cambia[1]); return { status: e.status, error: { ...e.error, message: m } }; };
+const xNoHay = fn => ({ status: 404, error: { code: 'PGRST202', message: `Could not find the function public.${fn} in the schema cache`, details: null, hint: null } });
+const xMal = msg => ({ status: 400, error: { code: 'MOCK', message: 'La base simulada no conoce esta llamada: ' + msg, details: null, hint: null } });
+const xGet = (o, ruta) => ruta.split('.').reduce((x, k) => x == null ? x : x[k], o);
+// el paso siguiente de la cadena, si la llamada es la suya (su función y sus llaves); si no, que la prueba lo vea
+function xPaso(capa, fn, a) {
+  const c = F12[capa], i = capa === 'c13' ? X.e13 : X.e14, nombre = c.orden[i], p = nombre && c.pasos[nombre];
+  if (!p || p.fn !== fn || !p.igual.every(r => JSON.stringify(xGet(a, r)) === JSON.stringify(xGet(p.args, r))))
+    return xMal(`${fn}(${JSON.stringify(a).slice(0, 160)}): el paso que sigue en ${capa} es ${nombre ? `«${nombre}» (${p.fn})` : 'ninguno'}`);
+  if (capa === 'c13') X.e13 = i + 1; else X.e14 = i + 1;
+  return xParchar(p.respuesta);
+}
+const xAal = auth => { try { return JSON.parse(Buffer.from(String(auth || '').replace(/^Bearer /, '').split('.')[1], 'base64url').toString()).aal || null; } catch { return null; } };
+const X_LETRAS = t => String(t || '').replace(/[^\p{L}\p{N}]/gu, '').length;
+const X_MONTO = t => /^-?\d{1,11}(\.\d+)?$/.test(String(t || ''));
+const X_LEE13 = ['fn_cedula_resumen', 'fn_cedula', 'fn_cedula_partidas', 'fn_cedula_control', 'fn_cedula_cierre', 'fn_cedula_cuentas', 'fn_cedula_qb_periodos', 'fn_cedula_qb', 'fn_cedula_capas'];
+function xRpc13(fn, a) {
+  if (!estado.c13) return xNoHay(fn);
+  const lee = X_LEE13.includes(fn) || (fn === 'fn_cedula_config' && (!a.p || !Object.keys(a.p).length));
+  if (estado.c13NoDueno) return fn === 'fn_cedula_resumen' ? xErr('c13', 'equipo_resumen') : lee ? (fn === 'fn_cedula_config' || fn === 'fn_cedula_capas' ? null : []) : xErr('c13', 'equipo_explicar');
+  // (APARTE, del banco en una transacción que se deshizo: la forma de pago «efectivo» de c3 apuntada al 1093, que se concilia)
+  const xAparte = k => estado.c13EfectivoBanco && F12.c13.aparte.efectivo_banco[k] ? xVal(F12.c13.aparte.efectivo_banco[k]) : undefined;
+  if (fn === 'fn_cedula_resumen') return xAparte(`fn_cedula_resumen|${xDia(a.p_fecha)}`) || xLeer('c13', `fn_cedula_resumen|${xDia(a.p_fecha)}`);
+  if (fn === 'fn_cedula') {
+    const d = a.p_fecha ? xDia(a.p_fecha) : xLeer('c13', 'fn_cedula_resumen|').fecha;
+    const filas = xAparte(`fn_cedula|${d}`) || xLeer('c13', `fn_cedula|${d}`);
+    return estado.c13ConteoMal ? filas.slice(1) : filas;
+  }
+  if (fn === 'fn_cedula_partidas') {
+    const d = a.p_fecha ? xDia(a.p_fecha) : xLeer('c13', 'fn_cedula_resumen|').fecha;
+    return (xLeer('c13', `fn_cedula_partidas|${d}`) || []).filter(x => !a.p_cuenta || x.cuenta === a.p_cuenta);
+  }
+  if (fn === 'fn_cedula_control') {
+    const filas = xLeer('c13', `fn_cedula_control|${a.p_periodo || ''}`) || xLeer('c13', 'fn_cedula_control|');
+    return estado.c13CuadreMal ? filas.map(x => Number(x.orden) === 10 ? { ...x, ok: false, detalle: 'La cédula al 31-oct-2026 trae 44 cuentas de balance y el libro tiene 45: no se pinta (prueba).' } : x) : filas;
+  }
+  if (fn === 'fn_cedula_cierre') return xLeer('c13', `fn_cedula_cierre|${a.p_periodo}`) || [];
+  if (fn === 'fn_cedula_qb') return xLeer('c13', `fn_cedula_qb|${a.p_periodo}`) || [];
+  if (lee) return xLeer('c13', fn + '|');
+  // las escrituras: el error de la base, si la regla lo dice; si no, el paso siguiente
+  if (fn === 'fn_cedula_explicar') {
+    if (X_LETRAS(a.p_texto) < 10) return xErr('c13', 'explicar_corto');
+    if (String(a.p_fecha) > F12.capturado.hoy) return xErr('c13', 'explicar_futuro');
+    const f = (xLeer('c13', `fn_cedula|${xDia(a.p_fecha)}`) || []).find(x => x.cuenta === a.p_cuenta);
+    if (f && f.estado === 'cuadra') return xErr('c13', 'explicar_cuadra');
+  }
+  if (fn === 'fn_cedula_explicacion_retirar') {
+    const f = (xLeer('c13', `fn_cedula|${xDia(a.p_fecha)}`) || []).find(x => x.cuenta === a.p_cuenta);
+    if (f && !f.explicacion_id) return xErr('c13', 'retirar_nada');
+  }
+  if (fn === 'fn_cedula_renglon') {
+    const p = a.p || {};
+    if (!String(p.concepto || '').trim()) return xErr('c13', 'renglon_sin_concepto');
+    if (!X_MONTO(p.monto)) return xErr('c13', 'renglon_monto_mal', ['15o', String(p.monto)]);
+    if (/\.\d{3,}$/.test(String(p.monto))) return xErr('c13', 'renglon_tres_decimales', ['150.001', String(p.monto)]);
+    if (Number(p.monto) === 0) return xErr('c13', 'renglon_cero');
+    if (!p.id && !/^\d{4}-\d{2}-\d{2}$/.test(String(p.desde || ''))) return xErr('c13', 'renglon_sin_desde');
+  }
+  if (fn === 'fn_cedula_renglon_anular' && X.anulados.has(a.p_id)) return xErr('c13', 'anular_otra_vez');
+  const r = xPaso('c13', fn, a);
+  if (fn === 'fn_cedula_renglon_anular' && !(r && r.error)) X.anulados.add(a.p_id);
+  return r;
+}
+const X_LEE14 = ['fn_subs_anios', 'fn_subs_1099', 'fn_subs_pagos', 'fn_subs_control', 'fn_subs_umbral', 'fn_subs_antes', 'fn_subs_cierre', 'fn_subs_fichas', 'fn_subs_coi'];
+const X_TIPOS = ['individual', 'sole_proprietor', 'llc_un_socio', 'llc_sociedad', 'sociedad', 's_corp', 'c_corp', 'otro'];
+function xRpc14(fn, a, auth) {
+  if (!estado.c14) return xNoHay(fn);
+  const lee = X_LEE14.includes(fn);
+  if (estado.c14NoDueno) return lee ? (fn === 'fn_subs_umbral' ? null : []) : xErr('c14', 'equipo_ficha');
+  if (fn === 'fn_subs_anios') return xLeer('c14', 'fn_subs_anios|');
+  // (revisión final) UNA LÍNEA PAGADA POR DOS CAMINOS —parte del banco, parte de un bolsillo—: la base da DOS partes de la misma línea
+  // del asiento (mismo asiento y mismo orden), la del banco primero y la «por otro camino» después (visto en el banco: una línea de
+  // 5200 por 1,000 contra 1010 por 400 y 2900 por 600 sale así). Aquí se le antepone a la línea «de su bolsillo» su parte del banco.
+  if (fn === 'fn_subs_pagos' && estado.c14DosCaminos) {
+    const v = xLeer('c14', `${fn}|${a.p_anio}`) || [];
+    return v.flatMap(x => x.asiento_id === F12.ids.asiento_bolsillo && x.estado === 'otro_camino'
+      ? [{ ...x, medio: 'efectivo', estado: 'cuenta', monto: 123.45, marca_id: null, marca_trato: null, marca_nota: null }, x] : [x]);
+  }
+  if (['fn_subs_1099', 'fn_subs_pagos', 'fn_subs_umbral', 'fn_subs_antes'].includes(fn)) { const v = xLeer('c14', `${fn}|${a.p_anio}`); return v === undefined ? (fn === 'fn_subs_umbral' ? null : []) : v; }
+  if (fn === 'fn_subs_control') {
+    const filas = xLeer('c14', `fn_subs_control|${a.p_anio == null ? '' : a.p_anio}`) || [];
+    return estado.c14CuadreMal ? filas.map(x => Number(x.orden) === 10 ? { ...x, ok: false, detalle: 'Las cuentas de servicio de 2026 suman $6,020.00 en el libro y sus partes $5,570.00: no se pinta (prueba).' } : x) : filas;
+  }
+  if (fn === 'fn_subs_cierre') return xLeer('c14', `fn_subs_cierre|${a.p_periodo}`) || [];
+  if (fn === 'fn_subs_fichas') return (xLeer('c14', 'v_subs_fichas') || []).filter(x => !a.p_ficha || x.ficha_id === a.p_ficha);
+  if (fn === 'fn_subs_coi') return xLeer('c14', 'v_subs_coi') || [];
+  // las escrituras: el código del teléfono (como s1: 403 «MFA»), el error de la base si la regla lo dice, o el paso siguiente
+  if ((fn === 'fn_subs_tin_guardar' || fn === 'fn_subs_1099_export') && xAal(auth) !== 'aal2') return xErr('c14', fn === 'fn_subs_tin_guardar' ? 'tin_sin_codigo' : 'exportar_sin_codigo');
+  if (fn === 'fn_subs_tin_guardar' && a.p && !a.p.quitar && !/^(\d{3}-\d{2}-\d{4}|\d{2}-\d{7}|\d{9})$/.test(String(a.p.tin || ''))) return xErr('c14', 'tin_mal');
+  if (fn === 'fn_subs_ficha') {
+    const p = a.p || {};
+    if (p.tipo_entidad != null && !X_TIPOS.includes(p.tipo_entidad)) return xErr('c14', 'ficha_tipo_mal', ['sa_de_cv', String(p.tipo_entidad)]);
+    if (p.zip != null && !/^\d{5}(-\d{4})?$/.test(String(p.zip))) return xErr('c14', 'ficha_zip_mal');
+    if (p.estado != null && !/^[A-Z]{2}$/.test(String(p.estado))) return xErr('c14', 'ficha_estado_mal');
+  }
+  if (fn === 'fn_subs_archivo') {
+    const p = a.p || {}, o = X.objetos.get(String(p.ruta || ''));
+    if (p.clase === 'coi' && !p.vence) return xErr('c14', 'coi_sin_vence');
+    if (!o || o.bytes !== Number(p.bytes)) return xErr('c14', 'archivo_no_esta', [F12.c14.errores.archivo_no_esta.args.p.ruta, String(p.ruta)]);
+  }
+  if (fn === 'fn_subs_marcar' && a.p && !a.p.quitar && !String(a.p.nota || '').trim()) return xErr('c14', 'marcar_sin_nota');
+  if (fn === 'fn_subs_umbral_confirmar') {
+    if (!/^\d{1,11}(\.\d{1,2})?$/.test(String(a.p_umbral || ''))) return xErr('c14', 'umbral_mal');
+    if (!String(a.p_nota || '').trim()) return xErr('c14', 'umbral_sin_nota');
+  }
+  if (fn === 'fn_subs_config' && a.p && ((a.p.coi_aviso_dias != null && !(Number.isInteger(a.p.coi_aviso_dias) && a.p.coi_aviso_dias >= 0 && a.p.coi_aviso_dias <= 365)))) return xErr('c14', 'config_dias_mal', ['coi_aviso_dias', 'coi_aviso_dias']);
+  if (fn === 'fn_subs_archivo_retirar' && X.retirados.has(a.p_archivo)) return xErr('c14', 'retirar_otra_vez');
+  // el paso siguiente es de los que la base solo deja con «desde» o «corrige» y la orden no lo trae: contesta lo que pidió el banco
+  // (MX008 con su pista y su detalle) a esa misma orden sin eso
+  { const sig = F12.c14.pasos[F12.c14.orden[X.e14]];
+    if (sig && sig.pide && sig.fn === fn && sig.igual.every(r => JSON.stringify(xGet(a, r)) === JSON.stringify(xGet(sig.args, r))) && a.p && a.p.desde == null && a.p.corrige == null) return xErr('c14', sig.pide); }
+  // (dos pestañas a la vez: la segunda recibe el 23505 de PostgREST —409—; la pantalla lo dice en llano)
+  if (estado.c14Duplicado && fn === 'fn_subs_marcar') { estado.c14Duplicado = false; return { status: 409, error: { code: '23505', message: 'duplicate key value violates unique constraint "subs_marcas_viva"', details: 'Key (asiento_id, orden)=(…) already exists.', hint: null } }; }
+  const r = xPaso('c14', fn, a);
+  if (r && !r.error && fn === 'fn_subs_archivo') {
+    // lo que subió la pantalla sustituye a lo que subió el capturador: su ruta y su sha256, en esta respuesta y en lo que se lea después
+    const p0 = F12.c14.pasos[F12.c14.orden[X.e14 - 1]].args.p, o = X.objetos.get(a.p.ruta);
+    X.cambios.push([p0.ruta, a.p.ruta], [p0.sha256, o.sha256]);
+    return xParchar(F12.c14.pasos[F12.c14.orden[X.e14 - 1]].respuesta);
+  }
+  if (r && !r.error && fn === 'fn_subs_archivo_retirar') X.retirados.add(a.p_archivo);
+  return r;
+}
+// las vistas y tablas de c13 y c14 (sin la capa, 404; al equipo, nada)
+const X_VISTAS13 = ['v_cedula_manual', 'v_cedula_explicaciones', 'cedula_config'];
+const X_VISTAS14 = ['v_subs_fichas', 'v_subs_archivos', 'v_subs_coi', 'subs_config', 'subs_umbrales', 'subs_exportaciones', 'subs_tramos'];
+function xVista(nombre) {
+  if (X_VISTAS13.includes(nombre)) return estado.c13NoDueno ? [] : (xLeer('c13', nombre) || []);
+  if (X_VISTAS14.includes(nombre)) return estado.c14NoDueno ? [] : (xLeer('c14', nombre) || []);
+  if (nombre === 'proveedores' && estado.c14) return estado.c14NoDueno ? [] : (xLeer('c14', 'proveedores') || []);
+  return null;
+}
 const estado = { controlMal: false, controlFilas: null, fallar: false, casarRondas: 0, concNueva: false, plaidFijada: false, plaidSinVista: false, plaidSinFijar: false, mfaFactores: [], sesionAal: undefined,
   // los interruptores de los estados: el control en rojo, el conteo distinto para una vista, el «Sigue» del tope por reloj (cuenta llamadas; 90 o más = nunca termina),
   // el equipo (no dueño), la apertura sin postear, el balance descuadrado, una vista que no existe en la base, un mayor que no termina donde dice la balanza
@@ -2470,7 +2674,14 @@ const estado = { controlMal: false, controlFilas: null, fallar: false, casarRond
   // y c11EstadoFalla: v_emision_estado contesta 500 (un statement timeout) para ver que el 🧾 no adivina
   c11: false, c11Fn: true, c11App: false, c11EstadoFalla: false,
   // (fase 10) c12 pegado o no (sin él, sus vistas y wip_config 404 y sus funciones también); y el equipo (no dueño): vistas vacías y 42501
-  c12: false, c12NoDueno: false };
+  c12: false, c12NoDueno: false,
+  // (fase 12a) c13 y c14 pegados o no (sin ellos, sus vistas 404 y sus funciones también); el equipo (no dueño); y la falla ruidosa: un
+  // cuadre del control en rojo, la cédula con una cuenta menos que su resumen
+  c13: false, c13NoDueno: false, c13CuadreMal: false, c13ConteoMal: false, c14: false, c14NoDueno: false, c14CuadreMal: false,
+  // (fase 12a, arreglos) la cédula con el «efectivo» de c3 apuntado a un banco que se concilia (del banco, aparte) y el 23505 de dos pestañas
+  c13EfectivoBanco: false, c14Duplicado: false,
+  // (fase 12a, revisión final) una línea de servicio pagada por DOS caminos: fn_subs_pagos da dos partes de la misma línea del asiento
+  c14DosCaminos: false };
 const llamadas = [], lecturas = []; // lecturas: cada GET a /rest/v1/<vista>?… tal como lo pidió la pantalla
 function tabla(nombre, q) {
   let filas = T[nombre] || [];
@@ -2482,6 +2693,8 @@ function tabla(nombre, q) {
   if (C11_VISTAS[nombre]) filas = estado.c11 ? C11_VISTAS[nombre]() : [];
   // (fase 10) las vistas del WIP (c12) y su configuración: el equipo las ve vacías
   if (W_VISTAS[nombre]) filas = estado.c12 && !estado.c12NoDueno ? W_VISTAS[nombre]() : [];
+  // (fase 12a) las vistas y tablas de c13 y c14, del banco (pantalla-f12.json)
+  { const xv = xVista(nombre); if (xv) filas = xv; }
   if (nombre === 'proyectos' && estado.c11App) filas = filas.concat([{ id: 'c11-prueba-a', nombre: 'C11 PRUEBA Oficina Uno', estado: 'ejecucion', tipo: 'comercial', cliente: 'ZZ Cliente Uno', cliente_email: 'zz.uno@c11-pruebas.invalid' }]);
   if (nombre === 'hitos' && estado.c11App) filas = F.hitos.filter(h => h.p === 'c11-prueba-a').map(h => ({ id: h.id, proyecto_id: h.p, titulo: h.titulo, condicion: h.condicion, monto: h.monto / 100, estado: h.estado, orden: h.orden, es_deposito: h.dep }));
   if (nombre === 'finanzas_proyecto' && estado.c11App) filas = filas.concat([{ proyecto_id: 'c11-prueba-a', contrato: 18500.55, cobrado: 0 }]);
@@ -2531,7 +2744,10 @@ function tabla(nombre, q) {
   }
   return filas;
 }
-function rpc(fn, a) {
+function rpc(fn, a, auth) {
+  // (fase 12a) la cédula (c13) y los subs (c14): lo que contestó el banco
+  if (fn.startsWith('fn_cedula')) return xRpc13(fn, a);
+  if (fn.startsWith('fn_subs')) return xRpc14(fn, a, auth);
   // (fase 8) las funciones de c9: sin c9 pegado, PostgREST no las encuentra
   if (C9_FN[fn]) return estado.c9 ? C9_FN[fn](a) : { status: 404, error: { code: 'PGRST202', message: `Could not find the function public.${fn} in the schema cache`, details: null, hint: null } };
   // (fase 10) las funciones de c11: sin c11 pegado, PostgREST no las encuentra
@@ -2779,6 +2995,30 @@ async function simular(ctx, rol) {
       lecturas.push(v + u.search);
       return route.fulfill({ status: 404, headers: CORS, contentType: 'application/json', body: JSON.stringify({ code: 'PGRST205', message: `Could not find the table 'public.${v}' in the schema cache`, details: null, hint: null }) });
     }
+    // (fase 12a) c13 y c14 sin pegar: sus vistas y tablas no existen (la lectura se anota igual)
+    if ((!estado.c13 && /^\/rest\/v1\/(v_cedula_manual|v_cedula_explicaciones|v_cedula|v_cedula_control|v_cedula_qb|cedula_config)$/.test(u.pathname)) ||
+        (!estado.c14 && /^\/rest\/v1\/(v_subs_fichas|v_subs_archivos|v_subs_coi|v_subs_1099|v_subs_pagos|v_subs_control|subs_config|subs_umbrales|subs_exportaciones|subs_historial|subs_tramos)$/.test(u.pathname))) {
+      const v = u.pathname.slice('/rest/v1/'.length);
+      lecturas.push(v + u.search);
+      return route.fulfill({ status: 404, headers: CORS, contentType: 'application/json', body: JSON.stringify({ code: 'PGRST205', message: `Could not find the table 'public.${v}' in the schema cache`, details: null, hint: null }) });
+    }
+    // (fase 12a) Storage, el bucket privado «subs»: subir (solo con el código del teléfono; nada se pisa: 409) y firmar para ver (también con el código)
+    if (u.pathname.startsWith('/storage/v1/object/subs/') && req.method() === 'POST') {
+      const ruta = decodeURIComponent(u.pathname.slice('/storage/v1/object/subs/'.length)), buf = req.postDataBuffer() || Buffer.alloc(0), auth = req.headers()['authorization'] || '';
+      llamadas.push({ fn: 'storage:subir-subs', args: { ruta, bytes: buf.length, tipo: req.headers()['content-type'] || '', upsert: req.headers()['x-upsert'] || '' }, auth });
+      if (!estado.c14) return route.fulfill({ status: 400, headers: CORS, contentType: 'application/json', body: JSON.stringify({ statusCode: '404', error: 'Bucket not found', message: 'Bucket not found' }) });
+      if (xAal(auth) !== 'aal2') return route.fulfill({ status: 403, headers: CORS, contentType: 'application/json', body: JSON.stringify({ statusCode: '403', error: 'Unauthorized', message: 'new row violates row-level security policy' }) });
+      if (X.objetos.has(ruta)) return route.fulfill({ status: 409, headers: CORS, contentType: 'application/json', body: JSON.stringify({ statusCode: '409', error: 'Duplicate', message: 'The resource already exists' }) });
+      X.objetos.set(ruta, { bytes: buf.length, sha256: sha(buf), tipo: req.headers()['content-type'] || '' });
+      return route.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify({ Key: 'subs/' + ruta, Id: 'obj-subs-' + X.objetos.size }) });
+    }
+    if (u.pathname === '/storage/v1/object/sign/subs' && req.method() === 'POST') {
+      let b = {}; try { b = JSON.parse(req.postData() || '{}'); } catch { /* vacío */ }
+      const auth = req.headers()['authorization'] || '';
+      llamadas.push({ fn: 'storage:firmar-subs', args: b, auth });
+      if (xAal(auth) !== 'aal2') return route.fulfill({ status: 403, headers: CORS, contentType: 'application/json', body: JSON.stringify({ statusCode: '403', error: 'Unauthorized', message: 'new row violates row-level security policy' }) });
+      return route.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify((b.paths || []).map(ruta => X.objetos.has(ruta) ? { path: ruta, signedURL: '/object/sign/subs/' + ruta + '?token=prueba', error: null } : { path: ruta, signedURL: null, error: 'Object not found' })) });
+    }
     if (!estado.c9 && /^\/rest\/v1\/(v_cierre_estado|v_cierres|v_ronda_ultima|v_activos_fijos|v_reserva_impuestos|v_dr15_mes|cierre_config|reserva_estimados)$/.test(u.pathname)) {
       const v = u.pathname.slice('/rest/v1/'.length);
       lecturas.push(v + u.search);
@@ -2787,8 +3027,8 @@ async function simular(ctx, rol) {
     if (u.pathname.startsWith('/rest/v1/rpc/')) {
       const fn = u.pathname.slice('/rest/v1/rpc/'.length); let args = {};
       try { args = JSON.parse(req.postData() || '{}'); } catch { /* vacío */ }
-      llamadas.push({ fn, args });
-      const r = rpc(fn, args);
+      llamadas.push({ fn, args, auth: req.headers()['authorization'] || '' });
+      const r = rpc(fn, args, req.headers()['authorization'] || '');
       if (r && r.error) return route.fulfill({ status: r.status || 400, headers: CORS, contentType: 'application/json', body: JSON.stringify(r.error) });
       if (r === null) return route.fulfill({ status: 204, headers: CORS });
       return route.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify(r) });
@@ -2815,9 +3055,11 @@ if (FOTOS) fs.mkdirSync(FOTOS, { recursive: true });
 // animations: 'disabled' porque el fullPage encoge el viewport un instante, la media query del lateral cambia y la transición de .15 s salía a medias en la imagen
 const foto = async (p, nombre) => { if (FOTOS) await p.screenshot({ path: path.join(FOTOS, nombre + '.png'), fullPage: true, animations: 'disabled' }); };
 const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' ');
-const PAGS = ['resumen', 'bancos', 'bandeja', 'conciliar', 'movimientos', 'estados', 'obras', 'wip', 'cierre', 'facturas', 'cobros', 'conexiones'];
-// (fase 8) la lista de respaldo de js/app.js (CONTA_PAGINAS_FIJAS, por si conta.js no cargó) trae las mismas doce, «cierre», (fase 9) «obras» y (fase 10) «facturas» y «wip» incluidas
-const PAGS_APP = PAGS;
+// (fase 12a) catorce: «Cédula de corte» después del cierre y «Subs y 1099» después de los cobros
+const PAGS = ['resumen', 'bancos', 'bandeja', 'conciliar', 'movimientos', 'estados', 'obras', 'wip', 'cierre', 'cedula', 'facturas', 'cobros', 'subs', 'conexiones'];
+// (fase 8) la lista de respaldo de js/app.js (CONTA_PAGINAS_FIJAS, por si conta.js no cargó) trae las mismas, «cierre», (fase 9) «obras» y (fase 10) «facturas» y «wip» incluidas.
+// (fase 12a) «cedula» y «subs» entran en ella cuando se añadan a app.js (no es de esta fase): hasta entonces trae las doce de antes, en el mismo orden
+const PAGS_APP = /\{ k: "cedula",/.test(fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8')) ? PAGS : PAGS.filter(k => k !== 'cedula' && k !== 'subs');
 // cambiar de página por su pestaña: en la computadora (≥ 1024 px) las pestañas están escondidas (las enseña el lateral de app.js), así que el clic es del DOM
 const titulo2 = async pg => (await pg.locator('#titulo-vista').textContent()).trim();
 const tab = async (pg, k) => { await pg.locator(`.ct-tab[data-pag="${k}"]`).evaluate(b => b.click()); };
@@ -2861,7 +3103,7 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
   const mesRegla = (() => { const meses = CORTES.filter(c => c.tipo === 'mes' && c.desde <= HOY).sort((x, y) => y.desde.localeCompare(x.desde)); return (meses.find(c => c.corte >= HOY) || meses[0]).periodo; })();
   const titulo = async () => (await p.locator('#titulo-vista').textContent()).trim();
   ok('Edgar tiene la loseta (escondida en Hoy, como las demás del dueño)', !(await p.locator('#btn-conta').getAttribute('hidden')) );
-  ok('…y la pestaña «Contabilidad» en el lateral con las 10 páginas como subtítulos (conta-<k>, los que da MXP_CONTA.paginas(): «Costo por obra» y «Cierre del mes» incluidas), y el botón de la barra de abajo', (await p.locator('#lateral [data-lat="conta"]').count()) === 1 &&
+  ok('…y la pestaña «Contabilidad» en el lateral con las 14 páginas como subtítulos (conta-<k>, los que da MXP_CONTA.paginas(): «Costo por obra», «Cierre del mes», «Cédula de corte» y «Subs y 1099» incluidas), y el botón de la barra de abajo', (await p.locator('#lateral [data-lat="conta"]').count()) === 1 &&
     JSON.stringify(await p.locator('#lateral [data-lat^="conta-"]').evaluateAll(bs => bs.map(b => b.dataset.lat))) === JSON.stringify(PAGS.map(k => 'conta-' + k)) && (await p.locator('#nav-abajo button[data-nav="conta"]').getAttribute('hidden')) === null);
 
   // ---- La portada («Resumen»): control antes de pintar, las fichas y «Qué atender» ----
@@ -2870,16 +3112,16 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
   await p.waitForSelector('#conta-raiz .ct-ficha', { timeout: 8000 });
   ok('Al entrar, la vista de la contabilidad se ve, la página es «Resumen» (la portada) y la pestaña «resumen» está marcada', await p.locator('#vista-conta').isVisible() && (await p.locator('#titulo-vista').textContent()).trim() === 'Resumen' && (await p.locator('.ct-tab[data-pag="resumen"][aria-current="page"]').count()) === 1, await p.locator('#titulo-vista').textContent());
   const pags = await p.evaluate(() => window.MXP_CONTA.paginas().map(x => [x.k, x.nombre, /^<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"/.test(x.svg) && /<\/svg>$/.test(x.svg)]));
-  ok('MXP_CONTA.paginas() da las 12 páginas en su orden (Costo por obra después de Estados y, desde la fase 10, el WIP entre Costo por obra y Cierre del mes, y Facturas antes de Cobros en línea), con su nombre y un svg del estilo del menú', JSON.stringify(pags.map(x => x[0])) === JSON.stringify(PAGS) && pags.every(x => x[2]) && pags.map(x => x[1]).join('|') === 'Resumen|Bancos y tarjetas|Bandeja|Conciliar|Movimientos|Estados financieros|Costo por obra|WIP (obra en curso)|Cierre del mes|Facturas|Cobros en línea|Conexiones y seguridad', JSON.stringify(pags));
+  ok('MXP_CONTA.paginas() da las 14 páginas en su orden (Costo por obra después de Estados; desde la fase 10, el WIP entre Costo por obra y Cierre del mes, y Facturas antes de Cobros en línea; desde la 12a, la Cédula de corte después del cierre y Subs y 1099 después de los cobros), con su nombre y un svg del estilo del menú', JSON.stringify(pags.map(x => x[0])) === JSON.stringify(PAGS) && pags.every(x => x[2]) && pags.map(x => x[1]).join('|') === 'Resumen|Bancos y tarjetas|Bandeja|Conciliar|Movimientos|Estados financieros|Costo por obra|WIP (obra en curso)|Cierre del mes|Cédula de corte|Facturas|Cobros en línea|Subs y 1099|Conexiones y seguridad', JSON.stringify(pags));
   ok('La página no repite el título que ya pone la barra de la app: la cabecera trae la línea de cifras y, como aria-label, el nombre', (await p.locator('.ct-pag-h').count()) === 0 && (await p.locator('.ct-pag-cab').getAttribute('aria-label')) === 'Resumen' && (await p.locator('.ct-pag-sub').count()) === 1);
   {
     // la lista de respaldo de app.js (por si conta.js no cargó) lleva los mismos trazos que ICONOS de conta.js: el lateral y las pestañas nunca enseñan iconos distintos para la misma página
     const appJs = fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8'), contaJs = fs.readFileSync(path.join(ROOT, 'js', 'conta.js'), 'utf8');
     const fijos = Object.fromEntries([...appJs.matchAll(/\{ k: "(\w+)", nombre: "[^"]+", svg: SVG_MENU\('([^']*)'\) \}/g)].map(m => [m[1], m[2]]));
     const iconos = Object.fromEntries([...contaJs.matchAll(/^\s+(\w+): svgMenu\('([^']*)'\),?$/gm)].map(m => [m[1], m[2]]));
-    ok('La lista de respaldo CONTA_PAGINAS_FIJAS de app.js trae las 12 páginas en el mismo orden y con los mismos trazos que ICONOS de conta.js («Costo por obra», «WIP», «Cierre del mes» y «Facturas» incluidas)', JSON.stringify(Object.keys(fijos)) === JSON.stringify(PAGS_APP) && PAGS_APP.every(k => fijos[k] && fijos[k] === iconos[k]), PAGS_APP.filter(k => fijos[k] !== iconos[k]).join(',') || Object.keys(fijos).join(','));
+    ok(`La lista de respaldo CONTA_PAGINAS_FIJAS de app.js trae ${PAGS_APP.length === PAGS.length ? 'las 14 páginas' : 'las 12 de antes (la Cédula y Subs y 1099 todavía no están en app.js)'} en el mismo orden y con los mismos trazos que ICONOS de conta.js («Costo por obra», «WIP», «Cierre del mes» y «Facturas» incluidas)`, JSON.stringify(Object.keys(fijos)) === JSON.stringify(PAGS_APP) && PAGS_APP.every(k => fijos[k] && fijos[k] === iconos[k]), PAGS_APP.filter(k => fijos[k] !== iconos[k]).join(',') || Object.keys(fijos).join(','));
   }
-  ok('En la computadora (1280 px) las pestañas de arriba van escondidas (las enseña el lateral), pero siguen en el DOM con sus 12 páginas', (await p.locator('.ct-tabs').evaluate(e => getComputedStyle(e).display)) === 'none' && (await p.locator('.ct-tab').count()) === PAGS.length && JSON.stringify(await p.locator('.ct-tab').evaluateAll(bs => bs.map(b => b.dataset.pag))) === JSON.stringify(PAGS));
+  ok('En la computadora (1280 px) las pestañas de arriba van escondidas (las enseña el lateral), pero siguen en el DOM con sus 14 páginas', (await p.locator('.ct-tabs').evaluate(e => getComputedStyle(e).display)) === 'none' && (await p.locator('.ct-tab').count()) === PAGS.length && JSON.stringify(await p.locator('.ct-tab').evaluateAll(bs => bs.map(b => b.dataset.pag))) === JSON.stringify(PAGS));
   await espiar(p);
   const ctrlR0 = desde(n).find(l => l.fn === 'fn_banco_control');
   ok('La portada pidió fn_banco_control(hoy) con las cuatro vistas del banco (v_banco_saldos manda) y fn_estados_control con v_resultados del mes de hoy', !!ctrlR0 && ctrlR0.args.p_periodo === 'hoy' && JSON.stringify(ctrlR0.args.p_vistas) === '["v_banco_saldos","v_banco_bandeja","v_conciliacion","v_banco_movimientos"]' &&
@@ -6154,6 +6396,695 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     estado.c9 = false; c9Reset(); estado.c12 = false; wReset(); conCodigo(false);
   }
 
+  // ---- La cédula de corte (c13, fase 12a) y los subs con su 1099 (c14), con la base simulada SACADA DEL BANCO (pantalla-f12.json):
+  // la cédula al último día del mes pasado (el resumen de la base manda: sus totales, sin sumar nada aquí), una fila por cuenta de
+  // balance con su píldora, los filtros, bajar a una cuenta (las facturas y lo suelto de la 1110, la conciliación de un banco con sus
+  // partidas en tránsito, lo de después a otra fecha), explicar (el texto corto que la base no deja, la explicación nueva, la vieja
+  // que se vuelve a explicar, retirarla), el renglón a mano (el monto mal que no sale, añadirlo, corregirlo, anularlo), «A mano»,
+  // «Explicaciones», QuickBooks, los ajustes, la 178 en el cierre con su botón; y los subs: las fichas con sus chips (W-9, TIN ····,
+  // COI), quien cobró sin ficha y «Darle su ficha» (el ZIP mal que dice la base), el TIN en un campo de contraseña que se vacía y nunca
+  // se ve entero, el W-9 y el COI al bucket «subs» con su sha256, «Decir de quién es» un Zelle sin nombre, la ficha del ayudante, el
+  // umbral del año, el 1099 de 2026 con su aviso fijo y cada pago, la hoja (pide el código y avisa del TIN entero; se baja como
+  // archivo y la pantalla no se la queda), el COI, los ajustes, retirar un papel, la 160 y la 179 en el cierre; la falla ruidosa, sin
+  // c13 ni c14, el equipo, sin el código del teléfono y 390/820/1280 sin desplazamiento lateral ni rojos ----
+  {
+    estado.c13 = true; estado.c14 = true; estado.c9 = true; c9Reset(); xReset();
+    const conCodigo = si => { estado.mfaFactores = si ? [{ id: 'f-1', friendly_name: 'Teléfono de Edgar', factor_type: 'totp', status: 'verified' }] : []; estado.sesionAal = si ? 'aal2' : undefined; };
+    const abrirCtx = async (w, codigo) => {
+      conCodigo(codigo);
+      const cx = await b.newContext({ viewport: { width: w, height: w < 700 ? 844 : 1000 }, deviceScaleFactor: w < 1024 ? 2 : 1, isMobile: w < 1024, hasTouch: w < 1024, serviceWorkers: 'block', acceptDownloads: true });
+      await simular(cx, 'dueno');
+      const q = await cx.newPage(); q.on('pageerror', e => errs.push(`f12 ${w}: ` + String(e).slice(0, 160)));
+      await q.goto('http://localhost:8873/index.html'); await q.waitForSelector('#vista-app:not([hidden])', { timeout: 15000 }); await q.waitForTimeout(800);
+      await q.evaluate(() => document.querySelectorAll('dialog[open]').forEach(d => d.close()));
+      await q.locator('#btn-conta').evaluate(x => x.click()); await q.waitForSelector('#conta-raiz .ct-ficha', { timeout: 8000 }); await pintado(q);
+      return { cx, q };
+    };
+    const ve = async (q, k, op) => { await q.evaluate(([k, o]) => window.MXP_CONTA.ir(k, o || {}), [k, op || null]); await pintado(q); };
+    const ultima = (n0, fn) => desde(n0).filter(l => l.fn === fn).pop();
+    const toca = async (q, sel) => { await q.locator(sel).first().evaluate(x => x.click()); await pintado(q); };
+    const txt = async loc => (await loc.evaluateAll(es => es.map(x => x.innerText).join(' '))).replace(/\s+/g, ' ').trim();
+    const enviar = async (q, form) => { await form.locator('button[type="submit"]').evaluate(x => x.click()); await pintado(q); };
+    const rellenar = async (form, v) => { for (const [k, x] of Object.entries(v)) { const el = form.locator(`[name="${k}"]`); if ((await el.evaluate(e => e.tagName)) === 'SELECT') await el.selectOption(x); else await el.fill(x); } };
+    const usd = v => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(v));
+    const MESC = ['', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+    const largo = iso => { const [a, m, d] = String(iso).slice(0, 10).split('-').map(Number); return `${d} ${MESC[m]} ${a}`; };
+    const finMes = (() => { const [a, m] = HOY.split('-').map(Number); return new Date(Date.UTC(a, m - 1, 0)).toISOString().slice(0, 10); })();
+    const DIA = X_FECHAS.includes(finMes) ? finMes : '2026-10-31';   // lo que contestó el banco a ese día (otro día de prueba: el 31-oct)
+    const I = F12.ids, TX = F12.textos;
+    const esc = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = s => new RegExp(esc(s));
+    const ced = (q, cuenta) => q.locator(`.ct-ced-fila[data-ced-cuenta="${cuenta}"]`);
+    let { cx, q } = await abrirCtx(1280, true);
+    // la base simulada es la de los c13 y c14 de este árbol (si cambian, se vuelve a capturar: node pruebas/conta/f12-capturar.js <bd nueva>)
+    { const h = f => require('crypto').createHash('sha1').update(fs.readFileSync(path.join(ROOT, 'docs', 'conta', f))).digest('hex').slice(0, 12);
+      ok('La base simulada de la cédula y de los subs (pantalla-f12.json) se sacó del banco con los c13-cedula.sql y c14-subs.sql de este árbol', F12.capturado.c13 === h('c13-cedula.sql') && F12.capturado.c14 === h('c14-subs.sql'),
+        `capturado ${F12.capturado.c13}/${F12.capturado.c14}, hoy ${h('c13-cedula.sql')}/${h('c14-subs.sql')}: vuelve a correr node pruebas/conta/f12-capturar.js <bd nueva>`); }
+
+    // ==================== LA CÉDULA ====================
+    let n0 = llamadas.length;
+    await ve(q, 'cedula');
+    const res0 = xLeer('c13', `fn_cedula_resumen|${xDia(finMes)}`), filas0 = xLeer('c13', `fn_cedula|${DIA}`);
+    const cResumen = ultima(n0, 'fn_cedula_resumen'), cCed = ultima(n0, 'fn_cedula'), cCtl = ultima(n0, 'fn_cedula_control');
+    ok('Cédula · el título, y pide el resumen al último día del mes pasado, la cédula y el control de ESE día (el que dijo la base)', (await titulo2(q)) === 'Cédula de corte' && !!cResumen && cResumen.args.p_fecha === finMes &&
+      !!cCed && cCed.args.p_fecha === res0.fecha && !!cCtl && cCtl.args.p_periodo === res0.periodo, JSON.stringify([cResumen && cResumen.args, cCed && cCed.args, cCtl && cCtl.args]));
+    const kpis = await txt(q.locator('#ct-ced-res .ct-kpis'));
+    ok(`…el resumen con los totales DE LA BASE (activo ${usd(res0.activo)}, pasivo ${usd(res0.pasivo)}, patrimonio ${usd(res0.capital)}) y lo que pide algo (${res0.pendientes})`,
+      kpis.includes(usd(res0.activo)) && kpis.includes(usd(res0.pasivo)) && kpis.includes(usd(res0.capital)) && re(`${res0.pendientes} cuentas piden algo`).test(await txt(q.locator('#ct-ced-res .ct-cab'))) &&
+      re(`Diferencia sin explicar: ${usd(res0.diferencia_pendiente)}`).test(await txt(q.locator('#ct-ced-res'))) && /explicación se quedó vieja/.test(await txt(q.locator('#ct-ced-res'))), kpis);
+    // (arreglo A3) la cuarta cifra: el resultado sin cerrar, y la ecuación del balance tal como la da la base (Activo = Pasivo + Patrimonio + Resultado)
+    ok(`…la cuarta loseta «Resultado sin cerrar» (${usd(res0.resultado)}) y la ecuación: Activo ${usd(res0.activo)} = Pasivo ${usd(res0.pasivo)} + Patrimonio ${usd(res0.capital)} + ${usd(res0.resultado)}, con «el balance cuadra» (de la base)`,
+      (await q.locator('#ct-ced-res .ct-kpis.cuatro .ct-kpi').count()) === 4 && re(`Resultado sin cerrar ${usd(res0.resultado)}`).test(kpis) && res0.balance_cuadra === true &&
+      re(`Activo ${usd(res0.activo)} = Pasivo ${usd(res0.pasivo)} + Patrimonio ${usd(res0.capital)} + el resultado del año sin cerrar ${usd(res0.resultado)}`).test(await txt(q.locator('#ct-ced-res .ct-ced-ecuacion'))) &&
+      /el balance cuadra/.test(await txt(q.locator('#ct-ced-res .ct-ced-ecuacion .ct-pill.ok'))), kpis);
+    // (arreglo A3) «cuadran» ya no cuenta lo del libro; con qué cuadran; el reparto del préstamo aparte, una vez
+    ok(`…«${res0.cuadran} cuadran (${res0.cuadran_papel} con un papel, ${res0.cuadran_partidas} por sus partidas del libro)» y ${res0.del_libro} que sale del propio libro, aparte; el reparto del préstamo (${usd(res0.reparto_pendiente)} en ${res0.reparto_cuentas} cuentas) en su propia línea, fuera de la diferencia sin explicar`,
+      re(`${res0.cuadran} cuadran con su auxiliar (${res0.cuadran_papel} con un papel, ${res0.cuadran_partidas} por sus partidas del libro), ${res0.del_libro} sale del propio libro`).test(await txt(q.locator('#ct-ced-res'))) &&
+      re(`El reparto de un préstamo entre lo corriente y lo de largo plazo: ${usd(res0.reparto_pendiente)} en ${res0.reparto_cuentas} cuentas`).test(await txt(q.locator('#ct-ced-res .ct-ced-reparto'))) &&
+      re(`${res0.del_libro} del libro`).test(await txt(q.locator('.ct-pag-sub'))), await txt(q.locator('#ct-ced-res .ct-nota')));
+    ok(`…una fila por cuenta de balance (${res0.cuentas}), agrupadas en Activo, Pasivo y Patrimonio`, (await q.locator('.ct-ced-fila').count()) === res0.cuentas && filas0.length === res0.cuentas &&
+      JSON.stringify(await q.locator('.ct-ced-grupo').allTextContents()) === '["Activo","Pasivo","Patrimonio"]');
+    const fila = async c => txt(ced(q, c));
+    ok('…cada fila con su saldo, su auxiliar, lo que suma, la diferencia y su píldora: 2010 no cuadra ($60.00), 1110 explicada, 2050 con la explicación vieja, 1520 cuadra, 1010 sin auxiliar, 1093 cuadra con su conciliación',
+      /2010 Cuentas por pagar.*\$1,180\.00.*\$1,120\.00.*\$60\.00.*no cuadra/.test(await fila('2010')) && /explicada/.test(await fila('1110')) && /explicación vieja/.test(await fila('2050')) &&
+      /cuadra/.test(await fila('1520')) && /sin auxiliar/.test(await fila('1010')) && /—/.test(await fila('1010')) && /El estado de cuenta, conciliado.*\$800\.00.*cuadra/.test(await fila('1093')) &&
+      (await ced(q, '2010').evaluate(e => e.classList.contains('mal'))), await fila('2010'));
+    const f2300 = filas0.find(f => f.cuenta === '2300'), f2520 = filas0.find(f => f.cuenta === '2520');
+    ok('(arreglo A1) la 2300 (use tax) sale «del libro»: píldora neutra, nunca verde, «sale del propio libro» debajo y no pide nada', f2300.estado === 'del_libro' && f2300.pendiente === false &&
+      /del libro/.test(await txt(ced(q, '2300').locator('.ct-pill'))) && !(await ced(q, '2300').locator('.ct-pill.ok, .ct-pill.warn, .ct-pill.bad').count()) && /sale del propio libro/.test(await txt(ced(q, '2300').locator('.ct-ced-sost'))) &&
+      !(await ced(q, '2300').evaluate(e => e.classList.contains('pide') || e.classList.contains('mal'))), await fila('2300'));
+    ok('(arreglo A2) debajo de cada «cuadra», con qué: la 1020 «con un papel», la 1120 «por sus partidas del libro»; la 2010 (no cuadra) no dice nada de eso', /con un papel/.test(await txt(ced(q, '1020').locator('.ct-ced-sost'))) &&
+      /por sus partidas del libro/.test(await txt(ced(q, '1120').locator('.ct-ced-sost'))) && !(await ced(q, '2010').locator('.ct-ced-sost').count()));
+    ok(`(arreglo A2) el préstamo: la 2520 y la 2530 no cuadran, pero dicen que con su par el total cuadra (solo el reparto) y van en ámbar, no en rojo`, f2520.solo_reparto === true && f2520.par === '2530' &&
+      /con la 2530 el total cuadra: solo el reparto/.test(await fila('2520')) && /con la 2520 el total cuadra: solo el reparto/.test(await fila('2530')) &&
+      (await ced(q, '2520').evaluate(e => e.classList.contains('pide') && !e.classList.contains('mal'))), await fila('2520'));
+    ok('(arreglo A5) una cuenta sin auxiliar (la 1010) dice con qué SE SOSTENDRÍA, no «Su auxiliar: El estado de cuenta, conciliado»', /Se sostendría con: El estado de cuenta, conciliado/.test(await txt(ced(q, '1010').locator('.ct-ced-a'))) && /sin auxiliar/.test(await fila('1010')));
+    const pideN = filas0.filter(f => f.pendiente).length;
+    await toca(q, '[data-ced-filtro="piden"]');
+    ok(`…«Piden algo (${pideN})» deja solo las que piden algo`, (await q.locator('.ct-ced-fila').count()) === pideN && /Piden algo \(\d+\)/.test(await txt(q.locator('[data-ced-filtro="piden"]'))));
+    await toca(q, '[data-ced-filtro="todas"]');
+    await foto(q, 'f12-1-cedula');
+
+    // ---- bajar a una cuenta: la 1110 (las facturas y lo suelto, explicada) ----
+    n0 = llamadas.length;
+    await toca(q, '[data-ced-cuenta="1110"]');
+    const cPart = ultima(n0, 'fn_cedula_partidas');
+    const v1110 = await txt(q.locator('#ct-ced-cta')), p1110 = await txt(q.locator('#ct-ced-partidas'));
+    ok('Bajar a la 1110 · pide sus renglones (fn_cedula_partidas con ese día y esa cuenta); el título es la cuenta y «←» aparece', !!cPart && cPart.args.p_cuenta === '1110' && cPart.args.p_fecha === res0.fecha &&
+      (await titulo2(q)) === '1110 · Cuentas por cobrar' && await q.locator('#btn-volver').isVisible(), JSON.stringify(cPart && cPart.args));
+    ok('…lo que dice la base de ella (en el libro $3,950.00, su auxiliar $3,700.00, $250.00 de diferencia, el detalle) y su explicación con quién y cuándo',
+      /En el libro \$3,950\.00/.test(v1110) && /Su auxiliar \$3,700\.00/.test(v1110) && /Diferencia \$250\.00/.test(v1110) && /\$250\.00 están en el libro sin decir de qué factura son/.test(v1110) &&
+      /«ZZ REAL: los 250 son un saldo que venía de QuickBooks sin su factura»/.test(v1110) && /Edgar, el \d+ \w+ 2026/.test(v1110) && (await q.locator('#ct-ced-cta [data-ced-retirar]').count()) === 1 && !(await q.locator('#ct-ced-cta [data-ced-explicar]').count()), v1110.slice(0, 300));
+    ok('…lo que la sostiene por obra: las facturas R-101 y R-102 con lo que falta cobrar, y lo SUELTO ($250.00, «sin papel») aparte', /ZZ Oficina Dos.*Factura #R-101.*\$2,500\.00/i.test(p1110) && /ZZ Casa Uno.*Factura #R-102.*\$1,200\.00/i.test(p1110) &&
+      /sin papel.*Sin factura ni anticipo.*\$250\.00/.test(p1110) && (await q.locator('#ct-ced-partidas .ct-ced-r.suelto').count()) === 1, p1110.slice(0, 300));
+    ok('…y el botón a Movimientos (de donde salen las partidas)', (await q.locator('#ct-ced-cta [data-ced-ir="movimientos"]').count()) === 1);
+    await foto(q, 'f12-2-cuenta-1110');
+    ok('«←» de la app cierra la cuenta y vuelve a la cédula', await q.evaluate(() => window.MXP_CONTA.atras()) && (await (async () => { await pintado(q); return q.locator('.ct-ced-fila').count(); })()) === res0.cuentas && (await titulo2(q)) === 'Cédula de corte');
+    // ---- un banco: su conciliación, y a otra fecha lo de después ----
+    await toca(q, '[data-ced-cuenta="1093"]');
+    const p1093 = await txt(q.locator('#ct-ced-partidas'));
+    ok('Un banco (1093) · su auxiliar es la conciliación: el statement al 31-oct, el depósito en tránsito (+$1,000.00) y el cheque en circulación (−$200.00), y el botón a Conciliar',
+      /Lo que dice el statement al 31-oct-2026.*\$0\.00/.test(p1093) && /Depósito en tránsito: ZZ: un depósito al banco de prueba.*\$1,000\.00/.test(p1093) && /Cheque o cargo en circulación: ZZ: el cheque 9301.*-\$200\.00/.test(p1093) &&
+      (await q.locator('#ct-ced-cta [data-ced-ir="conciliar"]').count()) === 1, p1093);
+    await q.locator('#ct-ced-volver').click(); await pintado(q);
+    n0 = llamadas.length;
+    await q.locator('#ct-ced-dia').fill('2026-11-12'); await q.locator('#ct-ced-dia').dispatchEvent('change'); await pintado(q);
+    ok('Otro día (12-nov) · se vuelve a pedir todo a ese día; el 1093 ya no cuadra: lo que el libro movió después de la conciliación ($50.00)', ultima(n0, 'fn_cedula_resumen').args.p_fecha === '2026-11-12' &&
+      /Al 12 nov 2026/.test(await txt(q.locator('.ct-pag-sub'))) && /\$850\.00.*\$800\.00.*\$50\.00.*no cuadra/.test(await fila('1093')), await fila('1093'));
+    await toca(q, '[data-ced-cuenta="1093"]');
+    ok('…y en su auxiliar sale aparte, «después de la conciliación», con lo que falta conciliar', /después de la conciliación.*Lo que el libro movió después de esa conciliación \(del 1-nov-2026 al 12-nov-2026\).*\$50\.00/.test(await txt(q.locator('#ct-ced-partidas'))) &&
+      /Su auxiliar es del 31 oct 2026/.test(await txt(q.locator('#ct-ced-cta'))) && /Concilia la cuenta hasta el 12-nov-2026/.test(await txt(q.locator('#ct-ced-cta .ct-ced-hacer'))));
+    await q.locator('#ct-ced-volver').click(); await pintado(q);
+    await q.locator('#ct-ced-dia').fill(DIA); await q.locator('#ct-ced-dia').dispatchEvent('change'); await pintado(q);
+
+    // ---- (arreglos A1 y A4) la 2300: sale del libro, sus renglones del propio libro con su importe, y no se explica ----
+    await toca(q, '[data-ced-cuenta="2300"]');
+    const p2300 = await txt(q.locator('#ct-ced-partidas'));
+    ok('(arreglo A1) La 2300 · «del libro» con «sale del propio libro», sin «Explicar la diferencia» (la base no lo deja: MX008) ni un «Qué hacer» en ámbar', /del libro/.test(await txt(q.locator('#ct-ced-cta .ct-cab'))) &&
+      /sale del propio libro/.test(await txt(q.locator('#ct-ced-cta .ct-cab .ct-ced-sost'))) && !(await q.locator('#ct-ced-cta [data-ced-explicar]').count()) && !(await q.locator('#ct-ced-cta .ct-aviso.ct-ced-hacer').count()) &&
+      /aquí no se compara con ningún papel de fuera/.test(await txt(q.locator('#ct-ced-cta .ct-ced-detalle'))));
+    ok('(arreglo A4) …su renglón del propio libro (clase «libro») con SU IMPORTE: «Use tax de octubre de 2026: devengado $21.50, pagado $0.00» por $21.50, no «—»', (await q.locator('#ct-ced-partidas .ct-ced-r.libro').count()) === 1 &&
+      /del libro.*Use tax de octubre de 2026: devengado \$21\.50, pagado \$0\.00/.test(p2300) && (await txt(q.locator('#ct-ced-partidas .ct-ced-r.libro .ct-ced-r-m'))) === '$21.50' && /1 renglón/.test(await txt(q.locator('#ct-ced-partidas .ct-cab'))), p2300);
+    await q.locator('#ct-ced-volver').click(); await pintado(q);
+    // ---- (arreglo A2) el préstamo: la 2520 dice que el total cuadra con su par y lleva a él ----
+    await toca(q, '[data-ced-cuenta="2520"]');
+    ok('(arreglo A2) La 2520 · «con la 2530 el total del préstamo sí cuadra» y un botón a la otra cuenta del préstamo', /Con la 2530 el total del préstamo sí cuadra/.test(await txt(q.locator('#ct-ced-cta .ct-datos'))) && (await q.locator('#ct-ced-cta [data-ced-par="2530"]').count()) === 1);
+    await toca(q, '#ct-ced-cta [data-ced-par="2530"]');
+    ok('…que abre la 2530 al mismo día, con su par (la 2520)', (await titulo2(q)) === `2530 · ${filas0.find(f => f.cuenta === '2530').nombre}` && (await q.locator('#ct-ced-cta [data-ced-par="2520"]').count()) === 1 && (await q.evaluate(() => window.MXP_CONTA._estado.ced.fecha)) === DIA);
+    await q.locator('#ct-ced-volver').click(); await pintado(q);
+    // ---- (arreglo A1) al 30-sep: la 1093 «del libro» (su conciliación es posterior): no pide nada, y dice cómo comprobarla sin ámbar ----
+    await q.locator('#ct-ced-dia').fill('2026-09-30'); await q.locator('#ct-ced-dia').dispatchEvent('change'); await pintado(q);
+    const f1093s = xLeer('c13', 'fn_cedula|2026-09-30').find(f => f.cuenta === '1093');
+    await toca(q, '[data-ced-cuenta="1093"]');
+    ok('(arreglo A1) Al 30-sep · la 1093 «del libro» («un papel de otro día, llevado a la fecha»): «No pide nada. Para comprobar…» como una nota, no como «Qué hacer», y sin «Explicar»', f1093s.estado === 'del_libro' && f1093s.pendiente === false &&
+      /del libro/.test(await txt(q.locator('#ct-ced-cta .ct-cab'))) && /un papel de otro día, llevado a la fecha/.test(await txt(q.locator('#ct-ced-cta .ct-cab'))) &&
+      re(f1093s.que_hacer).test(await txt(q.locator('#ct-ced-cta .ct-ced-comprobar'))) && !(await q.locator('#ct-ced-cta .ct-aviso.ct-ced-hacer').count()) && !/Qué hacer/.test(await txt(q.locator('#ct-ced-cta'))) &&
+      !(await q.locator('#ct-ced-cta [data-ced-explicar]').count()), await txt(q.locator('#ct-ced-cta')));
+    await q.locator('#ct-ced-volver').click(); await pintado(q);
+    await q.locator('#ct-ced-dia').fill(DIA); await q.locator('#ct-ced-dia').dispatchEvent('change'); await pintado(q);
+    // ---- (arreglo A5) el OJO del origen: el «efectivo» de c3 apuntado a un banco que se concilia (del banco, aparte) ----
+    estado.c13EfectivoBanco = true;
+    await ve(q, 'cedula', { sub: 'cedula', fecha: DIA });
+    const ojo1093 = xVal(F12.c13.aparte.efectivo_banco[`fn_cedula|2026-10-31`]).find(f => f.cuenta === '1093');
+    ok('(arreglo A5) Con el «efectivo» de los recibos apuntado al 1093 · su fila lleva «ojo: mírala»', /OJO:/.test(ojo1093.origen) && /ojo: mírala/.test(await txt(ced(q, '1093').locator('.ct-pill.warn'))));
+    await toca(q, '[data-ced-cuenta="1093"]');
+    ok('…y en la cuenta el aviso de la base, aparte y a la vista («OJO: la forma de pago «efectivo» de los recibos apunta a esta cuenta…»), no escondido en la letra chica', re(ojo1093.origen.slice(ojo1093.origen.indexOf('OJO:'))).test(await txt(q.locator('#ct-ced-cta .ct-ced-ojo'))) &&
+      !/OJO/.test(await txt(q.locator('#ct-ced-cta .ct-ced-aux small'))), await txt(q.locator('#ct-ced-cta .ct-ced-aux')));
+    estado.c13EfectivoBanco = false;
+    await q.locator('#ct-ced-volver').click(); await pintado(q);
+
+    // ---- explicar: la 2010 (no cuadra) ----
+    await toca(q, '[data-ced-cuenta="2010"]');
+    let card = q.locator('#ct-ced-cta');
+    ok('La 2010 (no cuadra) · lo que hacer (de la base) y «Explicar la diferencia»', /Qué hacer:/.test(await txt(card.locator('.ct-ced-hacer'))) && (await card.locator('[data-ced-explicar]').count()) === 1);
+    await card.locator('[data-ced-explicar]').click();
+    n0 = llamadas.length;
+    await card.locator('textarea[name="texto"]').fill('ZZ corto'); await enviar(q, card.locator('.ct-form'));
+    const eCorto = F12.c13.errores.explicar_corto.error.message;
+    ok('…un texto corto: la base dice que no (22023) y la pantalla lo enseña tal cual, sin cambiar nada', !!ultima(n0, 'fn_cedula_explicar') && (await txt(card.locator('.ct-form .ct-error'))) === eCorto && X.e13 === 0, await txt(card.locator('.ct-form .ct-error')));
+    await card.locator('textarea[name="texto"]').fill(TX.explicar_2010); await enviar(q, card.locator('.ct-form'));
+    const cExp = ultima(n0, 'fn_cedula_explicar');
+    ok('…con su texto: fn_cedula_explicar(2010, el día, el texto); la nota arriba, la píldora «explicada» y la explicación con quién y cuándo', !!cExp && cExp.args.p_cuenta === '2010' && cExp.args.p_fecha === res0.fecha && cExp.args.p_texto === TX.explicar_2010 &&
+      X.e13 === 1 && /Explicada la 2010 al 31 oct 2026/.test(await txt(q.locator('.ct-ced-nota'))) && /explicada/.test(await txt(q.locator('#ct-ced-cta .ct-cab'))) && re(`«${TX.explicar_2010}»`).test(await txt(q.locator('#ct-ced-expl'))), JSON.stringify(cExp && cExp.args));
+    await q.locator('#ct-ced-volver').click(); await pintado(q);
+    ok('…y en la cédula: la 2010 explicada, el resumen con una explicada más', /explicada/.test(await fila('2010')) && re(`${xLeer('c13', `fn_cedula_resumen|${DIA}`).explicadas} explicadas`).test(await txt(q.locator('.ct-pag-sub'))));
+
+    // ---- el renglón a mano: la 1600 (depósitos) ----
+    await toca(q, '[data-ced-cuenta="1600"]');
+    card = q.locator('#ct-ced-cta');
+    await card.locator('[data-ced-renglon]').click();
+    n0 = llamadas.length;
+    const fR = card.locator('.ct-form');
+    await rellenar(fR, { concepto: TX.renglon.concepto, monto: '0', documento: TX.renglon.documento, nota: TX.renglon.nota });
+    await fR.locator('[name="desde"]').fill(TX.renglon.desde);
+    await enviar(q, fR);
+    const malMonto = await txt(fR.locator('.ct-error'));
+    await fR.locator('[name="monto"]').fill('15o'); await enviar(q, fR);
+    await fR.locator('[name="monto"]').fill('150.001'); await enviar(q, fR);
+    ok('Un renglón a mano · un monto en cero, con letra o con tres decimales no sale (lo dice en llano y no llama)', /Cero no sostiene nada/.test(malMonto) && /dos decimales como mucho/.test(await txt(fR.locator('.ct-error'))) && !ultima(n0, 'fn_cedula_renglon'), malMonto);
+    await fR.locator('[name="monto"]').fill(TX.renglon.monto); await enviar(q, fR);
+    const cRen = ultima(n0, 'fn_cedula_renglon');
+    ok('…bien escrito: fn_cedula_renglon con la cuenta, qué es, el monto COMO TEXTO, desde, hasta vacío (sigue), el documento y la nota', !!cRen && JSON.stringify(cRen.args.p) === JSON.stringify({ cuenta: '1600', concepto: TX.renglon.concepto, monto: '150.00', desde: TX.renglon.desde, hasta: '', documento: TX.renglon.documento, nota: TX.renglon.nota }) && X.e13 === 2, JSON.stringify(cRen && cRen.args));
+    const p1600 = await txt(q.locator('#ct-ced-partidas'));
+    ok('…y sale en lo que la sostiene, con «Corregir» y «Anular»; la cuenta ya cuadra con sus $650.00', /ZZ: depósito de la luz.*ZZ recibo 4471.*\$150\.00/.test(p1600) && (await q.locator(`#ct-ced-partidas [data-ced-corregir="${I.renglon_nuevo}"]`).count()) === 1 &&
+      /cuadra/.test(await txt(q.locator('#ct-ced-cta .ct-cab'))) && /Su auxiliar \$650\.00/.test(await txt(q.locator('#ct-ced-cta .ct-kpis'))), p1600);
+    await q.locator(`#ct-ced-partidas [data-ced-corregir="${I.renglon_nuevo}"]`).click();
+    const fC = q.locator('#ct-ced-partidas .ct-form');
+    ok('Corregir · la forma trae lo de ahora (qué es, 150.00, desde, el documento, la nota)', (await fC.locator('[name="concepto"]').inputValue()) === TX.renglon.concepto && (await fC.locator('[name="monto"]').inputValue()) === '150.00' && (await fC.locator('[name="desde"]').inputValue()) === TX.renglon.desde && (await fC.locator('[name="documento"]').inputValue()) === TX.renglon.documento);
+    n0 = llamadas.length;
+    await fC.locator('[name="monto"]').fill('175.00'); await enviar(q, fC);
+    const cCor = ultima(n0, 'fn_cedula_renglon');
+    ok('…con otro monto: fn_cedula_renglon con su id (sin la cuenta, que no cambia) y lo demás de la forma; el de antes queda sustituido', !!cCor && cCor.args.p.id === I.renglon_nuevo && !('cuenta' in cCor.args.p) && cCor.args.p.monto === '175.00' && X.e13 === 3 &&
+      /\$175\.00/.test(await txt(q.locator('#ct-ced-partidas'))) && /Corregido el renglón «ZZ: depósito de la luz» de la 1600: \$175\.00/.test(await txt(q.locator('.ct-ced-nota'))), JSON.stringify(cCor && cCor.args));
+    await q.locator(`#ct-ced-partidas [data-ced-anular="${I.renglon_corregido}"]`).click();
+    n0 = llamadas.length;
+    const fA = q.locator('#ct-ced-partidas .ct-form');
+    await fA.locator('[name="motivo"]').fill(TX.anular); await enviar(q, fA);
+    const cAn = ultima(n0, 'fn_cedula_renglon_anular');
+    ok('Anular · con su motivo: fn_cedula_renglon_anular(el id, el motivo); deja de sumar y la 1600 vuelve a no cuadrar', !!cAn && cAn.args.p_id === I.renglon_corregido && cAn.args.p_motivo === TX.anular && X.e13 === 4 &&
+      !/depósito de la luz/.test(await txt(q.locator('#ct-ced-partidas'))) && /no cuadra/.test(await txt(q.locator('#ct-ced-cta .ct-cab'))), JSON.stringify(cAn && cAn.args));
+    await q.locator('#ct-ced-volver').click(); await pintado(q);
+
+    // ---- la explicación vieja (2050): volver a explicarla; y retirar la de la 1110 ----
+    await toca(q, '[data-ced-cuenta="2050"]');
+    card = q.locator('#ct-ced-cta');
+    ok('La 2050 (explicación vieja) · la de antes a la vista, marcada («ya no vale») y la base dice por qué; «Volver a explicarla»', /ya no vale/.test(await txt(card.locator('#ct-ced-expl'))) && (await card.locator('#ct-ced-expl.vieja').count()) === 1 &&
+      /vuelve a explicarla/.test(await txt(card.locator('.ct-ced-detalle'))) && /Volver a explicarla/.test(await txt(card.locator('[data-ced-explicar]'))));
+    await card.locator('[data-ced-explicar]').click();
+    n0 = llamadas.length;
+    await card.locator('textarea[name="texto"]').fill(TX.explicar_2050); await enviar(q, card.locator('.ct-form'));
+    ok('…fn_cedula_explicar con el texto nuevo: ya no está vieja', !!ultima(n0, 'fn_cedula_explicar') && ultima(n0, 'fn_cedula_explicar').args.p_cuenta === '2050' && X.e13 === 5 && !(await q.locator('#ct-ced-expl.vieja').count()) && re(TX.explicar_2050).test(await txt(q.locator('#ct-ced-expl'))));
+    await q.locator('#ct-ced-volver').click(); await pintado(q);
+    await toca(q, '[data-ced-cuenta="1110"]');
+    card = q.locator('#ct-ced-cta');
+    await card.locator('[data-ced-retirar]').click();
+    n0 = llamadas.length;
+    await card.locator('[name="motivo"]').fill(TX.retirar_1110); await enviar(q, card.locator('.ct-form'));
+    const cRet = ultima(n0, 'fn_cedula_explicacion_retirar');
+    ok('Retirar la explicación de la 1110 · con su motivo: vuelve a «no cuadra» y ofrece explicarla otra vez', !!cRet && cRet.args.p_cuenta === '1110' && cRet.args.p_motivo === TX.retirar_1110 && X.e13 === 6 &&
+      /no cuadra/.test(await txt(q.locator('#ct-ced-cta .ct-cab'))) && (await q.locator('#ct-ced-cta [data-ced-explicar]').count()) === 1, JSON.stringify(cRet && cRet.args));
+    // ---- «A mano» y «Explicaciones» ----
+    await ve(q, 'cedula', { sub: 'manual' });
+    const man = xLeer('c13', 'v_cedula_manual');
+    ok(`«A mano» · los ${man.filter(m => m.vigente).length} vigentes (el 941 «sin documento» en rojo) y los de antes plegados (${man.filter(m => !m.vigente).length}: el corregido y el anulado)`,
+      (await q.locator('#ct-ced-manual > ul > .ct-wip-hi').count()) === man.filter(m => m.vigente).length && /941 por depositar.*sin documento/.test(await txt(q.locator('#ct-ced-manual > ul'))) &&
+      /Los de antes \(corregidos o anulados\): 2/.test(await txt(q.locator('#ct-ced-manual details summary'))));
+    await q.locator('#ct-ced-nuevo').click();
+    ok('…«Añadir un renglón» pide primero la cuenta (las de balance de fn_cedula_cuentas)', (await q.locator('#ct-ced-manual .ct-form select[name="cuenta"] option').count()) === xLeer('c13', 'fn_cedula_cuentas|').filter(k => k.activa !== false).length);
+    await ve(q, 'cedula', { sub: 'explicaciones' });
+    ok('«Explicaciones» · las vivas (2010 y la 2050 nueva) y, plegadas, la vieja de la 2050 (sustituida) y la de la 1110 (retirada, con su motivo)', (await q.locator('#ct-ced-expls > ul > .ct-wip-hi').count()) === 2 &&
+      /sustituida/.test(await q.locator('#ct-ced-expls details').textContent()) && new RegExp('retirada el \\d+ \\w+ 2026 \\(«' + esc(TX.retirar_1110) + '»\\)').test(await q.locator('#ct-ced-expls details').textContent()),
+      `${await q.locator('#ct-ced-expls > ul > .ct-wip-hi').count()} vivas · ${(await q.locator('#ct-ced-expls details').textContent()).replace(/\s+/g, ' ').slice(0, 200)}`);
+    // ---- QuickBooks y ajustes ----
+    await ve(q, 'cedula', { sub: 'qb' });
+    const qb = xLeer('c13', 'fn_cedula_qb|2026-10');
+    ok(`QuickBooks · la balanza de octubre: ${qb.length} cuentas, cuántas amarran, y la 1010 con lo de QuickBooks ($68,877.00) y lo que queda sin explicar`, (await q.locator('#ct-ced-qb tbody tr').count()) === qb.length &&
+      re(`${qb.filter(x => x.amarra).length} de ${qb.length} amarran`).test(await txt(q.locator('#ct-ced-qb .ct-cab'))) && /\$68,877\.00/.test(await txt(q.locator('#ct-ced-qb tr[data-cuenta="1010"]'))) && /docs\/qb\/zz-real-2026-10\.csv/.test(await txt(q.locator('#ct-ced-qb'))));
+    // ---- el cierre (avisa desde octubre, como lo dejó la base): la 178 con su botón a la cédula ----
+    await ve(q, 'cierre', { sub: 'cierre', periodo: '2026-10' });
+    const f178 = q.locator('#ct-cie-avisos .ct-cie-item[data-orden="178"]');
+    ok('El cierre de octubre · la 178 de la cédula entre los avisos (con su nombre fijo, no detiene) y su botón «Cédula»', (await f178.count()) === 1 && /Cédula: cada saldo del balance con su auxiliar cuadrado o explicado \(c13\)/.test(await txt(f178)) &&
+      !(await q.locator('#ct-cie-rev .ct-cie-item[data-orden="178"]').count()) && (await f178.locator('[data-cie-cedula="2026-10-31"]').count()) === 1, await txt(f178));
+    if (await f178.locator('[data-cie-cedula]').count()) { await f178.locator('[data-cie-cedula]').click(); await pintado(q); }
+    ok('…que lleva a la cédula AL ÚLTIMO DÍA DE ESE MES (la lista, aunque antes se mirara otro apartado)', (await titulo2(q)) === 'Cédula de corte' && (await q.locator('.ct-ced-fila').count()) > 0 && (await q.evaluate(() => window.MXP_CONTA._estado.ced.fecha)) === '2026-10-31');
+    await ve(q, 'cedula', { sub: 'ajustes' });
+    card = q.locator('#ct-ced-cfg');
+    ok('Ajustes · desde qué mes avisa el cierre (octubre, como lo dejó la base) y el patrimonio «a mano», con lo de antes plegado', (await card.locator('select[name="avisar_desde"]').inputValue()) === '2026-10' && (await card.locator('input[name="patrimonio"][value="manual"]').isChecked()) && /Cómo estaba antes: 1/.test(await txt(card.locator('details summary'))));
+    n0 = llamadas.length;
+    await card.locator('select[name="avisar_desde"]').selectOption('2026-11'); await card.locator('input[name="patrimonio"][value="mayor"]').check();
+    await card.locator('form button[type="submit"]').click(); await pintado(q);
+    const cCfg = desde(n0).filter(l => l.fn === 'fn_cedula_config' && l.args.p && Object.keys(l.args.p).length).pop();
+    ok('…guardar: fn_cedula_config({avisar_desde: 2026-11, patrimonio: mayor}) y la nota de la base', !!cCfg && JSON.stringify(cCfg.args) === '{"p":{"avisar_desde":"2026-11","patrimonio":"mayor"}}' && X.e13 === 7 && /avisa desde noviembre de 2026; el patrimonio, con su mayor/.test(await txt(q.locator('.ct-ced-nota'))),
+      `${JSON.stringify(cCfg && cCfg.args)} · escena ${X.e13} · ${await txt(q.locator('#ct-ced-cuerpo')).then(t => t.slice(0, 200))}`);
+    await ve(q, 'cedula', { sub: 'cedula' });
+    const f3100 = xLeer('c13', `fn_cedula|${DIA}`).find(f => f.cuenta === '3100');
+    ok(`…y en la cédula la 3100 se sostiene con su mayor («Su propio mayor»), más el renglón del acta que sigue sumando (los renglones a mano suman siempre): lo que suma (${usd(f3100.saldo_auxiliar)}) y la diferencia (${usd(f3100.diferencia)}) los dice la base`,
+      f3100.auxiliar === 'Su propio mayor' && new RegExp(['3100 Aportaciones', 'Su propio mayor', usd(f3100.saldo_auxiliar), usd(f3100.diferencia), ESTADO_X[f3100.estado]].map(esc).join('.*')).test(await fila('3100')), await fila('3100'));
+    await ve(q, 'cierre', { sub: 'cierre', periodo: '2026-10' });
+    ok('…y en el cierre de octubre la 178 ya no sale en rojo (avisa desde noviembre)', !(await q.locator('#ct-cie-cuerpo .ct-cie-item[data-orden="178"]:not(.ok)').count()));
+
+    // ==================== LOS SUBS Y EL 1099 ====================
+    n0 = llamadas.length;
+    await ve(q, 'subs');
+    const fichas0 = xLeer('c14', 'v_subs_fichas'), uno = fichas0.find(f => f.ficha_id === I.ficha_uno);
+    ok('Subs y 1099 · el título; pide los años, el control de 2026, las fichas y el 1099 del año', (await titulo2(q)) === 'Subs y 1099' && ['fn_subs_anios', 'fn_subs_control', 'fn_subs_1099'].every(f => !!ultima(n0, f)) && ultima(n0, 'fn_subs_control').args.p_anio === 2026);
+    const ctl0 = xLeer('c14', 'fn_subs_control|2026');
+    ok('(arreglo B8) …el control de los subs trae sus 18 filas (con la 82: pagos que el banco fecha en otro año)', ctl0.length === 18 && ctl0.some(f => Number(f.orden) === 82 && /el banco fecha en otro año/.test(f.control)), ctl0.map(f => f.orden).join(','));
+    ok('…el aviso fijo de 2026: «El 1099 de 2026 sale de QuickBooks; esto es solo lo que la app sabe desde el 1-oct»', /El 1099 de 2026 sale de QuickBooks; esto es solo lo que la app sabe desde el 1-oct/.test(await txt(q.locator('.ct-subs-2026'))));
+    const fUno = await txt(q.locator(`[data-subs-ficha="${I.ficha_uno}"]`)), fAy = await txt(q.locator(`[data-subs-ficha="${I.ficha_ayudante}"]`));
+    ok('…cada ficha con sus chips: el sub uno «sin W-9», «TIN ····0071», «falta el COI»; el ayudante sin W-9, «sin TIN», y lo que le falta (de la base)', /sin W-9/.test(fUno) && /TIN ····0071/.test(fUno) && /falta el COI/.test(fUno) && /sin TIN/.test(fAy) && re(`Le falta: ${xLeer('c14', 'v_subs_fichas').find(f => f.ficha_id === I.ficha_ayudante).falta_texto}`).test(fAy), fUno + ' | ' + fAy);
+    const r0 = xLeer('c14', 'fn_subs_1099|2026'), r0dos = r0.find(x => x.clave === `proveedor:${I.sub_dos}`), r0sin = r0.find(x => x.clave === 'sin_tercero');
+    ok(`…quien tuvo servicio sin ficha (ZZ Sub Zanjas Dos: ${usd(r0dos.pagado_servicio)} pagado, ${usd(r0dos.otro_camino)} por otro camino, pasa del umbral) con «Darle su ficha»; y (arreglo B4) el servicio sin nombre con lo pagado (${usd(r0sin.pagado_servicio)}) y lo devengado (${usd(r0sin.devengado)}), de la base`,
+      re(`ZZ Sub Zanjas Dos · ${usd(r0dos.pagado_servicio)} pagado de servicio (${r0dos.n_pagos} ${r0dos.n_pagos === 1 ? 'pago' : 'pagos'}) · ${usd(r0dos.otro_camino)} por otro camino · pasa del umbral`).test(await txt(q.locator('#ct-subs-sin'))) &&
+      re(`Servicio sin nombre · ${usd(r0sin.pagado_servicio)} pagado de servicio`).test(await txt(q.locator('#ct-subs-sin'))) && re(`${usd(r0sin.devengado)} devengado (trabajo por pagar)`).test(await txt(q.locator('#ct-subs-sin'))), await txt(q.locator('#ct-subs-sin')));
+    ok('…lo que falta, del control (30: servicio a alguien sin ficha; 40: pagos sin nombre)', (await q.locator('#ct-subs-avisos [data-orden="30"]').count()) === 1 && (await q.locator('#ct-subs-avisos [data-orden="40"]').count()) === 1);
+    const tinEntero = () => q.evaluate(() => document.body.innerText + ' ' + [...document.querySelectorAll('input')].map(i => i.value).join(' '));
+    ok('Ningún TIN entero en la página (ni en un campo)', !/00-0000071|000-00-0003|0000071\b/.test(await tinEntero()));
+    await foto(q, 'f12-3-fichas');
+    // ---- darle su ficha al sub dos ----
+    await toca(q, `[data-subs-dar="proveedor:${I.sub_dos}"]`);
+    card = q.locator('#ct-subs-w9');
+    ok('«Darle su ficha» · la ficha nueva con su nombre del libro y para quién es', (await titulo2(q)) === 'Nueva ficha' && (await card.locator('[name="nombre_legal"]').inputValue()) === 'ZZ Sub Zanjas Dos' && /Para ZZ Sub Zanjas Dos, como está en el libro \(proveedor\)/.test(await txt(card)));
+    // (arreglo B12) la ayuda de la LLC de un socio: sale al elegir ese tipo y se va con otro
+    await card.locator('select[name="tipo_entidad"]').selectOption('llc_un_socio');
+    const llcSi = await card.locator('.ct-subs-llc').isVisible();
+    await card.locator('select[name="tipo_entidad"]').selectOption('sole_proprietor');
+    ok('(arreglo B12) La ficha · al elegir «LLC de un socio» sale la ayuda (la línea 1 del W-9 lleva el nombre y el TIN del dueño, no el EIN de la LLC; a confirmar con el CPA) y con otro tipo se va', llcSi && !(await card.locator('.ct-subs-llc').isVisible()) &&
+      /la línea 1 lleva el nombre del DUEÑO y el TIN del dueño.*no el EIN de la LLC.*A confirmar con el CPA/.test(await card.locator('.ct-subs-llc').textContent()));
+    // (arreglo B11) un TIN pegado en un campo de texto no sale de la pantalla (el campo se vacía); un ZIP+4 sin guion se escribe con él
+    n0 = llamadas.length;
+    await rellenar(card.locator('form'), { nombre_comercial: 'ZZ Zanjas', tipo_entidad: 'sole_proprietor', reporta: 'si', direccion: '5 ZZ Rd', direccion2: '000-00-0009', ciudad: 'Ocala', estado: 'FL', zip: '344711234' });
+    await enviar(q, card.locator('form'));
+    ok('(arreglo B11) …un TIN pegado en «Suite, apartamento»: no se manda (ninguna llamada), se dice en llano qué campo sin repetirlo, y el campo queda vacío; el ZIP de nueve dígitos queda escrito como ZIP+4 (34471-1234)', !ultima(n0, 'fn_subs_ficha') &&
+      /Lo escrito en «Suite, apartamento» parece un TIN: ahí no va/.test(await txt(card.locator('.ct-form .ct-error'))) && !/000-00-0009/.test(await tinEntero()) && (await card.locator('[name="direccion2"]').inputValue()) === '' &&
+      (await card.locator('[name="zip"]').inputValue()) === '34471-1234', await txt(card.locator('.ct-form .ct-error')));
+    await card.locator('[name="zip"]').fill('3447');
+    n0 = llamadas.length;
+    await enviar(q, card.locator('form'));
+    ok('…un ZIP mal escrito: la base dice que no (22023) y se enseña tal cual', !!ultima(n0, 'fn_subs_ficha') && (await txt(card.locator('.ct-form .ct-error'))) === F12.c14.errores.ficha_zip_mal.error.message && X.e14 === 0);
+    await card.locator('[name="zip"]').fill('34471'); await enviar(q, card.locator('form'));
+    const cFi = ultima(n0, 'fn_subs_ficha');
+    ok('…bien: fn_subs_ficha con lo del W-9 (vacío = nulo) y su tercero del libro; se abre la ficha nueva', !!cFi && JSON.stringify(cFi.args.p) === JSON.stringify({ nombre_legal: 'ZZ Sub Zanjas Dos', nombre_comercial: 'ZZ Zanjas', tipo_entidad: 'sole_proprietor', reporta: 'si', reporta_nota: null, direccion: '5 ZZ Rd', direccion2: null, ciudad: 'Ocala', estado: 'FL', zip: '34471', wc_exento: false, notas: null, activa: true, tercero: { tipo: 'proveedor', id: I.sub_dos } }) &&
+      X.e14 === 1 && (await q.evaluate(() => window.MXP_CONTA._estado.subs.ficha)) === I.ficha_dos && /Creada la ficha de ZZ Sub Zanjas Dos/.test(await txt(q.locator('.ct-subs-nota'))), JSON.stringify(cFi && cFi.args));
+    // ---- el TIN: como una contraseña; se vacía; nunca entero ----
+    const tin = q.locator('#ct-subs-tin-in');
+    ok('El TIN · un campo de contraseña (no se queda a la vista), sin autocompletar', (await tin.getAttribute('type')) === 'password' && (await tin.getAttribute('autocomplete')) === 'off' && await tin.isEnabled());
+    n0 = llamadas.length;
+    await tin.fill('12-345'); await enviar(q, q.locator('#ct-subs-tin form'));
+    ok('…uno con mala forma no sale (lo dice sin repetirlo) y el campo se vacía', !ultima(n0, 'fn_subs_tin_guardar') && /no tiene la forma de un SSN/.test(await txt(q.locator('#ct-subs-tin .ct-error'))) && !/12-345/.test(await txt(q.locator('#ct-subs-tin'))) && (await tin.inputValue()) === '');
+    await tin.fill('000-00-0003');
+    ok('…mientras se escribe tampoco se ve (es un campo de contraseña)', !/000-00-0003/.test(await q.evaluate(() => document.body.innerText)));
+    await enviar(q, q.locator('#ct-subs-tin form'));
+    const cTin = ultima(n0, 'fn_subs_tin_guardar');
+    ok('…bien escrito: fn_subs_tin_guardar(la ficha, {tin}) por POST; la ficha enseña solo «SSN ***-**-0003» y el campo vacío', !!cTin && cTin.args.p_ficha === I.ficha_dos && cTin.args.p.tin === '000-00-0003' && X.e14 === 2 &&
+      /SSN \*\*\*-\*\*-0003/.test(await txt(q.locator('#ct-subs-tin .ct-cab'))) && (await q.locator('#ct-subs-tin-in').inputValue()) === '' && /TIN ····0003/.test(await txt(q.locator('#ct-subs-w9 .ct-cab'))), JSON.stringify(cTin && cTin.args.p_ficha));
+    ok('…y el TIN entero no está en la página ni en la memoria de la pantalla', !/000-00-0003|00-0000071/.test(await tinEntero()) && !/000-00-0003|00-0000071/.test(await q.evaluate(() => JSON.stringify(window.MXP_CONTA._estado, (k, v) => typeof v === 'function' ? undefined : v))));
+    // ---- los papeles: el W-9 y el COI al bucket «subs» ----
+    await q.locator('#ct-subs-papeles [data-subs-subir="w9"]').click();
+    let fP = q.locator('#ct-subs-papeles .ct-form');
+    n0 = llamadas.length;
+    await fP.locator('input[type="file"]').setInputFiles({ name: 'w9-zanjas.pdf', mimeType: 'application/pdf', buffer: Buffer.alloc(TX.bytes.w9, 0x25) });
+    await enviar(q, fP); await pintado(q);
+    const sub1 = ultima(n0, 'storage:subir-subs'), cArch = ultima(n0, 'fn_subs_archivo');
+    ok('Subir el W-9 · al bucket «subs» en <ficha>/w9/w9-<fecha y hora>.pdf, sin pisar, con la sesión del código; y se registra con su sha256 y sus bytes', !!sub1 && new RegExp(`^${I.ficha_dos}/w9/w9-\\d{4}-\\d{2}-\\d{2}_\\d{6}\\.pdf$`).test(sub1.args.ruta) && sub1.args.upsert === 'false' && sub1.args.bytes === TX.bytes.w9 && xAal(sub1.auth) === 'aal2' &&
+      !!cArch && cArch.args.p_ficha === I.ficha_dos && cArch.args.p.clase === 'w9' && cArch.args.p.ruta === sub1.args.ruta && cArch.args.p.sha256 === TX.sha.w9 && cArch.args.p.bytes === TX.bytes.w9 && cArch.args.p.fecha === HOY && X.e14 === 3, JSON.stringify(cArch && cArch.args.p));
+    ok('…la ficha: «W-9 ✓» y el papel en la lista con su nombre', /W-9 ✓/.test(await txt(q.locator('#ct-subs-w9 .ct-cab'))) && re(sub1.args.ruta.split('/').pop()).test(await txt(q.locator('#ct-subs-papeles'))) && /Subido y registrado el W-9/.test(await txt(q.locator('.ct-subs-nota'))));
+    await q.locator('#ct-subs-papeles [data-subs-subir="coi"]').click();
+    fP = q.locator('#ct-subs-papeles .ct-form');
+    await fP.locator('input[type="file"]').setInputFiles({ name: 'coi-zanjas.pdf', mimeType: 'application/pdf', buffer: Buffer.alloc(TX.bytes.coi, 0x25) });
+    n0 = llamadas.length;
+    await enviar(q, fP);
+    ok('El COI · sin el día en que vence no sale (está en el certificado)', /Falta el día en que vence/.test(await txt(fP.locator('.ct-error'))) && !ultima(n0, 'storage:subir-subs'));
+    await fP.locator('[name="vence"]').fill('2026-12-02'); await enviar(q, fP); await pintado(q);
+    const cCoi = ultima(n0, 'fn_subs_archivo');
+    ok('…con su vencimiento: subido y registrado; el chip dice «COI vence en 20 días» (los días los cuenta la base)', !!cCoi && cCoi.args.p.clase === 'coi' && cCoi.args.p.vence === '2026-12-02' && X.e14 === 4 && /COI vence en 20 días/.test(await txt(q.locator('#ct-subs-w9 .ct-cab'))), JSON.stringify(cCoi && cCoi.args.p));
+    n0 = llamadas.length;
+    await q.locator('#ct-subs-papeles [data-subs-ver]').first().click(); await q.waitForSelector('#ct-subs-ver a', { timeout: 5000 });
+    ok('Ver un papel · se firma por diez minutos (con el código) y sale su enlace', !!ultima(n0, 'storage:firmar-subs') && /\/storage\/v1\/object\/sign\/subs\//.test(await q.locator('#ct-subs-ver a').getAttribute('href')));
+    await foto(q, 'f12-4-ficha');
+    // ---- un Zelle sin nombre: decir de quién es ----
+    await ve(q, 'subs', { sub: 'pagos', filtro: 'sin_tercero' });
+    const zel = q.locator(`.ct-subs-pago[data-asiento="${I.asiento_zelle}"]`);
+    const sinNombre = () => xLeer('c14', 'fn_subs_pagos|2026').filter(x => !x.tercero && !x.ficha_id && !x.reverso).length;
+    const sinN0 = sinNombre();
+    ok(`Pagos · «Sin nombre (${sinN0})»: el Zelle del 16-oct por $450.00 (pagado) y lo por pagar sin proveedor, que el libro no dice de quién son`, (await q.locator('#ct-subs-pagosc .ct-subs-pago').count()) === sinN0 && sinN0 >= 1 && /El libro no dice de quién es.*\$450\.00/.test(await txt(zel)), await txt(q.locator('#ct-subs-pagosc')));
+    await zel.locator('[data-subs-marcar]').click();
+    const fM = zel.locator('.ct-form');
+    ok('…«Decir de quién es»: elegida de entrada la ficha que se parece a lo que dijo el banco (el sub uno)', (await fM.locator('select[name="ficha"]').inputValue()) === I.ficha_uno);
+    n0 = llamadas.length;
+    await enviar(q, fM);
+    ok('…sin nota no sale', /Falta la nota/.test(await txt(fM.locator('.ct-error'))) && !ultima(n0, 'fn_subs_marcar'));
+    await fM.locator('[name="nota"]').fill(TX.subs_marcar); await enviar(q, fM);
+    const cMar = ultima(n0, 'fn_subs_marcar');
+    ok('…con su nota: fn_subs_marcar(el asiento, la línea, {ficha, nota}) y el Zelle ya es del sub uno (queda uno menos sin nombre)', !!cMar && cMar.args.p_asiento === I.asiento_zelle && cMar.args.p_orden === 1 && JSON.stringify(cMar.args.p) === JSON.stringify({ nota: TX.subs_marcar, ficha: I.ficha_uno }) && X.e14 === 5 &&
+      sinNombre() === sinN0 - 1 && re(`Sin nombre (${sinN0 - 1})`).test(await txt(q.locator('[data-subs-filtro="sin_tercero"]'))) && !(await zel.count()), JSON.stringify(cMar && cMar.args));
+    // ---- la ficha del ayudante: no se le reporta (lo dijo el CPA) ----
+    await ve(q, 'subs', { sub: 'fichas', ficha: I.ficha_ayudante });
+    card = q.locator('#ct-subs-w9');
+    await rellenar(card.locator('form'), { reporta: 'no', reporta_nota: TX.subs_ayudante, direccion: '7 ZZ Ln', ciudad: 'Ocala', estado: 'fl', zip: '34472' });
+    n0 = llamadas.length;
+    await enviar(q, card.locator('form'));
+    // (arreglo B1) el ayudante ya tiene pagos «por decidir»: la base pide desde cuándo vale el «no» (MX008, pista «desde», el detalle en JSON)
+    const pideAy = F12.c14.errores.ficha_ayudante_pide, fD = card.locator('.ct-form');
+    ok('(arreglo B1) La ficha del ayudante · «No se le reporta» y ya tiene pagos: la base pide desde cuándo (MX008, pista «desde»); la pantalla enseña su mensaje tal cual, lo pagado (del detalle) y las dos salidas: un día (de hoy para atrás) o «estaba mal desde el principio»',
+      !!ultima(n0, 'fn_subs_ficha') && X.e14 === 5 && pideAy.error.code === 'MX008' && pideAy.error.hint === 'desde' && (await txt(fD.locator('.ct-form-t'))) === pideAy.error.message &&
+      (await fD.locator('input[name="como"]').count()) === 2 && (await fD.locator('input[name="como"][value="desde"]').isChecked()) && (await fD.locator('input[name="desde"]').getAttribute('max')) === HOY &&
+      /Estaba mal desde el principio: vale para todo lo pagado/.test(await txt(fD)) && /Lo pagado con lo de antes: \$800\.00, del 15 oct 2026 al 15 oct 2026/.test(await txt(fD)), await txt(fD));
+    await foto(q, 'f12-6-desde');
+    let n1 = llamadas.length;
+    await enviar(q, fD);
+    ok('…sin el día (con «desde un día») no sale', /Falta el día desde el que vale el cambio/.test(await txt(fD.locator('.ct-error'))) && !ultima(n1, 'fn_subs_ficha'));
+    await fD.locator('input[name="desde"]').fill('2027-01-04'); await enviar(q, fD);
+    ok('…un día que todavía no llega tampoco (el cambio se anota ese día, o con la fecha de hoy)', /todavía no llega/.test(await txt(fD.locator('.ct-error'))) && !ultima(n1, 'fn_subs_ficha'));
+    await fD.locator('input[name="como"][value="corrige"]').check(); await enviar(q, fD);
+    const cAy = ultima(n0, 'fn_subs_ficha');
+    ok('…«estaba mal desde el principio» (lo dijo el CPA): lo mismo otra vez con corrige: true (su id, «no» con su nota, el estado en mayúsculas), y la nota lo dice', !!cAy && cAy.args.p.id === I.ficha_ayudante && cAy.args.p.reporta === 'no' && cAy.args.p.reporta_nota === TX.subs_ayudante && cAy.args.p.estado === 'FL' &&
+      cAy.args.p.corrige === true && !('desde' in cAy.args.p) && X.e14 === 6 && /Corregida: vale para todo lo pagado/.test(await txt(q.locator('.ct-subs-nota'))), JSON.stringify(cAy && cAy.args.p));
+    // ---- el umbral de 2026 ----
+    await ve(q, 'subs', { sub: 'ajustes' });
+    await q.locator('#ct-subs-umbral').click();
+    const fU = q.locator('#ct-subs-umbrales .ct-form');
+    n0 = llamadas.length;
+    await rellenar(fU, { anio: '2026', umbral: '-5', nota: TX.subs_umbral }); await enviar(q, fU);
+    ok('El umbral de un año · uno negativo no sale', /de cero para arriba/.test(await txt(fU.locator('.ct-error'))) && !ultima(n0, 'fn_subs_umbral_confirmar'));
+    await fU.locator('[name="umbral"]').fill('2000'); await enviar(q, fU);
+    const cUm = ultima(n0, 'fn_subs_umbral_confirmar');
+    ok('…con su nota: fn_subs_umbral_confirmar(2026, «2000», la nota) y sale en la lista', !!cUm && cUm.args.p_anio === 2026 && cUm.args.p_umbral === '2000' && cUm.args.p_nota === TX.subs_umbral && X.e14 === 7 && re(TX.subs_umbral).test(await txt(q.locator('#ct-subs-umbrales'))), JSON.stringify(cUm && cUm.args));
+    // ---- el 1099 de 2026 ----
+    await ve(q, 'subs', { sub: '1099' });
+    const r1099 = xLeer('c14', 'fn_subs_1099|2026');
+    ok('El 1099 de 2026 · el aviso fijo, lo PARCIAL que dice la base y el umbral confirmado con su nota', /El 1099 de 2026 sale de QuickBooks; esto es solo lo que la app sabe desde el 1-oct/.test(await txt(q.locator('#ct-subs-2026'))) &&
+      /PARCIAL: el libro de la app empieza el 1-oct-2026/.test(await txt(q.locator('#ct-subs-1099'))) && re(`Umbral de 2026: $2,000.00 (confirmado: «${TX.subs_umbral}»`).test(await txt(q.locator('#ct-subs-1099'))));
+    const rUno = await txt(q.locator(`.ct-subs-1099f[data-clave="ficha:${I.ficha_uno}"]`)), rDos = await txt(q.locator(`.ct-subs-1099f[data-clave="ficha:${I.ficha_dos}"]`)), rAy = await txt(q.locator(`.ct-subs-1099f[data-clave="ficha:${I.ficha_ayudante}"]`));
+    ok(`…una fila por cada uno (${r1099.length}): el sub uno $2,200.00 reportable (con el Zelle que se le atribuyó) y $300.00 con tarjeta que no se reporta, con su porqué, pasa del umbral y le falta el W-9`,
+      (await q.locator('#ct-subs-1099 .ct-subs-1099f').count()) === r1099.length && /Reportable \$2,200\.00/i.test(rUno) && /No se reporta \$300\.00/i.test(rUno) && /Pagado con tarjeta: lo reporta el procesador de la tarjeta/.test(rUno) && /pasa del umbral/.test(rUno) && /Le falta: su W-9/.test(rUno), rUno);
+    ok('…el sub dos $2,400.00 «lista para la hoja»; el ayudante «no se le reporta» (sus $800.00 fuera, con su porqué)', /Reportable \$2,400\.00/i.test(rDos) && /lista para la hoja/.test(rDos) && /TIN \*\*\*-\*\*-0003/.test(rDos) && /no se le reporta/.test(rAy) && /No se reporta \$800\.00/i.test(rAy), rDos + ' | ' + rAy);
+    await toca(q, `[data-subs-abrir="ficha:${I.ficha_uno}"]`);
+    ok('…tocar una fila baja a cada pago que lo forma (fecha, asiento, cómo se pagó y si cuenta)', (await q.locator(`.ct-subs-1099f[data-clave="ficha:${I.ficha_uno}"] .ct-subs-pago`).count()) === r1099.find(x => x.clave === `ficha:${I.ficha_uno}`).pagos.length &&
+      /con tarjeta: no se reporta/.test(await txt(q.locator(`.ct-subs-1099f[data-clave="ficha:${I.ficha_uno}"] .ct-subs-pagos`))) && /cuenta para el 1099/.test(await txt(q.locator(`.ct-subs-1099f[data-clave="ficha:${I.ficha_uno}"] .ct-subs-pagos`))));
+    await foto(q, 'f12-5-1099');
+    // ---- la hoja: pide el código, avisa del TIN entero, se baja como archivo ----
+    card = q.locator('#ct-subs-hoja');
+    ok('La hoja · avisa que lleva el TIN entero, y el botón con el código del teléfono', /lleva el TIN entero/.test(await txt(card.locator('.ct-cab'))) && await card.locator('#ct-subs-exportar').isEnabled());
+    await card.locator('#ct-subs-exportar').click();
+    n0 = llamadas.length;
+    await enviar(q, card.locator('.ct-form'));
+    ok('…la confirmación lo dice otra vez («Esta hoja lleva el TIN ENTERO») y sin marcar «Entiendo» no sale', /Esta hoja lleva el TIN ENTERO de cada uno/.test(await txt(card.locator('.ct-form'))) && /Marca que entiendes/.test(await txt(card.locator('.ct-error'))) && !ultima(n0, 'fn_subs_1099_export'));
+    // (arreglo B7) ANTES de bajarla: lo que la deja corta (los avisos del control que la base pone en la hoja) y quién no va a entrar
+    const ctlHoja = xLeer('c14', 'fn_subs_control|2026').filter(f => [30, 40, 45, 55, 60, 82].includes(Number(f.orden)) && f.ok !== true);
+    const antes = await txt(card.locator('#ct-subs-antes'));
+    ok(`(arreglo B7) …y antes de bajarla dice que saldrá incompleta: quién no va a entrar (el sub uno: ${usd(2200)}, le falta su W-9) y lo que dice el control (${ctlHoja.map(f => f.orden).join(', ')}); no frena`,
+      ctlHoja.length >= 1 && /esta hoja va a salir incompleta/.test(antes) && /No van a entrar: ZZ Sub Electrico Uno LLC · \$2,200\.00 pagado de servicio.*le falta su W-9/.test(antes) &&
+      ctlHoja.every(f => antes.includes(String(f.detalle).slice(0, 60))) && (await card.locator('#ct-subs-antes li[data-orden]').count()) === ctlHoja.length && await card.locator('.ct-form button[type="submit"]').isEnabled(), antes.slice(0, 300));
+    await card.locator('[name="entiendo"]').check();
+    const [dl] = await Promise.all([q.waitForEvent('download', { timeout: 8000 }), card.locator('.ct-form button[type="submit"]').click()]);
+    await pintado(q);
+    const csvBajado = fs.readFileSync(await dl.path(), 'utf8'), resp = F12.c14.pasos.exportar_2026.respuesta, txtHres = await txt(q.locator('#ct-subs-hres'));
+    const cEx = ultima(n0, 'fn_subs_1099_export');
+    ok('…fn_subs_1099_export(2026, {bajo_umbral: false}) con la sesión del código; se baja «1099-NEC-2026.csv» con lo que mandó la base, tal cual (con el TIN entero)', !!cEx && cEx.args.p_anio === 2026 && JSON.stringify(cEx.args.p_opciones) === '{"bajo_umbral":false}' && xAal(cEx.auth) === 'aal2' && X.e14 === 8 &&
+      dl.suggestedFilename() === resp.nombre_archivo && csvBajado === resp.csv && /"SSN","000-00-0003","ZZ Sub Zanjas Dos"/.test(csvBajado), dl.suggestedFilename());
+    ok(`(arreglo B7) …y lo bajado dice si está completa (la base: ${resp.completa ? 'sí' : 'no'}) y trae sus avisos (${resp.avisos.map(a => a.orden).join(', ')})`, resp.completa === false && /incompleta/.test(await txt(q.locator('#ct-subs-hres .ct-pill.warn'))) &&
+      (await q.locator('#ct-subs-hres li[data-orden]').count()) === resp.avisos.length && resp.avisos.every(a => re(String(a.detalle).slice(0, 60)).test(txtHres)));
+    ok('…en la página: lo bajado (1 fila por $2,400.00) y lo que pasa del umbral y no entró (el sub uno: le falta su W-9), SIN el TIN entero', /1 fila por \$2,400\.00/.test(await txt(q.locator('#ct-subs-hres'))) && /ZZ Sub Electrico Uno LLC.*\$2,200\.00.*le falta su W-9/.test(await txt(q.locator('#ct-subs-hres'))) &&
+      !/000-00-0003|00-0000071/.test(await tinEntero()) && !/000-00-0003|00-0000071|"csv"/.test(await q.evaluate(() => JSON.stringify(window.MXP_CONTA._estado, (k, v) => typeof v === 'function' ? undefined : v))));
+    // ---- el cierre: la 160 y la 179 con su botón a los subs ----
+    await ve(q, 'cierre', { sub: 'cierre', periodo: '2026-10' });
+    const f160 = q.locator('#ct-cie-avisos .ct-cie-item[data-orden="160"]'), f179 = q.locator('#ct-cie-avisos .ct-cie-item[data-orden="179"]');
+    ok('El cierre de octubre · la 160 (COI) y la 179 (W-9 y TIN) de los subs entre los avisos, con su botón «Subs»', (await f160.count()) === 1 && (await f179.count()) === 1 && /W-9 y TIN de cada sub con pago en el mes/.test(await txt(f179)) &&
+      (await f179.locator('[data-cie-subs="fichas"]').count()) === 1 && (await f160.locator('[data-cie-subs="coi"]').count()) === 1 && !(await q.locator('#ct-cie-rev [data-orden="179"]').count()), await txt(f179));
+    if (await f160.locator('[data-cie-subs]').count()) { await f160.locator('[data-cie-subs]').click(); await pintado(q); }
+    ok('…la 160 lleva al COI de los subs y la 179 a sus fichas', (await titulo2(q)) === 'Subs y 1099' && (await q.evaluate(() => window.MXP_CONTA._estado.subs.sub)) === 'coi' && (await q.locator('#ct-subs-coi').count()) === 1);
+    // ---- el W-9 del sub uno: la hoja ya no está al día ----
+    await ve(q, 'subs', { sub: 'fichas', ficha: I.ficha_uno });
+    await q.locator('#ct-subs-papeles [data-subs-subir="w9"]').click();
+    fP = q.locator('#ct-subs-papeles .ct-form');
+    await fP.locator('input[type="file"]').setInputFiles({ name: 'w9-uno.jpg', mimeType: 'image/jpeg', buffer: Buffer.alloc(TX.bytes.w9, 0x25) });
+    n0 = llamadas.length;
+    await enviar(q, fP); await pintado(q);
+    ok('El W-9 del sub uno (una foto) · subido como .jpg y registrado: su ficha completa', !!ultima(n0, 'fn_subs_archivo') && /\.jpg$/.test(ultima(n0, 'fn_subs_archivo').args.p.ruta) && X.e14 === 9 && /W-9 ✓/.test(await txt(q.locator('#ct-subs-w9 .ct-cab'))));
+    await ve(q, 'subs', { sub: '1099' });
+    ok('…y el 1099 avisa que la hoja exportada ya no es lo que dice el libro (85)', (await q.locator('#ct-subs-avisos [data-orden="85"]').count()) === 1 && /lista para la hoja/.test(await txt(q.locator(`.ct-subs-1099f[data-clave="ficha:${I.ficha_uno}"]`))));
+    // ---- ajustes: los días del COI ----
+    await ve(q, 'subs', { sub: 'ajustes' });
+    card = q.locator('#ct-subs-cfg');
+    ok('Ajustes · el umbral de fábrica, los días del COI y a quién no se le reporta (S y C corp), como los tiene la base', (await card.locator('[name="umbral_1099"]').inputValue()) === '2000.00' && (await card.locator('[name="coi_aviso_dias"]').inputValue()) === '30' &&
+      (await card.locator('input[name="entidades_no_reporta"]:checked').evaluateAll(es => es.map(e => e.value).sort().join(','))) === 'c_corp,s_corp');
+    n0 = llamadas.length;
+    await card.locator('[name="coi_aviso_dias"]').fill('400'); await enviar(q, card.locator('form'));
+    ok('…400 días: la base dice que no (MX005) y se enseña tal cual', !!ultima(n0, 'fn_subs_config') && (await txt(card.locator('.ct-form .ct-error'))) === F12.c14.errores.config_dias_mal.error.message && X.e14 === 9);
+    ok('(arreglo B9) …con qué fecha cuenta un pago (de fábrica, la del libro; ▶ CPA) y las cuentas de gasto que no son servicio (de fábrica, ninguna), como los tiene la base', xLeer('c14', 'subs_config')[0].fecha_pago === 'contable' &&
+      (await card.locator('input[name="fecha_pago"][value="contable"]').isChecked()) && !(await card.locator('input[name="fecha_pago"][value="banco"]').isChecked()) && (await card.locator('[name="cuentas_no_servicio"]').inputValue()) === '' &&
+      /Lo decide el CPA/.test(await txt(card.locator('.ct-subs-fpago'))));
+    await card.locator('[name="coi_aviso_dias"]').fill('45'); await enviar(q, card.locator('form'));
+    const cCf = ultima(n0, 'fn_subs_config');
+    ok('…45: fn_subs_config con todo lo de la forma (el umbral como texto, los días como número, las listas, la fecha del pago); la nota lo dice', !!cCf && JSON.stringify(cCf.args.p) === JSON.stringify({ umbral_1099: '2000.00', entidades_no_reporta: ['s_corp', 'c_corp'], cuentas_por_pagar: ['2010', '2020'], cuentas_no_pago: ['1020'], cuentas_no_servicio: [], coi_aviso_dias: 45, coi_ventana_dias: 90, coi_exento_basta: false, fecha_pago: 'contable' }) && X.e14 === 10 &&
+      /un pago cuenta con la fecha del libro/.test(await txt(q.locator('.ct-subs-nota'))), JSON.stringify(cCf && cCf.args.p));
+    // ---- retirar un papel ----
+    await ve(q, 'subs', { sub: 'fichas', ficha: I.ficha_dos });
+    await q.locator(`#ct-subs-papeles [data-subs-retirar="${I.coi_dos}"]`).click();
+    fP = q.locator('#ct-subs-papeles .ct-form');
+    n0 = llamadas.length;
+    await fP.locator('[name="motivo"]').fill(TX.subs_retirar); await enviar(q, fP);
+    const cRt = ultima(n0, 'fn_subs_archivo_retirar');
+    ok('Retirar el COI · con su motivo: fn_subs_archivo_retirar; queda en «Retirados» y la ficha vuelve a «falta el COI»', !!cRt && cRt.args.p_archivo === I.coi_dos && cRt.args.p_motivo === TX.subs_retirar && X.e14 === 11 &&
+      /Retirados: 1/.test(await txt(q.locator('#ct-subs-papeles details summary'))) && /falta el COI/.test(await txt(q.locator('#ct-subs-w9 .ct-cab'))), JSON.stringify(cRt && cRt.args));
+    // ---- el COI de quien trabajó ----
+    await ve(q, 'subs', { sub: 'coi' });
+    const coi = xLeer('c14', 'v_subs_coi');
+    ok(`COI · quien tuvo servicio estos días (${coi.length}), cada uno con su chip y si estaba cubierto`, (await q.locator('#ct-subs-coi .ct-subs-1099f').count()) === coi.length && /sin cubrir/.test(await txt(q.locator('#ct-subs-coi'))));
+    await ve(q, 'cierre', { sub: 'cierre', periodo: '2026-10' });
+    ok('…y en el cierre de octubre la 179 ya no sale en rojo (todos con su W-9 y su TIN, o no se les reporta), y la 160 sí (el COI retirado)', !(await q.locator('#ct-cie-cuerpo .ct-cie-item[data-orden="179"]:not(.ok)').count()) && (await q.locator('#ct-cie-avisos .ct-cie-item[data-orden="160"]').count()) === 1);
+    // ---- quién es en el libro: enlazar y soltar; quitar el TIN; quitar una marca ----
+    await ve(q, 'subs', { sub: 'fichas', ficha: I.ficha_ayudante });
+    card = q.locator('#ct-subs-terceros');
+    await card.locator('[data-subs-enlazar]').click();
+    const fT = card.locator('.ct-form');
+    ok('Quién es en el libro · «Enlazar a alguien del libro» ofrece los proveedores que no están en otra ficha (el ayudante también es proveedor por sus trabajos externos)', (await fT.locator(`select[name="quien"] option[value="proveedor:${I.prov_zzeli}"]`).count()) === 1);
+    n0 = llamadas.length;
+    await fT.locator('select[name="quien"]').selectOption(`proveedor:${I.prov_zzeli}`); await enviar(q, fT);
+    const cTe = ultima(n0, 'fn_subs_tercero');
+    ok('…enlazarlo: fn_subs_tercero(la ficha, proveedor, su id, false) y la ficha lo lleva (dos terceros: una persona, un 1099)', !!cTe && cTe.args.p_ficha === I.ficha_ayudante && cTe.args.p_tipo === 'proveedor' && cTe.args.p_id === I.prov_zzeli && cTe.args.p_quitar === false && X.e14 === 12 &&
+      (await q.locator('#ct-subs-terceros [data-subs-soltar]').count()) === 2, JSON.stringify(cTe && cTe.args));
+    await q.locator(`#ct-subs-terceros [data-subs-soltar="proveedor:${I.prov_zzeli}"]`).click();
+    n0 = llamadas.length;
+    await enviar(q, q.locator('#ct-subs-terceros .ct-form'));
+    const cSo = ultima(n0, 'fn_subs_tercero');
+    ok('…soltarlo: fn_subs_tercero(…, true) y vuelve a uno', !!cSo && cSo.args.p_quitar === true && cSo.args.p_id === I.prov_zzeli && X.e14 === 13 && (await q.locator('#ct-subs-terceros [data-subs-soltar]').count()) === 1);
+    await ve(q, 'subs', { sub: 'fichas', ficha: I.ficha_dos });
+    // ---- (arreglo B2) cambiar el TIN por otro en una ficha con pagos: la base pide confirmar que era un error de dedo ----
+    const tinC = q.locator('#ct-subs-tin-in'), pideTin = F12.c14.errores.tin_corrige_pide;
+    ok('(arreglo B2) Con TIN guardado · la casilla «El de antes estaba mal tecleado» no está a la vista hasta que la base la pida', (await q.locator('#ct-subs-tin-corr').count()) === 1 && !(await q.locator('#ct-subs-tin-corr').isVisible()));
+    n0 = llamadas.length;
+    await tinC.fill('000-00-0004'); await enviar(q, q.locator('#ct-subs-tin form'));
+    const cTc0 = ultima(n0, 'fn_subs_tin_guardar');
+    ok('…otro TIN en una ficha con pagos: la base pide «corrige» (MX008, pista «corrige») y no guarda nada; se enseña su mensaje, qué hacer, la casilla a la vista y el campo vacío', !!cTc0 && !('corrige' in cTc0.args.p) && X.e14 === 13 &&
+      pideTin.error.hint === 'corrige' && re(pideTin.error.message).test(await txt(q.locator('#ct-subs-tin .ct-error'))) && /marca «El de antes estaba mal tecleado», escribe el TIN otra vez/.test(await txt(q.locator('#ct-subs-tin .ct-error'))) &&
+      (await q.locator('#ct-subs-tin-corr').isVisible()) && (await tinC.inputValue()) === '' && /SSN \*\*\*-\*\*-0003/.test(await txt(q.locator('#ct-subs-tin .ct-cab'))), await txt(q.locator('#ct-subs-tin .ct-error')));
+    await q.locator('#ct-subs-tin-corr input').check(); await tinC.fill('000-00-0004'); await enviar(q, q.locator('#ct-subs-tin form'));
+    const cTc = ultima(n0, 'fn_subs_tin_guardar');
+    ok('…marcada y tecleado otra vez: fn_subs_tin_guardar(la ficha, {tin, corrige: true}); la ficha enseña «SSN ***-**-0004» y el TIN entero no está ni en la página ni en la memoria', !!cTc && cTc.args.p.corrige === true && cTc.args.p.tin === '000-00-0004' && X.e14 === 14 &&
+      /SSN \*\*\*-\*\*-0004/.test(await txt(q.locator('#ct-subs-tin .ct-cab'))) && /TIN corregido: SSN \*\*\*-\*\*-0004/.test(await txt(q.locator('.ct-subs-nota'))) && (await q.locator('#ct-subs-tin-in').inputValue()) === '' &&
+      !/000-00-0004|000000004/.test(await tinEntero()) && !/000-00-0004|000000004/.test(await q.evaluate(() => JSON.stringify(window.MXP_CONTA._estado, (k, v) => typeof v === 'function' ? undefined : v))), JSON.stringify(cTc && cTc.args.p_ficha));
+    await q.locator('#ct-subs-tin [data-subs-tin-quitar]').click();
+    n0 = llamadas.length;
+    await enviar(q, q.locator('#ct-subs-tin .ct-form'));
+    const cTq = ultima(n0, 'fn_subs_tin_guardar');
+    ok('Quitar el TIN · con su confirmación: fn_subs_tin_guardar(la ficha, {quitar: true}) con el código; la ficha vuelve a «sin TIN»', !!cTq && JSON.stringify(cTq.args.p) === '{"quitar":true}' && xAal(cTq.auth) === 'aal2' && X.e14 === 15 && /sin TIN/.test(await txt(q.locator('#ct-subs-tin .ct-cab'))), JSON.stringify(cTq && cTq.args));
+    await ve(q, 'subs', { sub: 'pagos', filtro: 'todos' });
+    const zel2 = q.locator(`.ct-subs-pago[data-asiento="${I.asiento_zelle}"]`);
+    await zel2.locator('[data-subs-desmarcar]').click();
+    n0 = llamadas.length;
+    await zel2.locator('.ct-form [name="nota"]').fill(TX.subs_desmarcar); await enviar(q, zel2.locator('.ct-form'));
+    const cDm = ultima(n0, 'fn_subs_marcar');
+    ok('Quitar la marca del Zelle · fn_subs_marcar(el asiento, la línea, {quitar, nota}): vuelve a no decir de quién es', !!cDm && JSON.stringify(cDm.args.p) === JSON.stringify({ quitar: true, nota: TX.subs_desmarcar }) && X.e14 === 16 &&
+      /El libro no dice de quién es/.test(await txt(q.locator(`.ct-subs-pago[data-asiento="${I.asiento_zelle}"]`))), JSON.stringify(cDm && cDm.args));
+    // ---- (arreglo B5) las fechas de cada pago: la que cuenta, y la del libro o la del banco solo cuando son otras ----
+    const pag16 = xLeer('c14', 'fn_subs_pagos|2026');
+    ok(`(arreglo B5) Pagos · cada pago trae la fecha con que cuenta, la del libro y la del banco (de la base); aquí son la misma (${pag16.length} pagos, ninguno con fecha del banco), y no sale ninguna fecha de más`,
+      pag16.every(x => 'fecha_libro' in x && 'fecha_banco' in x && 'anio_libro' in x && x.fecha_libro === x.fecha) && !(await q.locator('#ct-subs-pagosc .ct-subs-fechas').count()));
+    // ---- (arreglo B6) lo pagado por otro camino (Edgar, de su bolsillo): «pagado», solo en esa línea ----
+    const bol = q.locator(`.ct-subs-pago[data-asiento="${I.asiento_bolsillo}"]`), zel3 = q.locator(`.ct-subs-pago[data-asiento="${I.asiento_zelle}"]`);
+    ok('(arreglo B6) …el pago de su bolsillo sale «por otro camino»', /por otro camino/.test(await txt(bol.locator('.ct-pill'))) && /ZZ: zanja extra, la pagó Edgar de su bolsillo/.test(await txt(bol)));
+    // ---- (arreglo de la revisión final) UNA LÍNEA PAGADA POR DOS CAMINOS: sus dos partes son dos filas de la misma línea del asiento, y
+    //      «Marcar» en cada una abre LA SUYA. Antes la pantalla buscaba el pago por «asiento:línea» y tomaba la primera parte —la del
+    //      banco—: en la fila «por otro camino» salía el monto de la otra y «pagado» no se podía elegir (lo pagado de un bolsillo se
+    //      quedaba fuera del 1099 sin manera de marcarlo desde la pantalla).
+    {
+      const montoOtro = xLeer('c14', 'fn_subs_pagos|2026').find(x => x.asiento_id === I.asiento_bolsillo && x.estado === 'otro_camino').monto;
+      estado.c14DosCaminos = true;
+      await ve(q, 'subs', { sub: 'pagos', filtro: 'todos' });
+      const dos = q.locator(`.ct-subs-pago[data-asiento="${I.asiento_bolsillo}"]`);
+      const nDos = await dos.count(), fBanco = dos.nth(0), fOtro = dos.nth(1);
+      const pintadas = nDos === 2 && /cuenta para el 1099/.test(await txt(fBanco.locator('.ct-pill'))) && /123\.45/.test(await txt(fBanco)) && /por otro camino/.test(await txt(fOtro.locator('.ct-pill')));
+      let enOtro = '', enBanco = '', otroOfrece = 0, bancoOfrece = 0;
+      if (nDos === 2) {
+        await fOtro.locator('[data-subs-marcar]').click();
+        enOtro = await txt(fOtro.locator('.ct-form')); otroOfrece = await fOtro.locator('.ct-form select[name="trato"] option[value="pagado"]').count();
+        await fOtro.locator('.ct-form [data-cerrar]').click();
+        await fBanco.locator('[data-subs-marcar]').click();
+        enBanco = await txt(fBanco.locator('.ct-form')); bancoOfrece = await fBanco.locator('.ct-form select[name="trato"] option[value="pagado"]').count();
+        await fBanco.locator('.ct-form [data-cerrar]').click();
+      }
+      ok('(arreglo de la revisión final) Pagos · una línea pagada por dos caminos (banco y bolsillo) sale en dos filas, y «Marcar» abre la de cada una: en la «por otro camino», su monto y «Lo pagó la empresa por otro camino»; en la del banco, el suyo y sin «pagado»',
+        pintadas && otroOfrece === 1 && !/123\.45/.test(enOtro) && enOtro.includes(Number(montoOtro).toFixed(2)) && /Si el CPA dice que cuenta/.test(enOtro) && bancoOfrece === 0 && /123\.45/.test(enBanco),
+        `filas ${nDos} · en la «por otro camino»: ofrece pagado ${otroOfrece}, «${enOtro.slice(0, 90)}» · en la del banco: ofrece pagado ${bancoOfrece}, «${enBanco.slice(0, 70)}»`);
+      estado.c14DosCaminos = false;
+      await ve(q, 'subs', { sub: 'pagos', filtro: 'todos' });
+    }
+    await zel3.locator('[data-subs-marcar]').click();
+    const sinPagado = !(await zel3.locator('.ct-form select[name="trato"] option[value="pagado"]').count());
+    await zel3.locator('.ct-form [data-cerrar]').click();
+    await bol.locator('[data-subs-marcar]').click();
+    const fB = bol.locator('.ct-form');
+    ok('…«Marcar» ofrece «Lo pagó la empresa por otro camino» en esa línea (y en una del banco, no), con el ▶ del CPA', sinPagado && (await fB.locator('select[name="trato"] option[value="pagado"]').count()) === 1 && /Si el CPA dice que cuenta/.test(await txt(fB)));
+    await fB.locator('select[name="trato"]').selectOption('pagado'); await fB.locator('[name="nota"]').fill(TX.subs_pagado);
+    // (dos pestañas a la vez: la segunda recibe el 23505 de PostgREST; arreglo de la revisión) se dice en llano y no se hace nada
+    estado.c14Duplicado = true;
+    n0 = llamadas.length;
+    await enviar(q, fB);
+    ok('(arreglo) …si otra pestaña lo hizo a la vez (23505): «Otra pestaña (u otra persona) hizo lo mismo a la vez…», sin la jerga de la base, y no pasó nada', !!ultima(n0, 'fn_subs_marcar') && X.e14 === 16 &&
+      /Otra pestaña \(u otra persona\) hizo lo mismo a la vez/.test(await txt(fB.locator('.ct-error'))) && !/duplicate|unique|constraint/.test(await txt(fB.locator('.ct-error'))), await txt(fB.locator('.ct-error')));
+    await enviar(q, fB);
+    const cPg = ultima(n0, 'fn_subs_marcar');
+    ok('…«pagado» con su nota: fn_subs_marcar(el asiento, la línea, {nota, trato: pagado}); el pago ya «cuenta para el 1099» y el sub dos lo suma', !!cPg && cPg.args.p_asiento === I.asiento_bolsillo && JSON.stringify(cPg.args.p) === JSON.stringify({ nota: TX.subs_pagado, trato: 'pagado' }) && X.e14 === 17 &&
+      /cuenta para el 1099/.test(await txt(q.locator(`.ct-subs-pago[data-asiento="${I.asiento_bolsillo}"] .ct-pill`))) && /cuenta como pagado ese día/.test(await txt(q.locator('.ct-subs-nota'))) &&
+      xLeer('c14', 'fn_subs_1099|2026').find(x => x.ficha_id === I.ficha_dos).reportable === 2600, JSON.stringify(cPg && cPg.args));
+    // ---- (arreglos B1 y B3) el sub uno deja de reportarse DESDE el 1-nov: lo de antes queda en un tramo; el 1099 lo dice; el tramo se retira ----
+    await ve(q, 'subs', { sub: 'fichas', ficha: I.ficha_uno });
+    card = q.locator('#ct-subs-w9');
+    ok('(arreglo B12) La ficha del sub uno (LLC de un socio) · la ayuda del W-9 a la vista, en la ficha y junto al TIN', (await q.locator('#ct-subs-w9 .ct-subs-llc').isVisible()) && (await q.locator('#ct-subs-tin .ct-subs-llc').isVisible()) && !(await q.locator('#ct-subs-tramos').count()));
+    await rellenar(card.locator('form'), { reporta: 'no', reporta_nota: TX.subs_uno_no });
+    n0 = llamadas.length;
+    await enviar(q, card.locator('form'));
+    const pideUno = F12.c14.errores.tramo_uno_pide;
+    ok('(arreglo B1) …«No se le reporta» con pagos: la base pide desde cuándo (con lo pagado y entre qué días, de la base)', X.e14 === 17 && (await txt(card.locator('.ct-form .ct-form-t'))) === pideUno.error.message && /\$1,750\.00 entre el 14-oct-2026 y el 3-nov-2026/.test(pideUno.error.message));
+    await card.locator('.ct-form input[name="desde"]').fill('2026-11-01'); await enviar(q, card.locator('.ct-form'));
+    const cUno = ultima(n0, 'fn_subs_ficha');
+    ok('…desde el 1-nov: lo mismo otra vez con desde (sin corrige); la nota lo dice', !!cUno && cUno.args.p.id === I.ficha_uno && cUno.args.p.reporta === 'no' && cUno.args.p.reporta_nota === TX.subs_uno_no && cUno.args.p.desde === '2026-11-01' && !('corrige' in cUno.args.p) && X.e14 === 18 &&
+      /Lo nuevo vale desde el 1 nov 2026; lo pagado antes se queda como estaba/.test(await txt(q.locator('.ct-subs-nota'))), JSON.stringify(cUno && cUno.args.p));
+    const tr18 = xLeer('c14', 'subs_tramos').filter(t => t.ficha_id === I.ficha_uno);
+    ok('(arreglo B3) …la ficha lista su tramo vivo (de la base): «Hasta el 31 oct 2026: se le reportaba, como LLC de un socio», con «Retirar»', tr18.length === 1 && !tr18[0].retirado_el &&
+      /Hasta el 31 oct 2026: se le reportaba, como LLC de un socio/.test(await txt(q.locator('#ct-subs-tramos'))) && (await q.locator(`#ct-subs-tramos [data-subs-tramo-retirar="${I.tramo_uno}"]`).count()) === 1, await txt(q.locator('#ct-subs-tramos')));
+    await foto(q, 'f12-7-tramo');
+    await ve(q, 'subs', { sub: '1099' });
+    const r18 = xLeer('c14', 'fn_subs_1099|2026').find(x => x.ficha_id === I.ficha_uno);
+    ok(`(arreglo B4) …y en el 1099 su fila dice qué cambió («${r18.cambios}») y lo reportable cuenta cada pago como estaba ese día: ${usd(r18.reportable)} de ${usd(r18.pagado_servicio)} pagados`, r18.reportable === 1500 && r18.pagado_servicio === 1750 &&
+      re(`Su ficha cambió en el año: ${r18.cambios}`).test(await txt(q.locator(`.ct-subs-1099f[data-clave="ficha:${I.ficha_uno}"] .ct-subs-cambios`))) && /Reportable \$1,500\.00/i.test(await txt(q.locator(`.ct-subs-1099f[data-clave="ficha:${I.ficha_uno}"]`))));
+    await ve(q, 'subs', { sub: 'fichas', ficha: I.ficha_uno });
+    const cardTr = q.locator('#ct-subs-tramos');
+    await cardTr.locator(`[data-subs-tramo-retirar="${I.tramo_uno}"]`).click();
+    n0 = llamadas.length;
+    await enviar(q, cardTr.locator('.ct-form'));
+    ok('Retirar el tramo · sin motivo no sale', /Falta el motivo/.test(await txt(cardTr.locator('.ct-error'))) && !ultima(n0, 'fn_subs_tramo_retirar'));
+    await cardTr.locator('.ct-form [name="motivo"]').fill(TX.subs_tramo); await enviar(q, cardTr.locator('.ct-form'));
+    const cTr = ultima(n0, 'fn_subs_tramo_retirar');
+    ok('…con su motivo: fn_subs_tramo_retirar(el tramo, el motivo); queda en «Retirados» con su motivo, y ya ningún tramo vivo', !!cTr && cTr.args.p_tramo === I.tramo_uno && cTr.args.p_motivo === TX.subs_tramo && X.e14 === 19 &&
+      /Ningún tramo vivo/.test(await txt(q.locator('#ct-subs-tramos'))) && /Retirados: 1/.test(await txt(q.locator('#ct-subs-tramos details summary'))) && re(TX.subs_tramo).test(await q.locator('#ct-subs-tramos details').textContent()), JSON.stringify(cTr && cTr.args));
+
+    // ---- la falla ruidosa, sin las capas, el equipo ----
+    estado.c13CuadreMal = true;
+    await ve(q, 'cedula', { sub: 'cedula' });
+    ok('Falla ruidosa · un cuadre de la cédula en rojo: «La cédula no cuadra» con su detalle y NINGUNA cifra ni fila', /La cédula no cuadra/.test(await txt(q.locator('#ct-ced-cuerpo .ct-rojo h2'))) && /no se pinta \(prueba\)/.test(await txt(q.locator('#ct-ced-cuerpo .ct-rojo'))) && !(await q.locator('#ct-ced-cuerpo .ct-kpi, .ct-ced-fila').count()));
+    estado.c13CuadreMal = false; estado.c13ConteoMal = true;
+    await ve(q, 'cedula', { sub: 'cedula' });
+    ok('…la cédula con una cuenta menos que su resumen: rojo («no cuentan lo mismo»), sin cifras', /El resumen y la cédula no cuentan lo mismo/.test(await txt(q.locator('#ct-ced-cuerpo .ct-rojo h2'))) && !(await q.locator('.ct-ced-fila').count()));
+    estado.c13ConteoMal = false; estado.c14CuadreMal = true;
+    await ve(q, 'subs', { sub: 'fichas' });
+    ok('…un cuadre de los subs en rojo: «Los subs no cuadran» y ninguna ficha ni cifra', /Los subs no cuadran/.test(await txt(q.locator('#ct-subs-cuerpo .ct-rojo h2'))) && !(await q.locator('[data-subs-ficha]').count()));
+    estado.c14CuadreMal = false;
+    estado.c13 = false; estado.c14 = false;
+    await ve(q, 'cedula');
+    ok('Sin c13 · la cédula dice en llano que falta c13-cedula.sql, con «Reintentar»; y (arreglo) no manda a volver a pegar c9-cierre.sql: lo que le falte al cierre lo dice la tabla del final del pegado', /Falta la cédula en la base/.test(await txt(q.locator('#ct-ced-cuerpo .ct-rojo h2'))) && /c13-cedula\.sql/.test(await txt(q.locator('#ct-ced-cuerpo .ct-rojo'))) &&
+      !/vuelve a pegar c9/.test(await txt(q.locator('#ct-ced-cuerpo .ct-rojo'))) && /La tabla que sale al final del pegado dice si al cierre del mes le falta algo/.test(await txt(q.locator('#ct-ced-cuerpo .ct-rojo'))));
+    await ve(q, 'subs');
+    ok('Sin c14 · los subs dicen que falta c14-subs.sql (y no mandan a volver a pegar c9-cierre.sql)', /Faltan los subs en la base/.test(await txt(q.locator('#ct-subs-cuerpo .ct-rojo h2'))) && /c14-subs\.sql/.test(await txt(q.locator('#ct-subs-cuerpo .ct-rojo'))) && !/vuelve a pegar c9/.test(await txt(q.locator('#ct-subs-cuerpo .ct-rojo'))));
+    await ve(q, 'cierre', { sub: 'cierre', periodo: '2026-10' });
+    ok('…y el cierre sigue como antes: sin 178 ni 179, y la 160 de antes', !(await q.locator('#ct-cie-cuerpo [data-orden="178"], #ct-cie-cuerpo [data-orden="179"]').count()) && (await q.locator('#ct-cie-cuerpo [data-orden="160"]').count()) === 1);
+    estado.c13 = true; estado.c14 = true; estado.c13NoDueno = true; estado.c14NoDueno = true;
+    await ve(q, 'cedula');
+    ok('El equipo (no dueño) · la cédula: la base dice 42501 y se enseña («La cédula es solo del dueño»), sin cifras', /La cédula es solo del dueño/.test(await txt(q.locator('#ct-ced-cuerpo .ct-rojo h2'))) && re(F12.c13.errores.equipo_resumen.error.message).test(await txt(q.locator('#ct-ced-cuerpo .ct-rojo'))) && !(await q.locator('.ct-ced-fila').count()));
+    await ve(q, 'subs');
+    ok('…los subs: la base no le da nada (el control vacío) y no se pinta ninguna ficha', /El control de los subs no devolvió nada/.test(await txt(q.locator('#ct-subs-cuerpo .ct-rojo h2'))) && /no es la del dueño/.test(await txt(q.locator('#ct-subs-cuerpo .ct-rojo'))) && !(await q.locator('[data-subs-ficha]').count()));
+    estado.c13NoDueno = false; estado.c14NoDueno = false;
+    await cx.close();
+
+    // ---- sin el código del teléfono: el TIN, los papeles y la hoja no se tocan ----
+    ({ cx, q } = await abrirCtx(820, false));
+    n0 = llamadas.length;
+    await ve(q, 'subs', { sub: 'fichas', ficha: I.ficha_dos });
+    ok('Sin el código del teléfono · el campo del TIN, «Guardar el TIN», «Subir el W-9» y «Verlo» apagados, diciendo que lo piden', (await q.locator('#ct-subs-tin-in').isDisabled()) && (await q.locator('#ct-subs-tin button[type="submit"]').isDisabled()) &&
+      (await q.locator('#ct-subs-papeles [data-subs-subir="w9"]').isDisabled()) && /Guardar el TIN pide el código del teléfono/.test(await txt(q.locator('#ct-subs-tin'))) && /Subir y ver los papeles pide el código del teléfono/.test(await txt(q.locator('#ct-subs-papeles'))));
+    await ve(q, 'subs', { sub: '1099' });
+    ok('…«Bajar la hoja» apagado y lo dice; nada se llamó', (await q.locator('#ct-subs-exportar').isDisabled()) && /Bajar la hoja pide el código del teléfono/.test(await txt(q.locator('#ct-subs-hoja'))) && !ultima(n0, 'fn_subs_1099_export') && !ultima(n0, 'fn_subs_tin_guardar') && !ultima(n0, 'storage:subir-subs'));
+    // (si la sesión dice aal2 en la pantalla pero la base no lo ve: el 403 «MFA» de la base se explica, no se enseña crudo)
+    await cx.close();
+
+    // ---- el teléfono (390), el iPad (820) y la computadora (1280): sin desplazamiento lateral ni rojos ----
+    for (const w of [390, 820, 1280]) {
+      ({ cx, q } = await abrirCtx(w, true));
+      const mal = [];
+      const mide = async nombre => { const m = await q.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth, rojo: !!document.querySelector('#conta-raiz .ct-rojo') })); if (m.sw > m.iw + 1 || m.rojo) mal.push(`${nombre}: ${m.sw} > ${m.iw}${m.rojo ? ' (rojo)' : ''}`); await foto(q, `f12-${w}-${nombre}`); };
+      await ve(q, 'cedula', { sub: 'cedula', fecha: DIA }); await mide('cedula');
+      await ve(q, 'cedula', { sub: 'cedula', fecha: DIA, cuenta: '1110' }); await q.locator('#ct-ced-cta [data-ced-renglon]').click(); await q.waitForTimeout(150); await mide('cedula-1110');
+      await ve(q, 'cedula', { sub: 'cedula', fecha: '2026-11-12', cuenta: '1093' }); await mide('cedula-1093');
+      await ve(q, 'cedula', { sub: 'cedula', fecha: DIA, cuenta: '1200' }); await mide('cedula-1200');
+      await ve(q, 'cedula', { sub: 'manual' }); await mide('manual');
+      await ve(q, 'cedula', { sub: 'explicaciones' }); await mide('explicaciones');
+      await ve(q, 'cedula', { sub: 'qb' }); await mide('qb');
+      await ve(q, 'cedula', { sub: 'ajustes' }); await mide('ced-ajustes');
+      await ve(q, 'subs', { sub: 'fichas' }); await mide('fichas');
+      await ve(q, 'subs', { sub: 'fichas', ficha: I.ficha_uno }); await q.locator('#ct-subs-papeles [data-subs-subir="coi"]').click(); await q.waitForTimeout(150); await mide('ficha');
+      await ve(q, 'subs', { sub: '1099', clave: `ficha:${I.ficha_uno}` }); await q.locator('#ct-subs-exportar').click(); await q.waitForTimeout(150); await mide('1099');
+      await ve(q, 'subs', { sub: 'coi' }); await mide('coi');
+      await ve(q, 'subs', { sub: 'pagos', filtro: 'todos' }); await q.locator('#ct-subs-pagosc [data-subs-marcar]').first().click(); await q.waitForTimeout(150); await mide('pagos');
+      await ve(q, 'subs', { sub: 'ajustes' }); await mide('subs-ajustes');
+      if (w === 390) {
+        for (const k of ['cedula', 'subs']) {
+          await ve(q, k);
+          const tv = await q.evaluate(() => { const t = document.querySelector('.ct-tabs'), a = t.querySelector('.ct-tab[aria-current="page"]'), T = t.getBoundingClientRect(), A = a.getBoundingClientRect(); return { pag: a.dataset.pag, izq: Math.round(A.left - T.left), der: Math.round(T.right - A.right) }; });
+          ok(`Teléfono · la pestaña «${k === 'cedula' ? 'Cédula' : 'Subs'}» se ve entera dentro de la tira de pestañas`, tv.pag === k && tv.izq >= 14 && tv.der >= 14, JSON.stringify(tv));
+        }
+        await ve(q, 'cedula', { sub: 'cedula', fecha: DIA });
+        // (arreglo A5) en el teléfono la lista empieza en «Con saldo»: las 45 cuentas en fila no caben (unos 10,700 px)
+        const fsT = xLeer('c13', `fn_cedula|${DIA}`), conSaldoT = fsT.filter(f => [f.saldo_libro, f.saldo_auxiliar].some(v => v != null && Number(v) !== 0) || f.pendiente || f.explicacion).length;
+        const altoT = await q.evaluate(() => document.documentElement.scrollHeight);
+        ok(`(arreglo A5) Teléfono · la cédula empieza en «Con saldo» (${conSaldoT} de ${fsT.length} cuentas), y la página mide ${altoT} px`, (await q.locator('[data-ced-filtro="saldo"]').getAttribute('aria-pressed')) === 'true' &&
+          (await q.locator('.ct-ced-fila').count()) === conSaldoT && conSaldoT < fsT.length && altoT < 9000, `${await q.locator('.ct-ced-fila').count()} filas`);
+        const ap = await q.evaluate(() => { const f = document.querySelector('.ct-ced-fila[data-ced-cuenta="2010"]'), r = f.getBoundingClientRect(); return { cols: getComputedStyle(f).gridTemplateColumns.split(' ').length, der: Math.round(r.right), iw: window.innerWidth, cab: getComputedStyle(document.querySelector('.ct-ced-cab')).display }; });
+        ok('Teléfono · cada cuenta de la cédula se apila (dos columnas, con su etiqueta, sin la cabecera de la tabla) y cabe en 390 px', ap.cols === 2 && ap.der <= ap.iw && ap.cab === 'none', JSON.stringify(ap));
+      }
+      if (w === 1280) {
+        await ve(q, 'cedula', { sub: 'cedula', fecha: DIA });
+        ok('Computadora · la cédula empieza en «Todas» (en el teléfono, «Con saldo»)', (await q.locator('[data-ced-filtro="todas"]').getAttribute('aria-pressed')) === 'true' && (await q.locator('.ct-ced-fila').count()) === xLeer('c13', `fn_cedula|${DIA}`).length);
+        const cols = await q.evaluate(() => getComputedStyle(document.querySelector('.ct-ced-fila')).gridTemplateColumns.split(' ').length);
+        ok('Computadora · la cédula en columnas (cuenta, libro, auxiliar, lo que suma, diferencia, estado) con su cabecera', cols === 6 && (await q.locator('.ct-ced-cab').isVisible()), cols);
+      }
+      ok(`Cédula y subs · ${w} px: la cédula, tres cuentas (con su forma abierta), a mano, explicaciones, QuickBooks, ajustes, las fichas, una ficha con la forma del COI, el 1099 con la hoja, el COI, los pagos y los ajustes, sin desplazamiento lateral ni rojos`, !mal.length, mal.join(' | '));
+      await cx.close();
+    }
+    estado.c13 = false; estado.c14 = false; estado.c9 = false; c9Reset(); xReset(); conCodigo(false);
+  }
+
   // ---- Sin señal ----
   await ctx.setOffline(true);
   await tab(p, 'bancos'); await p.waitForSelector('.ct-rojo', { timeout: 8000 });
@@ -6176,6 +7107,8 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     estado.c11 = true; fReset();
     // (fase 10) c12 pegado: «WIP» con octubre revisado (lo de antes de D confirmado) y su ajuste posteado
     estado.c12 = true; wReset();
+    // (fase 12a) c13 y c14 pegados: la cédula y los subs como los dejó la última escena de cada cadena (lo que contestó el banco)
+    estado.c13 = true; estado.c14 = true; xReset(); X.e13 = F12.c13.orden.length; X.e14 = F12.c14.orden.length;
     W_FN.fn_wip_antes({ p_proyecto: 'c12-prueba-d', p: { costo: '730.00', facturado: '1500.00' } });
     for (const [id, c, n] of [['c12-prueba-a', '6000', null], ['c12-prueba-b', '10000', 'ZZ: el bid'], ['c12-prueba-c', '11000', 'ZZ: subió el material'], ['c12-prueba-d', '12000', 'ZZ: estimado de prueba']])
       W_FN.fn_wip_revisar({ p_proyecto: id, p_periodo: '2026-10', p: n ? { costo_estimado: c, nota: n } : { costo_estimado: c } });
@@ -6201,6 +7134,7 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
       await cx.close();
     }
     estado.mfaFactores = []; estado.sesionAal = undefined; estado.stripeDeposito = false; estado.c8 = false; estado.c9 = false; estado.c10 = false; estado.c11 = false; estado.c12 = false; wReset(); iaReset();
+    estado.c13 = false; estado.c14 = false; xReset();
   }
   ok('Sin errores de JavaScript en la página', errs.length === 0, errs.join(' | '));
   await b.close(); srv.close();

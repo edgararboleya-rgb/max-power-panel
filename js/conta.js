@@ -75,12 +75,25 @@
 // del teléfono. La misma revisión sale en «Cierre del mes». La cabecera de su
 // sección lo cuenta.
 //
+// Y la cédula de corte (c13, fase 12a: fn_cedula_resumen, fn_cedula, fn_cedula_control,
+// fn_cedula_partidas, v_cedula_manual, v_cedula_explicaciones, fn_cedula_qb, fn_cedula_config;
+// fn_cedula_explicar, fn_cedula_explicacion_retirar, fn_cedula_renglon, fn_cedula_renglon_anular):
+// la página «Cédula de corte» pone cada saldo del balance a una fecha al lado de lo que lo
+// sostiene (su auxiliar), baja a sus renglones, explica lo que no cuadra y escribe a mano lo que
+// la base no sabe. Y los subs (c14, fase 12a: v_subs_fichas, fn_subs_fichas, v_subs_archivos,
+// fn_subs_1099, fn_subs_pagos, v_subs_coi, fn_subs_control, subs_config, subs_umbrales,
+// subs_exportaciones; fn_subs_ficha, fn_subs_tercero, fn_subs_tin_guardar, fn_subs_archivo,
+// fn_subs_archivo_retirar, fn_subs_marcar, fn_subs_config, fn_subs_umbral_confirmar y
+// fn_subs_1099_export; el bucket privado «subs»): la página «Subs y 1099» lleva la ficha de cada
+// sub (W-9, TIN que nunca se ve entero, COI), el 1099 del año con cada pago que lo forma y la
+// hoja para el e-file con el código del teléfono. La cabecera de cada sección lo cuenta.
+//
 // Cómo está organizada (v290, «que se parezca a un programa de contabilidad»):
 // una portada («Resumen») con las cifras y lo que hay que atender, y una
 // página por tarea: Bancos y tarjetas, Bandeja (el bank feed), Conciliar,
 // Movimientos, Estados financieros, Costo por obra (fase 9), WIP (fase 10),
-// Cierre del mes (desde la fase 8), Facturas (fase 10), Cobros en línea y
-// Conexiones y seguridad
+// Cierre del mes (desde la fase 8), Cédula de corte (fase 12a), Facturas
+// (fase 10), Cobros en línea, Subs y 1099 (fase 12a) y Conexiones y seguridad
 // (el código del teléfono, Plaid y la conexión con Stripe). En el teléfono y
 // el iPad las pestañas van arriba; en la computadora las enseña el lateral de
 // la app (js/app.js) con MXP_CONTA.paginas() y los hooks pagina() y volver().
@@ -142,16 +155,25 @@
     fac: { sub: "facturas", doc: null, pedido: null, filtro: "todas", q: "", obraQ: "", obrasFiltro: "activas", serie: 0, estado: null, nota: null, ultimo: null, sinEnlace: null },
     // (fase 10) «WIP»: qué apartado, qué mes (nulo = el que toca), la serie contra el doble pintado, la nota de la última acción
     // (la que devolvió la base, con su mes), los meses de v_cortes, y el filtro y el buscador de «Obras»
-    wip: { sub: "mes", periodo: null, serie: 0, nota: null, meses: null, filtro: "llevan", q: "" }
+    wip: { sub: "mes", periodo: null, serie: 0, nota: null, meses: null, filtro: "llevan", q: "" },
+    // (fase 12a) «Cédula de corte»: qué apartado, a qué día (nulo = el último día del mes pasado), qué cuenta está abierta (su auxiliar),
+    // el filtro de la lista (nulo = el de fábrica: «Con saldo» en el teléfono, «Todas» en el iPad y la computadora), la serie contra el
+    // doble pintado, la nota de la última acción y el mes de la balanza de QuickBooks
+    ced: { sub: "cedula", fecha: null, cuenta: null, filtro: null, serie: 0, nota: null, qbPer: null },
+    // (fase 12a) «Subs y 1099»: qué apartado, qué año, qué ficha está abierta («nueva» con lo que trae: nombre y tercero), qué fila del
+    // 1099 está desplegada, el filtro de los pagos, la serie, la nota de la última acción y lo que dijo la última hoja (sin TIN)
+    subs: { sub: "fichas", anio: null, ficha: null, nueva: null, clave: null, filtro: "todos", serie: 0, nota: null, ultimaHoja: null }
   };
   // Las páginas, en el orden del menú. TITULOS va en el membrete de la app y en el lateral; PESTANAS, corto, en las pestañas del teléfono
   // (fase 8) «Cierre del mes» va después de los estados: es lo último del mes, con lo de arriba ya hecho
   // (fase 9) «Costo por obra» va junto a los estados: es el otro informe que sale del libro
   // (fase 10) «Facturas» va junto a «Cobros en línea»: facturar y cobrar
   // (fase 10) «WIP» va entre «Costo por obra» y «Cierre del mes»: sale del costo de cada obra y se hace al cerrar
-  const ORDEN = ["resumen", "bancos", "bandeja", "conciliar", "movimientos", "estados", "obras", "wip", "cierre", "facturas", "cobros", "conexiones"];
-  const TITULOS = { resumen: "Resumen", bancos: "Bancos y tarjetas", bandeja: "Bandeja", conciliar: "Conciliar", movimientos: "Movimientos", estados: "Estados financieros", obras: "Costo por obra", wip: "WIP (obra en curso)", cierre: "Cierre del mes", facturas: "Facturas", cobros: "Cobros en línea", conexiones: "Conexiones y seguridad" };
-  const PESTANAS = { resumen: "Resumen", bancos: "Bancos", bandeja: "Bandeja", conciliar: "Conciliar", movimientos: "Movimientos", estados: "Estados", obras: "Obras", wip: "WIP", cierre: "Cierre", facturas: "Facturas", cobros: "Cobros", conexiones: "Conexiones" };
+  // (fase 12a) «Cédula de corte» va después del cierre (es el corte de año que se hace al cerrar) y «Subs y 1099» después de los
+  // cobros (lo que se les paga a los subs, su W-9, su COI y su 1099)
+  const ORDEN = ["resumen", "bancos", "bandeja", "conciliar", "movimientos", "estados", "obras", "wip", "cierre", "cedula", "facturas", "cobros", "subs", "conexiones"];
+  const TITULOS = { resumen: "Resumen", bancos: "Bancos y tarjetas", bandeja: "Bandeja", conciliar: "Conciliar", movimientos: "Movimientos", estados: "Estados financieros", obras: "Costo por obra", wip: "WIP (obra en curso)", cierre: "Cierre del mes", cedula: "Cédula de corte", facturas: "Facturas", cobros: "Cobros en línea", subs: "Subs y 1099", conexiones: "Conexiones y seguridad" };
+  const PESTANAS = { resumen: "Resumen", bancos: "Bancos", bandeja: "Bandeja", conciliar: "Conciliar", movimientos: "Movimientos", estados: "Estados", obras: "Obras", wip: "WIP", cierre: "Cierre", cedula: "Cédula", facturas: "Facturas", cobros: "Cobros", subs: "Subs", conexiones: "Conexiones" };
   // el icono de cada página, del mismo trazo que los del menú de la app (24 × 24, línea de 1.8)
   const svgMenu = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
   const ICONOS = {
@@ -164,8 +186,10 @@
     obras: svgMenu('<path d="M3 11l9-7 9 7"/><path d="M5 9.5V20h14V9.5"/><path d="M9.5 20v-5.5h5V20"/>'),
     wip: svgMenu('<rect x="3" y="8.5" width="18" height="7" rx="3.5"/><path d="M6.5 12h6"/><path d="M15.5 4.5v2.5M15.5 17v2.5"/>'),
     cierre: svgMenu('<rect x="4" y="10.5" width="16" height="10.5" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><path d="M12 14.5v2.5"/>'),
+    cedula: svgMenu('<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 9h18M9.5 9v11"/><path d="M13 15l2 2 3.5-3.5"/>'),
     facturas: svgMenu('<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/>'),
     cobros: svgMenu('<circle cx="12" cy="12" r="9"/><path d="M12 6.5v11M9.5 9.5h3.5a1.75 1.75 0 0 1 0 3.5h-2a1.75 1.75 0 0 0 0 3.5H15"/>'),
+    subs: svgMenu('<circle cx="9" cy="8" r="3.2"/><path d="M3.5 19.5a5.5 5.5 0 0 1 11 0"/><path d="M15.5 4.5h5v7h-5z"/><path d="M17 7h2M17 9h2"/>'),
     conexiones: svgMenu('<path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6z"/><path d="M9.5 12l2 2 3.5-3.5"/>')
   };
   const KICKER = "Contabilidad · solo dueño";
@@ -193,7 +217,8 @@
     });
   }
   // «←» de la app: solo cuando hay algo interno que cerrar (una conciliación abierta, el mayor o el asiento de los estados). Se avisa en cada pintada
-  const hayAtras = () => !!S.conc || (S.pagina === "estados" && !!(S.est.cuenta || S.est.asiento)) || (S.pagina === "obras" && !!(S.obras.sel || S.obras.bajar)) || (S.pagina === "facturas" && !!S.fac.doc);
+  const hayAtras = () => !!S.conc || (S.pagina === "estados" && !!(S.est.cuenta || S.est.asiento)) || (S.pagina === "obras" && !!(S.obras.sel || S.obras.bajar)) || (S.pagina === "facturas" && !!S.fac.doc)
+    || (S.pagina === "cedula" && !!S.ced.cuenta) || (S.pagina === "subs" && !!S.subs.ficha);
   const marcarVolver = () => S.hooks.volver(hayAtras());
   // La cabecera común de cada página: una línea con sus cifras (o lo que explica la página), los selectores si los hay y la acción principal a la derecha.
   // El título no se repite: ya lo pone la barra de la app (hooks.titulo); queda como aria-label de la cabecera
@@ -250,6 +275,20 @@
     }
     // (fase 10) el WIP: qué apartado y qué mes (sin opciones, el último que se miró; nulo, el que toca)
     if (pag === "wip") for (const k of ["sub", "periodo"]) if (opciones[k] !== undefined) S.wip[k] = opciones[k];
+    // (fase 12a) la cédula: qué apartado, qué día y qué cuenta; la pestaña tocada sin más vuelve a la lista (la cuenta abierta se cierra)
+    if (pag === "cedula") {
+      for (const k of ["sub", "fecha"]) if (opciones[k] !== undefined) S.ced[k] = opciones[k];
+      S.ced.cuenta = opciones.cuenta !== undefined ? opciones.cuenta : null;
+      S.ced.nota = null;
+    }
+    // (fase 12a) los subs: qué apartado, qué año, qué ficha (o «nueva» con lo que trae), qué fila del 1099 y qué filtro de los pagos;
+    // la pestaña tocada sin más vuelve a la lista (la ficha abierta se cierra)
+    if (pag === "subs") {
+      for (const k of ["sub", "anio", "clave", "filtro"]) if (opciones[k] !== undefined) S.subs[k] = opciones[k];
+      S.subs.ficha = opciones.ficha !== undefined ? opciones.ficha : null;
+      S.subs.nueva = opciones.nueva !== undefined ? opciones.nueva : (S.subs.ficha === "nueva" ? {} : null);
+      S.subs.nota = null;
+    }
     marcarPestana();
     S.hooks.titulo(KICKER, TITULOS[pag]);
     S.hooks.pagina(pag);
@@ -4344,9 +4383,16 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
   // a qué página lleva un control (ir_a de la base). «cierre» se queda aquí: los activos, la reserva, el historial; el 10
   // (los anteriores sin cerrar) lleva al período que toca
   // (fase 10) «wip» (las filas 174 a 177 de c12) lleva al WIP del mismo mes que se está revisando
-  const PAG_IR = ["bandeja", "conciliar", "movimientos", "estados", "wip", "facturas", "cobros", "conexiones"];
+  // (fase 12a) «cedula» (la fila 178 de c13) y «subs» (la 160 y la 179 de c14) llevan a sus páginas
+  const PAG_IR = ["bandeja", "conciliar", "movimientos", "estados", "wip", "facturas", "cobros", "conexiones", "cedula", "subs"];
   function destinoCie(x, sig) {
     if (x.ir_a === "wip") return { txt: PESTANAS.wip, attr: `data-wip-ir="${/^\d{4}-\d{2}$/.test(String(S.cie.periodo || "")) ? esc(S.cie.periodo) : ""}"` };
+    // (fase 12a) la 178 abre la cédula al último día del período que se revisa; la 160 y la 179, el COI y las fichas de los subs de ese año
+    if (x.ir_a === "cedula" || x.ir_a === "subs") {
+      const per = (S.cie.estado || []).find(e => e.periodo === S.cie.periodo);
+      if (x.ir_a === "cedula") return { txt: PESTANAS.cedula, attr: `data-cie-cedula="${per && per.hasta ? esc(String(per.hasta).slice(0, 10)) : ""}"` };
+      return { txt: PESTANAS.subs, attr: `data-cie-subs="${Number(x.orden) === 160 ? "coi" : "fichas"}" data-cie-anio="${per && per.hasta ? esc(String(per.hasta).slice(0, 4)) : ""}"` };
+    }
     if (PAG_IR.includes(x.ir_a)) return { txt: PESTANAS[x.ir_a], attr: `data-ir="${x.ir_a}"` };
     if (x.ir_a !== "cierre") return null;
     const o = Number(x.orden);
@@ -4372,6 +4418,8 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
   function wireCie(c) {
     c.querySelectorAll("[data-ir]").forEach(b => b.addEventListener("click", () => ir(b.dataset.ir)));
     c.querySelectorAll("[data-wip-ir]").forEach(b => b.addEventListener("click", () => ir("wip", { sub: "mes", periodo: b.dataset.wipIr || null })));
+    c.querySelectorAll("[data-cie-cedula]").forEach(b => b.addEventListener("click", () => ir("cedula", { sub: "cedula", fecha: b.dataset.cieCedula || null })));
+    c.querySelectorAll("[data-cie-subs]").forEach(b => b.addEventListener("click", () => ir("subs", { sub: b.dataset.cieSubs, anio: b.dataset.cieAnio ? Number(b.dataset.cieAnio) : undefined })));
     c.querySelectorAll("[data-cie-ir]").forEach(b => b.addEventListener("click", () => ir("cierre", { sub: b.dataset.cieIr })));
     c.querySelectorAll("[data-cie-per]").forEach(b => b.addEventListener("click", () => ir("cierre", { sub: "cierre", periodo: b.dataset.ciePer })));
     c.querySelectorAll("[data-cie-exportar]").forEach(b => b.addEventListener("click", () => exportarDesde(b.dataset.cieExportar)));
@@ -6674,7 +6722,1393 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     });
   }
 
-  const PAGINAS = { resumen: pintarResumen, bancos: pintarBancos, bandeja: pintarBandeja, conciliar: pintarConciliar, movimientos: pintarMovimientos, estados: pintarEstados, obras: pintarObras, wip: pintarWip, cierre: pintarCierre, facturas: pintarFacturas, cobros: pintarCobros, conexiones: pintarConexiones };
+  // ============================================================
+  // LA CÉDULA DE CORTE (c13, fase 12a) — docs/conta/c13-cedula.sql
+  //
+  // Max Power deja QuickBooks el 1-ene-2027: antes de cortar hay que saber,
+  // cuenta por cuenta del balance, QUÉ HAY DEBAJO de cada saldo (su
+  // «auxiliar»: las facturas por cobrar, lo que se le debe a cada supply, el
+  // statement de cada banco y tarjeta, la carta de cada préstamo, cada póliza,
+  // cada activo, cada obra del WIP) y si cuadra. La base hace TODO: aquí solo
+  // se pinta lo que manda y se llama a sus funciones. Cinco apartados:
+  //   · LA CÉDULA a una fecha (de fábrica, el último día del mes pasado; la
+  //     fecha que manda es la que devuelve la base): fn_cedula_resumen (los
+  //     totales: la pantalla no suma), fn_cedula (una fila por cuenta de
+  //     balance: su saldo en el libro, su auxiliar y de dónde sale, lo que
+  //     suma, la diferencia y su estado en una píldora) y fn_cedula_control.
+  //     Tocar una cuenta BAJA A SU AUXILIAR (fn_cedula_partidas: las
+  //     partidas, la conciliación, los préstamos, las obras del WIP, los
+  //     activos, los renglones a mano), con lo que dice la base de ella (qué
+  //     le falta, qué hacer), EXPLICAR LA DIFERENCIA (fn_cedula_explicar: el
+  //     texto, que queda con quién y cuándo; volver a explicarla si se quedó
+  //     vieja o retirarla con su motivo) y AÑADIR UN RENGLÓN A MANO
+  //     (fn_cedula_renglon: qué es, cuánto, desde cuándo, con qué documento;
+  //     corregirlo o anularlo con su motivo; nada de esto postea).
+  //   · A MANO (v_cedula_manual): todos los renglones escritos a mano, los
+  //     vigentes y su historia, y añadir uno a cualquier cuenta de balance.
+  //   · EXPLICACIONES (v_cedula_explicaciones): las vivas y las de antes.
+  //   · QUICKBOOKS (fn_cedula_qb_periodos, fn_cedula_qb): la cédula al lado de
+  //     la balanza de QuickBooks cargada en c4 (para el 30-nov): qué amarra.
+  //   · AJUSTES (fn_cedula_config): desde qué mes avisa el cierre y con qué se
+  //     sostiene el patrimonio.
+  // EL ESTADO de cada cuenta es el de la base, en una píldora: «cuadra» (en
+  // verde, y debajo con qué: «con un papel» o «por sus partidas del libro»),
+  // «del libro» (neutra: el auxiliar es el propio libro ordenado, o un papel
+  // de otro día llevado a la fecha; no pide nada y NO se explica: la base no
+  // lo deja), «explicada», «no cuadra» y «sin auxiliar» (y entonces su
+  // columna dice con qué SE SOSTENDRÍA). Si una fila pide algo lo dice
+  // «pendiente», no «que_hacer» (una fila del libro trae ahí cómo
+  // comprobarla). Un préstamo cuyo total cuadra y solo falla el reparto entre
+  // corriente y largo plazo lo dice (par, solo_reparto), y en los totales va
+  // aparte. Los totales: Activo = Pasivo + Patrimonio + el resultado sin
+  // cerrar (las cuatro cifras de la base). En el teléfono la lista empieza
+  // en «Con saldo» (las 45 cuentas, casi todas en cero, no caben).
+  // FALLA RUIDOSA: los dos cuadres del control (10: la cédula trae todas las
+  // cuentas de balance con el saldo del libro; 90: las protecciones) en rojo,
+  // o la cédula con otro número de cuentas que el resumen, y no se pinta
+  // ninguna cifra. Los avisos (20 a 50) son trabajo por hacer: salen abajo.
+  // Quien no es el dueño no ve nada (la base le contesta 42501 o nada). Los
+  // montos que se escriben van como texto (dos decimales como mucho; con
+  // signo, en el lado natural de la cuenta); los que se enseñan, tal como los
+  // da la base, en el lado natural de su cuenta (positivo = lo normal).
+  // ============================================================
+  const SUBS_CED = { cedula: "La cédula", manual: "A mano", explicaciones: "Explicaciones", qb: "QuickBooks", ajustes: "Ajustes" };
+  const cedCuerpo = () => $("ct-ced-cuerpo");
+  const vivaCed = mia => mia === S.ced.serie && S.pagina === "cedula" && !!cedCuerpo();
+  const subCed = html => { const s = main() && main().querySelector(".ct-pag-sub"); if (s) s.innerHTML = html; };
+  const faltaCapa = err => !!err && (err.status === 404 || ["PGRST205", "PGRST202", "42P01", "42883"].includes(String(err.codigo || "")));
+  // el último día del mes pasado (Miami): la fecha de fábrica de la cédula
+  function finMesPasado() {
+    const [a, m] = hoyMiami().split("-").map(Number);
+    return new Date(Date.UTC(a, m - 1, 0)).toISOString().slice(0, 10);
+  }
+  const mensajeCed = err => esFalloDeRed(err) || !navigator.onLine ? "Sin señal: no se hizo nada. Vuelve a intentarlo con señal."
+    : err.codigo === "MFA" ? "Falta el código del teléfono: sal y vuelve a entrar con él."
+    : err.codigo === "55P03" ? "La base estaba ocupada (se estaba pegando un SQL): no se hizo nada. Vuelve a intentarlo en un momento."
+    : /^(MX\d+|22023|22007|42501)$/.test(String(err.codigo || "")) ? err.message
+    : faltaCapa(err) ? "A la base le falta la cédula: pega docs/conta/c13-cedula.sql en Supabase (SQL Editor → pegar → Run)."
+    : `La base contestó con un error que no es de las reglas de la cédula: ${err.message || "sin texto"}. Recarga la app; si sigue, avisa.`;
+  // el estado de una cuenta en una píldora (el de la base; «explicación vieja» encima, en rojo)
+  // («del libro», neutra y nunca verde: sale del propio libro, ordenado, o de un papel de otro día llevado a la fecha; no pide nada)
+  const ESTADO_CED = { cuadra: ["cuadra", "ok"], del_libro: ["del libro", ""], explicada: ["explicada", ""], no_cuadra: ["no cuadra", "bad"], sin_auxiliar: ["sin auxiliar", "warn"] };
+  function pillCed(f) {
+    const [t, c] = ESTADO_CED[f.estado] || [f.estado || "—", ""];
+    return pill(t, f.estado === "sin_auxiliar" && !f.pendiente ? "" : c) + (f.explicacion_vieja ? " " + pill("explicación vieja", "bad") : "");
+  }
+  // QUÉ HAY DEBAJO de un «cuadra» o de un «del libro» (sosten): no es lo mismo cuadrar con un papel que con las partidas del libro
+  const SOSTEN_CED = { papel: "con un papel", partidas: "por sus partidas del libro", libro: "sale del propio libro", llevado: "un papel de otro día, llevado a la fecha con el libro" };
+  const sostenCed = f => (f.estado === "cuadra" || f.estado === "del_libro") && SOSTEN_CED[f.sosten] ? SOSTEN_CED[f.sosten] : "";
+  // la columna «Su auxiliar»: lo que lo sostiene; sin auxiliar, con qué SE SOSTENDRÍA (todavía no lo tiene)
+  const auxCed = f => f.estado === "sin_auxiliar" ? `Se sostendría con: ${f.auxiliar || "—"}` : (f.auxiliar || "—");
+  // el «origen» puede traer un aviso de la base («OJO: …»): va aparte, a la vista
+  const partirOjo = t => { const s = String(t || ""), i = s.indexOf("OJO:"); return i < 0 ? [s, ""] : [s.slice(0, i).trim(), s.slice(i).trim()]; };
+  // el teléfono (lo que la hoja de estilos llama teléfono: hasta 699 px)
+  const esTelefono = () => !!(window.matchMedia && window.matchMedia("(max-width: 699px)").matches);
+  // a qué página lleva el auxiliar de una cuenta (donde se arregla lo que no cuadra)
+  const IR_CED = { conciliacion: ["conciliar", "Conciliar"], partidas: ["movimientos", "Movimientos"], activos: ["cierre", "Activos fijos", "activos"], depreciacion: ["cierre", "Activos fijos", "activos"],
+    wip: ["wip", "WIP"], stripe: ["cobros", "Cobros en línea"], stripe_paso: ["cobros", "Cobros en línea"] };
+  // lo que se escribe como monto en la cédula: dólares con dos decimales como mucho, con su signo (un renglón que resta)
+  const montoCedOk = t => /^-?\d{1,11}(\.\d{1,2})?$/.test(t) && Number(t) !== 0;
+  const MONTO_CED_MAL = "Escribe el monto en dólares, con dos decimales como mucho (por ejemplo 150 o 150.25; con «-» delante si resta). Cero no sostiene nada.";
+  const fechaOk = t => /^\d{4}-\d{2}-\d{2}$/.test(String(t || ""));
+  const notaCedHTML = () => S.ced.nota ? `<p class="ct-aviso ${S.ced.nota.tipo || "ok"} ct-ced-nota" role="status">${esc(S.ced.nota.texto)}</p>` : "";
+
+  async function pintarCedula() {
+    const mia = ++S.ced.serie;
+    if (!navigator.onLine) return sinSenal(pintarCedula);
+    if (!SUBS_CED[S.ced.sub]) S.ced.sub = "cedula";
+    if (!S.ced.fecha) S.ced.fecha = finMesPasado();
+    S.hooks.titulo(KICKER, TITULOS.cedula);
+    main().innerHTML = cabPagina(TITULOS.cedula, "Leyendo con la base…") +
+      `<section class="ct-card ct-ob-barra"><div class="ct-chips ct-ced-subs" aria-label="Qué parte">${Object.keys(SUBS_CED).map(k =>
+        `<button type="button" class="ct-chip" data-ced-sub="${k}" aria-pressed="${k === S.ced.sub ? "true" : "false"}">${esc(SUBS_CED[k])}</button>`).join("")}</div></section>
+      <div id="ct-ced-cuerpo" class="ct-ced-cuerpo"><div class="ct-card ct-cargando">Cargando…</div></div>`;
+    main().querySelectorAll("[data-ced-sub]").forEach(b => b.addEventListener("click", () => { if (!S.ocupado) ir("cedula", { sub: b.dataset.cedSub }); }));
+    marcarVolver();
+    if (S.ced.sub === "cedula" && S.ced.cuenta) return pintarCedCuenta(mia);
+    return ({ cedula: pintarCedLista, manual: pintarCedManual, explicaciones: pintarCedExplicaciones, qb: pintarCedQb, ajustes: pintarCedAjustes })[S.ced.sub](mia);
+  }
+  function errorCed(err, reintentar) {
+    const c = cedCuerpo(); if (!c) return;
+    if (faltaCapa(err) && !esFalloDeRed(err)) {
+      c.innerHTML = `<section class="ct-card ct-rojo" role="alert"><h2>Falta la cédula en la base</h2>
+        <p>Esta página lee lo que deja <span class="ct-num">docs/conta/c13-cedula.sql</span>, y la base todavía no lo tiene. Pégalo entero en Supabase (SQL Editor → pegar → Run), después de c1 a c12, y vuelve aquí. La tabla que sale al final del pegado dice si al cierre del mes le falta algo para mirar la cédula (eso lo pone c9-cierre.sql, no este archivo).</p>
+        <div class="ct-acciones"><button type="button" class="accion secundaria" id="ct-reintentar">Reintentar</button></div></section>`;
+      $("ct-reintentar").addEventListener("click", reintentar);
+      return;
+    }
+    pintarError(err, reintentar, err.codigo === "42501" ? "La cédula es solo del dueño" : undefined, c);
+  }
+  // LA CÉDULA a una fecha: el resumen manda (su fecha es la que se pinta), la cédula y el control de ese mes (o del que toca).
+  // FALLA RUIDOSA aquí: un cuadre en rojo o la cédula con otro número de cuentas que el resumen, y no se pinta ninguna cifra
+  async function leerCedula(fecha) {
+    const res = await DB._rpc("fn_cedula_resumen", { p_fecha: fecha || null });
+    if (!res || typeof res !== "object" || !res.fecha) throw errorControl("La cédula no devolvió su resumen", [{ vista: "resumen de la cédula", filas: 0, esperadas: 1, detalle: "Vacío: la sesión no es la del dueño o a la base le falta la cédula." }]);
+    const [filas, ctl] = await Promise.all([
+      DB._rpc("fn_cedula", { p_fecha: res.fecha }),
+      DB._rpc("fn_cedula_control", { p_periodo: res.periodo || null })
+    ]);
+    if (!Array.isArray(ctl) || !ctl.length) throw errorControl("El control de la cédula no devolvió nada", [{ vista: "control de la cédula", filas: 0, esperadas: 6, detalle: "Vacío: la sesión no es la del dueño o a la base le falta la cédula." }]);
+    const rojos = ctl.filter(f => f.nivel === "cuadre" && f.ok !== true);
+    if (rojos.length) throw errorControl("La cédula no cuadra", rojos.map(f => ({ vista: cap(String(f.control || "").replace(/^cédula: /, "")), filas: null, esperadas: null, detalle: f.detalle })));
+    const total = num(res.cuentas);
+    if (!Array.isArray(filas) || filas.length !== total) {
+      throw errorControl("El resumen y la cédula no cuentan lo mismo", [{ vista: "cédula", filas: Array.isArray(filas) ? filas.length : "—", esperadas: total,
+        detalle: `El resumen al ${fechaLarga(res.fecha)} cuenta ${total == null ? "—" : total} cuenta(s) de balance y la cédula trae ${Array.isArray(filas) ? filas.length : "otra cosa"}: no se pinta nada hasta que digan lo mismo.` }]);
+    }
+    return { res, filas, ctl, avisos: ctl.filter(f => f.nivel === "aviso" && f.ok !== true) };
+  }
+  // Una escritura de la cédula: la tarjeta se apaga, el error va a su forma; si salió, la nota arriba, el aviso y se vuelve a pintar
+  async function accionCed(card, fn, args, exito, opciones = {}) {
+    if (S.ocupado) return;
+    if (!navigator.onLine) { mostrarErrorForma(card, "Sin señal: no se hizo nada."); return; }
+    S.ocupado = true;
+    const apagados = [...card.querySelectorAll("button, input, select, textarea")].filter(b => !b.disabled);
+    apagados.forEach(b => { b.disabled = true; });
+    let r;
+    try { r = await DB._rpc(fn, args); }
+    catch (err) {
+      apagados.forEach(b => { b.disabled = false; });
+      S.ocupado = false;
+      mostrarErrorForma(card, mensajeCed(err));
+      return;
+    }
+    S.ocupado = false;
+    const n = exito(r) || null;
+    if (n) S.ced.nota = n;
+    S.hooks.avisar(opciones.aviso || "Hecho");
+    await repintar();
+  }
+  // la barra de la fecha: el día que se mira, el último día del mes pasado y hoy (la base dice el que manda)
+  function barraFechaCed(res) {
+    const hoy = hoyMiami(), fin = finMesPasado();
+    return `<div class="ct-ced-fecha">
+        <label class="ct-campo">La cédula al día<input type="date" id="ct-ced-dia" value="${esc(res.fecha)}" max="${esc(hoy)}"></label>
+        <div class="ct-chips">${res.fecha !== fin ? `<button type="button" class="ct-chip" data-ced-dia="${fin}">Fin del mes pasado (${esc(fecha(fin))})</button>` : ""}${res.fecha !== hoy ? `<button type="button" class="ct-chip" data-ced-dia="${hoy}">Hoy</button>` : ""}</div>
+      </div>`;
+  }
+  function wireFechaCed(c) {
+    const inp = c.querySelector("#ct-ced-dia");
+    if (inp) inp.addEventListener("change", ev => { const v = ev.target.value; if (S.ocupado || !fechaOk(v)) return; S.ced.fecha = v; S.ced.nota = null; pintarCedula(); });
+    c.querySelectorAll("[data-ced-dia]").forEach(b => b.addEventListener("click", () => { if (S.ocupado) return; S.ced.fecha = b.dataset.cedDia; S.ced.nota = null; pintarCedula(); }));
+  }
+  // LA CÉDULA: el resumen (los totales de la base), los filtros y una fila por cuenta, agrupadas por activo, pasivo y patrimonio
+  async function pintarCedLista(mia) {
+    let d;
+    try { d = await leerCedula(S.ced.fecha); if (!vivaCed(mia)) return; }
+    catch (err) { if (!vivaCed(mia)) return; return errorCed(err, pintarCedula); }
+    const r = d.res;
+    S.ced.fecha = r.fecha;
+    subCed(`<b>Al ${esc(fechaLarga(r.fecha))}</b> · ${plural(num(r.cuadran) || 0, "cuadra", "cuadran")}${num(r.del_libro) ? ` · ${r.del_libro} del libro` : ""}${num(r.explicadas) ? ` · ${plural(r.explicadas, "explicada", "explicadas")}` : ""}${num(r.no_cuadran) ? ` · <span class="bad-txt">${r.no_cuadran} no cuadran</span>` : ""}${num(r.sin_auxiliar) ? ` · ${r.sin_auxiliar} con saldo y sin auxiliar` : ""}`);
+    const piden = d.filas.filter(f => f.pendiente).length, conSaldo = d.filas.filter(f => noCero(f.saldo_libro) || noCero(f.saldo_auxiliar) || f.pendiente || f.explicacion).length;
+    const FILTROS = { todas: `Todas (${d.filas.length})`, piden: `Piden algo (${piden})`, saldo: `Con saldo (${conSaldo})` };
+    // (de fábrica: en el teléfono, las que tienen saldo —las 45 en fila no caben—; en el iPad y la computadora, todas)
+    if (!FILTROS[S.ced.filtro]) S.ced.filtro = esTelefono() ? "saldo" : "todas";
+    const vis = d.filas.filter(f => S.ced.filtro === "piden" ? f.pendiente : S.ced.filtro === "saldo" ? (noCero(f.saldo_libro) || noCero(f.saldo_auxiliar) || f.pendiente || f.explicacion) : true);
+    const grupo = (tipo, titulo) => {
+      const fs = vis.filter(f => f.tipo === tipo);
+      if (!fs.length) return "";
+      return `<h3 class="ct-ced-grupo">${esc(titulo)}</h3><div class="ct-ced-filas">${fs.map(filaCedHTML).join("")}</div>`;
+    };
+    const c = cedCuerpo();
+    c.innerHTML = notaCedHTML() +
+      `<section class="ct-card ct-ced-res" id="ct-ced-res">
+        <div class="ct-cab"><h2>La cédula de corte al ${esc(fechaLarga(r.fecha))}</h2>${r.listo ? pill("lista: todo cuadra o está explicado", "ok") : pill(plural(num(r.pendientes) || 0, "cuenta pide algo", "cuentas piden algo"), num(r.pendientes) ? "warn" : "")}</div>
+        ${barraFechaCed(r)}
+        <div class="ct-kpis ${r.resultado == null ? "tres" : "cuatro"}">
+          <div class="ct-kpi"><span class="ct-lbl">Activo</span><span class="ct-val ct-num">${fmt(r.activo)}</span></div>
+          <div class="ct-kpi"><span class="ct-lbl">Pasivo</span><span class="ct-val ct-num">${fmt(r.pasivo)}</span></div>
+          <div class="ct-kpi"><span class="ct-lbl">Patrimonio</span><span class="ct-val ct-num">${fmt(r.capital)}</span></div>
+          ${r.resultado == null ? "" : `<div class="ct-kpi"><span class="ct-lbl">Resultado sin cerrar</span><span class="ct-val ct-num">${fmt(r.resultado)}</span></div>`}
+        </div>
+        ${r.resultado == null ? "" : `<p class="ct-nota ct-ced-ecuacion">Activo <span class="ct-num">${fmt(r.activo)}</span> = Pasivo <span class="ct-num">${fmt(r.pasivo)}</span> + Patrimonio <span class="ct-num">${fmt(r.capital)}</span> + el resultado del año sin cerrar <span class="ct-num">${fmt(r.resultado)}</span> (ingresos menos costos y gastos a la fecha; pasa al patrimonio al cerrar el año). ${r.balance_cuadra === false ? pill("el balance no cuadra", "bad") : pill("el balance cuadra", "ok")}</p>`}
+        <p class="ct-nota">${plural(num(r.cuentas) || 0, "cuenta de balance", "cuentas de balance")}, ${num(r.con_saldo) || 0} con saldo: ${plural(num(r.cuadran) || 0, "cuadra", "cuadran")} con su auxiliar${r.cuadran_papel != null ? ` (${num(r.cuadran_papel) || 0} con un papel, ${num(r.cuadran_partidas) || 0} por sus partidas del libro)` : ""}${num(r.del_libro) ? `, ${plural(r.del_libro, "sale del propio libro (no se compara con ningún papel de fuera)", "salen del propio libro (no se comparan con ningún papel de fuera)")}` : ""}, ${plural(num(r.explicadas) || 0, "explicada", "explicadas")}, ${num(r.no_cuadran) || 0} no cuadran y ${num(r.sin_auxiliar) || 0} con saldo no tienen auxiliar.</p>
+        ${noCero(r.diferencia_pendiente) || noCero(r.reparto_pendiente) || noCero(r.sin_respaldo) ? `<ul class="ct-datos">${noCero(r.diferencia_pendiente) ? `<li>Diferencia sin explicar: <b class="ct-num">${fmt(r.diferencia_pendiente)}</b> (lo que no cuadra y nadie explicó, cuenta por cuenta)</li>` : ""}${noCero(r.reparto_pendiente) ? `<li class="ct-ced-reparto">El reparto de un préstamo entre lo corriente y lo de largo plazo: <b class="ct-num">${fmt(r.reparto_pendiente)}</b> en ${plural(num(r.reparto_cuentas) || 0, "cuenta", "cuentas")} (el total del préstamo sí cuadra: lo arregla un asiento entre sus dos cuentas)</li>` : ""}${noCero(r.sin_respaldo) ? `<li>Saldo sin nada debajo: <b class="ct-num">${fmt(r.sin_respaldo)}</b> (cuentas con saldo y sin auxiliar)</li>` : ""}</ul>` : ""}
+        ${num(r.explicaciones_viejas) ? `<p class="ct-aviso bad">${plural(r.explicaciones_viejas, "explicación se quedó vieja", "explicaciones se quedaron viejas")}: los números cambiaron después de explicarlas. Ábrelas y vuelve a explicarlas.</p>` : ""}
+        ${ayudaHTML(`<p>Cada saldo del balance tiene que tener algo debajo que lo sostenga: su <b>auxiliar</b> (las facturas por cobrar, lo que se le debe a cada supply, el statement de cada banco y tarjeta, la carta de cada préstamo, cada póliza, cada activo, cada obra del WIP). La base lo busca sola y lo compara al centavo con la cuenta.</p>
+          <p><b>Cuadra con un papel</b> quiere decir que algo de fuera del libro dice lo mismo (el statement conciliado ese día, la carta del préstamo, la póliza, el activo). <b>Cuadra por sus partidas</b> dice que cada línea tiene su factura o su proveedor, no que case con el statement del supply: eso se compara a mano. <b>Del libro</b> es una cuenta cuyo auxiliar es el propio libro ordenado (el use tax por mes) o un papel de otro día llevado a la fecha: no pide nada, pero tampoco comprueba nada; la cuenta dice cómo comprobarla.</p>
+          <p>Lo que <b>no cuadra</b> se arregla donde dice cada cuenta, o se explica con tus palabras (queda quién y cuándo). Lo que la base no sabe (la caja chica, un depósito en garantía) se escribe <b>a mano</b>: qué es, cuánto y con qué documento. Nada de esto toca el libro.</p>`, "¿Qué es la cédula?")}
+      </section>
+      <section class="ct-card ct-ced-lista" id="ct-ced-lista">
+        <div class="ct-chips" aria-label="Qué cuentas">${Object.keys(FILTROS).map(k => `<button type="button" class="ct-chip" data-ced-filtro="${k}" aria-pressed="${k === S.ced.filtro ? "true" : "false"}">${esc(FILTROS[k])}</button>`).join("")}</div>
+        <div class="ct-ced-cab" aria-hidden="true"><span>Cuenta</span><span class="r">En el libro</span><span>Su auxiliar</span><span class="r">Lo que suma</span><span class="r">Diferencia</span><span>Estado</span></div>
+        ${vis.length ? grupo("activo", "Activo") + grupo("pasivo", "Pasivo") + grupo("capital", "Patrimonio") : `<p class="ct-vacio">Ninguna cuenta pide nada al ${esc(fechaLarga(r.fecha))}.</p>`}
+      </section>` + avisosCedHTML(d.avisos);
+    wireFechaCed(c);
+    c.querySelectorAll("[data-ced-filtro]").forEach(b => b.addEventListener("click", () => { S.ced.filtro = b.dataset.cedFiltro; pintarCedLista(++S.ced.serie); }));
+    c.querySelectorAll("[data-ced-cuenta]").forEach(b => b.addEventListener("click", () => { if (S.ocupado) return; S.ced.cuenta = b.dataset.cedCuenta; S.ced.nota = null; pintarCedula(); }));
+  }
+  // una cuenta de la cédula: un botón (baja a su auxiliar). En el teléfono se apila; en la computadora, columnas
+  function filaCedHTML(f) {
+    const sinAux = f.saldo_auxiliar == null;
+    // (un préstamo cuyo total cuadra y solo falla el reparto pide algo, pero no es un descuadre de dinero: en ámbar)
+    const clase = f.explicacion_vieja || (f.estado === "no_cuadra" && !f.solo_reparto) ? "mal" : f.pendiente ? "pide" : (f.estado === "cuadra" || f.estado === "del_libro") && !noCero(f.saldo_libro) ? "cero" : "";
+    const sost = sostenCed(f), ojo = partirOjo(f.origen)[1];
+    return `<button type="button" class="ct-ced-fila ${clase}" data-ced-cuenta="${esc(f.cuenta)}" data-estado="${esc(f.estado || "")}">
+        <span class="ct-ced-c"><b><span class="ct-num">${esc(f.cuenta)}</span> ${esc(f.nombre)}</b></span>
+        <span class="ct-ced-v r" data-col="En el libro"><span class="ct-num">${fmt(f.saldo_libro)}</span></span>
+        ${f.estado === "sin_auxiliar" ? `<span class="ct-ced-a" data-col="Se sostendría con"><span class="ct-ced-a-pre">Se sostendría con: </span>${esc(f.auxiliar || "—")}</span>` : `<span class="ct-ced-a" data-col="Su auxiliar">${esc(auxCed(f))}</span>`}
+        <span class="ct-ced-v r" data-col="Lo que suma"><span class="ct-num">${sinAux ? "—" : fmt(f.saldo_auxiliar)}</span></span>
+        <span class="ct-ced-v r" data-col="Diferencia"><span class="ct-num${noCero(f.diferencia) ? " bad-txt" : ""}">${f.diferencia == null ? "—" : fmt(f.diferencia)}</span></span>
+        <span class="ct-ced-e">${pillCed(f)}${ojo ? " " + pill("ojo: mírala", "warn") : ""}${sost ? `<small class="ct-ced-sost">${esc(sost)}</small>` : ""}${f.solo_reparto && f.par ? `<small class="ct-ced-sost">con la ${esc(f.par)} el total cuadra: solo el reparto</small>` : ""}</span>
+      </button>`;
+  }
+  const avisosCedHTML = avisos => avisos.length ? `<section class="ct-card ct-ced-avisos" id="ct-ced-avisos"><h2>Lo que dice el control</h2><ul class="ct-jr-avisos">${avisos.map(f =>
+    `<li class="ct-aviso warn">${esc(cap(String(f.control || "").replace(/^cédula: /, "")))}: ${esc(f.detalle || "")}</li>`).join("")}</ul></section>` : "";
+
+  // ---------- Una cuenta: su auxiliar, explicarla y sus renglones a mano ----------
+  async function pintarCedCuenta(mia) {
+    const cuenta = S.ced.cuenta;
+    let d, partidas, manual;
+    try {
+      d = await leerCedula(S.ced.fecha);
+      [partidas, manual] = await Promise.all([
+        DB._rpc("fn_cedula_partidas", { p_fecha: d.res.fecha, p_cuenta: cuenta }),
+        DB._leer(`v_cedula_manual?select=*&cuenta=eq.${enc(cuenta)}&order=desde.asc,creado_el.asc`)
+      ]);
+      if (!vivaCed(mia)) return;
+    } catch (err) { if (!vivaCed(mia)) return; return errorCed(err, pintarCedula); }
+    const f = d.filas.find(x => x.cuenta === cuenta);
+    const c = cedCuerpo();
+    S.ced.fecha = d.res.fecha;
+    if (!f) {
+      c.innerHTML = `<section class="ct-card"><p class="ct-vacio">La ${esc(cuenta)} no está en la cédula al ${esc(fechaLarga(d.res.fecha))}.</p><div class="ct-acciones"><button type="button" class="accion secundaria" id="ct-ced-volver">← La cédula</button></div></section>`;
+      $("ct-ced-volver").addEventListener("click", () => { S.ced.cuenta = null; pintarCedula(); });
+      return;
+    }
+    S.hooks.titulo(KICKER, `${f.cuenta} · ${f.nombre}`);
+    subCed(`<b>${esc(f.cuenta)} ${esc(f.nombre)}</b> · al ${esc(fechaLarga(d.res.fecha))}`);
+    marcarVolver();
+    const lista = Array.isArray(partidas) ? partidas : [];
+    const vigentes = (Array.isArray(manual) ? manual : []).filter(m => m.vigente);
+    const irA = IR_CED[f.fuente];
+    const puedeExplicar = (f.estado === "no_cuadra" || (f.estado === "sin_auxiliar" && f.pendiente) || f.explicacion_vieja);
+    const datos = [
+      f.auxiliar_al && f.auxiliar_al !== d.res.fecha ? `Su auxiliar es del ${esc(fechaLarga(f.auxiliar_al))}.` : "",
+      noCero(f.despues) ? `Lo que el libro movió después de la última conciliación: <b class="ct-num">${fmt(f.despues)}</b>.` : "",
+      noCero(f.sueltas) ? `En la cuenta sin decir de qué es: <b class="ct-num">${fmt(f.sueltas)}</b>.` : "",
+      noCero(f.manual) ? `Escrito a mano: <b class="ct-num">${fmt(f.manual)}</b>.` : "",
+      num(f.descuadres) ? `${plural(f.descuadres, "renglón no casa", "renglones no casan")} uno a uno con el libro.` : "",
+      f.solo_reparto && f.par ? `Con la <span class="ct-num">${esc(f.par)}</span> el total del préstamo sí cuadra: lo que falla es el reparto entre lo que vence en un año y lo de largo plazo.` : ""
+    ].filter(Boolean);
+    const [origen, ojo] = partirOjo(f.origen), sost = sostenCed(f);
+    c.innerHTML = notaCedHTML() +
+      `<section class="ct-card ct-ced-cta" id="ct-ced-cta" data-cuenta="${esc(f.cuenta)}">
+        <div class="ct-cab"><h2><span class="ct-num">${esc(f.cuenta)}</span> ${esc(f.nombre)}</h2><span class="ct-ced-e">${pillCed(f)}${sost ? `<small class="ct-ced-sost">${esc(sost)}</small>` : ""}</span></div>
+        <div class="ct-kpis tres">
+          <div class="ct-kpi"><span class="ct-lbl">En el libro</span><span class="ct-val ct-num">${fmt(f.saldo_libro)}</span></div>
+          <div class="ct-kpi"><span class="ct-lbl">Su auxiliar</span><span class="ct-val ct-num">${f.saldo_auxiliar == null ? "—" : fmt(f.saldo_auxiliar)}</span></div>
+          <div class="ct-kpi"><span class="ct-lbl">Diferencia</span><span class="ct-val ct-num${noCero(f.diferencia) ? " bad-txt" : ""}">${f.diferencia == null ? "—" : fmt(f.diferencia)}</span></div>
+        </div>
+        <p class="ct-ced-aux"><b>${esc(f.estado === "sin_auxiliar" ? auxCed(f) : (f.auxiliar || "Sin auxiliar"))}</b>${origen ? `<small>${esc(origen)}</small>` : ""}</p>
+        ${ojo ? `<p class="ct-aviso warn ct-ced-ojo" role="note">${esc(ojo)}</p>` : ""}
+        ${f.detalle ? `<p class="ct-nota ct-ced-detalle">${esc(f.detalle)}</p>` : ""}
+        ${datos.length ? `<ul class="ct-datos">${datos.map(x => `<li>${x}</li>`).join("")}</ul>` : ""}
+        ${f.que_hacer ? (f.pendiente ? `<p class="ct-aviso warn ct-ced-hacer"><b>Qué hacer:</b> ${esc(f.que_hacer)}</p>` : `<p class="ct-nota ct-ced-hacer ct-ced-comprobar">${esc(f.que_hacer)}</p>`) : ""}
+        ${f.explicacion ? `<div class="ct-ced-expl${f.explicacion_vieja ? " vieja" : ""}" id="ct-ced-expl"><p class="ct-lbl">${f.explicacion_vieja ? "La explicación de antes (ya no vale: los números cambiaron)" : "Explicada"}</p>
+          <p>«${esc(f.explicacion)}»</p><small>${esc(f.explicada_por_nombre || "Edgar")}, el ${esc(fechaLarga(f.explicada_el))}</small></div>` : ""}
+        <div class="ct-acciones">
+          ${puedeExplicar ? `<button type="button" class="accion" data-ced-explicar>${f.explicacion ? "Volver a explicarla" : "Explicar la diferencia"}</button>` : ""}
+          ${f.explicacion ? `<button type="button" class="accion secundaria" data-ced-retirar>Retirar la explicación</button>` : ""}
+          <button type="button" class="accion secundaria" data-ced-renglon>Añadir un renglón a mano</button>
+          ${irA ? `<button type="button" class="accion secundaria" data-ced-ir="${esc(irA[0])}"${irA[2] ? ` data-ced-ir-sub="${esc(irA[2])}"` : ""}>${esc(irA[1])}</button>` : ""}
+          ${f.par ? `<button type="button" class="accion secundaria" data-ced-par="${esc(f.par)}">La otra cuenta del préstamo (${esc(f.par)})</button>` : ""}
+        </div>
+        <div class="ct-form" hidden></div>
+      </section>
+      <section class="ct-card ct-ced-aux-lista" id="ct-ced-partidas">
+        <div class="ct-cab"><h2>Lo que la sostiene</h2>${pill(plural(lista.filter(x => x.clase === "auxiliar" || x.clase === "libro").length, "renglón", "renglones"))}</div>
+        ${lista.length ? partidasCedHTML(lista, vigentes) : `<p class="ct-vacio">Nada debajo de esta cuenta al ${esc(fechaLarga(d.res.fecha))}.</p>`}
+        <div class="ct-form" hidden></div>
+      </section>
+      <div class="ct-acciones"><button type="button" class="accion secundaria" id="ct-ced-volver">← La cédula</button></div>`;
+    $("ct-ced-volver").addEventListener("click", () => { S.ced.cuenta = null; S.ced.nota = null; S.hooks.titulo(KICKER, TITULOS.cedula); pintarCedula(); });
+    const card = $("ct-ced-cta");
+    const bPar = card.querySelector("[data-ced-par]");
+    if (bPar) bPar.addEventListener("click", () => { if (S.ocupado) return; S.ced.cuenta = bPar.dataset.cedPar; S.ced.nota = null; pintarCedula(); });
+    const bIr = card.querySelector("[data-ced-ir]");
+    if (bIr) bIr.addEventListener("click", () => {
+      const k = bIr.dataset.cedIr;
+      if (k === "conciliar" || k === "movimientos") ir(k, { cuenta: f.cuenta });
+      else if (k === "cierre") ir("cierre", { sub: bIr.dataset.cedIrSub || "cierre" });
+      else ir(k);
+    });
+    const bExp = card.querySelector("[data-ced-explicar]");
+    if (bExp) bExp.addEventListener("click", () => montarForma(card, formaHTML(`Por qué no cuadra la ${esc(f.cuenta)} al ${esc(fechaLarga(d.res.fecha))}. Queda con tu nombre y la fecha, y vale para estos números: si cambian, se vuelve a explicar.`,
+      `<label class="ct-campo">La explicación (con tus palabras: qué es esa diferencia y con qué papel se sostiene)<textarea name="texto" rows="3" required data-falta="Falta la explicación: qué es esa diferencia y con qué papel se sostiene."></textarea></label>`, "Guardar la explicación"), v =>
+      accionCed(card, "fn_cedula_explicar", { p_cuenta: f.cuenta, p_fecha: d.res.fecha, p_texto: v.texto }, r => ({ tipo: "ok", texto: `Explicada la ${r.cuenta} al ${fechaLarga(r.fecha)}.` }), { aviso: "Explicación guardada" })));
+    const bRet = card.querySelector("[data-ced-retirar]");
+    if (bRet) bRet.addEventListener("click", () => montarForma(card, formaHTML(`Retirar la explicación de la ${esc(f.cuenta)} al ${esc(fechaLarga(d.res.fecha))}. No se borra: queda en el historial con tu motivo.`,
+      `<label class="ct-campo">Por qué se retira<input name="motivo" required data-falta="Falta el motivo: por qué se retira la explicación."></label>`, "Retirarla"), v =>
+      accionCed(card, "fn_cedula_explicacion_retirar", { p_cuenta: f.cuenta, p_fecha: d.res.fecha, p_motivo: v.motivo }, r => ({ tipo: "ok", texto: `Retirada la explicación de la ${r.cuenta} al ${fechaLarga(r.fecha)}.` }), { aviso: "Explicación retirada" })));
+    card.querySelector("[data-ced-renglon]").addEventListener("click", () => formaRenglon(card, { cuenta: f.cuenta, nombre: f.nombre, desde: d.res.fecha }));
+    const cardP = $("ct-ced-partidas");
+    cardP.querySelectorAll("[data-ced-corregir]").forEach(b => b.addEventListener("click", () => { const m = vigentes.find(x => x.renglon_id === b.dataset.cedCorregir); if (m) formaRenglon(cardP, { cuenta: m.cuenta, nombre: m.cuenta_nombre, renglon: m }); }));
+    cardP.querySelectorAll("[data-ced-anular]").forEach(b => b.addEventListener("click", () => { const m = vigentes.find(x => x.renglon_id === b.dataset.cedAnular); if (m) formaAnular(cardP, m); }));
+  }
+  // los renglones del auxiliar de una cuenta, por grupo (la obra, el proveedor…), como los da la base: lo que suma, lo que sale del
+  // propio libro ordenado (libro: su importe en «monto»), lo que está en el libro sin decir de qué es (suelto), lo que el libro movió
+  // después (de la conciliación, en un banco; del día, en una póliza o en Stripe), un error, y la meta de la reserva (dato: no suma)
+  const CLASE_CED = { suelto: ["sin papel", "bad"], despues: ["movido después del día", "warn"], error: ["no se pudo leer", "bad"], dato: ["dato: no suma", ""], libro: ["del libro", ""] };
+  const claseCed = x => x.clase === "despues" && x.fuente === "conciliacion" ? ["después de la conciliación", "warn"] : CLASE_CED[x.clase];
+  function partidasCedHTML(lista, vigentes) {
+    const grupos = [];
+    for (const x of lista) { const g = x.grupo || ""; let e = grupos.find(y => y.g === g); if (!e) grupos.push(e = { g, filas: [] }); e.filas.push(x); }
+    return grupos.map(g => `${g.g ? `<h3 class="ct-ced-grupo">${esc(g.g)}</h3>` : ""}<ul class="ct-ced-renglones">${g.filas.map(x => {
+      const cl = claseCed(x), esManual = x.ref_tabla === "cedula_manual" && vigentes.some(m => m.renglon_id === x.ref_id);
+      const monto = x.clase === "auxiliar" || x.clase === "dato" || x.clase === "libro" ? x.monto : x.libro;
+      return `<li class="ct-ced-r ${esc(x.clase || "")}${x.ok === false ? " nocasa" : ""}" data-clave="${esc(x.clave || "")}">
+          <span class="ct-ced-r-t">${cl ? pill(cl[0], cl[1]) + " " : ""}${x.ok === false ? pill("no casa con el libro", "bad") + " " : ""}<b>${esc(x.concepto || "—")}</b>
+            <small>${[x.referencia ? esc(x.referencia) : "", x.fecha ? esc(fechaLarga(x.fecha)) : "", x.nota ? esc(x.nota) : "",
+              x.libro != null && x.clase === "auxiliar" ? `en el libro <span class="ct-num">${fmt(x.libro)}</span>` : ""].filter(Boolean).join(" · ")}</small></span>
+          <span class="ct-ced-r-m ct-num">${monto == null ? "—" : fmt(monto)}</span>
+          ${esManual ? `<span class="ct-ced-r-b"><button type="button" class="accion secundaria chica" data-ced-corregir="${esc(x.ref_id)}">Corregir</button><button type="button" class="accion secundaria chica" data-ced-anular="${esc(x.ref_id)}">Anular</button></span>` : ""}
+        </li>`;
+    }).join("")}</ul>`).join("");
+  }
+  // EL RENGLÓN A MANO: qué es, cuánto (en el lado natural de la cuenta; con «-» resta), desde cuándo vale (y hasta cuándo), con qué
+  // documento y una nota. Con `renglon`, lo corrige: el anterior queda sustituido (la cuenta no cambia)
+  function formaRenglon(card, o) {
+    const m = o.renglon || null;
+    const val = k => esc(m && m[k] != null ? (k === "monto" ? Number(m[k]).toFixed(2) : m[k]) : "");
+    montarForma(card, formaHTML(m ? `Corregir el renglón «${esc(m.concepto)}» de la ${esc(o.cuenta)} (el de ahora queda en el historial, sustituido).`
+      : `Un renglón a mano en la ${esc(o.cuenta)} ${esc(o.nombre || "")}: suma a su auxiliar. No toca el libro.`,
+      `<label class="ct-campo">Qué es<input name="concepto" value="${val("concepto")}" required data-falta="Falta decir qué es (el concepto del renglón)." autocomplete="off"></label>
+       <div class="ct-fila">
+         <label class="ct-campo">Cuánto (en dólares; con «-» si resta)<input name="monto" inputmode="decimal" value="${val("monto")}" placeholder="0.00" required data-falta="Falta el monto." autocomplete="off"></label>
+         <label class="ct-campo">Desde el día<input type="date" name="desde" value="${esc(m ? m.desde : o.desde || "")}" required data-falta="Falta desde qué día vale."></label>
+         <label class="ct-campo">Hasta el día (vacío: sigue)<input type="date" name="hasta" value="${val("hasta")}"></label>
+       </div>
+       <label class="ct-campo">Con qué documento (la póliza, el contrato, el statement, el conteo)<input name="documento" value="${val("documento")}" autocomplete="off"></label>
+       <label class="ct-campo">Nota (opcional)<input name="nota" value="${val("nota")}" autocomplete="off"></label>`, m ? "Guardar la corrección" : "Añadir el renglón"), v => {
+      if (!montoCedOk(v.monto)) { mostrarErrorForma(card, MONTO_CED_MAL); return; }
+      const p = m ? { id: m.renglon_id } : { cuenta: o.cuenta };
+      Object.assign(p, { concepto: v.concepto, monto: v.monto, desde: v.desde, hasta: v.hasta || "", documento: v.documento || null, nota: v.nota || null });
+      accionCed(card, "fn_cedula_renglon", { p }, r => ({ tipo: "ok", texto: `${m ? "Corregido" : "Añadido"} el renglón «${r.concepto}» de la ${r.cuenta}: ${fmt(r.monto)} desde el ${fechaLarga(r.desde)}${r.hasta ? ` hasta el ${fechaLarga(r.hasta)}` : ""}${r.documento ? "" : ". Sin documento: el control lo va a pedir"}.` }),
+        { aviso: m ? "Renglón corregido" : "Renglón añadido" });
+    });
+  }
+  function formaAnular(card, m) {
+    montarForma(card, formaHTML(`Anular el renglón «${esc(m.concepto)}» (${esc(fmt(m.monto))}) de la ${esc(m.cuenta)}. No se borra: queda con tu motivo y deja de sumar.`,
+      `<label class="ct-campo">Por qué se anula<input name="motivo" required data-falta="Falta el motivo: por qué se anula el renglón." autocomplete="off"></label>`, "Anularlo"), v =>
+      accionCed(card, "fn_cedula_renglon_anular", { p_id: m.renglon_id, p_motivo: v.motivo }, r => ({ tipo: "ok", texto: `Anulado el renglón «${r.concepto}» de la ${r.cuenta}.` }), { aviso: "Renglón anulado" }));
+  }
+
+  // ---------- A mano: todos los renglones y añadir uno a cualquier cuenta ----------
+  async function pintarCedManual(mia) {
+    let filas, cuentas;
+    try {
+      [filas, cuentas] = await Promise.all([DB._leer("v_cedula_manual?select=*&order=cuenta.asc,desde.asc,creado_el.asc"), DB._rpc("fn_cedula_cuentas", {})]);
+      if (!vivaCed(mia)) return;
+    } catch (err) { if (!vivaCed(mia)) return; return errorCed(err, pintarCedula); }
+    filas = Array.isArray(filas) ? filas : [];
+    cuentas = (Array.isArray(cuentas) ? cuentas : []).filter(k => k.activa !== false);
+    const vig = filas.filter(m => m.vigente), viejos = filas.filter(m => !m.vigente);
+    subCed(`<b>${plural(vig.length, "renglón vigente", "renglones vigentes")}</b>${viejos.length ? ` · ${viejos.length} de antes` : ""}`);
+    const filaM = m => `<li class="ct-wip-hi${m.vigente ? "" : " deshecho"}" data-renglon="${esc(m.renglon_id)}">
+        <p><b><span class="ct-num">${esc(m.cuenta)}</span> ${esc(m.cuenta_nombre || "")}</b> · ${esc(m.concepto)} · <span class="ct-num">${fmt(m.monto)}</span></p>
+        <p class="ct-sub">Desde el ${esc(fechaLarga(m.desde))}${m.hasta ? ` hasta el ${esc(fechaLarga(m.hasta))}` : ""} · ${m.documento ? `documento: ${esc(m.documento)}` : `<span class="bad-txt">sin documento</span>`}${m.nota ? ` · ${esc(m.nota)}` : ""}</p>
+        <p class="ct-sub">${esc(m.creado_por_nombre || "Edgar")}, el ${esc(fechaLarga(m.creado_el))}${m.anulado_el ? ` · anulado el ${esc(fechaLarga(m.anulado_el))}${m.anulado_motivo ? ` («${esc(m.anulado_motivo)}»)` : ""}` : m.sustituido_el ? ` · corregido el ${esc(fechaLarga(m.sustituido_el))}` : ""}</p>
+        ${m.vigente ? `<div class="ct-acciones"><button type="button" class="accion secundaria chica" data-ced-corregir="${esc(m.renglon_id)}">Corregir</button><button type="button" class="accion secundaria chica" data-ced-anular="${esc(m.renglon_id)}">Anular</button></div>` : ""}
+      </li>`;
+    const c = cedCuerpo();
+    c.innerHTML = notaCedHTML() + `<section class="ct-card ct-ced-manual" id="ct-ced-manual">
+        <div class="ct-cab"><h2>Los renglones escritos a mano</h2><button type="button" class="accion chica" id="ct-ced-nuevo">Añadir un renglón</button></div>
+        <p class="ct-nota">Lo que la base no sabe (la caja chica, un depósito en garantía, el 941 por depositar): qué es, cuánto, desde cuándo y con qué documento. Suma al auxiliar de su cuenta; no toca el libro.</p>
+        <div class="ct-form" hidden></div>
+        ${vig.length ? `<ul class="ct-wip-his">${vig.map(filaM).join("")}</ul>` : `<p class="ct-vacio">Ningún renglón escrito a mano todavía.</p>`}
+        ${viejos.length ? `<details class="ct-wip-mas"><summary>Los de antes (corregidos o anulados): ${viejos.length}</summary><ul class="ct-wip-his">${viejos.map(filaM).join("")}</ul></details>` : ""}
+      </section>`;
+    const card = $("ct-ced-manual");
+    $("ct-ced-nuevo").addEventListener("click", () => {
+      montarForma(card, formaHTML("Un renglón a mano: elige la cuenta.", `<label class="ct-campo">La cuenta<select name="cuenta" required data-falta="Falta la cuenta.">${cuentas.map(k => `<option value="${esc(k.cuenta)}">${esc(k.cuenta)} ${esc(k.nombre)}</option>`).join("")}</select></label>`, "Seguir"), v => {
+        const k = cuentas.find(x => x.cuenta === v.cuenta);
+        formaRenglon(card, { cuenta: v.cuenta, nombre: k ? k.nombre : "", desde: S.ced.fecha || finMesPasado() });
+      });
+    });
+    card.querySelectorAll("[data-ced-corregir]").forEach(b => b.addEventListener("click", () => { const m = vig.find(x => x.renglon_id === b.dataset.cedCorregir); if (m) formaRenglon(card, { cuenta: m.cuenta, nombre: m.cuenta_nombre, renglon: m }); }));
+    card.querySelectorAll("[data-ced-anular]").forEach(b => b.addEventListener("click", () => { const m = vig.find(x => x.renglon_id === b.dataset.cedAnular); if (m) formaAnular(card, m); }));
+  }
+
+  // ---------- Explicaciones: las vivas y las de antes ----------
+  async function pintarCedExplicaciones(mia) {
+    let filas;
+    try { filas = await DB._leer("v_cedula_explicaciones?select=*&order=explicado_el.desc"); if (!vivaCed(mia)) return; }
+    catch (err) { if (!vivaCed(mia)) return; return errorCed(err, pintarCedula); }
+    filas = Array.isArray(filas) ? filas : [];
+    const vivas = filas.filter(x => x.viva), viejas = filas.filter(x => !x.viva);
+    subCed(`<b>${plural(vivas.length, "explicación viva", "explicaciones vivas")}</b>${viejas.length ? ` · ${viejas.length} de antes` : ""}`);
+    const filaE = x => `<li class="ct-wip-hi${x.viva ? "" : " deshecho"}">
+        <p><b><span class="ct-num">${esc(x.cuenta)}</span> ${esc(x.cuenta_nombre || "")}</b> · al ${esc(fechaLarga(x.fecha))}</p>
+        <p>«${esc(x.texto)}»</p>
+        <p class="ct-sub">Con <span class="ct-num">${fmt(x.saldo_libro)}</span> en el libro y <span class="ct-num">${x.saldo_auxiliar == null ? "—" : fmt(x.saldo_auxiliar)}</span> en su auxiliar · ${esc(x.explicado_por_nombre || "Edgar")}, el ${esc(fechaLarga(x.explicado_el))}${x.retirada_el ? ` · retirada el ${esc(fechaLarga(x.retirada_el))}${x.retirada_motivo ? ` («${esc(x.retirada_motivo)}»)` : ""}` : x.sustituida_el ? ` · sustituida el ${esc(fechaLarga(x.sustituida_el))}` : ""}</p>
+        ${x.viva ? `<div class="ct-acciones"><button type="button" class="accion secundaria chica" data-ced-ver="${esc(x.cuenta)}" data-ced-ver-dia="${esc(x.fecha)}">Ver la cuenta</button></div>` : ""}
+      </li>`;
+    const c = cedCuerpo();
+    c.innerHTML = notaCedHTML() + `<section class="ct-card ct-ced-expls" id="ct-ced-expls">
+        <h2>Las explicaciones</h2>
+        <p class="ct-nota">Cada una vale para su cuenta, su fecha y sus números: si después cambian, la cédula la marca vieja y pide explicarla otra vez. Ninguna se borra.</p>
+        ${vivas.length ? `<ul class="ct-wip-his">${vivas.map(filaE).join("")}</ul>` : `<p class="ct-vacio">Ninguna explicación viva.</p>`}
+        ${viejas.length ? `<details class="ct-wip-mas"><summary>Las de antes (sustituidas o retiradas): ${viejas.length}</summary><ul class="ct-wip-his">${viejas.map(filaE).join("")}</ul></details>` : ""}
+      </section>`;
+    c.querySelectorAll("[data-ced-ver]").forEach(b => b.addEventListener("click", () => ir("cedula", { sub: "cedula", fecha: b.dataset.cedVerDia, cuenta: b.dataset.cedVer })));
+  }
+
+  // ---------- QuickBooks: la cédula al lado de la balanza de QuickBooks (c4) ----------
+  async function pintarCedQb(mia) {
+    let pers, filas = [];
+    try {
+      pers = await DB._rpc("fn_cedula_qb_periodos", {});
+      pers = (Array.isArray(pers) ? pers : []).map(x => x.periodo).filter(Boolean);
+      if (pers.length && !pers.includes(S.ced.qbPer)) S.ced.qbPer = pers[0];
+      if (pers.length) filas = await DB._rpc("fn_cedula_qb", { p_periodo: S.ced.qbPer });
+      if (!vivaCed(mia)) return;
+    } catch (err) { if (!vivaCed(mia)) return; return errorCed(err, pintarCedula); }
+    const c = cedCuerpo();
+    if (!pers.length) {
+      subCed("Sin balanza de QuickBooks cargada");
+      c.innerHTML = `<section class="ct-card"><h2>La cédula al lado de QuickBooks</h2><p class="ct-vacio">Todavía no hay una balanza de QuickBooks cargada para comparar. Cuando esté la del 30-nov (la comparación de Estados financieros), aquí sale cuenta por cuenta qué amarra.</p></section>`;
+      return;
+    }
+    filas = Array.isArray(filas) ? filas : [];
+    const f0 = filas[0] || {};
+    const amarran = filas.filter(x => x.amarra).length;
+    subCed(`<b>${esc(nombrePer(S.ced.qbPer))}</b> · ${amarran} de ${filas.length} amarran`);
+    c.innerHTML = `<section class="ct-card ct-ced-qb" id="ct-ced-qb">
+        <div class="ct-cab"><h2>La cédula al ${esc(fechaLarga(f0.al))} al lado de QuickBooks</h2>${pill(`${amarran} de ${filas.length} amarran`, amarran === filas.length ? "ok" : "warn")}</div>
+        ${pers.length > 1 ? `<label class="ct-campo ct-wip-mes">La balanza de<select id="ct-ced-qbper">${pers.map(p => `<option value="${esc(p)}"${p === S.ced.qbPer ? " selected" : ""}>${esc(cap(nombrePer(p)))}</option>`).join("")}</select></label>` : ""}
+        ${f0.documento ? `<p class="ct-sub">La balanza: <span class="ct-num">${esc(f0.documento)}</span></p>` : ""}
+        <p class="ct-nota">Una cuenta <b>amarra</b> cuando QuickBooks y el libro dicen lo mismo (o la diferencia está anotada en la comparación) y el libro cuadra con su auxiliar (o está explicado aquí).</p>
+        <div class="ct-ob-tabla-env"><table class="ct-tabla ct-ob-tabla ct-ced-qbt"><thead><tr><th>Cuenta</th><th class="r">QuickBooks</th><th class="r">El libro</th><th class="r">Sin explicar con QuickBooks</th><th class="r">Su auxiliar</th><th>Amarra</th></tr></thead><tbody>
+          ${filas.map(x => `<tr${x.amarra ? "" : ` class="ct-ob-est"`} data-cuenta="${esc(x.cuenta)}"><td class="ct-ob-c1"><b><span class="ct-num">${esc(x.cuenta)}</span> ${esc(x.nombre)}</b></td>
+            <td class="r ct-num" data-col="QuickBooks">${x.saldo_qb == null ? "—" : fmt(x.saldo_qb)}</td>
+            <td class="r ct-num" data-col="El libro">${fmt(x.libro_comparable != null ? x.libro_comparable : x.saldo_libro)}</td>
+            <td class="r ct-num" data-col="Sin explicar con QuickBooks">${x.sin_explicar_qb == null ? "—" : fmt(x.sin_explicar_qb)}</td>
+            <td class="r ct-num" data-col="Su auxiliar">${x.saldo_auxiliar == null ? "—" : fmt(x.saldo_auxiliar)}</td>
+            <td data-col="Amarra">${x.amarra ? pill("amarra", "ok") : pill(x.qb_ok === false ? "QuickBooks no" : "su auxiliar no", "bad")}</td></tr>`).join("")}
+        </tbody></table></div>
+      </section>`;
+    const sel = $("ct-ced-qbper");
+    if (sel) sel.addEventListener("change", ev => { S.ced.qbPer = ev.target.value; pintarCedula(); });
+  }
+
+  // ---------- Ajustes: desde qué mes avisa el cierre y con qué se sostiene el patrimonio ----------
+  async function pintarCedAjustes(mia) {
+    let cfg, meses;
+    try { [cfg, meses] = await Promise.all([DB._rpc("fn_cedula_config", {}), mesesWip()]); if (!vivaCed(mia)) return; }
+    catch (err) { if (!vivaCed(mia)) return; return errorCed(err, pintarCedula); }
+    cfg = cfg || {};
+    subCed(`El cierre avisa ${cfg.avisar_desde ? `desde <b>${esc(nombrePer(cfg.avisar_desde))}</b>` : "<b>todavía no</b>"}`);
+    const ops = [...new Set([cfg.avisar_desde, ...(meses || []).map(m => m.periodo)].filter(Boolean))].sort().reverse();
+    const c = cedCuerpo();
+    c.innerHTML = notaCedHTML() + `<section class="ct-card ct-wip-cfg ct-ced-cfg" id="ct-ced-cfg">
+        <h2>Ajustes de la cédula</h2>
+        <form class="ct-pide" novalidate>
+          <label class="ct-campo">Desde qué mes el cierre avisa de lo que no cuadra (un aviso: nunca detiene el cierre)
+            <select name="avisar_desde"><option value="">Todavía no avisa</option>${ops.map(p => `<option value="${esc(p)}"${p === cfg.avisar_desde ? " selected" : ""}>${esc(cap(nombrePer(p)))}</option>`).join("")}</select>
+            <span class="ct-sub">De fábrica, noviembre de 2026: el 30-nov es el corte contra QuickBooks. Los meses anteriores no ganan un rojo por la cédula.</span></label>
+          <fieldset class="ct-ced-patr"><legend>Con qué se sostiene el patrimonio (3000 a 3900)</legend>
+            <label class="ct-check"><input type="radio" name="patrimonio" value="mayor"${cfg.patrimonio !== "manual" ? " checked" : ""}> Con su propio mayor: lo que trajo la apertura más cada asiento (lo que amarra de verdad es QuickBooks)</label>
+            <label class="ct-check"><input type="radio" name="patrimonio" value="manual"${cfg.patrimonio === "manual" ? " checked" : ""}> Con renglones a mano (el acta, la declaración de 2025)</label>
+            <span class="ct-sub">▶ Lo decide Edgar con el CPA.</span></fieldset>
+          <div class="ct-acciones"><button class="accion" type="submit">Guardar</button></div>
+        </form>
+        <div class="ct-form" hidden></div>
+        ${Array.isArray(cfg.historial) && cfg.historial.length ? `<details class="ct-wip-mas"><summary>Cómo estaba antes: ${cfg.historial.length}</summary><ul class="ct-wip-his">${cfg.historial.map(h => `<li class="ct-wip-hi"><p class="ct-sub">Hasta el ${esc(fechaLarga(h.el))}: avisaba ${h.avisar_desde ? `desde ${esc(nombrePer(h.avisar_desde))}` : "todavía no"}; el patrimonio, ${h.patrimonio === "manual" ? "a mano" : "con su mayor"}.</p></li>`).join("")}</ul></details>` : ""}
+      </section>`;
+    const card = $("ct-ced-cfg");
+    card.querySelector("form").addEventListener("submit", ev => {
+      ev.preventDefault();
+      const fd = new FormData(ev.target);
+      accionCed(card, "fn_cedula_config", { p: { avisar_desde: String(fd.get("avisar_desde") || ""), patrimonio: String(fd.get("patrimonio") || "mayor") } },
+        r => ({ tipo: "ok", texto: `Guardado: el cierre avisa ${r.avisar_desde ? `desde ${nombrePer(r.avisar_desde)}` : "todavía no"}; el patrimonio, ${r.patrimonio === "manual" ? "con renglones a mano" : "con su mayor"}.` }), { aviso: "Ajustes guardados" });
+    });
+  }
+
+  // ============================================================
+  // SUBS Y 1099 (c14, fase 12a) — docs/conta/c14-subs.sql
+  //
+  // A quien se le paga como contratista (los subs y los ayudantes por hora
+  // pagados por Zelle hasta que entren a Gusto) hay que pedirle su W-9 (nombre
+  // legal, tipo de entidad, dirección y TIN) y su certificado de seguro (COI),
+  // y en enero mandarle su 1099-NEC si lo pagado en el año pasa del umbral.
+  // W-9 y COI NUNCA en «contratistas» (son los GC clientes): aquí todo es de
+  // la FICHA FISCAL de c14. La base calcula todo; la pantalla pinta y llama:
+  //   · FICHAS (v_subs_fichas; y de fn_subs_1099 del año, quien cobró servicio
+  //     y no tiene ficha): cada uno con sus chips (W-9 sí/no, TIN ····1234 o
+  //     falta, COI vigente / vence en N días / vencido / falta) y lo que le
+  //     falta. La FICHA: lo del W-9 (fn_subs_ficha), a quién se refiere en el
+  //     libro (fn_subs_tercero), el TIN (fn_subs_tin_guardar: un campo que no
+  //     se queda a la vista, como una contraseña; con el código del teléfono;
+  //     la pantalla solo enseña ***-**-1234), y los papeles: el W-9, el COI y
+  //     la exención de WC, que se suben al bucket privado «subs» con el código
+  //     del teléfono (nada se pisa ni se borra: uno nuevo va con otro nombre)
+  //     y se registran con su sha256 (fn_subs_archivo); uno mal subido se
+  //     retira con su motivo (fn_subs_archivo_retirar).
+  //   · 1099 (fn_subs_1099 del año, fn_subs_umbral): cada tercero con lo
+  //     reportable, lo excluido y por qué, si pasa del umbral y qué le falta,
+  //     y cada pago que lo forma (bajar al asiento). La hoja (fn_subs_1099_
+  //     export) pide el código del teléfono y avisa que lleva el TIN ENTERO:
+  //     la pantalla la baja como archivo (CSV) y no se la queda. 2026 lleva un
+  //     aviso fijo: el 1099 de 2026 sale de QuickBooks.
+  //   · COI (v_subs_coi): quién tuvo servicio estos días y si su COI lo cubría.
+  //   · PAGOS (fn_subs_pagos): cada pago de servicio del año; a uno sin tercero
+  //     se le dice de quién es (fn_subs_marcar, sin tocar el libro), y uno sin
+  //     clasificar se marca servicio o no (o pagado con tarjeta).
+  //   · AJUSTES (subs_config, subs_umbrales, subs_exportaciones): el umbral de
+  //     fábrica (2000, ▶ a confirmar con el CPA cada diciembre) y el de cada
+  //     año con su nota, a quién no se reporta, el aviso del COI, con qué fecha
+  //     cuenta un pago (la del libro, de fábrica, o la del banco: ▶ CPA) y qué
+  //     cuentas de gasto no son servicio (no se pregunta por ellas).
+  // EL ESTATUS TIENE FECHA: si la ficha ya tiene pagos y cambia «se le
+  // reporta» o su tipo de entidad, la base contesta MX008 con la pista
+  // «desde» (y en el detalle lo pagado y entre qué días): la pantalla ofrece
+  // las dos salidas —desde qué día vale (lo de antes queda en un tramo) o
+  // «estaba mal desde el principio» (corrige: vale para todo)— y reenvía lo
+  // mismo con lo elegido. La ficha lista sus tramos (subs_tramos) y uno mal
+  // puesto se retira con su motivo (fn_subs_tramo_retirar). Cambiar un TIN
+  // por otro en una ficha con pagos pide «corrige» (pista «corrige»): era un
+  // error de dedo; se vuelve a teclear y se marca. Esas dos respuestas se
+  // leen con su pista (rpcCie: DB._rpc no la guarda).
+  // Un campo de texto de la ficha que es entero un TIN no sale de la pantalla
+  // (se vacía y se dice), y un ZIP+4 tecleado sin guion se escribe con él.
+  // FALLA RUIDOSA: los cuadres del control del año (10, 12, 20, 90) en rojo y
+  // no se pinta ninguna cifra; los avisos (30 a 95) son trabajo: salen arriba.
+  // EL TIN: nunca en la memoria de la pantalla, en un mensaje ni en un aviso;
+  // el campo se vacía en cuanto sale la orden (salga bien o mal).
+  // ============================================================
+  const SUBS_SUBS = { fichas: "Fichas", "1099": "1099", coi: "COI", pagos: "Pagos", ajustes: "Ajustes" };
+  // (en este orden: un objeto pone primero la clave «1099», que parece un número)
+  const ORDEN_SUBS = ["fichas", "1099", "coi", "pagos", "ajustes"];
+  const subsCuerpo = () => $("ct-subs-cuerpo");
+  const vivaSubs = mia => mia === S.subs.serie && S.pagina === "subs" && !!subsCuerpo();
+  const subSubs = html => { const s = main() && main().querySelector(".ct-pag-sub"); if (s) s.innerHTML = html; };
+  const anioHoy = () => Number(hoyMiami().slice(0, 4));
+  const AVISO_2026 = "El 1099 de 2026 sale de QuickBooks; esto es solo lo que la app sabe desde el 1-oct";
+  const mensajeSubs = err => esFalloDeRed(err) || !navigator.onLine ? "Sin señal: no se hizo nada. Vuelve a intentarlo con señal."
+    : err.codigo === "MFA" ? "Falta el código del teléfono: el TIN, los papeles y la hoja del 1099 solo se tocan con él. Actívalo en Conexiones y seguridad y entra otra vez escribiéndolo."
+    : err.codigo === "55P03" ? "La base estaba ocupada (se estaba pegando un SQL): no se hizo nada. Vuelve a intentarlo en un momento."
+    : /^(MX\d+|22023|22007|42501)$/.test(String(err.codigo || "")) ? err.message
+    : faltaCapa(err) ? "A la base le falta lo de los subs: pega docs/conta/c14-subs.sql en Supabase (SQL Editor → pegar → Run)."
+    : err.codigo === "23505" ? "Otra pestaña (u otra persona) hizo lo mismo a la vez y se guardó una sola vez: no se repitió nada. Recarga la página y mira cómo quedó."
+    : `La base contestó con un error que no es de las reglas de los subs: ${err.message || "sin texto"}. Recarga la app; si sigue, avisa.`;
+  // lo que PIDE la base para seguir (MX008 con su pista): «desde» (desde qué día vale un cambio de cómo se le reporta) o «corrige»
+  // (cambiar un TIN por otro en una ficha con pagos). Sin la pista (sin la sesión de Supabase a mano), por su frase
+  const detallesSubs = err => { try { const d = JSON.parse(err && err.detalles || "null"); return d && typeof d === "object" ? d : {}; } catch { return {}; } };
+  function pideSubs(err) {
+    if (!err || err.codigo !== "MX008") return null;
+    const k = String(err.pista || detallesSubs(err).pide || "");
+    if (k === "desde" || k === "corrige") return k;
+    const m = String(err.message || "");
+    return /Di desde qué día vale el cambio/.test(m) ? "desde" : /corrígelo diciéndolo/.test(m) ? "corrige" : null;
+  }
+  // un campo de texto que es, entero, un TIN (###-##-####, ##-####### o nueve dígitos): ahí no va (la base tampoco lo guarda)
+  const pareceTin = t => /^(\d{3}-\d{2}-\d{4}|\d{2}-\d{7}|\d{9})$/.test(String(t || "").trim());
+  const SIN_CODIGO_SUBS = "pide el código del teléfono: actívalo en Conexiones y seguridad y entra con él.";
+  const TIPO_ENT = { individual: "Persona (individual)", sole_proprietor: "Dueño único (sole proprietor)", llc_un_socio: "LLC de un socio", llc_sociedad: "LLC de varios socios", sociedad: "Sociedad (partnership)",
+    s_corp: "S corporation (o LLC que tributa como S)", c_corp: "C corporation (o LLC que tributa como C)", otro: "Otro" };
+  const REPORTA = { si: "Se le reporta el 1099", no: "No se le reporta", por_decidir: "Por decidir con el CPA" };
+  // (los tramos: lo que valía antes de un cambio, en llano)
+  const REPORTA_TR = { si: "se le reportaba", no: "no se le reportaba", por_decidir: "estaba por decidir" };
+  const AYUDA_LLC = "Una LLC de un socio (entidad ignorada): en su W-9, la línea 1 lleva el nombre del DUEÑO y el TIN del dueño (su SSN, o el EIN que tenga como persona), no el EIN de la LLC; el nombre de la LLC va en la línea 2. ▶ A confirmar con el CPA.";
+  const CLASE_ARCH = { w9: "W-9", coi: "COI", wc_exento: "Exención de WC" };
+  const ESTADO_PAGO_SUBS = { cuenta: ["cuenta para el 1099", "ok"], tarjeta: ["con tarjeta: no se reporta", ""], sin_clasificar: ["sin clasificar", "warn"], no_servicio: ["no es servicio", ""], por_pagar: ["por pagar todavía", ""], otro_camino: ["por otro camino", "warn"] };
+  const MEDIO_SUBS = { efectivo: "del banco", tarjeta: "con tarjeta", por_pagar: "a cuenta por pagar", otro: "por otro camino" };
+  // los chips de una ficha (lo que dice la base: W-9, TIN con sus 4 últimos, COI)
+  // (en rojo solo si la base dice que le falta: a quien no se le reporta, el W-9 y el TIN no le faltan para su 1099)
+  const falta14 = (f, k) => Array.isArray(f.falta) && f.falta.includes(k);
+  const chipW9 = f => f.w9_archivo_id ? pill("W-9 ✓", "ok") : pill("sin W-9", falta14(f, "w9") ? "bad" : "");
+  const chipTin = f => f.tin_ultimos4 ? pill(`TIN ····${f.tin_ultimos4}`, "ok") : pill("sin TIN", falta14(f, "tin") ? "bad" : "");
+  function chipCoi(f) {
+    const e = f.coi_estado;
+    if (e === "vigente") return pill("COI vigente", "ok");
+    if (e === "por_vencer") return pill(`COI ${f.coi_chip || "por vencer"}`, "warn");
+    if (e === "vencido") return pill("COI vencido", "bad");
+    return pill("falta el COI", "bad");
+  }
+  const notaSubsHTML = () => S.subs.nota ? `<p class="ct-aviso ${S.subs.nota.tipo || "ok"} ct-subs-nota" role="status">${esc(S.subs.nota.texto)}</p>` : "";
+
+  async function pintarSubs() {
+    const mia = ++S.subs.serie;
+    if (!navigator.onLine) return sinSenal(pintarSubs);
+    if (!SUBS_SUBS[S.subs.sub]) S.subs.sub = "fichas";
+    S.hooks.titulo(KICKER, TITULOS.subs);
+    main().innerHTML = cabPagina(TITULOS.subs, "Leyendo con la base…") +
+      `<section class="ct-card ct-ob-barra"><div class="ct-chips ct-subs-subs" aria-label="Qué parte">${ORDEN_SUBS.map(k =>
+        `<button type="button" class="ct-chip" data-subs-sub="${k}" aria-pressed="${k === S.subs.sub ? "true" : "false"}">${esc(SUBS_SUBS[k])}</button>`).join("")}</div></section>
+      <div id="ct-subs-cuerpo" class="ct-subs-cuerpo"><div class="ct-card ct-cargando">Cargando…</div></div>`;
+    main().querySelectorAll("[data-subs-sub]").forEach(b => b.addEventListener("click", () => { if (!S.ocupado) ir("subs", { sub: b.dataset.subsSub }); }));
+    marcarVolver();
+    if (S.subs.sub === "fichas" && S.subs.ficha) return pintarSubsFicha(mia);
+    return ({ fichas: pintarSubsFichas, "1099": pintarSubs1099, coi: pintarSubsCoi, pagos: pintarSubsPagos, ajustes: pintarSubsAjustes })[S.subs.sub](mia);
+  }
+  function errorSubs(err, reintentar) {
+    const c = subsCuerpo(); if (!c) return;
+    if (faltaCapa(err) && !esFalloDeRed(err)) {
+      c.innerHTML = `<section class="ct-card ct-rojo" role="alert"><h2>Faltan los subs en la base</h2>
+        <p>Esta página lee lo que deja <span class="ct-num">docs/conta/c14-subs.sql</span>, y la base todavía no lo tiene. Pégalo entero en Supabase (SQL Editor → pegar → Run), después de c1 a c12, y vuelve aquí. La tabla que sale al final del pegado dice si al cierre del mes le falta algo para mirar el COI y el W-9 (sus filas 160 y 179 las pone c9-cierre.sql, no este archivo).</p>
+        <div class="ct-acciones"><button type="button" class="accion secundaria" id="ct-reintentar">Reintentar</button></div></section>`;
+      $("ct-reintentar").addEventListener("click", reintentar);
+      return;
+    }
+    pintarError(err, reintentar, err.codigo === "42501" ? "Los subs son solo del dueño" : undefined, c);
+  }
+  // el año que se mira: el que se eligió, o el de hoy si el libro lo tiene, o el último del libro
+  async function anioSubs() {
+    const anios = await DB._rpc("fn_subs_anios", {});
+    const lista = (Array.isArray(anios) ? anios : []).map(x => Number(x.anio)).filter(Boolean).sort((a, b) => b - a);
+    if (!lista.includes(Number(S.subs.anio))) S.subs.anio = lista.includes(anioHoy()) ? anioHoy() : (lista[0] || anioHoy());
+    return lista;
+  }
+  // el control del año: un cuadre en rojo y no se pinta ninguna cifra; los avisos se enseñan arriba
+  async function controlSubs(anio) {
+    const ctl = await DB._rpc("fn_subs_control", { p_anio: anio });
+    if (!Array.isArray(ctl) || !ctl.length) throw errorControl("El control de los subs no devolvió nada", [{ vista: "control de los subs", filas: 0, esperadas: 18, detalle: "Vacío: la sesión no es la del dueño o a la base le falta lo de los subs." }]);
+    const rojos = ctl.filter(f => f.nivel === "cuadre" && f.ok !== true);
+    if (rojos.length) throw errorControl("Los subs no cuadran", rojos.map(f => ({ vista: cap(String(f.control || "").replace(/^subs: /, "")), filas: null, esperadas: null, detalle: f.detalle })));
+    return ctl.filter(f => f.nivel === "aviso" && f.ok !== true);
+  }
+  const avisosSubsHTML = (avisos, solo) => {
+    const vis = solo ? avisos.filter(f => solo.includes(Number(f.orden))) : avisos;
+    return vis.length ? `<section class="ct-card ct-subs-avisos" id="ct-subs-avisos"><h2>Lo que falta</h2><ul class="ct-jr-avisos">${vis.map(f =>
+      `<li class="ct-aviso warn" data-orden="${esc(f.orden)}">${esc(cap(String(f.control || "").replace(/^subs: /, "")))}: ${esc(f.detalle || "")}</li>`).join("")}</ul></section>` : "";
+  };
+  // Una escritura de los subs: la tarjeta se apaga, el error va a su forma; si salió, la nota arriba, el aviso y se vuelve a pintar
+  // (opciones.pista: por rpcCie, que trae la pista y el detalle del error; opciones.siPide(err): lo que la base pide para seguir
+  // —«desde», «corrige»—; si lo atiende, devuelve true y no se enseña el error tal cual)
+  async function accionSubs(card, fn, args, exito, opciones = {}) {
+    if (S.ocupado) return;
+    if (!navigator.onLine) { mostrarErrorForma(card, "Sin señal: no se hizo nada."); return; }
+    if (opciones.mfa && !mfaActivo()) { mostrarErrorForma(card, opciones.mfa); return; }
+    S.ocupado = true;
+    const apagados = [...card.querySelectorAll("button, input, select, textarea")].filter(b => !b.disabled);
+    apagados.forEach(b => { b.disabled = true; });
+    let r;
+    try { r = await (opciones.pista ? rpcCie(fn, args) : DB._rpc(fn, args)); }
+    catch (err) {
+      apagados.forEach(b => { b.disabled = false; });
+      S.ocupado = false;
+      if (opciones.alFallar) opciones.alFallar();
+      if (opciones.siPide && pideSubs(err) && opciones.siPide(err, pideSubs(err))) return;
+      mostrarErrorForma(card, mensajeSubs(err));
+      return;
+    }
+    S.ocupado = false;
+    const n = exito(r) || null;
+    if (n) S.subs.nota = n;
+    S.hooks.avisar(opciones.aviso || "Hecho");
+    await repintar();
+  }
+
+  // los montos de una fila del 1099 en una línea, como los da la base: lo pagado por servicio, lo que fue por otro camino, lo que
+  // está sin clasificar y lo devengado (el trabajo que entró a una cuenta por pagar): una fila puede tener lo pagado en cero
+  const montosSubs = x => [`<span class="ct-num">${fmt(x.pagado_servicio != null ? x.pagado_servicio : x.reportable)}</span> pagado de servicio${num(x.n_pagos) ? ` (${plural(x.n_pagos, "pago", "pagos")})` : ""}`,
+    noCero(x.otro_camino) ? `<span class="ct-num">${fmt(x.otro_camino)}</span> por otro camino` : "", noCero(x.sin_clasificar) ? `<span class="ct-num">${fmt(x.sin_clasificar)}</span> sin clasificar` : "",
+    noCero(x.devengado) ? `<span class="ct-num">${fmt(x.devengado)}</span> devengado (trabajo por pagar)` : ""].filter(Boolean).join(" · ");
+  const conAlgo = x => !!x && [x.pagado_servicio, x.reportable, x.otro_camino, x.sin_clasificar, x.devengado].some(noCero);
+
+  // ---------- Fichas: a quién se le paga como contratista ----------
+  async function pintarSubsFichas(mia) {
+    let fichas, filas1099, avisos;
+    try {
+      await Promise.all([anioSubs(), leerMfa()]);
+      [avisos, fichas, filas1099] = await Promise.all([controlSubs(S.subs.anio), DB._leer("v_subs_fichas?select=*&order=nombre.asc"), DB._rpc("fn_subs_1099", { p_anio: S.subs.anio })]);
+      if (!vivaSubs(mia)) return;
+    } catch (err) { if (!vivaSubs(mia)) return; return errorSubs(err, pintarSubs); }
+    fichas = Array.isArray(fichas) ? fichas : [];
+    filas1099 = Array.isArray(filas1099) ? filas1099 : [];
+    const sinFicha = filas1099.filter(x => !x.ficha_id && x.tercero_id), sinTercero = filas1099.find(x => x.clave === "sin_tercero");
+    const activas = fichas.filter(f => f.activa !== false), inactivas = fichas.filter(f => f.activa === false);
+    const incompletas = activas.filter(f => Array.isArray(f.falta) && f.falta.length).length;
+    subSubs(`<b>${plural(activas.length, "ficha", "fichas")}</b>${incompletas ? ` · <span class="bad-txt">${incompletas} con algo que falta</span>` : ""}${sinFicha.length ? ` · ${plural(sinFicha.length, "sin ficha", "sin ficha")}` : ""}`);
+    const filaF = f => `<button type="button" class="ct-subs-fila" data-subs-ficha="${esc(f.ficha_id)}">
+        <span class="ct-subs-n"><b>${esc(f.nombre_legal || f.nombre)}</b>${f.nombre_comercial ? `<small>${esc(f.nombre_comercial)}</small>` : ""}
+          <small>${esc(TIPO_ENT[f.tipo_entidad] || "sin tipo de entidad")} · ${esc(REPORTA[f.reporta] || "")}${(f.terceros || []).length ? ` · en el libro: ${esc(f.terceros.map(t => t.nombre).join(", "))}` : ""}</small></span>
+        <span class="ct-subs-chips">${chipW9(f)} ${chipTin(f)} ${chipCoi(f)}</span>
+        ${f.falta_texto ? `<span class="ct-subs-falta">Le falta: ${esc(f.falta_texto)}</span>` : ""}
+      </button>`;
+    const c = subsCuerpo();
+    c.innerHTML = notaSubsHTML() + (S.subs.anio === 2026 ? `<p class="ct-aviso warn ct-subs-2026">${esc(AVISO_2026)}.</p>` : "") +
+      avisosSubsHTML(avisos, [30, 40, 50, 55, 70, 75, 95]) +
+      `<section class="ct-card ct-subs-fichas" id="ct-subs-fichas">
+        <div class="ct-cab"><h2>Las fichas</h2><button type="button" class="accion chica" id="ct-subs-nueva">Nueva ficha</button></div>
+        <p class="ct-nota">Una por persona o empresa a la que se le paga como contratista: lo de su W-9, su TIN, su COI. Los GC clientes no van aquí.</p>
+        ${activas.length ? `<div class="ct-subs-filas">${activas.map(filaF).join("")}</div>` : `<p class="ct-vacio">Ninguna ficha todavía.</p>`}
+        ${inactivas.length ? `<details class="ct-wip-mas"><summary>Fichas que ya no se usan: ${inactivas.length}</summary><div class="ct-subs-filas">${inactivas.map(filaF).join("")}</div></details>` : ""}
+      </section>` +
+      (sinFicha.length || conAlgo(sinTercero) ? `<section class="ct-card ct-subs-sin" id="ct-subs-sin">
+        <h2>Tuvieron servicio en ${esc(S.subs.anio)} y no tienen ficha</h2>
+        <ul class="ct-wip-his">${sinFicha.map(x => `<li class="ct-wip-hi" data-clave="${esc(x.clave)}"><p><b>${esc(x.nombre)}</b> · ${montosSubs(x)}${x.pasa_umbral ? ` · ${pill("pasa del umbral", "bad")}` : ""}</p>
+            <div class="ct-acciones"><button type="button" class="accion secundaria chica" data-subs-dar="${esc(x.clave)}">Darle su ficha</button></div></li>`).join("")}
+          ${conAlgo(sinTercero) ? `<li class="ct-wip-hi" data-clave="sin_tercero"><p><b>Servicio sin nombre</b> · ${montosSubs(sinTercero)}: el libro no dice de quién es.</p>
+            <div class="ct-acciones"><button type="button" class="accion secundaria chica" data-subs-ir-pagos>Decir de quién es cada uno</button></div></li>` : ""}</ul>
+      </section>` : "");
+    c.querySelectorAll("[data-subs-ficha]").forEach(b => b.addEventListener("click", () => { if (S.ocupado) return; S.subs.ficha = b.dataset.subsFicha; S.subs.nueva = null; S.subs.nota = null; pintarSubs(); }));
+    $("ct-subs-nueva").addEventListener("click", () => { S.subs.ficha = "nueva"; S.subs.nueva = {}; S.subs.nota = null; pintarSubs(); });
+    c.querySelectorAll("[data-subs-dar]").forEach(b => b.addEventListener("click", () => {
+      const x = sinFicha.find(y => y.clave === b.dataset.subsDar); if (!x) return;
+      S.subs.ficha = "nueva"; S.subs.nueva = { nombre_legal: x.nombre, tercero: { tipo: x.tercero_tipo, id: x.tercero_id, nombre: x.nombre } }; S.subs.nota = null; pintarSubs();
+    }));
+    const bp = c.querySelector("[data-subs-ir-pagos]");
+    if (bp) bp.addEventListener("click", () => ir("subs", { sub: "pagos", filtro: "sin_tercero" }));
+  }
+
+  // ---------- La ficha: lo del W-9, a quién se refiere en el libro, el TIN y los papeles ----------
+  async function pintarSubsFicha(mia) {
+    const id = S.subs.ficha, nueva = id === "nueva";
+    let f = null, archivos = [], fila1099 = null, provs = [], perfs = [], tramos = [];
+    try {
+      await Promise.all([anioSubs(), leerMfa()]);
+      if (!nueva) {
+        const [fs, as, f1, tr] = await Promise.all([DB._rpc("fn_subs_fichas", { p_ficha: id }), DB._leer(`v_subs_archivos?select=*&ficha_id=eq.${enc(id)}&order=registrado_el.desc`), DB._rpc("fn_subs_1099", { p_anio: S.subs.anio }),
+          DB._leer(`subs_tramos?select=*&ficha_id=eq.${enc(id)}&order=hasta.asc`).catch(e => { if (esFalloDeRed(e)) throw e; return []; })]);
+        f = (Array.isArray(fs) ? fs : []).find(x => x.ficha_id === id) || null;
+        archivos = Array.isArray(as) ? as : [];
+        fila1099 = (Array.isArray(f1) ? f1 : []).find(x => x.ficha_id === id) || null;
+        tramos = Array.isArray(tr) ? tr : [];
+      }
+      [provs, perfs] = await Promise.all([DB._leer("proveedores?select=id,nombre,activo&order=nombre.asc").catch(e => { if (esFalloDeRed(e)) throw e; return []; }),
+        DB._leer("perfiles?select=id,nombre,rol,activo&order=nombre.asc").catch(e => { if (esFalloDeRed(e)) throw e; return []; })]);
+      if (!vivaSubs(mia)) return;
+    } catch (err) { if (!vivaSubs(mia)) return; return errorSubs(err, pintarSubs); }
+    const c = subsCuerpo();
+    if (!nueva && !f) {
+      c.innerHTML = `<section class="ct-card"><p class="ct-vacio">Esa ficha ya no está (o la sesión no es la del dueño).</p><div class="ct-acciones"><button type="button" class="accion secundaria" id="ct-subs-volver">← Las fichas</button></div></section>`;
+      $("ct-subs-volver").addEventListener("click", () => { S.subs.ficha = null; pintarSubs(); });
+      return;
+    }
+    const pre = nueva ? (S.subs.nueva || {}) : f;
+    S.hooks.titulo(KICKER, nueva ? "Nueva ficha" : (f.nombre_legal || f.nombre));
+    subSubs(nueva ? "<b>Nueva ficha</b>" : `<b>${esc(f.nombre_legal || f.nombre)}</b>${f.falta_texto ? ` · <span class="bad-txt">le falta ${esc(f.falta_texto)}</span>` : " · completa"}`);
+    marcarVolver();
+    const mfa = mfaActivo();
+    const v = k => esc(pre && pre[k] != null ? pre[k] : "");
+    const opts = (o, sel) => Object.keys(o).map(k => `<option value="${esc(k)}"${k === sel ? " selected" : ""}>${esc(o[k])}</option>`).join("");
+    const vivos = archivos.filter(a => !a.retirado);
+    c.innerHTML = notaSubsHTML() +
+      `<section class="ct-card ct-subs-w9" id="ct-subs-w9">
+        <div class="ct-cab"><h2>${nueva ? "Nueva ficha" : esc(f.nombre_legal || f.nombre)}</h2>${nueva ? "" : `${chipW9(f)} ${chipTin(f)} ${chipCoi(f)}`}</div>
+        ${nueva && pre.tercero ? `<p class="ct-nota">Para <b>${esc(pre.tercero.nombre || "")}</b>, como está en el libro (${pre.tercero.tipo === "empleado" ? "con horas en la app" : "proveedor"}).</p>` : ""}
+        ${!nueva && f.reporta_texto ? `<p class="ct-nota">${esc(f.reporta_texto)}</p>` : ""}
+        <form class="ct-pide ct-subs-forma" novalidate>
+          <p class="ct-form-t">Lo del W-9 (tal como viene escrito en él)</p>
+          <div class="ct-fila">
+            <label class="ct-campo">Nombre legal (línea 1 del W-9)<input name="nombre_legal" value="${v("nombre_legal")}" required data-falta="Falta el nombre legal (la línea 1 del W-9)." autocomplete="off"></label>
+            <label class="ct-campo">Nombre comercial (línea 2, si tiene)<input name="nombre_comercial" value="${v("nombre_comercial")}" autocomplete="off"></label>
+            <label class="ct-campo">Tipo de entidad<select name="tipo_entidad"><option value="">Sin decir todavía</option>${opts(TIPO_ENT, pre.tipo_entidad)}</select></label>
+          </div>
+          <p class="ct-nota ct-subs-llc"${pre.tipo_entidad === "llc_un_socio" ? "" : " hidden"}>${esc(AYUDA_LLC)}</p>
+          <div class="ct-fila">
+            <label class="ct-campo">Dirección<input name="direccion" value="${v("direccion")}" autocomplete="off"></label>
+            <label class="ct-campo">Suite, apartamento (si tiene)<input name="direccion2" value="${v("direccion2")}" autocomplete="off"></label>
+          </div>
+          <div class="ct-fila">
+            <label class="ct-campo">Ciudad<input name="ciudad" value="${v("ciudad")}" autocomplete="off"></label>
+            <label class="ct-campo">Estado (2 letras)<input name="estado" value="${v("estado")}" maxlength="2" autocomplete="off"></label>
+            <label class="ct-campo">ZIP<input name="zip" value="${v("zip")}" inputmode="numeric" maxlength="10" placeholder="34470 o 34470-1234" autocomplete="off"></label>
+          </div>
+          <div class="ct-fila">
+            <label class="ct-campo">¿Se le reporta el 1099?<select name="reporta">${opts(REPORTA, pre.reporta || "por_decidir")}</select>
+              <span class="ct-sub">A una S o C corporation no se le reporta (lo dice Ajustes), salvo que aquí digas «sí» con su nota: un abogado, lo que diga el CPA.</span></label>
+            <label class="ct-campo">Por qué (la nota de esa decisión)<input name="reporta_nota" value="${v("reporta_nota")}" autocomplete="off"></label>
+          </div>
+          <label class="ct-check"><input type="checkbox" name="wc_exento"${pre.wc_exento ? " checked" : ""}> Exento de workers' comp (con su certificado de exención)</label>
+          <label class="ct-campo">Notas<input name="notas" value="${v("notas")}" autocomplete="off"></label>
+          ${nueva ? "" : `<label class="ct-check"><input type="checkbox" name="activa"${f.activa !== false ? " checked" : ""}> Se le sigue pagando (si no, la ficha se guarda aparte)</label>`}
+          <div class="ct-acciones"><button class="accion" type="submit">${nueva ? "Crear la ficha" : "Guardar"}</button>${nueva ? `<button class="accion secundaria" type="button" id="ct-subs-cancelar">Cancelar</button>` : ""}</div>
+        </form>
+        <div class="ct-form" hidden></div>
+      </section>` +
+      (nueva ? "" : tramosSubsHTML(tramos) + tinSubsHTML(f, mfa) + papelesSubsHTML(f, vivos, archivos.filter(a => a.retirado), mfa) + tercerosSubsHTML(f, provs, perfs) + (fila1099 ? resumen1099FichaHTML(fila1099) : "")) +
+      `<div class="ct-acciones"><button type="button" class="accion secundaria" id="ct-subs-volver">← Las fichas</button></div>`;
+    $("ct-subs-volver").addEventListener("click", () => { S.subs.ficha = null; S.subs.nueva = null; S.subs.nota = null; S.hooks.titulo(KICKER, TITULOS.subs); pintarSubs(); });
+    const cancelar = $("ct-subs-cancelar");
+    if (cancelar) cancelar.addEventListener("click", () => { S.subs.ficha = null; S.subs.nueva = null; S.hooks.titulo(KICKER, TITULOS.subs); pintarSubs(); });
+    const card = $("ct-subs-w9");
+    const selTipo = card.querySelector("select[name=tipo_entidad]"), llc = card.querySelector(".ct-subs-llc");
+    selTipo.addEventListener("change", () => { llc.hidden = selTipo.value !== "llc_un_socio"; });
+    // (los campos de texto que la base no deja guardar si son, enteros, un TIN; su nombre en llano para el mensaje)
+    const TEXTOS_FICHA = { nombre_legal: "Nombre legal", nombre_comercial: "Nombre comercial", reporta_nota: "Por qué", direccion: "Dirección", direccion2: "Suite, apartamento", ciudad: "Ciudad", notas: "Notas" };
+    card.querySelector("form").addEventListener("submit", ev => {
+      ev.preventDefault();
+      const form = ev.target;
+      // un ZIP+4 tecleado sin guion (nueve dígitos seguidos, como un TIN: la base no lo guarda así) se escribe con él: 344701234 → 34470-1234
+      if (form.elements.zip && /^\d{9}$/.test(form.elements.zip.value.trim())) { const z = form.elements.zip.value.trim(); form.elements.zip.value = `${z.slice(0, 5)}-${z.slice(5)}`; }
+      // UN TIN EN EL CAMPO EQUIVOCADO no sale de la pantalla: el campo se vacía y se dice cuál (sin repetirlo)
+      const conTin = Object.keys(TEXTOS_FICHA).find(k => form.elements[k] && pareceTin(form.elements[k].value));
+      if (conTin) {
+        form.elements[conTin].value = "";
+        mostrarErrorForma(card, `Lo escrito en «${TEXTOS_FICHA[conTin]}» parece un TIN: ahí no va, y se borró del campo sin mandarlo. El TIN se guarda aparte, en su cuadro de esta ficha, con el código del teléfono.`);
+        return;
+      }
+      const fd = new FormData(form), t = k => { const s = String(fd.get(k) == null ? "" : fd.get(k)).trim(); return s === "" ? null : s; };
+      if (!t("nombre_legal")) { mostrarErrorForma(card, "Falta el nombre legal (la línea 1 del W-9)."); return; }
+      const p = { nombre_legal: t("nombre_legal"), nombre_comercial: t("nombre_comercial"), tipo_entidad: t("tipo_entidad"), reporta: t("reporta") || "por_decidir", reporta_nota: t("reporta_nota"),
+        direccion: t("direccion"), direccion2: t("direccion2"), ciudad: t("ciudad"), estado: t("estado") ? t("estado").toUpperCase() : null, zip: t("zip"), wc_exento: fd.get("wc_exento") === "on", notas: t("notas") };
+      if (nueva) { p.activa = true; if (pre.tercero) p.tercero = { tipo: pre.tercero.tipo, id: pre.tercero.id }; }
+      else { p.id = f.ficha_id; p.activa = fd.get("activa") === "on"; }
+      // lo mismo otra vez con lo que pidió la base («desde» o «corrige»), si lo pidió
+      const guardar = extra => accionSubs(card, "fn_subs_ficha", { p: { ...p, ...extra } }, r => {
+        if (nueva && r && r.ficha_id) { S.subs.ficha = r.ficha_id; S.subs.nueva = null; }
+        const cuando = extra.desde ? ` Lo nuevo vale desde el ${fechaLarga(extra.desde)}; lo pagado antes se queda como estaba.` : extra.corrige ? " Corregida: vale para todo lo pagado, también lo de antes." : "";
+        return { tipo: "ok", texto: `${nueva ? "Creada" : "Guardada"} la ficha de ${r.nombre_legal || r.nombre}${r.falta_texto ? `. Le falta: ${r.falta_texto}` : ": completa"}.${cuando}` };
+      }, { aviso: nueva ? "Ficha creada" : "Ficha guardada", pista: true, siPide: (err, k) => k === "desde" && (formaDesde(card, err, guardar), true) });
+      guardar({});
+    });
+    if (!nueva) wireFichaSubs(f, archivos, provs, perfs, tramos);
+  }
+  // LO QUE PIDE LA BASE cuando cambia cómo se le reporta a una ficha con pagos: desde qué día vale lo nuevo (lo pagado antes se
+  // queda como estaba: un tramo) o que estaba mal desde el principio (corrige: vale para todo). Su mensaje, tal cual, arriba
+  function formaDesde(card, err, guardar) {
+    const d = detallesSubs(err), hoy = hoyMiami(), min = fechaOk(d.desde_minimo) ? d.desde_minimo : "";
+    montarForma(card, formaHTML(esc(err.message),
+      `<fieldset class="ct-ced-patr ct-subs-desde"><legend>¿Desde cuándo vale el cambio?</legend>
+         <label class="ct-check"><input type="radio" name="como" value="desde" checked> Desde un día: lo pagado antes se queda como estaba</label>
+         <label class="ct-campo">Desde el día (de hoy para atrás)<input type="date" name="desde" max="${esc(hoy)}"${min ? ` min="${esc(min)}"` : ""}></label>
+         <label class="ct-check"><input type="radio" name="como" value="corrige"> Estaba mal desde el principio: vale para todo lo pagado (también lo de años anteriores)</label>
+         ${d.primer_pago ? `<span class="ct-sub">Lo pagado con lo de antes: <span class="ct-num">${fmt(d.pagado)}</span>, del ${esc(fechaLarga(d.primer_pago))} al ${esc(fechaLarga(d.ultimo_pago))}.</span>` : ""}
+       </fieldset>`, "Guardar con eso"), v => {
+      if (v.como === "corrige") return guardar({ corrige: true });
+      if (!fechaOk(v.desde)) { mostrarErrorForma(card, "Falta el día desde el que vale el cambio (o elige «estaba mal desde el principio»)."); return; }
+      if (v.desde > hoy) { mostrarErrorForma(card, `El ${fechaLarga(v.desde)} todavía no llega: el cambio se anota ese día, o con la fecha de hoy.`); return; }
+      if (min && v.desde < min) { mostrarErrorForma(card, `Esta ficha ya tiene anotado un cambio antes: el nuevo empieza el ${fechaLarga(min)} o después.`); return; }
+      guardar({ desde: v.desde });
+    });
+  }
+  // LOS TRAMOS: lo que valía la ficha antes de cada cambio con fecha (hasta qué día); uno mal puesto se retira con su motivo
+  function tramosSubsHTML(tramos) {
+    const vivos = tramos.filter(t => !t.retirado_el), idos = tramos.filter(t => t.retirado_el);
+    if (!tramos.length) return "";
+    const fila = t => `<li class="ct-wip-hi${t.retirado_el ? " deshecho" : ""}" data-tramo="${esc(t.id)}">
+        <p><b>Hasta el ${esc(fechaLarga(t.hasta))}</b>: ${esc(REPORTA_TR[t.reporta] || t.reporta || "")}${t.tipo_entidad ? `, como ${esc(TIPO_ENT[t.tipo_entidad] || t.tipo_entidad)}` : ""}${t.reporta_nota ? ` («${esc(t.reporta_nota)}»)` : ""}</p>
+        <p class="ct-sub">Anotado el ${esc(fechaLarga(t.anotado_el))}${t.retirado_el ? ` · retirado el ${esc(fechaLarga(t.retirado_el))}${t.retirado_motivo ? ` («${esc(t.retirado_motivo)}»)` : ""}` : ""}</p>
+        ${t.retirado_el ? "" : `<div class="ct-acciones"><button type="button" class="accion secundaria chica" data-subs-tramo-retirar="${esc(t.id)}">Retirar</button></div>`}
+      </li>`;
+    return `<section class="ct-card ct-subs-tramos" id="ct-subs-tramos">
+        <h2>Cómo estaba antes</h2>
+        <p class="ct-nota">Cada pago cuenta como estaba la ficha el día del pago: lo de antes de un cambio queda aquí, hasta su último día. Uno mal puesto se retira (queda, con tu motivo), y sus pagos vuelven a contar como diga la ficha hoy o el tramo siguiente.</p>
+        ${vivos.length ? `<ul class="ct-wip-his">${vivos.map(fila).join("")}</ul>` : `<p class="ct-vacio">Ningún tramo vivo.</p>`}
+        ${idos.length ? `<details class="ct-wip-mas"><summary>Retirados: ${idos.length}</summary><ul class="ct-wip-his">${idos.map(fila).join("")}</ul></details>` : ""}
+        <div class="ct-form" hidden></div>
+      </section>`;
+  }
+  // EL TIN: el tipo y los 4 últimos (lo que da la base); el campo para escribirlo es como una contraseña y no se queda a la vista
+  function tinSubsHTML(f, mfa) {
+    return `<section class="ct-card ct-subs-tin" id="ct-subs-tin">
+        <div class="ct-cab"><h2>El TIN</h2>${f.tin_mascara ? pill(`${(f.tin_tipo || "").toUpperCase()} ${f.tin_mascara}`, "ok") : pill("sin TIN", "bad")}</div>
+        <p class="ct-nota">${f.tin_mascara ? `Guardado el ${esc(fechaLarga(f.tin_guardado_el))}. La app solo enseña los 4 últimos: entero sale únicamente en la hoja del 1099, cuando la bajas tú.` : "El número del W-9: SSN (###-##-####) o EIN (##-#######). Solo lo ve el dueño; la app solo enseña los 4 últimos."}</p>
+        ${f.tipo_entidad === "llc_un_socio" ? `<p class="ct-nota ct-subs-llc">${esc(AYUDA_LLC)}</p>` : ""}
+        <form class="ct-pide ct-subs-tinf" novalidate autocomplete="off">
+          <div class="ct-fila">
+            <label class="ct-campo">${f.tin_mascara ? "Cambiarlo por" : "El TIN"} (no se queda a la vista)<input type="password" name="tin" id="ct-subs-tin-in" inputmode="numeric" autocomplete="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore maxlength="11" placeholder="###-##-#### o ##-#######"${mfa ? "" : " disabled"}></label>
+            <label class="ct-campo">Es un<select name="tipo"${mfa ? "" : " disabled"}><option value="">Lo dicen los guiones</option><option value="ssn">SSN (persona)</option><option value="ein">EIN (empresa)</option></select></label>
+          </div>
+          ${f.tin_mascara ? `<label class="ct-check ct-subs-tin-corr" id="ct-subs-tin-corr" hidden><input type="checkbox" name="corrige"> El de antes estaba mal tecleado: es una corrección (los pagos de esta ficha van al TIN nuevo)</label>` : ""}
+          <div class="ct-acciones"><button class="accion" type="submit"${mfa ? "" : " disabled"}>Guardar el TIN</button>${f.tin_mascara ? `<button class="accion secundaria" type="button" data-subs-tin-quitar${mfa ? "" : " disabled"}>Quitar el TIN</button>` : ""}</div>
+          ${mfa ? "" : `<p class="ct-nota">Guardar el TIN ${esc(SIN_CODIGO_SUBS)}</p>`}
+        </form>
+        <div class="ct-form" hidden></div>
+      </section>`;
+  }
+  // LOS PAPELES: el W-9, el COI (con su vencimiento) y la exención de WC; subir pide el código del teléfono; ver, también
+  function papelesSubsHTML(f, vivos, retirados, mfa) {
+    const fila = a => `<li class="ct-wip-hi" data-archivo="${esc(a.archivo_id)}">
+        <p><b>${esc(CLASE_ARCH[a.clase] || a.clase)}</b>${a.vigente ? " " + pill("el que vale", "ok") : ""}${a.clase === "coi" && a.vence ? ` · vence el ${esc(fechaLarga(a.vence))}` : ""}${a.clase !== "coi" && a.fecha ? ` · recibido el ${esc(fechaLarga(a.fecha))}` : ""}${a.clase === "wc_exento" && a.vence ? ` · vence el ${esc(fechaLarga(a.vence))}` : ""}</p>
+        <p class="ct-sub">${esc(String(a.ruta || "").split("/").pop())} · ${esc(kb(a.bytes))} · subido el ${esc(fechaLarga(a.registrado_el))}${a.nota ? ` · ${esc(a.nota)}` : ""}${a.retirado ? ` · retirado el ${esc(fechaLarga(a.retirado_el))}${a.retirado_motivo ? ` («${esc(a.retirado_motivo)}»)` : ""}` : ""}</p>
+        ${a.retirado ? "" : `<div class="ct-acciones"><button type="button" class="accion secundaria chica" data-subs-ver="${esc(a.ruta)}"${mfa ? "" : " disabled"}>Verlo</button><button type="button" class="accion secundaria chica" data-subs-retirar="${esc(a.archivo_id)}">Retirarlo</button></div>`}
+      </li>`;
+    return `<section class="ct-card ct-subs-papeles" id="ct-subs-papeles">
+        <div class="ct-cab"><h2>Los papeles</h2>${chipW9(f)} ${chipCoi(f)}${f.wc_exento ? " " + pill(f.wc_estado === "exento" ? "exento de WC" : f.wc_estado === "exento_vencido" ? "exención de WC vencida" : "exento de WC sin papel", f.wc_estado === "exento" ? "ok" : "warn") : ""}</div>
+        <p class="ct-nota">${f.w9_archivo_id ? `W-9 recibido el ${esc(fechaLarga(f.w9_recibido_el))}.` : "Falta su W-9."} ${f.coi_vence ? `El COI que vale vence el ${esc(fechaLarga(f.coi_vence))}.` : "Falta su COI (el certificado de seguro)."} Van al bucket privado de los subs: nada se pisa ni se borra (uno mal subido se retira con su motivo).</p>
+        <div class="ct-acciones">
+          <button type="button" class="accion secundaria" data-subs-subir="w9"${mfa ? "" : " disabled"}>Subir el W-9</button>
+          <button type="button" class="accion secundaria" data-subs-subir="coi"${mfa ? "" : " disabled"}>Subir el COI</button>
+          ${f.wc_exento ? `<button type="button" class="accion secundaria" data-subs-subir="wc_exento"${mfa ? "" : " disabled"}>Subir la exención de WC</button>` : ""}
+        </div>
+        ${mfa ? "" : `<p class="ct-nota">Subir y ver los papeles ${esc(SIN_CODIGO_SUBS)}</p>`}
+        <div class="ct-form" hidden></div>
+        <div id="ct-subs-ver" class="ct-subs-ver"></div>
+        ${vivos.length ? `<ul class="ct-wip-his">${vivos.map(fila).join("")}</ul>` : `<p class="ct-vacio">Ningún papel subido todavía.</p>`}
+        ${retirados.length ? `<details class="ct-wip-mas"><summary>Retirados: ${retirados.length}</summary><ul class="ct-wip-his">${retirados.map(fila).join("")}</ul></details>` : ""}
+      </section>`;
+  }
+  // A QUIÉN SE REFIERE EN EL LIBRO: sus terceros (un proveedor, un perfil con horas); enlazar otro o soltar uno
+  function tercerosSubsHTML(f, provs, perfs) {
+    const ts = Array.isArray(f.terceros) ? f.terceros : [];
+    const ya = new Set(ts.map(t => t.id));
+    const ops = [...(provs || []).filter(p => p.activo !== false && !ya.has(p.id)).map(p => `<option value="proveedor:${esc(p.id)}">Proveedor: ${esc(p.nombre)}</option>`),
+      ...(perfs || []).filter(p => p.activo !== false && p.rol !== "dueno" && !ya.has(p.id)).map(p => `<option value="empleado:${esc(p.id)}">Con horas en la app: ${esc(p.nombre)}</option>`)];
+    return `<section class="ct-card ct-subs-terceros" id="ct-subs-terceros">
+        <h2>Quién es en el libro</h2>
+        <p class="ct-nota">Los pagos del libro dicen a quién se le pagó por su proveedor o por su perfil con horas. La misma persona puede estar de las dos formas: una ficha, un 1099.</p>
+        ${ts.length ? `<ul class="ct-wip-his">${ts.map(t => `<li class="ct-wip-hi"><p><b>${esc(t.nombre || "—")}</b> · ${t.tipo === "empleado" ? "con horas en la app" : "proveedor"}${t.existe === false ? " · " + pill("ya no existe en el libro", "bad") : ""}</p>
+          <div class="ct-acciones"><button type="button" class="accion secundaria chica" data-subs-soltar="${esc(t.tipo)}:${esc(t.id)}">Soltarlo</button></div></li>`).join("")}</ul>` : `<p class="ct-vacio">Todavía no está enlazada a nadie del libro: sus pagos no se le suman.</p>`}
+        ${ops.length ? `<div class="ct-acciones"><button type="button" class="accion secundaria chica" data-subs-enlazar>Enlazar a alguien del libro</button></div>` : ""}
+        <div class="ct-form" hidden></div>
+      </section>`;
+  }
+  const resumen1099FichaHTML = x => `<section class="ct-card ct-subs-su1099" id="ct-subs-su1099">
+      <div class="ct-cab"><h2>Su 1099 de ${esc(x.anio)}</h2>${x.listo ? pill("lista para la hoja", "ok") : x.pasa_umbral ? pill("pasa del umbral", "bad") : pill("no llega al umbral")}</div>
+      <p class="ct-nota"><b class="ct-num">${fmt(x.reportable)}</b> reportable${noCero(x.excluido) ? ` · <span class="ct-num">${fmt(x.excluido)}</span> que no se reporta` : ""}${noCero(x.otro_camino) ? ` · <span class="ct-num">${fmt(x.otro_camino)}</span> por otro camino` : ""} · umbral <span class="ct-num">${fmt(x.umbral)}</span>${x.falta_texto ? ` · le falta ${esc(x.falta_texto)}` : ""}.</p>
+      ${x.cambios ? `<p class="ct-sub ct-subs-cambios">Su ficha cambió en el año: ${esc(x.cambios)}.</p>` : ""}
+      <div class="ct-acciones"><button type="button" class="accion secundaria chica" data-subs-ver1099="${esc(x.clave)}">Ver sus pagos</button></div>
+    </section>`;
+  function wireFichaSubs(f, archivos, provs, perfs, tramos) {
+    const id = f.ficha_id;
+    // el TIN: se lee del campo al enviar y el campo se vacía enseguida (salga bien o mal); nada lo guarda la pantalla.
+    // Cambiar uno por otro en una ficha con pagos: la base pide «corrige» (un error de dedo); se marca y se teclea otra vez
+    const cardT = $("ct-subs-tin");
+    cardT.querySelector("form").addEventListener("submit", ev => {
+      ev.preventDefault();
+      const fd = new FormData(ev.target), inp = $("ct-subs-tin-in"), tipo = String(fd.get("tipo") || ""), corrige = fd.get("corrige") === "on";
+      const t = String(inp.value || "").trim();
+      inp.value = "";
+      if (!/^(\d{3}-\d{2}-\d{4}|\d{2}-\d{7}|\d{9})$/.test(t)) { mostrarErrorForma(cardT, "Ese TIN no tiene la forma de un SSN (###-##-####) ni de un EIN (##-#######): revísalo contra el W-9 y escríbelo otra vez. No se guardó."); return; }
+      if (/^\d{9}$/.test(t) && !tipo) { mostrarErrorForma(cardT, "Nueve dígitos seguidos pueden ser un SSN o un EIN: elige cuál es, o escríbelo con sus guiones. No se guardó."); return; }
+      const p = { tin: t }; if (tipo) p.tipo = tipo; if (corrige) p.corrige = true;
+      accionSubs(cardT, "fn_subs_tin_guardar", { p_ficha: id, p }, r => ({ tipo: "ok", texto: `TIN ${corrige ? "corregido" : "guardado"}: ${r && r.tin ? `${String(r.tin.tipo || "").toUpperCase()} ${r.tin.mascara}` : "listo"}.` }),
+        { aviso: corrige ? "TIN corregido" : "TIN guardado", mfa: "Guardar el TIN " + SIN_CODIGO_SUBS, pista: true, siPide: (err, k) => {
+          const caja = $("ct-subs-tin-corr");
+          if (k !== "corrige" || !caja) return false;
+          caja.hidden = false;
+          mostrarErrorForma(cardT, `${err.message} Si era un error de dedo: marca «El de antes estaba mal tecleado», escribe el TIN otra vez y guárdalo.`);
+          return true;
+        } });
+    });
+    const bq = cardT.querySelector("[data-subs-tin-quitar]");
+    if (bq) bq.addEventListener("click", () => montarForma(cardT, formaHTML("Quitar el TIN de esta ficha. Sin TIN no entra en la hoja del 1099.", "", "Quitarlo"), () =>
+      accionSubs(cardT, "fn_subs_tin_guardar", { p_ficha: id, p: { quitar: true } }, () => ({ tipo: "ok", texto: "TIN quitado de la ficha." }), { aviso: "TIN quitado", mfa: "Quitar el TIN " + SIN_CODIGO_SUBS })));
+    // los papeles
+    const cardP = $("ct-subs-papeles");
+    cardP.querySelectorAll("[data-subs-subir]").forEach(b => b.addEventListener("click", () => formaSubir(cardP, f, b.dataset.subsSubir)));
+    cardP.querySelectorAll("[data-subs-ver]").forEach(b => b.addEventListener("click", () => verArchivoSubs(cardP, b.dataset.subsVer)));
+    cardP.querySelectorAll("[data-subs-retirar]").forEach(b => b.addEventListener("click", () => {
+      const a = archivos.find(x => x.archivo_id === b.dataset.subsRetirar); if (!a) return;
+      montarForma(cardP, formaHTML(`Retirar el ${esc(CLASE_ARCH[a.clase] || a.clase)} «${esc(String(a.ruta).split("/").pop())}». No se borra: queda en el bucket y en el historial con tu motivo, y deja de contar.`,
+        `<label class="ct-campo">Por qué se retira<input name="motivo" required data-falta="Falta el motivo: por qué se retira." autocomplete="off"></label>`, "Retirarlo"), v =>
+        accionSubs(cardP, "fn_subs_archivo_retirar", { p_archivo: a.archivo_id, p_motivo: v.motivo }, () => ({ tipo: "ok", texto: `Retirado el ${CLASE_ARCH[a.clase] || a.clase}.` }), { aviso: "Papel retirado" }));
+    }));
+    // los terceros
+    const cardX = $("ct-subs-terceros");
+    cardX.querySelectorAll("[data-subs-soltar]").forEach(b => b.addEventListener("click", () => {
+      const [tipo, tid] = b.dataset.subsSoltar.split(":");
+      montarForma(cardX, formaHTML("Soltar a este tercero de la ficha: sus pagos dejan de sumarle.", "", "Soltarlo"), () =>
+        accionSubs(cardX, "fn_subs_tercero", { p_ficha: id, p_tipo: tipo, p_id: tid, p_quitar: true }, r => ({ tipo: "ok", texto: `Soltado ${r && r.tercero ? r.tercero.nombre : "el tercero"} de la ficha.` }), { aviso: "Tercero soltado" }));
+    }));
+    const be = cardX.querySelector("[data-subs-enlazar]");
+    if (be) be.addEventListener("click", () => {
+      const ya = new Set((f.terceros || []).map(t => t.id));
+      const ops = [...(provs || []).filter(p => p.activo !== false && !ya.has(p.id)).map(p => `<option value="proveedor:${esc(p.id)}">Proveedor: ${esc(p.nombre)}</option>`),
+        ...(perfs || []).filter(p => p.activo !== false && p.rol !== "dueno" && !ya.has(p.id)).map(p => `<option value="empleado:${esc(p.id)}">Con horas en la app: ${esc(p.nombre)}</option>`)];
+      montarForma(cardX, formaHTML("A quién del libro se refiere esta ficha", `<label class="ct-campo">Quién<select name="quien" required>${ops.join("")}</select></label>`, "Enlazarlo"), v => {
+        const [tipo, tid] = String(v.quien || "").split(":");
+        accionSubs(cardX, "fn_subs_tercero", { p_ficha: id, p_tipo: tipo, p_id: tid, p_quitar: false }, r => ({ tipo: "ok", texto: `${r && r.ya_estaba ? "Ya estaba enlazado" : "Enlazado"} ${r && r.tercero ? r.tercero.nombre : ""} a la ficha.` }), { aviso: "Tercero enlazado" });
+      });
+    });
+    const b1 = $("ct-subs-su1099") && $("ct-subs-su1099").querySelector("[data-subs-ver1099]");
+    if (b1) b1.addEventListener("click", () => ir("subs", { sub: "1099", clave: b1.dataset.subsVer1099 }));
+    // los tramos: retirar uno mal puesto, con su motivo
+    const cardR = $("ct-subs-tramos");
+    if (cardR) cardR.querySelectorAll("[data-subs-tramo-retirar]").forEach(b => b.addEventListener("click", () => {
+      const t = (tramos || []).find(x => x.id === b.dataset.subsTramoRetirar); if (!t) return;
+      montarForma(cardR, formaHTML(`Retirar el tramo «hasta el ${esc(fechaLarga(t.hasta))}» (estaba mal puesto). No se borra: queda con tu motivo, y los pagos de esos días vuelven a contar como diga la ficha hoy (o el tramo siguiente).`,
+        `<label class="ct-campo">Por qué se retira<input name="motivo" required data-falta="Falta el motivo: por qué se retira el tramo." autocomplete="off"></label>`, "Retirarlo"), v =>
+        accionSubs(cardR, "fn_subs_tramo_retirar", { p_tramo: t.id, p_motivo: v.motivo }, () => ({ tipo: "ok", texto: `Retirado el tramo hasta el ${fechaLarga(t.hasta)}: esos pagos cuentan ahora como dice la ficha.` }), { aviso: "Tramo retirado" }));
+    }));
+  }
+  // Storage, el bucket privado «subs» (c14 lo crea con sus candados: solo el dueño con su código sube y lee; nadie borra ni pisa)
+  const EXT_SUBS = { pdf: "application/pdf", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", heic: "image/heic", webp: "image/webp" };
+  async function subirSubs(ruta, bytes, tipo, reintento = true) {
+    const sb = SBC(), tok = tokenCie();
+    if (!sb.url || !tok) throw new Error("Sin sesión: vuelve a entrar a la app.");
+    const r = await fetch(`${sb.url}/storage/v1/object/subs/${rutaUrl(ruta)}`, { method: "POST", headers: { apikey: sb.key, Authorization: `Bearer ${tok}`, "Content-Type": tipo, "x-upsert": "false" }, body: bytes });
+    if (r.status === 401 && reintento && typeof DB.refrescar === "function") { await DB.refrescar(); return subirSubs(ruta, bytes, tipo, false); }
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      const m = String(d.message || d.error || "");
+      throw new Error(r.status === 409 || /exist|duplicate/i.test(m) ? "Ya había un archivo con ese nombre en el bucket de los subs (ahí nada se pisa): vuelve a intentarlo."
+        : /bucket not found/i.test(m) ? "No existe el bucket «subs» en Storage: vuelve a pegar docs/conta/c14-subs.sql (lo crea)."
+        : r.status === 403 || /row-level|policy|unauthorized/i.test(m) ? "Storage no dejó subir al bucket de los subs: pide la sesión del dueño CON el código del teléfono (sal y vuelve a entrar con él)."
+        : `No se pudo subir el archivo (${r.status}${m ? `: ${m}` : ""}).`);
+    }
+  }
+  async function firmarSubs(rutas, reintento = true) {
+    const sb = SBC(), tok = tokenCie();
+    if (!sb.url || !tok) throw new Error("Sin sesión: vuelve a entrar a la app.");
+    const r = await fetch(`${sb.url}/storage/v1/object/sign/subs`, { method: "POST", headers: { apikey: sb.key, Authorization: `Bearer ${tok}`, "Content-Type": "application/json" }, body: JSON.stringify({ expiresIn: 600, paths: rutas }) });
+    if (r.status === 401 && reintento && typeof DB.refrescar === "function") { await DB.refrescar(); return firmarSubs(rutas, false); }
+    if (!r.ok) throw new Error(r.status === 403 ? "Storage no dejó ver el archivo: pide el código del teléfono (sal y vuelve a entrar con él)." : `Storage no firmó el archivo (${r.status}): vuelve a intentarlo en un rato.`);
+    const lista = await r.json().catch(() => []);
+    const mapa = {};
+    for (const it of Array.isArray(lista) ? lista : []) { const u = it.signedURL || it.signedUrl; if (it.path && u && !it.error) mapa[it.path] = `${sb.url}/storage/v1${u}`; }
+    return mapa;
+  }
+  // VER un papel: se firma por diez minutos y sale su enlace (un enlace que se toca, no una ventana que se abre sola)
+  async function verArchivoSubs(card, ruta) {
+    const caja = card.querySelector("#ct-subs-ver");
+    if (!mfaActivo()) { caja.innerHTML = `<p class="ct-aviso warn">Ver los papeles ${esc(SIN_CODIGO_SUBS)}</p>`; return; }
+    caja.innerHTML = `<p class="ct-aviso ct-espera" role="status">Pidiendo el enlace…</p>`;
+    try {
+      const m = await firmarSubs([ruta]);
+      const u = m[ruta];
+      caja.innerHTML = u ? `<p class="ct-aviso ok">Listo (vale diez minutos): <a href="${esc(u)}" target="_blank" rel="noopener" class="ct-fac-enlace">abrir ${esc(String(ruta).split("/").pop())}</a></p>`
+        : `<p class="ct-aviso bad">Storage no encontró ese archivo: el control de la página lo va a decir.</p>`;
+    } catch (err) { caja.innerHTML = `<p class="ct-aviso bad">${esc(esFalloDeRed(err) ? "Sin señal: vuelve a intentarlo con señal." : err.message)}</p>`; }
+  }
+  // SUBIR un papel: el archivo (PDF o foto), su fecha (el W-9) o su vencimiento (el COI, la exención); con el código del teléfono.
+  // Se sube a <ficha>/<clase>/<clase>-<fecha y hora>.<ext> y se registra con su sha256 y su tamaño (la base mira que esté y mida eso)
+  function formaSubir(card, f, clase) {
+    if (!mfaActivo()) { mostrarErrorForma(card, `Subir el ${CLASE_ARCH[clase]} ${SIN_CODIGO_SUBS}`); return; }
+    const hoy = hoyMiami();
+    montarForma(card, formaHTML(`Subir el ${esc(CLASE_ARCH[clase])} de ${esc(f.nombre_legal || f.nombre)} (PDF o foto)`,
+      `<label class="ct-campo">El archivo<input type="file" name="archivo" accept=".pdf,.jpg,.jpeg,.png,.heic,.webp,application/pdf,image/*" required data-falta="Falta el archivo."></label>
+       ${clase === "w9" ? `<label class="ct-campo">Recibido el<input type="date" name="fecha" value="${esc(hoy)}" max="${esc(hoy)}"></label>`
+         : `<label class="ct-campo">${clase === "coi" ? "Vence el (está en el certificado)" : "Vence el (si dice)"}<input type="date" name="vence"${clase === "coi" ? ` required data-falta="Falta el día en que vence (está en el certificado)."` : ""}></label>`}
+       <label class="ct-campo">Nota (opcional)<input name="nota" autocomplete="off"></label>`, "Subirlo"), async () => {
+      const form = card.querySelector(".ct-form form");
+      const archivo = form.querySelector("input[type=file]").files[0];
+      const fecha = form.querySelector("[name=fecha]") ? form.querySelector("[name=fecha]").value : "";
+      const vence = form.querySelector("[name=vence]") ? form.querySelector("[name=vence]").value : "";
+      const nota = String(form.querySelector("[name=nota]").value || "").trim();
+      if (!archivo) { mostrarErrorForma(card, "Falta el archivo."); return; }
+      const ext = String(archivo.name || "").toLowerCase().split(".").pop();
+      if (!EXT_SUBS[ext]) { mostrarErrorForma(card, `El ${CLASE_ARCH[clase]} va en PDF o en foto (pdf, jpg, png, heic o webp).`); return; }
+      if (S.ocupado) return;
+      if (!navigator.onLine) { mostrarErrorForma(card, "Sin señal: no se subió nada."); return; }
+      S.ocupado = true;
+      const apagados = [...card.querySelectorAll("button, input, select, textarea")].filter(b => !b.disabled);
+      apagados.forEach(b => { b.disabled = true; });
+      const ruta = `${f.ficha_id}/${clase}/${clase}-${selloMiami()}.${ext}`;
+      let subido = false, r;
+      try {
+        const bytes = new Uint8Array(await archivo.arrayBuffer());
+        const sha = await sha256Hex(bytes);
+        await subirSubs(ruta, bytes, archivo.type || EXT_SUBS[ext]);
+        subido = true;
+        const p = { clase, ruta, sha256: sha, bytes: bytes.length };
+        if (fecha) p.fecha = fecha;
+        if (vence) p.vence = vence;
+        if (nota) p.nota = nota;
+        r = await DB._rpc("fn_subs_archivo", { p_ficha: f.ficha_id, p });
+      } catch (err) {
+        apagados.forEach(b => { b.disabled = false; });
+        S.ocupado = false;
+        const m = err.codigo ? mensajeSubs(err) : esFalloDeRed(err) ? "Sin señal: vuelve a intentarlo con señal." : err.message;
+        mostrarErrorForma(card, subido ? `El archivo se subió pero no quedó registrado: ${m} Vuelve a subirlo (va con otro nombre).` : m);
+        return;
+      }
+      S.ocupado = false;
+      const a = (r && r.archivo) || {};
+      S.subs.nota = { tipo: "ok", texto: `${r && r.ya_estaba ? "Ya estaba registrado" : "Subido y registrado"} el ${CLASE_ARCH[clase]}${a.vence ? ` (vence el ${fechaLarga(a.vence)})` : ""}.` };
+      S.hooks.avisar(`${CLASE_ARCH[clase]} subido`);
+      await repintar();
+    });
+  }
+
+  // ---------- El 1099 del año: cada uno con lo reportable, lo excluido, el umbral, lo que falta y sus pagos; la hoja ----------
+  const REPORTA_EF = { si: ["se le reporta", "ok"], no: ["no se le reporta", ""], por_decidir: ["por decidir", "warn"], sin_ficha: ["sin ficha", "bad"], sin_tercero: ["sin nombre", "bad"] };
+  async function pintarSubs1099(mia) {
+    let anios, filas, avisos, umbral, umbrales;
+    try {
+      [anios] = await Promise.all([anioSubs(), leerMfa()]);
+      [avisos, filas, umbral, umbrales] = await Promise.all([controlSubs(S.subs.anio), DB._rpc("fn_subs_1099", { p_anio: S.subs.anio }), DB._rpc("fn_subs_umbral", { p_anio: S.subs.anio }),
+        DB._leer(`subs_umbrales?select=*&anio=eq.${enc(S.subs.anio)}`)]);
+      if (!vivaSubs(mia)) return;
+    } catch (err) { if (!vivaSubs(mia)) return; return errorSubs(err, pintarSubs); }
+    filas = Array.isArray(filas) ? filas : [];
+    const conf = (Array.isArray(umbrales) ? umbrales : [])[0] || null;
+    const anio = S.subs.anio, pasan = filas.filter(x => x.pasa_umbral), listos = filas.filter(x => x.listo);
+    subSubs(`<b>El 1099 de ${esc(anio)}</b> · ${plural(pasan.length, "pasa del umbral", "pasan del umbral")}${listos.length ? ` · ${listos.length} listos para la hoja` : ""}`);
+    const parcial = filas.find(x => x.parcial && x.parcial_texto);
+    const mfa = mfaActivo();
+    const u = S.subs.ultimaHoja && S.subs.ultimaHoja.anio === anio ? S.subs.ultimaHoja : null;
+    const c = subsCuerpo();
+    c.innerHTML = notaSubsHTML() + (anio === 2026 ? `<p class="ct-aviso warn ct-subs-2026" id="ct-subs-2026">${esc(AVISO_2026)}.</p>` : "") +
+      `<section class="ct-card ct-subs-1099" id="ct-subs-1099">
+        <div class="ct-cab"><h2>El 1099-NEC de ${esc(anio)}</h2>${anios.length > 1 ? `<label class="ct-campo ct-subs-anio">Año<select id="ct-subs-anio">${anios.map(a => `<option value="${a}"${a === anio ? " selected" : ""}>${a}</option>`).join("")}</select></label>` : ""}</div>
+        ${parcial ? `<p class="ct-nota">${esc(parcial.parcial_texto)}</p>` : ""}
+        <p class="ct-nota">Umbral de ${esc(anio)}: <b class="ct-num">${fmt(umbral)}</b> ${conf ? `(confirmado: «${esc(conf.nota || "")}», el ${esc(fechaLarga(conf.confirmado_el))})` : `<span class="bad-txt">(el de fábrica: a confirmar con el CPA)</span>`}. Se le reporta a quien se le pagó eso o más en el año, por la fecha del pago, desde el banco o la caja; lo pagado con tarjeta lo reporta el procesador, y a una corporación no se le reporta salvo lo que diga su ficha.</p>
+        ${filas.length ? `<div class="ct-subs-filas">${filas.map(x => fila1099HTML(x)).join("")}</div>` : `<p class="ct-vacio">En ${esc(anio)} no hay ningún pago de servicio en el libro.</p>`}
+      </section>
+      <section class="ct-card ct-subs-hoja" id="ct-subs-hoja">
+        <div class="ct-cab"><h2>La hoja del 1099 (CSV)</h2>${pill("lleva el TIN entero", "warn")}</div>
+        <p class="ct-nota">Una fila por cada uno que se reporta, pasa del umbral y tiene todo (con su TIN entero), con las columnas de la 1099-NEC, en inglés, para subirla al servicio del 1099 (IRIS, Track1099…). Lo que pasa del umbral y le falta algo sale aparte, con lo que le falta. La app no la manda a ningún sitio.</p>
+        ${u ? hojaResultadoHTML(u) : ""}
+        <div class="ct-acciones"><button type="button" class="accion" id="ct-subs-exportar"${mfa ? "" : " disabled"}>Bajar la hoja del 1099 de ${esc(anio)}</button></div>
+        ${mfa ? "" : `<p class="ct-nota">Bajar la hoja ${esc(SIN_CODIGO_SUBS)}</p>`}
+        <div class="ct-form" hidden></div>
+      </section>` + avisosSubsHTML(avisos, [40, 45, 50, 55, 60, 80, 82, 85, 88]);
+    const sel = $("ct-subs-anio");
+    if (sel) sel.addEventListener("change", ev => { S.subs.anio = Number(ev.target.value); S.subs.clave = null; pintarSubs(); });
+    c.querySelectorAll("[data-subs-abrir]").forEach(b => b.addEventListener("click", () => { S.subs.clave = S.subs.clave === b.dataset.subsAbrir ? null : b.dataset.subsAbrir; pintarSubs1099(++S.subs.serie); }));
+    c.querySelectorAll("[data-subs-atribuir]").forEach(b => b.addEventListener("click", () => ir("subs", { sub: "pagos", filtro: "sin_tercero" })));
+    c.querySelectorAll("[data-subs-dar]").forEach(b => b.addEventListener("click", () => {
+      const x = filas.find(y => y.clave === b.dataset.subsDar); if (!x) return;
+      ir("subs", { sub: "fichas", ficha: "nueva", nueva: { nombre_legal: x.nombre, tercero: { tipo: x.tercero_tipo, id: x.tercero_id, nombre: x.nombre } } });
+    }));
+    c.querySelectorAll("[data-subs-ir-ficha]").forEach(b => b.addEventListener("click", () => ir("subs", { sub: "fichas", ficha: b.dataset.subsIrFicha })));
+    const card = $("ct-subs-hoja");
+    $("ct-subs-exportar").addEventListener("click", () => {
+      if (!mfaActivo()) { mostrarErrorForma(card, "Bajar la hoja " + SIN_CODIGO_SUBS); return; }
+      montarForma(card, formaHTML(`<b>Esta hoja lleva el TIN ENTERO de cada uno.</b> Bájala solo para subirla al servicio del 1099; guárdala donde nadie más la vea y bórrala después de subirla.${anio === 2026 ? ` ${esc(AVISO_2026)}: esta hoja sirve para cruzar con QuickBooks, no para presentar.` : ""}`,
+        `${antesHojaHTML(filas, avisos)}
+         <label class="ct-check"><input type="checkbox" name="bajo_umbral"> También a quien no llega al umbral (para cruzar)</label>
+         <label class="ct-check"><input type="checkbox" name="entiendo" required data-falta="Marca que entiendes que la hoja lleva el TIN entero."> Entiendo que lleva el TIN entero</label>`, "Bajar la hoja (CSV)"), v => exportarHoja(card, anio, v.bajo_umbral === "on"));
+    });
+  }
+  // ANTES DE BAJAR LA HOJA: lo que el control del año tiene en rojo y la deja corta (los mismos que la base pone en sus «avisos»: 30,
+  // 40, 45, 55, 60 y 82), y quién pasa del umbral sin poder entrar o tiene servicio sin nombre (lo dice el 1099 de la base). No frena
+  const AVISOS_HOJA = [30, 40, 45, 55, 60, 82];
+  function antesHojaHTML(filas, avisos) {
+    const av = (avisos || []).filter(f => AVISOS_HOJA.includes(Number(f.orden)));
+    // (sin sumar nada: lo que dice cada fila) pasa del umbral y le falta algo; pagos sin nombre; o algo sin clasificar o por otro
+    // camino que, contado, podría pasarlo del umbral (la base lo dice con su monto en la respuesta de la hoja)
+    const porQue = x => x.clave === "sin_tercero" ? "el libro no dice de quién son"
+      : x.pasa_umbral ? `le falta ${x.falta_texto || "algo"}` : "tiene pagos sin clasificar o por otro camino: contados, podría pasar del umbral";
+    const fuera = (filas || []).filter(x => !x.listo && (x.pasa_umbral || (x.clave === "sin_tercero" && [x.reportable, x.sin_clasificar, x.otro_camino].some(noCero))
+      || (x.reporta_efectivo !== "no" && x.clave !== "sin_tercero" && [x.sin_clasificar, x.otro_camino].some(noCero))));
+    if (!av.length && !fuera.length) return `<p class="ct-aviso ok ct-subs-antes" id="ct-subs-antes">Nada del control deja corta esta hoja, y todos los que pasan del umbral están listos.</p>`;
+    return `<div class="ct-aviso warn ct-subs-antes" id="ct-subs-antes"><p><b>Antes de bajarla: esta hoja va a salir incompleta.</b> No frena; míralo con el CPA.</p>
+        ${fuera.length ? `<p class="ct-form-t">No van a entrar:</p><ul class="ct-subs-excl">${fuera.map(x => `<li data-clave="${esc(x.clave)}"><b>${esc(x.nombre)}</b> · ${montosSubs(x)} · ${esc(porQue(x))}</li>`).join("")}</ul>` : ""}
+        ${av.length ? `<p class="ct-form-t">Lo que dice el control:</p><ul class="ct-subs-excl">${av.map(f => `<li data-orden="${esc(f.orden)}">${esc(cap(String(f.control || "").replace(/^subs: /, "")))}: ${esc(f.detalle || "")}</li>`).join("")}</ul>` : ""}
+      </div>`;
+  }
+  function fila1099HTML(x) {
+    const abierta = S.subs.clave === x.clave;
+    const [rt, rc] = REPORTA_EF[x.reporta_efectivo] || [x.reporta_efectivo || "", ""];
+    const pagos = Array.isArray(x.pagos) ? x.pagos : [];
+    return `<div class="ct-subs-1099f${x.pasa_umbral && !x.listo ? " mal" : ""}" data-clave="${esc(x.clave)}">
+        <button type="button" class="ct-subs-fila" data-subs-abrir="${esc(x.clave)}" aria-expanded="${abierta ? "true" : "false"}">
+          <span class="ct-subs-n"><b>${esc(x.nombre)}</b><small>${pill(rt, rc)}${x.tin_mascara ? ` TIN ${esc(x.tin_mascara)}` : ""}${x.tipo_entidad ? ` · ${esc(TIPO_ENT[x.tipo_entidad] || x.tipo_entidad)}` : ""} · ${plural(num(x.n_pagos) || 0, "pago", "pagos")}</small></span>
+          <span class="ct-subs-m"><span class="ct-lbl">Reportable</span><b class="ct-num">${fmt(x.reportable)}</b></span>
+          <span class="ct-subs-m"><span class="ct-lbl">No se reporta</span><span class="ct-num">${fmt(x.excluido)}</span></span>
+          <span class="ct-subs-chips">${x.listo ? pill("lista para la hoja", "ok") : x.pasa_umbral ? pill("pasa del umbral", "bad") : pill("no llega al umbral")}${noCero(x.sin_clasificar) ? " " + pill(`${fmt(x.sin_clasificar)} sin clasificar`, "warn") : ""}${noCero(x.otro_camino) ? " " + pill(`${fmt(x.otro_camino)} por otro camino`, "warn") : ""}</span>
+        </button>
+        ${(x.excluido_por || []).length ? `<ul class="ct-subs-excl">${x.excluido_por.map(e => `<li><span class="ct-num">${fmt(e.monto)}</span> · ${esc(e.texto)}</li>`).join("")}</ul>` : ""}
+        ${noCero(x.otro_camino) ? `<p class="ct-sub ct-subs-otro">Por otro camino: <span class="ct-num">${fmt(x.otro_camino)}</span> de servicio que no salió del banco ni de una tarjeta (lo pagó alguien de su bolsillo): no cuenta hasta marcarlo «pagado» en Pagos, si el CPA dice que cuenta.</p>` : ""}
+        ${noCero(x.devengado) ? `<p class="ct-sub ct-subs-dev">Devengado en ${esc(x.anio)}: <span class="ct-num">${fmt(x.devengado)}</span> de trabajo que entró a una cuenta por pagar (cuenta para el 1099 cuando se paga).</p>` : ""}
+        ${x.cambios ? `<p class="ct-sub ct-subs-cambios">Su ficha cambió en el año: ${esc(x.cambios)}. Cada pago cuenta como estaba ese día.</p>` : ""}
+        ${x.falta_texto ? `<p class="ct-subs-falta">Le falta: ${esc(x.falta_texto)}</p>` : ""}
+        ${noCero(x.antes_del_libro) ? `<p class="ct-sub">Antes del libro (en QuickBooks): <span class="ct-num">${fmt(x.antes_del_libro)}</span></p>` : ""}
+        <div class="ct-acciones">${x.ficha_id ? `<button type="button" class="accion secundaria chica" data-subs-ir-ficha="${esc(x.ficha_id)}">Su ficha</button>` : x.tercero_id ? `<button type="button" class="accion secundaria chica" data-subs-dar="${esc(x.clave)}">Darle su ficha</button>` : x.clave === "sin_tercero" ? `<button type="button" class="accion secundaria chica" data-subs-atribuir>Decir de quién es cada pago</button>` : ""}</div>
+        ${abierta ? `<ul class="ct-subs-pagos">${pagos.map(pagoSubsHTML).join("") || `<li class="ct-sub">Sin pagos.</li>`}</ul>` : ""}
+      </div>`;
+  }
+  const pagoSubsHTML = p => {
+    const [et, ec] = ESTADO_PAGO_SUBS[p.estado] || [p.estado || "", ""];
+    return `<li class="ct-subs-pago" data-asiento="${esc(p.asiento_id)}" data-orden="${esc(p.orden)}">
+        <span class="ct-subs-pago-t"><span><b>${esc(fechaLarga(p.fecha))}</b>${fechasPagoSubs(p)} · asiento <span class="ct-num">${esc(p.numero || "—")}</span> · ${esc(p.cuenta || "")} · ${esc(MEDIO_SUBS[p.medio] || p.medio || "")}${p.reverso ? " · " + pill("reverso: resta", "warn") : ""}</span>
+          <small>${esc(p.descripcion || "")}${p.banco && p.banco !== p.descripcion ? ` · el banco: «${esc(p.banco)}»` : ""}${p.marca_trato ? ` · marcado: ${esc(p.marca_trato)}` : ""}${p.sugerencia_ficha ? ` · ¿es de ${esc(p.sugerencia_ficha)}?` : ""}</small></span>
+        <span class="ct-num">${fmt(p.monto)}</span>
+        <span>${pill(et, ec)}</span>
+      </li>`;
+  };
+  const hojaResultadoHTML = u => `<div class="ct-subs-hres" id="ct-subs-hres">
+      <p class="ct-aviso ok">Bajada «${esc(u.nombre_archivo)}» el ${esc(fechaLarga(u.generado_el))}: ${plural(num(u.cuantos) || 0, "fila", "filas")} por <span class="ct-num">${fmt(u.total)}</span> (umbral <span class="ct-num">${fmt(u.umbral)}</span>). ${u.completa === true ? pill("completa", "ok") : u.completa === false ? pill("incompleta", "warn") : ""}</p>
+      ${u.parcial_texto ? `<p class="ct-nota">${esc(u.parcial_texto)}</p>` : ""}
+      ${(u.pendientes || []).length ? `<p class="ct-form-t">No entraron (pasan del umbral y les falta algo, o no se sabe de quién son):</p><ul class="ct-subs-excl">${u.pendientes.map(p => `<li><b>${esc(p.nombre)}</b> · <span class="ct-num">${fmt(p.monto)}</span>${noCero(p.sin_clasificar) ? ` y <span class="ct-num">${fmt(p.sin_clasificar)}</span> sin clasificar` : ""}${noCero(p.otro_camino) ? ` y <span class="ct-num">${fmt(p.otro_camino)}</span> por otro camino` : ""} · ${esc(p.por_que || "")}${p.falta_texto && !String(p.por_que || "").includes(p.falta_texto) ? ` (${esc(p.falta_texto)})` : ""}</li>`).join("")}</ul>` : `<p class="ct-nota">Nadie que pase del umbral se quedó fuera.</p>`}
+      ${(u.avisos || []).length ? `<p class="ct-form-t">Lo que la deja corta, según el control:</p><ul class="ct-subs-excl">${u.avisos.map(a => `<li data-orden="${esc(a.orden)}">${esc(cap(String(a.control || "").replace(/^subs: /, "")))}: ${esc(a.detalle || "")}</li>`).join("")}</ul>` : ""}
+    </div>`;
+  // LA HOJA: con el código del teléfono; la base la arma y la apunta (sin TIN); la pantalla la baja como archivo y no se queda con ella
+  async function exportarHoja(card, anio, bajoUmbral) {
+    if (S.ocupado) return;
+    if (!navigator.onLine) { mostrarErrorForma(card, "Sin señal: no se bajó nada."); return; }
+    if (!mfaActivo()) { mostrarErrorForma(card, "Bajar la hoja " + SIN_CODIGO_SUBS); return; }
+    S.ocupado = true;
+    const apagados = [...card.querySelectorAll("button, input, select, textarea")].filter(b => !b.disabled);
+    apagados.forEach(b => { b.disabled = true; });
+    let r;
+    try { r = await DB._rpc("fn_subs_1099_export", { p_anio: anio, p_opciones: { bajo_umbral: !!bajoUmbral } }); }
+    catch (err) {
+      apagados.forEach(b => { b.disabled = false; });
+      S.ocupado = false;
+      mostrarErrorForma(card, mensajeSubs(err));
+      return;
+    }
+    S.ocupado = false;
+    // el archivo: se baja y su enlace se suelta enseguida; de la respuesta la pantalla solo guarda los totales y lo pendiente (sin TIN)
+    try {
+      const blob = new Blob([String((r && r.csv) || "")], { type: "text/csv;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = (r && r.nombre_archivo) || `1099-NEC-${anio}.csv`; a.hidden = true;
+      document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+    } catch { /* el navegador no dejó bajarla: lo dice el aviso de abajo */ }
+    S.subs.ultimaHoja = { anio, nombre_archivo: r && r.nombre_archivo, generado_el: r && r.generado_el, cuantos: r && r.cuantos, total: r && r.total, umbral: r && r.umbral,
+      parcial_texto: r && r.parcial_texto, completa: r ? r.completa : null,
+      pendientes: ((r && r.pendientes) || []).map(p => ({ nombre: p.nombre, monto: p.monto, sin_clasificar: p.sin_clasificar, otro_camino: p.otro_camino, por_que: p.por_que, falta_texto: p.falta_texto })),
+      avisos: ((r && r.avisos) || []).map(a => ({ orden: a.orden, control: a.control, detalle: a.detalle })) };
+    r = null;
+    S.subs.nota = { tipo: "ok", texto: `La hoja del 1099 de ${anio} se bajó a tu equipo. Lleva el TIN entero: súbela al servicio del 1099 y bórrala después.` };
+    S.hooks.avisar("Hoja del 1099 bajada");
+    await repintar();
+  }
+
+  // ---------- COI: quién tuvo servicio estos días y si su COI lo cubría ----------
+  async function pintarSubsCoi(mia) {
+    let filas, avisos;
+    try { await anioSubs(); [avisos, filas] = await Promise.all([controlSubs(S.subs.anio), DB._leer("v_subs_coi?select=*&order=nombre.asc")]); if (!vivaSubs(mia)) return; }
+    catch (err) { if (!vivaSubs(mia)) return; return errorSubs(err, pintarSubs); }
+    filas = Array.isArray(filas) ? filas : [];
+    const sin = filas.filter(x => !x.cubierto);
+    subSubs(`<b>${plural(filas.length, "con servicio estos días", "con servicio estos días")}</b>${sin.length ? ` · <span class="bad-txt">${sin.length} sin COI que lo cubra</span>` : ""}`);
+    const c = subsCuerpo();
+    c.innerHTML = avisosSubsHTML(avisos, [70, 75]) + `<section class="ct-card ct-subs-coi" id="ct-subs-coi">
+        <h2>El COI de quien trabajó</h2>
+        <p class="ct-nota">Quien tuvo servicio pagado o por pagar en el mes en curso o en los últimos días (Ajustes), con su COI: si cubría cada día que trabajó o se le pagó.</p>
+        ${filas.length ? `<div class="ct-subs-filas">${filas.map(x => `<div class="ct-subs-1099f${x.cubierto ? "" : " mal"}" data-clave="${esc(x.clave)}">
+            <div class="ct-subs-fila ct-subs-fija"><span class="ct-subs-n"><b>${esc(x.nombre)}</b><small>Del ${esc(fechaLarga(x.primer_dia))} al ${esc(fechaLarga(x.ultimo_dia))}${x.coi_vence ? ` · su COI vence el ${esc(fechaLarga(x.coi_vence))}` : ""}</small></span>
+              <span class="ct-subs-m"><span class="ct-lbl">Pagado</span><span class="ct-num">${fmt(x.pagado)}</span></span>
+              <span class="ct-subs-m"><span class="ct-lbl">Por pagar</span><span class="ct-num">${fmt(x.devengado)}</span></span>
+              <span class="ct-subs-chips">${chipCoi(x)} ${x.cubierto ? pill("cubierto", "ok") : pill("sin cubrir", "bad")}${x.wc_exento ? " " + pill("exento de WC", "") : ""}</span></div>
+            ${x.que_falta ? `<p class="ct-subs-falta">${esc(cap(x.que_falta))}</p>` : ""}
+            ${x.ficha_id ? `<div class="ct-acciones"><button type="button" class="accion secundaria chica" data-subs-ir-ficha="${esc(x.ficha_id)}">Su ficha</button></div>` : ""}
+          </div>`).join("")}</div>` : `<p class="ct-vacio">Nadie con servicio en estos días.</p>`}
+      </section>`;
+    c.querySelectorAll("[data-subs-ir-ficha]").forEach(b => b.addEventListener("click", () => ir("subs", { sub: "fichas", ficha: b.dataset.subsIrFicha })));
+  }
+
+  // las fechas de un pago: «fecha» es con la que cuenta (según los Ajustes); si el libro o el banco dicen otra, se dice
+  const fechasPagoSubs = p => [p.fecha_libro && p.fecha_libro !== p.fecha ? `en el libro, el ${fechaLarga(p.fecha_libro)}` : "",
+    p.fecha_banco && p.fecha_banco !== p.fecha ? `el banco lo fecha el ${fechaLarga(p.fecha_banco)}` : ""].filter(Boolean).map(t => ` <small class="ct-subs-fechas">(${esc(t)})</small>`).join("");
+
+  // ---------- Pagos: cada pago de servicio del año; decir de quién es o qué es ----------
+  async function pintarSubsPagos(mia) {
+    let filas, fichas, avisos;
+    try {
+      await anioSubs();
+      [avisos, filas, fichas] = await Promise.all([controlSubs(S.subs.anio), DB._rpc("fn_subs_pagos", { p_anio: S.subs.anio }), DB._leer("v_subs_fichas?select=ficha_id,nombre,nombre_legal,activa&order=nombre.asc")]);
+      if (!vivaSubs(mia)) return;
+    } catch (err) { if (!vivaSubs(mia)) return; return errorSubs(err, pintarSubs); }
+    filas = Array.isArray(filas) ? filas : [];
+    fichas = (Array.isArray(fichas) ? fichas : []).filter(f => f.activa !== false);
+    const sinT = filas.filter(p => !p.tercero && !p.ficha_id && !p.reverso), sinC = filas.filter(p => p.clase === "sin_clasificar");
+    const FILTROS = { todos: `Todos (${filas.length})`, sin_tercero: `Sin nombre (${sinT.length})`, sin_clasificar: `Sin clasificar (${sinC.length})` };
+    if (!FILTROS[S.subs.filtro]) S.subs.filtro = "todos";
+    const vis = S.subs.filtro === "sin_tercero" ? sinT : S.subs.filtro === "sin_clasificar" ? sinC : filas;
+    subSubs(`<b>Los pagos de servicio de ${esc(S.subs.anio)}</b>${sinT.length ? ` · <span class="bad-txt">${sinT.length} sin nombre</span>` : ""}`);
+    const c = subsCuerpo();
+    c.innerHTML = notaSubsHTML() + (S.subs.anio === 2026 ? `<p class="ct-aviso warn ct-subs-2026">${esc(AVISO_2026)}.</p>` : "") + avisosSubsHTML(avisos, [40, 45, 60, 82]) +
+      `<section class="ct-card ct-subs-pagosc" id="ct-subs-pagosc">
+        <h2>Los pagos de ${esc(S.subs.anio)}</h2>
+        <p class="ct-nota">Cada pago de servicio, con la fecha con que cuenta (la del libro, o la del banco si así lo dicen los Ajustes). Al que el libro no le dice de quién es, se le dice aquí; al que fue por otro camino (de un bolsillo), si el CPA dice que cuenta, se marca «pagado» (no toca el libro: queda la marca con tu nota).</p>
+        <div class="ct-chips" aria-label="Qué pagos">${Object.keys(FILTROS).map(k => `<button type="button" class="ct-chip" data-subs-filtro="${k}" aria-pressed="${k === S.subs.filtro ? "true" : "false"}">${esc(FILTROS[k])}</button>`).join("")}</div>
+        ${vis.length ? `<ul class="ct-subs-pagos">${vis.map(p => `<li class="ct-subs-pago" data-asiento="${esc(p.asiento_id)}" data-orden="${esc(p.orden)}">
+            <span class="ct-subs-pago-t"><span><b>${esc(fechaLarga(p.fecha))}</b>${fechasPagoSubs(p)} · <span class="ct-num">${esc(p.numero || "—")}</span> · ${esc(p.cuenta)} ${esc(p.cuenta_nombre || "")} · ${esc(MEDIO_SUBS[p.medio] || p.medio || "")}${p.reverso ? " · " + pill("reverso: resta", "warn") : ""}</span>
+              <small>${p.ficha ? `De <b>${esc(p.ficha)}</b>` : p.tercero ? `De ${esc(p.tercero)} (sin ficha)` : `<span class="bad-txt">El libro no dice de quién es</span>`} · ${esc(p.descripcion || "")}${p.banco && p.banco !== p.descripcion ? ` · el banco: «${esc(p.banco)}»` : ""}${p.marca_nota ? ` · marca: «${esc(p.marca_nota)}»` : ""}</small></span>
+            <span class="ct-num">${fmt(p.monto)}</span>
+            <span>${pill(...(ESTADO_PAGO_SUBS[p.estado] || [p.estado || "", ""]))}</span>
+            ${p.reverso ? "" : `<span class="ct-subs-pago-b">${p.marca_id ? `<button type="button" class="accion secundaria chica" data-subs-desmarcar="${esc(p.asiento_id)}:${esc(p.orden)}">Quitar la marca</button>` : ""}<button type="button" class="accion secundaria chica" data-subs-marcar="${esc(p.asiento_id)}:${esc(p.orden)}">${!p.tercero && !p.ficha_id ? "Decir de quién es" : "Marcar"}</button></span>`}
+            <div class="ct-form" hidden></div>
+          </li>`).join("")}</ul>` : `<p class="ct-vacio">Ningún pago aquí.</p>`}
+      </section>`;
+    c.querySelectorAll("[data-subs-filtro]").forEach(b => b.addEventListener("click", () => { S.subs.filtro = b.dataset.subsFiltro; pintarSubsPagos(++S.subs.serie); }));
+    // (el pago de cada fila es EL DE ESA FILA: una línea del asiento pagada por dos caminos —parte del banco, parte de un bolsillo— sale en
+    // dos filas con el mismo asiento y la misma línea, y buscarla por «asiento:línea» daba siempre la primera parte: en la fila «por otro
+    // camino» se abría la del banco, con su monto y sin «pagado»)
+    const lis = [...c.querySelectorAll("#ct-subs-pagosc .ct-subs-pagos > .ct-subs-pago")];
+    const de = b => vis[lis.indexOf(b.closest(".ct-subs-pago"))];
+    c.querySelectorAll("[data-subs-marcar]").forEach(b => b.addEventListener("click", () => {
+      const p = de(b); if (!p) return;
+      const li = b.closest(".ct-subs-pago");
+      const sinNombre = !p.tercero && !p.ficha_id;
+      const opsF = fichas.map(f => `<option value="${esc(f.ficha_id)}"${f.ficha_id === p.sugerencia_ficha_id ? " selected" : ""}>${esc(f.nombre_legal || f.nombre)}</option>`).join("");
+      montarForma(li, formaHTML(`El pago del ${esc(fechaLarga(p.fecha))} por ${esc(fmt(p.monto))}${p.sugerencia_ficha ? ` (lo que dijo el banco se parece a <b>${esc(p.sugerencia_ficha)}</b>)` : ""}`,
+        `${sinNombre ? `<label class="ct-campo">De quién es<select name="ficha"><option value="">(no cambiar)</option>${opsF}</select></label>` : ""}
+         <label class="ct-campo">Qué es<select name="trato"><option value="">Lo que diga el libro</option>${p.estado === "otro_camino" ? `<option value="pagado">Lo pagó la empresa por otro camino (cuenta como pagado ese día)</option>` : ""}<option value="servicio">Es servicio (cuenta para el 1099)</option><option value="no_servicio">No es servicio (material, un reembolso)</option><option value="tarjeta">Se pagó con tarjeta (lo reporta el procesador)</option></select></label>
+         ${p.estado === "otro_camino" ? `<p class="ct-sub">No salió del banco ni de una tarjeta (lo pagó alguien de su bolsillo). ▶ Si el CPA dice que cuenta (el pagador es la empresa, que lo devolvió), márcalo «pagado».</p>` : ""}
+         <label class="ct-campo">Por qué (quién te lo dijo, qué papel lo dice)<input name="nota" required data-falta="Falta la nota: por qué (quién te lo dijo, qué papel lo dice)." autocomplete="off"></label>`, "Guardar la marca"), v => {
+        const q = { nota: v.nota };
+        if (v.ficha) q.ficha = v.ficha;
+        if (v.trato) q.trato = v.trato;
+        if (!q.ficha && !q.trato) { mostrarErrorForma(li, sinNombre ? "Elige de quién es el pago, o qué es." : "Elige qué es el pago."); return; }
+        accionSubs(li, "fn_subs_marcar", { p_asiento: p.asiento_id, p_orden: Number(p.orden), p: q }, () => ({ tipo: "ok", texto: `Marcado el pago del ${fechaLarga(p.fecha)} por ${fmt(p.monto)}${q.ficha ? ` como de ${(fichas.find(f => f.ficha_id === q.ficha) || {}).nombre_legal || "su ficha"}` : ""}${q.trato === "pagado" ? ": cuenta como pagado ese día" : ""}.` }), { aviso: "Pago marcado" });
+      });
+    }));
+    c.querySelectorAll("[data-subs-desmarcar]").forEach(b => b.addEventListener("click", () => {
+      const p = de(b); if (!p) return;
+      const li = b.closest(".ct-subs-pago");
+      montarForma(li, formaHTML("Quitar la marca de este pago (queda en el historial).", `<label class="ct-campo">Por qué (opcional)<input name="nota" autocomplete="off"></label>`, "Quitarla"), v =>
+        accionSubs(li, "fn_subs_marcar", { p_asiento: p.asiento_id, p_orden: Number(p.orden), p: v.nota ? { quitar: true, nota: v.nota } : { quitar: true } }, () => ({ tipo: "ok", texto: "Marca quitada." }), { aviso: "Marca quitada" }));
+    }));
+  }
+
+  // ---------- Ajustes: el umbral, a quién no se reporta, el COI; el umbral de cada año; las hojas bajadas ----------
+  async function pintarSubsAjustes(mia) {
+    let cfg, umbrales, hojas, anios;
+    try {
+      anios = await anioSubs();
+      [cfg, umbrales, hojas] = await Promise.all([DB._leer("subs_config?select=*"), DB._leer("subs_umbrales?select=*&order=anio.desc"), DB._leer("subs_exportaciones?select=id,anio,filas,total,umbral,pendientes,generado_el&order=generado_el.desc")]);
+      if (!vivaSubs(mia)) return;
+    } catch (err) { if (!vivaSubs(mia)) return; return errorSubs(err, pintarSubs); }
+    const k = (Array.isArray(cfg) ? cfg : [])[0] || {};
+    umbrales = Array.isArray(umbrales) ? umbrales : [];
+    hojas = Array.isArray(hojas) ? hojas : [];
+    subSubs(`Umbral de fábrica <b class="ct-num">${fmt(k.umbral_1099)}</b> · ${plural(umbrales.length, "año confirmado", "años confirmados")}`);
+    const lista = v => (Array.isArray(v) ? v : []).join(", ");
+    const aniosOps = [...new Set([...(anios || []), anioHoy(), anioHoy() + 1])].sort((a, b) => b - a);
+    const c = subsCuerpo();
+    c.innerHTML = notaSubsHTML() + `<section class="ct-card ct-wip-cfg ct-subs-cfg" id="ct-subs-cfg">
+        <h2>Ajustes del 1099 y del COI</h2>
+        <form class="ct-pide" novalidate>
+          <div class="ct-fila">
+            <label class="ct-campo">Umbral de fábrica (dólares)<input name="umbral_1099" inputmode="decimal" value="${esc(k.umbral_1099 == null ? "" : Number(k.umbral_1099).toFixed(2))}" autocomplete="off"><span class="ct-sub">▶ De fábrica 2000: a confirmar con el CPA cada diciembre (abajo, el de cada año).</span></label>
+            <label class="ct-campo">Avisar del COI con (días antes de que venza)<input name="coi_aviso_dias" inputmode="numeric" value="${esc(k.coi_aviso_dias == null ? "" : k.coi_aviso_dias)}"></label>
+            <label class="ct-campo">Mirar el COI de quien trabajó en los últimos (días)<input name="coi_ventana_dias" inputmode="numeric" value="${esc(k.coi_ventana_dias == null ? "" : k.coi_ventana_dias)}"></label>
+          </div>
+          <fieldset class="ct-ced-patr"><legend>A quién no se le reporta (salvo lo que diga su ficha)</legend>
+            ${Object.keys(TIPO_ENT).map(t => `<label class="ct-check"><input type="checkbox" name="entidades_no_reporta" value="${esc(t)}"${(k.entidades_no_reporta || []).includes(t) ? " checked" : ""}> ${esc(TIPO_ENT[t])}</label>`).join("")}
+            <span class="ct-sub">▶ De fábrica, las S y C corporations. Las excepciones (un abogado) las dice el CPA, en la ficha de cada uno.</span></fieldset>
+          <label class="ct-check"><input type="checkbox" name="coi_exento_basta"${k.coi_exento_basta ? " checked" : ""}> Al exento de workers' comp le basta su exención (sin COI) <span class="ct-sub">▶ lo decide Edgar con su aseguradora</span></label>
+          <fieldset class="ct-ced-patr ct-subs-fpago"><legend>Con qué fecha cuenta un pago para el 1099</legend>
+            <label class="ct-check"><input type="radio" name="fecha_pago" value="contable"${k.fecha_pago !== "banco" ? " checked" : ""}> La del libro (la del asiento): de fábrica</label>
+            <label class="ct-check"><input type="radio" name="fecha_pago" value="banco"${k.fecha_pago === "banco" ? " checked" : ""}> La del banco (la del movimiento, si el asiento la trae): un Zelle del 30 de diciembre asentado en enero cuenta en diciembre</label>
+            <span class="ct-sub">▶ Lo decide el CPA. El control 82 dice qué pagos cambiarían de año con el otro criterio.</span></fieldset>
+          <details class="ct-fac-avanzado"><summary>Las cuentas (avanzado)</summary>
+            <div class="ct-fila">
+              <label class="ct-campo">Cuentas por pagar que pagan a subs<input name="cuentas_por_pagar" value="${esc(lista(k.cuentas_por_pagar))}" autocomplete="off"></label>
+              <label class="ct-campo">Cuentas de activo que no pagan a nadie<input name="cuentas_no_pago" value="${esc(lista(k.cuentas_no_pago))}" autocomplete="off"></label>
+              <label class="ct-campo">Cuentas de gasto que no son servicio (no se pregunta por ellas)<input name="cuentas_no_servicio" value="${esc(lista(k.cuentas_no_servicio))}" placeholder="p. ej. 5100, si el CPA dice que el material no se reporta" autocomplete="off"></label>
+            </div></details>
+          <div class="ct-acciones"><button class="accion" type="submit">Guardar</button></div>
+        </form>
+        <div class="ct-form" hidden></div>
+      </section>
+      <section class="ct-card ct-subs-umbrales" id="ct-subs-umbrales">
+        <div class="ct-cab"><h2>El umbral de cada año</h2><button type="button" class="accion chica" id="ct-subs-umbral">Confirmar el de un año</button></div>
+        <p class="ct-nota">Cada diciembre, el CPA dice cuánto es el umbral de ese año y si se reporta a quien llega justo. Se anota aquí con su nota; sin eso vale el de fábrica y el control lo avisa.</p>
+        <div class="ct-form" hidden></div>
+        ${umbrales.length ? `<ul class="ct-wip-his">${umbrales.map(x => `<li class="ct-wip-hi"><p><b>${esc(x.anio)}</b> · <span class="ct-num">${fmt(x.umbral)}</span> · «${esc(x.nota || "")}»</p><p class="ct-sub">Anotado el ${esc(fechaLarga(x.confirmado_el))}</p></li>`).join("")}</ul>` : `<p class="ct-vacio">Ningún año confirmado todavía.</p>`}
+      </section>
+      <section class="ct-card ct-subs-hojas" id="ct-subs-hojas">
+        <h2>Las hojas bajadas</h2>
+        ${hojas.length ? `<ul class="ct-wip-his">${hojas.map(h => `<li class="ct-wip-hi"><p><b>${esc(h.anio)}</b> · ${plural(num(h.filas) || 0, "fila", "filas")} por <span class="ct-num">${fmt(h.total)}</span>${num(h.pendientes) ? ` · ${h.pendientes} se quedaron fuera` : ""}</p><p class="ct-sub">Bajada el ${esc(fechaLarga(h.generado_el))} (umbral <span class="ct-num">${fmt(h.umbral)}</span>). La app apunta quién y cuándo, nunca el TIN.</p></li>`).join("")}</ul>` : `<p class="ct-vacio">Ninguna hoja bajada todavía.</p>`}
+      </section>`;
+    const card = $("ct-subs-cfg");
+    card.querySelector("form").addEventListener("submit", ev => {
+      ev.preventDefault();
+      const fd = new FormData(ev.target), t = n => String(fd.get(n) || "").trim();
+      const umbral = t("umbral_1099").replace(/[$,\s]/g, "");
+      if (!/^\d{1,11}(\.\d{1,2})?$/.test(umbral)) { mostrarErrorForma(card, "El umbral es un monto en dólares, de cero para arriba y con dos decimales como mucho (por ejemplo 2000)."); return; }
+      const dias = n => { const s = t(n); return /^\d+$/.test(s) ? Number(s) : s; };
+      const cuentasDe = n => t(n).split(/[\s,;]+/).filter(Boolean);
+      const p = { umbral_1099: umbral, entidades_no_reporta: fd.getAll("entidades_no_reporta").map(String), cuentas_por_pagar: cuentasDe("cuentas_por_pagar"), cuentas_no_pago: cuentasDe("cuentas_no_pago"),
+        cuentas_no_servicio: cuentasDe("cuentas_no_servicio"), coi_aviso_dias: dias("coi_aviso_dias"), coi_ventana_dias: dias("coi_ventana_dias"), coi_exento_basta: fd.get("coi_exento_basta") === "on",
+        fecha_pago: String(fd.get("fecha_pago") || "contable") };
+      accionSubs(card, "fn_subs_config", { p }, r => ({ tipo: "ok", texto: `Guardado: umbral de fábrica ${fmt(r.umbral_1099)}; aviso del COI ${r.coi_aviso_dias} días antes; un pago cuenta con la fecha ${r.fecha_pago === "banco" ? "del banco" : "del libro"}.` }), { aviso: "Ajustes guardados" });
+    });
+    const cardU = $("ct-subs-umbrales");
+    $("ct-subs-umbral").addEventListener("click", () => montarForma(cardU, formaHTML("El umbral de un año, como lo dijo el CPA",
+      `<div class="ct-fila"><label class="ct-campo">El año<select name="anio">${aniosOps.map(a => `<option value="${a}"${a === Number(S.subs.anio) ? " selected" : ""}>${a}</option>`).join("")}</select></label>
+       <label class="ct-campo">El umbral (dólares)<input name="umbral" inputmode="decimal" required data-falta="Falta el umbral." autocomplete="off"></label></div>
+       <label class="ct-campo">La nota (quién lo dijo y cuándo)<input name="nota" required data-falta="Falta la nota: quién lo dijo y cuándo." autocomplete="off"></label>`, "Confirmarlo"), v => {
+      const u = String(v.umbral || "").replace(/[$,\s]/g, "");
+      if (!/^\d{1,11}(\.\d{1,2})?$/.test(u)) { mostrarErrorForma(cardU, "El umbral es un monto en dólares, de cero para arriba y con dos decimales como mucho (por ejemplo 2000)."); return; }
+      accionSubs(cardU, "fn_subs_umbral_confirmar", { p_anio: Number(v.anio), p_umbral: u, p_nota: v.nota }, r => ({ tipo: "ok", texto: `Umbral de ${r.anio} confirmado: ${fmt(r.umbral)}.` }), { aviso: "Umbral confirmado" });
+    }));
+  }
+
+  const PAGINAS = { resumen: pintarResumen, bancos: pintarBancos, bandeja: pintarBandeja, conciliar: pintarConciliar, movimientos: pintarMovimientos, estados: pintarEstados, obras: pintarObras, wip: pintarWip, cierre: pintarCierre, cedula: pintarCedula, facturas: pintarFacturas, cobros: pintarCobros, subs: pintarSubs, conexiones: pintarConexiones };
 
   // ---------- Lo que la app llama (el contrato con js/app.js) ----------
   window.MXP_CONTA = {
@@ -6706,6 +8140,9 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
       if (S.pagina === "obras" && S.obras.sel) { S.obras.sel = null; pintarObras(); return true; }
       // (fase 10) la factura abierta → la lista
       if (S.pagina === "facturas" && S.fac.doc) { S.fac.doc = null; S.hooks.titulo(KICKER, TITULOS.facturas); pintarFacturas(); return true; }
+      // (fase 12a) la cuenta abierta de la cédula → la cédula; la ficha abierta → las fichas
+      if (S.pagina === "cedula" && S.ced.cuenta) { S.ced.cuenta = null; S.ced.nota = null; S.hooks.titulo(KICKER, TITULOS.cedula); pintarCedula(); return true; }
+      if (S.pagina === "subs" && S.subs.ficha) { S.subs.ficha = null; S.subs.nueva = null; S.subs.nota = null; S.hooks.titulo(KICKER, TITULOS.subs); pintarSubs(); return true; }
       return false;
     },
     // (fase 10) el 🧾 de un hito desde el corte (js/app.js): deja pedido su borrador; app.js abre después «Facturas» (irConta("facturas"))

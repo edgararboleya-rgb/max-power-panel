@@ -1107,3 +1107,146 @@ body[data-vista="conta"] .fab { display: none; }
 #conta-raiz .ct-wip-hi p { margin: .1rem 0; overflow-wrap: anywhere; }
 #conta-raiz .ct-wip-hi.deshecho { opacity: .85; }
 #conta-raiz .ct-wip-cfg .ct-campo .ct-sub { font-weight: 500; line-height: 1.4; }
+
+/* ============================================================
+   CÉDULA DE CORTE (c13, fase 12a): el resumen a una fecha, una fila por
+   cuenta de balance (en el teléfono apilada; en la computadora, columnas),
+   la cuenta abierta con lo que la sostiene, los renglones a mano, las
+   explicaciones, QuickBooks y los ajustes. Y SUBS Y 1099 (c14): las fichas
+   con sus chips, la ficha (W-9, TIN, papeles, terceros), el 1099 del año con
+   sus pagos y la hoja, el COI, los pagos y los ajustes. Solo tokens de
+   css/styles.css. Teléfono primero: nada ensancha la página.
+   ============================================================ */
+#conta-raiz .ct-ced-cuerpo, #conta-raiz .ct-subs-cuerpo { display: grid; gap: .8rem; min-width: 0; }
+#conta-raiz .ct-ced-nota, #conta-raiz .ct-subs-nota, #conta-raiz .ct-subs-2026 { margin: 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-ced-res .ct-cab h2, #conta-raiz .ct-ced-cta .ct-cab h2, #conta-raiz .ct-subs-w9 .ct-cab h2, #conta-raiz .ct-subs-1099 .ct-cab h2 { overflow-wrap: anywhere; }
+#conta-raiz .ct-ced-res .ct-nota, #conta-raiz .ct-ced-res .ct-datos, #conta-raiz .ct-ced-cta .ct-nota, #conta-raiz .ct-ced-cta .ct-datos, #conta-raiz .ct-ced-cta .ct-aviso { overflow-wrap: anywhere; }
+/* la fecha: el día que se mira y los atajos */
+#conta-raiz .ct-ced-fecha { display: grid; gap: .3rem; margin: .2rem 0 .5rem; }
+#conta-raiz .ct-ced-fecha .ct-campo { max-width: 15rem; }
+#conta-raiz .ct-ced-fecha .ct-chips { margin-top: 0; }
+#conta-raiz .ct-ced-fecha .ct-chips:empty { display: none; }
+/* la lista: los grupos y cada cuenta, un botón */
+#conta-raiz .ct-ced-grupo { margin: .8rem 0 .1rem; font-size: .76rem; letter-spacing: .06em; text-transform: uppercase; color: var(--cu-dark); font-weight: 800; }
+#conta-raiz .ct-ced-cab { display: none; }
+#conta-raiz .ct-ced-filas { display: grid; }
+#conta-raiz .ct-ced-fila { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .25rem .7rem; width: 100%; text-align: left; font: inherit; color: var(--mp-ink);
+  background: none; border: 0; border-top: 1px solid var(--mp-line); padding: .7rem .3rem; cursor: pointer; min-height: var(--tap); }
+#conta-raiz .ct-ced-fila:first-child { border-top: 0; }
+#conta-raiz .ct-ced-fila:hover { background: var(--mp-sky-1); }
+#conta-raiz .ct-ced-fila:focus-visible { outline: 3px solid var(--mp-blue); outline-offset: -3px; }
+#conta-raiz .ct-ced-fila.mal { border-left: 4px solid var(--bad); padding-left: .6rem; }
+#conta-raiz .ct-ced-fila.pide { border-left: 4px solid var(--mp-warn-bd); padding-left: .6rem; }
+#conta-raiz .ct-ced-fila.cero { color: var(--mp-ink-2); }
+#conta-raiz .ct-ced-c { grid-column: 1 / -1; min-width: 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-ced-a { grid-column: 1 / -1; font-size: .82rem; color: var(--mp-ink-2); min-width: 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-ced-a::before { content: attr(data-col) ": "; font-weight: 700; }
+#conta-raiz .ct-ced-v { min-width: 0; }
+#conta-raiz .ct-ced-v::before { content: attr(data-col); display: block; font-size: .68rem; letter-spacing: .05em; text-transform: uppercase; color: var(--mp-ink-2); font-weight: 700; font-family: var(--font); }
+#conta-raiz .ct-ced-e { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .3rem; }
+@media (min-width: 1024px) {
+  #conta-raiz { --ct-ced-cols: minmax(0, 1.25fr) 8.5rem minmax(0, 1fr) 8.5rem 8rem 9.5rem; }
+  #conta-raiz .ct-ced-cab { display: grid; grid-template-columns: var(--ct-ced-cols); gap: .7rem; padding: .45rem .3rem; margin-top: .5rem; border-bottom: 1px solid var(--mp-line);
+    font-size: .68rem; letter-spacing: .05em; text-transform: uppercase; color: var(--mp-ink-2); font-weight: 700; }
+  #conta-raiz .ct-ced-cab .r { text-align: right; }
+  #conta-raiz .ct-ced-fila { grid-template-columns: var(--ct-ced-cols); align-items: center; padding: .55rem .3rem; }
+  #conta-raiz .ct-ced-fila.mal, #conta-raiz .ct-ced-fila.pide { padding-left: .5rem; }
+  #conta-raiz .ct-ced-c, #conta-raiz .ct-ced-a, #conta-raiz .ct-ced-e { grid-column: auto; }
+  #conta-raiz .ct-ced-v.r { text-align: right; }
+  #conta-raiz .ct-ced-v::before, #conta-raiz .ct-ced-a::before { display: none; }
+}
+/* una cuenta abierta: de dónde sale su auxiliar, su explicación y lo que la sostiene */
+#conta-raiz .ct-ced-aux { margin: .2rem 0 .3rem; display: grid; gap: .15rem; overflow-wrap: anywhere; }
+#conta-raiz .ct-ced-aux small { font-size: .82rem; color: var(--mp-ink-2); line-height: 1.45; }
+#conta-raiz .ct-ced-expl { margin: .5rem 0 .2rem; padding: .55rem .75rem; border-radius: 12px; background: var(--mp-sky-1); border: 1px solid var(--mp-line); border-left: 4px solid var(--ok); overflow-wrap: anywhere; }
+#conta-raiz .ct-ced-expl.vieja { border-left-color: var(--bad); background: var(--mp-danger-bg); }
+#conta-raiz .ct-ced-expl p { margin: .1rem 0; font-size: .92rem; line-height: 1.5; }
+#conta-raiz .ct-ced-expl small { font-size: .78rem; color: var(--mp-ink-3); }
+#conta-raiz .ct-ced-renglones { list-style: none; margin: .2rem 0 .4rem; padding: 0; display: grid; }
+#conta-raiz .ct-ced-r { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .25rem .7rem; align-items: start; padding: .55rem 0; border-top: 1px solid var(--mp-line); min-width: 0; }
+#conta-raiz .ct-ced-r:first-child { border-top: 0; }
+#conta-raiz .ct-ced-r-t { display: grid; gap: .15rem; min-width: 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-ced-r-t > .ct-pill { justify-self: start; }
+#conta-raiz .ct-ced-r-t small { font-size: .8rem; color: var(--mp-ink-3); }
+#conta-raiz .ct-ced-r-m { font-weight: 700; text-align: right; white-space: nowrap; }
+#conta-raiz .ct-ced-r-b { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .4rem; justify-content: flex-end; }
+#conta-raiz .ct-ced-r.suelto, #conta-raiz .ct-ced-r.error, #conta-raiz .ct-ced-r.nocasa { border-left: 4px solid var(--bad); padding-left: .6rem; }
+#conta-raiz .ct-ced-r.despues { border-left: 4px solid var(--mp-warn-bd); padding-left: .6rem; }
+#conta-raiz .ct-ced-r.dato { color: var(--mp-ink-2); }
+#conta-raiz .ct-ced-patr { border: 1px solid var(--mp-line); border-radius: 12px; padding: .5rem .7rem .6rem; margin: .2rem 0; display: grid; gap: .1rem; min-width: 0; }
+#conta-raiz .ct-ced-patr legend { font-size: .82rem; font-weight: 800; color: var(--cu-dark); padding: 0 .3rem; }
+#conta-raiz .ct-ced-patr .ct-sub { font-weight: 500; }
+#conta-raiz .ct-ced-qbt td small { display: block; }
+
+/* las fichas y las filas del 1099 y del COI: un botón por renglón, apilado en el teléfono */
+#conta-raiz .ct-subs-filas { display: grid; margin-top: .4rem; }
+#conta-raiz .ct-subs-fila { display: grid; grid-template-columns: minmax(0, 1fr); gap: .3rem .8rem; width: 100%; text-align: left; font: inherit; color: var(--mp-ink);
+  background: none; border: 0; border-top: 1px solid var(--mp-line); padding: .75rem .3rem; cursor: pointer; min-height: var(--tap); }
+#conta-raiz .ct-subs-filas > .ct-subs-fila:first-child, #conta-raiz .ct-subs-filas > .ct-subs-1099f:first-child > .ct-subs-fila { border-top: 0; }
+#conta-raiz .ct-subs-fila.ct-subs-fija { cursor: default; }
+#conta-raiz .ct-subs-fila:hover { background: var(--mp-sky-1); }
+#conta-raiz .ct-subs-fila.ct-subs-fija:hover { background: none; }
+#conta-raiz .ct-subs-fila:focus-visible { outline: 3px solid var(--mp-blue); outline-offset: -3px; }
+#conta-raiz .ct-subs-n { display: grid; gap: .15rem; min-width: 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-subs-n small { font-size: .8rem; color: var(--mp-ink-3); }
+#conta-raiz .ct-subs-chips { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; }
+#conta-raiz .ct-subs-falta { margin: 0; font-size: .84rem; color: var(--bad); font-weight: 600; overflow-wrap: anywhere; }
+#conta-raiz .ct-subs-m { display: grid; gap: .05rem; }
+#conta-raiz .ct-subs-m .ct-lbl { font-size: .68rem; letter-spacing: .05em; text-transform: uppercase; }
+#conta-raiz .ct-subs-1099f { border-top: 1px solid var(--mp-line); min-width: 0; }
+#conta-raiz .ct-subs-filas > .ct-subs-1099f:first-child { border-top: 0; }
+#conta-raiz .ct-subs-1099f > .ct-subs-fila { border-top: 0; }
+#conta-raiz .ct-subs-1099f.mal { border-left: 4px solid var(--bad); padding-left: .4rem; }
+#conta-raiz .ct-subs-1099f > .ct-subs-falta, #conta-raiz .ct-subs-1099f > .ct-sub, #conta-raiz .ct-subs-1099f > .ct-acciones { padding: 0 .3rem; }
+#conta-raiz .ct-subs-1099f > .ct-acciones { margin: .2rem 0 .6rem; }
+#conta-raiz .ct-subs-1099f > .ct-acciones:empty { display: none; }
+#conta-raiz .ct-subs-excl { margin: 0 0 .3rem; padding: 0 .3rem 0 1.4rem; font-size: .86rem; color: var(--mp-ink-2); display: grid; gap: .15rem; overflow-wrap: anywhere; }
+#conta-raiz .ct-subs-pagos { list-style: none; margin: .3rem 0 .6rem; padding: 0; display: grid; }
+#conta-raiz .ct-subs-pago { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .25rem .7rem; align-items: start; padding: .55rem .3rem; border-top: 1px dashed var(--mp-line); min-width: 0; }
+#conta-raiz .ct-subs-pago-t { display: grid; gap: .15rem; min-width: 0; overflow-wrap: anywhere; font-size: .9rem; }
+#conta-raiz .ct-subs-pago-t small { font-size: .8rem; color: var(--mp-ink-3); }
+#conta-raiz .ct-subs-pago > .ct-num { font-weight: 700; text-align: right; white-space: nowrap; }
+#conta-raiz .ct-subs-pago > span:nth-of-type(3) { grid-column: 1 / -1; }
+#conta-raiz .ct-subs-pago-b { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .4rem; justify-content: flex-end; }
+#conta-raiz .ct-subs-pago > .ct-form { grid-column: 1 / -1; }
+#conta-raiz .ct-subs-anio { max-width: 9rem; }
+#conta-raiz .ct-subs-ver:empty, #conta-raiz .ct-subs-hres:empty { display: none; }
+#conta-raiz .ct-subs-ver .ct-aviso, #conta-raiz .ct-subs-hres .ct-aviso, #conta-raiz .ct-subs-hres .ct-nota { overflow-wrap: anywhere; }
+#conta-raiz .ct-subs-tin .ct-campo input[type=password] { font-family: var(--mono); letter-spacing: .08em; }
+#conta-raiz .ct-subs-w9 .ct-fila, #conta-raiz .ct-subs-tin .ct-fila { margin: .1rem 0; }
+@media (min-width: 700px) {
+  #conta-raiz .ct-subs-fila { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+  #conta-raiz .ct-subs-fila > .ct-subs-falta { grid-column: 1 / -1; }
+  #conta-raiz .ct-subs-1099f > .ct-subs-fila { grid-template-columns: minmax(0, 1fr) 8rem 8rem minmax(0, 12rem); }
+  #conta-raiz .ct-subs-1099f > .ct-subs-fila .ct-subs-m { text-align: right; }
+  #conta-raiz .ct-subs-1099f > .ct-subs-fila .ct-subs-chips { justify-content: flex-end; }
+  #conta-raiz .ct-subs-pago { grid-template-columns: minmax(0, 1fr) 8rem minmax(0, 11rem); align-items: center; }
+  #conta-raiz .ct-subs-pago > span:nth-of-type(3) { grid-column: auto; }
+}
+
+/* (fase 12a, arreglos de la revisión) la cédula: con qué cuadra cada cuenta (debajo de su píldora), la ecuación del balance con el
+   resultado sin cerrar, el aviso del origen («OJO»), cómo comprobar una cuenta «del libro» (no pide nada: sin ámbar), sus renglones
+   del propio libro; y los subs: desde cuándo vale un cambio, los tramos, la ayuda de la LLC de un socio, lo que deja corta la hoja,
+   las otras fechas de un pago */
+#conta-raiz .ct-ced-e .ct-ced-sost { flex-basis: 100%; font-size: .76rem; color: var(--mp-ink-2); line-height: 1.35; overflow-wrap: anywhere; }
+#conta-raiz .ct-ced-cta .ct-cab .ct-ced-e { display: flex; flex-wrap: wrap; gap: .3rem; justify-content: flex-end; max-width: 16rem; }
+#conta-raiz .ct-ced-cta .ct-cab .ct-ced-e .ct-ced-sost { text-align: right; }
+#conta-raiz .ct-ced-ecuacion { overflow-wrap: anywhere; }
+#conta-raiz .ct-ced-ecuacion .ct-pill { margin-left: .2rem; }
+#conta-raiz .ct-ced-ojo { margin: .2rem 0 .4rem; overflow-wrap: anywhere; }
+#conta-raiz .ct-ced-comprobar { padding: .45rem .7rem; border-radius: 10px; background: var(--mp-sky-1); border: 1px solid var(--mp-line); }
+#conta-raiz .ct-ced-r.libro { color: var(--mp-ink); }
+#conta-raiz .ct-subs-desde { margin: .3rem 0; }
+#conta-raiz .ct-subs-desde .ct-campo { max-width: 15rem; margin-left: 1.6rem; }
+#conta-raiz .ct-subs-llc { margin: .2rem 0 .3rem; padding: .45rem .7rem; border-left: 4px solid var(--mp-warn-bd); background: var(--mp-sky-1); border-radius: 8px; overflow-wrap: anywhere; }
+#conta-raiz .ct-subs-tin-corr { margin: .2rem 0; }
+#conta-raiz .ct-subs-tramos .ct-wip-hi p { overflow-wrap: anywhere; }
+#conta-raiz .ct-subs-antes { display: grid; gap: .25rem; margin: .2rem 0 .5rem; overflow-wrap: anywhere; }
+#conta-raiz .ct-subs-antes p { margin: 0; }
+#conta-raiz .ct-subs-antes .ct-subs-excl { padding-left: 1.2rem; }
+#conta-raiz .ct-subs-fechas { font-size: .78rem; color: var(--mp-ink-3); font-weight: 500; }
+#conta-raiz .ct-subs-otro, #conta-raiz .ct-subs-dev, #conta-raiz .ct-subs-cambios { margin: 0 0 .25rem; overflow-wrap: anywhere; }
+#conta-raiz .ct-subs-cambios { color: var(--cu-dark); font-weight: 600; }
+/* «Se sostendría con»: en el teléfono lo dice la etiqueta de la columna; en la computadora (sin etiqueta), el propio texto */
+#conta-raiz .ct-ced-a-pre { display: none; }
+@media (min-width: 1024px) { #conta-raiz .ct-ced-a-pre { display: inline; } }

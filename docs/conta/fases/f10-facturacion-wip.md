@@ -103,6 +103,18 @@ una serie por año, sin huecos; pago en línea **solo por cuenta de banco
   factura otra vez.
 - **Anular** = nota de crédito de c3, nunca borrado; el hito vuelve a
   pendiente. No se anula con un pago por cuenta de banco en camino.
+- **Un hito anulado se vuelve a facturar** (revisión del 12-nov, después de
+  pegarlo en producción). La base de la app admite una sola fila de
+  `facturas` por hito, también contando las anuladas (el índice único
+  `ux_facturas_hito`, de la otra sesión): al emitir la buena, la anulada deja
+  de apuntar al hito (sigue anulada, con su nota de crédito y su asiento) y
+  queda apuntado en `emision_soltados`; el borrador lo avisa sin frenar y el
+  documento de la nueva dice a cuál sustituyó. Si la factura se anuló **desde
+  Contabilidad** (por c3: así se anula una de QuickBooks, con una consulta),
+  la ficha se queda con el hito «facturado»: la app lo dice (el aviso 75 y el
+  mensaje al pedir el borrador, con la factura y su nota de crédito) y el
+  hito tiene que volver a pendiente; la ficha no tiene botón para eso, así
+  que va en la misma consulta que anula.
 - **El corte**: desde el 1-ene-2027 (configurable) el 🧾 de cada hito abre la
   factura aquí; antes, va a QuickBooks como siempre. Ante la duda (la base no
   contesta claro) no factura nada y lo dice. El corte no se pone después de
@@ -165,7 +177,25 @@ la capa de antes y pasa con la de ahora. Desde cero: c11-pruebas 51 y c12-prueba
 c2 a c10 en verde, la concurrencia de c10, c11 y c12, la función de punta a
 punta (también en Deno), y la pantalla a 390, 820 y 1280 px.
 
+Después de pegarlo en producción (12-nov), c11-pruebas dio allá 7 filas en
+falso por dos cosas que el banco no tenía: el índice único de `facturas` por
+hito que cuenta las anuladas, y el candado de Supabase que no deja borrar
+directo en Storage. El banco las trae ahora
+(`pruebas/conta/06-produccion-facturas.sql`); c11 se arregló y se revisó en
+contra, y hoy **c11-pruebas tiene 57 pruebas**, que pasan con eso puesto y
+sin ello. La corrida pone un tope de medio segundo a cualquier espera (no
+deja esperando a la app) y no crea índices en las tablas de la app.
+
 ### Lo que queda dicho y no hecho
+- **Volver a facturar un hito anulado ANTES del corte**: no hay camino. El 🧾
+  de QuickBooks lo ve facturado (su candado no mira si la factura está
+  anulada, y está el índice) y la app no emite antes del corte. Si hiciera
+  falta: adelantar el corte, o que la otra sesión cambie `qb` (el candado,
+  el índice y el número con que guarda: las tres cosas, en la cabecera de
+  `c11-emision.sql`).
+- **El portal del cliente y las facturas anuladas**: lo arma la función
+  `portal`, de la otra sesión. Hay que confirmar que deja fuera las anuladas
+  antes de la primera anulación de verdad.
 - **La tarjeta**: hace falta una versión de p1 que asiente el recargo como
   ingreso, y confirmar con Stripe y el CPA las reglas del recargo en Florida.
 - **La 2020** (retención por pagar a subcontratistas): necesita un campo en

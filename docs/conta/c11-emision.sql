@@ -10,6 +10,29 @@
 -- emitida, ni la serie). Después se pega c11-pruebas.sql. No depende de
 -- c12 ni c12 de ella.
 --
+-- REVISIÓN DEL 12-nov-2026, después de pegarlo en producción. La base de
+-- la app tiene un índice único que este archivo no conocía —
+-- ux_facturas_hito: un hito, UNA sola fila de facturas, contando también
+-- las anuladas; es de la otra sesión—, y con él, después de anular la
+-- factura de un hito, la buena no entraba (23505). Ahora, al emitir, la
+-- anulada SUELTA el hito y queda apuntado (ver «El hito que se vuelve a
+-- facturar»). Sobre una base que ya tiene la versión anterior se pega esta
+-- ENTERA encima: añade una tabla (emision_soltados) y una fila a lo que
+-- enseña el pegado, rehace las funciones y las vistas, y no pisa nada. c9 no
+-- hace falta volver a pegarlo por esto.
+-- Y de la revisión de ese arreglo (el mismo día), cuatro cosas más, sin
+-- tabla ni función nueva: (1) un hito que la ficha SIGUE teniendo como
+-- «facturado» por una factura que se anuló desde Contabilidad ya no da un
+-- mensaje que no la nombra: dice cuál es, con su nota de crédito, y qué
+-- hacer, y el control 75 lo avisa (ver «El hito que sigue como facturado
+-- con su factura anulada»); (2) el documento de la factura nueva dice a
+-- cuál sustituyó, y el de la anulada, cuál la sustituyó (fn_emision_documento:
+-- sustituye y sustituida_por); (3) si la fila de facturas de una emisión
+-- choca con un índice único de la base, el error lleva en su detalle —fuera
+-- del texto en llano— qué índice fue; y (4) con una factura VIVA del hito el
+-- borrador ya no añade «esta la sustituye» por una anulada que también lo
+-- apunte: dice solo que ya se facturó.
+--
 -- Qué hace. Desde el corte (1-ene-2027, configurable) Max Power deja de
 -- facturar en QuickBooks: el 🧾 de un hito ya no llama a la función qb,
 -- viene aquí. Cinco piezas:
@@ -42,7 +65,11 @@
 --          serie de las facturas ES una fila de facturas;
 --       3. crea la fila de facturas YA EMITIDA (num, fecha de hoy en Miami,
 --          monto, retencion EN DÓLARES, hito_id, a_contratista), como nacen
---          hoy las de QuickBooks: es el camino que c3 ya contabiliza. El
+--          hoy las de QuickBooks: es el camino que c3 ya contabiliza. (Si el
+--          hito ya tuvo una factura que se anuló y su fila todavía lo apunta,
+--          antes esa fila anulada suelta el hito: la base de la app admite
+--          una sola fila de facturas por hito. Ver «El hito que se vuelve a
+--          facturar».) El
 --          puente de c3 es diferido (corre al confirmar): aquí se adelanta
 --          dentro de la misma transacción (set constraints … immediate) y
 --          se comprueba que la factura QUEDÓ EN EL LIBRO, al centavo:
@@ -104,6 +131,152 @@
 -- como nacen hoy las de QuickBooks y lo que todo lo demás ya entiende—. El
 -- ciclo de c3 se usa entero y sin rodearlo: su puente la contabiliza, su
 -- guarda la congela y su fn_factura_anular la anula.
+--
+-- EL HITO QUE SE VUELVE A FACTURAR (lo que falló en producción el 12-nov).
+-- La base de la app tiene DOS índices únicos sobre facturas.hito_id. Son de
+-- la otra sesión (de la app y de la función qb), no de ninguna capa c*:
+-- aquí ni se crean ni se quitan. Leídos en producción el 12-nov-2026:
+--   ux_facturas_hito       un hito, UNA sola fila de facturas: cuenta TODAS,
+--                          también las anuladas
+--   ux_facturas_hito_viva  un hito, una sola fila VIVA (sin anular)
+-- Y aquí anular es nota de crédito, nunca borrar: la fila anulada se queda,
+-- con su hito_id. Con el primero, la factura buena de ese hito no entraba
+-- nunca más (23505 «ux_facturas_hito»), la hubiera emitido la app o
+-- QuickBooks. Lo que se hace, y por qué así:
+--   · AL EMITIR la factura de un hito, en la misma transacción y justo
+--     antes de crear su fila de facturas, las filas ANULADAS que todavía
+--     apuntan a ese hito lo SUELTAN: su facturas.hito_id pasa a nulo. De
+--     cualquier origen: las que emitió la app y las de fuera (una de
+--     QuickBooks anulada desde Contabilidad, por c3). En lo demás no
+--     cambian: siguen anuladas, con su nota de crédito, su asiento, su
+--     número y lo cobrado como estaban. Si la emisión no llega al final
+--     (el libro no la acepta, ya no es lo que se vio…), se deshace con
+--     todo lo demás y la anulada conserva su hito.
+--   · QUEDA APUNTADO en emision_soltados: qué factura (su id, su número, su
+--     obra, su nota de crédito, y si era de la app o de fuera), qué hito
+--     tenía, qué documento la soltó al emitirse, cuándo y quién. En facturas
+--     ya no se ve de qué hito fue la anulada: ahí queda. (Si era de la app,
+--     su documento conserva además su hito: emision_documentos.hito_id no
+--     cambia nunca.) La emisión lo devuelve también en «soltadas».
+--   · EL BORRADOR LO DICE con un aviso que NO frena (código
+--     hito_factura_anulada): «El hito … ya tuvo una factura que se anuló: N
+--     del día D (nota de crédito NC-…). Esta la sustituye…». Es lo normal
+--     después de anular; se dice para que nadie facture dos veces sin
+--     darse cuenta de que hubo otra.
+--   · SIEMPRE, tenga la base ese índice o no: la regla no depende de lo que
+--     otra sesión ponga o quite en facturas (si un día quita
+--     ux_facturas_hito y deja el de las vivas, aquí no cambia nada). Con
+--     eso, facturas.hito_id dice una sola cosa: cuál es la factura de ese
+--     hito HOY (la viva; o la última anulada, si todavía no hay otra).
+--   · POR QUÉ AL EMITIR Y NO AL ANULAR. Soltar al anular solo cubriría las
+--     anulaciones que pasan por aquí: una factura anulada desde Contabilidad
+--     (c3 directo) y una de QuickBooks anulada por c3 seguirían apuntando a
+--     su hito, y habría que soltarlas al emitir de todas formas. Y al
+--     emitir, soltar la anulada y poner la nueva van juntos: quien lea
+--     facturas por su hito (la función qb, su candado) nunca ve el hito sin
+--     fila.
+--   · LO QUE SE COMPROBÓ (c11-pruebas, la 52 y la 53; c11-concurrencia, 4b
+--     y 4c), con los índices de producción puestos:
+--       - la guarda de c3 deja ese cambio en una anulada (no cambian su
+--         monto, su fecha, su obra, su número, su retención, su estado ni
+--         lo cobrado);
+--       - su puente no asienta nada: ni el hito ni el estado entran en la
+--         firma del papel, y una anulada «no aplica»; el libro solo gana el
+--         asiento de la factura nueva;
+--       - el trigger de lo cobrado de la app (trg_factura_cobrada) no cambia
+--         nada: solo actúa al pasar a pagada, o si cobrado está vacío;
+--       - ningún control se enciende, ni de aquí ni de c2, c3, c4, c6, p1,
+--         c8, c9 (con c12) ni c10. El aviso 42 («una factura de hito que ya
+--         no apunta a su hito») solo mira facturas VIVAS: una anulada que
+--         soltó su hito no sale ahí.
+--   · LA FUNCIÓN qb (viva hasta el 31-dic). Su candado por hito lee facturas
+--     por hito_id SIN mirar el estado: una fila anulada que todavía apunta
+--     a un hito le sigue diciendo «ese hito ya se facturó». Eso es de qb y
+--     de ANTES de esta capa (una de QuickBooks anulada por c3 ya trancaba
+--     su hito), y aquí no cambia: mientras el hito no se vuelva a facturar
+--     por la app, la anulada lo conserva y qb no lo factura; y al
+--     facturarlo la app, qb encuentra la factura nueva, viva. El soltado no
+--     le abre nunca un hito a qb. Lo que sigue sin poderse, y no es de
+--     aquí: ANTES DEL CORTE NO HAY NINGÚN CAMINO para volver a facturar un
+--     hito cuya factura se anuló: qb (el 🧾 de siempre) lo ve facturado, y
+--     la app no emite antes del corte, así que tampoco suelta. Si hiciera
+--     falta antes del 1-ene quedan dos salidas: adelantar el corte (desde
+--     ese día factura la app, que sí lo hace), o que la otra sesión cambie
+--     qb. Y para eso no le basta con «mirar solo las vivas»; son TRES cosas
+--     a la vez:
+--       - que su candado mire solo las vivas, y que no se rinda si un día
+--         encuentra dos filas de facturas del mismo hito (una anulada y una
+--         viva): hoy, con dos, no ve ninguna y facturaría otra vez;
+--       - quitar ux_facturas_hito (si solo cambia el candado, qb crearía la
+--         factura en QuickBooks y su fila chocaría con el índice);
+--       - EL NÚMERO: qb le pone a la factura de un hito siempre el mismo
+--         número y guarda su fila por obra y número (si ya hay una con ese
+--         número en esa obra, la actualiza en vez de crear otra). Si
+--         QuickBooks le acepta el número repetido, lo que se actualiza es la
+--         fila ANULADA: con otra fecha u otro monto la guarda de c3 lo
+--         rechaza (si la anulada estuvo en el libro) y la factura queda
+--         hecha en QuickBooks y sin anotar en la app; con la misma fecha y
+--         el mismo monto cambia en silencio, y la factura nueva no existe ni
+--         para la app ni para el libro. (Comprobado en el banco imitando ese
+--         guardado sobre una anulada.)
+--   · DOS A LA VEZ. Dos pestañas emitiendo el mismo borrador: una emite y
+--     suelta; la otra, MX008, y lo soltado queda apuntado una vez. La app y
+--     qb con el mismo hito en el mismo instante: la fila de fuera sujeta su
+--     hito (la llave de facturas hacia hitos) y la emisión, que toma el
+--     hito lo primero, la espera; cuando le toca ya no es lo que se vio
+--     (MX011) o el hito ya está facturado (MX008). Y si aun así su fila de
+--     facturas chocara con un índice único de la base —el del hito o el del
+--     número—, no sale el error del índice: MX011, en llano, y no queda
+--     nada (ni el número). Qué índice chocó va en el DETALLE del error, que
+--     la pantalla no enseña y sí queda en la respuesta de la API y en el
+--     registro de la base: si un día la base tuviera otro índice único que
+--     la emisión no cumple, ese MX011 saldría siempre, y así se sabe cuál.
+--   · EL HITO QUE SIGUE COMO «FACTURADO» CON SU FACTURA ANULADA. Anular
+--     desde Facturación devuelve el hito a pendiente. Anular DESDE
+--     CONTABILIDAD (por c3, que no sabe de hitos; es como se anula hoy una
+--     de QuickBooks, y no hay botón: se hace con una consulta) deja la
+--     ficha con el hito «facturado» y sin ninguna factura viva. Solo se
+--     factura un hito pendiente (ver «Un hito, una factura viva»), así que
+--     ese hito no se ofrece y su borrador no se abre; y la ficha de la obra
+--     NO TIENE BOTÓN para devolver un hito a pendiente (solo lo pasa a
+--     cobrado). Lo que se hace aquí, sin cambiar esa regla:
+--       - se DICE, con la factura y su nota de crédito, al pedir el
+--         borrador (MX008) y en uno ya abierto (el aviso
+--         hito_marcado_facturado, que frena). Si la anulada es de la app y
+--         aquí sigue sin cerrar: «ábrela en Facturación y toca Anular»
+--         (termina lo de aquí y el hito vuelve a pendiente: ese camino sí
+--         tiene botón). Si es de fuera: el hito tiene que volver antes a
+--         pendiente, y como la ficha no tiene con qué, «avisa y se hace»;
+--       - el CONTROL 75 lo avisa (el hito, la obra, la factura anulada y su
+--         nota): sin eso nadie lo ve, porque en «Por facturar» ese hito sale
+--         «facturado» y sin botón, y si nadie lo volvió a facturar por otro
+--         lado está SIN FACTURAR.
+--     Por qué no se factura sin más (se pensó): que el hito esté marcado se
+--     explica por la anulada, pero aquí no se puede saber si después se
+--     volvió a facturar por QuickBooks a mano; la regla de la casa es no
+--     facturar un hito que la ficha da por facturado sin que alguien lo
+--     devuelva a pendiente. EN LA PRÁCTICA: la consulta con que se anule una
+--     factura de QuickBooks lleva los dos pasos, anularla y devolver su hito
+--     a pendiente (update hitos set estado = 'pendiente' where id = …). Y si
+--     el control 75 nombra un hito que SÍ se volvió a facturar por fuera, lo
+--     que toca es enlazar esa factura a su hito (antes hay que quitarle el
+--     hito a la anulada: con el índice de producción no caben las dos); el
+--     aviso se apaga con cualquiera de las dos cosas.
+--   · SI EL HITO SE BORRA en la ficha, la llave de la app deja en nulo el
+--     hito_id de TODAS sus filas de facturas, también de las anuladas, y de
+--     eso no queda apunte aquí (a las tablas de la app no se les cuelga
+--     nada): de qué hito fue una anulada de la app lo sigue diciendo su
+--     documento; de una de fuera, la procedencia de su asiento en los
+--     puentes de c3.
+--   · LO QUE NO SE PUDO COMPROBAR DESDE AQUÍ: qué enseña el portal del
+--     cliente de una factura anulada. Sus facturas y lo que debe los arma la
+--     función «portal», de la otra sesión, que no está en este repositorio.
+--     Si lee las facturas de un hito por su hito_id, el soltado le viene
+--     bien (después de volver a facturar queda una sola, la viva). Lo que
+--     hay que preguntarle antes de la primera anulación de verdad: si deja
+--     fuera las anuladas de la lista de facturas y de lo que el cliente
+--     debe; si no, una anulada le sale al cliente como abierta, tenga hito o
+--     no.
 --
 -- LA RETENCIÓN (c3: facturas.retencion es el MONTO en dólares de ESTA
 -- factura que el cliente retiene; va a 1120):
@@ -233,7 +406,7 @@
 --     ponen las funciones de aquí. Un insert o un update a mano por
 --     PostgREST, aunque sea del dueño, da MX003. Un documento emitido no
 --     cambia (solo se le apunta su anulación, una vez); sus líneas, su
---     número, sus PDF y sus envíos no se editan ni se borran.
+--     número, sus PDF, sus envíos y lo soltado no se editan ni se borran.
 --   · Las vistas son security_invoker y leen solo TABLAS (nunca una vista
 --     de otra capa, que se rehace al volver a pegar su archivo) y funciones
 --     de aquí; de periodos y de cuentas no nombran estado,
@@ -264,27 +437,33 @@
 --   MX001  el asiento que dejó c3 no es el de la factura al centavo: no se
 --          emite nada (una red: no debe verse)
 --   MX003  las tablas de c11 solo las escriben sus funciones; un documento
---          emitido, sus líneas, su número, sus PDF y sus envíos no cambian
+--          emitido, sus líneas, su número, sus PDF, sus envíos y lo soltado
+--          no cambian
 --   MX004  la cuenta del recargo no sirve
 --   MX005  un monto o un porcentaje mal (cero, negativo, con decimales de
 --          más, fuera de rango)
 --   MX008  no procede, con el porqué y qué hacer: todavía no es el corte;
 --          faltan los datos de la empresa o el «How to pay»; el hito ya se
---          facturó (aquí, o la ficha lo tiene como facturado) o ya se cobró;
+--          facturó (aquí, o la ficha lo tiene como facturado: si es por una
+--          factura que se anuló, dice cuál y qué hacer) o ya se cobró;
 --          el borrador ya se emitió; la factura ya
 --          estaba anulada; anularla con un pago por cuenta de banco en
 --          camino, o con cobros aplicados; el libro no la aceptó (dice qué
---          falta); la tarjeta está apagada; un PDF con un enlace que no es
---          el suyo; un envío sin PDF; poner el corte después de una factura
---          viva. Y los demás MX008 de c3 al anular, tal cual
+--          falta); la base no dejó soltar el hito de una anulada (una red:
+--          no debe verse); la tarjeta está apagada; un PDF con un enlace
+--          que no es el suyo; un envío sin PDF; poner el corte después de
+--          una factura viva. Y los demás MX008 de c3 al anular, tal cual
 --   MX011  YA NO ES LO QUE VISTE: el «visto» que manda la pantalla no es el
 --          del borrador de hoy (lo cambió otra pestaña; cambiaron los
 --          ajustes que salen en la factura; entró o se anuló otra factura
 --          de la obra —cambian su ordinal y lo facturado antes—; o se miró
 --          un día y se emite otro), o cambió algo de fuera desde que se
 --          armó (el hito, el contrato, la retención, a quién se factura la
---          obra), o el PDF no se pintó del contenido congelado: no se hace
---          nada; se refresca y se vuelve a pedir
+--          obra), o el PDF no se pintó del contenido congelado, o —una red—
+--          mientras se emitía entró por otro lado una factura de ese mismo
+--          hito o con ese mismo número y la fila de facturas chocó con un
+--          índice único de la base (cuál, en el detalle del error): no se
+--          hace nada; se refresca y se vuelve a pedir
 --   22023  entrada mal formada: falta un dato, una clave desconocida, una
 --          ruta fuera de su carpeta, un archivo que no está en Storage
 --   22007  una fecha que no viene como AAAA-MM-DD
@@ -320,7 +499,9 @@
 --              app; ninguna de fuera con un número de la serie
 --   75 aviso   ninguna anulada en el libro y sin cerrar aquí; ninguna
 --              factura de la retención que reclame lo de una anulada; ningún
---              hito con dos facturas vivas de antes
+--              hito con dos facturas vivas de antes; ningún hito que siga
+--              como facturado en la ficha con su factura anulada y sin otra
+--              viva
 --   80 aviso   el pago en línea como se decidió (ningún cobro con tarjeta de
 --              una factura de la app; el porcentaje de tarjeta, vacío;
 --              ninguna anulada con un pago en camino)
@@ -359,7 +540,10 @@
 --     sin su hito: en producción hay facturas de antes sin hito) NO se
 --     factura otra vez: el borrador no se abre y uno ya abierto no se emite
 --     (MX008, con qué hacer: si de verdad falta facturarlo, se pone antes en
---     pendiente), y la lista de hitos de la obra no lo ofrece. Antes solo se
+--     pendiente —la ficha no tiene botón para eso: se avisa y se hace—; y si
+--     lo que tiene es una factura suya ANULADA, dice cuál: ver «El hito que
+--     sigue como facturado con su factura anulada»), y la lista de hitos de
+--     la obra no lo ofrece. Antes solo se
 --     frenaba el «cobrado»: el «facturado» sin factura enlazada salía con su
 --     botón de facturar y sin un solo aviso (el ingreso, dos veces). Un hito
 --     borrado y vuelto a crear es
@@ -369,10 +553,14 @@
 --     contrato; el control 42 nombra la factura del hito borrado mientras a
 --     la obra le queden hitos por facturar; y el control 44 dice si lo
 --     facturado por hitos pasa de lo que suman los hitos de la obra.
---     (Lo que esta capa NO puede impedir: que durante el paralelo la función
---     qb facture por su lado un hito que la app está emitiendo en ese mismo
---     instante. No se le pone un índice a facturas, que es de la app: si
---     pasa, el control 40 lo dice y detiene el cierre.)
+--     (Durante el paralelo la función qb puede facturar por su lado un hito
+--     que la app está emitiendo en ese mismo instante. Aquí no se le pone un
+--     índice a facturas, que es de la app; en producción la app tiene los
+--     suyos —ver «El hito que se vuelve a facturar»— y con ellos la segunda
+--     no entra. En una base sin ellos, si pasa, el control 40 lo dice y
+--     detiene el cierre.) Y UN HITO CUYA FACTURA SE ANULÓ SE VUELVE A
+--     FACTURAR: la anulada suelta el hito al emitirse la que la sustituye, y
+--     queda apuntado.
 --   · A QUIÉN SE FACTURA lo dice la obra (el contratista si es por contrato
 --     con él; si no, el cliente) y Edgar lo puede escribir en el borrador.
 --     Si la obra cambia de destinatario después, el borrador lo dice y se
@@ -423,7 +611,11 @@
 --
 -- Lo que este archivo NO toca: c1..c10, s1, p1, es_dueno(), docs/sql, el
 -- libro (ni una línea: el asiento es de c3), la función qb, correo ni
--- portal. De la app: inserta en facturas (como qb) y mueve hitos.estado
+-- portal; ni los índices de facturas de la app (ux_facturas_hito y
+-- ux_facturas_hito_viva: no los crea, no los quita y no depende de que
+-- estén). De la app: inserta en facturas (como qb), le quita el hito a la
+-- fila de facturas ANULADA que lo tenía cuando se emite la que la
+-- sustituye (solo hito_id, y solo en una anulada) y mueve hitos.estado
 -- (como el 🧾); lee proyectos, hitos, finanzas_proyecto, estimados,
 -- contratistas (si existe) y perfiles. De c3 lee puente_cuentas,
 -- puente_documentos, mapeo_tipo_proyecto y notas_credito; de p1, si está,
@@ -431,15 +623,19 @@
 --
 -- Cómo se instala (Edgar, en este orden):
 --   1. SQL Editor → pegar ESTE archivo entero → Run. Al final sale una
---      tabla: los ajustes, el corte y por dónde se factura hoy, la serie,
---      las tablas y las vistas, el bucket, el pago en línea, QUÉ FALTA
---      (los datos de la empresa, el «How to pay»), el control y el paso
---      siguiente. Si algo de lo que da por hecho falta, para con MX000 y
---      no queda nada. Con la pantalla de Contabilidad cerrada: si alguien
---      la está leyendo, para con 55P03 y basta volver a pegarlo.
+--      tabla de doce filas: los ajustes, el corte y por dónde se factura
+--      hoy, la serie, las tablas y las vistas, el bucket, el pago en línea,
+--      VOLVER A FACTURAR UN HITO (si la base tiene el índice único de
+--      facturas por hito que cuenta las anuladas, y que se maneja), QUÉ
+--      FALTA (los datos de la empresa, el «How to pay»), el control y el
+--      paso siguiente. Si algo de lo que da por hecho falta, para con
+--      MX000 y no queda nada. Con la pantalla de Contabilidad cerrada: si
+--      alguien la está leyendo, para con 55P03 y basta volver a pegarlo.
 --   2. SQL Editor → volver a pegar docs/conta/c9-cierre.sql (el que trae
 --      las filas 172 y 173: el cierre mira estos controles). Sin ese paso
---      el cierre no los mira, y la prueba del cierre sale «omitida».
+--      el cierre no los mira, y la prueba del cierre sale «omitida». (Si el
+--      c9 pegado ya las trae —la fila «el cierre del mes» del paso 1 lo
+--      dice—, no hace falta: volver a pegar ESTE archivo no las quita.)
 --   3. SQL Editor → pegar docs/conta/c11-pruebas.sql → sus filas en true
 --      (las «omitida» dicen por qué).
 --   4. En la app, Facturación → Ajustes: los datos de la empresa y el
@@ -455,17 +651,36 @@
 --   fn_emision_obra(p jsonb)                         la retención de una obra
 --   fn_emision_borrador(p jsonb)                     crear, cambiar o refrescar un borrador
 --   fn_emision_documento(p_documento uuid)           solo lee: el documento entero
+--                                                    (una emitida trae además
+--                                                    sustituye: las anuladas a
+--                                                    las que sustituyó en su
+--                                                    hito, y sustituida_por: si
+--                                                    es una anulada que soltó
+--                                                    su hito, cuál la sustituyó)
 --   fn_emision_descartar(p_documento uuid)           tirar un borrador
 --   fn_emision_emitir(p_documento uuid, p_visto text, p_opciones jsonb)
 --                                                    (devuelve además
 --                                                    saltados y aviso si la
---                                                    serie saltó un número)
+--                                                    serie saltó un número, y
+--                                                    soltadas si una anulada
+--                                                    soltó el hito)
 --   fn_emision_anular(p_documento uuid, p_motivo text, p_fecha date)
 --   fn_emision_pago(p_documento uuid)                solo lee: qué va a Stripe y qué enlace hay
 --   fn_emision_pdf(p_documento uuid, p_archivo jsonb)
 --   fn_emision_envio(p_documento uuid, p_envio jsonb)
 -- Y lee: v_emision_estado, v_emision_documentos, v_emision_obras,
 -- v_emision_control, emision_config.
+-- Los avisos de un borrador (fn_emision_documento → avisos: [{codigo,
+-- texto, frena}]) se pintan tal como llegan; el de esta revisión,
+-- hito_factura_anulada, no frena (y no sale si el hito tiene una factura
+-- viva, o si la ficha lo sigue teniendo como facturado: ahí el que sale, y
+-- frena, es hito_facturado o hito_marcado_facturado, que nombra la anulada).
+-- LO QUE LA PANTALLA DE HOY NO TIENE (se dice aquí para quien la toque): un
+-- documento anulado en el libro y sin cerrar aquí le llega con estado
+-- «anulada», y en una anulada la pantalla no ofrece «Anular»: cerrar esa
+-- anulación (fn_emision_anular, que termina lo de aquí y devuelve el hito a
+-- pendiente) hoy no tiene botón. Por eso los mensajes dicen «si ya sale
+-- anulada y no ofrece el botón, avisa y se hace».
 -- =====================================================================
 -- (Lo primero, como en c4, c6, c9 y c10: el pegado espera un candado como
 -- mucho medio segundo. Con la app leyendo o emitiendo, para con 55P03
@@ -488,7 +703,7 @@ declare
   v_x     text;
   v_v     bigint;
   c_tablas constant text[] := array['emision_config', 'emision_obras', 'emision_documentos', 'emision_lineas', 'emision_serie',
-                                    'emision_pdfs', 'emision_envios'];
+                                    'emision_pdfs', 'emision_envios', 'emision_soltados'];
   c_vistas constant text[] := array['v_emision_estado', 'v_emision_documentos', 'v_emision_obras', 'v_emision_control'];
   c_fn     constant text[] := array['fn_emision_precondiciones', 'fn_emision_exigir_dueno', 'fn_emision_ve', 'fn_emision_guarda',
                                     'fn_emision_numerar', 'fn_emision_usd', 'fn_emision_dia', 'fn_emision_numero', 'fn_emision_formato',
@@ -563,7 +778,7 @@ begin
   -- de tocar nada (la lección de c8 con ia_propuestas).
   foreach v_x in array array['emision_config:serie_formato', 'emision_obras:retencion_pct', 'emision_documentos:huella',
                              'emision_lineas:importe', 'emision_serie:secuencia', 'emision_pdfs:sha256',
-                             'emision_envios:resend_id'] loop
+                             'emision_envios:resend_id', 'emision_soltados:soltado_el'] loop
     if to_regclass('public.' || split_part(v_x, ':', 1)) is not null
        and not exists (select 1 from information_schema.columns
                         where table_schema = 'public' and table_name = split_part(v_x, ':', 1) and column_name = split_part(v_x, ':', 2)) then
@@ -909,6 +1124,33 @@ create table if not exists public.emision_envios (
 create index if not exists emision_envios_documento_idx on public.emision_envios (documento_id);
 comment on table public.emision_envios is 'c11: cada envío de una factura emitida: el medio (correo o en_mano), a quién (para, cc), el asunto, el PDF que se mandó, el id de Resend, una nota, cuándo y quién. n = 1 es el primer envío; los demás, reenvíos. Solo se añade.';
 
+-- LO SOLTADO (cabecera, «El hito que se vuelve a facturar»): cada fila de
+-- facturas ANULADA que dejó de apuntar a su hito (facturas.hito_id pasó a
+-- nulo) porque se emitió la factura que la sustituye. Una fila por anulada y
+-- por emisión: qué factura era (su id, su número, su obra, su nota de
+-- crédito, y si salió de la app o de fuera —QuickBooks—), qué hito tenía,
+-- qué documento la soltó al emitirse, cuándo y quién. Es donde queda la
+-- historia: en facturas ya no se ve de qué hito fue la anulada.
+-- SIN llave hacia facturas ni hacia hitos, a propósito: es un apunte, y no
+-- cambia cómo se borran las filas de la app (una anulada que nunca entró al
+-- libro se sigue pudiendo borrar; su apunte se queda, con su número).
+create table if not exists public.emision_soltados (
+  id            uuid         primary key default gen_random_uuid(),
+  factura_id    bigint       not null,
+  num           text         not null,
+  hito_id       bigint       not null,
+  proyecto_id   text,
+  nota_credito  text,
+  de_la_app     boolean      not null default false,
+  documento_id  uuid         not null references public.emision_documentos (id),
+  soltado_el    timestamptz  not null default now(),
+  soltado_por   uuid,
+  constraint emision_soltados_una unique (factura_id, documento_id)
+);
+create index if not exists emision_soltados_documento_idx on public.emision_soltados (documento_id);
+create index if not exists emision_soltados_hito_idx on public.emision_soltados (hito_id);
+comment on table public.emision_soltados is 'c11: cada factura ANULADA que dejó de apuntar a su hito (su facturas.hito_id pasó a nulo) al emitirse la factura que la sustituye: la anulada (factura_id, num, proyecto_id, su nota_credito si la tiene, de_la_app: si la había emitido la app o era de fuera —QuickBooks—), el hito que tenía (hito_id), el documento que la soltó al emitirse (documento_id), cuándo y quién. La anulada sigue anulada, con su nota de crédito y su asiento: solo deja de figurar como la factura de ese hito, para que la nueva pueda llevarlo (la base de la app admite una sola fila de facturas por hito). La escribe fn_emision_emitir. Solo se añade.';
+
 
 -- ---------------------------------------------------------------------
 -- 2. La guarda de las tablas de c11 (la de c6, c9 y c10, en su forma): solo
@@ -942,6 +1184,7 @@ begin
                          when 'emision_documentos' then 'fn_emision_borrador, fn_emision_emitir y fn_emision_anular'
                          when 'emision_lineas' then 'fn_emision_borrador'
                          when 'emision_serie' then 'fn_emision_emitir'
+                         when 'emision_soltados' then 'fn_emision_emitir'
                          when 'emision_pdfs' then 'fn_emision_pdf'
                          else 'fn_emision_envio' end);
   end if;
@@ -996,19 +1239,20 @@ begin
     end if;
     return new;
   end if;
-  -- emision_serie, emision_pdfs y emision_envios: solo se añaden.
+  -- emision_serie, emision_pdfs, emision_envios y emision_soltados: solo se añaden.
   if tg_op <> 'INSERT' then
     raise exception using errcode = 'MX003',
       message = format('%s no se edita ni se borra: %s.', tg_table_name,
                        case tg_table_name
                          when 'emision_serie' then 'un número dado no se quita ni se cambia'
                          when 'emision_pdfs' then 'un PDF nuevo es otra fila, con otra ruta'
+                         when 'emision_soltados' then 'es el apunte de qué factura anulada dejó de figurar en qué hito'
                          else 'un reenvío es otra fila' end);
   end if;
   return new;
 end $$;
 revoke execute on function public.fn_emision_guarda() from public, anon, authenticated, service_role;
-comment on function public.fn_emision_guarda() is 'c11: la guarda de las tablas de c11: se escriben solo con la marca de la transacción (mx_emision.escribe) que ponen sus funciones; un documento emitido no se borra ni cambia (solo se le apunta su anulación, una vez); sus líneas cambian solo en borrador; la serie, los PDF y los envíos solo se añaden; nada se trunca.';
+comment on function public.fn_emision_guarda() is 'c11: la guarda de las tablas de c11: se escriben solo con la marca de la transacción (mx_emision.escribe) que ponen sus funciones; un documento emitido no se borra ni cambia (solo se le apunta su anulación, una vez); sus líneas cambian solo en borrador; la serie, los PDF, los envíos y lo soltado solo se añaden; nada se trunca.';
 
 -- EL NÚMERO: el trigger de emision_serie. Toma el contador del año en la
 -- tabla contadores de c2 (serie «facturas-AAAA», o «retenciones-AAAA» para
@@ -1075,7 +1319,7 @@ declare
   t text;
 begin
   foreach t in array array['emision_config', 'emision_obras', 'emision_documentos', 'emision_lineas', 'emision_serie', 'emision_pdfs',
-                           'emision_envios'] loop
+                           'emision_envios', 'emision_soltados'] loop
     execute format('create or replace trigger trg_%s_guarda before insert or update or delete on public.%I '
                    'for each row execute function public.fn_emision_guarda()', t, t);
     execute format('create or replace trigger trg_%s_sin_truncate before truncate on public.%I '
@@ -1100,7 +1344,7 @@ declare
   p record;
 begin
   foreach t in array array['emision_config', 'emision_obras', 'emision_documentos', 'emision_lineas', 'emision_serie', 'emision_pdfs',
-                           'emision_envios'] loop
+                           'emision_envios', 'emision_soltados'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('revoke all on public.%I from public, anon, authenticated, service_role', t);
     for p in select pl.policyname from pg_policies pl where pl.schemaname = 'public' and pl.tablename = t loop
@@ -1114,7 +1358,8 @@ begin
                    t || '_dueno_edita', t);
     execute format('grant update on public.%I to authenticated', t);
   end loop;
-  foreach t in array array['emision_obras', 'emision_documentos', 'emision_lineas', 'emision_serie', 'emision_pdfs', 'emision_envios'] loop
+  foreach t in array array['emision_obras', 'emision_documentos', 'emision_lineas', 'emision_serie', 'emision_pdfs', 'emision_envios',
+                           'emision_soltados'] loop
     execute format('create policy %I on public.%I for insert to authenticated with check ((select es_dueno()))',
                    t || '_dueno_anade', t);
     execute format('grant insert on public.%I to authenticated', t);
@@ -1492,6 +1737,7 @@ declare
   v_txt  text;
   v_ret  jsonb;
   v_dest jsonb;
+  v_viva boolean := false;
 begin
   select * into d from emision_documentos where id = p_documento;
   if not found or d.estado <> 'borrador' then
@@ -1581,22 +1827,54 @@ begin
       if h.estado = 'cobrado' then
         v := v || jsonb_build_array(jsonb_build_object('codigo', 'hito_cobrado', 'frena', true, 'texto',
           format('El hito «%s» ya está marcado como cobrado: no se factura otra vez. Si de verdad hay que facturarlo, ponlo antes en '
-                 'pendiente.', h.titulo)));
+                 'pendiente (la ficha no tiene botón para eso: avisa y se hace).', h.titulo)));
       end if;
       -- (la factura viva de ese hito, la sepa quien la sepa: la fila de facturas o el documento que salió de aquí)
       select format('%s del %s', x.num, fn_emision_dia(x.fecha)) into v_txt
         from fn_emision_factura_de_hito(d.hito_id) x order by x.factura_id limit 1;
-      if v_txt is not null then
+      v_viva := v_txt is not null;
+      if v_viva then
         v := v || jsonb_build_array(jsonb_build_object('codigo', 'hito_facturado', 'frena', true, 'texto',
           format('El hito «%s» ya se facturó: factura %s. No se hace otra; si aquella está mal, se anula con su nota de crédito.',
                  h.titulo, v_txt)));
       elsif h.estado = 'facturado' then
-        -- (la ficha lo tiene como FACTURADO y aquí no hay ninguna factura viva suya: se facturó fuera de la app —QuickBooks a
-        -- mano— o su factura se anotó sin su hito. Solo se factura un hito pendiente, como en la app)
-        v := v || jsonb_build_array(jsonb_build_object('codigo', 'hito_marcado_facturado', 'frena', true, 'texto',
-          format('El hito «%s» ya está marcado como facturado en la ficha de la obra y aquí no hay ninguna factura suya (¿se facturó '
-                 'en QuickBooks, o su factura se anotó sin su hito?): no se factura otra vez. Si de verdad falta facturarlo, ponlo '
-                 'antes en pendiente.', h.titulo)));
+        -- (la ficha lo tiene como FACTURADO y aquí no hay ninguna factura viva suya. Solo se factura un hito pendiente, como
+        -- en la app; se dice POR QUÉ está así y qué hacer —el mismo texto que da fn_emision_borrador—:
+        --  · una factura de la app de este hito está anulada en el libro y aquí sigue sin cerrar (se anuló desde
+        --    Contabilidad): se cierra aquí, y el hito vuelve a pendiente;
+        --  · una factura anulada —de fuera, de QuickBooks, o de la app y ya cerrada— todavía apunta a este hito: la ficha
+        --    se quedó como estaba cuando se anuló; el hito tiene que volver a pendiente y la ficha no tiene botón para eso;
+        --  · ninguna de las dos: se facturó fuera de la app —QuickBooks a mano— o su factura se anotó sin su hito.)
+        select string_agg(ed.numero || coalesce(' (nota de crédito ' || n.numero || ')', ''), ', ' order by ed.numero), count(*)
+          into v_txt, v_n
+          from emision_documentos ed
+          join facturas f on f.id = ed.factura_id
+          left join notas_credito n on n.anula_a = f.id
+         where ed.hito_id = d.hito_id and ed.forma = 'hito' and ed.estado = 'emitida' and ed.anulado_el is null and f.estado = 'anulada';
+        if v_txt is not null then
+          v_txt := format('El hito «%s» sigue marcado como facturado en la ficha de la obra porque %s en el libro y aquí %s sin '
+                          'cerrar. Hay que cerrar esa anulación aquí (Facturación → la factura → Anular; si ya sale anulada y no '
+                          'ofrece el botón, avisa y se hace): el hito vuelve a pendiente y entonces se hace la buena.', h.titulo,
+                          case when v_n = 1 then 'su factura ' || v_txt || ' está anulada' else 'sus facturas ' || v_txt || ' están anuladas' end,
+                          case when v_n = 1 then 'sigue' else 'siguen' end);
+        else
+          select string_agg(format('%s del %s%s', f.num, fn_emision_dia(f.fecha), coalesce(' (nota de crédito ' || n.numero || ')', '')),
+                            ', ' order by f.id), count(*)
+            into v_txt, v_n
+            from facturas f
+            left join notas_credito n on n.anula_a = f.id
+           where f.hito_id = d.hito_id and f.estado = 'anulada';
+          v_txt := case
+            when v_txt is not null
+              then format('El hito «%s» sigue marcado como facturado en la ficha de la obra y %s: hoy no tiene ninguna factura viva. Si '
+                          'no se volvió a facturar por otro lado (en QuickBooks), está sin facturar: para hacer aquí la buena, el hito '
+                          'tiene que volver antes a pendiente (la ficha no tiene botón para eso: avisa y se hace).', h.titulo,
+                          case when v_n = 1 then 'su factura ' || v_txt || ' está anulada' else 'sus facturas ' || v_txt || ' están anuladas' end)
+            else format('El hito «%s» ya está marcado como facturado en la ficha de la obra y aquí no hay ninguna factura suya (¿se '
+                        'facturó en QuickBooks, o su factura se anotó sin su hito?): no se factura otra vez. Si de verdad falta '
+                        'facturarlo, ponlo antes en pendiente (la ficha no tiene botón para eso: avisa y se hace).', h.titulo) end;
+        end if;
+        v := v || jsonb_build_array(jsonb_build_object('codigo', 'hito_marcado_facturado', 'frena', true, 'texto', v_txt));
       end if;
       if round(coalesce(h.monto, 0), 2) is distinct from d.monto or coalesce(h.es_deposito, false) is distinct from d.es_deposito then
         v := v || jsonb_build_array(jsonb_build_object('codigo', 'hito_cambio', 'frena', true, 'texto',
@@ -1621,6 +1899,29 @@ begin
         v := v || jsonb_build_array(jsonb_build_object('codigo', 'hito_borrado_facturado', 'frena', false, 'texto',
           format('En esta obra, la factura %s salió de un hito que después se borró. Mira que este hito no sea aquel vuelto a crear: se '
                  'facturaría dos veces. Si lo es, descarta este borrador.', v_txt)));
+      end if;
+      -- EL HITO YA TUVO UNA FACTURA QUE SE ANULÓ y su fila de facturas todavía lo apunta (la emitió la app o es de fuera, de
+      -- QuickBooks): esta la sustituye. Se dice y NO frena: al emitir, la anulada deja de figurar como la factura de este
+      -- hito (cabecera, «El hito que se vuelve a facturar»). Solo cuando de verdad la va a sustituir: con una factura VIVA
+      -- del hito (ya lo frena «ya se facturó») o con la ficha teniéndolo todavía como facturado (ya lo frena, y nombra la
+      -- anulada), «esta la sustituye» sería decir dos cosas a la vez.
+      v_txt := null;
+      if not v_viva and h.estado is distinct from 'facturado' then
+        select string_agg(format('%s del %s%s', f.num, fn_emision_dia(f.fecha), coalesce(' (nota de crédito ' || n.numero || ')', '')),
+                          ', ' order by f.id), count(*)
+          into v_txt, v_n
+          from facturas f
+          left join notas_credito n on n.anula_a = f.id
+         where f.hito_id = d.hito_id and f.estado = 'anulada';
+      end if;
+      if v_txt is not null then
+        v := v || jsonb_build_array(jsonb_build_object('codigo', 'hito_factura_anulada', 'frena', false, 'texto',
+          format('El hito «%s» ya tuvo %s: %s. Esta %s sustituye: al emitirla, %s de figurar como la factura de este hito (en lo '
+                 'demás %s) y queda apuntado.', h.titulo,
+                 case when v_n = 1 then 'una factura que se anuló' else 'facturas que se anularon' end, v_txt,
+                 case when v_n = 1 then 'la' else 'las' end,
+                 case when v_n = 1 then 'la anulada deja' else 'las anuladas dejan' end,
+                 case when v_n = 1 then 'no cambia: sigue anulada' else 'no cambian: siguen anuladas' end)));
       end if;
     end if;
   elsif d.forma = 'porcentaje' then
@@ -1686,7 +1987,7 @@ begin
 end $$;
 revoke execute on function public.fn_emision_revisar(uuid) from public, anon, service_role;
 grant  execute on function public.fn_emision_revisar(uuid) to authenticated;
-comment on function public.fn_emision_revisar(uuid) is 'c11: lo que hay que mirar antes de emitir un borrador: una lista de {codigo, texto, frena}: el corte, los datos de la empresa y el «How to pay», a quién se factura (y si la obra cambió de destinatario), la regla de ingreso de la obra, que sume, el hito (ya cobrado, ya facturado —por su fila de facturas o por el documento que salió de él—, o marcado como facturado en la ficha sin factura aquí: solo se factura un hito pendiente; cambió; en la obra hay una factura viva de un hito que se borró), el contrato (y si con esta factura lo facturado pasa de él), la retención (y si es el depósito y lleva retención), un texto que parece español… Solo lee.';
+comment on function public.fn_emision_revisar(uuid) is 'c11: lo que hay que mirar antes de emitir un borrador: una lista de {codigo, texto, frena}: el corte, los datos de la empresa y el «How to pay», a quién se factura (y si la obra cambió de destinatario), la regla de ingreso de la obra, que sume, el hito (ya cobrado, ya facturado —por su fila de facturas o por el documento que salió de él—, o marcado como facturado en la ficha sin factura viva aquí: solo se factura un hito pendiente, y si es por una factura que se anuló dice cuál, con su nota de crédito, y qué hacer; cambió; en la obra hay una factura viva de un hito que se borró; está pendiente y ya tuvo una factura que se anuló y todavía lo apunta: se dice, no frena, y al emitir la anulada lo suelta), el contrato (y si con esta factura lo facturado pasa de él), la retención (y si es el depósito y lleva retención), un texto que parece español… Solo lee.';
 
 -- EL CONTENIDO: el documento entero como lo recibe el cliente. Para un
 -- borrador es la vista previa (sin número: p_numero nulo); al emitir es lo
@@ -1815,7 +2116,11 @@ comment on function public.fn_emision_visto(uuid) is 'c11: la huella de un borra
 -- EL DOCUMENTO ENTERO PARA LA PANTALLA (un borrador o una factura
 -- emitida): {documento, lineas, y —borrador— avisos, puede_emitir,
 -- por_que_no, visto, vista_previa; —emitida— contenido, huella, libro,
--- pdfs, envios}.
+-- sustituye, sustituida_por, pdfs, envios}. sustituye: las facturas
+-- anuladas a las que esta sustituyó en su hito ([] si ninguna: [{factura_id,
+-- numero, nota_credito?, de_la_app, soltado_el}]); sustituida_por: si esta
+-- es una anulada de la app que soltó su hito, la que la sustituyó
+-- ({documento, numero, fecha, soltado_el}; nulo si no).
 create or replace function public.fn_emision_documento(p_documento uuid) returns jsonb
 language plpgsql stable
 set search_path = public, pg_temp
@@ -1875,6 +2180,17 @@ begin
     'libro', case when d.factura_id is not null
                   then jsonb_build_object('saldo', v_cxc, 'saldo_retencion', v_cret,
                                           'factura_estado', v_fest) end,
+    -- (el hito que se volvió a facturar: a qué facturas anuladas sustituyó esta —las que soltaron el hito al emitirla—, y,
+    -- si esta es una anulada de la app que lo soltó, cuál la sustituyó. Sale de emision_soltados)
+    'sustituye', (select coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
+                                              'factura_id', s.factura_id, 'numero', s.num, 'nota_credito', s.nota_credito,
+                                              'de_la_app', s.de_la_app, 'soltado_el', s.soltado_el)) order by s.factura_id), '[]'::jsonb)
+                    from emision_soltados s where s.documento_id = d.id),
+    'sustituida_por', (select jsonb_build_object('documento', x.id, 'numero', x.numero, 'fecha', x.fecha, 'soltado_el', s.soltado_el)
+                         from emision_soltados s
+                         join emision_documentos x on x.id = s.documento_id
+                        where d.factura_id is not null and s.factura_id = d.factura_id
+                        order by s.soltado_el desc, x.numero desc limit 1),
     'pdfs', (select coalesce(jsonb_agg(jsonb_build_object('id', x.id, 'n', x.n, 'ruta', x.ruta, 'sha256', x.sha256, 'bytes', x.bytes,
                                                           'pago', x.pago, 'creado_el', x.creado_el) order by x.n), '[]'::jsonb)
                from emision_pdfs x where x.documento_id = d.id),
@@ -1885,7 +2201,7 @@ begin
 end $$;
 revoke execute on function public.fn_emision_documento(uuid) from public, anon, service_role;
 grant  execute on function public.fn_emision_documento(uuid) to authenticated;
-comment on function public.fn_emision_documento(uuid) is 'c11: un documento entero para la pantalla: {documento, lineas} y, si es un borrador, {avisos, puede_emitir, por_que_no, visto, vista_previa}; si está emitido, {contenido, huella, libro: lo que debe hoy, pdfs, envios}. Solo lee. Solo el dueño.';
+comment on function public.fn_emision_documento(uuid) is 'c11: un documento entero para la pantalla: {documento, lineas} y, si es un borrador, {avisos, puede_emitir, por_que_no, visto, vista_previa}; si está emitido, {contenido, huella, libro: lo que debe hoy, sustituye: las facturas anuladas a las que sustituyó en su hito (las que lo soltaron al emitirse esta; [] si ninguna), sustituida_por: si es una anulada de la app que soltó su hito, la factura que la sustituyó (nulo si no), pdfs, envios}. Solo lee. Solo el dueño.';
 
 -- CREAR, CAMBIAR O REFRESCAR UN BORRADOR. p:
 --   documento      el borrador que se cambia (sin él, uno nuevo; el de un
@@ -2036,7 +2352,7 @@ begin
     if h.estado = 'cobrado' then
       raise exception using errcode = 'MX008',
         message = format('El hito «%s» ya está marcado como cobrado: no se factura otra vez. Si de verdad hay que facturarlo, ponlo '
-                         'antes en pendiente.', h.titulo);
+                         'antes en pendiente (la ficha no tiene botón para eso: avisa y se hace).', h.titulo);
     end if;
     select format('%s del %s', x.num, fn_emision_dia(x.fecha)) into v_txt
       from fn_emision_factura_de_hito(v_hito) x order by x.factura_id limit 1;
@@ -2045,13 +2361,43 @@ begin
         message = format('El hito «%s» ya se facturó: factura %s. No se hace otra; si aquella está mal, se anula con su nota de '
                          'crédito.', h.titulo, v_txt);
     end if;
-    -- (solo se factura un hito PENDIENTE, como en la app: el que la ficha ya tiene como facturado y aquí no tiene factura viva
-    -- se facturó fuera —QuickBooks a mano— o su factura se anotó sin su hito)
+    -- (solo se factura un hito PENDIENTE, como en la app. El que la ficha ya tiene como facturado y aquí no tiene factura viva
+    -- no se factura otra vez; se dice POR QUÉ está así y qué hacer —el mismo texto que el aviso hito_marcado_facturado de
+    -- fn_emision_revisar—: una factura de la app anulada en el libro y sin cerrar aquí; una anulada —de fuera, o de la app
+    -- ya cerrada— que todavía apunta al hito; o ninguna: se facturó fuera —QuickBooks a mano— o su factura se anotó sin
+    -- su hito)
     if h.estado = 'facturado' then
+      select string_agg(ed.numero || coalesce(' (nota de crédito ' || n.numero || ')', ''), ', ' order by ed.numero), count(*)
+        into v_txt, v_i
+        from emision_documentos ed
+        join facturas f on f.id = ed.factura_id
+        left join notas_credito n on n.anula_a = f.id
+       where ed.hito_id = v_hito and ed.forma = 'hito' and ed.estado = 'emitida' and ed.anulado_el is null and f.estado = 'anulada';
+      if v_txt is not null then
+        raise exception using errcode = 'MX008',
+          message = format('El hito «%s» sigue marcado como facturado en la ficha de la obra porque %s en el libro y aquí %s sin '
+                           'cerrar. Hay que cerrar esa anulación aquí (Facturación → la factura → Anular; si ya sale anulada y no '
+                           'ofrece el botón, avisa y se hace): el hito vuelve a pendiente y entonces se hace la buena.', h.titulo,
+                           case when v_i = 1 then 'su factura ' || v_txt || ' está anulada' else 'sus facturas ' || v_txt || ' están anuladas' end,
+                           case when v_i = 1 then 'sigue' else 'siguen' end);
+      end if;
+      select string_agg(format('%s del %s%s', f.num, fn_emision_dia(f.fecha), coalesce(' (nota de crédito ' || n.numero || ')', '')),
+                        ', ' order by f.id), count(*)
+        into v_txt, v_i
+        from facturas f
+        left join notas_credito n on n.anula_a = f.id
+       where f.hito_id = v_hito and f.estado = 'anulada';
+      if v_txt is not null then
+        raise exception using errcode = 'MX008',
+          message = format('El hito «%s» sigue marcado como facturado en la ficha de la obra y %s: hoy no tiene ninguna factura viva. Si '
+                           'no se volvió a facturar por otro lado (en QuickBooks), está sin facturar: para hacer aquí la buena, el hito '
+                           'tiene que volver antes a pendiente (la ficha no tiene botón para eso: avisa y se hace).', h.titulo,
+                           case when v_i = 1 then 'su factura ' || v_txt || ' está anulada' else 'sus facturas ' || v_txt || ' están anuladas' end);
+      end if;
       raise exception using errcode = 'MX008',
         message = format('El hito «%s» ya está marcado como facturado en la ficha de la obra y aquí no hay ninguna factura suya (¿se '
                          'facturó en QuickBooks, o su factura se anotó sin su hito?): no se factura otra vez. Si de verdad falta '
-                         'facturarlo, ponlo antes en pendiente.', h.titulo);
+                         'facturarlo, ponlo antes en pendiente (la ficha no tiene botón para eso: avisa y se hace).', h.titulo);
     end if;
     if h.monto is null or round(h.monto, 2) <= 0 then
       raise exception using errcode = 'MX005', message = format('El hito «%s» no tiene monto: ponle su monto antes de facturarlo.', h.titulo);
@@ -2275,7 +2621,7 @@ begin
 end $$;
 revoke execute on function public.fn_emision_borrador(jsonb) from public, anon, service_role;
 grant  execute on function public.fn_emision_borrador(jsonb) to authenticated;
-comment on function public.fn_emision_borrador(jsonb) is 'c11: crea, cambia o refresca un borrador de factura. p: {documento? (el que se cambia), forma (hito | porcentaje | tm | retencion), proyecto_id, hito_id, porcentaje, lineas: [{descripcion, cantidad?, precio, tipo?, unidad?, detalle?}], descripcion, detalle, retencion_pct (nulo = el de la obra), cliente: {nombre, atencion, direccion, correo} (nulo = el de la obra), notas}. El de un hito y el de la retención de una obra son uno solo (si ya hay, se abre ese). Cada llamada vuelve a leer el hito, el contrato, lo retenido y la retención de la obra: con solo «documento», refresca. Solo se factura un hito pendiente: el ya cobrado, el ya facturado aquí y el que la ficha tiene como facturado sin factura aquí dan MX008. Devuelve fn_emision_documento y {nuevo}. 22023, MX005, MX008. Solo el dueño.';
+comment on function public.fn_emision_borrador(jsonb) is 'c11: crea, cambia o refresca un borrador de factura. p: {documento? (el que se cambia), forma (hito | porcentaje | tm | retencion), proyecto_id, hito_id, porcentaje, lineas: [{descripcion, cantidad?, precio, tipo?, unidad?, detalle?}], descripcion, detalle, retencion_pct (nulo = el de la obra), cliente: {nombre, atencion, direccion, correo} (nulo = el de la obra), notas}. El de un hito y el de la retención de una obra son uno solo (si ya hay, se abre ese). Cada llamada vuelve a leer el hito, el contrato, lo retenido y la retención de la obra: con solo «documento», refresca. Solo se factura un hito pendiente: el ya cobrado, el ya facturado aquí y el que la ficha tiene como facturado sin factura viva aquí dan MX008 (si es por una factura que se anuló, dice cuál y qué hacer). Devuelve fn_emision_documento y {nuevo}. 22023, MX005, MX008. Solo el dueño.';
 
 -- TIRAR UN BORRADOR (no llegó a ser factura: no deja nada).
 create or replace function public.fn_emision_descartar(p_documento uuid) returns jsonb
@@ -2556,13 +2902,21 @@ comment on function public.fn_emision_obra(jsonb) is 'c11: fija la retención de
 --               está bien así»
 -- El orden de los candados: el documento, su obra (un candado por obra: dos
 -- emisiones de la misma obra van de una en una; la anulación toma el
--- mismo), su hito (o, en la de retención, las facturas de la obra), los
--- ajustes (compartido: no cambian a media emisión), el contador del año, y
--- solo entonces el libro (los períodos y la cadena los toma el puente de
--- c3). Dos emisiones del mismo borrador, o de dos borradores del mismo
--- hito, se esperan: la segunda ve lo que dejó la primera y para con MX008.
--- Dos de la misma obra: la segunda ya no es lo que se vio (cambiaron su
--- ordinal y lo facturado antes) y para con MX011.
+-- mismo), su hito y las facturas ANULADAS que todavía lo apuntan (o, en la
+-- de retención, las facturas de la obra), los ajustes (compartido: no
+-- cambian a media emisión), el contador del año, y solo entonces el libro
+-- (los períodos y la cadena los toma el puente de c3). Dos emisiones del
+-- mismo borrador, o de dos borradores del mismo hito, se esperan: la
+-- segunda ve lo que dejó la primera y para con MX008. Dos de la misma obra:
+-- la segunda ya no es lo que se vio (cambiaron su ordinal y lo facturado
+-- antes) y para con MX011.
+-- EL HITO QUE SE VUELVE A FACTURAR (cabecera): justo antes de crear la fila
+-- de facturas, las filas ANULADAS que todavía apuntan a ese hito —las que
+-- emitió la app y las de fuera, de QuickBooks— lo SUELTAN (hito_id a nulo;
+-- en lo demás no cambian) y queda apuntado en emision_soltados. La base de
+-- la app admite una sola fila de facturas por hito, también contando las
+-- anuladas: sin esto, después de anular no entraba la buena. Todo en esta
+-- transacción: si la emisión no llega al final, la anulada conserva su hito.
 create or replace function public.fn_emision_emitir(p_documento uuid, p_visto text, p_opciones jsonb default '{}'::jsonb)
 returns jsonb
 language plpgsql
@@ -2593,6 +2947,11 @@ declare
   v_vista  jsonb;
   v_cont   jsonb;
   v_huella text;
+  v_an     record;
+  v_k      bigint;
+  v_sol    jsonb;
+  v_idx    text;
+  v_det    text;
 begin
   perform fn_emision_exigir_dueno();
   if p_documento is null then
@@ -2621,6 +2980,8 @@ begin
   perform pg_advisory_xact_lock(820261111, hashtext('obra:' || d.proyecto_id));
   if d.hito_id is not null then
     perform 1 from hitos x where x.id = d.hito_id for update;
+    -- (y las facturas ANULADAS que todavía apuntan a ese hito: más abajo lo sueltan)
+    perform 1 from facturas f where f.hito_id = d.hito_id and f.estado = 'anulada' order by f.id for update;
   end if;
   if d.forma = 'retencion' then
     perform 1 from facturas f where f.proyecto_id = d.proyecto_id order by f.id for update;
@@ -2671,9 +3032,54 @@ begin
       raise exception using errcode = 'MX008',
         message = format('Ya hay una factura con el número %s (no salió de aquí): no se emitió nada. Avisa antes de seguir.', v_num);
     end if;
-    insert into facturas (proyecto_id, num, fecha, monto, pagada, hito_id, a_contratista, estado, retencion)
-    values (d.proyecto_id, v_num, v_hoy, d.monto, false, d.hito_id, d.a_contratista, 'emitida', d.retencion)
-    returning id into v_fid;
+    -- EL HITO QUE SE VUELVE A FACTURAR: las filas de facturas ANULADAS que todavía apuntan a este hito lo sueltan (la base de
+    -- la app admite una sola fila de facturas por hito, también contando las anuladas), y queda apuntado cuál, de qué hito y
+    -- por qué documento. Siguen anuladas, con su nota de crédito y su asiento: su puente no asienta nada por esto (ni el
+    -- hito ni el estado entran en su firma) y lo cobrado no cambia.
+    if d.forma = 'hito' then
+      for v_an in
+        select f.id, f.num, f.proyecto_id,
+               (select n.numero from notas_credito n where n.anula_a = f.id) as nota,
+               exists (select 1 from emision_documentos x where x.factura_id = f.id) as de_la_app
+          from facturas f
+         where f.hito_id = d.hito_id and f.estado = 'anulada'
+         order by f.id
+      loop
+        update facturas set hito_id = null where id = v_an.id and estado = 'anulada';
+        get diagnostics v_k = row_count;
+        if v_k <> 1 then
+          raise exception using errcode = 'MX008',
+            message = format('No se emitió nada (ni se gastó el número %s): la factura anulada %s sigue figurando como la de este hito y '
+                             'la base no dejó cambiarlo. Avisa antes de seguir.', v_num, v_an.num);
+        end if;
+        perform set_config('mx_emision.escribe', 'emision_soltados', true);
+        insert into emision_soltados (factura_id, num, hito_id, proyecto_id, nota_credito, de_la_app, documento_id, soltado_por)
+        values (v_an.id, v_an.num, d.hito_id, v_an.proyecto_id, v_an.nota, v_an.de_la_app, d.id, auth.uid());
+        perform set_config('mx_emision.escribe', '', true);
+        v_sol := coalesce(v_sol, '[]'::jsonb)
+                 || jsonb_build_array(jsonb_strip_nulls(jsonb_build_object('factura_id', v_an.id, 'numero', v_an.num,
+                                                                           'nota_credito', v_an.nota, 'de_la_app', v_an.de_la_app)));
+      end loop;
+    end if;
+    -- (si en este mismo momento entró por otro lado una fila de facturas de este hito, o con este número —la función de
+    -- QuickBooks, durante el paralelo—, los índices únicos de facturas paran a la segunda: aquí, dicho en llano)
+    -- (QUÉ índice la paró va en el DETALLE del error, fuera del texto en llano: la pantalla no lo enseña, y queda en la
+    -- respuesta de la API y en el registro de la base. Si un día la base tuviera otro índice único que la emisión no
+    -- cumple, este MX011 saldría siempre: así se sabe cuál es)
+    begin
+      insert into facturas (proyecto_id, num, fecha, monto, pagada, hito_id, a_contratista, estado, retencion)
+      values (d.proyecto_id, v_num, v_hoy, d.monto, false, d.hito_id, d.a_contratista, 'emitida', d.retencion)
+      returning id into v_fid;
+    exception when unique_violation then
+      get stacked diagnostics v_idx = constraint_name, v_det = pg_exception_detail;
+      raise exception using errcode = 'MX011',
+        message = format('No se emitió nada (ni se gastó el número %s): mientras se emitía entró por otro lado una factura %s (¿se '
+                         'facturó a la vez en QuickBooks?). Vuelve a mirar el borrador: si %s, tíralo.', v_num,
+                         case when d.forma = 'hito' then 'de este mismo hito, o con ese número' else 'con ese mismo número' end,
+                         case when d.forma = 'hito' then 'el hito ya quedó facturado' else 'ya está facturado' end),
+        detail  = format('La fila de facturas chocó con el índice único «%s» de la base%s.', coalesce(nullif(v_idx, ''), '(sin nombre)'),
+                         coalesce(' (' || nullif(v_det, '') || ')', ''));
+    end;
     select f.contabilizado_en into v_asi from facturas f where f.id = v_fid;
     if v_asi is null then
       -- (el puente de c3 corre al confirmar: aquí, ya; y vuelve a quedar diferido)
@@ -2734,6 +3140,7 @@ begin
     'tardio', case when v_fc is not null and v_fc <> v_hoy
                    then format('El mes de hoy ya estaba cerrado: el asiento entró el %s.', fn_emision_dia(v_fc)) end,
     'hito_id', d.hito_id, 'hito_estado', v_hito, 'huella', v_huella,
+    'soltadas', v_sol,
     'saltados', v_salt,
     'aviso', case when v_salt is not null
                   then format('La serie saltó %s: ya lo(s) llevaba una factura hecha fuera de la app (un número no se da dos veces). '
@@ -2743,7 +3150,7 @@ begin
 end $$;
 revoke execute on function public.fn_emision_emitir(uuid, text, jsonb) from public, anon, service_role;
 grant  execute on function public.fn_emision_emitir(uuid, text, jsonb) to authenticated;
-comment on function public.fn_emision_emitir(uuid, text, jsonb) is 'c11: emite un borrador, todo o nada: comprueba que es el que Edgar vio (p_visto, la huella de la vista previa entera; si no, MX011) y que nada lo frena (el corte, los datos de la empresa, el hito, la regla de ingreso…: MX008; algo que cambió: MX011); le da el siguiente número de su serie del año, sin huecos (saltando el que ya lleve una factura hecha fuera de la app: lo dice en saltados); crea la fila de facturas ya emitida, adelanta el puente de c3 y comprueba su asiento al centavo (si el libro no la acepta, MX008 con el porqué y no queda nada); mueve el hito a facturado; y congela el contenido con su huella (lo que se vio, salvo el número). Dos emisiones de la misma obra van de una en una. p_opciones: {idioma_revisado}. Devuelve {documento, numero, fecha, vence, monto, retencion, a_pagar, factura_id, asiento, hito_estado, huella, saltados?, aviso?}. Solo el dueño.';
+comment on function public.fn_emision_emitir(uuid, text, jsonb) is 'c11: emite un borrador, todo o nada: comprueba que es el que Edgar vio (p_visto, la huella de la vista previa entera; si no, MX011) y que nada lo frena (el corte, los datos de la empresa, el hito, la regla de ingreso…: MX008; algo que cambió: MX011); le da el siguiente número de su serie del año, sin huecos (saltando el que ya lleve una factura hecha fuera de la app: lo dice en saltados); si el hito ya tuvo una factura que se anuló y todavía lo apunta, esa fila anulada lo suelta (queda apuntado en emision_soltados; sigue anulada) para que entre la nueva; crea la fila de facturas ya emitida (si en ese momento entró por otro lado una del mismo hito o con ese número, MX011, con el índice que chocó en el detalle del error), adelanta el puente de c3 y comprueba su asiento al centavo (si el libro no la acepta, MX008 con el porqué y no queda nada); mueve el hito a facturado; y congela el contenido con su huella (lo que se vio, salvo el número). Dos emisiones de la misma obra van de una en una. p_opciones: {idioma_revisado}. Devuelve {documento, numero, fecha, vence, monto, retencion, a_pagar, factura_id, asiento, hito_estado, huella, soltadas?: [{factura_id, numero, nota_credito, de_la_app}], saltados?, aviso?}. Solo el dueño.';
 
 -- ANULAR una factura emitida: con su nota de crédito, por c3
 -- (fn_factura_anular: NC-AAAA-NNNN, el espejo de su asiento, y sus frenos
@@ -3315,7 +3722,7 @@ declare
                                 'fn_emision_obra', 'fn_emision_config', 'fn_emision_emitir', 'fn_emision_anular', 'fn_emision_pago',
                                 'fn_emision_pdf', 'fn_emision_envio', 'fn_emision_control', 'fn_emision_pegado'];
   c_tablas constant text[] := array['emision_config', 'emision_obras', 'emision_documentos', 'emision_lineas', 'emision_serie',
-                                    'emision_pdfs', 'emision_envios'];
+                                    'emision_pdfs', 'emision_envios', 'emision_soltados'];
   c_vistas constant text[] := array['v_emision_estado', 'v_emision_documentos', 'v_emision_obras', 'v_emision_control'];
   -- los candados del bucket «facturas» (Storage): los que piden el código del teléfono, y los que cierran
   c_bucket_aal constant text[] := array['facturas: el dueno sube', 'facturas: el dueno lee',
@@ -3642,7 +4049,7 @@ begin
   return next;
 
   -- 75 (aviso): anuladas en el libro y sin cerrar aquí; una factura de la retención que reclama lo de una anulada; hitos
-  -- con dos facturas vivas de antes
+  -- con dos facturas vivas de antes; y hitos que la ficha sigue teniendo como facturados con su factura anulada
   select count(*), string_agg(y.que, '; ' order by y.que) into v_n, v_d
     from (select format('la factura %s está anulada en el libro y aquí sigue como emitida', d.numero) as que
             from emision_documentos d
@@ -3664,13 +4071,37 @@ begin
                    group by coalesce(d.hito_id, f.hito_id)
                   having count(*) > 1 and not bool_or(d.id is not null)) x
             join hitos h on h.id = x.hito_id
-            left join proyectos p on p.id = h.proyecto_id) y;
+            left join proyectos p on p.id = h.proyecto_id
+          union all
+          -- (un hito que la ficha SIGUE teniendo como facturado, sin ninguna factura viva, y con su factura ANULADA todavía
+          -- apuntándolo: se anuló desde Contabilidad —por c3, que no sabe de hitos; así se anula una de QuickBooks— y nadie
+          -- devolvió el hito a pendiente. La de la app que sigue sin cerrar aquí ya sale arriba: aquí no se repite)
+          select format('el hito «%s» de %s sigue como facturado en la ficha y %s: no tiene ninguna factura viva', h.titulo,
+                        coalesce(p.nombre, h.proyecto_id),
+                        case when x.n = 1 then 'su factura ' || x.nums || ' está anulada' else 'sus facturas ' || x.nums || ' están anuladas' end)
+            from hitos h
+            left join proyectos p on p.id = h.proyecto_id
+           cross join lateral (select count(*) as n,
+                                      string_agg(f.num || coalesce(' (nota de crédito ' || n.numero || ')', ''), ', ' order by f.id) as nums
+                                 from facturas f
+                                 left join notas_credito n on n.anula_a = f.id
+                                where f.hito_id = h.id and f.estado = 'anulada') x
+           where h.estado = 'facturado' and x.n > 0
+             and not exists (select 1 from fn_emision_factura_de_hito(h.id))
+             and not exists (select 1 from emision_documentos d
+                               join facturas f on f.id = d.factura_id
+                              where d.hito_id = h.id and d.forma = 'hito' and d.estado = 'emitida' and d.anulado_el is null
+                                and f.estado = 'anulada')) y;
   orden := 75; cuadre := 'facturas: ninguna anulación a medias, ningún hito con dos facturas de antes'; nivel := 'aviso'; ok := v_n = 0;
   detalle := case when v_n = 0 then 'Toda factura de la app anulada en el libro está cerrada aquí, ninguna factura de la retención reclama lo de '
-                                    'una anulada, y ningún hito trae dos facturas vivas de antes.'
-                  else left(v_d, 1500) || ' → la anulada: ábrela en Facturación y toca Anular (termina lo de aquí y suelta su hito). La de '
-                       'la retención que reclama una anulada: anúlala y haz otra (el cliente tiene una cuenta que ya no es). El hito con dos '
-                       'facturas de antes: mira cuál sobra.' end;
+                                    'una anulada, ningún hito trae dos facturas vivas de antes, y ninguno sigue como facturado en la ficha '
+                                    'con su factura anulada.'
+                  else left(v_d, 1500) || ' → la anulada: ábrela en Facturación y toca Anular (termina lo de aquí y suelta su hito; si ya '
+                       'sale anulada y no ofrece el botón, avisa y se hace). La de la retención que reclama una anulada: anúlala y haz otra '
+                       '(el cliente tiene una cuenta que ya no es). El hito con dos facturas de antes: mira cuál sobra. El hito que sigue '
+                       'como facturado con su factura anulada: si no se volvió a facturar por otro lado, está SIN FACTURAR, y para hacer la '
+                       'buena tiene que volver antes a pendiente; si sí se volvió a facturar (en QuickBooks), esa factura tiene que quedar '
+                       'enlazada a su hito. La ficha no tiene botón para ninguna de las dos cosas: avisa y se hace.' end;
   return next;
 
   -- 80 (aviso): el pago en línea como se decidió (12-nov-2026: solo por cuenta de banco; la tarjeta, apagada). Cada cosa,
@@ -3964,7 +4395,7 @@ create view public.v_emision_control with (security_invoker = true) as
 select c.orden, c.cuadre, c.nivel, c.ok, c.detalle from public.fn_emision_control() c;
 revoke all on public.v_emision_control from public, anon, authenticated, service_role;
 grant select on public.v_emision_control to authenticated;
-comment on view public.v_emision_control is 'c11: el control de la facturación (orden, cuadre, nivel, ok, detalle en llano): 10 cada factura emitida por la app es su asiento de c3, al centavo; 20 las series de cada año (facturas y facturas de la retención) sin huecos ni repetidos y cada contador en el último (un número saltado vale solo si lo lleva una factura hecha fuera de la app); 30 cada documento emitido sigue sellado y su fila de facturas dice lo mismo; 40 ningún hito con dos facturas vivas si alguna salió de la app (el hito de una factura de la app es el de su documento); 42 (aviso) cada factura de hito sigue enlazada a su hito; 44 (aviso) en ninguna obra lo facturado por hitos pasa de lo que suman sus hitos; 50 (aviso) cada PDF registrado sigue en Storage y mide lo mismo; 60 (aviso) ninguna emitida hace más de N días sin PDF; 62 (aviso) ni sin mandar; 64 (aviso) ninguna cobrada entera en el libro y sin marcar como cobrada en su obra; 70 (aviso) ninguna factura de fuera de la app con una retención que parece un porcentaje; 72 (aviso) ninguna fechada desde el corte hecha fuera de la app, ni una de fuera con un número de la serie; 75 (aviso) ninguna anulación a medias, ninguna factura de la retención que reclame lo de una anulada, ni hitos con dos facturas de antes; 80 (aviso) el pago en línea solo por cuenta de banco (la tarjeta, apagada); 85 (aviso) los datos de la empresa y el «How to pay»; 90 las protecciones de la capa y los candados del bucket de las facturas. nivel: cuadre (algo roto: detiene el cierre) o aviso.';
+comment on view public.v_emision_control is 'c11: el control de la facturación (orden, cuadre, nivel, ok, detalle en llano): 10 cada factura emitida por la app es su asiento de c3, al centavo; 20 las series de cada año (facturas y facturas de la retención) sin huecos ni repetidos y cada contador en el último (un número saltado vale solo si lo lleva una factura hecha fuera de la app); 30 cada documento emitido sigue sellado y su fila de facturas dice lo mismo; 40 ningún hito con dos facturas vivas si alguna salió de la app (el hito de una factura de la app es el de su documento); 42 (aviso) cada factura de hito sigue enlazada a su hito; 44 (aviso) en ninguna obra lo facturado por hitos pasa de lo que suman sus hitos; 50 (aviso) cada PDF registrado sigue en Storage y mide lo mismo; 60 (aviso) ninguna emitida hace más de N días sin PDF; 62 (aviso) ni sin mandar; 64 (aviso) ninguna cobrada entera en el libro y sin marcar como cobrada en su obra; 70 (aviso) ninguna factura de fuera de la app con una retención que parece un porcentaje; 72 (aviso) ninguna fechada desde el corte hecha fuera de la app, ni una de fuera con un número de la serie; 75 (aviso) ninguna anulación a medias, ninguna factura de la retención que reclame lo de una anulada, ni hitos con dos facturas de antes, ni hitos que sigan como facturados en la ficha con su factura anulada y sin otra viva; 80 (aviso) el pago en línea solo por cuenta de banco (la tarjeta, apagada); 85 (aviso) los datos de la empresa y el «How to pay»; 90 las protecciones de la capa y los candados del bucket de las facturas. nivel: cuadre (algo roto: detiene el cierre) o aviso.';
 
 -- ---------------------------------------------------------------------
 -- 11. Lo que enseña el SQL Editor al terminar de pegar.
@@ -3979,6 +4410,9 @@ declare
   v_anio  int;
   v_falta text;
   v_rojos text;
+  v_idx   text;
+  v_todas boolean;
+  v_nsol  bigint;
 begin
   if not fn_desde_editor() then
     raise exception using errcode = '42501', message = 'Esto lo enseña el SQL Editor al pegar c11-emision.sql.';
@@ -4003,7 +4437,7 @@ begin
              format('sin estrenar: la primera factura será %s; la primera factura de la retención (que lleva su propia serie), %s',
                     fn_emision_numero(cfg.serie_formato, v_anio, 1),
                     fn_emision_numero(fn_emision_formato(cfg.serie_formato, 'retenciones'), v_anio, 1)));
-  return query select 'tablas'::text, 'emision_config, emision_obras, emision_documentos, emision_lineas, emision_serie, emision_pdfs, emision_envios'::text;
+  return query select 'tablas'::text, 'emision_config, emision_obras, emision_documentos, emision_lineas, emision_serie, emision_pdfs, emision_envios, emision_soltados'::text;
   return query select 'vistas'::text, 'v_emision_estado, v_emision_documentos, v_emision_obras, v_emision_control'::text;
   if to_regclass('storage.buckets') is not null and to_regclass('storage.objects') is not null then
     return query execute
@@ -4026,6 +4460,29 @@ begin
          when not cfg.ach then 'apagado en los ajustes (ach = false)'
          else 'por cuenta de banco (ACH), con el enlace de los cobros en línea restringido a cuenta de banco. '
               || fn_emision_tarjeta_texto() end;
+  -- VOLVER A FACTURAR UN HITO: los índices únicos de facturas por hito que tenga esta base (son de la app, de la otra
+  -- sesión: aquí no se crean ni se quitan), leídos del catálogo, y lo que la facturación hace con ellos.
+  select string_agg(c.relname || case when coalesce(pg_get_expr(i.indpred, i.indrelid), '') ~* '\mestado\M' then ' (solo las vivas)'
+                                      else ' (todas, también las anuladas)' end, ' y ' order by c.relname),
+         coalesce(bool_or(coalesce(pg_get_expr(i.indpred, i.indrelid), '') !~* '\mestado\M'), false)
+    into v_idx, v_todas
+    from pg_catalog.pg_index i
+    join pg_catalog.pg_class c on c.oid = i.indexrelid
+   where i.indrelid = 'public.facturas'::regclass and i.indisunique and i.indisvalid and i.indnkeyatts = 1 and i.indexprs is null
+     and i.indkey[0] = (select a.attnum from pg_catalog.pg_attribute a
+                         where a.attrelid = i.indrelid and a.attname = 'hito_id' and not a.attisdropped);
+  select count(*) into v_nsol from emision_soltados;
+  return query select 'volver a facturar un hito'::text,
+    case when v_todas
+           then format('esta base admite UNA sola fila de facturas por hito, contando las anuladas (%s; de la app, no de aquí): se maneja '
+                       '— al emitir la factura nueva de un hito, la anulada deja de apuntarlo (sigue anulada, con su nota de crédito) y '
+                       'queda apuntado en emision_soltados', v_idx)
+         when v_idx is not null
+           then format('esta base no deja dos facturas vivas del mismo hito (%s; de la app, no de aquí) y no cuenta las anuladas; igual, '
+                       'al emitir la factura nueva de un hito la anulada deja de apuntarlo y queda apuntado en emision_soltados', v_idx)
+         else 'esta base no tiene un índice único de facturas por hito (producción sí: ux_facturas_hito); igual, al emitir la factura '
+              'nueva de un hito la anulada deja de apuntarlo y queda apuntado en emision_soltados' end
+    || format(' · soltadas hasta hoy: %s', v_nsol);
   v_falta := concat_ws('; ',
     nullif(concat_ws(' y ',
              case when coalesce(btrim(cfg.empresa->>'nombre'), '') = '' then 'los datos de la empresa (nombre, licencia, dirección, teléfono, correo, web)' end,
@@ -4051,6 +4508,6 @@ begin
     'pega docs/conta/c11-pruebas.sql; después, en la app, Facturación → Ajustes: los datos de la empresa y el «How to pay»'::text;
 end $$;
 revoke execute on function public.fn_emision_pegado() from public, anon, authenticated, service_role;
-comment on function public.fn_emision_pegado() is 'c11: lo que enseña el SQL Editor al pegar c11-emision.sql: los ajustes, por dónde se factura hoy, las series, las tablas y las vistas, el bucket y sus candados, el pago en línea, qué falta, el control, si el cierre lo mira y el paso siguiente. Sin API.';
+comment on function public.fn_emision_pegado() is 'c11: lo que enseña el SQL Editor al pegar c11-emision.sql (doce filas): los ajustes, por dónde se factura hoy, las series, las tablas y las vistas, el bucket y sus candados, el pago en línea, volver a facturar un hito (los índices únicos de facturas por hito que tenga la base —de la app— y cómo se manejan), qué falta, el control, si el cierre lo mira y el paso siguiente. Sin API.';
 
 select * from public.fn_emision_pegado();
