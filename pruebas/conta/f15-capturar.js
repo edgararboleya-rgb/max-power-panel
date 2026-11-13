@@ -13,16 +13,18 @@
      2. lee todo lo que la pantalla lee (la ESCENA 0), y después hace, EN EL
         ORDEN DE LA PRUEBA, cada cosa que la pantalla escribe (un PASO: subir
         el journal, decir qué es una columna, enlazar a la gente, postear,
-        casar los cargos, el bono, la otra nómina del mismo día, el lote de
-        horas, el amarre…), y tras cada paso lo vuelve a leer todo (la escena
+        casar los cargos —los impuestos en dos cargos: el que ninguna opción
+        casa se dice a mano—, la misma nómina leída de otras columnas, el
+        bono, la otra nómina del mismo día, el lote de horas, el amarre…), y
+        tras cada paso lo vuelve a leer todo (la escena
         siguiente). Un paso «externo» es algo que no hace la pantalla (una hora
         que se aprueba en la app después del lote);
      3. prueba, sin dejar nada, los errores que la pantalla enseña (sin el
         código del teléfono, el equipo, lo visto que ya cambió, un cargo ya
-        casado, un monto mal escrito…);
+        casado, un monto mal escrito, las partes de un cargo que no lo suman…);
      4. escribe pruebas/conta/pantalla-f15.json: cada fila una vez (por su
         huella), de cada escena solo lo que cambió respecto de la anterior, y
-        los TRES ARCHIVOS que sube la prueba (los CSV sintéticos, con sus
+        los CUATRO ARCHIVOS que sube la prueba (los CSV sintéticos, con sus
         columnas delicadas DE MENTIRA: «SSN» 000-00-000N, que no existe, y
         «Home address» en una calle falsa). Lo que la pantalla manda de ellos
         es lo que este script manda: las celdas como texto, SIN las columnas
@@ -144,8 +146,13 @@ const BONO = ['Employee first name,Employee last name,Pay period start,Pay perio
 const OTRA = [CAB.join(','),
   FILAS_J[0].replace(',0.00,1666.21,0.00,1666.21,', ',10.00,1656.21,0.00,1656.21,'), FILAS_J[1], FILAS_J[2],
   TOT_J.replace(',50.00,4810.68,64.25,4874.93,', ',60.00,4800.68,64.25,4864.93,')].join('\n') + '\n';
+// la MISMA nómina del 23-oct bajada otra vez de Gusto con otras columnas (sin el desglose del bruto: solo «Gross earnings»): el mismo
+// bruto y el mismo neto, leídos de otras columnas (la base no la da por igual: su firma va por concepto). No se sube como otra.
+const SIN_DESGLOSE = ['Regular earnings', 'Overtime earnings'].map(c => CAB.indexOf(c));
+const sinDesglose = l => l.split(',').filter((x, j) => !SIN_DESGLOSE.includes(j)).join(',');
+const MISMA = [sinDesglose(CAB.join(',')), ...FILAS_J.map(sinDesglose), sinDesglose(TOT_J)].join('\n') + '\n';
 const ARCHIVOS = { journal: { nombre: 'zz-c15-journal-23oct.csv', texto: JOURNAL }, bono: { nombre: 'zz-c15-bono-23oct.csv', texto: BONO },
-  otra: { nombre: 'zz-c15-journal-23oct-v2.csv', texto: OTRA } };
+  otra: { nombre: 'zz-c15-journal-23oct-v2.csv', texto: OTRA }, misma: { nombre: 'zz-c15-journal-23oct-columnas.csv', texto: MISMA } };
 
 // LAS CELDAS, como las lee la pantalla (comillas, comas dentro, BOM, CRLF) y LO QUE NO SALE DEL TELÉFONO, con la regla de js/conta.js
 // (nominaLimpiar): una fila con dos o más nombres del mapeo es una cabecera (abre una sección); en cada sección se quitan las
@@ -197,7 +204,7 @@ for (const k of Object.keys(ARCHIVOS)) {
 }
 
 // ---------- los ids que la prueba necesita ----------
-const MOV = Object.fromEntries(['fee', 'net', 'tax', 'csd'].map(k => [k, uno(`select id from movimientos_banco where id_externo = 'c15-pantalla-${k}'`)]));
+const MOV = Object.fromEntries(['fee', 'net', 'tax', 'sui', 'csd'].map(k => [k, uno(`select id from movimientos_banco where id_externo = 'c15-pantalla-${k}'`)]));
 for (const [k, v] of Object.entries(MOV)) if (!v) throw new Error('falta el movimiento ' + k);
 const persona = nombre => uno(`select id from nomina_personas where nombre = ${q(nombre)}`);
 
@@ -217,6 +224,10 @@ function lecturas() {
   o.push({ k: 'perfiles', sql: 'select ' + filasDe(`select id, nombre, rol, activo from perfiles order by nombre`) });
   o.push({ k: 'fn_nomina_config|', sql: `select fn_nomina_config(null)` });
   o.push({ k: 'fn_nomina_amarre|2026', sql: 'select ' + filasDe(`select * from fn_nomina_amarre(2026)`) });
+  // (las cuentas del libro, como las lee la pantalla para nombrar cada línea del asiento: las de la nómina, con su nombre de c1)
+  o.push({ k: 'cuentas', sql: 'select ' + filasDe(`select codigo, nombre, tipo, regla_obra, imputable, activa from cuentas order by codigo`) });
+  // (lo que TODAS las nóminas posteadas dejaron por pagar: «decir a mano qué paga» un cargo de Gusto)
+  o.push({ k: 'fn_nomina_pendiente|', sql: 'select ' + filasDe(`select * from fn_nomina_pendiente() order by dia_pago desc, cuenta`) });
   for (const c of corridas) {
     o.push({ k: `fn_nomina_propuesta|${c}`, sql: `select fn_nomina_propuesta(${q(c)}::uuid)` });
     o.push({ k: `fn_nomina_pendiente|${c}`, sql: 'select ' + filasDe(`select * from fn_nomina_pendiente(${q(c)}::uuid) order by cuenta`) });
@@ -257,7 +268,8 @@ const T = {
   deshacer: 'ZZ: lo casé con la nómina equivocada',
   anular: 'ZZ: el bono se pagó dos veces en Gusto y se revirtió',
   descartar: 'ZZ: era la misma nómina bajada otra vez, con una corrección de Gusto que no vale',
-  lote: 'ZZ: las horas de la quincena para Gusto'
+  lote: 'ZZ: las horas de la quincena para Gusto',
+  mano: 'ZZ: Gusto cobró los impuestos en dos cargos (el federal y el de Florida)'
 };
 const llama = (fn, args) => ({ sql: `${fn}(${args.map(a => a.sql).join(', ')})`, json: Object.fromEntries(args.map(a => [a.k, a.v])) });
 const A = (k, v, tipo) => ({ k, v, sql: v == null ? 'null' : tipo === 'jsonb' ? jb(v) : tipo === 'uuid' ? `${q(v)}::uuid` : tipo === 'date' ? `${q(v)}::date` : tipo === 'int' ? String(v) : q(v) });
@@ -279,13 +291,18 @@ const pasos = [
   { nombre: 'decidir_dos', fn: 'fn_nomina_decidir', igual: ['p_corrida', 'p_persona', 'p.decision'], args: () => llama('fn_nomina_decidir', [A('p_corrida', ID.journal, 'uuid'), A('p_persona', ID.persona.dos, 'uuid'), A('p', { decision: 'sin_obra', nota: T.dos }, 'jsonb')]) },
   { nombre: 'postear_journal', fn: 'fn_nomina_postear', igual: ['p_corrida', 'p_visto'], args: () => llama('fn_nomina_postear', [A('p_corrida', ID.journal, 'uuid'), A('p_visto', uno(`select fn_nomina_propuesta(${q(ID.journal)}::uuid)->>'visto'`))]) },
   { nombre: 'casar_net', fn: 'fn_nomina_cargo_casar', igual: ['p_movimiento', 'p_partes'], args: () => llama('fn_nomina_cargo_casar', [A('p_movimiento', MOV.net, 'uuid'), A('p_partes', [parte('2210', '4874.93')], 'jsonb'), A('p_nota', null)]) },
-  { nombre: 'casar_tax', fn: 'fn_nomina_cargo_casar', igual: ['p_movimiento', 'p_partes'], args: () => llama('fn_nomina_cargo_casar', [A('p_movimiento', MOV.tax, 'uuid'), A('p_partes', [parte('2220', '1391.64'), parte('2225', '34.85'), parte('2230', '156.82')], 'jsonb'), A('p_nota', null)]) },
+  // (los impuestos en dos cargos: el federal con el FUTA no casa al centavo con ninguna opción y se dice a mano; después, el de Florida
+  // sí casa: lo único que queda por pagar de impuestos)
+  { nombre: 'casar_tax_mano', fn: 'fn_nomina_cargo_casar', igual: ['p_movimiento', 'p_partes', 'p_nota'], args: () => llama('fn_nomina_cargo_casar', [A('p_movimiento', MOV.tax, 'uuid'), A('p_partes', [parte('2220', '1391.64'), parte('2225', '34.85')], 'jsonb'), A('p_nota', T.mano)]) },
+  { nombre: 'casar_sui', fn: 'fn_nomina_cargo_casar', igual: ['p_movimiento', 'p_partes'], args: () => llama('fn_nomina_cargo_casar', [A('p_movimiento', MOV.sui, 'uuid'), A('p_partes', [parte('2230', '156.82')], 'jsonb'), A('p_nota', null)]) },
   { nombre: 'cuota_fee', fn: 'fn_nomina_cargo_cuota', igual: ['p_movimiento'], args: () => llama('fn_nomina_cargo_cuota', [A('p_movimiento', MOV.fee, 'uuid'), A('p_nota', null)]) },
   { nombre: 'casar_csd', fn: 'fn_nomina_cargo_casar', igual: ['p_movimiento', 'p_partes'], args: () => llama('fn_nomina_cargo_casar', [A('p_movimiento', MOV.csd, 'uuid'), A('p_partes', [parte('2240', '50.00')], 'jsonb'), A('p_nota', null)]),
     despues: r => { ID.pago_csd = r.pago; } },
   { nombre: 'deshacer_csd', fn: 'fn_nomina_cargo_deshacer', igual: ['p_pago'], args: () => llama('fn_nomina_cargo_deshacer', [A('p_pago', ID.pago_csd, 'uuid'), A('p_motivo', T.deshacer)]) },
   { nombre: 'ensayo_ya', fn: 'fn_nomina_ensayo', igual: IGUAL_ARCH, args: ensayo('journal') },
   { nombre: 'importar_ya', fn: 'fn_nomina_importar', igual: IGUAL_ARCH, args: importar('journal') },
+  { nombre: 'ensayo_misma', fn: 'fn_nomina_ensayo', igual: IGUAL_ARCH, args: ensayo('misma') },
+  { nombre: 'importar_misma', fn: 'fn_nomina_importar', igual: IGUAL_ARCH, args: importar('misma') },
   { nombre: 'ensayo_bono', fn: 'fn_nomina_ensayo', igual: IGUAL_ARCH, args: ensayo('bono') },
   { nombre: 'importar_bono', fn: 'fn_nomina_importar', igual: IGUAL_ARCH, args: importar('bono'), despues: r => { ID.bono = corridaDe(r); } },
   { nombre: 'postear_bono', fn: 'fn_nomina_postear', igual: ['p_corrida', 'p_visto'], args: () => llama('fn_nomina_postear', [A('p_corrida', ID.bono, 'uuid'), A('p_visto', uno(`select fn_nomina_propuesta(${q(ID.bono)}::uuid)->>'visto'`))]) },
@@ -318,6 +335,7 @@ const errores = [
   { nombre: 'propuesta_sin_codigo', antes: 'importar_journal', aal: 'aal1', args: () => llama('fn_nomina_propuesta', [A('p_corrida', ID.journal, 'uuid')]) },
   { nombre: 'postear_visto_viejo', antes: 'decidir_dos', args: () => llama('fn_nomina_postear', [A('p_corrida', ID.journal, 'uuid'), A('p_visto', '0'.repeat(32))]) },
   { nombre: 'config_mal', antes: 'decidir_dos', args: () => llama('fn_nomina_config', [A('p', { ...CFG, semana_empieza: 9 }, 'jsonb')]) },
+  { nombre: 'casar_mano_suma', antes: 'casar_net', args: () => llama('fn_nomina_cargo_casar', [A('p_movimiento', MOV.tax, 'uuid'), A('p_partes', [parte('2220', '1391.64'), parte('2225', '34.58')], 'jsonb'), A('p_nota', T.mano)]) },
   { nombre: 'anular_con_cargos', antes: 'casar_net', args: () => llama('fn_nomina_anular', [A('p_corrida', ID.journal, 'uuid'), A('p_motivo', 'ZZ: prueba')]) },
   { nombre: 'deshacer_sin_motivo', antes: 'casar_csd', args: () => llama('fn_nomina_cargo_deshacer', [A('p_pago', ID.pago_csd, 'uuid'), A('p_motivo', '')]) },
   { nombre: 'anular_sin_motivo', antes: 'postear_bono', args: () => llama('fn_nomina_anular', [A('p_corrida', ID.bono, 'uuid'), A('p_motivo', '')]) },
@@ -365,6 +383,14 @@ debe(res('importar_journal').corridas[0].resultado === 'nueva' && res('importar_
 debe(res('postear_journal').posteada === true && res('postear_bono').posteada === true && res('anular_bono').anulada === true, 'postear y anular');
 debe(res('importar_otra').corridas[0].resultado === 'otra_distinta' && res('importar_otra_nomina').corridas[0].resultado === 'nueva', 'la otra nómina del mismo día');
 debe(res('deshacer_csd').deshecho === true && res('cuota_fee').clase === 'cuota', 'deshacer y la cuota');
+// (lo que se leyó en la escena de después de un paso)
+const leidoTras = (paso, k) => { for (let i = c15.orden.indexOf(paso) + 1; i >= 0; i--) { const l = c15.escenas[i].lecturas[k]; if (l) return l.filas ? l.filas.map(h => FILAS[h]) : l.valor; } };
+debe(leidoTras('casar_net', `fn_nomina_cargo_propuesta|${MOV.tax}`).opciones.length === 0 && leidoTras('casar_tax_mano', `fn_nomina_cargo_propuesta|${MOV.sui}`).opciones.length === 1 &&
+  res('casar_tax_mano').ya_estaba === false && res('casar_sui').ya_estaba === false, 'los impuestos en dos cargos: el federal no casa solo (a mano) y el de Florida, después, sí');
+{ const e = res('ensayo_misma').corridas[0];
+  debe(e.ya_estaba && e.ya_estaba.mismas_cifras === false && Number(e.totales.bruto) === Number(e.ya_estaba.bruto) && Number(e.totales.neto) === Number(e.ya_estaba.neto) &&
+    res('importar_misma').corridas[0].resultado === 'otra_distinta', 'la misma nómina con otras columnas: otra_distinta, con el mismo bruto y el mismo neto'); }
+debe(c15.errores.casar_mano_suma.error.code === 'MX001', 'las partes a mano que no suman el cargo: MX001');
 // nada delicado en lo que contestó el banco ni en lo que se le mandó (solo en los archivos que sube la prueba)
 const sinArchivos = JSON.stringify({ FILAS, c15 });
 for (const t of ['000-00-0001', '000-00-0002', '000-00-0003', '000-00-0009', 'Calle Falsa', '"SSN"', 'Home address', 'ZZ Nota']) {

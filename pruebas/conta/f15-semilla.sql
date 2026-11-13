@@ -14,8 +14,11 @@
 --
 -- EL PERÍODO DE PAGO: del lunes 5 al domingo 18 de octubre de 2026 (dos
 -- semanas laborales enteras, la semana empieza en lunes); día de pago, el
--- viernes 23; los cargos de Gusto, el lunes 19 (cuatro días hábiles antes);
--- la cuota mensual, el 2. Las horas:
+-- viernes 23; los cargos de Gusto, el lunes 19 (cuatro días hábiles antes):
+-- el neto, la manutención (CSD) y los impuestos EN DOS CARGOS (el federal con
+-- el FUTA, y el reempleo de Florida aparte), que ninguna opción de la base casa
+-- solos al centavo (la pantalla los parte a mano); la cuota mensual, el 2.
+-- Las horas:
 --   ZZ Ayudante Uno   6-oct 8 h obra A · 7-oct 8 h obra A · 8-oct 10 h obra B
 --                     «CO #1» · 9-oct 4 h SIN OBRA (aprobadas) · y la
 --                     segunda semana 12 a 16-oct 10+10+10+10+4 h (aprobadas:
@@ -86,7 +89,8 @@ select fn_banco_importar_filas(jsonb_build_object(
   'filas', jsonb_build_array(
     jsonb_build_object('id', 'c15-pantalla-fee', 'fecha', '2026-10-02', 'plaid_monto', '49.00',   'descripcion', 'GUSTO FEE 6semk7 C15 PRUEBA', 'tipo', 'DEBIT', 'pendiente', false),
     jsonb_build_object('id', 'c15-pantalla-net', 'fecha', '2026-10-19', 'plaid_monto', '4874.93', 'descripcion', 'GUSTO NET 6semk7 C15 PRUEBA', 'tipo', 'DEBIT', 'pendiente', false),
-    jsonb_build_object('id', 'c15-pantalla-tax', 'fecha', '2026-10-19', 'plaid_monto', '1583.31', 'descripcion', 'GUSTO TAX 6semk7 C15 PRUEBA', 'tipo', 'DEBIT', 'pendiente', false),
+    jsonb_build_object('id', 'c15-pantalla-tax', 'fecha', '2026-10-19', 'plaid_monto', '1426.49', 'descripcion', 'GUSTO TAX 6semk7 C15 PRUEBA', 'tipo', 'DEBIT', 'pendiente', false),
+    jsonb_build_object('id', 'c15-pantalla-sui', 'fecha', '2026-10-19', 'plaid_monto', '156.82',  'descripcion', 'GUSTO TAX SUI 6semk7 C15 PRUEBA', 'tipo', 'DEBIT', 'pendiente', false),
     jsonb_build_object('id', 'c15-pantalla-csd', 'fecha', '2026-10-19', 'plaid_monto', '50.00',   'descripcion', 'GUSTO CSD 6semk7 C15 PRUEBA', 'tipo', 'DEBIT', 'pendiente', false)))) \gset
 select count(fn_banco_casar(m.id)) as casados from movimientos_banco m where m.id_externo like 'c15-pantalla-%' \gset
 commit;

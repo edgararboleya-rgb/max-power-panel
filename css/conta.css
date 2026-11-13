@@ -1293,3 +1293,20 @@ body[data-vista="conta"] .fab { display: none; }
   #conta-raiz .ct-nom-fila .ct-subs-chips { justify-content: flex-end; }
   #conta-raiz .ct-nom-semanas { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+#conta-raiz .ct-nom-avisos details summary { cursor: pointer; font-weight: 700; min-height: var(--tap); display: flex; align-items: center; overflow-wrap: anywhere; }
+#conta-raiz .ct-nom-avisos details p { margin: .2rem 0 .3rem; overflow-wrap: anywhere; }
+/* (fase 11, arreglos) el rojo del control arriba de lo que se deja ver sin cifras; las nóminas sin cifras (nombre y estado); las anuladas
+   y las descartadas, plegadas debajo de las vivas; la misma nómina leída de otras columnas; y «decir a mano qué paga» un cargo de Gusto:
+   una línea por lo que cada nómina dejó por pagar, con su campo */
+#conta-raiz .ct-nom-rojo ul { margin: .3rem 0; }
+#conta-raiz .ct-nom-rojo li, #conta-raiz .ct-nom-misma { overflow-wrap: anywhere; }
+#conta-raiz .ct-nom-muertas { margin-top: .4rem; border-top: 1px solid var(--mp-line); }
+#conta-raiz .ct-nom-mano { border: 1px solid var(--mp-line); border-radius: 10px; padding: 0 .6rem; min-width: 0; }
+#conta-raiz .ct-nom-mano[open] { padding-bottom: .5rem; }
+#conta-raiz .ct-nom-mano summary { cursor: pointer; font-weight: 700; color: var(--cu-dark); padding: .55rem 0; min-height: var(--tap); overflow-wrap: anywhere; }
+#conta-raiz .ct-nom-mano-f { display: grid; gap: .35rem; min-width: 0; }
+#conta-raiz .ct-nom-mano-l { min-width: 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-nom-mano-l input { max-width: 12rem; }
+@media (min-width: 700px) {
+  #conta-raiz .ct-nom-fila.sin-cifras { grid-template-columns: minmax(0, 1fr) minmax(0, 13rem); }
+}
