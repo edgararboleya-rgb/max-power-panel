@@ -1321,3 +1321,314 @@ body[data-vista="conta"] .fab { display: none; }
 #conta-raiz .ct-nom-bolsa-mes { margin-top: .5rem; border-top: 1px dashed var(--mp-line); padding-top: .4rem; }
 #conta-raiz .ct-nom-bolsa-mes input[type="month"] { max-width: 12rem; }
 #conta-raiz .ct-nom-avisos details .ct-acciones { margin: 0 0 .3rem; }
+
+/* (tablero, c16) la Bandeja abierta desde un enlace del tablero: las fechas de ese período (y si son depósitos o cargos), dichas, con «Ver todos» */
+#conta-raiz .ct-bj-rango { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .6rem; margin-top: .55rem; padding: .35rem .6rem; border-radius: 10px;
+  background: var(--mp-sky-1); border: 1px solid var(--mp-line); font-size: .86rem; font-weight: 600; color: var(--mp-ink-2); }
+#conta-raiz .ct-bj-rango > span { flex: 1 1 12rem; min-width: 0; }
+/* ===========================================================================
+   (tablero, c16) EL TABLERO de la portada «Resumen» (c16): como el «Business at a
+   glance» de QuickBooks. Las acciones rápidas, «Qué atender» y una rejilla de
+   tarjetas (una columna en el teléfono, dos en el iPad, tres en la
+   computadora; el embudo y el flujo de caja, anchos, como en QuickBooks), cada
+   una con su título en cobre, su cifra, su gráfica (SVG), la tabla con los
+   mismos números y su enlace al pie.
+   LOS COLORES DE LAS GRÁFICAS son tokens de styles.css, con su papel (y
+   pasados por el validador de la guía de gráficas sobre la tarjeta blanca):
+     · la serie: --mp-blue; la segunda serie (las salidas de caja): --cu
+       (las dos pasan las seis comprobaciones: ΔE CVD 28.7, normal 34.1,
+       las dos ≥ 3:1);
+     · la antigüedad (tramos en orden): una rampa de un solo azul, de claro
+       (corriente) a oscuro (más de 90 días): --night-ink-3, --night-blue,
+       --mp-blue, --mp-navy, --night-2 (pasa la comprobación de rampa
+       ordenada: luz monótona, saltos ≥ 0.06, el claro a 2.15:1);
+     · lo de contexto (el período anterior, «las demás», lo que no ha vencido,
+       lo que no se ha depositado): --mp-gris-bd, gris A PROPÓSITO (no es una
+       serie: queda bajo el piso de croma y a 2.46:1; por eso lleva su cifra
+       escrita al lado y su tabla, que es el alivio que la guía pide);
+     · el estado: --bad (vencido, pérdida) y --ok (depositado), siempre con su
+       icono y su texto.
+   El texto va en tinta (nunca del color de la serie); la rejilla, de un pelo.
+   La app no tiene modo oscuro (styles.css no lo trae): en un teléfono en
+   oscuro el tablero se ve igual que en claro (pantalla.js lo comprueba).
+   Darle modo oscuro es cosa de styles.css (de todos); sobre la noche de la
+   app (--night) el par --mp-blue / --cu pasa el validador salvo el
+   contraste de --mp-blue (2.99:1, aviso): el alivio que pide la guía ya
+   está (la cifra escrita al lado de cada barra y la tabla gemela).
+   Cada tarjeta mide lo que trae (align-items: start en la rejilla).
+   =========================================================================== */
+#conta-raiz .ct-tb-raiz { display: grid; gap: .8rem; min-width: 0;
+  --tb-s1: var(--mp-blue); --tb-s2: var(--cu); --tb-gris: var(--mp-gris-bd); --tb-bien: var(--ok); --tb-mal: var(--bad);
+  --tb-t0: var(--night-ink-3); --tb-t1: var(--night-blue); --tb-t2: var(--mp-blue); --tb-t3: var(--mp-navy); --tb-t4: var(--night-2);
+  --tb-rej: var(--mp-sky-3); --tb-base: var(--mp-line-2); --tb-eje: var(--mp-ink-3); --tb-pista: var(--mp-sky-3); }
+#conta-raiz .ct-tb-i { width: 1em; height: 1em; flex: none; vertical-align: -.15em; margin-right: .3em; }
+#conta-raiz .ct-tb-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+/* sin c16: la línea que dice qué pegar (o que el tablero no contestó) */
+#conta-raiz .ct-tb-falta { display: flex; align-items: center; flex-wrap: wrap; gap: .3rem .45rem; margin: 0; padding: .5rem .75rem; border-radius: 10px;
+  background: var(--mp-sky-1); border: 1px dashed var(--cu-light); font-size: .88rem; color: var(--mp-ink-2); overflow-wrap: anywhere; }
+#conta-raiz .ct-tb-falta .ct-tb-i { color: var(--cu-dark); }
+#conta-raiz .ct-tb-falta.mal { border-style: solid; border-color: var(--bad-line); color: var(--bad); }
+/* los dos botones de arriba a la derecha (como «Customize» y «Privacy» de QuickBooks): Personalizar y Privacidad */
+#conta-raiz .ct-tb-btn { display: inline-flex; align-items: center; justify-content: center; }
+#conta-raiz .ct-tb-btn[aria-pressed="true"], #conta-raiz .ct-tb-btn[aria-expanded="true"] { background: var(--night); border-color: var(--night); color: var(--mp-white); }
+/* Personalizar */
+#conta-raiz .ct-tb-pers-lista { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: .1rem .8rem; }
+#conta-raiz .ct-tb-pers-op { display: flex; align-items: center; gap: .55rem; min-height: var(--tap); font-weight: 600; font-size: .92rem; cursor: pointer; }
+#conta-raiz .ct-tb-pers-op input { width: 20px; height: 20px; flex: none; accent-color: var(--cu-dark); }
+/* la fila de acciones rápidas */
+#conta-raiz .ct-tb-acc { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem .7rem; min-width: 0; }
+#conta-raiz .ct-tb-acc-t { font-weight: 800; font-size: .95rem; color: var(--mp-ink); }
+#conta-raiz .ct-tb-acc-lista { display: flex; flex-wrap: wrap; gap: .45rem; min-width: 0; }
+#conta-raiz .ct-tb-chip { display: inline-flex; align-items: center; gap: .4rem; min-height: var(--tap); padding: .35rem .85rem; border-radius: 999px; text-align: left;
+  border: 1.5px solid var(--mp-line); background: var(--mp-card); color: var(--mp-ink); font: inherit; font-size: .88rem; font-weight: 700; cursor: pointer; max-width: 100%; }
+#conta-raiz .ct-tb-chip svg { width: 18px; height: 18px; flex: none; color: var(--cu-dark); }
+#conta-raiz .ct-tb-chip:hover:not(:disabled) { border-color: var(--cu-light); }
+#conta-raiz .ct-tb-chip:disabled { opacity: .55; cursor: not-allowed; }
+#conta-raiz .ct-tb-chip:focus-visible, #conta-raiz .ct-tb-ir:focus-visible, #conta-raiz .ct-tb-link:focus-visible, #conta-raiz .ct-tb-paso:focus-visible { outline: 3px solid var(--mp-blue); outline-offset: 2px; }
+#conta-raiz .ct-tb-n { min-width: 22px; height: 22px; border-radius: 999px; background: var(--mp-sky-3); color: var(--mp-ink); font-size: .75rem; font-weight: 800;
+  display: inline-grid; place-items: center; padding: 0 6px; font-variant-numeric: tabular-nums; }
+#conta-raiz .ct-tb-n.alarma { background: var(--bad); color: var(--mp-white); }
+/* «El negocio de un vistazo» y la rejilla */
+#conta-raiz .ct-tb-vistazo { display: grid; gap: .1rem; margin-top: .35rem; }
+#conta-raiz .ct-tb-h { margin: 0; font-size: var(--fs-h2); font-weight: 800; letter-spacing: -.01em; }
+#conta-raiz .ct-tb-libro { margin: 0; font-size: .84rem; color: var(--mp-ink-3); }
+/* (cada tarjeta mide lo que trae: estiradas a la más alta de su fila dejaban media tarjeta en blanco) */
+#conta-raiz .ct-tb-rejilla { display: grid; grid-template-columns: minmax(0, 1fr); gap: .8rem; grid-auto-flow: row dense; align-items: start; }
+@media (min-width: 700px) {
+  #conta-raiz .ct-tb-rejilla { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #conta-raiz .ct-tb.ancha { grid-column: span 2; }
+}
+@media (min-width: 1200px) {
+  #conta-raiz .ct-tb-rejilla { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  /* bancos y tarjetas ocupa dos filas al lado del embudo (como QuickBooks: el embudo ancho y las cuentas a su lado) */
+  #conta-raiz .ct-tb[data-tb="bancos"] { grid-row: span 2; }
+}
+/* una tarjeta: título en cobre (como las etiquetas de sección), cifra, gráfica, tabla y el enlace al pie */
+#conta-raiz .ct-tb { display: flex; flex-direction: column; gap: .55rem; min-width: 0; container-type: inline-size; }
+#conta-raiz .ct-tb.mal { border-color: var(--bad-line); }
+#conta-raiz .ct-tb-cab { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .2rem .6rem; min-height: 24px; }
+#conta-raiz .ct-tb-cab h3 { margin: 0; font-size: .8rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--cu-dark); }
+#conta-raiz .ct-tb-cuando { font-size: .78rem; font-weight: 600; color: var(--mp-ink-3); }
+/* el selector de la tarjeta (el período de los resultados, el año de las ventas): chico, arriba a la derecha, como «Last month ˅» */
+#conta-raiz .ct-tb-sel { font: inherit; font-size: .8rem; font-weight: 700; color: var(--mp-ink); min-height: 36px; max-width: 100%; padding: .25rem 1.8rem .25rem .65rem; border-radius: 999px;
+  border: 1.5px solid var(--mp-line); background-color: var(--mp-card); cursor: pointer; }
+#conta-raiz .ct-tb-sel:hover:not(:disabled) { border-color: var(--cu-light); }
+#conta-raiz .ct-tb-sel:focus-visible { outline: 3px solid var(--mp-blue); outline-offset: 2px; }
+#conta-raiz .ct-tb-sel:disabled { opacity: .6; }
+#conta-raiz .ct-tb-ctl .ct-chips { margin-top: 0; }
+#conta-raiz .ct-tb-chips .ct-chip { padding: .3rem .6rem; font-size: .8rem; }
+#conta-raiz .ct-tb-cuerpo { flex: 1 1 auto; display: grid; gap: .55rem; align-content: start; min-width: 0; transition: opacity .2s; }
+#conta-raiz .ct-tb.leyendo .ct-tb-cuerpo { opacity: .5; }
+#conta-raiz .ct-tb-pie { display: flex; flex-wrap: wrap; gap: 0 1.1rem; margin-top: auto; padding-top: .35rem; border-top: 1px solid var(--mp-line); }
+#conta-raiz .ct-tb-ir, #conta-raiz .ct-tb-link { font: inherit; font-weight: 700; color: var(--mp-navy); background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+#conta-raiz .ct-tb-ir { font-size: .88rem; min-height: var(--tap); }
+#conta-raiz .ct-tb-link { font-size: inherit; text-decoration: underline; text-decoration-color: var(--mp-line-2); text-underline-offset: 3px; }
+#conta-raiz .ct-tb-ir:hover, #conta-raiz .ct-tb-link:hover { text-decoration: underline; text-decoration-color: currentColor; }
+/* la cifra de la tarjeta (letra de la app, figuras proporcionales: se lee como número, no como columna); nunca se parte */
+#conta-raiz .ct-tb-fig { display: flex; flex-wrap: wrap; align-items: center; gap: .2rem .6rem; }
+#conta-raiz .ct-tb-et { flex-basis: 100%; font-size: .86rem; font-weight: 600; color: var(--mp-ink-2); }
+#conta-raiz .ct-tb-cifra { font-family: var(--font); font-size: 1.8rem; font-weight: 800; letter-spacing: -.02em; line-height: 1.1; color: var(--mp-ink); font-variant-numeric: proportional-nums; white-space: nowrap; }
+#conta-raiz .ct-tb-gris { font-size: .82rem; font-weight: 500; color: var(--mp-ink-3); }
+#conta-raiz .ct-tb-nota { margin: 0; font-size: .82rem; line-height: 1.45; color: var(--mp-ink-2); overflow-wrap: anywhere; }
+#conta-raiz .ct-tb-nota.chica { font-size: .78rem; margin-top: .2rem; }
+#conta-raiz .ct-tb-delta { display: flex; align-items: center; flex-wrap: wrap; gap: .1rem .35rem; margin: 0; font-size: .86rem; color: var(--mp-ink-2); }
+#conta-raiz .ct-tb-delta.bien b, #conta-raiz .ct-tb-delta.bien .ct-tb-i { color: var(--ok-ink); }
+#conta-raiz .ct-tb-delta.mal b, #conta-raiz .ct-tb-delta.mal .ct-tb-i { color: var(--bad); }
+#conta-raiz .ct-tb .ct-pill { display: inline-flex; align-items: center; white-space: normal; }
+#conta-raiz .ct-tb .ct-pill .ct-tb-i { margin-right: .25em; }
+#conta-raiz .ct-tb-aldia { display: inline-flex; align-items: center; font-size: .84rem; font-weight: 700; color: var(--ok-ink); }
+#conta-raiz .ct-tb-vencido { display: inline-flex; align-items: center; font-size: .88rem; font-weight: 700; color: var(--bad); }
+#conta-raiz .ct-tb-alarma { display: flex; align-items: flex-start; gap: .1rem; margin: 0; font-size: .82rem; font-weight: 600; color: var(--bad); overflow-wrap: anywhere; }
+#conta-raiz .ct-tb-revisar { display: flex; align-items: flex-start; gap: .15rem; margin: 0; padding: .45rem .6rem; border-radius: 10px; background: var(--warn-bg); color: var(--warn-ink); font-size: .84rem; line-height: 1.45; overflow-wrap: anywhere; }
+#conta-raiz .ct-tb-revisar > span { flex: 1 1 0; min-width: 0; }
+#conta-raiz .ct-tb-revisar .ct-tb-i { margin-top: .2em; }
+#conta-raiz .ct-tb-revisar .ct-tb-link { color: var(--warn-ink); }
+#conta-raiz .ct-tb .ct-aviso { display: flex; align-items: flex-start; gap: .2rem; margin: 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-tb-modo { margin: 0; }
+/* la leyenda (con dos series): la marca como en la gráfica (cuadro para barras, raya para líneas) y el texto en tinta */
+#conta-raiz .ct-tb-ley { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: .2rem 1rem; font-size: .82rem; color: var(--mp-ink-2); }
+#conta-raiz .ct-tb-ley li { display: inline-flex; align-items: center; gap: .4rem; }
+#conta-raiz .ct-tb-ley-m { display: inline-block; width: 12px; height: 12px; border-radius: 3px; background: var(--tb-s1); }
+#conta-raiz .ct-tb-ley-m.gris { background: var(--tb-gris); }
+#conta-raiz .ct-tb-ley-m.serie2 { background: var(--tb-s2); }
+#conta-raiz .ct-tb-ley-m.mal { background: var(--tb-mal); }
+#conta-raiz .ct-tb-ley-m.bien { background: var(--tb-bien); }
+#conta-raiz .ct-tb-lado-t .ct-tb-ley-m { width: 10px; height: 10px; margin-right: .35rem; flex: none; }
+#conta-raiz .ct-tb-ley-m.linea { width: 20px; height: 0; border-radius: 0; background: none; border-top: 2px solid var(--tb-s1); }
+#conta-raiz .ct-tb-ley-m.linea.punteada { border-top-style: dashed; }
+/* las gráficas */
+#conta-raiz .ct-tb-graf { width: 100%; min-width: 0; }
+#conta-raiz .ct-tb-svg { display: block; overflow: visible; max-width: 100%; }
+#conta-raiz .ct-tb-svg text { font-family: var(--font); }
+#conta-raiz .ct-tb-tx1 { font-size: 12px; font-weight: 700; fill: var(--mp-ink); font-variant-numeric: tabular-nums; }
+#conta-raiz .ct-tb-eje { font-size: 12px; fill: var(--tb-eje); font-variant-numeric: tabular-nums; }
+#conta-raiz .ct-tb-rej { stroke: var(--tb-rej); stroke-width: 1; shape-rendering: crispEdges; }
+#conta-raiz .ct-tb-base, #conta-raiz .ct-tb-cero { stroke: var(--tb-base); stroke-width: 1; shape-rendering: crispEdges; }
+#conta-raiz .ct-tb-m.serie1 { fill: var(--tb-s1); }
+#conta-raiz .ct-tb-m.serie2 { fill: var(--tb-s2); }
+#conta-raiz .ct-tb-m.gris { fill: var(--tb-gris); }
+#conta-raiz .ct-tb-m.bien { fill: var(--tb-bien); }
+#conta-raiz .ct-tb-m.mal { fill: var(--tb-mal); }
+#conta-raiz .ct-tb-m.t0 { fill: var(--tb-t0); }
+#conta-raiz .ct-tb-m.t1 { fill: var(--tb-t1); }
+#conta-raiz .ct-tb-m.t2 { fill: var(--tb-t2); }
+#conta-raiz .ct-tb-m.t3 { fill: var(--tb-t3); }
+#conta-raiz .ct-tb-m.t4 { fill: var(--tb-t4); }
+#conta-raiz .ct-tb-m { transition: opacity .12s; }
+#conta-raiz .ct-tb-m.on { opacity: .72; }
+#conta-raiz .ct-tb-pista { fill: var(--tb-pista); }
+#conta-raiz .ct-tb-hit { fill: transparent; cursor: pointer; outline: none; }
+#conta-raiz .ct-tb-hit:focus-visible { stroke: var(--mp-blue); stroke-width: 2; }
+#conta-raiz .ct-tb-linea { fill: none; stroke: var(--tb-s1); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+#conta-raiz .ct-tb-linea.proy { stroke-dasharray: 6 5; }
+#conta-raiz .ct-tb-area { fill: var(--tb-s1); fill-opacity: .1; stroke: none; }
+#conta-raiz .ct-tb-punto { fill: var(--tb-s1); stroke: var(--mp-card); stroke-width: 2; }
+#conta-raiz .ct-tb-punto.proy { fill: var(--mp-card); stroke: var(--tb-s1); }
+#conta-raiz .ct-tb-punto.on { stroke: var(--mp-ink); stroke-width: 2.5; }
+#conta-raiz .ct-tb-cruz { stroke: var(--mp-ink-3); stroke-width: 1; shape-rendering: crispEdges; pointer-events: none; }
+/* una gráfica por filas (barras horizontales): el nombre y su cifra arriba, la barra debajo; lo que espera en la Bandeja, al lado */
+#conta-raiz .ct-tb-barras { display: grid; gap: .55rem; min-width: 0; }
+#conta-raiz .ct-tb-bf { display: grid; gap: .25rem; min-width: 0; }
+#conta-raiz .ct-tb-bf-c { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 0 .6rem; font-size: .86rem; }
+#conta-raiz .ct-tb-bf-n { min-width: 0; font-weight: 600; color: var(--mp-ink-2); overflow-wrap: anywhere; }
+#conta-raiz .ct-tb-bf-v { margin-left: auto; white-space: nowrap; color: var(--mp-ink); }
+#conta-raiz .ct-tb-bf-v b { display: inline-flex; align-items: center; font-weight: 800; }
+#conta-raiz .ct-tb-bf-r { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 .5rem; font-size: .8rem; }
+#conta-raiz .ct-tb-bf-r small { font-size: .76rem; color: var(--mp-ink-3); }
+#conta-raiz .ct-tb-neg { color: var(--bad); }
+/* el tooltip: el valor primero, en grande; lo que es, después (sobre la noche de la app) */
+#conta-raiz .ct-tb-tip { position: fixed; z-index: 60; left: 0; top: 0; display: grid; gap: .1rem; max-width: 17rem; padding: .45rem .65rem; border-radius: 10px;
+  background: var(--night); color: var(--mp-white); box-shadow: var(--mp-shadow); font-size: .82rem; line-height: 1.35; pointer-events: none; }
+#conta-raiz .ct-tb-tip > b { font-size: 1rem; font-weight: 800; }
+#conta-raiz .ct-tb-tip > span { color: var(--night-ink-2); }
+#conta-raiz .ct-tb-tip .f { display: flex; justify-content: space-between; gap: .9rem; }
+#conta-raiz .ct-tb-tip .f i { font-style: normal; color: var(--night-ink-2); }
+#conta-raiz .ct-tb-tip .f b { font-weight: 700; color: var(--mp-white); }
+/* «Ver los números»: la tabla gemela de cada gráfica */
+#conta-raiz .ct-tb-tabla { min-width: 0; max-width: 100%; }
+#conta-raiz .ct-tb-tabla > summary { cursor: pointer; display: flex; align-items: center; min-height: 36px; font-size: .84rem; font-weight: 700; color: var(--mp-navy); }
+#conta-raiz .ct-tb-tabla .ct-tabla { font-size: .82rem; }
+#conta-raiz .ct-tb-tabla .ct-tabla th { white-space: nowrap; }
+#conta-raiz .ct-tb-tabla .ct-tabla td.r { white-space: nowrap; }
+#conta-raiz .ct-tb-tabla .ct-tabla td small { display: block; }
+/* un porcentaje entre paréntesis no se parte («(+1.1 %)» entero, aunque la celda apilada parta la cifra de su porcentaje) */
+#conta-raiz .ct-tb-nb { white-space: nowrap; }
+#conta-raiz .ct-tb-tabla-t { margin-top: .6rem; font-weight: 700; }
+/* de dónde sale cada cifra (la «fuente» de la base), al final de «Ver los números» */
+#conta-raiz .ct-tb-fuente { margin-top: .5rem; color: var(--mp-ink-3); }
+/* lo que la base aparta y dice (el reverso del ajuste del WIP del día 1): a la vista, con su raya a la izquierda */
+#conta-raiz .ct-tb-aparte { padding-left: .6rem; border-left: 3px solid var(--mp-line-2); }
+#conta-raiz .ct-tb-pj { font-size: .84rem; color: var(--mp-ink-2); }
+#conta-raiz .ct-tb-pj p { margin: .2rem 0; }
+#conta-raiz .ct-tb-pj ul { margin: 0 0 .3rem; padding-left: 1.1rem; }
+/* la tabla gemela en una tarjeta angosta: cada fila apilada (el nombre arriba, sus cifras debajo con su etiqueta) */
+@container (max-width: 519px) {
+  #conta-raiz .ct-tb-tabla .ct-tabla-env { margin: 0; padding: 0; overflow: visible; }
+  #conta-raiz .ct-tb-tabla .ct-tabla thead { display: none; }
+  #conta-raiz .ct-tb-tabla .ct-tabla tbody tr { display: grid; grid-template-columns: repeat(var(--tb-cols, 2), minmax(0, 1fr)); gap: .15rem .6rem; padding: .45rem 0; border-bottom: 1px solid var(--mp-line); }
+  #conta-raiz .ct-tb-tabla .ct-tabla tbody tr.ct-total { border-top: 1px solid var(--mp-line-2); }
+  /* (también td.r: la regla de arriba —una cifra no se parte en la tabla ancha— pesa más que «tbody td» y, apilada, la celda de
+     «Variación» de los resultados, con su cifra y su porcentaje, se salía de la tarjeta y hacía ancha la página en el teléfono) */
+  #conta-raiz .ct-tb-tabla .ct-tabla tbody td, #conta-raiz .ct-tb-tabla .ct-tabla tbody td.r { display: block; border: 0; padding: 0; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+  #conta-raiz .ct-tb-tabla .ct-tabla tbody td:first-child { grid-column: 1 / -1; font-weight: 700; }
+  #conta-raiz .ct-tb-tabla .ct-tabla td[data-col]::before { content: attr(data-col); display: block; font-family: var(--font); font-size: .68rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--mp-ink-3); }
+}
+/* el embudo de cobro: tres pasos con el cable de cobre arriba (la raya de color de QuickBooks), en fila cuando la tarjeta es ancha */
+#conta-raiz .ct-tb-embudo { display: grid; grid-template-columns: minmax(0, 1fr); gap: .5rem; }
+#conta-raiz .ct-tb-paso { position: relative; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .3rem .5rem; min-width: 0;
+  padding: .8rem .8rem .7rem; overflow: hidden; font: inherit; color: inherit; text-align: left; background: var(--mp-card); border: 1px solid var(--mp-line); border-radius: 12px; }
+#conta-raiz .ct-tb-paso::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 4px; background: var(--wire); }
+#conta-raiz button.ct-tb-paso { cursor: pointer; }
+#conta-raiz button.ct-tb-paso:hover { border-color: var(--cu-light); }
+#conta-raiz .ct-tb-paso-t { flex-basis: 100%; font-size: .9rem; font-weight: 700; color: var(--mp-ink-2); }
+#conta-raiz .ct-tb-paso .ct-tb-cifra { font-size: 1.35rem; }
+#conta-raiz .ct-tb-paso-n { min-width: 0; }
+#conta-raiz .ct-tb-paso-d { flex-basis: 100%; font-size: .76rem; line-height: 1.35; color: var(--mp-ink-3); }
+#conta-raiz .ct-tb-flecha { display: none; align-self: center; font-size: 1.6rem; line-height: 1; color: var(--mp-ink-3); }
+@container (min-width: 520px) {
+  #conta-raiz .ct-tb-embudo { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr); align-items: stretch; }
+  #conta-raiz .ct-tb-paso { display: grid; align-content: start; justify-content: stretch; }
+  #conta-raiz .ct-tb-paso .ct-tb-cifra { font-size: 1.5rem; }
+  #conta-raiz .ct-tb-flecha { display: block; }
+}
+/* bancos y tarjetas: los totales; cada cuenta con el nombre a la izquierda y lo del banco y del libro a la derecha */
+#conta-raiz .ct-tb-totales { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; margin: 0; }
+#conta-raiz .ct-tb-totales dt { font-size: .82rem; font-weight: 600; color: var(--mp-ink-2); }
+#conta-raiz .ct-tb-totales dd { margin: 0; font-size: 1.3rem; font-weight: 800; letter-spacing: -.01em; font-family: var(--font); font-variant-numeric: proportional-nums; white-space: nowrap; }
+#conta-raiz .ct-tb-totales small { display: block; font-size: .76rem; color: var(--mp-ink-3); }
+#conta-raiz .ct-tb-ctas, #conta-raiz .ct-tb-cx, #conta-raiz .ct-tb-meses, #conta-raiz .ct-tb-pres, #conta-raiz .ct-tb-cx-tot { list-style: none; margin: 0; padding: 0; display: grid; }
+#conta-raiz .ct-tb-cta { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: .7rem; row-gap: .25rem; align-items: start; padding: .55rem 0; border-top: 1px solid var(--mp-line); min-width: 0; }
+#conta-raiz .ct-tb-cta.alarma { border-left: 3px solid var(--bad); padding-left: .6rem; }
+#conta-raiz .ct-tb-cta > .ct-tb-alarma, #conta-raiz .ct-tb-cta > .ct-tb-cta-x { grid-column: 1 / -1; }
+#conta-raiz .ct-tb-cta-n { display: grid; gap: .1rem; min-width: 0; }
+#conta-raiz .ct-tb-cta-n b { font-size: .95rem; }
+#conta-raiz .ct-tb-cta-n small { font-size: .78rem; color: var(--mp-ink-3); overflow-wrap: anywhere; }
+#conta-raiz .ct-tb-cta-r { font-size: .82rem; }
+#conta-raiz .ct-tb-cta-s { display: grid; gap: .1rem; margin: 0; text-align: right; }
+#conta-raiz .ct-tb-cta-s > div { display: grid; }
+#conta-raiz .ct-tb-cta-s dt { order: 2; font-size: .72rem; color: var(--mp-ink-3); }
+#conta-raiz .ct-tb-cta-s dd { order: 1; margin: 0; font-weight: 700; font-size: .9rem; white-space: nowrap; }
+#conta-raiz .ct-tb-cta-s dt b { font-weight: 700; color: var(--mp-ink-2); }
+/* la diferencia con el banco, el mismo día: cero, «igual que el banco» con su ✓ */
+#conta-raiz .ct-tb-cta-dif dt { display: inline-flex; align-items: center; justify-content: flex-end; }
+#conta-raiz .ct-tb-cta-dif.igual dt { order: 1; font-size: .74rem; font-weight: 700; color: var(--ok-ink); }
+/* en una tarjeta angosta (el teléfono, el iPad, la columna de la computadora) el nombre arriba a lo ancho y, debajo, lo del banco, lo
+   del libro y la diferencia lado a lado: con «al 31-oct-2026» la columna de las cifras ya no cabe al lado del nombre */
+@container (max-width: 459px) {
+  #conta-raiz .ct-tb-cta { grid-template-columns: minmax(0, 1fr); }
+  #conta-raiz .ct-tb-cta-s { grid-template-columns: repeat(auto-fit, minmax(6.2rem, 1fr)); gap: .25rem .7rem; text-align: left; }
+  #conta-raiz .ct-tb-cta-dif dt { justify-content: flex-start; }
+}
+/* facturas: las dos partes de cada todo, a los lados, con su barra fina debajo */
+#conta-raiz .ct-tb-fac { display: grid; gap: .35rem; }
+#conta-raiz .ct-tb-fac + .ct-tb-fac { padding-top: .55rem; border-top: 1px solid var(--mp-line); }
+#conta-raiz .ct-tb-fac-t { margin: 0; font-size: .9rem; color: var(--mp-ink-2); }
+#conta-raiz .ct-tb-fac-t b { font-size: 1.05rem; color: var(--mp-ink); }
+#conta-raiz .ct-tb-lados { display: flex; justify-content: space-between; align-items: flex-end; gap: .6rem; }
+#conta-raiz .ct-tb-lado { display: grid; min-width: 0; }
+#conta-raiz .ct-tb-lado.der { text-align: right; justify-items: end; }
+#conta-raiz .ct-tb-lado-v { font-size: 1.2rem; font-weight: 800; letter-spacing: -.01em; font-variant-numeric: proportional-nums; white-space: nowrap; }
+#conta-raiz .ct-tb-lado-t { display: inline-flex; align-items: center; font-size: .82rem; color: var(--mp-ink-2); }
+#conta-raiz .ct-tb-lado.mal .ct-tb-lado-t { color: var(--bad); font-weight: 700; }
+#conta-raiz .ct-tb-lado.bien .ct-tb-lado-t { color: var(--ok-ink); font-weight: 700; }
+/* conexiones (como «My integrations»: el total, conectadas y con problemas; después cada una con su estado) */
+#conta-raiz .ct-tb-cx-t { display: flex; align-items: center; gap: .4rem; padding: .45rem 0; border-top: 1px solid var(--mp-line); font-weight: 700; font-size: .92rem; }
+#conta-raiz .ct-tb-cx-t b { margin-left: auto; }
+#conta-raiz .ct-tb-cx-t.bien .ct-tb-i { color: var(--ok-ink); }
+#conta-raiz .ct-tb-cx-t.mal .ct-tb-i { color: var(--bad); }
+#conta-raiz .ct-tb-cx-f { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: .25rem .6rem; padding: .5rem 0; border-top: 1px solid var(--mp-line); }
+#conta-raiz .ct-tb-cx-n { min-width: 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-tb-cx-d { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: .2rem .5rem; min-width: 0; }
+#conta-raiz .ct-tb-cx-d small { font-size: .78rem; color: var(--mp-ink-3); overflow-wrap: anywhere; }
+/* use tax: el mes pasado y este */
+#conta-raiz .ct-tb-meses li { display: flex; justify-content: space-between; align-items: center; gap: .6rem; padding: .45rem 0; border-top: 1px solid var(--mp-line); }
+#conta-raiz .ct-tb-meses li > div { min-width: 0; }
+#conta-raiz .ct-tb-meses small { display: block; font-size: .78rem; color: var(--mp-ink-3); overflow-wrap: anywhere; }
+/* préstamos: un medidor por préstamo */
+#conta-raiz .ct-tb-pres li { display: grid; gap: .3rem; padding: .5rem 0; border-top: 1px solid var(--mp-line); }
+#conta-raiz .ct-tb-pres small { font-size: .78rem; color: var(--mp-ink-3); }
+#conta-raiz .ct-tb-pres-c { display: flex; flex-wrap: wrap; align-items: baseline; gap: .1rem .5rem; }
+#conta-raiz .ct-tb-pres-c .ct-num { margin-left: auto; font-weight: 800; }
+#conta-raiz .ct-tb-pres-px { display: flex; flex-wrap: wrap; align-items: center; gap: 0 .3rem; margin: 0; font-size: .84rem; }
+#conta-raiz .ct-tb-pres-px.mal { color: var(--bad); }
+/* cobros en línea: dos cifras en su cajita (como el «Deposit tracker») */
+#conta-raiz .ct-tb-sts { display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: .5rem; }
+#conta-raiz .ct-tb-st { display: grid; gap: .05rem; align-content: start; min-width: 0; padding: .5rem .6rem; border-radius: 10px; background: var(--mp-sky-1); border: 1px solid var(--mp-line); }
+#conta-raiz .ct-tb-st .ct-tb-et { flex-basis: auto; font-size: .8rem; }
+#conta-raiz .ct-tb-st-v { font-size: 1.15rem; font-weight: 800; font-variant-numeric: proportional-nums; white-space: nowrap; }
+#conta-raiz .ct-tb-st small { font-size: .76rem; color: var(--mp-ink-3); }
+/* obras: el WIP del mes y el margen por obra */
+#conta-raiz .ct-tb-ob-w, #conta-raiz .ct-tb-ob-c { display: grid; gap: .4rem; }
+#conta-raiz .ct-tb-ob-c { padding-top: .55rem; border-top: 1px solid var(--mp-line); }
+#conta-raiz .ct-tb-ob-w .ct-tb-et, #conta-raiz .ct-tb-ob-c .ct-tb-et { margin: 0; }
+/* el teléfono: las acciones en dos columnas (no una tira larga) */
+@media (max-width: 699px) {
+  #conta-raiz .ct-tb-acc-t { flex-basis: 100%; }
+  #conta-raiz .ct-tb-acc-lista { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  #conta-raiz .ct-tb-chip { border-radius: 12px; padding: .4rem .6rem; font-size: .84rem; line-height: 1.2; }
+  #conta-raiz .ct-tb-chip > span { min-width: 0; overflow-wrap: anywhere; }
+  #conta-raiz .ct-tb-n { margin-left: auto; }
+}
+/* lo de dentro de una tarjeta nunca la ensancha (un hijo de rejilla crece con su contenido si no se le dice) */
+#conta-raiz .ct-tb :is(div, ul, li, dl, p, details) { min-width: 0; }
+#conta-raiz .ct-tb-cuerpo > * { min-width: 0; max-width: 100%; }

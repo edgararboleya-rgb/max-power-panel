@@ -167,3 +167,8 @@ arriba.
   (s1-mfa.sql).
 - La IA contable: `update contador_config set activa = false where id = 1;`
   (c8); la Bandeja sigue como siempre.
+- El tablero de la portada (c16) no se apaga: solo lee y no guarda nada. Si
+  una tarjeta falla, sale sola con su motivo en llano y las demás siguen. Si
+  hiciera falta quitarlo entero: `drop function if exists public.fn_tablero(jsonb);`
+  (la app vuelve a la portada de siempre, con su línea de qué pegar); para
+  volver, se pega `docs/conta/c16-tablero.sql` otra vez.

@@ -1,8 +1,8 @@
-# Lo que hay que pegar (13-nov · v303)
+# Lo que hay que pegar (13-nov · v304)
 
 Esta lista **sustituye a la del 12-nov** (`PEGAR-12NOV.md`): trae lo mismo
-y además la nómina (c15). Si ya pegaste algo de la del 12-nov, no pasa nada:
-todo se puede pegar dos veces.
+y además la nómina (c15) y el tablero de la portada (c16). Si ya pegaste algo
+de la del 12-nov, no pasa nada: todo se puede pegar dos veces.
 
 En Supabase → SQL Editor. Cada archivo se copia **entero**, se pega en una
 consulta nueva y se le da a **Run**. Al final cada uno enseña una tabla:
@@ -25,22 +25,26 @@ Antes de empezar:
 | 3 | `docs/conta/c14-subs.sql` (nuevo: W-9, COI y 1099) | 9 |
 | 4 | `docs/conta/c15-nomina.sql` (nuevo: la nómina con Gusto) | 9 |
 | 5 | `docs/conta/c9-cierre.sql` (otra vez: trae las filas 160, 178, 179 y 180 a 183) | 12 |
+| 6 | `docs/conta/c16-tablero.sql` (nuevo: el tablero de la portada; solo lee, no guarda nada) | 6 |
 
 - En la de c14, la fila «qué falta» dirá que hay que confirmar el umbral del
   1099 con el CPA y dar de alta las fichas. Es lo esperado.
 - En la de c15, la fila «control» tiene que decir «0 de 5 cuadres en rojo ·
   0 de 14 avisos». La fila «qué falta» dirá que falta la cuenta de las horas
   sin obra y el primer «Payroll journal» de Gusto. Es lo esperado.
+- En la de c16, «una pasada del tablero» tiene que decir «15 tarjetas: 15
+  contestan, 0 dicen que su capa no está, 0 fallan» y «qué falta», «nada».
 
 ## B. Las pruebas (no dejan nada: lo que hacen, lo deshacen)
 
 | # | Archivo | Filas que salen |
 |---|---|---|
-| 6 | `docs/conta/c11-pruebas.sql` | 57 |
-| 7 | `docs/conta/c13-pruebas.sql` | 41 |
-| 8 | `docs/conta/c14-pruebas.sql` | 48 |
-| 9 | `docs/conta/c15-pruebas.sql` | 52 |
-| 10 | `docs/conta/c9-pruebas.sql` | 36 (con datos de verdad, hasta 4 pueden decir «omitida») |
+| 7 | `docs/conta/c11-pruebas.sql` | 57 |
+| 8 | `docs/conta/c13-pruebas.sql` | 41 |
+| 9 | `docs/conta/c14-pruebas.sql` | 48 |
+| 10 | `docs/conta/c15-pruebas.sql` | 52 |
+| 11 | `docs/conta/c9-pruebas.sql` | 36 (con datos de verdad, hasta 4 pueden decir «omitida») |
+| 12 | `docs/conta/c16-pruebas.sql` | 50 (hasta 3 pueden decir «omitida»: la 39, la 49 y la 50) |
 
 Todas tienen que decir `true` u «omitida» con su porqué. Si una dice que la
 app tenía algo tomado, se pega otra vez más tarde. **Una fila en `false`: no
@@ -69,6 +73,10 @@ sigas y manda la captura.**
 9. **Costo por obra:** todavía **no fijes el «burden estándar»**. Con la
    nómina dentro contaría la mano de obra dos veces; se arregla antes del
    8-ene.
+10. **Resumen** (la portada nueva): arriba, «Personalizar» esconde las
+   tarjetas que no quieras ver y «Privacidad» tapa todos los montos (para
+   enseñar la pantalla a alguien). Se acuerda en ese navegador. Cada tarjeta
+   tiene «Ver los números» y su enlace a la página de donde sale.
 
 El 1099 de 2026 sale de QuickBooks: la hoja de la app es parcial (el libro
 de la app empieza el 30-sep) y sirve para cruzar.

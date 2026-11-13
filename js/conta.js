@@ -103,6 +103,14 @@
 // amarra con el 941, el 940 y el RT-6; y reparte a las obras lo que queda en la bolsa del burden real. La
 // cabecera de su sección lo cuenta.
 //
+// Y el tablero de la portada (c16: fn_tablero; no es la Fase 16 del plan): «Resumen» como el «Business at a glance»
+// de QuickBooks: las acciones rápidas, «Qué atender» y una tarjeta por cosa (el embudo de cobro,
+// bancos y tarjetas, resultados, gastos, flujo de caja con su proyección, facturas, ventas, por
+// cobrar y por pagar por antigüedad, conexiones, cobros en línea, use tax, préstamos y obras), con
+// sus gráficas en SVG, su tabla y su enlace; Privacidad y Personalizar en el navegador. Las cifras
+// son las de la base: aquí no se suma dinero. Sin c16, la portada de siempre con una línea que dice
+// qué pegar. La cabecera de su sección lo cuenta.
+//
 // Cómo está organizada (v290, «que se parezca a un programa de contabilidad»):
 // una portada («Resumen») con las cifras y lo que hay que atender, y una
 // página por tarea: Bancos y tarjetas, Bandeja (el bank feed), Conciliar,
@@ -140,7 +148,7 @@
     conc: null, concCuenta: null, movCuenta: null, movEstado: "", filtroCuenta: null,
     importe: null, impAbierto: false, ocupado: false,
     // la bandeja como bank feed: qué se busca, qué motivo, en qué orden, si se agrupa por comercio y qué fila está desplegada
-    bj: { q: "", motivo: "", orden: "fecha_asc", agrupar: false, abierta: null, soloJr: false },
+    bj: { q: "", motivo: "", orden: "fecha_asc", agrupar: false, abierta: null, soloJr: false, desde: null, hasta: null, lado: null },
     plaid: null, plaidErr: null, mfa: null,
     // Stripe (p1): la fila de v_stripe_estado, por qué no se leyó, la salud de la función, los depósitos asentados (para la bandeja) y la pestaña
     stripe: null, stripeErr: null, stripeSalud: null, stripePayouts: null, cobros: null,
@@ -185,7 +193,12 @@
     // (revisión final) y lo que Edgar dice de ESE archivo cuando la base no lo puede leer sola (opciones: su día de pago, la fila de su cabecera)
     nom: { sub: "nominas", corrida: null, serie: 0, nota: null, archivo: null, quitadas: null, opciones: null, ensayo: null, ensayoErr: null, ensayoCod: null, importe: null, mapa: null, desde: null, hasta: null, lote: null, anio: null, anios: null, bolsaMes: null },
     // (fase 11) en la Bandeja, los cargos de Gusto pendientes que la nómina reconoce (movimiento → su fila de v_nomina_cargos); sin c15, nulo
-    nomBj: null
+    nomBj: null,
+    // (tablero, c16) el tablero de la portada (c16): lo que llegó de fn_tablero (una clave por tarjeta), la serie contra el doble pintado,
+    // el período de los resultados, la vista de la caja (saldo | mov), el año de las ventas (nulo: el de hoy), las tarjetas que se están releyendo, si «Personalizar» está
+    // abierto, los tooltips y las cruces de lo dibujado, y lo de quien mira (Privacidad y las tarjetas que esconde: nulo = lo que diga
+    // su navegador; se pone al tocarlo, por si el navegador no deja guardar)
+    tab: { d: null, serie: 0, periodo: "mes", cajaVista: "saldo", ventasAnio: null, leyendo: new Set(), personalizar: false, tips: [], cruz: {}, priv: null, ocultas: null, pintado: null }
   };
   // Las páginas, en el orden del menú. TITULOS va en el membrete de la app y en el lateral; PESTANAS, corto, en las pestañas del teléfono
   // (fase 8) «Cierre del mes» va después de los estados: es lo último del mes, con lo de arriba ya hecho
@@ -272,6 +285,13 @@
     S.conc = null;
     // (fase 10) la nota de la última acción del WIP es de la página en que se hizo: al cambiar de página se va
     S.wip.nota = null;
+    // (tablero, c16) la Bandeja desde un enlace del tablero: solo las fechas de ese período (y, si se dice, solo los depósitos o solo los
+    // cargos, como los cuenta la base); cualquier otro camino a la Bandeja vuelve a enseñarlo todo
+    if (pag === "bandeja") {
+      S.bj.desde = opciones.desde || null; S.bj.hasta = opciones.hasta || null;
+      S.bj.lado = ["deposito", "cargo"].includes(opciones.lado) ? opciones.lado : null;
+      if (opciones.motivo !== undefined) S.bj.motivo = opciones.motivo || "";
+    }
     if (opciones.cuenta !== undefined) {
       if (pag === "bandeja") S.filtroCuenta = opciones.cuenta;
       if (pag === "conciliar") S.concCuenta = opciones.cuenta;
@@ -415,9 +435,13 @@
   const diasDesde = iso => iso ? diasEntre(hoyMiami(), iso) : null;
   const PAGINA_VISTA = { v_banco_saldos: "bancos", v_banco_bandeja: "bandeja", v_conciliacion: "conciliar", v_banco_movimientos: "movimientos" };
   async function pintarResumen() {
+    // (tablero, c16) la serie contra el doble pintado: lo que llega de una pintada vieja no se pinta
+    const mia = ++S.tab.serie;
     cargando("Controlando con la base…");
     if (!navigator.onLine) return sinSenal(pintarResumen);
-    let lista, suaves, mes, stripeCtl = [], iaCtl = [], ronda = [], jornal = null;
+    // (tablero, c16) el tablero (c16) se pide a la vez que lo de siempre; sin c16 en la base (404), la portada de siempre con su aviso
+    const tableroP = leerTablero(tbPedido()).then(d => ({ d }), err => ({ err }));
+    let lista, suaves, mes = null, stripeCtl = [], iaCtl = [], ronda = [], jornal = null, tb = null;
     try {
       lista = await leerSaldos();
       const vistas = Object.keys(PAGINA_VISTA);
@@ -438,16 +462,35 @@
       ronda = await DB._leer("v_ronda_ultima?select=*&order=periodo.asc,orden.asc").catch(e => { if (esFalloDeRed(e)) throw e; return []; });
       // (fase 9) los pagos de mano de obra que esperan reparto y los rojos del jornal y del margen (c10; sin c10, nada)
       jornal = await leerJornalResumen();
-      mes = await leerMes();
-    } catch (err) { return pintarError(err, pintarResumen); }
-    if (S.pagina !== "resumen") return;
+      tb = await tableroP;
+      if (tb.err && esFalloDeRed(tb.err)) throw tb.err;
+      // (tablero, c16) sin el tablero, «Este mes» de siempre (con el tablero, la tarjeta de resultados dice eso y más)
+      if (!tb.d) mes = await leerMes();
+    } catch (err) { if (mia !== S.tab.serie) return; return pintarError(err, pintarResumen); }
+    if (S.pagina !== "resumen" || mia !== S.tab.serie) return;
     pintarBadge();
     const vis = visibles(lista);
-    const bancos = vis.filter(c => c.tipo === "banco"), tarjetas = vis.filter(c => c.tipo === "tarjeta"), conBanco = bancos.filter(c => c.saldo_banco != null);
     const pend = suma(vis, "pendientes");
     const viejo = vis.map(c => c.pendiente_mas_viejo).filter(Boolean).sort()[0] || null;
     const diasViejo = diasDesde(viejo);
     const bandejaRoja = diasViejo != null && diasViejo > 30;
+    const atender = atenderDeHoy({ vis, viejo, bandejaRoja, suaves, stripeCtl, iaCtl, ronda, jornal });
+    const sub = `${plural(vis.length, "cuenta", "cuentas")} · ${pend ? `<b>${plural(pend, "movimiento espera", "movimientos esperan")}</b> en la bandeja` : "la bandeja está al día"} · hoy, ${fechaLarga(hoyMiami())}`;
+    // (tablero, c16) EL TABLERO: lo que llegó de fn_tablero; lo que no alcanzó el tope por reloj se pide otra vez, solo eso
+    if (tb.d) {
+      S.tab.d = null; S.tab.leyendo = new Set();
+      const sigue = tbJuntar(tb.d);
+      sigue.forEach(k => S.tab.leyendo.add(k));
+      // (la línea de arriba cuenta lo que espera en la Bandeja como las tarjetas: con la tarjeta de bancos, de ella; la página dice una sola cifra)
+      const bt = S.tab.d.bancos, prt = bt && bt.ok === true && bt.totales && bt.totales.por_revisar;
+      const subTb = prt ? `${plural((bt.cuentas || []).length, "cuenta", "cuentas")} · ${nOk(prt.n) ? `<b>${plural(prt.n, "movimiento espera", "movimientos esperan")}</b> en la bandeja` : "la bandeja está al día"} · hoy, ${fechaLarga(S.tab.d.hoy || hoyMiami())}` : sub;
+      pintarTablero(subTb, atender);
+      if (sigue.length) tbReleer(sigue);
+      return;
+    }
+    S.tab.d = null;
+    // sin el tablero: la portada de siempre, con una línea que dice qué falta (o por qué el tablero no se pintó)
+    const bancos = vis.filter(c => c.tipo === "banco"), tarjetas = vis.filter(c => c.tipo === "tarjeta"), conBanco = bancos.filter(c => c.saldo_banco != null);
     const e = S.stripe && S.stripe.estado;
     const ficha = (k, lbl, val, sub, clase) => `<button type="button" class="ct-ficha${clase ? " " + clase : ""}" data-ir="${k}"><span class="ct-lbl">${esc(lbl)}</span><span class="ct-val ct-num">${val}</span><span class="ct-sub">${sub || ""}</span></button>`;
     const perdida = mes && !mes.vacio && !mes.err && num(mes.resultado) < 0;
@@ -463,14 +506,24 @@
       ${ficha("cobros", "Cobros en línea", e ? fmt(e.por_depositar) : "—", e ? `en Stripe sin depositar · en camino <span class="ct-num">${fmt(e.en_camino_monto)}</span>` : "sin instalar")}
       ${fichaMes}
     </div>`;
-    // qué atender: cada alarma con el botón a su página
+    // (sin c16, qué pegar; el equipo, lo que dice la base; cualquier otra cosa, el porqué y «Reintentar»)
+    const avisoTb = faltaC16(tb.err) ? `<p class="ct-tb-falta" id="ct-tb-falta">${ICO_TB.ajustes}<span>Para ver el tablero con gráficas, pega <span class="ct-num">docs/conta/c16-tablero.sql</span></span></p>`
+      : tb.err.codigo === "42501" ? `<p class="ct-tb-falta mal" id="ct-tb-falta">${ICO_TB.alerta}<span>${esc(tb.err.message)}</span></p>`
+      : `<p class="ct-tb-falta mal" id="ct-tb-falta">${ICO_TB.alerta}<span>El tablero con gráficas no contestó (${esc(tb.err.message || "sin texto")}): aquí va lo de siempre.</span> <button type="button" class="ct-tb-ir" id="ct-tb-otra">Reintentar</button></p>`;
+    main().innerHTML = cabPagina("Resumen", sub) + avisoTb + fichas + atenderHTML(atender, false);
+    main().querySelectorAll("[data-ir]").forEach(b => b.addEventListener("click", () => ir(b.dataset.ir, b.dataset.irSub ? { sub: b.dataset.irSub } : {})));
+    const otra = $("ct-tb-otra"); if (otra) otra.addEventListener("click", pintarResumen);
+  }
+  // «Qué atender» (lo de hoy, la misma lista con o sin el tablero): cada alarma con el botón a su página
+  function atenderDeHoy({ vis, viejo, bandejaRoja, suaves, stripeCtl, iaCtl, ronda, jornal }) {
     const atender = [];
     for (const c of vis) if (c.alarma && c.alarma_texto) atender.push({ txt: `${c.cuenta_nombre}: ${c.alarma_texto}`, ir: "bancos" });
     if (bandejaRoja) atender.push({ txt: `${plural(vis.filter(c => (diasDesde(c.pendiente_mas_viejo) || 0) > 30).length, "cuenta tiene", "cuentas tienen")} movimientos de más de 30 días en la bandeja (el más viejo del ${fechaLarga(viejo)}).`, ir: "bandeja" });
     for (const m of suaves) atender.push({ txt: `El control del banco no cuadra en ${m.vista}: ${PESTANAS[PAGINA_VISTA[m.vista]]} se pone en rojo hasta que cuadre.`, det: m.detalle, ir: PAGINA_VISTA[m.vista] });
     if (!mfaActivo()) atender.push({ txt: S.mfa && S.mfa.verificados.length ? "El código del teléfono está activo pero esta sesión entró sin él: sal y vuelve a entrar con el código para conectar bancos y mover cobros." : "El código del teléfono (segundo paso para entrar) no está activo: sin él no se conecta ningún banco ni se tocan los cobros en línea.", ir: "conexiones" });
     for (const c of S.plaid || []) {
-      if (c.estado === "error") atender.push({ txt: `${c.institucion || "Un banco"} (Plaid) pide volver a conectar.`, det: c.ultimo_error, ir: "conexiones" });
+      // (en llano: el código del banco —ITEM_LOGIN_REQUIRED y así— está en Conexiones, no en la portada)
+      if (c.estado === "error") atender.push({ txt: `${c.institucion || "Un banco"} (Plaid) pide volver a conectar.`, det: /ITEM_LOGIN_REQUIRED|login|credencial|contraseña/i.test(String(c.ultimo_error || "")) ? "El banco pide volver a entrar con el usuario y la contraseña del banco." : c.ultimo_error ? "En Conexiones dice qué pasó." : "", ir: "conexiones" });
       else if (c.estado === "activa" && Number(c.cuentas_sin_fijar) > 0) atender.push({ txt: `${c.institucion || "Un banco"}: ${plural(c.cuentas_sin_fijar, "cuenta del banco sin fijar", "cuentas del banco sin fijar")} a una cuenta del plan (hasta fijarlas no se sincroniza nada).`, ir: "conexiones" });
     }
     for (const f of stripeCtl) {
@@ -490,12 +543,7 @@
     if (rojosRonda.length > 3) atender.push({ txt: `…y ${plural(rojosRonda.length - 3, "rojo más", "rojos más")} de la ronda: la lista entera está en Cierre del mes.`, ir: "cierre", sub: "cierre" });
     // (fase 9) la mano de obra: los pagos que esperan su reparto por horas y los rojos de sus controles
     for (const a of atenderJornal(jornal)) atender.push(a);
-    main().innerHTML = cabPagina("Resumen", `${plural(vis.length, "cuenta", "cuentas")} · ${pend ? `<b>${plural(pend, "movimiento espera", "movimientos esperan")}</b> en la bandeja` : "la bandeja está al día"} · hoy, ${fechaLarga(hoyMiami())}`) + fichas +
-      `<section class="ct-card ct-atender${atender.length ? "" : " ok"}" id="ct-atender"><h2>Qué atender</h2>
-        ${atender.length ? `<ul class="ct-atn-lista">${atender.map(a => `<li class="ct-atn"><div class="ct-atn-txt">${esc(a.txt)}${a.det ? `<small>${esc(a.det)}</small>` : ""}</div><button type="button" class="accion secundaria chica" data-ir="${a.ir}"${a.sub ? ` data-ir-sub="${esc(a.sub)}"` : ""}>${esc(PESTANAS[a.ir])}</button></li>`).join("")}</ul>`
-          : `<p class="ct-nota">Nada urgente: lo que espera en la bandeja no pasa de 30 días, las cuentas no tienen alarmas y las conexiones están bien.</p>`}
-      </section>`;
-    main().querySelectorAll("[data-ir]").forEach(b => b.addEventListener("click", () => ir(b.dataset.ir, b.dataset.irSub ? { sub: b.dataset.irSub } : {})));
+    return atender;
   }
   // El mes en curso para la portada: v_cortes dice qué período es, fn_estados_control lo controla y v_resultados trae las secciones.
   // Devuelve { corte, ingresos, gastos, resultado } o { vacio } en llano, o { err } si el control no cuadra (sin señal, se lanza).
@@ -518,6 +566,990 @@
       if (esFalloDeRed(err) || !err.control) throw err;
       return { corte, err };
     }
+  }
+
+  // ============================================================
+  // EL TABLERO (c16): la portada «como la de QuickBooks», con
+  // gráficas, datos, números y enlaces de interés. Todo sale de fn_tablero
+  // (docs/conta/c16-tablero.sql, marca 2026111303): una llamada con una clave
+  // por tarjeta, cada una con sus cifras YA CALCULADAS por la base (totales,
+  // porcentajes, diferencias, las series de cada gráfica, los tramos de
+  // antigüedad, lo que queda por revisar); lo que no alcanzó el tope por reloj
+  // sale en «sigue» y se vuelve a pedir solo eso ({tarjetas: sigue}).
+  // Aquí no se suma, ni se resta, ni se saca un porcentaje de dinero: la
+  // pantalla escala (cuántos píxeles mide una barra) y escribe lo que llegó.
+  // Una tarjeta que falla o cuya capa no está lo dice ella sola y las demás
+  // siguen; una que no cuadra con el libro («cuadre» en rojo) lo dice y no
+  // pinta sus cifras. Un período o un año de antes del libro (30-sep-2026) lo
+  // dice en llano: lo de antes vive en QuickBooks y no se pinta, ni en cero.
+  // Sin c16 en la base (404), la portada de siempre con una línea que dice
+  // qué pegar. «Qué atender» sigue igual, debajo de las acciones rápidas.
+  // Privacidad (tapar los montos) y Personalizar (qué tarjetas se ven) son de
+  // quien mira y viven en su navegador (localStorage, con try/catch: si no hay
+  // almacenamiento, valen para esta visita). Ningún monto se guarda.
+  // LO QUE DE QUICKBOOKS NO TIENE EQUIVALENTE (se dice, no se inventa): la
+  // fila de botones de arriba (Accounting, Expenses…) es el menú de la app
+  // (el lateral en la computadora, las pestañas en el teléfono); «Mileage»
+  // (no se llevan millas), «Lending» de Intuit (lo nuestro: los préstamos de
+  // c6) y el umbral de la gráfica de caja (nadie lo ha fijado); el «sales tax»
+  // es el use tax del DR-15 (c9): el DR-15 de Florida es de «sales and use
+  // tax», y aquí va el use tax (lo que dice la tarjeta, con las palabras de
+  // la base: que_es).
+  // LO QUE SE DECIDIÓ (13-nov, con las dos revisiones):
+  //  · LOS SELECTORES DENTRO DE LA TARJETA (el período de los resultados, el
+  //    año de las ventas, saldo o entradas y salidas en la caja): la guía de
+  //    gráficas pide UNA fila de filtros arriba que mande en todo. Aquí se
+  //    copia a QuickBooks A PROPÓSITO: cada tarjeta tiene SU rango («Últimos
+  //    30 días», «Al día de hoy», «Este mes»…) y lo dice arriba a la derecha;
+  //    el selector solo cambia esa tarjeta y lo que dice su rango. No hay un
+  //    filtro de arriba que mienta sobre las demás.
+  //  · UN SOLO MES DE LIBRO (el primer mes, o enero en las ventas del año):
+  //    la cifra sola, sin una gráfica de una columna (meses_con_libro).
+  //  · LA PROYECCIÓN DE CAJA lleva su línea A LA VISTA debajo de la gráfica
+  //    (proyeccion.aviso: no cuenta la nómina, la renta ni lo que se repite;
+  //    la caja real será menor) y su leyenda no dice que sea la caja que
+  //    habrá. Sin la apertura en el libro (producción hasta que se pegue), la
+  //    caja no es el saldo del banco: se dice, sin alarma de sobregiro, sin
+  //    proyección y sin línea de saldo (van las entradas y salidas, que sí
+  //    son de verdad).
+  //  · LO TÉCNICO (los códigos de Plaid, de Stripe, de la IA) no sale en la
+  //    portada: cada tarjeta dice una frase en llano y lleva a Conexiones,
+  //    que tiene el detalle.
+  //  · Los enlaces a la Bandeja son los de la base (la Bandeja entera, sin el
+  //    filtro de una cuenta de antes); el de «por revisar» de los resultados
+  //    y de los gastos lleva sus fechas (y si son depósitos o cargos), y la
+  //    Bandeja las enseña arriba con «Ver todos».
+  // Y CON LA REVISIÓN FINAL (13-nov, marca 2026111303):
+  //  · La caja del mes en curso es «hasta hoy» (la base ya no manda el mes
+  //    entero de Estados): lo que tiene fecha de después de hoy lo dice su
+  //    línea (despues_de_hoy.texto), debajo de la tabla.
+  //  · «Según el banco», sumado, solo si la base lo manda (todas las cuentas
+  //    con el saldo del mismo día, y se dice cuál); si no, lo que dice la
+  //    base (banco_texto: de días distintos).
+  //  · Lo devuelto en estos días de un cobro de antes (devuelto_antes) va
+  //    aparte, con las palabras de la base: no está restado de lo cobrado.
+  //  · Privacidad tapa también un monto escrito sin el signo de dólar
+  //    («la diferencia es 1234.56», como escriben algunos controles que
+  //    salen en «Qué atender»).
+  //  · La tabla gemela apilada (tarjeta angosta) deja partir sus celdas: la
+  //    de «Variación» de los resultados se salía de la tarjeta en el teléfono.
+  // LAS GRÁFICAS (la guía de gráficas al pie de la letra): SVG en línea,
+  // dibujadas al ancho de su caja (y otra vez si el ancho cambia); la forma
+  // según el trabajo del dato: barras horizontales en una sola base para
+  // comparar (los resultados contra el período anterior, los gastos por
+  // categoría de mayor a menor, la antigüedad por tramos), columnas para los
+  // meses (ventas; entradas y salidas de caja), una línea para el saldo de
+  // caja con la proyección punteada (con su leyenda: no es el libro), una
+  // barra fina partida para un todo y sus dos partes (facturas), un medidor
+  // para lo pagado de un préstamo y barras a los dos lados del cero para el
+  // margen de cada obra. Barras de 12 px con la punta redonda (4 px) y la
+  // base recta, 2 px de aire entre marcas que se tocan, líneas de 2 px,
+  // puntos con su anillo del color de la tarjeta, rejilla de un pelo, una
+  // sola escala por gráfica, leyenda cuando hay dos series (ninguna con una:
+  // el título la nombra), la cifra escrita al lado de cada barra (no en cada
+  // punto de la línea: ahí la dicen el eje, el tooltip y la tabla), tooltip
+  // al pasar, al tocar y con el teclado (en la línea, la cruz que busca el
+  // punto más cercano; las flechas lo recorren) y la tabla con los mismos
+  // números («Ver los números»). Los colores son tokens de styles.css con su
+  // papel (css/conta.css): la serie --mp-blue y la segunda --cu (pasan las
+  // comprobaciones del validador de la guía sobre la tarjeta blanca); la
+  // antigüedad, una rampa de un solo azul de claro (corriente) a oscuro (más
+  // de 90 días), que pasa la comprobación de rampa ordenada; lo de contexto
+  // (el período anterior, «las demás», lo que no ha vencido) en el gris
+  // --mp-gris-bd a propósito (no es una serie: lleva su cifra escrita y su
+  // tabla); --bad y --ok solo para estado, siempre con su icono y su texto. La
+  // app no tiene modo oscuro (styles.css no lo trae): con el teléfono en
+  // oscuro el tablero se ve igual que en claro, y se comprueba. (Darle
+  // modo oscuro a la app es cosa de styles.css, que es de todos: lo decide
+  // el orquestador; la paleta se validó también sobre la noche de la app.)
+  // ============================================================
+  const TB_TITULO = { cobros: "Embudo de cobro", bancos: "Bancos y tarjetas", resultados: "Resultados", gastos: "Gastos", caja: "Flujo de caja",
+    facturas: "Facturas", ventas: "Ventas", por_cobrar: "Por cobrar", por_pagar: "Por pagar", conexiones: "Conexiones", cobros_en_linea: "Cobros en línea",
+    use_tax: "Use tax (DR-15)", prestamos: "Préstamos", obras: "Obras" };
+  // el orden de la portada: el de fn_tablero (sin «acciones», que va arriba en su fila)
+  const TB_ORDEN = Object.keys(TB_TITULO);
+  // las tarjetas anchas (dos columnas desde el iPad, como el embudo y el flujo de caja de QuickBooks)
+  const TB_ANCHAS = ["cobros", "caja"];
+  const TB_PERIODOS = [["mes", "Este mes"], ["mes_pasado", "Mes pasado"], ["anio", "Este año"], ["anio_pasado", "Año pasado"]];
+  const TB_PRIV = "mxp.tablero.privado", TB_OCULTAS = "mxp.tablero.ocultas";
+  const TAPADO = "$•••";
+  // lo que recuerda el navegador de quien mira (si no hay almacenamiento, lo de esta visita)
+  const tbLeer = (k, def) => { try { const v = localStorage.getItem(k); return v == null ? def : v; } catch { return def; } };
+  const tbGuardar = (k, v) => { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch { /* sin almacenamiento: vale para esta visita */ } };
+  const tbPrivado = () => S.tab.priv != null ? S.tab.priv : tbLeer(TB_PRIV, "0") === "1";
+  function tbOcultas() {
+    if (S.tab.ocultas) return S.tab.ocultas;
+    let a = [];
+    try { a = JSON.parse(tbLeer(TB_OCULTAS, "[]")); } catch { a = []; }
+    return new Set(Array.isArray(a) ? a.filter(k => TB_TITULO[k]) : []);
+  }
+  const tbVisibles = () => { const o = tbOcultas(); return TB_ORDEN.filter(k => !o.has(k)); };
+  // un monto del tablero (con Privacidad, tapado) y un texto de la base (con Privacidad, sus montos tapados)
+  // (un monto con su signo de dólar —$1,234.56, −$1,234.56, $37.8K— o escrito sin él con sus dos decimales —1234.56; 1,234.56—, como
+  // lo escriben algunos controles de otras capas que salen en «Qué atender»; un porcentaje —12.50 %— no es un monto)
+  // (sin «mirar atrás» en la expresión: los iPhone de antes de iOS 16.4 no la entienden y no cargarían este archivo entero)
+  const tapar = s => String(s == null ? "" : s).replace(/[−-]?\$\s?\d[\d,]*(?:\.\d+)?[KM]?/g, TAPADO)
+    .replace(/(^|[^\w.,])[−-]?\d[\d,]*\.\d{2}(?![\d.,]*\d)(?!\s?%)/g, (m, antes) => antes + TAPADO);
+  const tm = v => num(v) == null ? "—" : tbPrivado() ? TAPADO : fmtNeg(v);
+  const tx = s => esc(tbPrivado() ? tapar(s) : s);
+  // un porcentaje de la base, con su signo cuando es una variación (lo escribe; no lo calcula)
+  const pctTb = (v, signo) => { const n = num(v); if (n == null) return "—"; const s = String(v).replace(/^-/, MENOS); return `${signo && n > 0 ? "+" : ""}${s} %`; };
+  const horaTb = iso => { if (!iso) return "—"; try { return new Intl.DateTimeFormat("es", { timeZone: "America/New_York", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }).format(new Date(iso)); } catch { return fechaLarga(iso); } };
+  // iconos de estado (siempre con su texto al lado): ✓, ! y ↑ ↓
+  const ICO_TB = {
+    ok: '<svg class="ct-tb-i" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    alerta: '<svg class="ct-tb-i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l6.6 11.7H1.4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8 6.2v3.4M8 11.6v.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+    nada: '<svg class="ct-tb-i" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 8h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+    sube: '<svg class="ct-tb-i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3.5M4 7.5l4-4 4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    baja: '<svg class="ct-tb-i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v9.5M4 8.5l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    ojo: '<svg class="ct-tb-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>',
+    ojoNo: '<svg class="ct-tb-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4 20L20 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+    ajustes: '<svg class="ct-tb-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="16" cy="7" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="17" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>'
+  };
+  const pillTb = (txt, clase, ico) => `<span class="ct-pill${clase ? " " + clase : ""}">${ico ? ICO_TB[ico] : ""}${txt}</span>`;
+
+  // ---------- la lectura: fn_tablero ----------
+  // lo que se le pide: las tarjetas que se ven (todas: {}), el período de los resultados y el año de las ventas
+  function tbPedido(solo) {
+    const p = {};
+    const vis = tbVisibles();
+    const pedidas = solo || (vis.length === TB_ORDEN.length ? null : ["acciones", ...vis]);
+    if (pedidas) p.tarjetas = pedidas;
+    if (S.tab.periodo !== "mes" && (!pedidas || pedidas.includes("resultados"))) p.resultados = { periodo: S.tab.periodo };
+    if (S.tab.ventasAnio != null && (!pedidas || pedidas.includes("ventas"))) p.ventas = { anio: S.tab.ventasAnio };
+    return p;
+  }
+  // c16 no está en la base: PostgREST no encuentra la función (404, PGRST202) o Postgres no la conoce (42883)
+  const faltaC16 = err => !!err && !esFalloDeRed(err) && (err.status === 404 || ["PGRST202", "42883"].includes(String(err.codigo || "")));
+  async function leerTablero(p) {
+    const d = await DB._rpc("fn_tablero", { p });
+    if (!d || typeof d !== "object" || d.ok !== true) { const e = new Error("El tablero no devolvió lo que se esperaba (sin «ok»)."); e.codigo = "TABLERO"; throw e; }
+    return d;
+  }
+  // lo que llega se junta con lo que ya había (una tarjeta pedida otra vez reemplaza a la de antes)
+  function tbJuntar(d) {
+    const viejo = S.tab.d || {};
+    const nuevo = { ...viejo, ok: true, hoy: d.hoy, generado_el: d.generado_el, version: d.version, libro: d.libro || viejo.libro, capas: d.capas || viejo.capas };
+    for (const k of ["acciones", ...TB_ORDEN]) if (d[k] !== undefined) nuevo[k] = d[k];
+    S.tab.d = nuevo;
+    return Array.isArray(d.sigue) ? d.sigue.filter(k => k === "acciones" || TB_TITULO[k]) : [];
+  }
+
+  // ---------- la página ----------
+  // sub: la línea de cifras de la cabecera; atender: la lista de «Qué atender» (la misma de siempre)
+  function pintarTablero(sub, atender) {
+    const priv = tbPrivado();
+    S.tab.tips = []; S.tab.cruz = {};
+    main().innerHTML = cabPagina("Resumen", sub,
+      `<button type="button" class="accion secundaria ct-tb-btn" id="ct-tb-personalizar" aria-expanded="${S.tab.personalizar ? "true" : "false"}" aria-controls="ct-tb-pers-caja">${ICO_TB.ajustes}Personalizar</button>
+       <button type="button" class="accion secundaria ct-tb-btn" id="ct-tb-privado" aria-pressed="${priv ? "true" : "false"}">${priv ? ICO_TB.ojoNo : ICO_TB.ojo}${priv ? "Montos tapados" : "Privacidad"}</button>`) +
+      `<div id="ct-tb" class="ct-tb-raiz${priv ? " privado" : ""}">
+        <div id="ct-tb-pers-caja">${S.tab.personalizar ? tbPersonalizarHTML() : ""}</div>
+        <div id="ct-tb-acc-caja">${tbAccionesHTML(S.tab.d.acciones)}</div>
+        ${atenderHTML(atender, priv)}
+        <div class="ct-tb-vistazo"><h2 class="ct-tb-h">El negocio de un vistazo</h2>
+        <p class="ct-tb-libro" id="ct-tb-libro">${tx((S.tab.d.libro && S.tab.d.libro.texto) || "")}</p></div>
+        <div id="ct-tb-rejilla" class="ct-tb-rejilla">${tbVisibles().map(k => tbTarjetaHTML(k)).join("")}</div>
+        <div id="ct-tb-tip" class="ct-tb-tip" aria-hidden="true" hidden></div>
+      </div>`;
+    const raizTb = $("ct-tb");
+    main().querySelectorAll("#ct-atender [data-ir]").forEach(b => b.addEventListener("click", () => ir(b.dataset.ir, b.dataset.irSub ? { sub: b.dataset.irSub } : {})));
+    $("ct-tb-privado").addEventListener("click", () => tbPonerPrivado(!tbPrivado(), sub, atender));
+    $("ct-tb-personalizar").addEventListener("click", () => { S.tab.personalizar = !S.tab.personalizar; tbPintarPersonalizar(); });
+    wireTipsTb(raizTb);
+    wireTb(raizTb);
+    tbDibujar(raizTb);
+    if (S.tab.personalizar) wirePersonalizar();
+    S.tab.pintado = { sub, atender };
+  }
+  // «Qué atender»: la de siempre (con Privacidad, los montos de sus textos tapados)
+  function atenderHTML(atender, priv) {
+    const t = s => esc(priv ? tapar(s) : s);
+    return `<section class="ct-card ct-atender${atender.length ? "" : " ok"}" id="ct-atender"><h2>Qué atender</h2>
+        ${atender.length ? `<ul class="ct-atn-lista">${atender.map(a => `<li class="ct-atn"><div class="ct-atn-txt">${t(a.txt)}${a.det ? `<small>${t(a.det)}</small>` : ""}</div><button type="button" class="accion secundaria chica" data-ir="${a.ir}"${a.sub ? ` data-ir-sub="${esc(a.sub)}"` : ""}>${esc(PESTANAS[a.ir])}</button></li>`).join("")}</ul>`
+          : `<p class="ct-nota">Nada urgente: lo que espera en la bandeja no pasa de 30 días, las cuentas no tienen alarmas y las conexiones están bien.</p>`}
+      </section>`;
+  }
+  const vivoTb = mia => mia === S.tab.serie && S.pagina === "resumen" && !!$("ct-tb");
+  // pintar otra vez UNA tarjeta (lo que llegó de la base, o «leyendo» con lo de antes a media luz)
+  function tbRepintar(k) {
+    const raizTb = $("ct-tb"); if (!raizTb) return;
+    if (k === "acciones") { const c = $("ct-tb-acc-caja"); if (c) { c.innerHTML = tbAccionesHTML(S.tab.d.acciones); wireTb(c); } return; }
+    const viejo = raizTb.querySelector(`.ct-tb[data-tb="${k}"]`); if (!viejo) return;
+    const t = document.createElement("div"); t.innerHTML = tbTarjetaHTML(k);
+    const nuevo = t.firstElementChild; viejo.replaceWith(nuevo);
+    wireTb(nuevo); tbDibujar(nuevo);
+  }
+  // volver a pedir unas tarjetas (lo que siguió, «Reintentar», otro período u otro año): mientras, lo de antes se queda a media luz
+  async function tbReleer(ks, intento = 0) {
+    const mia = S.tab.serie;
+    ks.forEach(k => { S.tab.leyendo.add(k); tbMarcarLeyendo(k, true); });
+    let sigue = [];
+    try {
+      const d = await leerTablero(tbPedido(ks));
+      if (!vivoTb(mia)) return;
+      sigue = tbJuntar(d);
+    } catch (err) {
+      if (!vivoTb(mia)) return;
+      for (const k of ks) if (S.tab.d) S.tab.d[k] = { ok: false, tarjeta: k, motivo: esFalloDeRed(err) || !navigator.onLine ? "Sin señal: no se pudo leer. Vuelve a intentarlo con señal." : (err.message || "La base no contestó."), codigo: err.codigo || null };
+    }
+    // lo que otra vez no alcanzó se vuelve a pedir (tres veces en total); después dice que la base no alcanzó y ofrece «Reintentar»
+    const otra = sigue.length > 0 && intento < 2;
+    ks.forEach(k => { if (!(otra && sigue.includes(k))) S.tab.leyendo.delete(k); tbRepintar(k); });
+    if (otra) return tbReleer(sigue, intento + 1);
+  }
+  function tbMarcarLeyendo(k, si) {
+    const el = k === "acciones" ? $("ct-tb-acc-caja") : document.querySelector(`#ct-tb .ct-tb[data-tb="${k}"]`);
+    if (!el) return;
+    el.setAttribute("aria-busy", si ? "true" : "false");
+    el.classList.toggle("leyendo", !!si);
+  }
+  // Privacidad: tapa o destapa los montos (se repinta lo que ya llegó: no se vuelve a pedir nada)
+  function tbPonerPrivado(si, sub, atender) {
+    S.tab.priv = si;
+    tbGuardar(TB_PRIV, si ? "1" : "0");
+    const y = window.scrollY;
+    pintarTablero(sub, atender);
+    window.scrollTo(0, y);
+    const b = $("ct-tb-privado"); if (b) b.focus({ preventScroll: true });
+  }
+
+  // ---------- Personalizar: qué tarjetas se ven ----------
+  function tbPersonalizarHTML() {
+    const o = tbOcultas();
+    return `<section class="ct-card ct-tb-pers" id="ct-tb-pers" aria-labelledby="ct-tb-pers-h">
+      <div class="ct-cab"><h2 id="ct-tb-pers-h">Qué tarjetas ver</h2></div>
+      <p class="ct-nota">Lo que quites se queda en este navegador (en otro teléfono o computadora se ven todas). Los números no cambian: solo se esconden.</p>
+      <div class="ct-tb-pers-lista">${TB_ORDEN.map(k => `<label class="ct-tb-pers-op"><input type="checkbox" data-tb-ver="${k}"${o.has(k) ? "" : " checked"}><span>${esc(TB_TITULO[k])}</span></label>`).join("")}</div>
+      <div class="ct-acciones"><button type="button" class="accion secundaria chica" id="ct-tb-pers-todas">Ver todas</button><button type="button" class="accion chica" id="ct-tb-pers-listo">Listo</button></div>
+    </section>`;
+  }
+  function tbPintarPersonalizar() {
+    const c = $("ct-tb-pers-caja"); if (!c) return;
+    c.innerHTML = S.tab.personalizar ? tbPersonalizarHTML() : "";
+    const b = $("ct-tb-personalizar"); if (b) b.setAttribute("aria-expanded", S.tab.personalizar ? "true" : "false");
+    if (S.tab.personalizar) wirePersonalizar();
+  }
+  function wirePersonalizar() {
+    const c = $("ct-tb-pers"); if (!c) return;
+    c.querySelectorAll("[data-tb-ver]").forEach(i => i.addEventListener("change", () => {
+      const o = new Set(tbOcultas());
+      if (i.checked) o.delete(i.dataset.tbVer); else o.add(i.dataset.tbVer);
+      tbPonerOcultas(o);
+    }));
+    $("ct-tb-pers-todas").addEventListener("click", () => { tbPonerOcultas(new Set()); tbPintarPersonalizar(); });
+    $("ct-tb-pers-listo").addEventListener("click", () => { S.tab.personalizar = false; tbPintarPersonalizar(); const b = $("ct-tb-personalizar"); if (b) b.focus(); });
+  }
+  function tbPonerOcultas(o) {
+    S.tab.ocultas = o;
+    tbGuardar(TB_OCULTAS, o.size ? JSON.stringify([...o]) : null);
+    const r = $("ct-tb-rejilla"); if (!r) return;
+    S.tab.tips = []; S.tab.cruz = {};
+    r.innerHTML = tbVisibles().map(k => tbTarjetaHTML(k)).join("");
+    wireTb(r); tbDibujar(r);
+    // la que se vuelve a ver y no se había pedido: se pide ahora
+    const faltan = tbVisibles().filter(k => !S.tab.d[k]);
+    if (faltan.length) tbReleer(faltan);
+  }
+
+  // ---------- los enlaces de interés: cada tarjeta lleva a su página (el «ir» que dice la base) ----------
+  const SUB_TXT = () => ({ estados: SUBS, cierre: SUBS_CIE, obras: SUBS_OB, wip: SUBS_WIP, facturas: SUBS_FAC, cedula: SUBS_CED });
+  function irTxt(x) {
+    if (!x || !TITULOS[x.pagina]) return "";
+    const subs = SUB_TXT()[x.pagina] || {};
+    const sub = x.sub && x.sub !== x.pagina && subs[x.sub] && subs[x.sub] !== TITULOS[x.pagina] ? ` · ${subs[x.sub]}` : "";
+    return `${TITULOS[x.pagina]}${sub}${x.cuenta ? ` · ${x.cuenta}` : ""}`;
+  }
+  const irAttr = x => x && TITULOS[x.pagina] ? ` data-tb-ir="${esc(JSON.stringify(x))}"` : "";
+  const irBtn = (x, texto, clase) => x && TITULOS[x.pagina] ? `<button type="button" class="${clase || "ct-tb-ir"}"${irAttr(x)}>${texto || `Ver en ${esc(irTxt(x))}`}<span aria-hidden="true"> ›</span></button>` : "";
+  function wireTb(c) {
+    c.querySelectorAll("[data-tb-ir]").forEach(b => b.addEventListener("click", ev => {
+      ev.stopPropagation();
+      let x = null; try { x = JSON.parse(b.dataset.tbIr); } catch { x = null; }
+      if (!x || !x.pagina) return;
+      const { pagina, ...op } = x;
+      ir(pagina, op);
+    }));
+    c.querySelectorAll("[data-tb-reintentar]").forEach(b => b.addEventListener("click", () => tbReleer([b.dataset.tbReintentar])));
+    // (otro período u otro año: se vuelve a pedir solo esa tarjeta; el selector vuelve a tener el foco al repintarla)
+    const foco = sel => { const n = document.querySelector(`#ct-tb ${sel}`); if (n) n.focus({ preventScroll: true }); };
+    c.querySelectorAll("select[data-tb-periodo]").forEach(s => s.addEventListener("change", async () => {
+      if (S.tab.periodo === s.value || S.tab.leyendo.has("resultados")) return;
+      S.tab.periodo = s.value;
+      await tbReleer(["resultados"]); foco("select[data-tb-periodo]");
+    }));
+    c.querySelectorAll("select[data-tb-anio]").forEach(s => s.addEventListener("change", async () => {
+      const a = Number(s.value);
+      if (S.tab.leyendo.has("ventas") || a === (S.tab.ventasAnio == null ? tbAnioHoy() : S.tab.ventasAnio)) return;
+      S.tab.ventasAnio = a === tbAnioHoy() ? null : a;
+      await tbReleer(["ventas"]); foco("select[data-tb-anio]");
+    }));
+    c.querySelectorAll("[data-tb-caja]").forEach(b => b.addEventListener("click", () => {
+      if (S.tab.cajaVista === b.dataset.tbCaja) return;
+      S.tab.cajaVista = b.dataset.tbCaja; tbRepintar("caja");
+      const n = document.querySelector(`#ct-tb [data-tb-caja="${S.tab.cajaVista}"]`); if (n) n.focus({ preventScroll: true });
+    }));
+  }
+
+  // ---------- la fila de acciones rápidas (las «Create actions» de QuickBooks, con lo que espera en cada una) ----------
+  const ICO_ACC = { factura: ICONOS.facturas, bandeja: ICONOS.bandeja, conciliar: ICONOS.conciliar, pago: ICONOS.cobros, cierre: ICONOS.cierre, estados: ICONOS.estados };
+  function tbAccionesHTML(a) {
+    if (!a) return "";
+    if (a.ok !== true) return `<nav class="ct-tb-acc" aria-label="Acciones rápidas"><span class="ct-tb-acc-t">Acciones rápidas</span>${S.tab.leyendo.has("acciones") ? `<span class="ct-tb-nota">Leyendo…</span>` : `<span class="ct-tb-nota">${tx(a.motivo || "No se pudieron leer.")}</span> <button type="button" class="ct-tb-ir" data-tb-reintentar="acciones">Reintentar</button>`}</nav>`;
+    return `<nav class="ct-tb-acc" aria-label="Acciones rápidas"><span class="ct-tb-acc-t">Acciones rápidas</span>
+      <div class="ct-tb-acc-lista">${(a.lista || []).map((x, i) => `<button type="button" class="ct-tb-chip${x.alarma ? " alarma" : ""}" data-tb-acc="${esc(x.clave)}"${x.disponible === false ? " disabled" : irAttr(x.ir)} title="${tx(x.detalle || "")}" aria-describedby="ct-tb-acc-d${i}">${ICO_ACC[x.clave] || ""}<span>${esc(x.texto)}</span>${nOk(x.n) ? `<b class="ct-tb-n${x.alarma ? " alarma" : ""}">${esc(x.n)}</b>` : ""}</button><span class="ct-tb-sr" id="ct-tb-acc-d${i}">${x.alarma ? "Pide atención: " : ""}${tx(x.detalle || "")}${x.falta ? ` (falta ${esc(x.falta)} en la base)` : ""}</span>`).join("")}</div></nav>`;
+  }
+
+  // ---------- una tarjeta: su marco, su cuerpo y su enlace ----------
+  function tbTarjetaHTML(k) {
+    const d = S.tab.d && S.tab.d[k];
+    const leyendo = S.tab.leyendo.has(k);
+    const marco = (cuerpo, op = {}) => `<section class="ct-card ct-tb${TB_ANCHAS.includes(k) ? " ancha" : ""}${leyendo ? " leyendo" : ""}${op.mal ? " mal" : ""}" data-tb="${k}" aria-labelledby="ct-tb-h-${k}" aria-busy="${leyendo ? "true" : "false"}">
+        <header class="ct-tb-cab"><h3 id="ct-tb-h-${k}">${esc(TB_TITULO[k])}</h3>${op.sel || (op.cuando ? `<span class="ct-tb-cuando">${op.cuando}</span>` : "")}</header>
+        ${op.ctl ? `<div class="ct-tb-ctl">${op.ctl}</div>` : ""}
+        <div class="ct-tb-cuerpo">${cuerpo}</div>
+        ${op.pie !== "" ? `<footer class="ct-tb-pie">${op.pie || irBtn(d && d.ir)}</footer>` : ""}
+      </section>`;
+    if (!d) return marco(`<p class="ct-tb-nota">Leyendo…</p>`, { pie: "" });
+    // (el período de los resultados y el año de las ventas: un selector arriba a la derecha, como el «Last month ˅» de QuickBooks)
+    const sel = k === "resultados" ? tbPeriodosHTML() : k === "ventas" ? tbAniosHTML() : "";
+    if (d.ok !== true) {
+      // lo que no alcanzó el tope por reloj (se vuelve a pedir solo), la capa que no está, un período de antes del libro o que no empieza, o un error
+      if (leyendo) return marco(`<p class="ct-tb-nota">Leyendo…</p>`, { sel, pie: "" });
+      if (d.sigue) return marco(`<p class="ct-aviso">${ICO_TB.nada}<span>La base no alcanzó a leer esta tarjeta a tiempo.</span></p><button type="button" class="accion secundaria chica" data-tb-reintentar="${k}">Reintentar</button>`, { pie: "" });
+      if (d.falta) return marco(`<p class="ct-aviso" data-tb-falta="${esc(d.falta)}">${ICO_TB.nada}<span>${tx(d.motivo || "Su capa no está en esta base.")} <span class="ct-tb-gris">(falta ${esc(d.falta)})</span></span></p>`, { pie: "" });
+      if (d.antes_del_libro || d.futuro) return marco(`<p class="ct-aviso" data-tb-antes="1">${ICO_TB.nada}<span>${tx(d.motivo || (d.futuro ? "Ese período todavía no empieza." : "Ese período es de antes del libro: vive en QuickBooks."))}</span></p>`, { sel, pie: "" });
+      return marco(`<div class="ct-aviso bad" role="alert">${ICO_TB.alerta}<span>${tx(d.motivo || "Esta tarjeta no se pudo leer ahora. Las demás siguen.")}${d.codigo ? ` <span class="ct-num">(${esc(d.codigo)})</span>` : ""}</span></div>
+        ${d.error ? `<details class="ct-tb-tabla"><summary>Lo que dijo la base (para soporte)</summary><p class="ct-tb-nota ct-num">${esc(d.error)}</p></details>` : ""}
+        <button type="button" class="accion secundaria chica" data-tb-reintentar="${k}">Reintentar</button>`, { sel, pie: "", mal: true });
+    }
+    // un cuadre en rojo: la tarjeta no pinta cifras (pintar lo que no cuadra sería mentir)
+    if (d.cuadre && d.cuadre.ok === false) return marco(`<div class="ct-aviso bad" role="alert">${ICO_TB.alerta}<span>No cuadra con el libro: ${tx(d.cuadre.texto || "")} (el libro dice ${tm(d.cuadre.libro)}; la tarjeta, ${tm(d.cuadre.suma != null ? d.cuadre.suma : d.cuadre.vista)}). No se pintan sus cifras hasta que cuadre.</span></div>`, { mal: true });
+    const f = TB_CUERPO[k];
+    const [cuerpo, op = {}] = f ? f(d) : [`<p class="ct-tb-nota">—</p>`];
+    return marco(cuerpo, { ...op, sel });
+  }
+  const tbPeriodosHTML = () => `<select class="ct-tb-sel" data-tb-periodo aria-label="Qué período"${S.tab.leyendo.has("resultados") ? " disabled" : ""}>${TB_PERIODOS.map(([k, t]) => `<option value="${k}"${S.tab.periodo === k ? " selected" : ""}>${t}</option>`).join("")}</select>`;
+  // el año de hoy (el de la base) y los años que el libro tiene: este y, si el libro ya lo tenía, el anterior
+  const tbAnioHoy = () => Number(String((S.tab.d && S.tab.d.hoy) || hoyMiami()).slice(0, 4));
+  function tbAniosHTML() {
+    const hoy = tbAnioHoy(), primero = Number(String((S.tab.d && S.tab.d.libro && S.tab.d.libro.primer_mes) || hoy).slice(0, 4));
+    if (!(primero < hoy)) return "";
+    const sel = S.tab.ventasAnio == null ? hoy : S.tab.ventasAnio;
+    return `<select class="ct-tb-sel" data-tb-anio aria-label="Qué año"${S.tab.leyendo.has("ventas") ? " disabled" : ""}>${[hoy, hoy - 1].map(a => `<option value="${a}"${sel === a ? " selected" : ""}>${a === hoy ? `Lo que va de ${a}` : `Todo ${a}`}</option>`).join("")}</select>`;
+  }
+  // una cifra grande con su etiqueta (la figura de la tarjeta)
+  const cifra = (et, v, extra) => `<div class="ct-tb-fig"><span class="ct-tb-et">${et}</span><span class="ct-tb-cifra">${v}</span>${extra || ""}</div>`;
+  // «Ver los números»: la tabla con lo mismo que la gráfica (el gemelo accesible)
+  // (en una tarjeta angosta —el teléfono, las tres columnas de la computadora— cada fila se apila: el nombre arriba y sus cifras debajo,
+  // cada una con su etiqueta, en 2 o 3 columnas: la tabla nunca se sale de la tarjeta)
+  const tablaSola = (cab, filas) => { const n = cab.length - 1, cols = n <= 3 ? n : n === 4 ? 2 : 3; return `<div class="ct-tabla-env"><table class="ct-tabla angosta" style="--tb-cols:${Math.max(1, cols)}"><thead><tr>${cab.map((c, i) => `<th${i ? ' class="r"' : ""}>${c}</th>`).join("")}</tr></thead>
+      <tbody>${filas.map(f => `<tr${f.clase ? ` class="${f.clase}"` : ""}>${f.celdas.map((c, i) => `<td${i ? ` class="r ct-num" data-col="${esc(String(cab[i]).replace(/<[^>]*>/g, ""))}"` : ""}>${c}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`; };
+  const tablaTb = (cab, filas, op = {}) => `<details class="ct-tb-tabla"${op.id ? ` data-tabla="${op.id}"` : ""}><summary>${op.titulo || "Ver los números"}</summary>${tablaSola(cab, filas)}${op.mas || ""}</details>`;
+  // la leyenda (con dos o más series): la marca como en la gráfica (cuadro para barras, raya para líneas) y el texto en tinta
+  const leyenda = items => `<ul class="ct-tb-ley">${items.map(([clase, t]) => `<li><i class="ct-tb-ley-m ${clase}" aria-hidden="true"></i>${t}</li>`).join("")}</ul>`;
+  // la caja donde se dibuja una gráfica (un grupo con nombre: cada marca de dentro lleva el suyo, con su cifra, y se llega a ella con Tab)
+  const grafCaja = (nombre, etiqueta, alto, i) => `<div class="ct-tb-graf" data-graf="${nombre}"${i != null ? ` data-i="${i}"` : ""} role="group" aria-label="${esc(etiqueta)}" style="min-height:${alto || 0}px"></div>`;
+  // una variación que manda la base (el porcentaje, si sube o baja, contra qué): verde si va hacia lo bueno, rojo si no; con su flecha
+  const variacionTxt = (pct, sube, bueno, contra, monto) => pct == null ? "" : `<p class="ct-tb-delta ${sube === bueno ? "bien" : "mal"}">${sube ? ICO_TB.sube : ICO_TB.baja}<b>${pctTb(pct, true)}</b>${monto != null ? ` <span class="ct-num">(${tm(monto)})</span>` : ""} <span>contra ${tx(contra)}</span></p>`;
+  // una fila de barras horizontales: el nombre y su cifra arriba (HTML: se parte bien y se tapa con Privacidad), la barra debajo (SVG)
+  const filaBarra = (nombre, derecha, graf, etiqueta, i, extra, debajo) => `<div class="ct-tb-bf"><div class="ct-tb-bf-c"><span class="ct-tb-bf-n">${nombre}</span><span class="ct-tb-bf-v">${derecha}</span></div>${extra || ""}${grafCaja(graf, etiqueta, 12, i)}${debajo || ""}</div>`;
+
+  // EL CUERPO DE CADA TARJETA: devuelve [html, {cuando, ctl, pie}] con lo que llegó (el contrato de c16, tal cual)
+  // (lo que la base dice en llano —los «texto», «nota», «etiqueta»— se pinta tal cual; lo técnico —«tecnico», «alarma_tecnico»— nunca va en la portada)
+  const SIN_DEP = ["en_stripe", "sin_casar", "en_caja", "en_camino"];
+  // lo cobrado que no está en el banco, por dónde va (las palabras de la base: «en Stripe, sin depositar», «todavía no sale en el banco…»)
+  const sinDepFilas = sd => sd ? SIN_DEP.filter(k => sd[k] && nOk(sd[k].n)).map(k => ({ celdas: [`· ${tx(sd[k].etiqueta || k)}`, tm(sd[k].monto), esc(sd[k].n)] })) : [];
+  // lo devuelto en estos días (cheques rebotados y reembolsos de Stripe; ya restado de lo cobrado)
+  const devFilas = dv => dv && nOk(dv.n) ? [{ celdas: [`· ${tx(dv.etiqueta || "devuelto (ya restado)")}`, tm(dv.monto), esc(dv.n)] },
+    ...(dv.cheques && nOk(dv.cheques.n) ? [{ celdas: ["&nbsp;&nbsp;cheques devueltos", tm(dv.cheques.monto), esc(dv.cheques.n)] }] : []),
+    ...(dv.stripe && nOk(dv.stripe.n) ? [{ celdas: ["&nbsp;&nbsp;reembolsos de Stripe", tm(dv.stripe.monto), esc(dv.stripe.n)] }] : [])] : [];
+  // «Ver los números» lleva al final de dónde sale cada cifra (la «fuente» de la base)
+  const fuenteTb = d => d && d.fuente ? `<p class="ct-tb-nota chica ct-tb-fuente">De dónde sale: ${tx(d.fuente)}.</p>` : "";
+  // una fecha de la base que no es hoy: «al 31-oct-2026»; hoy, «hoy»
+  // (con las palabras de la base: «31-oct-2026», como sus textos)
+  const diaTb = iso => { const [a, m, dd] = partes(iso); return `${dd}-${MES[m] || ""}-${a}`; };
+  const alDia = iso => !iso ? "" : iso === (S.tab.d && S.tab.d.hoy) ? "hoy" : `al ${diaTb(iso)}`;
+  const TB_CUERPO = {
+    // EL EMBUDO DE COBRO: por cobrar → cobrado en N días → depositado (los tres pasos que manda la base, cada uno a su página)
+    cobros(d) {
+      const pc = d.por_cobrar || {}, cb = d.cobrado || {}, sd = d.sin_depositar, pasos = d.pasos || [];
+      // (las píldoras, como las de QuickBooks: «5 vencidas» en rojo con su icono; «6 cobros…» y «4 en el banco» en verde con su ✓;
+      // lo cobrado que no está en el banco, debajo en letra chica, con las palabras de la base)
+      const pill = p => p.clave === "por_cobrar" ? pillTb(tx(p.detalle), p.alarma ? "bad" : "", p.alarma ? "alerta" : null)
+        : p.clave === "cobrado" ? pillTb(tx(p.detalle), nOk(p.n) ? "ok" : "", nOk(p.n) ? "ok" : null)
+        : p.monto == null ? pillTb(esc("sin el banco"), "", "nada")
+        : pillTb(esc(plural(p.n || 0, "cobro en el banco", "cobros en el banco")), p.alarma ? "warn" : nOk(p.n) ? "ok" : "", p.alarma ? "alerta" : nOk(p.n) ? "ok" : null);
+      const paso = (p, i) => {
+        const cuerpo = `<span class="ct-tb-paso-t">${esc(p.etiqueta)}</span><span class="ct-tb-cifra">${tm(p.monto)}</span><span class="ct-tb-paso-n">${pill(p)}</span>${p.clave === "depositado" && p.detalle && (p.monto == null || (sd && nOk(sd.n))) ? `<small class="ct-tb-paso-d">${tx(p.detalle)}</small>` : ""}`;
+        return `${i ? `<span class="ct-tb-flecha" aria-hidden="true">›</span>` : ""}${p.ir && TITULOS[p.ir.pagina] ? `<button type="button" class="ct-tb-paso" data-paso="${esc(p.clave)}"${irAttr(p.ir)} aria-label="${esc(p.etiqueta)}: ${esc(tm(p.monto))}. ${tx(p.detalle || "")}. Ver en ${esc(irTxt(p.ir))}">${cuerpo}</button>` : `<div class="ct-tb-paso" data-paso="${esc(p.clave)}">${cuerpo}</div>`}`;
+      };
+      const dv = cb.devuelto, da = cb.devuelto_antes;
+      const aparte = [nOk(pc.retencion && pc.retencion.monto) ? `retención que se cobra al terminar ${tm(pc.retencion.monto)} (${esc(pc.retencion.n)})` : "",
+        nOk(pc.a_favor && pc.a_favor.monto) ? `anticipos y saldos a favor ${tm(pc.a_favor.monto)} (${esc(pc.a_favor.n)})` : "",
+        dv && nOk(dv.monto) ? `${tx(dv.etiqueta || "devuelto en estos días (ya restado)")} ${tm(dv.monto)} (${esc(dv.n)})` : "",
+        da && nOk(da.monto) ? `<span data-tb-dev-antes>${tx(da.etiqueta || "devuelto en estos días de cobros de antes (no se resta)")} ${tm(da.monto)} (${esc(da.n)})</span>` : ""].filter(Boolean);
+      const v = pc.vencidas || {}, pv = pc.por_vencer || {}, sv = pc.sin_vencimiento || {};
+      return [`<div class="ct-tb-embudo">${pasos.map(paso).join("")}</div>
+        ${aparte.length ? `<p class="ct-tb-nota">Aparte (no entra en «por cobrar»): ${aparte.join(" · ")}.</p>` : ""}
+        ${d.nota ? `<p class="ct-tb-nota">${tx(d.nota)}</p>` : ""}
+        ${tablaTb(["Concepto", "Monto", "Cuántas"], [
+          { clase: "ct-total", celdas: ["Por cobrar", tm(pc.monto), esc(pc.facturas != null ? pc.facturas : pc.n)] },
+          { celdas: [`· vencidas${v.dias_mas_vieja != null ? ` (la más vieja, ${plural(v.dias_mas_vieja, "día", "días")})` : ""}`, tm(v.monto), esc(v.n)] },
+          { celdas: ["· por vencer", tm(pv.monto), esc(pv.n)] },
+          ...(nOk(sv.n) ? [{ celdas: ["· sin vencimiento conocido", tm(sv.monto), esc(sv.n)] }] : []),
+          { celdas: ["Retención por cobrar (aparte)", tm(pc.retencion && pc.retencion.monto), esc(pc.retencion ? pc.retencion.n : "—")] },
+          { celdas: ["Anticipos y saldos a favor (aparte)", tm(pc.a_favor && pc.a_favor.monto), esc(pc.a_favor ? pc.a_favor.n : "—")] },
+          { clase: "ct-total", celdas: [`Cobrado en ${esc(d.dias)} días`, tm(cb.monto), esc(cb.n)] },
+          { celdas: ["· a facturas", tm(cb.a_facturas), esc(cb.facturas)] }, { celdas: ["· anticipos", tm(cb.anticipos), "—"] },
+          ...devFilas(dv), ...devFilas(da),
+          ...(d.depositado ? [{ clase: "ct-total", celdas: ["Depositado", tm(d.depositado.monto), esc(d.depositado.n)] }] : []),
+          ...(sd ? [{ celdas: ["Cobrado que no está en el banco", tm(sd.monto), esc(sd.n)] }, ...sinDepFilas(sd)] : []),
+          ...(d.cuadre ? [{ celdas: [`${ICO_TB.ok}Cuadra: ${tx(d.cuadre.texto)}`, tm(d.cuadre.libro), ""] }] : [])], { mas: fuenteTb(d) })}`,
+        { cuando: `<span title="${esc(fechaLarga(d.desde))} a ${esc(fechaLarga(d.hasta))}">Últimos ${esc(d.dias)} días</span>`,
+          pie: `${irBtn(d.ir)}${irBtn({ pagina: "cobros" }, "Pedir un pago en línea")}${sd && nOk(sd.n) ? irBtn(sd.ir, "Casar lo que falta") : ""}` }];
+    },
+    // BANCOS Y TARJETAS: cada cuenta con lo que dice el banco (y de qué día), lo del libro a hoy, la diferencia el mismo día, lo que
+    // espera en la Bandeja y cuándo se actualizó; en llano (lo técnico de Plaid va en Conexiones, no aquí)
+    bancos(d) {
+      const t = d.totales || {}, pr = t.por_revisar || {};
+      const via = c => c.via === "plaid" ? `Plaid${c.conexion && c.conexion.institucion ? ` · ${esc(c.conexion.institucion)}` : ""}` : c.via === "archivo" ? "por archivo" : "sin conexión";
+      // cuándo se actualizó (Plaid o el archivo): lo dice la base en llano («hace menos de 1 hora», «hace 3 días»); el día del SALDO va aparte
+      const cuando = c => c.actualizado_texto ? `actualizada ${esc(c.actualizado_texto)}` : "";
+      const revisar = c => [plural(c.por_revisar, "por revisar", "por revisar"), nOk(c.dobles) ? plural(c.dobles, "con su ticket dos veces", "con su ticket dos veces") : "", nOk(c.quitadas) ? plural(c.quitadas, "que el banco quitó", "que el banco quitó") : ""].filter(Boolean).join(" · ");
+      // la diferencia: el banco contra el libro EL MISMO DÍA (el del saldo del banco); cero, «igual que el banco»
+      const dif = c => c.diferencia == null ? "" : `<div class="ct-tb-cta-dif${nOk(c.diferencia) === 0 ? " igual" : ""}"><dt>${nOk(c.diferencia) === 0 ? `${ICO_TB.ok}igual que el banco` : "diferencia"}${c.diferencia_al && c.diferencia_al !== d.corte ? ` ${esc(alDia(c.diferencia_al))}` : ""}</dt>${nOk(c.diferencia) === 0 ? "" : `<dd class="ct-num">${tm(c.diferencia)}</dd>`}</div>`;
+      // como QuickBooks: el nombre y por dónde se actualiza a la izquierda; lo que dice el banco y lo del libro a la derecha; lo que espera debajo
+      const fila = c => `<li class="ct-tb-cta${c.alarma ? " alarma" : ""}" data-cuenta="${esc(c.cuenta)}">
+          <div class="ct-tb-cta-n"><b>${esc(c.nombre)}</b><small>${c.tipo === "tarjeta" ? "tarjeta · " : ""}${[via(c), cuando(c)].filter(Boolean).join(" · ")}</small>
+            <span class="ct-tb-cta-r">${nOk(c.por_revisar) ? irBtn(c.ir, `${revisar(c)}${c.dias_mas_viejo != null ? ` · el más viejo, de hace ${plural(c.dias_mas_viejo, "día", "días")}` : ""}`, "ct-tb-link") : `<span class="ct-tb-aldia">${ICO_TB.ok}nada por revisar</span>`}</span></div>
+          <dl class="ct-tb-cta-s">${c.saldo_banco != null ? `<div><dt>${c.tipo === "tarjeta" ? "se debe, según el banco" : "según el banco"}, <b>${esc(c.saldo_banco_texto || alDia(c.saldo_banco_al))}</b></dt><dd class="ct-num">${tm(c.saldo_banco)}</dd></div>` : `<div><dt>según el banco</dt><dd class="ct-tb-gris">sin saldo</dd></div>`}
+            <div><dt>${c.tipo === "tarjeta" ? "se debe, en el libro" : "en el libro"}, hoy</dt><dd class="ct-num">${tm(c.saldo_libro)}</dd></div>${dif(c)}</dl>
+          ${c.posfechado && c.posfechado.texto ? `<p class="ct-tb-nota ct-tb-cta-x">${tx(c.posfechado.texto)}</p>` : ""}
+          ${c.alarma_texto ? `<p class="ct-tb-alarma">${ICO_TB.alerta}<span>${tx(c.alarma_texto)}</span></p>` : ""}
+          ${c.conexion && c.conexion.estado !== "activa" && c.conexion.texto ? `<p class="ct-tb-alarma">${ICO_TB.alerta}<span>${tx(c.conexion.texto)}</span></p>` : c.conexion && c.conexion.texto && !/^al día/i.test(c.conexion.texto) ? `<p class="ct-tb-nota ct-tb-cta-x">${tx(c.conexion.texto)}</p>` : ""}
+        </li>`;
+      // (lo que dice el banco, sumado, solo si la base lo manda: todas las cuentas con el saldo del MISMO día, y se dice cuál; si son
+      // de días distintos, la base no suma —sería una cifra que el banco nunca dijo— y lo dice con sus palabras)
+      const totBanco = x => !nOk(x.con_banco) ? "" : x.banco != null ? ` · según el banco${x.banco_al ? `, ${esc(alDia(x.banco_al))}` : ""} <span class="ct-num">${tm(x.banco)}</span>${x.con_banco < x.n ? ` (${esc(x.con_banco)} de ${esc(x.n)})` : ""}`
+        : x.banco_texto ? ` · según el banco: <span data-tb-banco-dias>${tx(x.banco_texto)}</span>` : "";
+      const tot = (x, et) => x && x.n ? `<div><dt>${et}</dt><dd class="ct-num">${tm(x.libro)}</dd><small>en el libro, hoy${totBanco(x)}</small></div>` : "";
+      const bandeja = d.ir_bandeja || { pagina: "bandeja", cuenta: null };
+      return [`<dl class="ct-tb-totales">${tot(t.bancos, "Bancos")}${tot(t.tarjetas, "Tarjetas (se debe)")}</dl>
+        ${d.nota ? `<p class="ct-tb-nota">${tx(d.nota)}</p>` : ""}
+        <ul class="ct-tb-ctas">${(d.cuentas || []).map(fila).join("")}</ul>
+        ${tablaTb(["Cuenta", "Según el banco", "En el libro, hoy", "Diferencia (el mismo día)", "Por revisar"], (d.cuentas || []).map(c => ({ celdas: [`${esc(c.nombre)} <small class="ct-tb-gris">${esc(c.cuenta)}${c.saldo_banco_texto ? ` · el saldo del banco, ${esc(c.saldo_banco_texto)}` : ""}${c.ultima_conciliacion ? ` · conciliada al ${esc(fechaLarga(c.ultima_conciliacion))}` : " · sin conciliar"}</small>`, tm(c.saldo_banco), tm(c.saldo_libro), c.diferencia == null ? "—" : `${tm(c.diferencia)}${c.diferencia_al ? ` <small class="ct-tb-gris">${esc(alDia(c.diferencia_al))}</small>` : ""}`, `${esc(c.por_revisar)}${nOk(c.por_revisar) ? ` · neto ${tm(c.por_revisar_monto)} <small class="ct-tb-gris">depósitos menos cargos</small>` : ""}`] })), { mas: fuenteTb(d) })}`,
+        { cuando: d.actualizado_texto ? `<span${d.actualizado_el ? ` title="${esc(horaTb(d.actualizado_el))}"` : ""}>actualizado ${esc(d.actualizado_texto)}</span>` : "Al día de hoy",
+          pie: `${irBtn(bandeja, `Bandeja${nOk(pr.n) ? ` (${esc(pr.n)})` : ""}`)}${irBtn(d.ir_conciliar || { pagina: "conciliar" }, "Conciliar")}${irBtn(d.ir)}` }];
+    },
+    // RESULTADOS: el resultado del período, su margen, la comparación y las dos barras (lo que entra y lo que sale) con lo que espera en la Bandeja
+    resultados(d) {
+      const ant = d.anterior || null, v = d.variacion || null, prv = d.por_revisar || null;
+      const dos = !!ant && (d.barras || []).some(b => b.anterior != null);
+      // (como QuickBooks: cada barra con su cifra y, al lado, cuánto de ese lado espera en la Bandeja —«20 to review»—, que lleva a ella:
+      // a las fechas de este período y, en la de ingresos, solo a los depósitos; en la de gastos, solo a los cargos)
+      const irRev = b => b.por_revisar && b.por_revisar.ir ? b.por_revisar.ir : prv && prv.ir ? { ...prv.ir, lado: b.clave === "ingresos" ? "deposito" : "cargo" } : { pagina: "bandeja", cuenta: null };
+      const rev = b => [b.por_revisar && nOk(b.por_revisar.n) ? irBtn(irRev(b), `${plural(b.por_revisar.n, "por revisar", "por revisar")} (${tm(b.por_revisar.monto)})`, "ct-tb-link").replace("<button ", `<button title="${esc(b.nota || "")}" `) : "",
+        b.dobles && nOk(b.dobles.n) && prv && prv.ir ? irBtn({ ...prv.ir, motivo: "llego_su_ticket" }, `${plural(b.dobles.n, "con su ticket dos veces", "con su ticket dos veces")} (${tm(b.dobles.monto)} de más)`, "ct-tb-link") : ""].filter(Boolean).join("");
+      const filas = (d.barras || []).map((b, i) => filaBarra(esc(b.etiqueta), `<b class="ct-num">${tm(b.monto)}</b>`, "res", `${b.etiqueta}: ${tm(b.monto)}`, i, "",
+        (dos && b.anterior != null) || rev(b) ? `<div class="ct-tb-bf-r">${dos && b.anterior != null ? `<span class="ct-tb-gris">antes <span class="ct-num">${tm(b.anterior)}</span></span>` : ""}${rev(b)}</div>` : "")).join("");
+      const titulo = d.titulo || `${d.es_perdida ? "Pérdida" : "Utilidad"} de ${d.etiqueta}${d.en_curso ? " (hasta hoy)" : ""}`;
+      return [`${cifra(esc(titulo), tm(d.resultado), d.margen_pct != null ? pillTb(`margen ${pctTb(d.margen_pct)}`, "") : "")}
+        ${v && v.pct != null ? variacionTxt(v.pct, v.sube, true, v.contra, v.monto) : v && v.igual ? `<p class="ct-tb-delta">${ICO_TB.nada}<span>Igual que ${tx(v.contra)}</span></p>` : d.sin_comparar ? `<p class="ct-tb-nota">${tx(d.sin_comparar)}</p>` : ""}
+        ${d.parcial && d.nota ? `<p class="ct-tb-nota">${tx(d.nota)}</p>` : ""}
+        ${dos ? leyenda([["serie1", `${esc(d.etiqueta)}${d.en_curso ? " (hasta hoy)" : ""}`], ["gris", esc(ant.etiqueta)]]) : ""}
+        <div class="ct-tb-barras">${filas}</div>
+        ${d.wip_aparte && d.wip_aparte.texto ? `<p class="ct-tb-nota ct-tb-aparte" data-tb-wip>${tx(d.wip_aparte.texto)}</p>` : ""}
+        ${d.despues_de_hoy && d.despues_de_hoy.texto ? `<p class="ct-tb-nota">${tx(d.despues_de_hoy.texto)}</p>` : ""}
+        ${nOk(d.ajustes_otro_ejercicio) ? `<p class="ct-tb-nota">Un ajuste del CPA que corrige otro año (${tm(d.ajustes_otro_ejercicio)}) no se cuenta en estos días.</p>` : ""}
+        ${d.nota && !d.parcial ? `<p class="ct-tb-nota">${tx(d.nota)}</p>` : ""}
+        ${tablaTb(["Concepto", "Este período", ...(ant ? ["Anterior", "Variación"] : [])], (d.renglones || []).map(r => ({ clase: r.es_total ? "ct-total" : "",
+          celdas: [esc(r.etiqueta), tm(r.monto), ...(ant ? [tm(r.anterior), r.variacion == null ? "—" : `${tm(r.variacion)}${r.variacion_pct != null ? ` <span class="ct-tb-nb">(${pctTb(r.variacion_pct, true)})</span>` : ""}`] : [])] }))
+          .concat((d.barras || []).map(b => ({ celdas: [`${esc(b.etiqueta)} (la barra)${b.por_revisar && nOk(b.por_revisar.n) ? `<small class="ct-tb-gris">${plural(b.por_revisar.n, "espera", "esperan")} en la Bandeja ${tm(b.por_revisar.monto)}. ${esc(b.nota || "")}</small>` : ""}`, tm(b.monto), ...(ant ? [tm(b.anterior), ""] : [])] })))
+          .concat(d.wip_aparte ? [{ celdas: ["Aparte: el reverso del ajuste del WIP", tm(d.wip_aparte.resultado), ...(ant ? ["", ""] : [])] }] : []), { mas: fuenteTb(d) })}
+        <p class="ct-tb-nota chica">${esc(fechaLarga(d.desde))} a ${esc(fechaLarga(d.en_curso ? d.corte : d.hasta))}.</p>`];
+    },
+    // GASTOS: lo gastado en N días por categoría (las mayores y «las demás», como manda la base), contra los N días de antes
+    gastos(d) {
+      const ant = d.anterior;
+      const g = d.grafica || [], pr = d.por_revisar || {}, db = d.dobles || {};
+      const enlace = d.ir_bandeja && (nOk(pr.n) || nOk(db.n)) ? irBtn({ ...d.ir_bandeja, ...(nOk(pr.n) && !nOk(db.n) ? { lado: "cargo" } : {}) }, `Ver en la Bandeja: ${[nOk(pr.n) ? plural(pr.n, "cargo por revisar", "cargos por revisar") : "", nOk(db.n) ? plural(db.n, "con su ticket dos veces", "con su ticket dos veces") : ""].filter(Boolean).join(" y ")}`, "ct-tb-link") : "";
+      return [`${cifra(`Gastado en los últimos ${esc(d.dias)} días`, tm(d.total))}
+        ${d.variacion_pct != null && ant ? variacionTxt(d.variacion_pct, nOk(d.variacion) > 0, false, `${ant.etiqueta} (${tm(ant.total)})`) : d.sin_comparar ? `<p class="ct-tb-nota">${tx(d.sin_comparar)}</p>` : ""}
+        <div class="ct-tb-barras">${g.length ? g.map((x, i) => filaBarra(`${esc(x.nombre)}${x.clave === "otras" && nOk(x.categorias) > 1 ? ` <span class="ct-tb-gris">(${esc(x.categorias)} categorías)</span>` : ""}`, `<b class="ct-num">${tm(x.monto)}</b> <span class="ct-tb-gris">${pctTb(x.pct)}</span>`, "gas", `${x.nombre}: ${tm(x.monto)}, ${pctTb(x.pct)} de lo gastado`, i)).join("") : `<p class="ct-tb-nota">Nada gastado en estos días.</p>`}</div>
+        ${nOk(d.abonos) ? `<p class="ct-tb-nota">Hubo abonos a favor por ${tm(d.abonos)}: no entran en la gráfica.</p>` : ""}
+        ${d.nota ? `<p class="${nOk(pr.n) || nOk(db.n) ? "ct-tb-revisar" : "ct-tb-nota"}">${nOk(pr.n) || nOk(db.n) ? ICO_TB.alerta : ""}<span>${tx(d.nota)}${enlace ? ` ${enlace}` : ""}</span></p>` : enlace ? `<p class="ct-tb-revisar">${ICO_TB.alerta}<span>${enlace}</span></p>` : ""}
+        ${tablaTb(["Categoría", "Monto", "% del total", ...(ant ? ["Antes", "Variación"] : [])], (d.categorias || []).map(c => ({ celdas: [`${esc(c.nombre)} <small class="ct-tb-gris">${esc(c.cuenta)}</small>`, tm(c.monto), pctTb(c.pct), ...(ant ? [tm(c.anterior), c.variacion == null ? "—" : `${tm(c.variacion)}${c.variacion_pct != null ? ` <span class="ct-tb-nb">(${pctTb(c.variacion_pct, true)})</span>` : ""}`] : [])] })).concat([{ clase: "ct-total", celdas: ["Total", tm(d.total), "", ...(ant ? [tm(ant.total), d.variacion == null ? "—" : tm(d.variacion)] : [])] }]),
+          { mas: `${nOk(d.wip_fuera) ? `<p class="ct-tb-nota chica">Fuera de la cuenta: ${plural(d.wip_fuera, "asiento", "asientos")} del ajuste del WIP de las obras (no son un gasto; están en Resultados).</p>` : ""}${fuenteTb(d)}` })}`,
+        { cuando: `<span title="${esc(fechaLarga(d.desde))} a ${esc(fechaLarga(d.hasta))}">Últimos ${esc(d.dias)} días</span>` }];
+    },
+    // FLUJO DE CAJA: el saldo mes a mes (la línea) con la proyección punteada, o lo que entró y salió (columnas). Sin la apertura en el
+    // libro no hay saldo de verdad: solo lo que entró y salió, dicho (ni alarma de sobregiro, ni proyección, ni línea de saldo)
+    caja(d) {
+      const pj = d.proyeccion || null, h = d.hoy || {};
+      const sinAp = !!(d.sin_apertura || h.sin_apertura);
+      const vista = sinAp || S.tab.cajaVista === "mov" ? "mov" : "saldo";
+      const ctl = sinAp ? "" : `<div class="ct-chips ct-tb-chips" role="group" aria-label="Qué ver"><button type="button" class="ct-chip chica" data-tb-caja="saldo" aria-pressed="${vista === "saldo"}">Saldo de caja</button><button type="button" class="ct-chip chica" data-tb-caja="mov" aria-pressed="${vista === "mov"}">Entradas y salidas</button></div>`;
+      const meses = d.meses || [];
+      const conta = (x, k) => x[k] != null ? tm(x[k]) : "";
+      // (un solo mes de libro: la cifra sola, sin una gráfica de una columna; ningún movimiento: dicho, sin una gráfica en cero)
+      const unMes = meses.length === 1 || nOk(d.meses_con_libro) === 1, sinMovs = meses.length > 0 && meses.every(m => m.sin_movimientos);
+      const noIncl = s => `${s.etiqueta ? `<b>${tx(s.etiqueta)}:</b> ` : ""}${tx(s.texto)}${s.monto != null ? ` <span class="ct-num">(${tm(s.monto)})</span>` : ""}${s.cobrar != null || s.pagar != null ? ` <span class="ct-num">(${[nOk(s.cobrar) ? `por cobrar ${tm(s.cobrar)}` : "", nOk(s.pagar) ? `por pagar ${tm(s.pagar)}` : ""].filter(Boolean).join(" · ") || tm(0)})</span>` : ""}`;
+      const fig = sinAp ? cifra(`Lo que entró menos lo que salió desde el ${esc(fechaLarga((S.tab.d && S.tab.d.libro && S.tab.d.libro.desde) || (meses[0] && meses[0].desde)))}`, tm(h.neto))
+        : cifra("Caja hoy", tm(h.saldo), h.alarma ? `<span class="ct-tb-vencido">${ICO_TB.alerta}sobregiro de ${tm(h.sobregiro)}</span>` : "");
+      const m0 = meses[0];
+      const grafica = vista === "saldo" ? grafCaja("caja", "Saldo de caja: la apertura, el cierre de cada mes, hoy y la proyección", 200)
+        : sinMovs ? `<p class="ct-tb-nota" data-tb-caja-vacia>Todavía no hay entradas ni salidas de caja en el libro.</p>`
+        : unMes && m0 ? `<div class="ct-tb-lados" data-tb-caja-un-mes><div class="ct-tb-lado"><span class="ct-tb-lado-v">${tm(m0.entradas)}</span><span class="ct-tb-lado-t">entró en ${esc(m0.etiqueta)}${m0.en_curso ? " (hasta hoy)" : ""}</span></div><div class="ct-tb-lado der"><span class="ct-tb-lado-v">${tm(m0.salidas)}</span><span class="ct-tb-lado-t">salió</span></div></div><p class="ct-tb-nota chica">Por ahora el libro tiene un solo mes: no hay meses que comparar en una gráfica.</p>`
+        : grafCaja("caja_mov", "Lo que entró y salió de la caja cada mes", 200);
+      return [`${fig}
+        ${h.texto ? `<p class="${sinAp ? "ct-tb-revisar" : "ct-tb-nota"}" data-tb-caja-hoy>${sinAp ? ICO_TB.alerta : ""}<span>${tx(h.texto)}</span></p>` : ""}
+        ${vista === "saldo" ? leyenda([["linea", "Saldo de caja (el libro)"], ...(pj ? [["linea punteada", "Proyección: solo lo que ya tiene fecha"]] : [])])
+          : !unMes && !sinMovs ? leyenda([["serie1", "Entradas"], ["serie2", "Salidas"]]) : ""}
+        ${grafica}
+        ${vista === "saldo" && pj && pj.aviso ? `<p class="ct-tb-revisar" data-tb-aviso>${ICO_TB.alerta}<span>${tx(pj.aviso)}</span></p>` : ""}
+        ${d.antes_del_libro && d.antes_del_libro.texto ? `<p class="ct-tb-nota">${tx(d.antes_del_libro.texto)}</p>` : ""}
+        ${pj ? `<details class="ct-tb-tabla" data-tabla="como"><summary>Cómo se hace la proyección</summary><div class="ct-tb-pj">
+            <p><b>Supone:</b></p><ul>${(pj.supuestos || []).map(s => `<li>${tx(s)}</li>`).join("")}</ul>
+            <p><b>No incluye:</b></p><ul>${(pj.no_incluye || []).map(s => `<li data-ni="${esc(s.clave || "")}">${noIncl(s)}</li>`).join("")}</ul></div></details>`
+          : d.sin_proyeccion ? `<p class="ct-tb-nota" data-tb-sin-pj>${tx(d.sin_proyeccion)}</p>` : ""}
+        ${tablaTb(["Mes", "Al empezar", "Entradas", "Salidas", "Al terminar"], [
+          ...(d.apertura && d.apertura.en_el_libro && d.apertura.saldo != null ? [{ celdas: [`Apertura (${esc(fechaLarga(d.apertura.fecha))})`, "—", "—", "—", tm(d.apertura.saldo)] }] : []),
+          ...meses.map(m => ({ celdas: [`${esc(m.etiqueta)}${m.en_curso ? " (hasta hoy)" : ""}`, sinAp ? "—" : conta(m, "inicial"), conta(m, "entradas"), conta(m, "salidas"), sinAp ? "—" : conta(m, "final")] }))
+        ], { id: "real", mas: `${sinAp ? `<p class="ct-tb-nota chica">Sin la apertura, «al empezar» y «al terminar» no serían lo que había en el banco: no se escriben.</p>` : ""}${meses.filter(m => m.en_curso && m.despues_de_hoy && m.despues_de_hoy.texto).map(m => `<p class="ct-tb-nota chica" data-tb-caja-despues>${tx(m.despues_de_hoy.texto)}</p>`).join("")}${pj ? `<p class="ct-tb-nota ct-tb-tabla-t">La proyección (solo lo que ya tiene fecha; no es la caja que habrá):</p><p class="ct-tb-nota chica">Entra: lo por cobrar; sale: lo por pagar; con fecha: lo que el libro ya tiene con fecha de después de hoy.</p>${tablaSola(["Mes", "Entra", "Sale", "Cuotas", "Use tax", "Con fecha", "Saldo"], (pj.meses || []).map(m => ({ celdas: [`${esc(m.etiqueta)}${nOk(m.cobrar_vencido) || nOk(m.pagar_vencido) || nOk(m.cuotas_atrasadas) ? ` <small class="ct-tb-gris">con lo ya vencido</small>` : ""}`, tm(m.cobrar), tm(m.pagar), tm(m.cuotas), tm(m.impuestos), tm(m.libro), tm(m.saldo)] })))}` : ""}${fuenteTb(d)}` })}`,
+        { cuando: "Mes a mes", ctl }];
+    },
+    // FACTURAS: no pagadas (vencidas / por vencer) y cobradas en N días (depositadas / no); las partes y su porcentaje, de la base
+    facturas(d) {
+      const np = d.no_pagadas || {}, pg = d.pagadas || {};
+      const ve = np.vencidas || {}, pv = np.por_vencer || {}, de = pg.depositado, sd = pg.sin_depositar;
+      // (cada parte con la muestra de su color al lado de su nombre: la barra fina de debajo no lleva texto)
+      const lado = (et, x, clase, ico, muestra) => `<div class="ct-tb-lado ${clase || ""}"><span class="ct-tb-lado-v">${tm(x && x.monto)}</span><span class="ct-tb-lado-t"><i class="ct-tb-ley-m ${muestra}" aria-hidden="true"></i>${ico ? ICO_TB[ico] : ""}${et}${x && nOk(x.n) ? ` · ${esc(x.n)}` : ""}</span></div>`;
+      const mv = np.mas_vencida;
+      return [`<div class="ct-tb-fac">
+          <p class="ct-tb-fac-t"><b>${tm(np.monto)}</b> sin pagar · ${plural(np.n || 0, "factura", "facturas")}</p>
+          <div class="ct-tb-lados">${lado("Vencidas", ve, nOk(ve.n) ? "mal" : "", nOk(ve.n) ? "alerta" : null, "mal")}${lado("Por vencer", pv, "der", null, "gris")}</div>
+          ${grafCaja("fac_np", `Facturas sin pagar: vencidas ${pctTb(ve.pct)}, por vencer ${pctTb(pv.pct)}`, 12)}
+          ${mv ? `<p class="ct-tb-nota">La más vencida: ${esc(mv.factura || "—")}${mv.obra ? ` (${esc(mv.obra)})` : ""}, ${tm(mv.monto)}, lleva ${plural(mv.dias_vencida, "día", "días")} (venció el ${esc(fechaLarga(mv.vence))}).</p>` : ""}
+        </div>
+        <div class="ct-tb-fac">
+          <p class="ct-tb-fac-t"><b>${tm(pg.monto)}</b> cobrado en ${esc(pg.dias)} días · ${plural(pg.n || 0, "cobro", "cobros")}</p>
+          ${de && sd ? `<div class="ct-tb-lados">${lado("Sin depositar", sd, "", null, "gris")}${lado("Depositado", de, `der${nOk(de.n) ? " bien" : ""}`, nOk(de.n) ? "ok" : null, "bien")}</div>
+          ${grafCaja("fac_pg", `Cobrado en ${pg.dias} días: sin depositar ${pctTb(sd.pct)}, depositado ${pctTb(de.pct)}`, 12)}` : ""}
+          ${pg.nota ? `<p class="ct-tb-nota">${tx(pg.nota)}</p>` : ""}
+        </div>
+        ${tablaTb(["Facturas", "Monto", "Cuántas", "%"], [
+          { celdas: ["Vencidas", tm(ve.monto), esc(ve.n), pctTb(ve.pct)] }, { celdas: ["Por vencer", tm(pv.monto), esc(pv.n), pctTb(pv.pct)] },
+          { clase: "ct-total", celdas: ["Sin pagar", tm(np.monto), esc(np.n), ""] },
+          ...(de && sd ? [{ celdas: [`Cobrado en ${esc(pg.dias)} días, sin depositar`, tm(sd.monto), esc(sd.n), pctTb(sd.pct)] }, ...sinDepFilas(sd).map(f => ({ celdas: [...f.celdas, ""] })), { celdas: [`Cobrado en ${esc(pg.dias)} días, depositado`, tm(de.monto), esc(de.n), pctTb(de.pct)] }] : []),
+          { clase: "ct-total", celdas: [`Cobrado en ${esc(pg.dias)} días`, tm(pg.monto), esc(pg.n), ""] }], { mas: fuenteTb(d) })}`,
+        { cuando: "Al día de hoy", pie: `${irBtn(d.ir)}${de ? irBtn(pg.ir, "Ver los depósitos") : ""}` }];
+    },
+    // VENTAS: lo vendido cada mes del año que el libro tiene (sin el ajuste del WIP), y su total; lo de antes del libro, dicho y sin pintar
+    ventas(d) {
+      const ab = d.antes_del_libro, ms = d.meses || [], w = d.wip;
+      // (un solo mes de libro: la cifra sola —el total ES ese mes—, sin una gráfica de una columna)
+      const unMes = ms.length === 1 || nOk(d.meses_con_libro) === 1;
+      const conWip = ms.some(m => nOk(m.wip) !== 0);
+      // (ningún mes con ventas todavía: dicho, sin una gráfica en cero)
+      const sinVentas = ms.length > 0 && ms.every(m => nOk(m.monto) === 0);
+      return [`${cifra(esc(d.titulo || `Ventas de ${d.anio}`), tm(d.total), d.mejor_mes && ms.length > 1 ? `<span class="ct-tb-gris">el mejor mes: ${esc(d.mejor_mes.etiqueta)}, ${tm(d.mejor_mes.monto)}</span>` : "")}
+        ${!ms.length ? `<p class="ct-tb-nota">Este año todavía no tiene meses en el libro.</p>` : sinVentas ? `<p class="ct-tb-nota" data-tb-sin-ventas>Todavía no hay ventas en el libro en ${esc(d.anio)}.</p>` : unMes ? `<p class="ct-tb-nota" data-tb-un-mes>Por ahora ${esc(d.anio)} tiene un solo mes en el libro (${esc(ms[0].etiqueta)}${ms[0].en_curso ? ", hasta hoy" : ""}): la cifra de arriba es ese mes; con el segundo sale la gráfica.</p>` : grafCaja("ventas", `Ventas de cada mes de ${d.anio} que tiene el libro`, 180)}
+        ${w && w.texto ? `<p class="ct-tb-nota" data-tb-wip>${tx(w.texto)}</p>` : ""}
+        ${ab && nOk(ab.meses) ? `<p class="ct-tb-nota">${tx(ab.texto)}</p>` : ""}
+        ${tablaTb(["Mes", "Ventas", ...(conWip ? ["Ajuste del WIP", "Con el ajuste"] : [])], ms.map(m => ({ celdas: [`${esc(m.etiqueta)}${m.en_curso ? " (hasta hoy)" : ""}`, tm(m.monto), ...(conWip ? [tm(m.wip), tm(m.con_wip)] : [])] }))
+          .concat([{ clase: "ct-total", celdas: ["Total", tm(d.total), ...(conWip ? [w ? tm(w.monto) : "", w ? tm(w.con_wip) : ""] : [])] }]), { mas: fuenteTb(d) })}`,
+        { cuando: esc(d.etiqueta || `Lo que va de ${d.anio}`) }];
+    },
+    por_cobrar: d => tbAntiguedad(d, "por cobrar"),
+    por_pagar: d => tbAntiguedad(d, "por pagar"),
+    // CONEXIONES: Plaid, Stripe y la IA: conectadas, con problemas o apagadas (como «My integrations»), y lo que no está instalado.
+    // Cada una con UNA frase en llano; lo técnico (el código del banco, el nombre del secreto) está en la página Conexiones
+    conexiones(d) {
+      const EST = { conectada: ["conectada", "ok", "ok"], con_problemas: ["con problemas", "bad", "alerta"], apagada: ["apagada", "", "nada"] };
+      const fila = (n, et, ico, clase) => `<li class="ct-tb-cx-t${clase ? " " + clase : ""}">${ICO_TB[ico]}<span>${et}</span><b class="ct-num">${esc(n)}</b></li>`;
+      return [`${cifra("Conexiones", `<span class="ct-num">${esc(d.total || 0)}</span>`)}
+        <ul class="ct-tb-cx-tot">${fila(d.conectadas || 0, "Conectadas", "ok", "bien")}${fila(d.con_problemas || 0, "Con problemas", "alerta", nOk(d.con_problemas) ? "mal" : "")}${nOk(d.apagadas) ? fila(d.apagadas, "Apagadas", "nada", "") : ""}</ul>
+        <ul class="ct-tb-cx">${(d.lista || []).map(c => { const e = EST[c.estado] || [c.estado, "", "nada"]; return `<li class="ct-tb-cx-f" data-cx="${esc(c.tipo)}"><div class="ct-tb-cx-n"><b>${esc(c.nombre)}</b>${c.modo === "prueba" ? ` ${pillTb("modo de prueba", "warn")}` : ""}</div>${irBtn(c.ir, "Ver", "ct-tb-link")}<div class="ct-tb-cx-d">${pillTb(esc(e[0]), e[1], e[2])}<small>${tx(c.detalle || "")}</small></div></li>`; }).join("")}</ul>
+        ${(d.sin_instalar || []).length ? `<p class="ct-tb-nota">Sin instalar: ${d.sin_instalar.map(x => `${esc(x.nombre)} (falta ${esc(x.falta)})`).join(", ")}.</p>` : ""}
+        ${nOk(d.desconectadas) ? `<p class="ct-tb-nota">${plural(d.desconectadas, "banco dado de baja no cuenta", "bancos dados de baja no cuentan")}.</p>` : ""}
+        ${nOk(d.con_problemas) ? `<p class="ct-tb-nota chica">El detalle de cada problema (para arreglarlo o para soporte) está en Conexiones.</p>` : ""}`,
+        { cuando: "Al día de hoy", pie: irBtn(d.ir, nOk(d.con_problemas) ? "Ver los problemas en Conexiones" : null) }];
+    },
+    // COBROS EN LÍNEA (Stripe): lo cobrado que espera su depósito, lo que Stripe descontará del siguiente (un reembolso de algo ya
+    // depositado), lo que viene en camino, el último depósito y los que vienen; cada cifra con las palabras de la base
+    cobros_en_linea(d) {
+      const st = (k, et, x, sub) => `<div class="ct-tb-st" data-st="${k}"><span class="ct-tb-et">${et}</span><span class="ct-tb-st-v">${tm(x && x.monto)}</span><small>${sub}</small></div>`;
+      const ud = d.ultimo_deposito, sig = d.siguientes || [], pd = d.por_depositar, pdc = d.por_descontar, ec = d.en_camino, fd = d.falta_depositar;
+      const sub = (x, uno, varios, nada) => x && nOk(x.n) ? `${plural(x.n, uno, varios)}: ${tx(x.etiqueta || "")}` : nada;
+      return [`${d.modo === "prueba" ? `<p class="ct-tb-modo">${pillTb("modo de prueba: nada de esto es dinero de verdad", "warn", "alerta")}</p>` : ""}
+        <div class="ct-tb-sts">${st("por_depositar", "Por depositar", pd, sub(pd, "pago", "pagos", "nada espera su depósito"))}
+          ${st("en_camino", "En camino", ec, sub(ec, "pago", "pagos", "nada en camino"))}
+          ${pdc ? st("por_descontar", "Stripe descontará", pdc, sub(pdc, "reembolso", "reembolsos", "")) : ""}</div>
+        ${d.texto ? `<p class="ct-tb-nota" data-tb-cel-texto>${tx(d.texto)}</p>` : ""}
+        <p class="ct-tb-nota">${ud ? `Último depósito: ${tm(ud.monto)} el ${esc(fechaLarga(ud.llegada))}${nOk(ud.n_pagos) ? ` (${plural(ud.n_pagos, "pago", "pagos")})` : ""}.` : "Todavía no ha llegado ningún depósito."}
+          ${sig.length ? ` Vienen: ${sig.map(s => `${tm(s.monto)}${s.llegada ? ` el ${esc(fecha(s.llegada))}` : ""}`).join(", ")}.` : ""}
+          ${plural(d.enlaces_activos || 0, "enlace de pago activo", "enlaces de pago activos")}.</p>
+        ${nOk(d.alarmas) || nOk(d.cuadres_rojos) || nOk(d.pagos_revisar) ? `<p class="ct-tb-revisar">${ICO_TB.alerta}<span>${[nOk(d.cuadres_rojos) ? plural(d.cuadres_rojos, "cuadre en rojo", "cuadres en rojo") : "", nOk(d.alarmas) ? plural(d.alarmas, "alarma", "alarmas") : "", nOk(d.pagos_revisar) ? plural(d.pagos_revisar, "pago por revisar", "pagos por revisar") : ""].filter(Boolean).join(" · ")}: la página lo explica.</span></p>` : ""}
+        ${d.fuente || fd ? `<details class="ct-tb-tabla"><summary>De dónde sale</summary>${fd && pdc ? `<p class="ct-tb-nota">Lo cobrado que espera su depósito, menos lo que Stripe descontará: ${tm(fd.monto)} (${plural(fd.n || 0, "pago", "pagos")}).</p>` : ""}${fuenteTb(d)}</details>` : ""}`,
+        { cuando: "Al día de hoy" }];
+    },
+    // EL USE TAX (el DR-15 de c9): lo que se debe hoy, el DR-15 que toca (lo que falta y cuándo vence) y lo del mes pasado y de este
+    use_tax(d) {
+      const dr = d.dr15;
+      const fila = (m, et) => m ? `<li><div><b>${esc(m.etiqueta)}</b><span class="ct-tb-gris"> · ${et}</span><small>cargado ${tm(m.cargado)} · pagado en el mes ${tm(m.pagado)} · ${m === d.mes ? "va en" : "quedó en"} ${tm(m.saldo_al_cierre)}</small></div></li>` : "";
+      return [`${cifra(`Por pagar hoy (cuenta ${esc(d.cuenta || "2300")})`, tm(d.saldo_hoy))}
+        ${dr && dr.texto ? `<p class="${dr.vencido ? "ct-tb-alarma" : nOk(dr.falta) ? "ct-tb-revisar" : "ct-tb-nota"}" data-tb-dr15>${dr.vencido || nOk(dr.falta) ? ICO_TB.alerta : ""}<span>${tx(dr.texto)}</span></p>` : ""}
+        <ul class="ct-tb-meses">${fila(d.mes_pasado, "se declara")}${fila(d.mes, "en curso")}</ul>
+        ${!d.mes_pasado && d.sin_mes_pasado ? `<p class="ct-tb-nota">${tx(d.sin_mes_pasado)}</p>` : ""}
+        ${d.que_es ? `<p class="ct-tb-nota chica" data-tb-que-es>${tx(d.que_es)}</p>` : ""}
+        ${tablaTb(["Mes", "Compras", "Base", "Cargado", "Pagado en el mes", "Saldo"], [d.mes_pasado, d.mes].filter(Boolean).map(m => ({ celdas: [esc(m.etiqueta), esc(m.compras_n), tm(m.base), tm(m.cargado), tm(m.pagado), tm(m.saldo_al_cierre)] })),
+          { mas: `${d.nota ? `<p class="ct-tb-nota chica">${tx(d.nota)}</p>` : ""}${fuenteTb(d)}` })}`,
+        { cuando: "Este mes y el pasado", pie: irBtn(d.ir, dr ? `Ver el DR-15 de ${esc(dr.etiqueta)}` : null) }];
+    },
+    // LOS PRÉSTAMOS (c6): lo que se debe, lo pagado (un medidor por préstamo) y la próxima cuota
+    prestamos(d) {
+      const t = d.totales || {}, px = t.proxima, lb = d.libro;
+      return [`${cifra(`Lo que se debe · ${plural(t.n || 0, "préstamo", "préstamos")}`, tm(t.saldo), px ? `<span class="ct-tb-gris">próxima cuota: ${esc(fechaLarga(px.fecha))}, ${tm(px.monto)} · en 30 días ${tm(t.en_30_dias)}</span>` : "")}
+        ${nOk(t.atrasadas) ? `<p class="ct-tb-alarma">${ICO_TB.alerta}<span>${plural(t.atrasadas, "cuota atrasada", "cuotas atrasadas")}: su cargo puede estar esperando en la Bandeja.</span></p>` : ""}
+        <ul class="ct-tb-pres">${(d.lista || []).map((p, i) => { const q = p.proxima || {}; return `<li><div class="ct-tb-pres-c"><b>${esc(p.prestamista)}</b> <span class="ct-tb-gris">${esc(p.descripcion || "")}</span><span class="ct-num">${tm(p.saldo)}</span></div>
+            ${grafCaja("prestamo", `${p.prestamista}: pagado ${pctTb(p.pagado_pct)} de ${tm(p.principal)}`, 8, i)}
+            <small>pagado ${pctTb(p.pagado_pct)} de ${tm(p.principal)} · cuota ${tm(p.cuota)} ${esc(p.frecuencia || "")}${p.tasa_anual != null ? ` · ${esc(p.tasa_anual)} % al año` : ""}</small>
+            ${q.fecha ? `<p class="ct-tb-pres-px${q.atrasada ? " mal" : ""}">${q.atrasada ? ICO_TB.alerta : ""}Próxima: <b>${esc(fechaLarga(q.fecha))}</b>${q.dias != null ? ` (${q.atrasada ? `atrasada ${plural(Math.abs(nOk(q.dias)), "día", "días")}` : `en ${plural(q.dias, "día", "días")}`})` : ""} · ${tm(q.monto)} <span class="ct-tb-gris">(capital ${tm(q.capital)} · interés ${tm(q.interes)})</span></p>` : ""}</li>`; }).join("")}</ul>
+        ${!(d.lista || []).length && lb && lb.texto ? `<p class="ct-tb-nota">${tx(lb.texto)}</p>` : ""}
+        ${lb && lb.igual === false ? `<p class="ct-tb-alarma">${ICO_TB.alerta}<span>${tx(lb.texto)} (el libro dice ${tm(lb.saldo)})</span></p>` : ""}
+        ${tablaTb(["Préstamo", "Se debe", "Principal", "Pagado", "Próxima cuota"], (d.lista || []).map(p => ({ celdas: [`${esc(p.prestamista)} <small class="ct-tb-gris">${esc(p.descripcion || "")}</small>`, tm(p.saldo), tm(p.principal), pctTb(p.pagado_pct), p.proxima ? `${esc(fecha(p.proxima.fecha))} · ${tm(p.proxima.monto)}` : "—"] })), { mas: fuenteTb(d) })}
+        ${d.regla ? `<details class="ct-tb-tabla"><summary>¿Cómo se sabe la próxima cuota?</summary><p class="ct-tb-nota">${tx(d.regla)}</p></details>` : ""}`,
+        { cuando: "Al día de hoy" }];
+    },
+    // LAS OBRAS: el WIP del mes que toca (c12) y el costo por obra (c10), con el margen de cada obra a los dos lados del cero
+    obras(d) {
+      const w = d.wip || {}, c = d.costo || {}, ct = c.totales || {};
+      const wipHTML = w.ok === true ? `<div class="ct-tb-ob-w"><p class="ct-tb-et">WIP de ${esc(w.nombre)}${w.cerrado ? " (cerrado)" : ""}</p>
+          <div class="ct-tb-lados"><div class="ct-tb-lado"><span class="ct-tb-lado-v">${tm(w.sub_facturado)}</span><span class="ct-tb-lado-t">sub-facturado (falta facturar)</span></div><div class="ct-tb-lado der"><span class="ct-tb-lado-v">${tm(w.sobre_facturado)}</span><span class="ct-tb-lado-t">sobre-facturado (facturado de más)</span></div></div>
+          ${w.nota || w.por_que_no ? `<p class="ct-tb-nota">${tx(w.nota || w.por_que_no)}</p>` : ""}${irBtn(w.ir, "Ver el WIP", "ct-tb-link")}</div>`
+        : `<p class="ct-aviso">${ICO_TB.nada}<span>WIP: ${tx(w.motivo || "no está en esta base")}${w.falta ? ` <span class="ct-tb-gris">(falta ${esc(w.falta)})</span>` : ""}</span></p>`;
+      const obras = c.obras || [];
+      const costoHTML = c.ok === true ? `<div class="ct-tb-ob-c"><p class="ct-tb-et">Margen por obra: ${obras.length < nOk(ct.n) ? `las ${esc(obras.length)} con más ingreso, de ${esc(ct.n)}` : `las ${esc(obras.length)}`}</p>
+          <div class="ct-tb-barras">${obras.map((o, i) => filaBarra(`${irBtn(o.ir, esc(o.obra), "ct-tb-link")}${o.parcial ? ` <span class="ct-pill" title="${esc(o.parcial_por ? `parcial: ${o.parcial_por}` : "parcial")}">parcial</span>` : ""}`,
+            `<b class="ct-num${nOk(o.margen) < 0 ? " ct-tb-neg" : ""}">${nOk(o.margen) < 0 ? `${ICO_TB.alerta}pérdida ` : ""}${tm(o.margen)}</b> <span class="ct-tb-gris">${pctTb(o.margen_pct)}</span>`, "obra", `${o.obra}: margen ${tm(o.margen)} (${pctTb(o.margen_pct)})`, i)).join("")}</div>
+          <p class="ct-tb-nota">Todas (${esc(ct.n)}): ingreso ${tm(ct.ingreso)} · costo ${tm(ct.costo)} · margen <b class="ct-num">${tm(ct.margen)}</b> (${pctTb(ct.margen_pct)})${nOk(ct.parciales) ? ` · ${plural(ct.parciales, "parcial", "parciales")}` : ""}.</p>
+          ${c.nota ? `<p class="ct-tb-nota">${tx(c.nota)}</p>` : ""}
+          ${tablaTb(["Obra", "Ingreso", "Costo", "Margen", "%"], obras.map(o => ({ celdas: [`${esc(o.obra)}${o.cliente ? ` <small class="ct-tb-gris">${esc(o.cliente)}</small>` : ""}`, tm(o.ingreso), tm(o.costo), tm(o.margen), pctTb(o.margen_pct)] })).concat([{ clase: "ct-total", celdas: [`Todas (${esc(ct.n)})`, tm(ct.ingreso), tm(ct.costo), tm(ct.margen), pctTb(ct.margen_pct)] }]), { mas: fuenteTb(d) })}</div>`
+        : `<p class="ct-aviso">${ICO_TB.nada}<span>Costo por obra: ${tx(c.motivo || "no está en esta base")}${c.falta ? ` <span class="ct-tb-gris">(falta ${esc(c.falta)})</span>` : ""}</span></p>`;
+      return [wipHTML + costoHTML, { cuando: "Lo que dice el libro", pie: `${irBtn(c.ir || d.ir, "Ver en Costo por obra")}${w.ok === true ? irBtn(w.ir, "Ver el WIP") : ""}` }];
+    }
+  };
+  // LA ANTIGÜEDAD (por cobrar y por pagar): el total, lo vencido y los cinco tramos por vencimiento (barras en una rampa de azul:
+  // claro lo que no ha vencido, más oscuro lo más viejo), lo de aparte y las más vencidas
+  function tbAntiguedad(d, que) {
+    const v = d.vencido || {}, sv = d.sin_vencimiento || {};
+    const aparte = [nOk(d.retencion && d.retencion.monto) ? `retención ${tm(d.retencion.monto)} (${esc(d.retencion.n)})` : "",
+      nOk(d.a_favor && d.a_favor.monto) ? `a favor ${tm(d.a_favor.monto)} (${esc(d.a_favor.n)})` : ""].filter(Boolean);
+    // (cuántas, con las palabras de la base: «11 facturas»; «4 facturas de proveedores y 1 saldo de proveedor sin factura»)
+    const cuantas = d.cuantas || plural(d.n || 0, "factura", "facturas");
+    return [`${cifra(`Total ${que} · ${esc(cuantas)}`, tm(d.total), nOk(v.monto) ? `<span class="ct-tb-vencido">${ICO_TB.alerta}${tm(v.monto)} vencido (${pctTb(v.pct)})</span>` : `<span class="ct-tb-aldia">${ICO_TB.ok}nada vencido</span>`)}
+      <div class="ct-tb-barras">${(d.tramos || []).map((t, i) => filaBarra(`${esc(t.etiqueta)}${t.clave === "corriente" ? ' <span class="ct-tb-gris">(no ha vencido)</span>' : ' <span class="ct-tb-gris">días</span>'}`,
+        `<b class="ct-num">${tm(t.monto)}</b>${nOk(t.n) ? ` <span class="ct-tb-gris">· ${esc(t.n)}</span>` : ""}`, "ant", `${t.etiqueta}${t.clave === "corriente" ? " (no ha vencido)" : " días de vencido"}: ${tm(t.monto)}`, i)).join("")}</div>
+      ${nOk(sv.n) ? `<p class="ct-tb-nota">Sin vencimiento conocido: ${tm(sv.monto)} (${esc(sv.n)}); cuenta en el total.</p>` : ""}
+      ${aparte.length ? `<p class="ct-tb-nota">Aparte (no vence por términos): ${aparte.join(" · ")}.</p>` : ""}
+      ${(d.mas_vencidas || []).length ? tablaTb(["Factura", "Venció", "Días", "Monto"], d.mas_vencidas.map(x => ({ celdas: [`${esc(x.papel || "—")}${x.de ? ` <small class="ct-tb-gris">${esc(x.de)}</small>` : ""}`, esc(fechaLarga(x.vence)), esc(x.dias_vencida), tm(x.monto)] })), { titulo: "Las más vencidas", id: "viejas" }) : ""}
+      ${tablaTb(["Días de vencido", "Monto", "Cuántas", "%"], (d.tramos || []).map(t => ({ celdas: [esc(t.etiqueta), tm(t.monto), esc(t.n), pctTb(t.pct)] }))
+        .concat(nOk(sv.n) ? [{ celdas: ["Sin vencimiento", tm(sv.monto), esc(sv.n), ""] }] : []).concat([{ clase: "ct-total", celdas: [`Total (${esc(cuantas)})`, tm(d.total), esc(d.n), ""] }]), { id: "tramos", mas: fuenteTb(d) })}
+      ${d.regla ? `<details class="ct-tb-tabla"><summary>¿Cómo se sabe cuándo vence?</summary><p class="ct-tb-nota">${tx(d.regla)}</p></details>` : ""}`,
+      { cuando: "Al día de hoy" }];
+  }
+
+  // ============================================================
+  // LAS GRÁFICAS (SVG en línea, al ancho de su caja)
+  // ============================================================
+  const svgEsc = esc;
+  // marcas «redondas» para un eje: 0 / 1,000 / 2,000 … (con su paso), cubriendo [min, max]
+  function marcasEje(min, max, n = 4) {
+    if (!(max > min)) { max = min + 1; }
+    const paso0 = (max - min) / n, p = Math.pow(10, Math.floor(Math.log10(paso0))), r = paso0 / p;
+    const paso = (r <= 1 ? 1 : r <= 2 ? 2 : r <= 2.5 ? 2.5 : r <= 5 ? 5 : 10) * p;
+    const out = [];
+    for (let x = Math.floor(min / paso) * paso; x <= Math.ceil(max / paso) * paso + paso / 2; x += paso) out.push(Math.round(x * 100) / 100);
+    return out;
+  }
+  // el texto de una marca del eje: completo debajo de 10,000; compacto (10K, 1.2M) si el eje llega ahí (un estilo por eje)
+  const textoEje = (v, compacto) => {
+    const s = v < 0 ? MENOS : "", a = Math.abs(v);
+    if (!compacto) return `${s}$${a.toLocaleString("en-US")}`;
+    return a >= 1e6 ? `${s}$${(a / 1e6).toLocaleString("en-US", { maximumFractionDigits: 1 })}M` : a >= 1e3 ? `${s}$${(a / 1e3).toLocaleString("en-US", { maximumFractionDigits: 1 })}K` : `${s}$${a}`;
+  };
+  // la cifra de la base escrita en corto en la punta de una columna ($37.8K): solo el formato, sin cuentas
+  const compactoTb = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1 });
+  // una barra horizontal con la punta redonda (derecha) y la base recta (izquierda); una columna con la punta arriba
+  const barraH = (x, y, w, h) => { if (!(w > 0.5)) return ""; const r = Math.min(4, w, h / 2); return `M${x},${y}h${w - r}a${r},${r} 0 0 1 ${r},${r}v${h - 2 * r}a${r},${r} 0 0 1 -${r},${r}h-${w - r}z`; };
+  // la misma, hacia la izquierda (un margen negativo: la base recta en el cero, la punta redonda a la izquierda)
+  const barraHi = (x0, y, w, h) => { if (!(w > 0.5)) return ""; const r = Math.min(4, w, h / 2); return `M${x0},${y}v${h}h-${w - r}a${r},${r} 0 0 1 -${r},-${r}v-${h - 2 * r}a${r},${r} 0 0 1 ${r},-${r}z`; };
+  const barraV = (x, base, w, h) => { if (!(h > 0.5)) return ""; const r = Math.min(4, h, w / 2); return `M${x},${base}v-${h - r}a${r},${r} 0 0 1 ${r},-${r}h${w - 2 * r}a${r},${r} 0 0 1 ${r},${r}v${h - r}z`; };
+  // un tooltip: su índice en S.tab.tips ([el valor, lo que es, filas de más])
+  const tip = (valor, etiqueta, filas) => { S.tab.tips.push({ valor, etiqueta, filas: filas || [] }); return S.tab.tips.length - 1; };
+  const hitAria = t => svgEsc(S.tab.tips[t].etiqueta + ": " + S.tab.tips[t].valor);
+
+  // UNA FILA DE BARRAS HORIZONTALES (una o dos: este período y el de antes), con la escala de toda la gráfica (max) y la base a la
+  // izquierda. barras: [{v, clase, tip}]. Toda la fila es la zona que se toca (más grande que la marca)
+  function svgFila(ancho, barras, max) {
+    const H = 12, G = 2, partes = [];
+    barras.forEach((b, j) => {
+      const y = j * (H + G), w = max > 0 ? Math.max(0, nOk(b.v) / max * ancho) : 0, id = `m${S.tab.tips.length}-${j}`;
+      // (una barra en cero no dibuja nada: su cifra dice $0.00 y su zona se puede tocar igual)
+      if (w > 0.5) partes.push(`<path class="ct-tb-m ${b.clase || "serie1"}" data-m="${id}" d="${barraH(0, y, w, H)}"/>`);
+      partes.push(`<rect class="ct-tb-hit" data-tip="${b.tip}" data-mm="${id}" x="0" y="${y - (j ? 0 : G)}" width="${ancho}" height="${H + G + (j ? 0 : G)}" tabindex="0" role="img" aria-label="${hitAria(b.tip)}"/>`);
+    });
+    const alto = barras.length * H + (barras.length - 1) * G;
+    return `<svg class="ct-tb-svg" width="${ancho}" height="${alto}" viewBox="0 0 ${ancho} ${alto}">${partes.join("")}</svg>`;
+  }
+  // UNA BARRA A LOS DOS LADOS DEL CERO (el margen de una obra): la escala va de min a max de todas las obras, el cero marcado
+  function svgDiverge(ancho, v, lo, hi, t, id) {
+    const H = 12, span = (hi - lo) || 1, x0 = (0 - lo) / span * ancho, w = Math.abs(nOk(v)) / span * ancho;
+    const m = !(w > 0.5) ? "" : nOk(v) < 0 ? `<path class="ct-tb-m mal" data-m="${id}" d="${barraHi(x0, 0, w, H)}"/>` : `<path class="ct-tb-m serie1" data-m="${id}" d="${barraH(x0, 0, w, H)}"/>`;
+    return `<svg class="ct-tb-svg" width="${ancho}" height="${H}" viewBox="0 0 ${ancho} ${H}">${m}<line class="ct-tb-cero" x1="${x0}" x2="${x0}" y1="-2" y2="${H + 2}"/><rect class="ct-tb-hit" data-tip="${t}" data-mm="${id}" x="0" y="-2" width="${ancho}" height="${H + 4}" tabindex="0" role="img" aria-label="${hitAria(t)}"/></svg>`;
+  }
+  // COLUMNAS (los meses): una o dos series lado a lado, con su eje y su rejilla; la cifra en la punta de las que se señalan
+  function svgColumnas(ancho, alto, cats, series, op = {}) {
+    const priv = tbPrivado(), IZQ = priv ? 8 : 52, ABAJO = 26, ARRIBA = 18, W = ancho - IZQ, Hh = alto - ABAJO - ARRIBA;
+    const vals = series.flatMap(s => s.valores.map(v => nOk(v)));
+    const marcas = marcasEje(0, Math.max(0, ...vals));
+    const top = marcas[marcas.length - 1] || 1, compacto = top >= 1e4;
+    const y = v => ARRIBA + Hh - (v / top) * Hh;
+    const banda = W / Math.max(1, cats.length), ns = series.length;
+    const cw = Math.min(24, Math.max(4, (banda * 0.6 - (ns - 1) * 2) / ns));
+    const partes = [];
+    for (const m of marcas) partes.push(`<line class="${m === 0 ? "ct-tb-base" : "ct-tb-rej"}" x1="${IZQ}" x2="${ancho}" y1="${y(m)}" y2="${y(m)}"/>${priv ? "" : `<text class="ct-tb-eje" x="${IZQ - 6}" y="${y(m) + 4}" text-anchor="end">${svgEsc(textoEje(m, compacto))}</text>`}`);
+    // las etiquetas de abajo: todas si caben (36 px cada una); si no, una sí y otra no
+    const cada = Math.max(1, Math.ceil(36 / banda));
+    cats.forEach((c, i) => {
+      const x0 = IZQ + i * banda + (banda - (ns * cw + (ns - 1) * 2)) / 2;
+      series.forEach((s, j) => {
+        const v = Math.max(0, nOk(s.valores[i])), id = `m${S.tab.tips.length}-${i}-${j}`;
+        if (y(0) - y(v) > 0.5) partes.push(`<path class="ct-tb-m ${s.clase}" data-m="${id}" d="${barraV(x0 + j * (cw + 2), y(0), cw, y(0) - y(v))}"/>`);
+        const t = s.tips[i];
+        // la zona que se toca: la banda del mes entera para esa serie (más grande que la columna)
+        const hx = ns === 1 ? IZQ + i * banda : x0 + j * (cw + 2) - (j ? 1 : (banda - (ns * cw + (ns - 1) * 2)) / 2), hw = ns === 1 ? banda : cw + (banda - (ns * cw + (ns - 1) * 2)) / 2 + 1;
+        partes.push(`<rect class="ct-tb-hit" data-tip="${t}" data-mm="${id}" x="${hx}" y="${ARRIBA}" width="${hw}" height="${Hh}" tabindex="0" role="img" aria-label="${hitAria(t)}"/>`);
+        if (op.rotular && op.rotular(i, j) && !priv) partes.push(`<text class="ct-tb-tx1 chico" x="${x0 + j * (cw + 2) + cw / 2}" y="${y(v) - 5}" text-anchor="middle">${svgEsc(compactoTb.format(nOk(s.valores[i])).replace("-", MENOS))}</text>`);
+      });
+      if (i % cada === 0 || i === cats.length - 1) partes.push(`<text class="ct-tb-eje" x="${IZQ + i * banda + banda / 2}" y="${alto - 6}" text-anchor="middle">${svgEsc(c)}</text>`);
+    });
+    return `<svg class="ct-tb-svg" width="${ancho}" height="${alto}" viewBox="0 0 ${ancho} ${alto}">${partes.join("")}</svg>`;
+  }
+  // UNA LÍNEA en el tiempo (el saldo de caja) con su proyección punteada; la cruz busca el punto más cercano
+  // reales/proy: [{t (día AAAA-MM-DD), v, corto, etiqueta, filas (para el tooltip)}]
+  function svgLinea(ancho, alto, reales, proy, id) {
+    const priv = tbPrivado(), IZQ = priv ? 8 : 52, DER = 14, ABAJO = 26, ARRIBA = 14, W = ancho - IZQ - DER, Hh = alto - ABAJO - ARRIBA;
+    const todos = reales.concat(proy);
+    const ts = todos.map(p => Date.parse(p.t));
+    const t0 = Math.min(...ts), t1 = Math.max(...ts);
+    const vs = todos.map(p => nOk(p.v));
+    const marcas = marcasEje(Math.min(0, ...vs), Math.max(0, ...vs));
+    const lo = marcas[0], hi = marcas[marcas.length - 1], compacto = Math.max(Math.abs(lo), Math.abs(hi)) >= 1e4;
+    const x = t => IZQ + (t1 > t0 ? (Date.parse(t) - t0) / (t1 - t0) : 0.5) * W;
+    const y = v => ARRIBA + Hh - ((v - lo) / ((hi - lo) || 1)) * Hh;
+    const partes = [];
+    for (const m of marcas) partes.push(`<line class="${m === 0 ? "ct-tb-base" : "ct-tb-rej"}" x1="${IZQ}" x2="${ancho - DER}" y1="${y(m)}" y2="${y(m)}"/>${priv ? "" : `<text class="ct-tb-eje" x="${IZQ - 6}" y="${y(m) + 4}" text-anchor="end">${svgEsc(textoEje(m, compacto))}</text>`}`);
+    const camino = ps => ps.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(nOk(p.v)).toFixed(1)}`).join("");
+    if (reales.length) {
+      // el área (un velo del 10 %) bajo el saldo real, hasta el cero
+      if (reales.length > 1) partes.push(`<path class="ct-tb-area" d="${camino(reales)}L${x(reales[reales.length - 1].t).toFixed(1)},${y(0)}L${x(reales[0].t).toFixed(1)},${y(0)}Z"/>`);
+      partes.push(`<path class="ct-tb-linea" d="${camino(reales)}"/>`);
+    }
+    if (proy.length) partes.push(`<path class="ct-tb-linea proy" d="${camino((reales.length ? [reales[reales.length - 1]] : []).concat(proy))}"/>`);
+    // las etiquetas de abajo, sin encimarse: primero «hoy», después la apertura, los demás meses del libro y al final los de la proyección
+    const puestas = [], anchoTxt = t => String(t).length * 6.6;
+    const cabe = (px, w) => px - w / 2 >= 0 && px + w / 2 <= ancho + 2 && puestas.every(([qx, qw]) => Math.abs(qx - px) >= (qw + w) / 2 + 6);
+    const iHoy = reales.length - 1;
+    const orden = reales.length ? [reales[iHoy], reales[0], ...reales.slice(1, -1).reverse(), ...proy] : proy;
+    for (const p of orden) { const px = Math.min(ancho - anchoTxt(p.corto) / 2, Math.max(anchoTxt(p.corto) / 2, x(p.t))), w = anchoTxt(p.corto); if (cabe(px, w)) { puestas.push([px, w]); partes.push(`<text class="ct-tb-eje${p.proy ? " proy" : ""}" x="${px}" y="${alto - 6}" text-anchor="middle">${svgEsc(p.corto)}</text>`); } }
+    // los puntos (con su anillo del color de la tarjeta); el de hoy, más grande; los de la proyección, huecos
+    reales.forEach((p, i) => partes.push(`<circle class="ct-tb-punto${i === iHoy && p.hoy ? " hoy" : ""}" data-i="${i}" cx="${x(p.t)}" cy="${y(nOk(p.v))}" r="${i === iHoy && p.hoy ? 5 : 4}"/>`));
+    proy.forEach((p, i) => partes.push(`<circle class="ct-tb-punto proy" data-i="${reales.length + i}" cx="${x(p.t)}" cy="${y(nOk(p.v))}" r="4"/>`));
+    // la cruz: una línea de un pelo que sigue al dedo o al ratón y se pega al punto más cercano
+    partes.push(`<line class="ct-tb-cruz" x1="0" x2="0" y1="${ARRIBA}" y2="${ARRIBA + Hh}" visibility="hidden"/>`);
+    partes.push(`<rect class="ct-tb-hit cruz" data-cruz="${id}" x="${IZQ - 10}" y="0" width="${W + 20}" height="${alto}" tabindex="0" role="img" aria-label="Saldo de caja: con las flechas se recorre cada punto (${todos.length})"/>`);
+    S.tab.cruz[id] = { xs: todos.map(p => x(p.t)), puntos: todos };
+    return `<svg class="ct-tb-svg" width="${ancho}" height="${alto}" viewBox="0 0 ${ancho} ${alto}">${partes.join("")}</svg>`;
+  }
+  // UNA BARRA FINA PARTIDA (un todo y sus dos partes, con el porcentaje que da la base): 8 px, puntas redondas, 2 px entre partes
+  function svgPartida(ancho, partesIn) {
+    const H = 8, G = 2;
+    const vivas = partesIn.filter(p => nOk(p.pct) > 0);
+    const util = ancho - G * Math.max(0, vivas.length - 1);
+    let x = 0; const out = [];
+    vivas.forEach((p, i) => {
+      const w = Math.max(1, util * (nOk(p.pct) / 100)), id = `m${S.tab.tips.length}-p${i}`;
+      const r = H / 2, iz = i === 0, de = i === vivas.length - 1;
+      const d = `M${x + (iz ? r : 0)},0h${Math.max(0, w - (iz ? r : 0) - (de ? r : 0))}${de ? `a${r},${r} 0 0 1 0,${H}` : `v${H}`}h-${Math.max(0, w - (iz ? r : 0) - (de ? r : 0))}${iz ? `a${r},${r} 0 0 1 0,-${H}` : `v-${H}`}z`;
+      out.push(`<path class="ct-tb-m ${p.clase}" data-m="${id}" d="${d}"/><rect class="ct-tb-hit" data-tip="${p.tip}" data-mm="${id}" x="${x}" y="-6" width="${w}" height="${H + 12}" tabindex="0" role="img" aria-label="${hitAria(p.tip)}"/>`);
+      x += w + G;
+    });
+    if (!vivas.length) out.push(`<rect class="ct-tb-pista" x="0" y="0" width="${ancho}" height="${H}" rx="${H / 2}"/>`);
+    return `<svg class="ct-tb-svg" width="${ancho}" height="${H + 12}" viewBox="0 -6 ${ancho} ${H + 12}">${out.join("")}</svg>`;
+  }
+  // UN MEDIDOR (lo pagado de un préstamo): la pista es un paso más claro del mismo azul
+  function svgMedidor(ancho, pct, t) {
+    const H = 8, w = Math.max(0, Math.min(100, nOk(pct))) / 100 * ancho;
+    return `<svg class="ct-tb-svg" width="${ancho}" height="${H}" viewBox="0 0 ${ancho} ${H}"><rect class="ct-tb-pista" x="0" y="0" width="${ancho}" height="${H}" rx="${H / 2}"/>${w > 0 ? `<rect class="ct-tb-m serie1" x="0" y="0" width="${Math.max(H, w)}" height="${H}" rx="${H / 2}"/>` : ""}<rect class="ct-tb-hit" data-tip="${t}" x="0" y="-4" width="${ancho}" height="${H + 8}" tabindex="0" role="img" aria-label="${hitAria(t)}"/></svg>`;
+  }
+
+  // lo que dibuja cada caja de gráfica, con los datos de su tarjeta (i: la fila, cuando la gráfica va por filas; una sola escala por gráfica)
+  const maxDe = vals => Math.max(0, ...vals.map(nOk));
+  const GRAF = {
+    res(caja, d, i) {
+      const b = (d.barras || [])[i]; if (!b) return;
+      const dos = !!d.anterior && (d.barras || []).some(x => x.anterior != null);
+      const max = maxDe((d.barras || []).flatMap(x => [x.monto, dos ? x.anterior : 0]));
+      caja.innerHTML = svgFila(caja.clientWidth, [{ v: b.monto, clase: "serie1", tip: tip(tm(b.monto), `${b.etiqueta} · ${d.etiqueta}${d.en_curso ? " (hasta hoy)" : ""}`) },
+        ...(dos && b.anterior != null ? [{ v: b.anterior, clase: "gris", tip: tip(tm(b.anterior), `${b.etiqueta} · ${d.anterior.etiqueta}`) }] : [])], max);
+    },
+    gas(caja, d, i) {
+      const g = (d.grafica || [])[i]; if (!g) return;
+      caja.innerHTML = svgFila(caja.clientWidth, [{ v: g.monto, clase: g.clave === "otras" ? "gris" : "serie1", tip: tip(tm(g.monto), `${g.nombre} · ${pctTb(g.pct)} de lo gastado`) }], maxDe((d.grafica || []).map(x => x.monto)));
+    },
+    ant(caja, d, i) {
+      const t = (d.tramos || [])[i]; if (!t) return;
+      caja.innerHTML = svgFila(caja.clientWidth, [{ v: t.monto, clase: `t${i}`, tip: tip(tm(t.monto), `${t.etiqueta}${t.clave === "corriente" ? " (no ha vencido)" : " días de vencido"}`, [["Cuántas", String(nOk(t.n))]]) }], maxDe((d.tramos || []).map(x => x.monto)));
+    },
+    obra(caja, d, i) {
+      const os = (d.costo && d.costo.obras) || [], o = os[i]; if (!o) return;
+      const vals = os.map(x => nOk(x.margen));
+      caja.innerHTML = svgDiverge(caja.clientWidth, o.margen, Math.min(0, ...vals), Math.max(0, ...vals),
+        tip(tm(o.margen), `Margen de ${o.obra} (${pctTb(o.margen_pct)})`, [["Ingreso", tm(o.ingreso)], ["Costo", tm(o.costo)]]), `m${S.tab.tips.length}-o${i}`);
+    },
+    ventas(caja, d) {
+      const ms = d.meses || [];
+      if (!ms.length) { caja.innerHTML = `<p class="ct-tb-nota">Este año todavía no tiene meses en el libro.</p>`; return; }
+      const mejor = d.mejor_mes && d.mejor_mes.mes;
+      caja.innerHTML = svgColumnas(caja.clientWidth, 180, ms.map(m => m.corto + (m.en_curso ? "*" : "")), [{ clase: "serie1", valores: ms.map(m => m.monto),
+        tips: ms.map(m => tip(tm(m.monto), `Ventas de ${m.etiqueta}${m.en_curso ? " (hasta hoy)" : ""}`, nOk(m.wip) !== 0 ? [["Con el ajuste del WIP", tm(m.con_wip)]] : [])) }],
+        { rotular: i => ms[i].mes === mejor || i === ms.length - 1 });
+      if (ms.some(m => m.en_curso)) caja.insertAdjacentHTML("beforeend", `<p class="ct-tb-nota chica">* el mes en curso, hasta hoy.</p>`);
+    },
+    caja(caja, d) {
+      const pj = d.proyeccion || null, ms = d.meses || [];
+      const mes = k => ms.find(m => m.mes === k) || null;
+      const mesPj = k => ((pj && pj.meses) || []).find(m => m.mes === k) || null;
+      const corto = iso => { const [, m, dd] = partes(iso); return `${dd} ${MES[m] || ""}`; };
+      const reales = [], proy = [];
+      for (const s of d.serie || []) {
+        if (s.tipo === "proyeccion") {
+          const m = mesPj(s.mes);
+          proy.push({ t: s.fecha, v: s.saldo, corto: corto(s.fecha), proy: true, etiqueta: `${s.etiqueta} (proyección)`,
+            filas: [["Saldo proyectado", tm(s.saldo)], ...(m ? [["Entra (por cobrar)", tm(m.cobrar)], ["Sale (por pagar)", tm(m.pagar)], ["Cuotas", tm(m.cuotas)], ["Use tax", tm(m.impuestos)], ...(nOk(m.libro) !== 0 ? [["Ya en el libro, con fecha", tm(m.libro)]] : [])] : [])] });
+        } else {
+          const m = s.tipo === "cierre" ? mes(s.mes) : s.tipo === "hoy" ? ms.find(x => x.en_curso) : null;
+          reales.push({ t: s.fecha, v: s.saldo, hoy: s.tipo === "hoy", corto: s.tipo === "hoy" ? "hoy" : s.tipo === "apertura" ? "apertura" : corto(s.fecha),
+            etiqueta: s.tipo === "apertura" ? `Apertura (${s.etiqueta})` : s.tipo === "hoy" ? `Hoy (${fechaLarga(d.corte)})` : `Cierre de ${m ? m.etiqueta : s.etiqueta} (${s.etiqueta})`,
+            filas: [["Saldo", tm(s.saldo)], ...(m ? [["Entradas del mes", tm(m.entradas)], ["Salidas del mes", tm(m.salidas)]] : [])] });
+        }
+      }
+      if (!reales.length && !proy.length) { caja.innerHTML = `<p class="ct-tb-nota">Todavía no hay meses en el libro.</p>`; return; }
+      caja.innerHTML = svgLinea(caja.clientWidth, 200, reales, proy, "caja");
+    },
+    caja_mov(caja, d) {
+      const ms = d.meses || [];
+      if (!ms.length) { caja.innerHTML = `<p class="ct-tb-nota">Todavía no hay meses en el libro.</p>`; return; }
+      caja.innerHTML = svgColumnas(caja.clientWidth, 200, ms.map(m => m.corto + (m.en_curso ? "*" : "")), [
+        { clase: "serie1", valores: ms.map(m => m.entradas), tips: ms.map(m => tip(tm(m.entradas), `Entradas de ${m.etiqueta}${m.en_curso ? " (hasta hoy)" : ""}`, [["Salidas", tm(m.salidas)]])) },
+        { clase: "serie2", valores: ms.map(m => m.salidas), tips: ms.map(m => tip(tm(m.salidas), `Salidas de ${m.etiqueta}${m.en_curso ? " (hasta hoy)" : ""}`, [["Entradas", tm(m.entradas)]])) }]);
+      if (ms.some(m => m.en_curso)) caja.insertAdjacentHTML("beforeend", `<p class="ct-tb-nota chica">* el mes en curso, hasta hoy.</p>`);
+    },
+    fac_np(caja, d) {
+      const np = d.no_pagadas || {}, ve = np.vencidas || {}, pv = np.por_vencer || {};
+      caja.innerHTML = svgPartida(caja.clientWidth, [
+        { pct: ve.pct, clase: "mal", tip: tip(tm(ve.monto), `Vencidas · ${pctTb(ve.pct)} · ${plural(ve.n || 0, "factura", "facturas")}`) },
+        { pct: pv.pct, clase: "gris", tip: tip(tm(pv.monto), `Por vencer · ${pctTb(pv.pct)} · ${plural(pv.n || 0, "factura", "facturas")}`) }]);
+    },
+    fac_pg(caja, d) {
+      const pg = d.pagadas || {}, sd = pg.sin_depositar || {}, de = pg.depositado || {};
+      caja.innerHTML = svgPartida(caja.clientWidth, [
+        { pct: sd.pct, clase: "gris", tip: tip(tm(sd.monto), `Sin depositar · ${pctTb(sd.pct)}`) },
+        { pct: de.pct, clase: "bien", tip: tip(tm(de.monto), `Depositado · ${pctTb(de.pct)}`) }]);
+    },
+    prestamo(caja, d, i) {
+      const p = (d.lista || [])[i]; if (!p) return;
+      caja.innerHTML = svgMedidor(caja.clientWidth, p.pagado_pct, tip(`${pctTb(p.pagado_pct)} pagado`, `${p.prestamista}: se debe ${tm(p.saldo)} de ${tm(p.principal)}`));
+    }
+  };
+  // dibujar las gráficas que haya dentro de «c» (al ancho que tienen ahora)
+  function tbDibujar(c) {
+    c.querySelectorAll(".ct-tb-graf[data-graf]").forEach(caja => {
+      const tarjeta = caja.closest(".ct-tb"), k = tarjeta && tarjeta.dataset.tb, d = k && S.tab.d && S.tab.d[k];
+      const f = GRAF[caja.dataset.graf];
+      if (!f || !d || !(caja.clientWidth > 0)) return;
+      try { f(caja, d, caja.dataset.i != null ? Number(caja.dataset.i) : null); } catch (err) { caja.innerHTML = `<p class="ct-tb-nota">No se pudo dibujar la gráfica (${esc(err.message)}): los números están en la tabla.</p>`; }
+      caja.style.minHeight = "";
+    });
+  }
+  // otra vez al cambiar el ancho (girar el teléfono, cambiar la ventana)
+  let tbRedibujo = null, tbAncho = 0;
+  window.addEventListener("resize", () => {
+    clearTimeout(tbRedibujo);
+    tbRedibujo = setTimeout(() => {
+      const r = $("ct-tb"); if (!r || S.pagina !== "resumen") return;
+      const w = r.clientWidth; if (w === tbAncho) return; tbAncho = w;
+      S.tab.tips = []; S.tab.cruz = {}; tbDibujar(r);
+    }, 150);
+  });
+
+  // EL TOOLTIP: uno para todo el tablero. Al pasar o tocar una marca (su zona es más grande que la marca), y con el teclado
+  // (Tab llega a cada marca; en la línea, las flechas recorren los puntos). Lo que dice va con textContent: el valor primero.
+  function wireTipsTb(raizTb) {
+    const caja = $("ct-tb-tip");
+    let encendida = null;
+    const apagar = () => { if (caja) caja.hidden = true; if (encendida) encendida.classList.remove("on"); encendida = null; raizTb.querySelectorAll(".ct-tb-cruz").forEach(l => l.setAttribute("visibility", "hidden")); raizTb.querySelectorAll(".ct-tb-punto.on").forEach(p => p.classList.remove("on")); };
+    const poner = (t, px, py) => {
+      if (!caja || !t) return;
+      caja.textContent = "";
+      const v = document.createElement("b"); v.textContent = t.valor; caja.appendChild(v);
+      const e = document.createElement("span"); e.textContent = t.etiqueta; caja.appendChild(e);
+      for (const [a, b] of t.filas || []) { const f = document.createElement("span"); f.className = "f"; const i = document.createElement("i"); i.textContent = a; const j = document.createElement("b"); j.textContent = b; f.append(i, j); caja.appendChild(f); }
+      caja.hidden = false;
+      const r = caja.getBoundingClientRect(), vw = document.documentElement.clientWidth;
+      let x = px + 12, y = py - r.height - 12;
+      if (x + r.width > vw - 8) x = Math.max(8, px - r.width - 12);
+      if (y < 8) y = py + 16;
+      caja.style.left = `${x}px`; caja.style.top = `${y}px`;
+    };
+    const marca = hit => { if (encendida) encendida.classList.remove("on"); encendida = hit.dataset.mm ? hit.ownerSVGElement.querySelector(`[data-m="${hit.dataset.mm}"]`) : null; if (encendida) encendida.classList.add("on"); };
+    const cruz = (hit, i) => {
+      const c = S.tab.cruz[hit.dataset.cruz]; if (!c) return;
+      i = Math.max(0, Math.min(c.xs.length - 1, i)); hit.dataset.ci = i;
+      const svg = hit.ownerSVGElement, l = svg.querySelector(".ct-tb-cruz");
+      l.setAttribute("x1", c.xs[i]); l.setAttribute("x2", c.xs[i]); l.setAttribute("visibility", "visible");
+      svg.querySelectorAll(".ct-tb-punto").forEach(p => p.classList.toggle("on", Number(p.dataset.i) === i));
+      const p = c.puntos[i], r = svg.getBoundingClientRect(), punto = svg.querySelector(`.ct-tb-punto[data-i="${i}"]`), pr = punto ? punto.getBoundingClientRect() : r;
+      hit.setAttribute("aria-label", `${p.etiqueta}: ${(p.filas[0] || ["", ""])[1]}`);
+      poner({ valor: (p.filas[0] || ["", ""])[1], etiqueta: p.etiqueta, filas: p.filas.slice(1) }, pr.left + pr.width / 2, pr.top);
+    };
+    const cerca = (hit, clientX) => { const c = S.tab.cruz[hit.dataset.cruz]; if (!c) return 0; const r = hit.ownerSVGElement.getBoundingClientRect(), x = clientX - r.left; let mejor = 0; c.xs.forEach((cx, i) => { if (Math.abs(cx - x) < Math.abs(c.xs[mejor] - x)) mejor = i; }); return mejor; };
+    raizTb.addEventListener("pointermove", ev => {
+      const hit = ev.target.closest && ev.target.closest(".ct-tb-hit");
+      if (!hit) { if (caja && !caja.hidden && ev.pointerType !== "touch") apagar(); return; }
+      if (hit.dataset.cruz) return cruz(hit, cerca(hit, ev.clientX));
+      marca(hit); poner(S.tab.tips[Number(hit.dataset.tip)], ev.clientX, ev.clientY);
+    });
+    raizTb.addEventListener("pointerdown", ev => {
+      const hit = ev.target.closest && ev.target.closest(".ct-tb-hit");
+      if (!hit) return apagar();
+      if (hit.dataset.cruz) return cruz(hit, cerca(hit, ev.clientX));
+      marca(hit); poner(S.tab.tips[Number(hit.dataset.tip)], ev.clientX, ev.clientY);
+    });
+    raizTb.addEventListener("pointerleave", apagar);
+    raizTb.addEventListener("focusin", ev => {
+      const hit = ev.target.closest && ev.target.closest(".ct-tb-hit"); if (!hit) return;
+      if (hit.dataset.cruz) { const c = S.tab.cruz[hit.dataset.cruz]; return cruz(hit, hit.dataset.ci != null ? Number(hit.dataset.ci) : c ? c.xs.length - 1 : 0); }
+      const r = hit.getBoundingClientRect(); marca(hit); poner(S.tab.tips[Number(hit.dataset.tip)], r.left + Math.min(r.width, 60), r.top);
+    });
+    raizTb.addEventListener("focusout", apagar);
+    raizTb.addEventListener("keydown", ev => {
+      const hit = ev.target.closest && ev.target.closest(".ct-tb-hit.cruz"); if (!hit) { if (ev.key === "Escape") apagar(); return; }
+      if (ev.key === "ArrowLeft" || ev.key === "ArrowRight") { ev.preventDefault(); cruz(hit, Number(hit.dataset.ci || 0) + (ev.key === "ArrowRight" ? 1 : -1)); }
+      if (ev.key === "Escape") apagar();
+    });
   }
 
   // ============================================================
@@ -1588,6 +2620,7 @@
           <label class="ct-casilla ct-agrupar"><input type="checkbox" id="ct-bj-agrupar"${S.bj.agrupar ? " checked" : ""}> Agrupar por comercio</label>
         </div>
         ${conMovs.length > 1 ? `<div class="ct-chips">${chipsCuentaHTML(filas, conMovs)}</div>` : ""}
+        ${rangoBjHTML()}
         <p class="ct-sub ct-bj-n" id="ct-bj-n"></p>
       </section>` : "") +
       `<div id="ct-bj-lista"></div>`;
@@ -1609,6 +2642,8 @@
     herr("ct-bj-motivo", "change", ev => { S.bj.motivo = ev.target.value; pintarListaBandeja(); });
     herr("ct-bj-orden", "change", ev => { S.bj.orden = ev.target.value; pintarListaBandeja(); });
     herr("ct-bj-agrupar", "change", ev => { S.bj.agrupar = ev.target.checked; pintarListaBandeja(); });
+    // (tablero, c16) «Ver todos»: quita las fechas (y el lado) que puso un enlace del tablero
+    herr("ct-bj-rango-quitar", "click", () => { S.bj.desde = null; S.bj.hasta = null; S.bj.lado = null; const r = $("ct-bj-rango"); if (r) r.remove(); pintarListaBandeja(); });
     main().querySelectorAll(".ct-chip[data-filtro]").forEach(b => b.addEventListener("click", () => {
       S.filtroCuenta = b.dataset.filtro || null;
       main().querySelectorAll(".ct-chip[data-filtro]").forEach(x => x.setAttribute("aria-pressed", String((x.dataset.filtro || null) === S.filtroCuenta)));
@@ -1620,6 +2655,9 @@
     // (7c) LAS PROPUESTAS SALEN SOLAS: si algo nuevo espera y nada lo frena, la cadena arranca sin que Edgar toque nada
     if (S.ia && puedeSola() && nuevosIA().length) cadenaIA("sola");
   }
+  // (tablero, c16) el rango que puso un enlace del tablero (las fechas de un período; solo los depósitos o solo los cargos), dicho y con «Ver todos»
+  const LADO_BJ = { deposito: "solo los depósitos", cargo: "solo los cargos" };
+  const rangoBjHTML = () => S.bj.desde || S.bj.hasta || S.bj.lado ? `<div class="ct-bj-rango" id="ct-bj-rango"><span>${[S.bj.desde || S.bj.hasta ? `Del tablero: ${S.bj.desde ? `del ${esc(fechaLarga(S.bj.desde))} ` : ""}${S.bj.hasta ? `al ${esc(fechaLarga(S.bj.hasta))}` : "a hoy"}` : "Del tablero", S.bj.lado ? LADO_BJ[S.bj.lado] : ""].filter(Boolean).join(" · ")}</span><button type="button" class="ct-chip" id="ct-bj-rango-quitar">Ver todos</button></div>` : "";
   const chipsCuentaHTML = (filas, conMovs) => `<button type="button" class="ct-chip" data-filtro="" aria-pressed="${!S.filtroCuenta}">Todas</button>` +
     conMovs.map(c => `<button type="button" class="ct-chip" data-filtro="${esc(c)}" aria-pressed="${S.filtroCuenta === c}">${esc(nombreCuenta(c))} (${filas.filter(f => f.cuenta === c).length})</button>`).join("");
 
@@ -1630,6 +2668,11 @@
     if (S.bj.soloJr) lista = lista.filter(f => !!jrDe(f));
     if (S.filtroCuenta) lista = lista.filter(f => f.cuenta === S.filtroCuenta);
     if (S.bj.motivo) lista = lista.filter(f => f.motivo === S.bj.motivo);
+    // (tablero, c16) las fechas y el lado de un enlace del tablero, contados como la base (fn_tablero_por_revisar: un depósito entra, un
+    // cargo sale; lo que «llegó su ticket» y lo que el banco quitó no son ni uno ni otro)
+    if (S.bj.desde) lista = lista.filter(f => String(f.fecha) >= S.bj.desde);
+    if (S.bj.hasta) lista = lista.filter(f => String(f.fecha) <= S.bj.hasta);
+    if (S.bj.lado) lista = lista.filter(f => !["llego_su_ticket", "quitada"].includes(f.motivo) && (S.bj.lado === "deposito" ? num(f.monto) > 0 : num(f.monto) < 0));
     if (q) lista = lista.filter(f => sinAcentos(`${f.descripcion || ""} ${f.memo || ""} ${f.cheque || ""}`).includes(q) || (qMonto && Math.abs(num(f.monto) || 0).toFixed(2).includes(qMonto)));
     const k = S.bj.orden, abs = m => Math.abs(num(m.monto) || 0);
     if (k === "fecha_desc") lista = [...lista].sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
