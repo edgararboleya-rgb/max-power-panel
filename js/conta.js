@@ -88,6 +88,14 @@
 // sub (W-9, TIN que nunca se ve entero, COI), el 1099 del año con cada pago que lo forma y la
 // hoja para el e-file con el código del teléfono. La cabecera de cada sección lo cuenta.
 //
+// Y el tablero de la portada (c16, fase 16: fn_tablero): «Resumen» como el «Business at a glance»
+// de QuickBooks: las acciones rápidas, «Qué atender» y una tarjeta por cosa (el embudo de cobro,
+// bancos y tarjetas, resultados, gastos, flujo de caja con su proyección, facturas, ventas, por
+// cobrar y por pagar por antigüedad, conexiones, cobros en línea, use tax, préstamos y obras), con
+// sus gráficas en SVG, su tabla y su enlace; Privacidad y Personalizar en el navegador. Las cifras
+// son las de la base: aquí no se suma dinero. Sin c16, la portada de siempre con una línea que dice
+// qué pegar. La cabecera de su sección lo cuenta.
+//
 // Cómo está organizada (v290, «que se parezca a un programa de contabilidad»):
 // una portada («Resumen») con las cifras y lo que hay que atender, y una
 // página por tarea: Bancos y tarjetas, Bandeja (el bank feed), Conciliar,
@@ -162,7 +170,12 @@
     ced: { sub: "cedula", fecha: null, cuenta: null, filtro: null, serie: 0, nota: null, qbPer: null },
     // (fase 12a) «Subs y 1099»: qué apartado, qué año, qué ficha está abierta («nueva» con lo que trae: nombre y tercero), qué fila del
     // 1099 está desplegada, el filtro de los pagos, la serie, la nota de la última acción y lo que dijo la última hoja (sin TIN)
-    subs: { sub: "fichas", anio: null, ficha: null, nueva: null, clave: null, filtro: "todos", serie: 0, nota: null, ultimaHoja: null }
+    subs: { sub: "fichas", anio: null, ficha: null, nueva: null, clave: null, filtro: "todos", serie: 0, nota: null, ultimaHoja: null },
+    // (fase 16) el tablero de la portada (c16): lo que llegó de fn_tablero (una clave por tarjeta), la serie contra el doble pintado,
+    // el período de los resultados, la vista de la caja (saldo | mov), las tarjetas que se están releyendo, si «Personalizar» está
+    // abierto, los tooltips y las cruces de lo dibujado, y lo de quien mira (Privacidad y las tarjetas que esconde: nulo = lo que diga
+    // su navegador; se pone al tocarlo, por si el navegador no deja guardar)
+    tab: { d: null, serie: 0, periodo: "mes", cajaVista: "saldo", leyendo: new Set(), personalizar: false, tips: [], cruz: {}, priv: null, ocultas: null, pintado: null }
   };
   // Las páginas, en el orden del menú. TITULOS va en el membrete de la app y en el lateral; PESTANAS, corto, en las pestañas del teléfono
   // (fase 8) «Cierre del mes» va después de los estados: es lo último del mes, con lo de arriba ya hecho
@@ -382,9 +395,13 @@
   const diasDesde = iso => iso ? diasEntre(hoyMiami(), iso) : null;
   const PAGINA_VISTA = { v_banco_saldos: "bancos", v_banco_bandeja: "bandeja", v_conciliacion: "conciliar", v_banco_movimientos: "movimientos" };
   async function pintarResumen() {
+    // (fase 16) la serie contra el doble pintado: lo que llega de una pintada vieja no se pinta
+    const mia = ++S.tab.serie;
     cargando("Controlando con la base…");
     if (!navigator.onLine) return sinSenal(pintarResumen);
-    let lista, suaves, mes, stripeCtl = [], iaCtl = [], ronda = [], jornal = null;
+    // (fase 16) el tablero (c16) se pide a la vez que lo de siempre; sin c16 en la base (404), la portada de siempre con su aviso
+    const tableroP = leerTablero(tbPedido()).then(d => ({ d }), err => ({ err }));
+    let lista, suaves, mes = null, stripeCtl = [], iaCtl = [], ronda = [], jornal = null, tb = null;
     try {
       lista = await leerSaldos();
       const vistas = Object.keys(PAGINA_VISTA);
@@ -405,16 +422,32 @@
       ronda = await DB._leer("v_ronda_ultima?select=*&order=periodo.asc,orden.asc").catch(e => { if (esFalloDeRed(e)) throw e; return []; });
       // (fase 9) los pagos de mano de obra que esperan reparto y los rojos del jornal y del margen (c10; sin c10, nada)
       jornal = await leerJornalResumen();
-      mes = await leerMes();
-    } catch (err) { return pintarError(err, pintarResumen); }
-    if (S.pagina !== "resumen") return;
+      tb = await tableroP;
+      if (tb.err && esFalloDeRed(tb.err)) throw tb.err;
+      // (fase 16) sin el tablero, «Este mes» de siempre (con el tablero, la tarjeta de resultados dice eso y más)
+      if (!tb.d) mes = await leerMes();
+    } catch (err) { if (mia !== S.tab.serie) return; return pintarError(err, pintarResumen); }
+    if (S.pagina !== "resumen" || mia !== S.tab.serie) return;
     pintarBadge();
     const vis = visibles(lista);
-    const bancos = vis.filter(c => c.tipo === "banco"), tarjetas = vis.filter(c => c.tipo === "tarjeta"), conBanco = bancos.filter(c => c.saldo_banco != null);
     const pend = suma(vis, "pendientes");
     const viejo = vis.map(c => c.pendiente_mas_viejo).filter(Boolean).sort()[0] || null;
     const diasViejo = diasDesde(viejo);
     const bandejaRoja = diasViejo != null && diasViejo > 30;
+    const atender = atenderDeHoy({ vis, viejo, bandejaRoja, suaves, stripeCtl, iaCtl, ronda, jornal });
+    const sub = `${plural(vis.length, "cuenta", "cuentas")} · ${pend ? `<b>${plural(pend, "movimiento espera", "movimientos esperan")}</b> en la bandeja` : "la bandeja está al día"} · hoy, ${fechaLarga(hoyMiami())}`;
+    // (fase 16) EL TABLERO: lo que llegó de fn_tablero; lo que no alcanzó el tope por reloj se pide otra vez, solo eso
+    if (tb.d) {
+      S.tab.d = null; S.tab.leyendo = new Set();
+      const sigue = tbJuntar(tb.d);
+      sigue.forEach(k => S.tab.leyendo.add(k));
+      pintarTablero(sub, atender);
+      if (sigue.length) tbReleer(sigue);
+      return;
+    }
+    S.tab.d = null;
+    // sin el tablero: la portada de siempre, con una línea que dice qué falta (o por qué el tablero no se pintó)
+    const bancos = vis.filter(c => c.tipo === "banco"), tarjetas = vis.filter(c => c.tipo === "tarjeta"), conBanco = bancos.filter(c => c.saldo_banco != null);
     const e = S.stripe && S.stripe.estado;
     const ficha = (k, lbl, val, sub, clase) => `<button type="button" class="ct-ficha${clase ? " " + clase : ""}" data-ir="${k}"><span class="ct-lbl">${esc(lbl)}</span><span class="ct-val ct-num">${val}</span><span class="ct-sub">${sub || ""}</span></button>`;
     const perdida = mes && !mes.vacio && !mes.err && num(mes.resultado) < 0;
@@ -430,7 +463,16 @@
       ${ficha("cobros", "Cobros en línea", e ? fmt(e.por_depositar) : "—", e ? `en Stripe sin depositar · en camino <span class="ct-num">${fmt(e.en_camino_monto)}</span>` : "sin instalar")}
       ${fichaMes}
     </div>`;
-    // qué atender: cada alarma con el botón a su página
+    // (sin c16, qué pegar; el equipo, lo que dice la base; cualquier otra cosa, el porqué y «Reintentar»)
+    const avisoTb = faltaC16(tb.err) ? `<p class="ct-tb-falta" id="ct-tb-falta">${ICO_TB.ajustes}<span>Para ver el tablero con gráficas, pega <span class="ct-num">docs/conta/c16-tablero.sql</span></span></p>`
+      : tb.err.codigo === "42501" ? `<p class="ct-tb-falta mal" id="ct-tb-falta">${ICO_TB.alerta}<span>${esc(tb.err.message)}</span></p>`
+      : `<p class="ct-tb-falta mal" id="ct-tb-falta">${ICO_TB.alerta}<span>El tablero con gráficas no contestó (${esc(tb.err.message || "sin texto")}): aquí va lo de siempre.</span> <button type="button" class="ct-tb-ir" id="ct-tb-otra">Reintentar</button></p>`;
+    main().innerHTML = cabPagina("Resumen", sub) + avisoTb + fichas + atenderHTML(atender, false);
+    main().querySelectorAll("[data-ir]").forEach(b => b.addEventListener("click", () => ir(b.dataset.ir, b.dataset.irSub ? { sub: b.dataset.irSub } : {})));
+    const otra = $("ct-tb-otra"); if (otra) otra.addEventListener("click", pintarResumen);
+  }
+  // «Qué atender» (lo de hoy, la misma lista con o sin el tablero): cada alarma con el botón a su página
+  function atenderDeHoy({ vis, viejo, bandejaRoja, suaves, stripeCtl, iaCtl, ronda, jornal }) {
     const atender = [];
     for (const c of vis) if (c.alarma && c.alarma_texto) atender.push({ txt: `${c.cuenta_nombre}: ${c.alarma_texto}`, ir: "bancos" });
     if (bandejaRoja) atender.push({ txt: `${plural(vis.filter(c => (diasDesde(c.pendiente_mas_viejo) || 0) > 30).length, "cuenta tiene", "cuentas tienen")} movimientos de más de 30 días en la bandeja (el más viejo del ${fechaLarga(viejo)}).`, ir: "bandeja" });
@@ -457,12 +499,7 @@
     if (rojosRonda.length > 3) atender.push({ txt: `…y ${plural(rojosRonda.length - 3, "rojo más", "rojos más")} de la ronda: la lista entera está en Cierre del mes.`, ir: "cierre", sub: "cierre" });
     // (fase 9) la mano de obra: los pagos que esperan su reparto por horas y los rojos de sus controles
     for (const a of atenderJornal(jornal)) atender.push(a);
-    main().innerHTML = cabPagina("Resumen", `${plural(vis.length, "cuenta", "cuentas")} · ${pend ? `<b>${plural(pend, "movimiento espera", "movimientos esperan")}</b> en la bandeja` : "la bandeja está al día"} · hoy, ${fechaLarga(hoyMiami())}`) + fichas +
-      `<section class="ct-card ct-atender${atender.length ? "" : " ok"}" id="ct-atender"><h2>Qué atender</h2>
-        ${atender.length ? `<ul class="ct-atn-lista">${atender.map(a => `<li class="ct-atn"><div class="ct-atn-txt">${esc(a.txt)}${a.det ? `<small>${esc(a.det)}</small>` : ""}</div><button type="button" class="accion secundaria chica" data-ir="${a.ir}"${a.sub ? ` data-ir-sub="${esc(a.sub)}"` : ""}>${esc(PESTANAS[a.ir])}</button></li>`).join("")}</ul>`
-          : `<p class="ct-nota">Nada urgente: lo que espera en la bandeja no pasa de 30 días, las cuentas no tienen alarmas y las conexiones están bien.</p>`}
-      </section>`;
-    main().querySelectorAll("[data-ir]").forEach(b => b.addEventListener("click", () => ir(b.dataset.ir, b.dataset.irSub ? { sub: b.dataset.irSub } : {})));
+    return atender;
   }
   // El mes en curso para la portada: v_cortes dice qué período es, fn_estados_control lo controla y v_resultados trae las secciones.
   // Devuelve { corte, ingresos, gastos, resultado } o { vacio } en llano, o { err } si el control no cuadra (sin señal, se lanza).
@@ -485,6 +522,779 @@
       if (esFalloDeRed(err) || !err.control) throw err;
       return { corte, err };
     }
+  }
+
+  // ============================================================
+  // EL TABLERO (c16, fase 16): la portada «como la de QuickBooks», con
+  // gráficas, datos, números y enlaces de interés. Todo sale de fn_tablero
+  // (docs/conta/c16-tablero.sql): una llamada con una clave por tarjeta, cada
+  // una con sus cifras YA CALCULADAS por la base (totales, porcentajes,
+  // diferencias, las series de cada gráfica, los tramos de antigüedad); lo que
+  // no alcanzó el tope por reloj sale en «sigue» y se vuelve a pedir solo eso.
+  // Aquí no se suma, ni se resta, ni se saca un porcentaje de dinero: la
+  // pantalla escala (cuántos píxeles mide una barra) y escribe lo que llegó.
+  // Una tarjeta que falla o cuya capa no está lo dice ella sola y las demás
+  // siguen; una que no cuadra con el libro («cuadre») se pone en rojo y no
+  // pinta sus cifras. Sin c16 en la base (404), la portada de siempre con una
+  // línea que dice qué pegar. «Qué atender» sigue igual, debajo de las
+  // acciones rápidas.
+  // Privacidad (tapar los montos) y Personalizar (qué tarjetas se ven) son de
+  // quien mira y viven en su navegador (localStorage, con try/catch: si no hay
+  // almacenamiento, valen para esta visita). Ningún monto se guarda.
+  // LAS GRÁFICAS (la guía de gráficas al pie de la letra): SVG en línea,
+  // dibujadas al ancho de su caja (y otra vez si el ancho cambia); la forma
+  // según el trabajo del dato (barras ordenadas para comparar, columnas para
+  // los meses, una línea para el saldo con la proyección punteada, una barra
+  // fina partida para el todo y sus partes, un medidor para lo pagado de un
+  // préstamo); barras de 12 px con la punta redonda y la base recta, 2 px
+  // entre marcas que se tocan, líneas de 2 px, rejilla de un pelo, una sola
+  // escala por gráfica; leyenda cuando hay dos series; tooltip al pasar, al
+  // tocar y con el teclado (con la cruz que busca el mes en la línea); y la
+  // tabla con los mismos números debajo («Ver los números»). Los colores son
+  // tokens de styles.css: --mp-blue la serie y --cu la segunda (pasan las seis
+  // comprobaciones del validador de la guía sobre la tarjeta blanca),
+  // --night-ink-3 lo de contexto (gris a propósito: no es una serie; lleva su
+  // cifra al lado y su tabla), --bad y --ok solo para estado, con su icono y su
+  // texto. La app no tiene modo oscuro: con el teléfono en oscuro el tablero se
+  // ve igual que en claro.
+  // ============================================================
+  const TB_TITULO = { cobros: "Embudo de cobro", bancos: "Bancos y tarjetas", resultados: "Resultados", gastos: "Gastos", caja: "Flujo de caja",
+    facturas: "Facturas", ventas: "Ventas", por_cobrar: "Por cobrar", por_pagar: "Por pagar", conexiones: "Conexiones", cobros_en_linea: "Cobros en línea",
+    use_tax: "Use tax (DR-15)", prestamos: "Préstamos", obras: "Obras" };
+  // el orden de la portada: el de fn_tablero (sin «acciones», que va arriba en su fila)
+  const TB_ORDEN = Object.keys(TB_TITULO);
+  const TB_PERIODOS = [["mes", "Este mes"], ["mes_pasado", "Mes pasado"], ["anio", "Este año"]];
+  const TB_PRIV = "mxp.tablero.privado", TB_OCULTAS = "mxp.tablero.ocultas";
+  const TAPADO = "$•••";
+  // lo que recuerda el navegador de quien mira (si no hay almacenamiento, lo de esta visita)
+  const tbLeer = (k, def) => { try { const v = localStorage.getItem(k); return v == null ? def : v; } catch { return def; } };
+  const tbGuardar = (k, v) => { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch { /* sin almacenamiento: vale para esta visita */ } };
+  const tbPrivado = () => S.tab.priv != null ? S.tab.priv : tbLeer(TB_PRIV, "0") === "1";
+  function tbOcultas() {
+    if (S.tab.ocultas) return S.tab.ocultas;
+    let a = [];
+    try { a = JSON.parse(tbLeer(TB_OCULTAS, "[]")); } catch { a = []; }
+    return new Set(Array.isArray(a) ? a.filter(k => TB_TITULO[k]) : []);
+  }
+  const tbVisibles = () => { const o = tbOcultas(); return TB_ORDEN.filter(k => !o.has(k)); };
+  // un monto del tablero (con Privacidad, tapado) y un texto de la base (con Privacidad, sus montos tapados)
+  const tapar = s => String(s == null ? "" : s).replace(/[−-]?\$\s?\d[\d,]*(?:\.\d+)?/g, TAPADO);
+  const tm = v => tbPrivado() ? TAPADO : fmtNeg(v);
+  const tx = s => esc(tbPrivado() ? tapar(s) : s);
+  // un porcentaje de la base, con su signo cuando es una variación (lo escribe; no lo calcula)
+  const pctTb = (v, signo) => { const n = num(v); if (n == null) return "—"; const s = String(v).replace(/^-/, MENOS); return `${signo && n > 0 ? "+" : ""}${s} %`; };
+  const horaTb = iso => { if (!iso) return "—"; try { return new Intl.DateTimeFormat("es", { timeZone: "America/New_York", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }).format(new Date(iso)); } catch { return fechaLarga(iso); } };
+  // iconos de estado (siempre con su texto al lado): ✓, ! y ↑ ↓
+  const ICO_TB = {
+    ok: '<svg class="ct-tb-i" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    alerta: '<svg class="ct-tb-i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l6.6 11.7H1.4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8 6.2v3.4M8 11.6v.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+    nada: '<svg class="ct-tb-i" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 8h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+    sube: '<svg class="ct-tb-i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3.5M4 7.5l4-4 4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    baja: '<svg class="ct-tb-i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v9.5M4 8.5l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    ojo: '<svg class="ct-tb-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>',
+    ojoNo: '<svg class="ct-tb-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4 20L20 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+    ajustes: '<svg class="ct-tb-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="16" cy="7" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="17" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>'
+  };
+  const pillTb = (txt, clase, ico) => `<span class="ct-pill${clase ? " " + clase : ""}">${ico ? ICO_TB[ico] : ""}${txt}</span>`;
+
+  // ---------- la lectura: fn_tablero ----------
+  // lo que se le pide: las tarjetas que se ven (todas: {}) y el período de los resultados
+  function tbPedido(solo) {
+    const p = {};
+    const vis = tbVisibles();
+    const pedidas = solo || (vis.length === TB_ORDEN.length ? null : ["acciones", ...vis]);
+    if (pedidas) p.tarjetas = pedidas;
+    if (S.tab.periodo !== "mes" && (!pedidas || pedidas.includes("resultados"))) p.resultados = { periodo: S.tab.periodo };
+    return p;
+  }
+  // c16 no está en la base: PostgREST no encuentra la función (404, PGRST202) o Postgres no la conoce (42883)
+  const faltaC16 = err => !!err && !esFalloDeRed(err) && (err.status === 404 || ["PGRST202", "42883"].includes(String(err.codigo || "")));
+  async function leerTablero(p) {
+    const d = await DB._rpc("fn_tablero", { p });
+    if (!d || typeof d !== "object" || d.ok !== true) { const e = new Error("El tablero no devolvió lo que se esperaba (sin «ok»)."); e.codigo = "TABLERO"; throw e; }
+    return d;
+  }
+  // lo que llega se junta con lo que ya había (una tarjeta pedida otra vez reemplaza a la de antes)
+  function tbJuntar(d) {
+    const viejo = S.tab.d || {};
+    const nuevo = { ...viejo, ok: true, hoy: d.hoy, generado_el: d.generado_el, version: d.version, libro: d.libro || viejo.libro, capas: d.capas || viejo.capas };
+    for (const k of ["acciones", ...TB_ORDEN]) if (d[k] !== undefined) nuevo[k] = d[k];
+    S.tab.d = nuevo;
+    return Array.isArray(d.sigue) ? d.sigue.filter(k => k === "acciones" || TB_TITULO[k]) : [];
+  }
+
+  // ---------- la página ----------
+  // sub: la línea de cifras de la cabecera; atender: la lista de «Qué atender» (la misma de siempre)
+  function pintarTablero(sub, atender) {
+    const priv = tbPrivado();
+    S.tab.tips = []; S.tab.cruz = {};
+    main().innerHTML = cabPagina("Resumen", sub,
+      `<button type="button" class="accion secundaria ct-tb-btn" id="ct-tb-personalizar" aria-expanded="${S.tab.personalizar ? "true" : "false"}">${ICO_TB.ajustes}Personalizar</button>
+       <button type="button" class="accion secundaria ct-tb-btn" id="ct-tb-privado" aria-pressed="${priv ? "true" : "false"}">${priv ? ICO_TB.ojoNo : ICO_TB.ojo}${priv ? "Montos tapados" : "Privacidad"}</button>`) +
+      `<div id="ct-tb" class="ct-tb-raiz${priv ? " privado" : ""}">
+        <div id="ct-tb-pers-caja">${S.tab.personalizar ? tbPersonalizarHTML() : ""}</div>
+        <div id="ct-tb-acc-caja">${tbAccionesHTML(S.tab.d.acciones)}</div>
+        ${atenderHTML(atender, priv)}
+        <h2 class="ct-tb-h">El negocio de un vistazo</h2>
+        <p class="ct-tb-libro">${tx((S.tab.d.libro && S.tab.d.libro.texto) || "")}</p>
+        <div id="ct-tb-rejilla" class="ct-tb-rejilla">${tbVisibles().map(k => tbTarjetaHTML(k)).join("")}</div>
+        <div id="ct-tb-tip" class="ct-tb-tip" aria-hidden="true" hidden></div>
+      </div>`;
+    const raizTb = $("ct-tb");
+    main().querySelectorAll("#ct-atender [data-ir]").forEach(b => b.addEventListener("click", () => ir(b.dataset.ir, b.dataset.irSub ? { sub: b.dataset.irSub } : {})));
+    $("ct-tb-privado").addEventListener("click", () => tbPonerPrivado(!tbPrivado(), sub, atender));
+    $("ct-tb-personalizar").addEventListener("click", () => { S.tab.personalizar = !S.tab.personalizar; tbPintarPersonalizar(); });
+    wireTipsTb(raizTb);
+    wireTb(raizTb);
+    tbDibujar(raizTb);
+    if (S.tab.personalizar) wirePersonalizar();
+    S.tab.pintado = { sub, atender };
+  }
+  // «Qué atender»: la de siempre (con Privacidad, los montos de sus textos tapados)
+  function atenderHTML(atender, priv) {
+    const t = s => esc(priv ? tapar(s) : s);
+    return `<section class="ct-card ct-atender${atender.length ? "" : " ok"}" id="ct-atender"><h2>Qué atender</h2>
+        ${atender.length ? `<ul class="ct-atn-lista">${atender.map(a => `<li class="ct-atn"><div class="ct-atn-txt">${t(a.txt)}${a.det ? `<small>${t(a.det)}</small>` : ""}</div><button type="button" class="accion secundaria chica" data-ir="${a.ir}"${a.sub ? ` data-ir-sub="${esc(a.sub)}"` : ""}>${esc(PESTANAS[a.ir])}</button></li>`).join("")}</ul>`
+          : `<p class="ct-nota">Nada urgente: lo que espera en la bandeja no pasa de 30 días, las cuentas no tienen alarmas y las conexiones están bien.</p>`}
+      </section>`;
+  }
+  const vivoTb = mia => mia === S.tab.serie && S.pagina === "resumen" && !!$("ct-tb");
+  // pintar otra vez UNA tarjeta (lo que llegó de la base, o «leyendo» con lo de antes a media luz)
+  function tbRepintar(k) {
+    const raizTb = $("ct-tb"); if (!raizTb) return;
+    if (k === "acciones") { const c = $("ct-tb-acc-caja"); if (c) { c.innerHTML = tbAccionesHTML(S.tab.d.acciones); wireTb(c); } return; }
+    const viejo = raizTb.querySelector(`.ct-tb[data-tb="${k}"]`); if (!viejo) return;
+    const t = document.createElement("div"); t.innerHTML = tbTarjetaHTML(k);
+    const nuevo = t.firstElementChild; viejo.replaceWith(nuevo);
+    wireTb(nuevo); tbDibujar(nuevo);
+  }
+  // volver a pedir unas tarjetas (lo que siguió, «Reintentar», otro período): mientras, lo de antes se queda a media luz
+  async function tbReleer(ks, intento = 0) {
+    const mia = S.tab.serie;
+    ks.forEach(k => { S.tab.leyendo.add(k); tbMarcarLeyendo(k, true); });
+    let sigue = [];
+    try {
+      const d = await leerTablero(tbPedido(ks));
+      if (!vivoTb(mia)) return;
+      sigue = tbJuntar(d);
+    } catch (err) {
+      if (!vivoTb(mia)) return;
+      for (const k of ks) if (S.tab.d) S.tab.d[k] = { ok: false, tarjeta: k, motivo: esFalloDeRed(err) || !navigator.onLine ? "Sin señal: no se pudo leer. Vuelve a intentarlo con señal." : (err.message || "La base no contestó."), codigo: err.codigo || null };
+    }
+    // lo que otra vez no alcanzó se vuelve a pedir (tres veces en total); después dice que la base no alcanzó y ofrece «Reintentar»
+    const otra = sigue.length > 0 && intento < 2;
+    ks.forEach(k => { if (!(otra && sigue.includes(k))) S.tab.leyendo.delete(k); tbRepintar(k); });
+    if (otra) return tbReleer(sigue, intento + 1);
+  }
+  function tbMarcarLeyendo(k, si) {
+    const el = k === "acciones" ? $("ct-tb-acc-caja") : document.querySelector(`#ct-tb .ct-tb[data-tb="${k}"]`);
+    if (!el) return;
+    el.setAttribute("aria-busy", si ? "true" : "false");
+    el.classList.toggle("leyendo", !!si);
+  }
+  // Privacidad: tapa o destapa los montos (se repinta lo que ya llegó: no se vuelve a pedir nada)
+  function tbPonerPrivado(si, sub, atender) {
+    S.tab.priv = si;
+    tbGuardar(TB_PRIV, si ? "1" : "0");
+    const y = window.scrollY;
+    pintarTablero(sub, atender);
+    window.scrollTo(0, y);
+  }
+
+  // ---------- Personalizar: qué tarjetas se ven ----------
+  function tbPersonalizarHTML() {
+    const o = tbOcultas();
+    return `<section class="ct-card ct-tb-pers" id="ct-tb-pers" aria-labelledby="ct-tb-pers-h">
+      <div class="ct-cab"><h2 id="ct-tb-pers-h">Qué tarjetas ver</h2></div>
+      <p class="ct-nota">Lo que quites se queda en este navegador (en otro teléfono o computadora se ven todas). Los números no cambian: solo se esconden.</p>
+      <div class="ct-tb-pers-lista">${TB_ORDEN.map(k => `<label class="ct-tb-pers-op"><input type="checkbox" data-tb-ver="${k}"${o.has(k) ? "" : " checked"}><span>${esc(TB_TITULO[k])}</span></label>`).join("")}</div>
+      <div class="ct-acciones"><button type="button" class="accion secundaria chica" id="ct-tb-pers-todas">Ver todas</button><button type="button" class="accion chica" id="ct-tb-pers-listo">Listo</button></div>
+    </section>`;
+  }
+  function tbPintarPersonalizar() {
+    const c = $("ct-tb-pers-caja"); if (!c) return;
+    c.innerHTML = S.tab.personalizar ? tbPersonalizarHTML() : "";
+    const b = $("ct-tb-personalizar"); if (b) b.setAttribute("aria-expanded", S.tab.personalizar ? "true" : "false");
+    if (S.tab.personalizar) wirePersonalizar();
+  }
+  function wirePersonalizar() {
+    const c = $("ct-tb-pers"); if (!c) return;
+    c.querySelectorAll("[data-tb-ver]").forEach(i => i.addEventListener("change", () => {
+      const o = new Set(tbOcultas());
+      if (i.checked) o.delete(i.dataset.tbVer); else o.add(i.dataset.tbVer);
+      tbPonerOcultas(o);
+    }));
+    $("ct-tb-pers-todas").addEventListener("click", () => { tbPonerOcultas(new Set()); tbPintarPersonalizar(); });
+    $("ct-tb-pers-listo").addEventListener("click", () => { S.tab.personalizar = false; tbPintarPersonalizar(); const b = $("ct-tb-personalizar"); if (b) b.focus(); });
+  }
+  function tbPonerOcultas(o) {
+    S.tab.ocultas = o;
+    tbGuardar(TB_OCULTAS, o.size ? JSON.stringify([...o]) : null);
+    const r = $("ct-tb-rejilla"); if (!r) return;
+    S.tab.tips = []; S.tab.cruz = {};
+    r.innerHTML = tbVisibles().map(k => tbTarjetaHTML(k)).join("");
+    wireTb(r); tbDibujar(r);
+    // la que se vuelve a ver y no se había pedido: se pide ahora
+    const faltan = tbVisibles().filter(k => !S.tab.d[k]);
+    if (faltan.length) tbReleer(faltan);
+  }
+
+  // ---------- los enlaces de interés: cada tarjeta lleva a su página (el «ir» que dice la base) ----------
+  const SUB_TXT = () => ({ estados: SUBS, cierre: SUBS_CIE, obras: SUBS_OB, wip: SUBS_WIP, facturas: SUBS_FAC });
+  function irTxt(x) {
+    if (!x || !TITULOS[x.pagina]) return "";
+    const subs = SUB_TXT()[x.pagina] || {};
+    const sub = x.sub && subs[x.sub] && subs[x.sub] !== TITULOS[x.pagina] ? ` · ${subs[x.sub]}` : "";
+    return `${TITULOS[x.pagina]}${sub}${x.cuenta ? ` · ${x.cuenta}` : ""}`;
+  }
+  const irAttr = x => x && TITULOS[x.pagina] ? ` data-tb-ir="${esc(JSON.stringify(x))}"` : "";
+  const irBtn = (x, texto, clase) => x && TITULOS[x.pagina] ? `<button type="button" class="${clase || "ct-tb-ir"}"${irAttr(x)}>${texto || `Ver en ${esc(irTxt(x))}`}<span aria-hidden="true"> ›</span></button>` : "";
+  function wireTb(c) {
+    c.querySelectorAll("[data-tb-ir]").forEach(b => b.addEventListener("click", ev => {
+      ev.stopPropagation();
+      let x = null; try { x = JSON.parse(b.dataset.tbIr); } catch { x = null; }
+      if (!x || !x.pagina) return;
+      const { pagina, ...op } = x;
+      ir(pagina, op);
+    }));
+    c.querySelectorAll("[data-tb-reintentar]").forEach(b => b.addEventListener("click", () => tbReleer([b.dataset.tbReintentar])));
+    c.querySelectorAll("[data-tb-periodo]").forEach(b => b.addEventListener("click", () => {
+      if (S.tab.periodo === b.dataset.tbPeriodo || S.tab.leyendo.has("resultados")) return;
+      S.tab.periodo = b.dataset.tbPeriodo;
+      c.querySelectorAll("[data-tb-periodo]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+      tbReleer(["resultados"]);
+    }));
+    c.querySelectorAll("[data-tb-caja]").forEach(b => b.addEventListener("click", () => {
+      if (S.tab.cajaVista === b.dataset.tbCaja) return;
+      S.tab.cajaVista = b.dataset.tbCaja; tbRepintar("caja");
+    }));
+  }
+
+  // ---------- la fila de acciones rápidas ----------
+  const ICO_ACC = { factura: ICONOS.facturas, bandeja: ICONOS.bandeja, conciliar: ICONOS.conciliar, pago: ICONOS.cobros, cierre: ICONOS.cierre, estados: ICONOS.estados };
+  function tbAccionesHTML(a) {
+    if (!a) return "";
+    if (a.ok !== true) return `<nav class="ct-tb-acc" aria-label="Acciones rápidas"><span class="ct-tb-acc-t">Acciones rápidas</span>${S.tab.leyendo.has("acciones") ? `<span class="ct-tb-nota">Leyendo…</span>` : `<span class="ct-tb-nota">${tx(a.motivo || "No se pudieron leer.")}</span> <button type="button" class="ct-tb-ir" data-tb-reintentar="acciones">Reintentar</button>`}</nav>`;
+    return `<nav class="ct-tb-acc" aria-label="Acciones rápidas"><span class="ct-tb-acc-t">Acciones rápidas</span>
+      <div class="ct-tb-acc-lista">${(a.lista || []).map((x, i) => `<button type="button" class="ct-tb-chip${x.alarma ? " alarma" : ""}" data-tb-acc="${esc(x.clave)}"${x.disponible === false ? " disabled" : irAttr(x.ir)} title="${tx(x.detalle || "")}" aria-describedby="ct-tb-acc-d${i}">${ICO_ACC[x.clave] || ""}<span>${esc(x.texto)}</span>${num(x.n) ? `<b class="ct-tb-n${x.alarma ? " alarma" : ""}">${esc(x.n)}</b>` : ""}</button><span class="ct-tb-sr" id="ct-tb-acc-d${i}">${tx(x.detalle || "")}${x.falta ? ` (falta ${esc(x.falta)})` : ""}</span>`).join("")}</div></nav>`;
+  }
+
+  // ---------- una tarjeta: su marco, su cuerpo y su enlace ----------
+  function tbTarjetaHTML(k) {
+    const d = S.tab.d && S.tab.d[k];
+    const marco = (cuerpo, op = {}) => `<section class="ct-card ct-tb${op.ancha ? " ancha" : ""}${S.tab.leyendo.has(k) ? " leyendo" : ""}" data-tb="${k}" aria-labelledby="ct-tb-h-${k}" aria-busy="${S.tab.leyendo.has(k) ? "true" : "false"}">
+        <header class="ct-tb-cab"><h3 id="ct-tb-h-${k}">${esc(TB_TITULO[k])}</h3>${op.cuando ? `<span class="ct-tb-cuando">${op.cuando}</span>` : ""}</header>
+        ${op.ctl ? `<div class="ct-tb-ctl">${op.ctl}</div>` : ""}
+        <div class="ct-tb-cuerpo">${cuerpo}</div>
+        ${op.pie !== "" ? `<footer class="ct-tb-pie">${op.pie || irBtn(d && d.ir)}</footer>` : ""}
+      </section>`;
+    const ancha = ["cobros"].includes(k);
+    if (!d) return marco(`<p class="ct-tb-nota">Leyendo…</p>`, { ancha, pie: "" });
+    if (d.ok !== true) {
+      // lo que no alcanzó el tope por reloj (se vuelve a pedir solo), la capa que no está, un período de antes del libro, o un error
+      if (S.tab.leyendo.has(k)) return marco(`<p class="ct-tb-nota">Leyendo…</p>`, { ancha, pie: "" });
+      if (d.sigue) return marco(`<p class="ct-aviso">La base no alcanzó a leer esta tarjeta a tiempo.</p><button type="button" class="accion secundaria chica" data-tb-reintentar="${k}">Reintentar</button>`, { ancha, pie: "" });
+      if (d.falta) return marco(`<p class="ct-aviso">Falta en la base: <b>${esc(d.falta)}</b>. ${tx(d.motivo || "")}</p>`, { ancha, pie: "" });
+      if (d.antes_del_libro) return marco(`<p class="ct-aviso">${tx(d.motivo || "Ese período es de antes del libro: vive en QuickBooks.")}</p>`, { ancha, ctl: k === "resultados" ? tbPeriodosHTML() : "", pie: "" });
+      return marco(`<div class="ct-aviso bad" role="alert">${ICO_TB.alerta}<span>Esta tarjeta no se pudo leer: ${tx(d.motivo || "la base no contestó")}${d.codigo ? ` <span class="ct-num">(${esc(d.codigo)})</span>` : ""}. Las demás siguen bien.</span></div>
+        <button type="button" class="accion secundaria chica" data-tb-reintentar="${k}">Reintentar</button>`, { ancha, ctl: k === "resultados" ? tbPeriodosHTML() : "", pie: "" });
+    }
+    // un cuadre en rojo: la tarjeta no pinta cifras (pintar lo que no cuadra sería mentir)
+    if (d.cuadre && d.cuadre.ok === false) return marco(`<div class="ct-aviso bad" role="alert">${ICO_TB.alerta}<span>No cuadra con el libro: ${tx(d.cuadre.texto || "")} (libro ${tm(d.cuadre.libro)}, la tarjeta ${tm(d.cuadre.suma)}). No se pintan sus cifras hasta que cuadre.</span></div>`, { ancha });
+    const f = TB_CUERPO[k];
+    return f ? marco(...f(d)) : marco(`<p class="ct-tb-nota">—</p>`);
+  }
+  const tbPeriodosHTML = () => `<div class="ct-chips ct-tb-chips" role="group" aria-label="Qué período">${TB_PERIODOS.map(([k, t]) => `<button type="button" class="ct-chip chica" data-tb-periodo="${k}" aria-pressed="${S.tab.periodo === k ? "true" : "false"}">${t}</button>`).join("")}</div>`;
+  // una cifra grande con su etiqueta (la figura de la tarjeta)
+  const cifra = (et, v, extra) => `<div class="ct-tb-fig"><span class="ct-tb-et">${et}</span><span class="ct-tb-cifra">${v}</span>${extra || ""}</div>`;
+  // «Ver los números»: la tabla con lo mismo que la gráfica (el gemelo accesible)
+  // (en una tarjeta angosta —el teléfono, las tres columnas de la computadora— cada fila se apila: el nombre arriba y sus cifras debajo,
+  // cada una con su etiqueta, en 2 o 3 columnas: la tabla nunca se sale de la tarjeta)
+  const tablaTb = (cab, filas, op = {}) => { const n = cab.length - 1, cols = n <= 3 ? n : n === 4 ? 2 : 3; return `<details class="ct-tb-tabla"${op.abierta ? " open" : ""}><summary>${op.titulo || "Ver los números"}</summary>
+      <div class="ct-tabla-env"><table class="ct-tabla angosta" style="--tb-cols:${Math.max(1, cols)}"><thead><tr>${cab.map((c, i) => `<th${i ? ' class="r"' : ""}>${c}</th>`).join("")}</tr></thead>
+      <tbody>${filas.map(f => `<tr${f.clase ? ` class="${f.clase}"` : ""}>${f.celdas.map((c, i) => `<td${i ? ` class="r ct-num" data-col="${esc(String(cab[i]).replace(/<[^>]*>/g, ""))}"` : ""}>${c}</td>`).join("")}</tr>`).join("")}</tbody></table></div></details>`; };
+  const leyenda = items => `<ul class="ct-tb-ley">${items.map(([clase, t]) => `<li><i class="ct-tb-ley-m ${clase}" aria-hidden="true"></i>${t}</li>`).join("")}</ul>`;
+  // (un grupo con nombre: cada marca de dentro lleva el suyo, con su cifra, y se llega a ella con Tab)
+  const grafCaja = (nombre, etiqueta, alto) => `<div class="ct-tb-graf" data-graf="${nombre}" role="group" aria-label="${esc(etiqueta)}" style="min-height:${alto || 0}px"></div>`;
+  const variacionTxt = (pct, sube, bueno, contra) => pct == null ? "" : `<p class="ct-tb-delta ${sube === bueno ? "bien" : "mal"}">${sube ? ICO_TB.sube : ICO_TB.baja}<b>${pctTb(pct, true)}</b> <span>contra ${tx(contra)}</span></p>`;
+
+  // EL CUERPO DE CADA TARJETA: devuelve [html, {cuando, ctl, pie, ancha}]
+  const TB_CUERPO = {
+    // EL EMBUDO DE COBRO: por cobrar → cobrado en N días → depositado (los tres pasos que manda la base)
+    cobros(d) {
+      const pc = d.por_cobrar || {}, pasos = d.pasos || [];
+      const extra = { por_cobrar: pc.ir, cobrado: d.cobrado && d.cobrado.ir };
+      const paso = (p, i) => {
+        const pl = p.clave === "por_cobrar" ? pillTb(tx(p.detalle), p.alarma ? "bad" : "", p.alarma ? "alerta" : null)
+          : p.clave === "depositado" ? pillTb(tx(p.detalle), p.alarma ? "warn" : "ok", p.alarma ? "alerta" : "ok") : pillTb(tx(p.detalle), "");
+        const cuerpo = `<span class="ct-tb-paso-t">${esc(p.etiqueta)}</span><span class="ct-tb-cifra">${tm(p.monto)}</span><span class="ct-tb-paso-n">${pl}</span>`;
+        const x = extra[p.clave];
+        return `${i ? `<span class="ct-tb-flecha" aria-hidden="true">›</span>` : ""}${x ? `<button type="button" class="ct-tb-paso" data-paso="${esc(p.clave)}"${irAttr(x)} aria-label="${esc(p.etiqueta)}: ${esc(tm(p.monto))}, ${tx(p.detalle)} — ver en ${esc(irTxt(x))}">${cuerpo}</button>` : `<div class="ct-tb-paso" data-paso="${esc(p.clave)}">${cuerpo}</div>`}`;
+      };
+      const aparte = [num(pc.retencion && pc.retencion.monto) ? `retención por cobrar ${tm(pc.retencion.monto)} (${esc(pc.retencion.n)})` : "",
+        num(pc.a_favor && pc.a_favor.monto) ? `anticipos y saldos a favor ${tm(pc.a_favor.monto)} (${esc(pc.a_favor.n)})` : "",
+        num(pc.sin_factura && pc.sin_factura.monto) ? `sin factura ${tm(pc.sin_factura.monto)} (${esc(pc.sin_factura.n)})` : "",
+        num(d.devuelto && d.devuelto.monto) ? `devuelto en ${esc(d.dias)} días ${tm(d.devuelto.monto)} (${esc(d.devuelto.n)})` : ""].filter(Boolean);
+      return [`<div class="ct-tb-embudo">${pasos.map(paso).join("")}</div>
+        ${aparte.length ? `<p class="ct-tb-nota">Aparte (no entra en «por cobrar»): ${aparte.join(" · ")}.</p>` : ""}
+        ${d.nota ? `<p class="ct-tb-nota">${tx(d.nota)}</p>` : ""}`,
+        { ancha: true, cuando: `<span title="${esc(fechaLarga(d.desde))} a ${esc(fechaLarga(d.hasta))}">Últimos ${esc(d.dias)} días</span>` }];
+    },
+    // BANCOS Y TARJETAS: cada cuenta con lo que dice el banco, lo del libro, lo que espera en la Bandeja y cuándo se actualizó
+    bancos(d) {
+      const t = d.totales || {}, pr = t.por_revisar || {};
+      const via = c => c.via === "plaid" ? `Plaid${c.conexion && c.conexion.institucion ? ` · ${esc(c.conexion.institucion)}` : ""}` : c.via === "archivo" ? "por archivo" : "sin conexión";
+      const cuando = c => c.horas != null ? (num(c.horas) < 1 ? "hace menos de 1 h" : `hace ${c.horas} h`)
+        : c.saldo_banco_al ? `saldo del banco al ${fecha(c.saldo_banco_al)}` : "sin saldo del banco";
+      // como QuickBooks: el nombre y por dónde se actualiza a la izquierda; lo que dice el banco y lo del libro a la derecha; lo que espera debajo
+      const fila = c => `<li class="ct-tb-cta${c.alarma ? " alarma" : ""}" data-cuenta="${esc(c.cuenta)}">
+          <div class="ct-tb-cta-n"><b>${esc(c.nombre)}</b><small>${c.tipo === "tarjeta" ? "tarjeta · " : ""}${via(c)} · ${cuando(c)}</small>
+            <span class="ct-tb-cta-r">${num(c.por_revisar) ? irBtn(c.ir, `${plural(c.por_revisar, "por revisar", "por revisar")}${c.dias_mas_viejo != null ? ` · el más viejo, de hace ${plural(c.dias_mas_viejo, "día", "días")}` : ""}`, "ct-tb-link") : `<span class="ct-tb-aldia">${ICO_TB.ok}nada por revisar</span>`}</span></div>
+          <dl class="ct-tb-cta-s"><div><dt>${c.tipo === "tarjeta" ? "se debe, según el banco" : "según el banco"}</dt><dd class="ct-num">${c.saldo_banco == null ? "—" : tm(c.saldo_banco)}</dd></div>
+            <div><dt>${c.tipo === "tarjeta" ? "se debe, en el libro" : "en el libro"}</dt><dd class="ct-num">${tm(c.saldo_libro)}</dd></div></dl>
+          ${c.alarma_texto ? `<p class="ct-tb-alarma">${ICO_TB.alerta}<span>${tx(c.alarma_texto)}</span></p>` : ""}
+          ${c.conexion && c.conexion.estado === "error" ? `<p class="ct-tb-alarma">${ICO_TB.alerta}<span>${esc(c.conexion.institucion || "El banco")} pide volver a conectar${c.conexion.error ? ` (${tx(c.conexion.error)})` : ""}.</span></p>` : ""}
+        </li>`;
+      const tot = (x, et) => x && x.n ? `<div><dt>${et}</dt><dd class="ct-num">${tm(x.libro)}</dd><small>en el libro${x.con_banco ? ` · según el banco <span class="ct-num">${tm(x.banco)}</span>${x.con_banco < x.n ? ` (${x.con_banco} de ${x.n})` : ""}` : ""}</small></div>` : "";
+      return [`<dl class="ct-tb-totales">${tot(t.bancos, "Bancos")}${tot(t.tarjetas, "Tarjetas (se debe)")}</dl>
+        <ul class="ct-tb-ctas">${(d.cuentas || []).map(fila).join("")}</ul>`,
+        { cuando: t.actualizado_el ? `<span>actualizado ${esc(horaTb(t.actualizado_el))}</span>` : "Al día de hoy",
+          pie: `${irBtn({ pagina: "bandeja" }, `Bandeja${pr.n ? ` (${esc(pr.n)})` : ""}`)}${irBtn({ pagina: "conciliar" }, "Conciliar")}${irBtn(d.ir)}` }];
+    },
+    // RESULTADOS: el resultado del período, su margen, la comparación y las dos barras (lo que entra y lo que sale)
+    resultados(d) {
+      const ant = d.anterior || null, v = d.variacion || null;
+      const dosSeries = !!ant && (d.barras || []).some(b => b.anterior != null);
+      const pr = d.por_revisar;
+      return [`${cifra(`${d.es_perdida ? "Pérdida" : "Utilidad"} de ${esc(d.etiqueta)}${d.en_curso ? " (hasta hoy)" : ""}`, tm(d.resultado), d.margen_pct != null ? pillTb(`margen ${pctTb(d.margen_pct)}`, "") : "")}
+        ${v ? variacionTxt(v.pct, v.sube, true, v.contra) : d.sin_comparar ? `<p class="ct-tb-nota">${tx(d.sin_comparar)}</p>` : ""}
+        ${dosSeries ? leyenda([["serie1", `${esc(d.etiqueta)}${d.en_curso ? " (hasta hoy)" : ""}`], ["gris", esc(ant.etiqueta)]]) : ""}
+        ${grafCaja("resultados", `Ingresos y costo y gastos de ${d.etiqueta}${dosSeries ? `, contra ${ant.etiqueta}` : ""}`)}
+        ${pr && num(pr.n) ? `<p class="ct-tb-revisar">${ICO_TB.alerta}<span>En la Bandeja ${num(pr.n) === 1 ? "espera" : "esperan"} ${plural(pr.n, "movimiento", "movimientos")} de este período: ${[num(pr.cargos && pr.cargos.n) ? `${plural(pr.cargos.n, "cargo", "cargos")} (${tm(pr.cargos.monto)}), que pueden ser gastos que faltan` : "", num(pr.depositos && pr.depositos.n) ? `${plural(pr.depositos.n, "depósito", "depósitos")} (${tm(pr.depositos.monto)})` : ""].filter(Boolean).join(" y ")}. ${irBtn(pr.ir, "Revisarlos", "ct-tb-link")}</span></p>` : ""}
+        ${num(d.ajustes_otro_ejercicio) ? `<p class="ct-tb-nota">Un ajuste del CPA que corrige otro año (${tm(d.ajustes_otro_ejercicio)}) no se cuenta en estos días.</p>` : ""}
+        ${d.nota ? `<p class="ct-tb-nota">${tx(d.nota)}</p>` : ""}
+        ${tablaTb(["Concepto", "Este período", ...(ant ? ["Anterior", "Variación"] : [])], (d.renglones || []).map(r => ({ clase: r.es_total ? "ct-total" : "",
+          celdas: [esc(r.etiqueta), tm(r.monto), ...(ant ? [r.anterior == null ? "—" : tm(r.anterior), r.variacion == null ? "—" : `${tm(r.variacion)}${r.variacion_pct != null ? ` (${pctTb(r.variacion_pct, true)})` : ""}`] : [])] })))}`,
+        { cuando: esc(fechaLarga(d.desde)) + " a " + esc(fechaLarga(d.en_curso ? d.corte : d.hasta)), ctl: tbPeriodosHTML() }];
+    },
+    // GASTOS: lo gastado en N días por categoría (las mayores y «las demás», como manda la base), contra los N días de antes
+    gastos(d) {
+      const ant = d.anterior;
+      return [`${cifra(`Gastado en los últimos ${esc(d.dias)} días`, tm(d.total))}
+        ${d.variacion_pct != null && ant ? variacionTxt(d.variacion_pct, num(d.variacion) > 0, false, ant.etiqueta || "los días de antes") : d.sin_comparar ? `<p class="ct-tb-nota">${tx(d.sin_comparar)}</p>` : ""}
+        ${grafCaja("gastos", `Gastos de los últimos ${d.dias} días por categoría`)}
+        ${num(d.abonos) ? `<p class="ct-tb-nota">Hubo abonos a favor por ${tm(d.abonos)}: no entran en la gráfica.</p>` : ""}
+        ${d.nota ? `<p class="ct-tb-nota">${tx(d.nota)}</p>` : ""}
+        ${tablaTb(["Categoría", "Monto", "% del total", ...(ant ? ["Anterior", "Variación"] : [])], (d.categorias || []).map(c => ({ celdas: [esc(c.nombre), tm(c.monto), pctTb(c.pct), ...(ant ? [c.anterior == null ? "—" : tm(c.anterior), c.variacion == null ? "—" : tm(c.variacion)] : [])] })))}`,
+        { cuando: `<span title="${esc(fechaLarga(d.desde))} a ${esc(fechaLarga(d.hasta))}">Últimos ${esc(d.dias)} días</span>` }];
+    },
+    // FLUJO DE CAJA: el saldo mes a mes (la línea) con la proyección punteada, o lo que entró y salió (columnas)
+    caja(d) {
+      const pj = d.proyeccion || {}, h = d.hoy || {};
+      const vista = S.tab.cajaVista === "mov" ? "mov" : "saldo";
+      const ctl = `<div class="ct-chips ct-tb-chips" role="group" aria-label="Qué ver"><button type="button" class="ct-chip chica" data-tb-caja="saldo" aria-pressed="${vista === "saldo"}">Saldo</button><button type="button" class="ct-chip chica" data-tb-caja="mov" aria-pressed="${vista === "mov"}">Entradas y salidas</button></div>`;
+      const meses = d.meses || [];
+      const filasReal = meses.map(m => ({ celdas: [`${esc(m.etiqueta)}${m.en_curso ? " (hasta hoy)" : ""}`, tm(m.inicial), tm(m.entradas), tm(m.salidas), tm(m.final)] }));
+      const filasPj = pj.hay ? (pj.meses || []).map(m => ({ celdas: [esc(m.etiqueta), tm(m.por_cobrar), tm(m.por_pagar), tm(m.prestamos), tm(m.saldo)] })) : [];
+      return [`${cifra("Caja hoy", tm(h.saldo), num(h.sobregiro) ? `<span class="ct-tb-gris">y un sobregiro de ${tm(h.sobregiro)}</span>` : "")}
+        ${vista === "saldo" ? leyenda([["linea", "Saldo de caja, del libro"], ...(pj.hay ? [["linea punteada", "Proyección (no es un hecho)"]] : [])]) : leyenda([["serie1", "Entradas"], ["serie2", "Salidas"]])}
+        ${grafCaja(vista === "saldo" ? "caja" : "caja_mov", vista === "saldo" ? "Saldo de caja al final de cada mes, desde la apertura" : "Lo que entró y salió de la caja cada mes", 190)}
+        ${num(d.meses_con_libro) < num(d.meses_pedidos) ? `<p class="ct-tb-nota">${tx((d.libro && d.libro.texto) || d.nota || "")}</p>` : ""}
+        ${pj.hay ? `<details class="ct-tb-tabla"><summary>Cómo se hace la proyección</summary><div class="ct-tb-pj"><p>${tx(pj.texto || "")}</p>
+            <p><b>Supone:</b></p><ul>${(pj.supuestos || []).map(s => `<li>${tx(s)}</li>`).join("")}</ul>
+            <p><b>No incluye:</b></p><ul>${(pj.no_incluye || []).map(s => `<li>${tx(s)}</li>`).join("")}</ul></div></details>`
+          : pj.motivo ? `<p class="ct-tb-nota">Sin proyección: ${tx(pj.motivo)}</p>` : ""}
+        ${tablaTb(["Mes", "Al empezar", "Entradas", "Salidas", "Al terminar"], [
+          ...(d.apertura ? [{ celdas: [`apertura (${esc(fechaLarga(d.apertura.fecha))})`, "—", "—", "—", tm(d.apertura.saldo)] }] : []), ...filasReal])}
+        ${filasPj.length ? tablaTb(["Mes", "Por cobrar", "Por pagar", "Préstamos", "Saldo proyectado"], filasPj, { titulo: "Ver la proyección" }) : ""}`,
+        { cuando: "Mes a mes", ctl }];
+    },
+    // FACTURAS: no pagadas (vencidas / por vencer) y cobradas en N días (depositadas / no); las partes y su porcentaje, de la base
+    facturas(d) {
+      const np = d.no_pagadas || {}, pg = d.pagadas || {};
+      const ve = np.vencidas || {}, pv = np.por_vencer || {}, de = pg.depositado || {}, sd = pg.sin_depositar || {};
+      const lado = (et, x, clase, ico) => `<div class="ct-tb-lado ${clase || ""}"><span class="ct-tb-lado-v">${tm(x.monto)}</span><span class="ct-tb-lado-t">${ico ? ICO_TB[ico] : ""}${et}${num(x.n) ? ` · ${esc(x.n)}` : ""}</span></div>`;
+      return [`<div class="ct-tb-fac">
+          <p class="ct-tb-fac-t"><b>${tm(np.monto)}</b> sin pagar · ${plural(np.n || 0, "factura", "facturas")}</p>
+          <div class="ct-tb-lados">${lado("Vencidas", ve, "mal", num(ve.n) ? "alerta" : null)}${lado("Por vencer", pv, "der")}</div>
+          ${grafCaja("facturas_np", `Facturas sin pagar: vencidas ${pctTb(ve.pct)}, por vencer ${pctTb(pv.pct)}`, 12)}
+          ${np.dias_mas_vencida != null ? `<p class="ct-tb-nota">La más vencida lleva ${plural(np.dias_mas_vencida, "día", "días")} (del ${esc(fechaLarga(np.mas_vieja))}).</p>` : ""}
+        </div>
+        <div class="ct-tb-fac">
+          <p class="ct-tb-fac-t"><b>${tm(pg.monto)}</b> cobrado en ${esc(pg.dias)} días · ${plural(pg.n || 0, "cobro", "cobros")}</p>
+          <div class="ct-tb-lados">${lado("Sin depositar", sd, "")}${lado("Depositado", de, "der bien", num(de.n) ? "ok" : null)}</div>
+          ${grafCaja("facturas_pg", `Cobrado en ${pg.dias} días: sin depositar ${pctTb(sd.pct)}, depositado ${pctTb(de.pct)}`, 12)}
+          ${pg.nota ? `<p class="ct-tb-nota">${tx(pg.nota)}</p>` : ""}
+        </div>
+        ${tablaTb(["Facturas", "Monto", "Cuántas", "%"], [
+          { celdas: ["Vencidas", tm(ve.monto), esc(ve.n), pctTb(ve.pct)] }, { celdas: ["Por vencer", tm(pv.monto), esc(pv.n), pctTb(pv.pct)] },
+          { clase: "ct-total", celdas: ["Sin pagar", tm(np.monto), esc(np.n), ""] },
+          { celdas: [`Cobrado en ${esc(pg.dias)} días, sin depositar`, tm(sd.monto), esc(sd.n), pctTb(sd.pct)] }, { celdas: ["…depositado", tm(de.monto), esc(de.n), pctTb(de.pct)] },
+          { clase: "ct-total", celdas: [`Cobrado en ${esc(pg.dias)} días`, tm(pg.monto), esc(pg.n), ""] }])}`,
+        { cuando: "Al día de hoy" }];
+    },
+    // VENTAS: los ingresos de cada mes del año que el libro tiene, y su total
+    ventas(d) {
+      const ab = d.antes_del_libro;
+      return [`${cifra(`Ventas de ${esc(d.anio)}${(d.meses || []).some(m => m.en_curso) ? " (hasta hoy)" : ""}`, tm(d.total), d.mejor_mes ? `<span class="ct-tb-gris">mejor mes: ${esc(d.mejor_mes.etiqueta)}, ${tm(d.mejor_mes.monto)}</span>` : "")}
+        ${grafCaja("ventas", `Ventas de cada mes de ${d.anio} que tiene el libro`, 170)}
+        ${ab && num(ab.meses) ? `<p class="ct-tb-nota">${tx(ab.texto)}</p>` : ""}
+        ${tablaTb(["Mes", "Ventas", "Asientos"], (d.meses || []).map(m => ({ celdas: [`${esc(m.etiqueta)}${m.en_curso ? " (hasta hoy)" : ""}`, tm(m.monto), esc(m.asientos)] })).concat([{ clase: "ct-total", celdas: ["Total", tm(d.total), ""] }]))}`,
+        { cuando: `Lo que va de ${esc(d.anio)}` }];
+    },
+    por_cobrar: d => tbAntiguedad(d, "por cobrar"),
+    por_pagar: d => tbAntiguedad(d, "por pagar"),
+    // CONEXIONES: Plaid, Stripe y la IA: conectadas, con problemas, sin usar, apagadas
+    conexiones(d) {
+      const t = d.totales || {};
+      const EST = { conectada: ["conectada", "ok", "ok"], problema: ["con problemas", "bad", "alerta"], sin_usar: ["sin usar", "", "nada"], apagada: ["apagada", "", "nada"] };
+      return [`<p class="ct-tb-resumen"><b class="ct-tb-cifra chica">${esc(t.total || 0)}</b> ${num(t.total) === 1 ? "conexión" : "conexiones"}: ${[[t.conectadas, "conectada", "conectadas"], [t.con_problemas, "con problemas", "con problemas"], [t.sin_usar, "sin usar", "sin usar"], [t.apagadas, "apagada", "apagadas"]].filter(x => num(x[0])).map(x => `${esc(x[0])} ${num(x[0]) === 1 ? x[1] : x[2]}`).join(" · ")}</p>
+        <ul class="ct-tb-cx">${(d.lista || []).map(c => { const e = EST[c.estado] || [c.estado, "", "nada"]; return `<li class="ct-tb-cx-f" data-cx="${esc(c.clave)}"><div class="ct-tb-cx-n"><b>${esc(c.nombre)}</b> <span class="ct-tb-gris">${esc(c.servicio || "")}</span></div>${irBtn(c.ir, "Ver", "ct-tb-link")}<div class="ct-tb-cx-d">${pillTb(esc(e[0]), e[1], e[2])}<small>${tx(c.detalle || "")}${c.horas != null ? ` · hace ${c.horas} h` : ""}</small></div></li>`; }).join("")}</ul>
+        ${(d.faltan || []).length ? `<p class="ct-tb-nota">No están en la base: ${esc(d.faltan.join(", "))}.</p>` : ""}`,
+        { cuando: "Al día de hoy" }];
+    },
+    // COBROS EN LÍNEA (Stripe): lo cobrado que falta depositar, lo que viene en camino y el último depósito
+    cobros_en_linea(d) {
+      const st = (et, x, sub) => `<div class="ct-tb-st"><span class="ct-tb-et">${et}</span><span class="ct-tb-st-v">${tm(x && x.monto)}</span><small>${sub || (x && num(x.n) ? plural(x.n, "pago", "pagos") : "ninguno")}</small></div>`;
+      const cam = d.en_camino_al_banco || {}, ud = d.ultimo_deposito;
+      return [`${d.modo === "prueba" ? `<p>${pillTb("modo de prueba", "warn", "alerta")}</p>` : ""}
+        <div class="ct-tb-sts">${st("Por depositar", d.por_depositar)}${st("En camino al banco", cam, num(cam.n) ? `${plural(cam.n, "depósito", "depósitos")}${cam.llegada ? `, llega el ${esc(fecha(cam.llegada))}` : ""}` : "ninguno")}
+          ${st("Pagos por banco en camino", d.pagos_en_camino)}${st("Depositado en 30 días", d.depositado_30, d.depositado_30 && num(d.depositado_30.n) ? plural(d.depositado_30.n, "depósito", "depósitos") : "ninguno")}</div>
+        <p class="ct-tb-nota">${ud && ud.fecha ? `Último depósito: ${esc(fechaLarga(ud.fecha))}, ${tm(ud.monto)}.` : "Todavía ningún depósito."} ${plural(d.enlaces_activos || 0, "enlace de pago activo", "enlaces de pago activos")}.</p>
+        ${d.por_revisar && (num(d.por_revisar.pagos) || num(d.por_revisar.depositos)) ? `<p class="ct-tb-revisar">${ICO_TB.alerta}<span>Por revisar: ${plural(d.por_revisar.pagos || 0, "pago", "pagos")} y ${plural(d.por_revisar.depositos || 0, "depósito", "depósitos")}.</span></p>` : ""}`,
+        { cuando: "Al día de hoy" }];
+    },
+    // EL USE TAX (el DR-15 de c9): lo que se debe hoy y lo de este mes y el pasado
+    use_tax(d) {
+      return [`${cifra(`Por pagar hoy (cuenta ${esc(d.cuenta || "2300")})`, tm(d.por_pagar))}
+        <ul class="ct-tb-meses">${(d.meses || []).map(m => `<li><div><b>${esc(m.nombre)}</b>${m.en_curso ? ` <span class="ct-tb-gris">(en curso)</span>` : ""}<small>cargado ${tm(m.cargado)} · pagado ${tm(m.pagado)} · ${m.en_curso ? "va en" : "quedó en"} ${tm(m.saldo_al_cierre)}</small></div>${irBtn(m.ir, "DR-15", "ct-tb-link nowrap")}</li>`).join("")}</ul>
+        ${d.ventas_gravables == null ? `<p class="ct-tb-nota">Es el use tax de lo que se compra (lo de QuickBooks llamado «sales tax»). Las ventas gravables y el sales tax cobrado todavía no se separan en las facturas: no se pintan.</p>` : ""}
+        ${tablaTb(["Mes", "Compras", "Base", "Cargado", "Pagado", "Saldo"], (d.meses || []).map(m => ({ celdas: [esc(m.nombre), tm(m.compras), tm(m.base), tm(m.cargado), tm(m.pagado), tm(m.saldo_al_cierre)] })))}`,
+        { cuando: "Este mes y el pasado" }];
+    },
+    // LOS PRÉSTAMOS (c6): lo que se debe, lo pagado (un medidor por préstamo) y la próxima cuota
+    prestamos(d) {
+      const t = d.totales || {};
+      return [`${cifra(`Lo que se debe · ${plural(t.n || 0, "préstamo", "préstamos")}`, tm(t.saldo), t.proxima_fecha ? `<span class="ct-tb-gris">próxima cuota el ${esc(fechaLarga(t.proxima_fecha))} · en 30 días ${tm(t.en_30_dias)}</span>` : "")}
+        <ul class="ct-tb-pres">${(d.lista || []).map((p, i) => { const px = p.proxima || {}; return `<li><div class="ct-tb-pres-c"><b>${esc(p.prestamista)}</b> <span class="ct-tb-gris">${esc(p.descripcion || "")}</span><span class="ct-num">${tm(p.saldo)}</span></div>
+            ${grafCaja("prestamo", `${p.prestamista}: pagado ${pctTb(p.pagado_pct)} de ${tm(p.principal)}`, 8).replace('data-graf="prestamo"', `data-graf="prestamo" data-i="${i}"`)}
+            <small>pagado ${pctTb(p.pagado_pct)} de ${tm(p.principal)} · cuota ${tm(p.cuota)}${p.tasa_anual != null ? ` · ${esc(p.tasa_anual)} % al año` : ""}</small>
+            ${px.fecha ? `<p class="ct-tb-pres-px${px.atrasada ? " mal" : ""}">${px.atrasada ? ICO_TB.alerta : ""}Próxima: <b>${esc(fechaLarga(px.fecha))}</b>${px.dias != null ? ` (${px.atrasada ? `atrasada ${plural(Math.abs(num(px.dias)), "día", "días")}` : `en ${plural(px.dias, "día", "días")}`})` : ""} · ${tm(px.monto)} <span class="ct-tb-gris">(capital ${tm(px.capital)} · interés ${tm(px.interes)})</span></p>` : ""}</li>`; }).join("")}</ul>
+        ${tablaTb(["Mes", "Cuotas", "Monto"], (d.calendario || []).map(c => ({ celdas: [esc(c.mes), esc(c.n), tm(c.monto)] })), { titulo: "Ver las cuotas de los próximos 12 meses" })}`,
+        { cuando: "Al día de hoy" }];
+    },
+    // LAS OBRAS: el WIP del mes que toca (c12) y el costo por obra (c10)
+    obras(d) {
+      const w = d.wip || {}, c = d.costo || {}, ct = c.totales || {};
+      const wipHTML = w.ok === true ? `<div class="ct-tb-ob-w"><p class="ct-tb-et">WIP de ${esc(w.nombre)}${w.cerrado ? " (cerrado)" : ""}</p>
+          <div class="ct-tb-lados"><div class="ct-tb-lado"><span class="ct-tb-lado-v">${tm(w.sub_facturado)}</span><span class="ct-tb-lado-t">sub-facturado</span></div><div class="ct-tb-lado der"><span class="ct-tb-lado-v">${tm(w.sobre_facturado)}</span><span class="ct-tb-lado-t">sobre-facturado</span></div></div>
+          ${w.nota ? `<p class="ct-tb-nota">${tx(w.nota)}</p>` : ""}${irBtn(w.ir, "Ver el WIP", "ct-tb-link")}</div>`
+        : `<p class="ct-aviso">WIP: ${tx(w.motivo || "no está en la base")}</p>`;
+      // el costo por obra: una fila por obra (el nombre lleva a su página; ingreso y costo debajo; el margen a la derecha), y todas juntas
+      const obraFila = (o, nombre) => `<li class="ct-tb-ob-f"><div class="ct-tb-ob-n">${nombre}${o.parcial ? ` <span class="ct-pill">parcial</span>` : ""}<small>ingreso <span class="ct-num">${tm(o.ingreso)}</span> · costo <span class="ct-num">${tm(o.costo)}</span></small></div>
+          <div class="ct-tb-ob-m${num(o.margen) < 0 ? " mal" : ""}"><span class="ct-num">${tm(o.margen)}</span><small>${num(o.margen) < 0 ? `${ICO_TB.alerta}pérdida` : "margen"} ${pctTb(o.margen_pct)}</small></div></li>`;
+      const costoHTML = c.ok === true ? `<div class="ct-tb-ob-c"><p class="ct-tb-et">Costo por obra: las ${esc((c.lista || []).length)} con más ingreso</p>
+          <ul class="ct-tb-ob-l">${(c.lista || []).map(o => obraFila(o, irBtn(o.ir, esc(o.obra), "ct-tb-link"))).join("")}${obraFila(ct, `<b>Todas (${esc(ct.obras)})</b>`).replace('class="ct-tb-ob-f"', 'class="ct-tb-ob-f total"')}</ul>
+          ${c.nota ? `<p class="ct-tb-nota">${tx(c.nota)}</p>` : ""}</div>`
+        : `<p class="ct-aviso">Costo por obra: ${tx(c.motivo || "no está en la base")}</p>`;
+      return [wipHTML + costoHTML, { cuando: "Lo que dice el libro" }];
+    }
+  };
+  // LA ANTIGÜEDAD (por cobrar y por pagar): el total, lo vencido y los cinco tramos por vencimiento (barras), lo de aparte y las más viejas
+  function tbAntiguedad(d, que) {
+    const v = d.vencido || {};
+    const aparte = [num(d.retencion && d.retencion.monto) ? `retención ${tm(d.retencion.monto)} (${esc(d.retencion.n)})` : "",
+      num(d.a_favor && d.a_favor.monto) ? `a favor ${tm(d.a_favor.monto)} (${esc(d.a_favor.n)})` : "",
+      d.sin_fecha && num(d.sin_fecha.monto) ? `sin fecha ${tm(d.sin_fecha.monto)} (${esc(d.sin_fecha.n)}; cuenta en el total)` : ""].filter(Boolean);
+    return [`${cifra(`Total ${que} · ${plural(d.n || 0, "partida", "partidas")}`, tm(d.total), num(v.monto) ? `<span class="ct-tb-vencido">${ICO_TB.alerta}${tm(v.monto)} vencido (${pctTb(v.pct)})</span>` : `<span class="ct-tb-aldia">${ICO_TB.ok}nada vencido</span>`)}
+      ${grafCaja("antiguedad", `Lo ${que} por días de vencido`)}
+      ${aparte.length ? `<p class="ct-tb-nota">Aparte (no vence por términos): ${aparte.join(" · ")}.</p>` : ""}
+      ${(d.mas_viejas || []).length ? tablaTb(["Papel", "Vence", "Días", "Monto"], d.mas_viejas.map(x => ({ celdas: [`${esc(x.papel || "—")}${x.de ? `<small>${esc(x.de)}</small>` : ""}`, esc(fecha(x.vence)), esc(x.dias_vencida), tm(x.monto)] })), { titulo: "Las más vencidas" }) : ""}
+      ${tablaTb(["Días de vencido", "Monto", "Partidas"], (d.tramos || []).map(t => ({ celdas: [esc(t.etiqueta), tm(t.monto), esc(t.n)] })))}
+      ${d.regla ? `<details class="ct-tb-tabla"><summary>¿Cómo se sabe cuándo vence?</summary><p class="ct-tb-nota">${tx(d.regla)}</p></details>` : ""}`,
+      { cuando: "Al día de hoy" }];
+  }
+
+  // ============================================================
+  // LAS GRÁFICAS (SVG en línea, al ancho de su caja)
+  // ============================================================
+  const svgEsc = esc;
+  // marcas «redondas» para un eje: 0 / 1,000 / 2,000 … (con su paso), cubriendo [min, max]
+  function marcasEje(min, max, n = 4) {
+    if (!(max > min)) { max = min + 1; }
+    const paso0 = (max - min) / n, p = Math.pow(10, Math.floor(Math.log10(paso0))), r = paso0 / p;
+    const paso = (r <= 1 ? 1 : r <= 2 ? 2 : r <= 2.5 ? 2.5 : r <= 5 ? 5 : 10) * p;
+    const out = [];
+    for (let x = Math.floor(min / paso) * paso; x <= Math.ceil(max / paso) * paso + paso / 2; x += paso) out.push(Math.round(x * 100) / 100);
+    return out;
+  }
+  // el texto de una marca del eje: completo debajo de 10,000; compacto (10K, 1.2M) si el eje llega ahí (un estilo por eje)
+  const textoEje = (v, compacto) => {
+    if (tbPrivado()) return "";
+    const s = v < 0 ? MENOS : "", a = Math.abs(v);
+    if (!compacto) return `${s}$${a.toLocaleString("en-US")}`;
+    return a >= 1e6 ? `${s}$${(a / 1e6).toLocaleString("en-US", { maximumFractionDigits: 1 })}M` : a >= 1e3 ? `${s}$${(a / 1e3).toLocaleString("en-US", { maximumFractionDigits: 1 })}K` : `${s}$${a}`;
+  };
+  // la cifra de la base escrita en corto en la punta de una columna ($37.8K): solo el formato, sin cuentas
+  const compactoTb = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1 });
+  // una barra horizontal con la punta redonda (derecha) y la base recta (izquierda); una columna con la punta arriba
+  const barraH = (x, y, w, h) => { if (!(w > 0.5)) return ""; const r = Math.min(4, w, h / 2); return `M${x},${y}h${w - r}a${r},${r} 0 0 1 ${r},${r}v${h - 2 * r}a${r},${r} 0 0 1 -${r},${r}h-${w - r}z`; };
+  const barraV = (x, base, w, h) => { if (!(h > 0.5)) return ""; const r = Math.min(4, h, w / 2); return `M${x},${base}v-${h - r}a${r},${r} 0 0 1 ${r},-${r}h${w - 2 * r}a${r},${r} 0 0 1 ${r},${r}v${h - r}z`; };
+  // un tooltip: su índice en S.tab.tips ([el valor, lo que es, filas de más])
+  const tip = (valor, etiqueta, filas) => { S.tab.tips.push({ valor, etiqueta, filas: filas || [] }); return S.tab.tips.length - 1; };
+  // el texto que no cabe se corta con «…» (medido ya pintado): nunca se sale ni se encima
+  function recortar(svg) {
+    svg.querySelectorAll("text[data-cabe]").forEach(t => {
+      const max = Number(t.dataset.cabe); if (!(max > 0) || typeof t.getComputedTextLength !== "function") return;
+      let s = t.textContent;
+      if (t.getComputedTextLength() <= max) return;
+      while (s.length > 1 && t.getComputedTextLength() > max) { s = s.slice(0, -1); t.textContent = s.trimEnd() + "…"; }
+    });
+  }
+
+  // BARRAS HORIZONTALES (una o dos por fila: este período y el anterior), todas sobre la misma base y la misma escala.
+  // filas: [{nombre, derecha (el texto de la cifra), barras: [{v, clase, tip}]}]
+  function svgBarrasH(ancho, filas) {
+    const H = 12, G = 2, ESP = 12, TXT = 18;
+    const max = Math.max(0, ...filas.flatMap(f => f.barras.map(b => num(b.v) || 0)));
+    let y = 0, partes = [];
+    for (const f of filas) {
+      const ty = y + 13;
+      partes.push(`<text class="ct-tb-tx2" x="0" y="${ty}" data-cabe="${Math.max(40, ancho - 118)}">${svgEsc(f.nombre)}</text><text class="ct-tb-tx1" x="${ancho}" y="${ty}" text-anchor="end">${svgEsc(f.derecha)}</text>`);
+      let by = y + TXT;
+      for (const b of f.barras) {
+        const w = max > 0 ? Math.max(0, (num(b.v) || 0) / max * ancho) : 0;
+        const id = `m${S.tab.tips.length}`;
+        partes.push(`<path class="ct-tb-m ${b.clase || "serie1"}" data-m="${id}" d="${barraH(0, by, w, H)}"/>`);
+        // la zona que se toca es la fila entera de esa barra (más grande que la marca), con su nombre para el lector de pantalla
+        partes.push(`<rect class="ct-tb-hit" data-tip="${b.tip}" data-mm="${id}" x="0" y="${by - G}" width="${ancho}" height="${H + 2 * G}" tabindex="0" role="img" aria-label="${svgEsc(S.tab.tips[b.tip].etiqueta + ": " + S.tab.tips[b.tip].valor)}"/>`);
+        by += H + G;
+      }
+      y = by - G + ESP;
+    }
+    const alto = Math.max(1, y - ESP + 2);
+    return `<svg class="ct-tb-svg" width="${ancho}" height="${alto}" viewBox="0 0 ${ancho} ${alto}">${partes.join("")}</svg>`;
+  }
+  // COLUMNAS (los meses): una o dos series lado a lado, con su eje y su rejilla; la cifra en la punta de las que se señalan
+  function svgColumnas(ancho, alto, cats, series, op = {}) {
+    const IZQ = tbPrivado() ? 8 : 52, ABAJO = 22, ARRIBA = 16, W = ancho - IZQ, Hh = alto - ABAJO - ARRIBA;
+    const vals = series.flatMap(s => s.valores.map(v => num(v) || 0));
+    const marcas = marcasEje(0, Math.max(0, ...vals));
+    const top = marcas[marcas.length - 1] || 1, compacto = top >= 1e4;
+    const y = v => ARRIBA + Hh - (v / top) * Hh;
+    const banda = W / Math.max(1, cats.length), ns = series.length;
+    const cw = Math.min(24, Math.max(4, (banda * 0.7 - (ns - 1) * 2) / ns));
+    const partes = [];
+    for (const m of marcas) partes.push(`<line class="${m === 0 ? "ct-tb-base" : "ct-tb-rej"}" x1="${IZQ}" x2="${ancho}" y1="${y(m)}" y2="${y(m)}"/>${tbPrivado() ? "" : `<text class="ct-tb-eje" x="${IZQ - 6}" y="${y(m) + 4}" text-anchor="end">${svgEsc(textoEje(m, compacto))}</text>`}`);
+    // las etiquetas de abajo: todas si caben (36 px cada una); si no, una sí y otra no
+    const cada = Math.max(1, Math.ceil(36 / banda));
+    cats.forEach((c, i) => {
+      const x0 = IZQ + i * banda + (banda - (ns * cw + (ns - 1) * 2)) / 2;
+      series.forEach((s, j) => {
+        const v = Math.max(0, num(s.valores[i]) || 0), id = `m${S.tab.tips.length}`;
+        partes.push(`<path class="ct-tb-m ${s.clase}" data-m="${id}" d="${barraV(x0 + j * (cw + 2), y(0), cw, y(0) - y(v))}"/>`);
+        const t = s.tips[i];
+        partes.push(`<rect class="ct-tb-hit" data-tip="${t}" data-mm="${id}" x="${x0 + j * (cw + 2) - 2}" y="${ARRIBA}" width="${cw + 4}" height="${Hh}" tabindex="0" role="img" aria-label="${svgEsc(S.tab.tips[t].etiqueta + ": " + S.tab.tips[t].valor)}"/>`);
+        if (op.rotular && op.rotular(i, j) && !tbPrivado()) partes.push(`<text class="ct-tb-tx1 chico" x="${x0 + j * (cw + 2) + cw / 2}" y="${y(v) - 5}" text-anchor="middle">${svgEsc(compactoTb.format(num(s.valores[i]) || 0).replace("-", MENOS))}</text>`);
+      });
+      if (i % cada === 0 || i === cats.length - 1) partes.push(`<text class="ct-tb-eje" x="${IZQ + i * banda + banda / 2}" y="${alto - 6}" text-anchor="middle">${svgEsc(c)}</text>`);
+    });
+    return `<svg class="ct-tb-svg" width="${ancho}" height="${alto}" viewBox="0 0 ${ancho} ${alto}">${partes.join("")}</svg>`;
+  }
+  // UNA LÍNEA en el tiempo (el saldo de caja) con su proyección punteada; la cruz busca el punto más cercano
+  // reales/proy: [{t (día AAAA-MM-DD), v, corto, filas (para el tooltip)}]
+  function svgLinea(ancho, alto, reales, proy, id) {
+    const IZQ = tbPrivado() ? 8 : 52, DER = 14, ABAJO = 22, ARRIBA = 18, W = ancho - IZQ - DER, Hh = alto - ABAJO - ARRIBA;
+    const todos = reales.concat(proy);
+    const ts = todos.map(p => Date.parse(p.t));
+    const t0 = Math.min(...ts), t1 = Math.max(...ts);
+    const vs = todos.map(p => num(p.v) || 0);
+    const marcas = marcasEje(Math.min(0, ...vs), Math.max(0, ...vs));
+    const lo = marcas[0], hi = marcas[marcas.length - 1], compacto = Math.max(Math.abs(lo), Math.abs(hi)) >= 1e4;
+    const x = t => IZQ + (t1 > t0 ? (Date.parse(t) - t0) / (t1 - t0) : 0.5) * W;
+    const y = v => ARRIBA + Hh - ((v - lo) / ((hi - lo) || 1)) * Hh;
+    const partes = [];
+    for (const m of marcas) partes.push(`<line class="${m === 0 ? "ct-tb-base" : "ct-tb-rej"}" x1="${IZQ}" x2="${ancho - DER}" y1="${y(m)}" y2="${y(m)}"/>${tbPrivado() ? "" : `<text class="ct-tb-eje" x="${IZQ - 6}" y="${y(m) + 4}" text-anchor="end">${svgEsc(textoEje(m, compacto))}</text>`}`);
+    const camino = ps => ps.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(num(p.v) || 0).toFixed(1)}`).join("");
+    if (reales.length) {
+      // el área (un velo del 10 %) bajo el saldo real, hasta el cero
+      partes.push(`<path class="ct-tb-area" d="${camino(reales)}L${x(reales[reales.length - 1].t).toFixed(1)},${y(0)}L${x(reales[0].t).toFixed(1)},${y(0)}Z"/>`);
+      partes.push(`<path class="ct-tb-linea" d="${camino(reales)}"/>`);
+    }
+    if (proy.length) partes.push(`<path class="ct-tb-linea proy" d="${camino((reales.length ? [reales[reales.length - 1]] : []).concat(proy))}"/>`);
+    // las etiquetas de abajo (el mes de cada punto), sin encimarse: primero las de lo real (todas las que quepan), después las de la proyección
+    // (la de hoy primero, después la apertura, los demás meses del libro y al final los de la proyección; el ancho de cada una, aproximado)
+    const puestas = [], anchoTxt = t => String(t).length * 6.6;
+    const cabe = (px, w) => px - w / 2 >= 0 && px + w / 2 <= ancho + 2 && puestas.every(([qx, qw]) => Math.abs(qx - px) >= (qw + w) / 2 + 6);
+    const orden = reales.length ? [reales[reales.length - 1], reales[0], ...reales.slice(1, -1).reverse(), ...proy] : proy;
+    for (const p of orden) { const px = x(p.t), w = anchoTxt(p.corto); if (cabe(px, w)) { puestas.push([px, w]); partes.push(`<text class="ct-tb-eje" x="${px}" y="${alto - 6}" text-anchor="middle">${svgEsc(p.corto)}</text>`); } }
+    // los puntos (con su anillo del color de la tarjeta); el de hoy, más grande y con su cifra
+    reales.forEach((p, i) => partes.push(`<circle class="ct-tb-punto${i === reales.length - 1 ? " hoy" : ""}" data-i="${i}" cx="${x(p.t)}" cy="${y(num(p.v) || 0)}" r="${i === reales.length - 1 ? 4.5 : 3}"/>`));
+    proy.forEach((p, i) => partes.push(`<circle class="ct-tb-punto proy" data-i="${reales.length + i}" cx="${x(p.t)}" cy="${y(num(p.v) || 0)}" r="3"/>`));
+    // la cruz: una línea de un pelo que sigue al dedo o al ratón y se pega al punto más cercano
+    partes.push(`<line class="ct-tb-cruz" x1="0" x2="0" y1="${ARRIBA}" y2="${ARRIBA + Hh}" visibility="hidden"/>`);
+    partes.push(`<rect class="ct-tb-hit cruz" data-cruz="${id}" x="${IZQ - 10}" y="0" width="${W + 20}" height="${alto}" tabindex="0" role="img" aria-label="Saldo de caja mes a mes: con las flechas se recorre cada punto"/>`);
+    S.tab.cruz[id] = { xs: todos.map(p => x(p.t)), puntos: todos };
+    return `<svg class="ct-tb-svg" width="${ancho}" height="${alto}" viewBox="0 0 ${ancho} ${alto}">${partes.join("")}</svg>`;
+  }
+  // UNA BARRA FINA PARTIDA (un todo y sus partes, con el porcentaje que da la base): 8 px, puntas redondas, 2 px entre partes
+  function svgPartida(ancho, partesIn) {
+    const H = 8, G = 2;
+    const vivas = partesIn.filter(p => num(p.pct) > 0);
+    const util = ancho - G * Math.max(0, vivas.length - 1);
+    let x = 0; const out = [];
+    vivas.forEach((p, i) => {
+      const w = Math.max(1, util * (num(p.pct) / 100)), id = `m${S.tab.tips.length}`;
+      const r = H / 2, iz = i === 0, de = i === vivas.length - 1;
+      const d = `M${x + (iz ? r : 0)},0h${w - (iz ? r : 0) - (de ? r : 0)}${de ? `a${r},${r} 0 0 1 0,${H}` : `v${H}`}h-${w - (iz ? r : 0) - (de ? r : 0)}${iz ? `a${r},${r} 0 0 1 0,-${H}` : `v-${H}`}z`;
+      out.push(`<path class="ct-tb-m ${p.clase}" data-m="${id}" d="${d}"/><rect class="ct-tb-hit" data-tip="${p.tip}" data-mm="${id}" x="${x}" y="-6" width="${w}" height="${H + 12}" tabindex="0" role="img" aria-label="${svgEsc(S.tab.tips[p.tip].etiqueta + ": " + S.tab.tips[p.tip].valor)}"/>`);
+      x += w + G;
+    });
+    if (!vivas.length) out.push(`<rect class="ct-tb-pista" x="0" y="0" width="${ancho}" height="${H}" rx="${H / 2}"/>`);
+    return `<svg class="ct-tb-svg" width="${ancho}" height="${H + 12}" viewBox="0 -6 ${ancho} ${H + 12}">${out.join("")}</svg>`;
+  }
+  // UN MEDIDOR (lo pagado de un préstamo): la pista es un paso más claro del mismo azul
+  function svgMedidor(ancho, pct, t) {
+    const H = 8, w = Math.max(0, Math.min(100, num(pct) || 0)) / 100 * ancho;
+    return `<svg class="ct-tb-svg" width="${ancho}" height="${H}" viewBox="0 0 ${ancho} ${H}"><rect class="ct-tb-pista" x="0" y="0" width="${ancho}" height="${H}" rx="${H / 2}"/>${w > 0 ? `<rect class="ct-tb-m serie1" x="0" y="0" width="${Math.max(H, w)}" height="${H}" rx="${H / 2}"/>` : ""}<rect class="ct-tb-hit" data-tip="${t}" x="0" y="0" width="${ancho}" height="${H}" tabindex="0" role="img" aria-label="${svgEsc(S.tab.tips[t].etiqueta + ": " + S.tab.tips[t].valor)}"/></svg>`;
+  }
+
+  // lo que dibuja cada caja de gráfica, con los datos de su tarjeta
+  const GRAF = {
+    resultados(caja, d) {
+      const ant = d.anterior;
+      const filas = (d.barras || []).map(b => ({ nombre: b.etiqueta, derecha: tm(b.monto), barras: [
+        { v: b.monto, clase: "serie1", tip: tip(tm(b.monto), `${b.etiqueta} · ${d.etiqueta}${d.en_curso ? " (hasta hoy)" : ""}`) },
+        ...(ant && b.anterior != null ? [{ v: b.anterior, clase: "gris", tip: tip(tm(b.anterior), `${b.etiqueta} · ${ant.etiqueta}`) }] : [])] }));
+      caja.innerHTML = svgBarrasH(caja.clientWidth, filas);
+    },
+    gastos(caja, d) {
+      const filas = (d.grafica || []).map(g => ({ nombre: g.clave === "otras" && g.categorias ? `${g.nombre} (${g.categorias})` : g.nombre, derecha: `${tm(g.monto)} · ${pctTb(g.pct)}`,
+        barras: [{ v: g.monto, clase: g.clave === "otras" ? "gris" : "serie1", tip: tip(tm(g.monto), `${g.nombre} · ${pctTb(g.pct)} de lo gastado`) }] }));
+      caja.innerHTML = filas.length ? svgBarrasH(caja.clientWidth, filas) : `<p class="ct-tb-nota">Nada gastado en estos días.</p>`;
+    },
+    antiguedad(caja, d) {
+      const filas = (d.tramos || []).map(t => ({ nombre: `${t.etiqueta}${t.clave === "corriente" ? " (no ha vencido)" : " días"}`, derecha: `${tm(t.monto)}${num(t.n) ? ` · ${t.n}` : ""}`,
+        barras: [{ v: t.monto, clase: "serie1", tip: tip(tm(t.monto), `${t.etiqueta}${t.clave === "corriente" ? "" : " días de vencido"} · ${plural(t.n || 0, "partida", "partidas")}`) }] }));
+      caja.innerHTML = svgBarrasH(caja.clientWidth, filas);
+    },
+    ventas(caja, d) {
+      const ms = d.meses || [];
+      if (!ms.length) { caja.innerHTML = `<p class="ct-tb-nota">Este año todavía no tiene meses en el libro.</p>`; return; }
+      const mejor = d.mejor_mes && d.mejor_mes.mes;
+      caja.innerHTML = svgColumnas(caja.clientWidth, 170, ms.map(m => m.corto + (m.en_curso ? "*" : "")), [{ clase: "serie1", valores: ms.map(m => m.monto),
+        tips: ms.map(m => tip(tm(m.monto), `Ventas de ${m.etiqueta}${m.en_curso ? " (hasta hoy)" : ""}`, [["Asientos", String(m.asientos)]])) }],
+        { rotular: i => ms[i].mes === mejor || i === ms.length - 1 });
+      if (ms.some(m => m.en_curso)) caja.insertAdjacentHTML("beforeend", `<p class="ct-tb-nota chica">* el mes en curso, hasta hoy.</p>`);
+    },
+    caja(caja, d) {
+      const pj = d.proyeccion || {};
+      const reales = [];
+      if (d.apertura) reales.push({ t: d.apertura.fecha, v: d.apertura.saldo, corto: d.apertura.es_la_apertura ? "apertura" : fecha(d.apertura.fecha), filas: [["Saldo", tm(d.apertura.saldo)]], etiqueta: `Apertura (${fechaLarga(d.apertura.fecha)})` });
+      for (const m of d.meses || []) reales.push({ t: m.al, v: m.final, corto: m.en_curso ? "hoy" : m.corto, etiqueta: `${m.etiqueta}${m.en_curso ? ` (al ${fecha(m.al)})` : ""}`,
+        filas: [["Saldo", tm(m.final)], ["Entradas", tm(m.entradas)], ["Salidas", tm(m.salidas)]] });
+      const proy = pj.hay ? (pj.meses || []).map(m => ({ t: m.al, v: m.saldo, corto: m.corto, etiqueta: `${m.etiqueta}, al ${fecha(m.al)} (proyección)`, proy: true,
+        filas: [["Saldo proyectado", tm(m.saldo)], ["Por cobrar", tm(m.por_cobrar)], ["Por pagar", tm(m.por_pagar)], ["Préstamos", tm(m.prestamos)]] })) : [];
+      if (!reales.length && !proy.length) { caja.innerHTML = `<p class="ct-tb-nota">Todavía no hay meses en el libro.</p>`; return; }
+      caja.innerHTML = svgLinea(caja.clientWidth, 190, reales, proy, "caja");
+    },
+    caja_mov(caja, d) {
+      const ms = d.meses || [];
+      if (!ms.length) { caja.innerHTML = `<p class="ct-tb-nota">Todavía no hay meses en el libro.</p>`; return; }
+      caja.innerHTML = svgColumnas(caja.clientWidth, 190, ms.map(m => m.corto + (m.en_curso ? "*" : "")), [
+        { clase: "serie1", valores: ms.map(m => m.entradas), tips: ms.map(m => tip(tm(m.entradas), `Entradas de ${m.etiqueta}${m.en_curso ? " (hasta hoy)" : ""}`)) },
+        { clase: "serie2", valores: ms.map(m => m.salidas), tips: ms.map(m => tip(tm(m.salidas), `Salidas de ${m.etiqueta}${m.en_curso ? " (hasta hoy)" : ""}`)) }]);
+      if (ms.some(m => m.en_curso)) caja.insertAdjacentHTML("beforeend", `<p class="ct-tb-nota chica">* el mes en curso, hasta hoy.</p>`);
+    },
+    facturas_np(caja, d) {
+      const np = d.no_pagadas || {};
+      caja.innerHTML = svgPartida(caja.clientWidth, [
+        { pct: np.vencidas && np.vencidas.pct, clase: "mal", tip: tip(tm(np.vencidas && np.vencidas.monto), `Vencidas · ${pctTb(np.vencidas && np.vencidas.pct)}`) },
+        { pct: np.por_vencer && np.por_vencer.pct, clase: "gris", tip: tip(tm(np.por_vencer && np.por_vencer.monto), `Por vencer · ${pctTb(np.por_vencer && np.por_vencer.pct)}`) }]);
+    },
+    facturas_pg(caja, d) {
+      const pg = d.pagadas || {};
+      caja.innerHTML = svgPartida(caja.clientWidth, [
+        { pct: pg.sin_depositar && pg.sin_depositar.pct, clase: "gris", tip: tip(tm(pg.sin_depositar && pg.sin_depositar.monto), `Sin depositar · ${pctTb(pg.sin_depositar && pg.sin_depositar.pct)}`) },
+        { pct: pg.depositado && pg.depositado.pct, clase: "bien", tip: tip(tm(pg.depositado && pg.depositado.monto), `Depositado · ${pctTb(pg.depositado && pg.depositado.pct)}`) }]);
+    },
+    prestamo(caja, d) {
+      const p = (d.lista || [])[Number(caja.dataset.i) || 0]; if (!p) return;
+      caja.innerHTML = svgMedidor(caja.clientWidth, p.pagado_pct, tip(`${pctTb(p.pagado_pct)} pagado`, `${p.prestamista}: se debe ${tm(p.saldo)} de ${tm(p.principal)}`));
+    }
+  };
+  // dibujar las gráficas que haya dentro de «c» (al ancho que tienen ahora)
+  function tbDibujar(c) {
+    c.querySelectorAll(".ct-tb-graf[data-graf]").forEach(caja => {
+      const tarjeta = caja.closest(".ct-tb"), k = tarjeta && tarjeta.dataset.tb, d = k && S.tab.d && S.tab.d[k];
+      const f = GRAF[caja.dataset.graf];
+      if (!f || !d || !(caja.clientWidth > 0)) return;
+      try { f(caja, d); } catch (err) { caja.innerHTML = `<p class="ct-tb-nota">No se pudo dibujar la gráfica (${esc(err.message)}): los números están en la tabla.</p>`; }
+      caja.style.minHeight = "";
+      const svg = caja.querySelector("svg"); if (svg) recortar(svg);
+    });
+  }
+  // otra vez al cambiar el ancho (girar el teléfono, cambiar la ventana)
+  let tbRedibujo = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(tbRedibujo);
+    tbRedibujo = setTimeout(() => { const r = $("ct-tb"); if (r && S.pagina === "resumen") { S.tab.tips = []; S.tab.cruz = {}; tbDibujar(r); } }, 150);
+  });
+
+  // EL TOOLTIP: uno para todo el tablero. Al pasar o tocar una marca (su zona es más grande que la marca), y con el teclado
+  // (Tab llega a cada marca; en la línea, las flechas recorren los puntos). Lo que dice va con textContent: el valor primero.
+  function wireTipsTb(raizTb) {
+    const caja = $("ct-tb-tip");
+    let encendida = null;
+    const apagar = () => { if (caja) caja.hidden = true; if (encendida) encendida.classList.remove("on"); encendida = null; raizTb.querySelectorAll(".ct-tb-cruz").forEach(l => l.setAttribute("visibility", "hidden")); raizTb.querySelectorAll(".ct-tb-punto.on").forEach(p => p.classList.remove("on")); };
+    const poner = (t, px, py) => {
+      if (!caja || !t) return;
+      caja.textContent = "";
+      const v = document.createElement("b"); v.textContent = t.valor; caja.appendChild(v);
+      const e = document.createElement("span"); e.textContent = t.etiqueta; caja.appendChild(e);
+      for (const [a, b] of t.filas || []) { const f = document.createElement("span"); f.className = "f"; const i = document.createElement("i"); i.textContent = a; const j = document.createElement("b"); j.textContent = b; f.append(i, j); caja.appendChild(f); }
+      caja.hidden = false;
+      const r = caja.getBoundingClientRect(), vw = document.documentElement.clientWidth;
+      let x = px + 12, y = py - r.height - 12;
+      if (x + r.width > vw - 8) x = Math.max(8, px - r.width - 12);
+      if (y < 8) y = py + 16;
+      caja.style.left = `${x}px`; caja.style.top = `${y}px`;
+    };
+    const marca = hit => { if (encendida) encendida.classList.remove("on"); encendida = hit.dataset.mm ? hit.ownerSVGElement.querySelector(`[data-m="${hit.dataset.mm}"]`) : null; if (encendida) encendida.classList.add("on"); };
+    const cruz = (hit, i) => {
+      const c = S.tab.cruz[hit.dataset.cruz]; if (!c) return;
+      i = Math.max(0, Math.min(c.xs.length - 1, i)); hit.dataset.ci = i;
+      const svg = hit.ownerSVGElement, l = svg.querySelector(".ct-tb-cruz");
+      l.setAttribute("x1", c.xs[i]); l.setAttribute("x2", c.xs[i]); l.setAttribute("visibility", "visible");
+      svg.querySelectorAll(".ct-tb-punto").forEach(p => p.classList.toggle("on", Number(p.dataset.i) === i));
+      const p = c.puntos[i], r = svg.getBoundingClientRect(), punto = svg.querySelector(`.ct-tb-punto[data-i="${i}"]`), pr = punto ? punto.getBoundingClientRect() : r;
+      poner({ valor: (p.filas[0] || ["", ""])[1], etiqueta: p.etiqueta, filas: p.filas.slice(1) }, pr.left + pr.width / 2, pr.top);
+    };
+    const cerca = (hit, clientX) => { const c = S.tab.cruz[hit.dataset.cruz]; if (!c) return 0; const r = hit.ownerSVGElement.getBoundingClientRect(), x = clientX - r.left; let mejor = 0; c.xs.forEach((cx, i) => { if (Math.abs(cx - x) < Math.abs(c.xs[mejor] - x)) mejor = i; }); return mejor; };
+    raizTb.addEventListener("pointermove", ev => {
+      const hit = ev.target.closest && ev.target.closest(".ct-tb-hit");
+      if (!hit) { if (!caja.hidden && ev.pointerType !== "touch") apagar(); return; }
+      if (hit.dataset.cruz) return cruz(hit, cerca(hit, ev.clientX));
+      marca(hit); poner(S.tab.tips[Number(hit.dataset.tip)], ev.clientX, ev.clientY);
+    });
+    raizTb.addEventListener("pointerdown", ev => {
+      const hit = ev.target.closest && ev.target.closest(".ct-tb-hit");
+      if (!hit) return apagar();
+      if (hit.dataset.cruz) return cruz(hit, cerca(hit, ev.clientX));
+      marca(hit); poner(S.tab.tips[Number(hit.dataset.tip)], ev.clientX, ev.clientY);
+    });
+    raizTb.addEventListener("pointerleave", apagar);
+    raizTb.addEventListener("focusin", ev => {
+      const hit = ev.target.closest && ev.target.closest(".ct-tb-hit"); if (!hit) return;
+      if (hit.dataset.cruz) { const c = S.tab.cruz[hit.dataset.cruz]; return cruz(hit, hit.dataset.ci != null ? Number(hit.dataset.ci) : c ? c.xs.length - 1 : 0); }
+      const r = hit.getBoundingClientRect(); marca(hit); poner(S.tab.tips[Number(hit.dataset.tip)], r.left + Math.min(r.width, 60), r.top);
+    });
+    raizTb.addEventListener("focusout", apagar);
+    raizTb.addEventListener("keydown", ev => {
+      const hit = ev.target.closest && ev.target.closest(".ct-tb-hit.cruz"); if (!hit) { if (ev.key === "Escape") apagar(); return; }
+      if (ev.key === "ArrowLeft" || ev.key === "ArrowRight") { ev.preventDefault(); cruz(hit, Number(hit.dataset.ci || 0) + (ev.key === "ArrowRight" ? 1 : -1)); }
+      if (ev.key === "Escape") apagar();
+    });
   }
 
   // ============================================================

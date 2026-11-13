@@ -136,6 +136,17 @@
    contrato es de después», «Dejarla fuera este mes» (con su nota), la obra
    con saldo cancelada o pasada a T&M, y el 🧾 ante un 404 con un corte ya
    visto (no adivina).
+   Y el tablero de la portada (c16, fase 16, «que se vea como QuickBooks»): aquí tampoco hay
+   mentira escrita a mano. fn_tablero contesta lo que contestó el banco (pruebas/conta/
+   pantalla-f16.json, que arma pruebas/conta/f16-capturar.js sobre g12a con f16-semilla.sql y
+   c16-tablero.sql): se comprueba sin c16 (la portada de siempre y la línea de qué pegar), la
+   base que no contesta y el equipo; las acciones rápidas, «Qué atender» y las 14 tarjetas en el
+   orden de QuickBooks con sus números iguales a los del banco y su enlace a su página; las
+   gráficas (SVG, una sola escala, marcas finas, leyenda con dos series, tooltip al pasar, al
+   tocar y con el teclado, la cruz de la caja, la tabla gemela), el período de los resultados,
+   la caja en entradas y salidas, Privacidad y Personalizar (en el navegador, tras recargar y sin
+   almacenamiento), una tarjeta que falla sola, dos capas que no están, el tope por reloj, el
+   10-mar-2027 con varios meses, y 390/820/1280 en claro y con el teléfono en oscuro.
    Y la cédula de corte (c13) y los subs con su 1099 (c14), fase 12a: aquí NO hay
    mentira escrita a mano. La base simulada de las dos páginas es lo que contestó
    el banco (pruebas/conta/pantalla-f12.json, que arma pruebas/conta/f12-capturar.js
@@ -2530,6 +2541,38 @@ function xPaso(capa, fn, a) {
   if (capa === 'c13') X.e13 = i + 1; else X.e14 = i + 1;
   return xParchar(p.respuesta);
 }
+// ---- (fase 16) EL TABLERO de la portada (c16): SACADO DEL BANCO. pruebas/conta/pantalla-f16.json es lo que contestó fn_tablero, como el
+// dueño, en el banco (g12a + f16-semilla.sql + c16-tablero.sql; lo arma pruebas/conta/f16-capturar.js): el tablero entero hoy y el
+// 10-mar-2027 (otra base, con el reloj fingido), la tarjeta de resultados con cada período del selector, el tope por reloj (la primera
+// llamada con lo que siguió y la segunda), dos capas que no están, una tarjeta que falla sola y los errores. Pedir unas tarjetas sueltas
+// da lo mismo que esas tarjetas en el tablero entero (lo comprobó el capturador): aquí se contesta con las pedidas.
+const F16 = JSON.parse(fs.readFileSync(path.join(__dirname, 'pantalla-f16.json'), 'utf8'));
+const TODAS16 = ['acciones', 'cobros', 'bancos', 'resultados', 'gastos', 'caja', 'facturas', 'ventas', 'por_cobrar', 'por_pagar', 'conexiones', 'cobros_en_linea', 'use_tax', 'prestamos', 'obras'];
+function rpcTablero(a) {
+  if (!estado.c16) return xNoHay('fn_tablero');
+  if (estado.c16NoDueno) return F16.errores.equipo;
+  if (estado.c16Roto) return { status: 500, error: { code: '57014', message: 'canceling statement due to statement timeout', details: null, hint: null } };
+  const p = (a && a.p) || {}, pedidas = Array.isArray(p.tarjetas) ? p.tarjetas : null;
+  if (pedidas && pedidas.some(k => !TODAS16.includes(k))) return F16.errores.tarjeta_mala;
+  const e = estado.c16Escena === 'marzo' ? F16.marzo : F16.hoy;
+  // (la base que nunca alcanza: a cada llamada, lo de la primera del tope, con las pedidas otra vez en «sigue»)
+  if (estado.c16Escena === 'tope_siempre') {
+    const r = xCopia(F16.tope.primera);
+    if (pedidas) { r.tarjetas = TODAS16.filter(k => pedidas.includes(k)); for (const k of TODAS16) if (!r.tarjetas.includes(k)) delete r[k]; r.sigue = r.sigue.filter(k => pedidas.includes(k)); }
+    return r;
+  }
+  if (estado.c16Escena === 'tope') {
+    if (!pedidas && !estado.c16TopeDado) { estado.c16TopeDado = true; return xCopia(F16.tope.primera); }
+    if (pedidas && JSON.stringify(pedidas) === JSON.stringify(F16.tope.primera.sigue)) return xCopia(F16.tope.segunda);
+  }
+  const todas = estado.c16Escena === 'capas' ? F16.capas : estado.c16Escena === 'falla' ? F16.falla : e.todas;
+  const r = xCopia(todas);
+  r.tarjetas = pedidas ? TODAS16.filter(k => pedidas.includes(k)) : TODAS16.slice(); r.sigue = [];
+  for (const k of TODAS16) if (!r.tarjetas.includes(k)) delete r[k];
+  const per = p.resultados && p.resultados.periodo;
+  if (per && r.resultados && estado.c16Escena !== 'falla' && estado.c16Escena !== 'capas') r.resultados = xCopia(e.resultados[per]);
+  return r;
+}
 const xAal = auth => { try { return JSON.parse(Buffer.from(String(auth || '').replace(/^Bearer /, '').split('.')[1], 'base64url').toString()).aal || null; } catch { return null; } };
 const X_LETRAS = t => String(t || '').replace(/[^\p{L}\p{N}]/gu, '').length;
 const X_MONTO = t => /^-?\d{1,11}(\.\d+)?$/.test(String(t || ''));
@@ -2681,7 +2724,10 @@ const estado = { controlMal: false, controlFilas: null, fallar: false, casarRond
   // (fase 12a, arreglos) la cédula con el «efectivo» de c3 apuntado a un banco que se concilia (del banco, aparte) y el 23505 de dos pestañas
   c13EfectivoBanco: false, c14Duplicado: false,
   // (fase 12a, revisión final) una línea de servicio pagada por DOS caminos: fn_subs_pagos da dos partes de la misma línea del asiento
-  c14DosCaminos: false };
+  c14DosCaminos: false,
+  // (fase 16) el tablero (c16) pegado o no (sin él, fn_tablero contesta 404); qué contestó el banco (hoy | marzo | capas | falla | tope);
+  // el equipo (42501); la base que no contesta (500); y si ya se dio la primera respuesta del tope por reloj
+  c16: false, c16Escena: 'hoy', c16NoDueno: false, c16Roto: false, c16TopeDado: false };
 const llamadas = [], lecturas = []; // lecturas: cada GET a /rest/v1/<vista>?… tal como lo pidió la pantalla
 function tabla(nombre, q) {
   let filas = T[nombre] || [];
@@ -2745,6 +2791,8 @@ function tabla(nombre, q) {
   return filas;
 }
 function rpc(fn, a, auth) {
+  // (fase 16) el tablero de la portada (c16): lo que contestó el banco
+  if (fn === 'fn_tablero') return rpcTablero(a);
   // (fase 12a) la cédula (c13) y los subs (c14): lo que contestó el banco
   if (fn.startsWith('fn_cedula')) return xRpc13(fn, a);
   if (fn.startsWith('fn_subs')) return xRpc14(fn, a, auth);
@@ -3142,6 +3190,8 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
   // lo tenía fijo en dos filas y empezó a fallar sola el 2 nov: ahora cuenta con esa fila cuando toca
   const atnBandeja = diasViejo > 30 ? 1 : 0;
   ok('«Qué atender»: (lo de más de 30 días en la bandeja, si toca), el código del teléfono no activo (→ Conexiones) y la cuenta de Plaid sin fijar (→ Conexiones); nada de Stripe (su control está en verde) ni de la ronda (sin c9)', atn.length === 2 + atnBandeja && (!atnBandeja || /más de 30 días en la bandeja/.test(atn[0])) && /El código del teléfono .*no está activo/.test(atn[atnBandeja]) && /Platypus Bank: 1 cuenta del banco sin fijar/.test(atn[atnBandeja + 1]) && (await p.locator('#ct-atender .ct-atn button[data-ir="conexiones"]').count()) === 2, atn.join(' | '));
+  // (fase 16) sin c16 en la base, la portada es la de siempre y una sola línea dice qué pegar para ver el tablero con gráficas
+  ok('Sin c16 (fn_tablero contesta 404): la portada de siempre lleva UNA línea: «Para ver el tablero con gráficas, pega docs/conta/c16-tablero.sql», sin rojo', (await p.locator('#ct-tb-falta').innerText()).replace(/\s+/g, ' ').trim() === 'Para ver el tablero con gráficas, pega docs/conta/c16-tablero.sql' && (await p.locator('#ct-tb').count()) === 0 && desde(n).some(l => l.fn === 'fn_tablero'));
   await foto(p, '0-resumen');
   await p.locator('.ct-ficha[data-ir="bandeja"]').click(); await p.waitForSelector('.ct-mov', { timeout: 8000 });
   const hooks1 = await p.evaluate(() => ({ pag: window.__pag.slice(), vol: window.__vol.slice() }));
@@ -7083,6 +7133,337 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
       await cx.close();
     }
     estado.c13 = false; estado.c14 = false; estado.c9 = false; c9Reset(); xReset(); conCodigo(false);
+  }
+
+  // ---- (fase 16) EL TABLERO de la portada (c16), con la base simulada SACADA DEL BANCO (pantalla-f16.json): las acciones rápidas,
+  // «Qué atender» y las catorce tarjetas con sus números iguales a los del banco, cada una con su enlace; las gráficas (SVG, una escala,
+  // leyenda con dos series, tooltip al pasar y con el teclado, la cruz de la caja, la tabla gemela); el período de los resultados; la
+  // caja en saldo y en entradas y salidas; Privacidad y Personalizar (en el navegador, también tras recargar); una tarjeta que falla
+  // sola, dos capas que no están, el tope por reloj («sigue»), el 10-mar-2027 con varios meses; sin c16 (la línea de qué pegar), la
+  // base que no contesta; y el teléfono (390), el iPad (820) y la computadora (1280), en claro y con el teléfono en oscuro ----
+  {
+    const T16 = F16.hoy.todas;
+    const num = v => (v == null || v === '') ? null : Number(v);
+    { const h16 = f => require('crypto').createHash('sha1').update(fs.readFileSync(path.join(ROOT, f))).digest('hex').slice(0, 12);
+      ok('Tablero · la base simulada (pantalla-f16.json) se sacó del banco con el c16-tablero.sql y la f16-semilla.sql de este árbol', F16.capturado.c16 === h16('docs/conta/c16-tablero.sql') && F16.capturado.semilla === h16('pruebas/conta/f16-semilla.sql'),
+        `capturado ${F16.capturado.c16}/${F16.capturado.semilla}, hoy ${h16('docs/conta/c16-tablero.sql')}/${h16('pruebas/conta/f16-semilla.sql')}: vuelve a correr node pruebas/conta/f16-capturar.js <bd nueva>`); }
+    // ni un total, ni una resta, ni un porcentaje de dinero en la pantalla: el bloque del tablero de conta.js no suma nada (ni reduce ni suma)
+    { const js = fs.readFileSync(path.join(ROOT, 'js', 'conta.js'), 'utf8'), a = js.indexOf('// EL TABLERO (c16, fase 16)'), z = js.indexOf('// BANCOS Y TARJETAS: primero las cuentas');
+      const blq = a > 0 && z > a ? js.slice(a, z) : '';
+      ok('Tablero · el código del tablero (js/conta.js) no suma dinero: ni reduce() ni suma() en todo su bloque (las cifras, los totales y los porcentajes son los de la base)', blq.length > 20000 && !/\.reduce\(|\bsuma\(/.test(blq), blq.length); }
+    const usd = v => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(v)).replace('-', '−');
+    const pc = v => `${String(v).replace(/^-/, '−')} %`;
+    const TIT = { cobros: 'Embudo de cobro', bancos: 'Bancos y tarjetas', resultados: 'Resultados', gastos: 'Gastos', caja: 'Flujo de caja', facturas: 'Facturas', ventas: 'Ventas', por_cobrar: 'Por cobrar',
+      por_pagar: 'Por pagar', conexiones: 'Conexiones', cobros_en_linea: 'Cobros en línea', use_tax: 'Use tax (DR-15)', prestamos: 'Préstamos', obras: 'Obras' };
+    const ORD16 = Object.keys(TIT);
+    const tarj = (q, k) => q.locator(`#ct-tb .ct-tb[data-tb="${k}"]`);
+    const visTxt = async loc => (await loc.evaluate(e => e.innerText)).replace(/\s+/g, ' ');
+    const svgTxt = async loc => (await loc.locator('svg text').allTextContents()).join(' | ');
+    const llam16 = n0 => desde(n0).filter(l => l.fn === 'fn_tablero');
+    const quieto = async q => { await pintado(q); await q.waitForFunction(() => !document.querySelector('#ct-tb [aria-busy="true"]'), null, { timeout: 8000 }).catch(() => {}); await q.waitForTimeout(250); };
+    const abrir16 = async (w, op = {}) => {
+      const cx = await b.newContext({ viewport: { width: w, height: w < 700 ? 844 : 1000 }, deviceScaleFactor: w < 1024 ? 2 : 1, isMobile: w < 1024, hasTouch: w < 1024, serviceWorkers: 'block', colorScheme: op.tema || 'light' });
+      await simular(cx, 'dueno');
+      // lo que quien mira dejó en su navegador (Privacidad, las tarjetas escondidas): una vez, al abrir; al recargar se queda lo que haya
+      if (op.prefs) await cx.addInitScript(p => { if (sessionStorage.getItem('f16-puesto')) return; sessionStorage.setItem('f16-puesto', '1'); for (const [k, v] of Object.entries(p)) { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } }, op.prefs);
+      const q = await cx.newPage(); q.on('pageerror', e => errs.push(`f16 ${w}${op.tema === 'dark' ? ' oscuro' : ''}: ` + String(e).slice(0, 200)));
+      await entrar16(q, op.espera);
+      return { cx, q };
+    };
+    const entrar16 = async (q, espera) => {
+      if (!q.url().includes('index.html')) await q.goto('http://localhost:8873/index.html');
+      await q.waitForSelector('#vista-app:not([hidden])', { timeout: 15000 }); await q.waitForTimeout(600);
+      await q.evaluate(() => document.querySelectorAll('dialog[open]').forEach(d => d.close()));
+      await q.locator('#btn-conta').evaluate(x => x.click());
+      await q.waitForSelector(espera || '#ct-tb .ct-tb', { timeout: 8000 }); await quieto(q);
+    };
+    const recargar = async (q, espera) => { await q.reload(); await entrar16(q, espera); };
+    const volverResumen = async q => { await q.evaluate(() => window.MXP_CONTA.ir('resumen')); await q.waitForSelector('#ct-tb .ct-tb', { timeout: 8000 }); await quieto(q); };
+
+    // ==================== SIN c16: la portada de siempre y una línea que dice qué pegar ====================
+    estado.c16 = false;
+    { const { cx, q } = await abrir16(390, { espera: '#conta-raiz .ct-ficha' });
+      const linea = (await q.locator('#ct-tb-falta').innerText()).replace(/\s+/g, ' ').trim();
+      ok('Tablero · sin c16 en la base (fn_tablero 404): la portada de siempre (las cinco fichas y «Qué atender») y UNA línea: «Para ver el tablero con gráficas, pega docs/conta/c16-tablero.sql»',
+        linea === 'Para ver el tablero con gráficas, pega docs/conta/c16-tablero.sql' && (await q.locator('.ct-ficha').count()) === 5 && (await q.locator('#ct-atender').count()) === 1 && (await q.locator('#ct-tb').count()) === 0 && (await q.locator('.ct-rojo').count()) === 0, linea);
+      await foto(q, 'f16-sin-c16-390');
+      // la base no contesta el tablero (500): lo de siempre, la línea con el porqué y «Reintentar»
+      estado.c16 = true; estado.c16Roto = true;
+      await recargar(q, '#conta-raiz .ct-ficha');
+      const roja = (await q.locator('#ct-tb-falta.mal').innerText().catch(() => '')).replace(/\s+/g, ' ');
+      ok('Tablero · si fn_tablero falla (500, se acabó el tiempo), la portada de siempre con la línea «El tablero con gráficas no contestó (…)» y «Reintentar»; sin rojo de página', /El tablero con gráficas no contestó/.test(roja) && (await q.locator('.ct-ficha').count()) === 5 && (await q.locator('#ct-tb-otra').count()) === 1 && (await q.locator('.ct-rojo').count()) === 0, roja);
+      estado.c16Roto = false;
+      await q.locator('#ct-tb-otra').click(); await q.waitForSelector('#ct-tb .ct-tb', { timeout: 8000 }); await quieto(q);
+      ok('Tablero · …«Reintentar» con la base ya bien: sale el tablero (14 tarjetas) y ya no hay fichas', (await q.locator('#ct-tb .ct-tb').count()) === 14 && (await q.locator('.ct-ficha').count()) === 0);
+      // el equipo (no dueño): la base dice 42501 y la línea lo enseña
+      estado.c16NoDueno = true;
+      await recargar(q, '#conta-raiz .ct-ficha');
+      ok('Tablero · el equipo (la base dice 42501): ni una cifra del tablero, la línea lo dice con las palabras de la base', (await q.locator('#ct-tb').count()) === 0 && (await q.locator('#ct-tb-falta.mal').innerText()).replace(/\s+/g, ' ').trim() === F16.errores.equipo.error.message, await q.locator('#ct-tb-falta').innerText().catch(() => ''));
+      estado.c16NoDueno = false;
+      await cx.close();
+    }
+
+    // ==================== CON c16, en la computadora: las tarjetas, sus números, sus enlaces y sus gráficas ====================
+    estado.c16 = true; estado.c16Escena = 'hoy';
+    let n0 = llamadas.length;
+    let { cx, q } = await abrir16(1280, { prefs: { 'mxp.tablero.privado': null, 'mxp.tablero.ocultas': null } });
+    const pedida = llam16(n0)[0];
+    ok('Tablero · la portada pide fn_tablero UNA vez, con todo lo de fábrica (p = {}), y no pinta las fichas de antes', llam16(n0).length === 1 && JSON.stringify(pedida.args) === '{"p":{}}' && (await q.locator('.ct-ficha').count()) === 0 && (await q.locator('#ct-tb-falta').count()) === 0, JSON.stringify(llam16(n0).map(l => l.args)));
+    ok('Tablero · el orden de QuickBooks: arriba Personalizar y Privacidad; luego las acciones rápidas, «Qué atender», «El negocio de un vistazo» y las 14 tarjetas en el orden de la base',
+      JSON.stringify(await q.locator('#ct-tb .ct-tb').evaluateAll(es => es.map(e => e.dataset.tb))) === JSON.stringify(ORD16) && (await q.locator('.ct-pag-acc #ct-tb-personalizar, .ct-pag-acc #ct-tb-privado').count()) === 2 &&
+      (await q.evaluate(() => { const r = document.getElementById('ct-tb'); const i = el => [...r.children].indexOf(el); return i(document.getElementById('ct-tb-acc-caja')) < i(document.getElementById('ct-atender')) && i(document.getElementById('ct-atender')) < i(r.querySelector('.ct-tb-h')) && i(r.querySelector('.ct-tb-h')) < i(document.getElementById('ct-tb-rejilla')); })),
+      JSON.stringify(await q.locator('#ct-tb .ct-tb').evaluateAll(es => es.map(e => e.dataset.tb))));
+    ok('Tablero · cada tarjeta con su título (el de QuickBooks en nuestras palabras)', JSON.stringify(await q.locator('#ct-tb .ct-tb h3').allTextContents()) === JSON.stringify(ORD16.map(k => TIT[k])));
+    ok('Tablero · «Qué atender» sigue, con lo de hoy (la bandeja vieja, el código del teléfono, Plaid sin fijar) y sus botones', (await q.locator('#ct-tb #ct-atender .ct-atn').count()) >= 2 && /El código del teléfono/.test(await q.locator('#ct-atender').innerText()));
+    ok('Tablero · la línea del libro: «el libro empieza con la apertura al 30-sep-2026: lo de antes vive en QuickBooks»', (await q.locator('.ct-tb-libro').innerText()) === T16.libro.texto, await q.locator('.ct-tb-libro').innerText());
+
+    // ---- las acciones rápidas ----
+    { const L = T16.acciones.lista;
+      const chips = await q.locator('#ct-tb .ct-tb-chip').evaluateAll(es => es.map(e => ({ t: e.querySelector('span').textContent, n: (e.querySelector('.ct-tb-n') || {}).textContent || null, alarma: e.classList.contains('alarma'), ir: e.dataset.tbIr || null, dis: e.disabled })));
+      ok('Tablero · acciones rápidas: crear una factura, la Bandeja (con cuántos esperan, en rojo si pasa de 30 días), Conciliar, pedir un pago en línea, Cerrar el mes y Estados financieros, con lo que dice la base',
+        chips.length === L.length && L.every((x, i) => chips[i].t === x.texto && (num(x.n) ? chips[i].n === String(x.n) : chips[i].n === null) && chips[i].alarma === !!x.alarma && JSON.parse(chips[i].ir || 'null').pagina === x.ir.pagina) && L.map(x => x.clave).join() === 'factura,bandeja,conciliar,pago,cierre,estados', JSON.stringify(chips));
+      await q.locator('#ct-tb .ct-tb-chip[data-tb-acc="bandeja"]').click(); await pintado(q);
+      ok('Tablero · …la acción «Bandeja» abre la Bandeja', (await q.evaluate(() => window.MXP_CONTA._estado.pagina)) === 'bandeja');
+      await volverResumen(q);
+      await q.locator('#ct-tb .ct-tb-chip[data-tb-acc="cierre"]').click(); await pintado(q);
+      ok('Tablero · …«Cerrar el mes» abre Cierre del mes en el período que dice la base', (await q.evaluate(() => [window.MXP_CONTA._estado.pagina, window.MXP_CONTA._estado.cie.periodo].join())) === `cierre,${L.find(x => x.clave === 'cierre').ir.periodo}`);
+      await volverResumen(q); }
+
+    // ---- los números: iguales a los del banco, tarjeta por tarjeta ----
+    { const c = T16.cobros, bn = T16.bancos, r = T16.resultados, g = T16.gastos, cj = T16.caja, f = T16.facturas, v = T16.ventas, pcb = T16.por_cobrar, ppg = T16.por_pagar,
+        cx16 = T16.conexiones, st = T16.cobros_en_linea, ut = T16.use_tax, pr = T16.prestamos, ob = T16.obras;
+      const ESPERA = {
+        cobros: [...c.pasos.flatMap(p => [p.etiqueta, usd(p.monto), p.detalle]), `Últimos ${c.dias} días`],
+        bancos: [usd(bn.totales.bancos.libro), usd(bn.totales.tarjetas.libro), ...bn.cuentas.flatMap(x => [x.nombre, usd(x.saldo_libro), ...(x.saldo_banco == null ? [] : [usd(x.saldo_banco)])]), `Bandeja (${bn.totales.por_revisar.n})`],
+        resultados: [usd(r.resultado), `margen ${pc(r.margen_pct)}`, `+${pc(r.variacion.pct)}`, r.variacion.contra, r.anterior.etiqueta],
+        gastos: [usd(g.total), g.sin_comparar],
+        caja: [usd(cj.hoy.saldo), 'Proyección (no es un hecho)'],
+        facturas: [f.no_pagadas.monto, f.no_pagadas.vencidas.monto, f.no_pagadas.por_vencer.monto, f.pagadas.monto, f.pagadas.depositado.monto, f.pagadas.sin_depositar.monto].map(usd),
+        ventas: [usd(v.total), usd(v.mejor_mes.monto), v.antes_del_libro.texto],
+        por_cobrar: [usd(pcb.total), `${usd(pcb.vencido.monto)} vencido (${pc(pcb.vencido.pct)})`],
+        por_pagar: [usd(ppg.total), `${usd(ppg.vencido.monto)} vencido (${pc(ppg.vencido.pct)})`],
+        conexiones: [String(cx16.totales.total), ...cx16.lista.map(x => x.nombre), 'con problemas'],
+        cobros_en_linea: [st.por_depositar, st.pagos_en_camino, st.depositado_30, st.en_camino_al_banco].map(x => usd(x.monto)).concat(['modo de prueba']),
+        use_tax: [usd(ut.por_pagar), ...ut.meses.flatMap(m => [m.nombre, usd(m.cargado), usd(m.saldo_al_cierre)])],
+        prestamos: [usd(pr.totales.saldo), ...pr.lista.flatMap(x => [x.prestamista, usd(x.saldo), usd(x.proxima.monto), `pagado ${pc(x.pagado_pct)}`])],
+        obras: [usd(ob.wip.sub_facturado), usd(ob.wip.sobre_facturado), usd(ob.costo.totales.ingreso), usd(ob.costo.totales.margen), ...ob.costo.lista.flatMap(o => [o.obra, usd(o.margen)])]
+      };
+      for (const k of ORD16) {
+        const t = await visTxt(tarj(q, k)), falta = ESPERA[k].filter(x => !t.includes(x));
+        ok(`Tablero · ${TIT[k]}: los números y los textos son los del banco (${ESPERA[k].length} cosas)`, !falta.length, falta.join(' · ') || ESPERA[k].slice(0, 4).join(' · '));
+      }
+      // y los de dentro de las gráficas (texto del SVG): las barras de resultados, de gastos y de la antigüedad
+      const sR = await svgTxt(tarj(q, 'resultados')), sG = await svgTxt(tarj(q, 'gastos')), sC = await svgTxt(tarj(q, 'por_cobrar')), sP = await svgTxt(tarj(q, 'por_pagar'));
+      ok('Tablero · las cifras escritas en las gráficas son las de la base (resultados: lo que entra y lo que sale; gastos: cada categoría con su %; por cobrar y por pagar: cada tramo)',
+        r.barras.every(x => sR.includes(usd(x.monto))) && g.grafica.every(x => sG.includes(`${usd(x.monto)} · ${pc(x.pct)}`)) && pcb.tramos.every(x => sC.includes(usd(x.monto))) && ppg.tramos.every(x => sP.includes(usd(x.monto))), [sR, sG].join(' ‖ ').slice(0, 300));
+    }
+
+    // ---- cada tarjeta lleva a su página (el «ir» de la base) ----
+    { const fallan = [];
+      for (const k of ORD16) {
+        const pie = tarj(q, k).locator('.ct-tb-pie [data-tb-ir]').last();
+        if (!(await pie.count())) { fallan.push(`${k}: sin enlace`); continue; }
+        const x = JSON.parse(await pie.getAttribute('data-tb-ir'));
+        await pie.click(); await pintado(q);
+        const est = await q.evaluate(() => ({ pag: window.MXP_CONTA._estado.pagina, titulo: document.getElementById('titulo-vista').textContent.trim() }));
+        if (est.pag !== x.pagina) fallan.push(`${k}: fue a ${est.pag} y debía ir a ${x.pagina}`);
+        await volverResumen(q);
+      }
+      ok('Tablero · cada una de las 14 tarjetas tiene su enlace al pie («Ver en …») y lleva a su página: Facturas, Bancos, Estados (resultados, flujo), Cédula (1110, 2010, 2520), Conexiones, Cobros, Cierre (DR-15), Costo por obra', !fallan.length, fallan.join(' | ')); }
+    { await tarj(q, 'cobros').locator('[data-paso="por_cobrar"]').click(); await pintado(q);
+      const ok1 = (await q.evaluate(() => window.MXP_CONTA._estado.pagina)) === T16.cobros.por_cobrar.ir.pagina; await volverResumen(q);
+      await tarj(q, 'obras').locator('.ct-tb-ob-l [data-tb-ir]').first().click(); await pintado(q);
+      const o2 = await q.evaluate(() => [window.MXP_CONTA._estado.pagina, window.MXP_CONTA._estado.obras.sel].join()); await volverResumen(q);
+      ok('Tablero · …y por dentro: el paso «Por cobrar» del embudo lleva a Facturas; una obra lleva a su costo por obra (la obra abierta)', ok1 && o2 === `obras,${T16.obras.costo.lista[0].proyecto_id}`, o2); }
+
+    // ---- las gráficas: SVG, una escala, leyenda, tooltip, teclado, la cruz y la tabla gemela ----
+    { const svgs = await q.locator('#ct-tb .ct-tb-graf svg').count();
+      ok('Tablero · las gráficas son SVG en línea, dibujadas: resultados, gastos, caja, facturas (2), ventas, por cobrar, por pagar y el medidor de cada préstamo', svgs === 8 + T16.prestamos.lista.length && (await q.locator('#ct-tb .ct-tb-graf:not(:has(svg))').count()) === 0, svgs);
+      // una sola escala: la barra mayor de gastos llena el ancho y las demás miden lo que les toca
+      const anchos = await tarj(q, 'gastos').locator('svg path.ct-tb-m').evaluateAll(ps => ps.map(p => p.getBBox().width));
+      const W = await tarj(q, 'gastos').locator('svg').evaluate(s => s.width.baseVal.value), gm = T16.gastos.grafica;
+      ok('Tablero · gastos: barras ordenadas sobre una sola escala (la mayor llena el ancho; cada una mide su monto), «las demás» en gris de contexto', anchos.length === gm.length && Math.abs(anchos[0] - W) < 1.5 && gm.every((x, i) => Math.abs(anchos[i] / W - x.monto / gm[0].monto) < 0.01) &&
+        (await tarj(q, 'gastos').locator('svg path.ct-tb-m.gris').count()) === gm.filter(x => x.clave === 'otras').length, JSON.stringify(anchos.map(Math.round)));
+      ok('Tablero · marcas finas: barras de 12 px (nunca más de 24) con la punta redonda; la línea de la caja de 2 px; la rejilla de un pelo', (await q.locator('#ct-tb [data-graf="gastos"] path.ct-tb-m, #ct-tb [data-graf="resultados"] path.ct-tb-m').evaluateAll(ps => ps.every(p => Math.round(p.getBBox().height) === 12 && /a4,4/.test(p.getAttribute('d'))))) &&
+        (await q.locator('#ct-tb .ct-tb-linea').first().evaluate(e => getComputedStyle(e).strokeWidth)) === '2px' && (await q.locator('#ct-tb .ct-tb-rej').first().evaluate(e => getComputedStyle(e).strokeWidth)) === '1px');
+      ok('Tablero · leyenda cuando hay dos series: resultados (este período y el anterior) y la caja (el saldo y la proyección); ninguna con una sola serie (gastos, ventas, antigüedad)',
+        JSON.stringify(await tarj(q, 'resultados').locator('.ct-tb-ley li').allTextContents()) === JSON.stringify([`${T16.resultados.etiqueta} (hasta hoy)`, T16.resultados.anterior.etiqueta]) &&
+        JSON.stringify(await tarj(q, 'caja').locator('.ct-tb-ley li').allTextContents()) === JSON.stringify(['Saldo de caja, del libro', 'Proyección (no es un hecho)']) &&
+        (await q.locator('#ct-tb .ct-tb[data-tb="gastos"] .ct-tb-ley, #ct-tb .ct-tb[data-tb="ventas"] .ct-tb-ley, #ct-tb .ct-tb[data-tb="por_cobrar"] .ct-tb-ley').count()) === 0);
+      // el tooltip al pasar: el valor primero, lo que es después
+      await tarj(q, 'gastos').locator('.ct-tb-hit').first().hover(); await q.waitForTimeout(150);
+      const tip1 = await q.locator('#ct-tb-tip').evaluate(e => ({ vis: !e.hidden, v: (e.querySelector('b') || {}).textContent, l: (e.querySelector('span') || {}).textContent }));
+      ok('Tablero · al pasar por una barra sale el tooltip: el valor primero ($ de la base) y lo que es después', tip1.vis && tip1.v === usd(T16.gastos.grafica[0].monto) && tip1.l.startsWith(T16.gastos.grafica[0].nombre), JSON.stringify(tip1));
+      await q.mouse.move(5, 5); await q.waitForTimeout(100);
+      // con el teclado: Tab llega a la barra y enseña lo mismo
+      await tarj(q, 'resultados').locator('.ct-tb-hit').first().focus(); await q.waitForTimeout(120);
+      const tip2 = await q.locator('#ct-tb-tip').evaluate(e => ({ vis: !e.hidden, v: (e.querySelector('b') || {}).textContent }));
+      ok('Tablero · con el teclado (una marca enfocada) sale el mismo tooltip; cada marca tiene su nombre para el lector de pantalla', tip2.vis && tip2.v === usd(T16.resultados.barras[0].monto) &&
+        (await q.locator('#ct-tb .ct-tb-hit:not([aria-label])').count()) === 0, JSON.stringify(tip2));
+      // la cruz de la caja: enfocada va al último punto (la proyección); con ← recorre los meses hasta hoy, con lo que entró y salió
+      const cruz = tarj(q, 'caja').locator('.ct-tb-hit.cruz');
+      await cruz.focus(); await q.waitForTimeout(120);
+      const pjm = T16.caja.proyeccion.meses, rl = T16.caja.meses;
+      const tip3 = await q.locator('#ct-tb-tip').innerText();
+      for (let i = 0; i < pjm.length; i++) await q.keyboard.press('ArrowLeft');
+      await q.waitForTimeout(120);
+      const tip4 = await q.locator('#ct-tb-tip').innerText(), linea = await tarj(q, 'caja').locator('.ct-tb-cruz').getAttribute('visibility');
+      ok('Tablero · flujo de caja: la cruz busca el mes (con el teclado: ← →) y el tooltip dice el saldo de ese punto; en la proyección, lo que se espera cobrar, pagar y las cuotas',
+        tip3.includes(usd(pjm[pjm.length - 1].saldo)) && /proyección/.test(tip3) && /Por cobrar/.test(tip3) && tip4.includes(usd(rl[rl.length - 1].final)) && tip4.includes(usd(rl[rl.length - 1].entradas)) && linea === 'visible', `${tip3.replace(/\s+/g, ' ')} ‖ ${tip4.replace(/\s+/g, ' ')}`);
+      await q.keyboard.press('Escape'); await q.locator('body').evaluate(x => x.focus && x.focus());
+      ok('Tablero · la caja: una línea con el saldo de la apertura y de cada mes del libro (área de 10 %), la proyección punteada después de hoy, y nunca un mes que el libro no tiene',
+        (await tarj(q, 'caja').locator('circle.ct-tb-punto:not(.proy)').count()) === 1 + rl.length && (await tarj(q, 'caja').locator('circle.ct-tb-punto.proy').count()) === pjm.length &&
+        (await tarj(q, 'caja').locator('.ct-tb-linea.proy').evaluate(e => getComputedStyle(e).strokeDasharray)) !== 'none' && Math.abs(Number(await tarj(q, 'caja').locator('.ct-tb-area').evaluate(e => getComputedStyle(e).fillOpacity)) - 0.1) < 0.001);
+      // la tabla gemela
+      await tarj(q, 'gastos').locator('details.ct-tb-tabla > summary').first().click();
+      const filasG = await tarj(q, 'gastos').locator('details.ct-tb-tabla tbody tr').evaluateAll(trs => trs.map(t => [...t.cells].map(c => c.textContent)));
+      ok('Tablero · «Ver los números»: la tabla con lo mismo que la gráfica (gastos: cada categoría con su monto y su %)', filasG.length === T16.gastos.categorias.length && T16.gastos.categorias.every((x, i) => filasG[i][0] === x.nombre && filasG[i][1] === usd(x.monto) && filasG[i][2] === pc(x.pct)), JSON.stringify(filasG[0]));
+      ok('Tablero · cada gráfica de barras, columnas o línea tiene su tabla gemela', (await q.locator('#ct-tb .ct-tb').evaluateAll(ts => ts.filter(t => t.querySelector('[data-graf="gastos"],[data-graf="resultados"],[data-graf="caja"],[data-graf="ventas"],[data-graf="antiguedad"],[data-graf="facturas_np"]') && !t.querySelector('details.ct-tb-tabla table')).map(t => t.dataset.tb))).length === 0);
+      // las facturas: cada parte de la barra fina mide el porcentaje que dice la base
+      const partes = await tarj(q, 'facturas').locator('[data-graf="facturas_np"] path.ct-tb-m').evaluateAll(ps => ps.map(p => ({ w: p.getBBox().width, c: p.getAttribute('class') })));
+      const Wf = await tarj(q, 'facturas').locator('[data-graf="facturas_np"] svg').evaluate(s => s.width.baseVal.value), npv = T16.facturas.no_pagadas;
+      ok('Tablero · facturas: la barra fina de lo que no está pagado, partida en vencidas (rojo de estado, con su icono y su texto) y por vencer, cada parte con el % de la base', partes.length === 2 && /mal/.test(partes[0].c) && Math.abs(partes[0].w / (Wf - 2) - npv.vencidas.pct / 100) < 0.01 && Math.abs(partes[1].w / (Wf - 2) - npv.por_vencer.pct / 100) < 0.01 &&
+        (await tarj(q, 'facturas').locator('.ct-tb-lado.mal .ct-tb-i').count()) === 1, JSON.stringify(partes));
+      ok('Tablero · ventas: una columna por mes del libro (solo los que tiene), el mes en curso marcado «hasta hoy», y lo de antes dicho en llano', (await tarj(q, 'ventas').locator('svg path.ct-tb-m').count()) === T16.ventas.meses.length && /\* el mes en curso, hasta hoy/.test(await visTxt(tarj(q, 'ventas'))) && (await visTxt(tarj(q, 'ventas'))).includes(T16.ventas.antes_del_libro.texto)); }
+
+    // ---- el período de los resultados (este mes, el mes pasado, el año): solo se vuelve a pedir esa tarjeta ----
+    for (const [per, txtBoton] of [['mes_pasado', 'Mes pasado'], ['anio', 'Este año'], ['mes', 'Este mes']]) {
+      n0 = llamadas.length;
+      await tarj(q, 'resultados').locator(`[data-tb-periodo="${per}"]`).click(); await quieto(q);
+      const R16 = F16.hoy.resultados[per], l = llam16(n0), t = await visTxt(tarj(q, 'resultados'));
+      ok(`Tablero · resultados, «${txtBoton}»: pide solo esa tarjeta con su período y pinta lo del banco (${R16.etiqueta}: ${usd(R16.resultado)})`,
+        l.length === 1 && JSON.stringify(l[0].args) === JSON.stringify({ p: { tarjetas: ['resultados'], ...(per === 'mes' ? {} : { resultados: { periodo: per } }) } }) && t.includes(usd(R16.resultado)) && t.includes(R16.etiqueta) &&
+        (await tarj(q, 'resultados').locator(`[data-tb-periodo="${per}"]`).getAttribute('aria-pressed')) === 'true', JSON.stringify(l.map(x => x.args)));
+    }
+    // ---- la caja: «Entradas y salidas» (dos series: leyenda y columnas lado a lado) ----
+    await tarj(q, 'caja').locator('[data-tb-caja="mov"]').click(); await q.waitForTimeout(200);
+    ok('Tablero · la caja en «Entradas y salidas»: columnas lado a lado por mes (la serie y la segunda serie), con su leyenda, sin pedir nada a la base',
+      (await tarj(q, 'caja').locator('svg path.ct-tb-m.serie1').count()) === T16.caja.meses.length && (await tarj(q, 'caja').locator('svg path.ct-tb-m.serie2').count()) === T16.caja.meses.length &&
+      JSON.stringify(await tarj(q, 'caja').locator('.ct-tb-ley li').allTextContents()) === '["Entradas","Salidas"]');
+    await tarj(q, 'caja').locator('[data-tb-caja="saldo"]').click(); await q.waitForTimeout(150);
+    await foto(q, 'f16-1280-claro');
+
+    // ---- PRIVACIDAD: tapa los montos (en el navegador de quien mira; sigue al recargar) ----
+    const sinDinero = () => q.evaluate(() => {
+      const r = document.getElementById('ct-tb'); if (!r) return { hay: false };
+      const t = r.textContent + ' ' + [...r.querySelectorAll('[aria-label],[title]')].map(x => `${x.getAttribute('aria-label') || ''} ${x.getAttribute('title') || ''}`).join(' ');
+      return { hay: true, dinero: (t.match(/\$\s?\d/g) || []).slice(0, 5), tapados: (t.match(/\$•••/g) || []).length, ls: (() => { try { return localStorage.getItem('mxp.tablero.privado'); } catch { return 'x'; } })(), pressed: document.getElementById('ct-tb-privado').getAttribute('aria-pressed') };
+    });
+    n0 = llamadas.length;
+    await q.locator('#ct-tb-privado').click(); await q.waitForTimeout(250);
+    let pv = await sinDinero();
+    ok('Tablero · Privacidad: ni un monto a la vista (ni en las cifras, ni en las gráficas, ni en las tablas, ni en los nombres para el lector de pantalla): «$•••», sin volver a pedir nada', pv.hay && !pv.dinero.length && pv.tapados > 40 && pv.pressed === 'true' && pv.ls === '1' && llam16(n0).length === 0, JSON.stringify(pv));
+    await tarj(q, 'gastos').locator('.ct-tb-hit').first().hover(); await q.waitForTimeout(120);
+    ok('Tablero · …el tooltip también va tapado; los conteos y los porcentajes se ven', (await q.locator('#ct-tb-tip b').first().textContent()) === '$•••' && (await visTxt(tarj(q, 'cobros'))).includes(T16.cobros.pasos[0].detalle.replace(/\$[\d,.]+/g, '$•••')));
+    await q.mouse.move(5, 5);
+    await recargar(q);
+    pv = await sinDinero();
+    ok('Tablero · …y sigue tapado al recargar (lo recuerda el navegador de quien mira, no la base)', pv.hay && !pv.dinero.length && pv.pressed === 'true', JSON.stringify(pv));
+    await foto(q, 'f16-1280-privado');
+    await q.locator('#ct-tb-privado').click(); await q.waitForTimeout(250);
+    pv = await sinDinero();
+    ok('Tablero · …otro toque y vuelven los montos', pv.dinero.length > 0 && pv.pressed === 'false' && pv.ls === '0', JSON.stringify(pv));
+
+    // ---- PERSONALIZAR: qué tarjetas se ven (en el navegador; la base solo calcula las que se ven) ----
+    await q.locator('#ct-tb-personalizar').click(); await q.waitForSelector('#ct-tb-pers');
+    await q.locator('[data-tb-ver="gastos"]').uncheck(); await q.locator('[data-tb-ver="ventas"]').uncheck(); await q.waitForTimeout(150);
+    const ocultas = await q.evaluate(() => localStorage.getItem('mxp.tablero.ocultas'));
+    ok('Tablero · Personalizar: quitar «Gastos» y «Ventas» las esconde al momento (12 tarjetas) y lo guarda el navegador', (await q.locator('#ct-tb .ct-tb').count()) === 12 && (await tarj(q, 'gastos').count()) === 0 && ocultas === '["gastos","ventas"]', ocultas);
+    n0 = llamadas.length;
+    await recargar(q);
+    const pidio = llam16(n0)[0];
+    ok('Tablero · …al recargar siguen escondidas y la base solo calcula las que se ven (pide las acciones y las 12)', (await q.locator('#ct-tb .ct-tb').count()) === 12 && pidio && JSON.stringify(pidio.args.p.tarjetas) === JSON.stringify(['acciones', ...ORD16.filter(k => k !== 'gastos' && k !== 'ventas')]), JSON.stringify(pidio && pidio.args));
+    n0 = llamadas.length;
+    await q.locator('#ct-tb-personalizar').click(); await q.waitForSelector('#ct-tb-pers'); await q.locator('#ct-tb-pers-todas').click(); await quieto(q);
+    ok('Tablero · …«Ver todas»: vuelven las 14 y se piden solo las dos que faltaban', (await q.locator('#ct-tb .ct-tb').count()) === 14 && JSON.stringify(llam16(n0).map(l => l.args.p)) === '[{"tarjetas":["gastos","ventas"]}]' && (await visTxt(tarj(q, 'gastos'))).includes(usd(T16.gastos.total)) && (await q.evaluate(() => localStorage.getItem('mxp.tablero.ocultas'))) === null, JSON.stringify(llam16(n0).map(l => l.args)));
+    await q.locator('#ct-tb-pers-listo').click();
+    // sin almacenamiento (el navegador no deja guardar): Privacidad y Personalizar valen para esta visita, sin romper nada
+    await q.evaluate(() => { Storage.prototype.setItem = () => { throw new Error('QuotaExceededError (prueba)'); }; Storage.prototype.getItem = () => { throw new Error('SecurityError (prueba)'); }; });
+    await q.locator('#ct-tb-privado').click(); await q.waitForTimeout(200);
+    pv = await sinDinero();
+    ok('Tablero · sin almacenamiento en el navegador (setItem y getItem lanzan): Privacidad tapa igual, para esta visita, sin errores', !pv.dinero.length && pv.pressed === 'true', JSON.stringify(pv));
+    await cx.close();
+
+    // ==================== LA BASE A MEDIAS: una tarjeta que falla sola, dos capas que no están, el tope por reloj ====================
+    estado.c16Escena = 'falla';
+    ({ cx, q } = await abrir16(820));
+    { const ut = tarj(q, 'use_tax'), malo = F16.falla.use_tax, t = await visTxt(ut);
+      const otras = await q.locator('#ct-tb .ct-tb:not([data-tb="use_tax"]) .ct-aviso.bad').count();
+      ok('Tablero · una tarjeta que falla sola (el use tax: la base le niega su vista, 42501): dice que no se pudo leer, con el motivo de la base y su código, y «Reintentar»; las otras 13 se pintan con sus números',
+        /Esta tarjeta no se pudo leer/.test(t) && t.includes(malo.motivo) && t.includes(malo.codigo) && (await ut.locator('[data-tb-reintentar="use_tax"]').count()) === 1 && otras === 0 && (await visTxt(tarj(q, 'bancos'))).includes(usd(F16.falla.bancos.totales.bancos.libro)), t.slice(0, 200));
+      await foto(q, 'f16-820-una-falla');
+      estado.c16Escena = 'hoy'; n0 = llamadas.length;
+      await ut.locator('[data-tb-reintentar="use_tax"]').click(); await quieto(q);
+      ok('Tablero · …«Reintentar» pide solo esa tarjeta y, ya bien, la pinta', JSON.stringify(llam16(n0).map(l => l.args.p)) === '[{"tarjetas":["use_tax"]}]' && (await visTxt(tarj(q, 'use_tax'))).includes(usd(T16.use_tax.por_pagar)), JSON.stringify(llam16(n0).map(l => l.args))); }
+    await cx.close();
+    estado.c16Escena = 'capas';
+    ({ cx, q } = await abrir16(390));
+    { const tp = await visTxt(tarj(q, 'prestamos')), ts = await visTxt(tarj(q, 'cobros_en_linea'));
+      ok('Tablero · una capa que no está deja SU tarjeta diciéndolo (sin los préstamos de c6: «Falta en la base: c6»; sin Stripe: «p1»), con el texto de la base; las demás siguen', tp.includes('Falta en la base: c6') && tp.includes(F16.capas.prestamos.motivo) && ts.includes('Falta en la base: p1') &&
+        (await q.locator('#ct-tb .ct-tb .ct-aviso.bad').count()) === 0 && (await visTxt(tarj(q, 'caja'))).includes(usd(F16.capas.caja.hoy.saldo)), `${tp} ‖ ${ts}`); }
+    await cx.close();
+    estado.c16Escena = 'tope'; estado.c16TopeDado = false; n0 = llamadas.length;
+    ({ cx, q } = await abrir16(1280));
+    { const l = llam16(n0), sig = F16.tope.primera.sigue;
+      ok(`Tablero · el tope por reloj: lo que no alcanzó (${sig.length} de 15) llega en «sigue», se pinta «Leyendo…» y se pide otra vez solo eso; al llegar, todas con sus números`,
+        l.length === 2 && JSON.stringify(l[0].args) === '{"p":{}}' && JSON.stringify(l[1].args.p.tarjetas) === JSON.stringify(sig) && (await q.locator('#ct-tb .ct-tb').count()) === 14 && !/Leyendo…/.test(await visTxt(q.locator('#ct-tb-rejilla'))) &&
+        (await visTxt(tarj(q, 'obras'))).includes(usd(F16.tope.segunda.obras.wip.sub_facturado)) && (await q.locator('#ct-tb .ct-tb-chip').count()) === 6, JSON.stringify(l.map(x => x.args))); }
+    await cx.close();
+
+    // la base que nunca alcanza: tras tres vueltas más, cada tarjeta lo dice y ofrece «Reintentar» (no se queda «Leyendo…» para siempre)
+    estado.c16Escena = 'tope_siempre'; n0 = llamadas.length;
+    ({ cx, q } = await abrir16(390));
+    { const sig = F16.tope.primera.sigue.filter(k => k !== 'acciones'), l = llam16(n0);
+      const dicen = await q.locator('#ct-tb .ct-tb').evaluateAll(ts => ts.filter(t => /La base no alcanzó a leer esta tarjeta a tiempo/.test(t.innerText) && t.querySelector('[data-tb-reintentar]')).map(t => t.dataset.tb));
+      ok('Tablero · si la base nunca alcanza (siempre «sigue»), se vuelve a pedir tres veces y después cada tarjeta que falta dice «La base no alcanzó a leer esta tarjeta a tiempo» con «Reintentar» (nada se queda «Leyendo…»)',
+        l.length === 4 && JSON.stringify(dicen.slice().sort()) === JSON.stringify(sig.slice().sort()) && !/Leyendo…/.test(await visTxt(q.locator('#ct-tb'))), `${l.length} llamadas · ${dicen.join(',')}`);
+      estado.c16Escena = 'hoy'; n0 = llamadas.length;
+      await tarj(q, 'gastos').locator('[data-tb-reintentar="gastos"]').click(); await quieto(q);
+      ok('Tablero · …«Reintentar» en una pide solo esa y la pinta', JSON.stringify(llam16(n0).map(l => l.args.p)) === '[{"tarjetas":["gastos"]}]' && (await visTxt(tarj(q, 'gastos'))).includes(usd(T16.gastos.total))); }
+    await cx.close();
+
+    // ==================== EL 10-MAR-2027: varios meses de libro (la caja y las ventas del año nuevo) ====================
+    estado.c16Escena = 'marzo';
+    for (const w of [1280, 390]) {
+      ({ cx, q } = await abrir16(w));
+      const M = F16.marzo.todas;
+      if (w === 1280) ok(`Tablero · el 10-mar-2027 (otra base del banco, con ${M.caja.meses.length} meses de libro): la caja tiene la apertura y un punto por mes, más ${M.caja.proyeccion.meses.length} de proyección; las ventas de 2027, una columna por mes (${M.ventas.meses.length})`,
+        (await tarj(q, 'caja').locator('circle.ct-tb-punto:not(.proy)').count()) === 1 + M.caja.meses.length && (await tarj(q, 'caja').locator('circle.ct-tb-punto.proy').count()) === M.caja.proyeccion.meses.length &&
+        (await tarj(q, 'ventas').locator('svg path.ct-tb-m').count()) === M.ventas.meses.length && (await visTxt(tarj(q, 'ventas'))).includes(usd(M.ventas.total)), `${M.caja.meses.length} meses`);
+      await foto(q, `f16-${w}-marzo`);
+      await cx.close();
+    }
+
+    // ==================== EL TELÉFONO, EL iPAD Y LA COMPUTADORA, EN CLARO Y EN OSCURO ====================
+    estado.c16Escena = 'hoy';
+    const colores = {};
+    for (const w of [390, 820, 1280]) for (const tema of ['light', 'dark']) {
+      ({ cx, q } = await abrir16(w, { tema }));
+      const m = await q.evaluate(() => {
+        const r = document.getElementById('ct-tb'), vw = window.innerWidth;
+        const fuera = [...r.querySelectorAll('*')].filter(e => { const b = e.getBoundingClientRect(); return b.width && (b.right > vw + 1 || b.left < -1) && !e.closest('#ct-tb-tip'); }).map(e => e.className && e.className.baseVal !== undefined ? e.className.baseVal : e.className).slice(0, 4);
+        const svgAncho = [...r.querySelectorAll('.ct-tb-graf svg')].filter(s => s.getBoundingClientRect().width > s.closest('.ct-tb').getBoundingClientRect().width).length;
+        const card = getComputedStyle(r.querySelector('.ct-tb')), h3 = getComputedStyle(r.querySelector('.ct-tb h3')), barra = r.querySelector('.ct-tb-m.serie1');
+        return { sw: document.documentElement.scrollWidth, vw, fuera, svgAncho, cols: getComputedStyle(document.getElementById('ct-tb-rejilla')).gridTemplateColumns.split(' ').length,
+          sinTitulo: [...r.querySelectorAll('.ct-tb')].filter(t => !t.querySelector('h3') || t.querySelector('h3').getBoundingClientRect().height === 0).length,
+          col: [card.backgroundColor, card.color, h3.color, barra ? getComputedStyle(barra).fill : ''].join(' ') };
+      });
+      const cols = w < 700 ? 1 : w < 1200 ? 2 : 3;
+      ok(`Tablero · ${w} px${tema === 'dark' ? ', el teléfono en oscuro' : ''}: sin desplazamiento lateral, nada se sale, ninguna gráfica más ancha que su tarjeta, cada tarjeta con su título, ${cols} columna${cols > 1 ? 's' : ''}`,
+        m.sw <= m.vw + 1 && !m.fuera.length && !m.svgAncho && !m.sinTitulo && m.cols === cols, JSON.stringify(m).slice(0, 300));
+      colores[`${w}-${tema}`] = m.col;
+      if (tema === 'dark') ok(`Tablero · ${w} px: con el teléfono en oscuro se ve igual que en claro (la app no tiene modo oscuro: los colores de las tarjetas, los títulos y las gráficas son los mismos)`, colores[`${w}-dark`] === colores[`${w}-light`], `${colores[`${w}-light`]} ‖ ${colores[`${w}-dark`]}`);
+      await foto(q, `f16-${w}-${tema === 'dark' ? 'oscuro' : 'claro'}`);
+      if (w === 390 && tema === 'light') {
+        // en el teléfono el tooltip se abre con el dedo (tocar una barra) y se cierra tocando fuera
+        await tarj(q, 'por_cobrar').locator('.ct-tb-hit').nth(1).tap(); await q.waitForTimeout(150);
+        const tt = await q.locator('#ct-tb-tip').evaluate(e => ({ vis: !e.hidden, v: (e.querySelector('b') || {}).textContent, r: e.getBoundingClientRect().right }));
+        await q.locator('.ct-tb-libro').tap(); await q.waitForTimeout(120);
+        ok('Tablero · 390 px: tocar una barra abre su tooltip (dentro de la pantalla) y tocar fuera lo cierra', tt.vis && tt.v === usd(T16.por_cobrar.tramos[1].monto) && tt.r <= 391 && (await q.locator('#ct-tb-tip').evaluate(e => e.hidden)), JSON.stringify(tt));
+      }
+      await cx.close();
+    }
+    estado.c16 = false; estado.c16Escena = 'hoy';
   }
 
   // ---- Sin señal ----
