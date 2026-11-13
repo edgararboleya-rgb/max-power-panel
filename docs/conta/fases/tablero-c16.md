@@ -98,7 +98,7 @@ con su prueba de antes y después:
   - restar de la proyección una nómina ya posteada con día de pago futuro.
     Para eso c15 tendría que decir qué día cobra Gusto cada cosa.
 
-  Va después de la Fase 11b, porque c15 puede cambiar ahí.
+  La 11b ya terminó (13-nov): se puede hacer ya.
 - **Para decidir** (están en la cabecera de c16, y ninguna frena nada):
   - Los términos de las facturas de QuickBooks: se toman de Facturas →
     Ajustes.

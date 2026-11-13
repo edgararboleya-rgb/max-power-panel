@@ -132,21 +132,67 @@ de socio para que el asiento entre solo; correr la nómina dentro de la app
   verde desde cero y sobre la plantilla, dos veces; la concurrencia (10
   escenas) en verde; con una nómina de verdad dentro, c15 52 de 52.
 
-## Lo que queda (Fase 11b, antes de la primera nómina del 8-ene)
-Lo que la nómina necesita de capas ya selladas. Ninguno mueve dinero hoy (no
-hay nóminas); cada uno se abre con su revisión:
-- **c10 · Costo por obra**: cuenta «a estándar» las horas que ya pagó una
-  nómina. Mientras, **no fijar el burden estándar** en Costo por obra (con
-  nómina contaría la mano de obra dos veces). Lo mismo el control 170 de c12.
-- **c4 / c6 · los papeles**: la vista de los papeles no conoce la nómina; con
-  una nómina en el libro la prueba 25 de c4 falla (los controles de verdad no
-  se ponen en rojo). La página de Estados ya lee el papel de la nómina.
-- **c13 · la cédula**: 2210 a 2240 no leen todavía el auxiliar de la nómina
-  (`fn_nomina_auxiliar`): saldrán «no cuadra» o «sin auxiliar».
-- **c3 · el devengo**: un mes con nómina no se devenga; el corte ya existe
-  (`fn_nomina_cola`).
-- **c6 · textos** que todavía dicen «espera el journal (f11)»: el cargo de
-  Gusto se casa desde Nómina → Cargos de Gusto.
+## La Fase 11b (13-nov, hecha)
+Las capas selladas ya conocen la nómina. Las costuras, la segunda revisión de
+c15 contra el dinero y la seguridad, los arreglos y la revisión final fueron
+en Fable 5.2; la pantalla y la verificación desde cero, en Opus 5.5. Todo en
+verde en los tres órdenes de pegado (sin c15, el de producción y desde cero),
+con una nómina de verdad dentro (también anulada y vuelta a postear) y en la
+lista única desde el estado del 12-nov (`docs/conta/PEGAR-13NOV.md`).
+- **c3 · el devengo** (marca 2026111301): un mes con nómina devenga solo las
+  horas aprobadas que ninguna nómina pagó; al postear o anular una nómina el
+  devengo del mes se pone al día solo. Su control ya no se cuelga con meses
+  grandes (de 38 s a 0.1 s). Pruebas 121 a 126; `c3-nomina.sh`.
+- **c6 · los papeles y los textos** (marca 2026111301; c4 no cambia): la vista
+  de los papeles lee el papel de la nómina por `fn_banco_papel_nomina()`
+  (sin el código del teléfono, un texto sin cifras); el débito de Gusto «se
+  casa desde Contabilidad → Nómina → Cargos de Gusto»; la devolución de Gusto
+  sale con el motivo «nomina». Pruebas 164 a 167; `c6-nomina.sh`.
+- **c10 · Costo por obra** (v3) **y c12 · WIP**: la hora que pagó una nómina
+  es «con pago real» (lee la marca sin dinero `fn_nomina_horas_con_pago()`):
+  ya no va además a estándar. **Ya se puede fijar el burden estándar.**
+- **c13 · la cédula**: 2210 a 2240 leen el auxiliar de la nómina; sin el
+  código del teléfono dicen «con el código», nunca un rojo falso.
+- **c15 · los arreglos de su segunda revisión** (66 funciones, 66 pruebas):
+  - la misma nómina por partes (un journal «por empleado») ya no entra dos
+    veces;
+  - la bolsa del burden no se reparte dos veces;
+  - «Total employer contributions» se ignora de fábrica y, sin las columnas
+    de lo patronal, la nómina no cuadra;
+  - el freno «resumen» (dos nóminas sumadas en un archivo);
+  - el traspaso al casar un cargo que dejaría una cuenta al revés;
+  - la cuota de Gusto con su guarda;
+  - la devolución de Gusto por palabra entera, como en c6 (un Zelle de un
+    «Augusto» ya no cuenta).
+- **La pantalla**: Costo por obra dice «en Nómina» y lista las nóminas que
+  pagaron horas de la obra; Personas, «cobra por nómina»; la cédula, «con el
+  código»; el papel de un asiento de nómina, desde c6; la 2250 con nombre solo
+  con el código; «Importar» apagado si ya está todo.
+
+### ▶ Lo que quedó abierto de la 11b
+- **El corte de los Zelle en c3**: c3 no aparta del devengo las horas que un
+  jornal pagó dentro del mes. Con un mes devengado, aplicar un Zelle de ese
+  mes pone en rojo el «devengo» de c3. Hoy la salida es reversar el devengo
+  de ese mes. ▶ CPA y una vuelta más con Fable.
+- **El débito de Gusto dentro de otra palabra**: en los DÉBITOS, «GUSTO»
+  casa dentro de «AUGUSTO»: un Zelle a alguien con ese nombre saldría como
+  cargo de nómina y pondría en rojo la fila 180 hasta clasificarlo a mano. Es
+  así desde octubre, en la regla R6 de c6. Se arregla con palabra entera
+  (como ya hacen los depósitos), con su prueba en c6 y c15, en una vuelta con
+  Fable.
+- **c10 y c12 dan por pagadas las horas en cuanto se postea la nómina**, sin
+  mirar la fecha de su journal (en c15 sí se corta al fin de mes). ▶ CPA.
+- La pantalla suma dinero en JavaScript en dos sitios (el subtítulo de Costo
+  por obra y el total de la Bandeja): pide un total de c10 y otro de c6.
+- Sin comprobación en `pantalla.js` (no hay escena en la base simulada): la
+  columna sin cuenta en el ensayo, el botón del freno «resumen», la cuota con
+  su nota, el texto del traspaso y los de devengo y bolsa al anular.
+- El traspaso está probado con un cargo; falta un depósito de Gusto que
+  mezcle cuentas a favor y por pagar.
+- La IA contable (c8) no sabe de la nómina: aprobar su propuesta para un
+  cargo de Gusto se salta la página de Nómina (el aviso 62 de c15 lo dice).
+- `c6-banco-parte1.sql` quedó a 3,805 bytes del tope del partidor: el
+  próximo cambio en las secciones 0 a 4 de c6 puede mover el corte.
 
 ## ▶ Pendientes
 - **Edgar, antes del 4-ene**: bajar de Gusto un «Payroll journal» en CSV
