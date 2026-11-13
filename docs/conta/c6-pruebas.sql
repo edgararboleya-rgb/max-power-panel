@@ -186,6 +186,35 @@
 -- hacia atrás, el extra chico como recargo, el pago que no cubre el interés
 -- (pide el statement) y la frecuencia como se escribe.
 --
+-- LA FASE 11b (13-nov-2026; piden la marca 2026111301): LA COSTURA CON LA
+-- NÓMINA DE GUSTO (c15), de la 164 a la 167. La 164, el papel de los
+-- asientos de la nómina (v_papel_fases lo lee de c15 por
+-- fn_banco_papel_nomina): sin c15, con una vista de prueba que se deshace;
+-- con c15, con los asientos de nómina de verdad que haya (cuántos, en su
+-- nombre) y con el de una corrida que no existe (sale sin papel). La 165,
+-- sin el código del teléfono: el papel dice que está y que se ve con el
+-- código, sin una cifra, y la puerta de c15 sigue cerrada; con el código,
+-- el de verdad. La 166, los textos del débito de nómina (la Bandeja,
+-- clasificar a mano, lo que le falta a la conciliación y el descriptor):
+-- mandan a Contabilidad → Nómina → Cargos de Gusto, no a esperar el journal
+-- de f11. La 167, la devolución de Gusto (un depósito que dice nómina): va
+-- a la nómina y no al cobro de un cliente (registrárselo, o clasificarlo a
+-- mano, pide su porqué, y la conciliación lo cuenta entre lo de nómina); la
+-- que una factura explica por su monto exacto y el Zelle de un cliente
+-- «AUGUSTO» siguen como estaban. Las cuatro fallan con el c6 anterior
+-- (2026100901), y dicen entonces lo que pasaba. Y con una nómina de verdad
+-- en el libro (posteada, con sus cargos casados; o anulada y vuelta a
+-- subir) corren igual: la 164 y la 165 miran entonces también sus
+-- asientos. Ninguna escribe en las tablas de c15 ni cambia nada suyo; sin
+-- c15, la vista y la puerta de prueba llevan sus nombres y se deshacen con
+-- la prueba.
+-- 13-nov, los arreglos de la verificación de la Fase 11b (la capa no
+-- cambia): la 22 y la 88 ya no fallan cuando el libro trae algo en 1410 que
+-- ninguna póliza registrada explica (la prima de WC llevada a la bolsa con
+-- un asiento a mano, sin registrar su póliza): comparan el cuadre de los
+-- prepagados con cómo estaría con una póliza en 1410, no con el verde de
+-- «sin prepagados registrados» (pg_temp.c6_1410_suelto).
+--
 -- LA RONDA 4d (3-oct; piden la marca 2026100303): de la 154 a la 161. La
 -- 154 es EL CONTROL (el cuadre 59 de fn_banco_control, «el otro lado de
 -- cada casado», su fila en fn_banco_verificar y el freno de
@@ -236,10 +265,10 @@ begin
   -- (Estas pruebas son las de ESTA versión del banco: con una c6-banco.sql
   -- anterior pegada, sus pruebas nuevas saldrían en rojo por lo que falta,
   -- no por un fallo del libro.)
-  if public.fn_banco_version() < 2026100901 then
+  if public.fn_banco_version() < 2026111301 then
     raise exception using
       errcode = 'MX000',
-      message = format('c6-pruebas NO se corrió: la c6-banco.sql pegada es anterior (marca %s; estas pruebas piden 2026100901 o '
+      message = format('c6-pruebas NO se corrió: la c6-banco.sql pegada es anterior (marca %s; estas pruebas piden 2026111301 o '
                        'más). Vuelve a pegar la c6-banco.sql de esta entrega (entera, o sus dos partes).', public.fn_banco_version());
   end if;
 end $$;
@@ -741,6 +770,27 @@ as $$
    where a.vigente and a.periodo > coalesce(nullif(current_setting('mx6.mes', true), ''), '9999-99')
 $$;
 revoke execute on function pg_temp.c6_amortizado_despues() from public, anon, authenticated, service_role;
+
+-- LO QUE HAY SUELTO EN 1410 (13-nov, los arreglos de la verificación de la
+-- Fase 11b; para la 22 y la 88). El cuadre de los prepagados compara lo que
+-- el libro dice en las cuentas de LAS PÓLIZAS REGISTRADAS con lo que les
+-- falta por amortizar; sin ninguna póliza en 1410, no mira esa cuenta. Si
+-- el libro ya trae algo en 1410 que ninguna póliza explica (un asiento a
+-- mano: la prima de WC llevada a la bolsa sin registrar su póliza), el
+-- cuadre está en verde ANTES de la prueba y se pone en rojo en cuanto la
+-- prueba registra la suya en 1410 —por eso que ya había, no por la
+-- prueba—, y la 22 y la 88 decían «cambió». Ahora lo comparan con cómo
+-- estaría el cuadre con una póliza en 1410: en verde solo si, además, no
+-- hay nada suelto.
+create or replace function pg_temp.c6_1410_suelto() returns numeric
+language sql
+stable
+set search_path = public, pg_temp
+as $$
+  select case when exists (select 1 from prepagados p where p.cuenta = '1410') then 0::numeric
+              else coalesce((select sum(l.monto) from asiento_lineas l where l.cuenta = '1410'), 0) end
+$$;
+revoke execute on function pg_temp.c6_1410_suelto() from public, anon, authenticated, service_role;
 
 -- El reloj fingido y los cierres (como en c4-pruebas): «hoy» en Miami
 -- pasa a ser ese día (fn_fecha_miami, dentro de la subtransacción: el
@@ -2007,7 +2057,9 @@ begin
   begin
     perform pg_temp.c6_montar();
     v_pos := (select coalesce(max(cadena_pos), 0) from asientos);
-    v_ok0 := (select c.ok from fn_banco_control(current_setting('mx6.mes'), array['v_prepagados']) c where c.vista = 'cuadre: prepagados');
+    -- (como estaría el cuadre con una póliza en 1410: «LO QUE HAY SUELTO EN 1410», arriba)
+    v_ok0 := (select c.ok from fn_banco_control(current_setting('mx6.mes'), array['v_prepagados']) c where c.vista = 'cuadre: prepagados')
+             and pg_temp.c6_1410_suelto() = 0;
     v_gl := (fn_prepagado_guardar(jsonb_build_object('descripcion', 'c6-pruebas GL', 'tipo', 'seguro', 'cuenta_gasto', '6200',
                'monto', '4800.00', 'desde', v_ini::text, 'hasta', v_fin::text, 'saldo_corte', '4000.00'))->>'id')::uuid;
     perform fn_prepagado_guardar(jsonb_build_object('descripcion', 'c6-pruebas WC', 'tipo', 'seguro', 'cuenta_gasto', '5015',
@@ -5720,7 +5772,9 @@ begin
   end if;
   begin
     perform pg_temp.c6_montar();
-    v_ok0 := (select c.ok from fn_banco_control(current_setting('mx6.mes'), array['v_prepagados']) c where c.vista = 'cuadre: prepagados');
+    -- (como estaría el cuadre con una póliza en 1410: «LO QUE HAY SUELTO EN 1410», arriba)
+    v_ok0 := (select c.ok from fn_banco_control(current_setting('mx6.mes'), array['v_prepagados']) c where c.vista = 'cuadre: prepagados')
+             and pg_temp.c6_1410_suelto() = 0;
     v_a := (fn_prepagado_guardar(jsonb_build_object('descripcion', 'c6-pruebas WC 88', 'tipo', 'seguro', 'cuenta_gasto', '6200',
               'monto', '12000.00', 'desde', d::text, 'hasta', (d + 364)::text))->>'id')::uuid;
     perform fn_postear(jsonb_build_object('fecha', d::text, 'descripcion', 'c6-pruebas: la póliza pagada (se deshace)',
@@ -10865,6 +10919,453 @@ begin
     when others then v_obt := sqlstate || ' ' || left(sqlerrm, 300);
   end;
   insert into _pruebas values (163, v_nom, v_esp, coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 164. EL PAPEL DE LOS ASIENTOS DE LA NÓMINA DE GUSTO (13-nov, Fase 11b):
+--      v_asiento_papel (c4) encuentra el papel de un asiento con origen
+--      «nomina_corridas» (el journal de una corrida) o «nomina_burden» (el
+--      reparto de su burden) por v_papel_fases, que lo lee de c15
+--      (v_nomina_papel) con fn_banco_papel_nomina(). Antes decía «el papel
+--      ya no está» y la 25 de c4-pruebas fallaba con una nómina en el
+--      libro. Con lo que haya en la base:
+--      · SIN c15 (el banco se pega antes, y la nómina es opcional): la
+--        función no devuelve nada; y con una vista de prueba con el nombre
+--        y las columnas de la de c15 (se deshace), el journal y el burden
+--        de su corrida salen con su papel y el de otra corrida, sin él;
+--      · CON c15: cada asiento de nómina DE VERDAD cuya corrida está sale
+--        con el papel de c15, tal cual (cuántos son, en el nombre de la
+--        prueba); la función devuelve lo mismo que la vista de c15; y el
+--        asiento de una corrida que no existe (de prueba) sale sin papel:
+--        un rastro roto se sigue viendo.
+--      Y, siempre: la función la ejecuta solo authenticated (la vista es
+--      security_invoker), no es SECURITY DEFINER, y es la que usa la vista.
+--      (Con un c6 anterior, sin la función, dice lo que pasaba: cuántos
+--      asientos de nómina de verdad salen sin su papel.)
+do $$
+declare
+  v_obt   text;
+  v_esp   text;
+  v_nom   text := 'el papel de un asiento de la nómina de Gusto se encuentra por v_papel_fases (fn_banco_papel_nomina)';
+  v_c15   boolean := to_regclass('public.v_nomina_papel') is not null;
+  v_fn    boolean := to_regprocedure('public.fn_banco_papel_nomina()') is not null;
+  v_k     text := gen_random_uuid()::text;
+  v_k2    text := gen_random_uuid()::text;
+  v_a     uuid;
+  v_b     uuid;
+  v_c     uuid;
+  v_n     bigint := 0;
+  v_m     bigint := 0;
+  v_mal   bigint;
+  v_dif   bigint;
+  v_x     text;
+  v_fijo  text;
+  d       date := nullif(current_setting('mx6.desde', true), '')::date;
+begin
+  v_esp := case when v_c15 then 'de_verdad_mal=0 funcion=vista inventado=f:el papel ya no está'
+                else 'sin_c15=0:fff con_la_vista=t:c6-pruebas: la nómina de prueba t:c6-pruebas: su burden f' end
+           || ' api=authenticated definer=f en_la_vista=t';
+  if d is null then
+    insert into _pruebas values (164, v_nom, v_esp, 'omitida: falta mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c6_montar();
+    -- (el journal y el burden de una corrida, y el journal de otra: de
+    -- prueba, por la puerta de los puentes, como el de la 18)
+    v_a := (fn_postear_interno(jsonb_build_object(
+              'camino', 'puente', 'origen_tabla', 'nomina_corridas', 'origen_id', v_k, 'fecha', (d + 5)::text,
+              'descripcion', 'c6-pruebas: journal de una nómina de prueba (se deshace)',
+              'lineas', jsonb_build_array(jsonb_build_object('cuenta', '2210', 'monto', '40.00'),
+                                          jsonb_build_object('cuenta', '1098', 'monto', '-40.00'))))->>'id')::uuid;
+    v_b := (fn_postear_interno(jsonb_build_object(
+              'camino', 'puente', 'origen_tabla', 'nomina_burden', 'origen_id', v_k, 'fecha', (d + 5)::text,
+              'descripcion', 'c6-pruebas: burden de una nómina de prueba (se deshace)',
+              'lineas', jsonb_build_array(jsonb_build_object('cuenta', '2210', 'monto', '4.00'),
+                                          jsonb_build_object('cuenta', '1098', 'monto', '-4.00'))))->>'id')::uuid;
+    v_c := (fn_postear_interno(jsonb_build_object(
+              'camino', 'puente', 'origen_tabla', 'nomina_corridas', 'origen_id', v_k2, 'fecha', (d + 5)::text,
+              'descripcion', 'c6-pruebas: journal de otra nómina de prueba (se deshace)',
+              'lineas', jsonb_build_array(jsonb_build_object('cuenta', '2210', 'monto', '7.00'),
+                                          jsonb_build_object('cuenta', '1098', 'monto', '-7.00'))))->>'id')::uuid;
+    if not v_c15 then
+      if v_fn then
+        execute 'select count(*) from public.fn_banco_papel_nomina()' into v_n;
+      end if;
+      select format('sin_c15=%s:%s', case when v_fn then v_n::text else 'sin la función' end,
+                    string_agg(case when p.papel_existe then 't' else 'f' end, '' order by p.numero))
+        into v_obt from v_asiento_papel p where p.asiento_id in (v_a, v_b, v_c);
+      execute format('create view public.v_nomina_papel as
+                        select ''nomina_corridas''::text as origen_tabla, %L::text as origen_id,
+                               ''c6-pruebas: la nómina de prueba''::text as papel, null::text as ruta
+                        union all
+                        select ''nomina_burden'', %L, ''c6-pruebas: su burden'', null', v_k, v_k);
+      select v_obt || ' con_la_vista=' || string_agg(case when p.papel_existe then 't:' || p.papel else 'f' end, ' ' order by p.numero)
+        into v_obt from v_asiento_papel p where p.asiento_id in (v_a, v_b, v_c);
+    else
+      -- (los de verdad: los asientos de nómina que ya estaban en el libro)
+      execute 'select count(*), count(n.origen_id),
+                      count(*) filter (where n.origen_id is not null and (p.papel_existe is not true or p.papel is distinct from n.papel))
+                 from public.asientos a
+                 join public.v_asiento_papel p on p.asiento_id = a.id
+                 left join public.v_nomina_papel n on n.origen_tabla = a.origen_tabla and n.origen_id = a.origen_id
+                where a.origen_tabla in (''nomina_corridas'', ''nomina_burden'') and a.id not in ($1, $2, $3)'
+        into v_n, v_m, v_mal using v_a, v_b, v_c;
+      if v_fn then
+        execute 'select count(*) from ((select f.origen_tabla, f.origen_id, f.papel, f.ruta from public.fn_banco_papel_nomina() f
+                                         except select n.origen_tabla, n.origen_id, n.papel, n.ruta from public.v_nomina_papel n)
+                                        union all
+                                        (select n.origen_tabla, n.origen_id, n.papel, n.ruta from public.v_nomina_papel n
+                                         except select f.origen_tabla, f.origen_id, f.papel, f.ruta from public.fn_banco_papel_nomina() f)) x'
+          into v_dif;
+      end if;
+      select case when p.papel_existe then 't' else 'f:' || case when p.papel like '%(el papel ya no está)' then 'el papel ya no está'
+                                                                   else p.papel end end
+        into v_x from v_asiento_papel p where p.asiento_id = v_c;
+      v_obt := format('de_verdad_mal=%s funcion=%s inventado=%s', v_mal,
+                      case when not v_fn then 'no está' when v_dif = 0 then 'vista' else v_dif || ' filas distintas' end,
+                      coalesce(v_x, '-'));
+    end if;
+    select format('api=%s definer=%s en_la_vista=%s',
+                  (select string_agg(g, ',' order by g) from unnest(array['anon', 'authenticated', 'service_role']) g
+                    where has_function_privilege(g, f.oid, 'execute')),
+                  case when f.prosecdef then 't' else 'f' end,
+                  case when exists (select 1 from pg_depend dp join pg_rewrite rw on rw.oid = dp.objid
+                                     where dp.classid = 'pg_rewrite'::regclass and dp.refclassid = 'pg_proc'::regclass
+                                       and dp.refobjid = f.oid and rw.ev_class = 'public.v_papel_fases'::regclass) then 't' else 'f' end)
+      into v_fijo from pg_proc f where f.oid = to_regprocedure('public.fn_banco_papel_nomina()');
+    v_obt := v_obt || ' ' || coalesce(v_fijo, 'api=- definer=- en_la_vista=f (falta fn_banco_papel_nomina: la vista de los papeles no '
+                                              || 'conoce la nómina)');
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 200);
+  end;
+  insert into _pruebas values (164, v_nom || case when v_c15 then format(' (con c15: %s asiento(s) de nómina de verdad en el libro, %s con su corrida)',
+                                                                       v_n, v_m)
+                                                  else ' (sin c15: con una vista de prueba)' end,
+                               v_esp, coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 165. SIN EL CÓDIGO DEL TELÉFONO, EL PAPEL DE LA NÓMINA DICE QUE ESTÁ Y
+--      CÓMO SE VE, SIN DINERO (13-nov, Fase 11b). c15 solo deja leer sus
+--      corridas con el código (llevan lo que cobra cada persona) y la
+--      función de los papeles NO abre esa puerta (lee con los permisos de
+--      quien mira). Sin el código, de un asiento de la nómina no dice «el
+--      papel ya no está» (un rojo falso): dice que su papel es su nómina y
+--      que se ve con el código, sin una cifra. Con el código, el papel de
+--      verdad, y el de una corrida que no existe, «ya no está».
+--      · CON c15: como el dueño por la API sin el código (aal1) y con él
+--        (aal2), con dos asientos de una corrida que no existe (de prueba,
+--        se deshacen) y los de verdad que haya (ninguno sin papel, ninguno
+--        con una cifra); la vista de c15 leída directo sin el código sigue
+--        dando cero filas; y el equipo, nada.
+--      · SIN c15: lo mismo con una vista y una puerta de prueba con los
+--        nombres de las de c15 (se deshacen).
+do $$
+declare
+  v_obt   text;
+  v_esp   text;
+  v_nom   text := 'sin el código del teléfono el papel de la nómina dice que está y que se ve con él, sin dinero; con él, el de verdad';
+  v_c15   boolean := to_regclass('public.v_nomina_papel') is not null;
+  v_fn    boolean := to_regprocedure('public.fn_banco_papel_nomina()') is not null;
+  v_eq    boolean := coalesce(current_setting('mx6.equipo', true), '') <> '';
+  v_k     text := gen_random_uuid()::text;
+  v_k2    text := gen_random_uuid()::text;
+  v_a     uuid;
+  v_b     uuid;
+  v_x     text;
+  v_y     text;
+  v_n     bigint;
+  v_d     bigint;
+  v_s     bigint;
+  v_p     bigint;
+  d       date := nullif(current_setting('mx6.desde', true), '')::date;
+begin
+  v_esp := case when v_c15
+                then 'sin_el_codigo=t:código t:código con_dinero=0 sin_papel=0 la_funcion_directo=sin_dinero v_nomina_papel=0 | '
+                     || 'con_el_codigo=ff' || case when v_eq then ' | equipo=0' else '' end
+                else 'sin_el_codigo=t:código t:código con_dinero=0 sin_papel=0 | con_el_codigo=t:de_c15 f' end;
+  if d is null or coalesce(current_setting('mx6.dueno', true), '') = '' then
+    insert into _pruebas values (165, v_nom, v_esp, 'omitida: falta mes abierto o el dueño', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c6_montar();
+    v_a := (fn_postear_interno(jsonb_build_object(
+              'camino', 'puente', 'origen_tabla', 'nomina_corridas', 'origen_id', v_k, 'fecha', (d + 5)::text,
+              'descripcion', 'c6-pruebas: journal de una nómina de prueba (se deshace)',
+              'lineas', jsonb_build_array(jsonb_build_object('cuenta', '2210', 'monto', '40.00'),
+                                          jsonb_build_object('cuenta', '1098', 'monto', '-40.00'))))->>'id')::uuid;
+    v_b := (fn_postear_interno(jsonb_build_object(
+              'camino', 'puente', 'origen_tabla', case when v_c15 then 'nomina_burden' else 'nomina_corridas' end,
+              'origen_id', case when v_c15 then v_k else v_k2 end, 'fecha', (d + 5)::text,
+              'descripcion', 'c6-pruebas: otro asiento de una nómina de prueba (se deshace)',
+              'lineas', jsonb_build_array(jsonb_build_object('cuenta', '2210', 'monto', '4.00'),
+                                          jsonb_build_object('cuenta', '1098', 'monto', '-4.00'))))->>'id')::uuid;
+    if v_c15 then
+      -- como el dueño por la API, SIN el código (su token no dice aal2)
+      perform pg_temp.c6_como('dueno');
+      select string_agg(case when p.papel_existe then 't' else 'f' end || ':'
+                        || case when p.papel like '%código del teléfono%' then 'código'
+                                when p.papel like '%(el papel ya no está)' then 'el papel ya no está' else left(p.papel, 60) end,
+                        ' ' order by p.numero)
+        into v_x from v_asiento_papel p where p.asiento_id in (v_a, v_b);
+      -- (todos los de nómina que hay, también los de verdad: ninguno con una
+      -- cifra, ninguno sin papel)
+      select count(*) filter (where p.papel_existe and p.papel ~ '[$0-9]'), count(*) filter (where not p.papel_existe) into v_d, v_s
+        from v_asiento_papel p where p.origen_tabla in ('nomina_corridas', 'nomina_burden');
+      if v_fn then
+        execute 'select count(*) filter (where f.papel ~ ''[$0-9]'' or f.papel not like ''%código del teléfono%'')
+                   from public.fn_banco_papel_nomina() f' into v_p;
+      end if;
+      execute 'select count(*) from public.v_nomina_papel' into v_n;
+      execute 'reset role';
+      v_obt := format('sin_el_codigo=%s con_dinero=%s sin_papel=%s la_funcion_directo=%s v_nomina_papel=%s', coalesce(v_x, '-'), v_d, v_s,
+                      case when not v_fn then 'no está' when v_p = 0 then 'sin_dinero' else v_p || ' con dinero o sin decir el código' end,
+                      v_n);
+      -- como el dueño por la API, CON el código (aal2): la corrida de prueba no existe
+      perform set_config('request.jwt.claims',
+                         json_build_object('sub', current_setting('mx6.dueno'), 'role', 'authenticated', 'aal', 'aal2')::text, true);
+      execute 'set local role authenticated';
+      select string_agg(case when p.papel_existe then 't' else 'f' end, '' order by p.numero)
+        into v_y from v_asiento_papel p where p.asiento_id in (v_a, v_b);
+      execute 'reset role';
+      perform pg_temp.c6_como(null);
+      v_obt := v_obt || ' | con_el_codigo=' || coalesce(v_y, '-');
+      if v_eq then
+        perform pg_temp.c6_como('equipo');
+        select count(*) into v_n from v_papel_fases f where f.origen_tabla in ('nomina_corridas', 'nomina_burden');
+        if v_fn then
+          execute 'select $1 + count(*) from public.fn_banco_papel_nomina()' into v_n using v_n;
+        end if;
+        execute 'reset role';
+        perform pg_temp.c6_como(null);
+        v_obt := v_obt || ' | equipo=' || v_n;
+      end if;
+    else
+      -- (sin c15: una vista y una puerta de prueba con los nombres de las de
+      -- c15; la puerta dice «sí» solo con el ajuste mx6.codigo puesto)
+      execute format('create view public.v_nomina_papel as
+                        select ''nomina_corridas''::text as origen_tabla, %L::text as origen_id,
+                               ''c6-pruebas: la nómina de prueba, bruto $1,234.56''::text as papel, null::text as ruta', v_k);
+      execute 'create function public.fn_nomina_ve_personas() returns boolean language sql stable
+               as $f$ select coalesce(current_setting(''mx6.codigo'', true), '''') = ''si'' $f$';
+      perform set_config('mx6.codigo', '', true);
+      select string_agg(case when p.papel_existe then 't' else 'f' end || ':'
+                        || case when p.papel like '%código del teléfono%' then 'código'
+                                when p.papel like '%(el papel ya no está)' then 'el papel ya no está' else left(p.papel, 60) end,
+                        ' ' order by p.numero)
+        into v_x from v_asiento_papel p where p.asiento_id in (v_a, v_b);
+      select count(*) filter (where p.papel_existe and p.papel ~ '[$0-9]'), count(*) filter (where not p.papel_existe) into v_d, v_s
+        from v_asiento_papel p where p.origen_tabla in ('nomina_corridas', 'nomina_burden');
+      perform set_config('mx6.codigo', 'si', true);
+      select string_agg(case when p.papel_existe then 't' || case when p.papel like 'c6-pruebas: la nómina de prueba%' then ':de_c15' else ':otro' end
+                             else 'f' end, ' ' order by p.numero)
+        into v_y from v_asiento_papel p where p.asiento_id in (v_a, v_b);
+      perform set_config('mx6.codigo', '', true);
+      v_obt := format('sin_el_codigo=%s con_dinero=%s sin_papel=%s | con_el_codigo=%s', coalesce(v_x, '-'), v_d, v_s, coalesce(v_y, '-'));
+    end if;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then
+      v_obt := sqlstate || ' ' || left(sqlerrm, 200);
+  end;
+  -- (si la prueba se cortó a medias siendo otro: volver a ser el editor)
+  execute 'reset role';
+  perform pg_temp.c6_como(null);
+  insert into _pruebas values (165, v_nom || case when v_c15 then ' (con c15: su puerta de verdad)'
+                                                  else ' (sin c15: con una vista y una puerta de prueba)' end,
+                               v_esp, coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 166. LOS TEXTOS DEL DÉBITO DE NÓMINA DICEN EL CAMINO DE HOY (13-nov, Fase
+--      11b). Con c15 el journal de Gusto no lleva línea del banco y el
+--      cargo no casa solo: se casa desde Contabilidad → Nómina → Cargos de
+--      Gusto, con lo que su nómina dejó por pagar. Lo dicen la propuesta de
+--      la Bandeja (R6), el freno de clasificar a mano (que sigue empezando
+--      «Es un débito de nómina» y terminando «dilo en el motivo»: c10 lo
+--      reconoce así), lo que le falta a la conciliación (sola la nómina, y
+--      con otro pendiente al lado; sigue ofreciendo fn_banco_nomina para
+--      la del proveedor anterior) y el «para» de su descriptor. Ninguno
+--      manda ya a esperar el journal de f11.
+do $$
+declare
+  v_obt text;
+  v_esp text := 'bandeja=nomina:R6:cargos_de_gusto clasificar=MX008:cargos_de_gusto falta=solo_nomina falta_con_otro=de_nomina '
+                'descriptor=cargos_de_gusto';
+  v_m   uuid;
+  v_p   jsonb;
+  v_c   jsonb;
+  v_x   text;
+  v_f1  text;
+  v_f2  text;
+  d     date := nullif(current_setting('mx6.desde', true), '')::date;
+begin
+  if d is null then
+    insert into _pruebas values (166, 'los textos del débito de nómina mandan a Nómina → Cargos de Gusto, no a esperar el journal', v_esp,
+                                 'omitida: falta mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c6_montar();
+    perform fn_banco_importar_ofx(pg_temp.c6_qfx('banco', '000000001098', d, d + 20, -4000.00, jsonb_build_array(
+              jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 15, 'monto', '-4000.00', 'id', 'C6NT1', 'nombre', 'GUSTO TAX 778811'))),
+            '1098', 'c6-pruebas-gusto-tax.qfx');
+    perform fn_banco_casar_todo('1098');
+    v_m := pg_temp.c6_mov('1098', 'C6NT1');
+    select m.propuesta into v_p from movimientos_banco m where m.id = v_m;
+    v_obt := format('bandeja=%s:%s:%s', v_p->>'motivo', v_p->>'regla',
+                    case when v_p->>'texto' like 'Débito de nómina (Gusto): se casa desde Contabilidad → Nómina → Cargos de Gusto, con lo que '
+                                                 'su nómina dejó por pagar%'
+                              and v_p->>'texto' like '%fn_banco_nomina(%' and v_p->>'texto' not like '%f11%'
+                              and v_p->>'texto' not like '%espera el journal%'
+                         then 'cargos_de_gusto' else left(v_p->>'texto', 120) end);
+    begin
+      perform fn_banco_clasificar(v_m, '[{"cuenta": "6130"}]'::jsonb, null);
+      v_x := 'entró';
+    exception when others then
+      v_x := sqlstate || ':' || case when sqlerrm like 'Es un débito de nómina%Contabilidad → Nómina → Cargos de Gusto%dilo en el motivo%'
+                                          and sqlerrm not like '%f11%' and sqlerrm not like '%espera su journal%'
+                                     then 'cargos_de_gusto' else left(sqlerrm, 120) end;
+    end;
+    v_c := fn_conciliar('1098', d + 20, '-4000.00');
+    v_f1 := v_c->>'falta';
+    -- (y con otro pendiente al lado, que no es de nómina)
+    perform fn_banco_importar_ofx(pg_temp.c6_qfx('banco', '000000001098', d + 16, d + 20, -4031.31, jsonb_build_array(
+              jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 16, 'monto', '-31.31', 'id', 'C6NT2', 'nombre', 'ZZ OTRA COSA 4431'))),
+            '1098', 'c6-pruebas-gusto-tax-2.qfx');
+    perform fn_banco_casar_todo('1098');
+    v_c := fn_conciliar('1098', d + 20, '-4031.31');
+    v_f2 := v_c->>'falta';
+    v_obt := v_obt || format(' clasificar=%s falta=%s falta_con_otro=%s descriptor=%s', v_x,
+                             case when v_f1 like '1 movimiento(s) de nómina (Gusto) sin casar: se casan desde Contabilidad → Nómina → '
+                                                 'Cargos de Gusto%fn_banco_nomina%' and v_f1 not like '%f11%' then 'solo_nomina'
+                                  else coalesce(left(v_f1, 120), '-') end,
+                             case when v_f2 like '2 movimiento(s) del banco sin su línea en el libro%(1 de nómina: se casan desde '
+                                                 'Contabilidad → Nómina → Cargos de Gusto; el del proveedor anterior, con fn_banco_nomina)%'
+                                       and v_f2 not like '%f11%' then 'de_nomina'
+                                  else coalesce(left(v_f2, 160), '-') end,
+                             (select case when dd.para like 'Débito de nómina (Gusto): se casa desde Contabilidad → Nómina → Cargos de '
+                                                            'Gusto%' and dd.para not like '%f11%' then 'cargos_de_gusto'
+                                          else left(dd.para, 100) end
+                                from banco_descriptores dd where dd.clave = 'nomina'));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 200);
+  end;
+  insert into _pruebas values (166, 'los textos del débito de nómina mandan a Nómina → Cargos de Gusto, no a esperar el journal', v_esp,
+                               coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 167. UNA DEVOLUCIÓN DE GUSTO NO ES UN DEPÓSITO CUALQUIERA (13-nov, Fase
+--      11b). Un depósito que dice nómina (una corrección de Gusto que
+--      devuelve) y que nada más explica salía «deposito_sin_factura» o, con
+--      facturas abiertas, «deposito_parcial» —con botones que registraban el
+--      cobro de un cliente con el dinero de Gusto—. Ahora sale con el motivo
+--      «nomina» (R6), como el débito: su tarjeta manda a Nómina → Cargos de
+--      Gusto, y los botones de las facturas, si los hay, piden su motivo.
+--      Registrarle el cobro de un cliente sin su porqué en las notas, o
+--      clasificarlo a mano sin motivo, MX008 («Es un depósito de nómina…»);
+--      con él, entra (un cliente que de verdad se llame así; o como lo casa
+--      la nómina, contra lo que quedó a favor). Lo que no cambia: si una
+--      factura abierta lo explica por su monto exacto, sigue siendo su
+--      cobro (y el texto avisa de que dice nómina); y el Zelle de un
+--      cliente que se llame AUGUSTO no es de Gusto (en un depósito el
+--      descriptor casa como palabra entera). Y la conciliación cuenta la
+--      devolución sin casar entre lo «de nómina».
+do $$
+declare
+  v_obt  text;
+  v_esp  text := 'devolucion=nomina:R6:cargos_de_gusto botones=con_motivo exacta=deposito_sin_cobro:avisa augusto=deposito_parcial:sin_aviso '
+                 'cobrar=MX008:deposito_de_nomina con_notas=casado:cobro clasificar=MX008:deposito_de_nomina con_motivo=casado:clasificado '
+                 'falta=de_nomina';
+  v_obra text := current_setting('mx6.obra', true);
+  v_m    uuid;
+  v_m4   uuid;
+  v_p    jsonb;
+  v_x    text;
+  v_f    text;
+  d      date := nullif(current_setting('mx6.desde', true), '')::date;
+begin
+  if d is null or coalesce(v_obra, '') = '' then
+    insert into _pruebas values (167, 'una devolución de Gusto (un depósito que dice nómina) va a la nómina, no al cobro de un cliente', v_esp,
+                                 'omitida: falta mes abierto o una obra', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c6_montar();
+    -- (sin el aviso de la apertura sin conciliar: con él todos los botones
+    -- piden su motivo y no se vería lo que esta prueba mira)
+    perform pg_temp.c6_sin_aviso();
+    insert into facturas (id, proyecto_id, num, fecha, monto, retencion) overriding system value
+    values (-661671, v_obra, 'C6-1671', d + 1, 2000.00, 0);
+    perform fn_banco_importar_ofx(pg_temp.c6_qfx('banco', '000000001098', d, d + 14, null, jsonb_build_array(
+              jsonb_build_object('tipo', 'CREDIT', 'fecha', d + 9, 'monto', '61.17', 'id', 'C6GD1', 'nombre', 'GUSTO TAX REFUND 778899'),
+              jsonb_build_object('tipo', 'CREDIT', 'fecha', d + 10, 'monto', '2000.00', 'id', 'C6GD2', 'nombre', 'GUSTO REFUND 112233'),
+              jsonb_build_object('tipo', 'CREDIT', 'fecha', d + 11, 'monto', '149.37', 'id', 'C6GD3', 'nombre', 'ZELLE FROM AUGUSTO ZZ C6'),
+              jsonb_build_object('tipo', 'CREDIT', 'fecha', d + 12, 'monto', '73.19', 'id', 'C6GD4', 'nombre', 'GUSTO REFUND 445566'))),
+            '1098', 'c6-pruebas-gusto-devuelve.qfx');
+    perform fn_banco_casar_todo('1098');
+    v_m := pg_temp.c6_mov('1098', 'C6GD1');
+    v_m4 := pg_temp.c6_mov('1098', 'C6GD4');
+    select m.propuesta into v_p from movimientos_banco m where m.id = v_m;
+    v_obt := format('devolucion=%s:%s:%s botones=%s', v_p->>'motivo', v_p->>'regla',
+                    case when v_p->>'texto' like 'Depósito que dice nómina (Gusto)%Contabilidad → Nómina → Cargos de Gusto, contra lo que su '
+                                                 'nómina dejó a favor%' and v_p->>'texto' not like '%f11%'
+                         then 'cargos_de_gusto' else left(v_p->>'texto', 120) end,
+                    case when jsonb_array_length(coalesce(v_p->'opciones', '[]'::jsonb)) = 0 then 'ninguno'
+                         when not exists (select 1 from jsonb_array_elements(v_p->'opciones') o
+                                           where not coalesce((o->>'pide_motivo')::boolean, false)) then 'con_motivo'
+                         else 'alguno sin motivo' end);
+    select m.propuesta into v_p from movimientos_banco m where m.id = pg_temp.c6_mov('1098', 'C6GD2');
+    v_obt := v_obt || format(' exacta=%s:%s', v_p->>'motivo',
+                             case when v_p->>'texto' like '%Ojo: su descripción dice nómina (Gusto)%Cargos de Gusto%' then 'avisa' else 'no avisa' end);
+    select m.propuesta into v_p from movimientos_banco m where m.id = pg_temp.c6_mov('1098', 'C6GD3');
+    v_obt := v_obt || format(' augusto=%s:%s', v_p->>'motivo',
+                             case when v_p->>'texto' like '%dice nómina%' then 'AVISA' else 'sin_aviso' end);
+    -- (lo que le falta a la conciliación: las devoluciones sin casar cuentan
+    -- entre lo de nómina)
+    v_f := fn_conciliar('1098', d + 14, '2283.73')->>'falta';
+    -- (registrarle el cobro de un cliente: sin su porqué, no; con él, sí)
+    begin
+      perform fn_banco_cobrar(v_m4, jsonb_build_array(jsonb_build_object('factura_id', -661671, 'monto', '73.19')), null);
+      v_x := 'entró sin su porqué';
+    exception when others then
+      v_x := sqlstate || ':' || case when sqlerrm like 'Es un depósito de nómina (una devolución de Gusto)%Contabilidad → Nómina → Cargos de '
+                                                       'Gusto%di por qué en las notas%'
+                                     then 'deposito_de_nomina' else left(sqlerrm, 120) end;
+    end;
+    if pg_temp.c6_est('1098', 'C6GD4') like 'pendiente:%' then
+      perform fn_banco_cobrar(v_m4, jsonb_build_array(jsonb_build_object('factura_id', -661671, 'monto', '73.19')),
+                              'c6-pruebas: el cliente se llama así; es una parte de su factura');
+    end if;
+    v_obt := v_obt || ' cobrar=' || v_x || ' con_notas=' || pg_temp.c6_est('1098', 'C6GD4');
+    begin
+      perform fn_banco_clasificar(v_m, '[{"cuenta": "2220"}]'::jsonb, null);
+      v_x := 'entró sin motivo';
+    exception when others then
+      v_x := sqlstate || ':' || case when sqlerrm like 'Es un depósito de nómina (una devolución de Gusto)%Contabilidad → Nómina → Cargos de '
+                                                       'Gusto%dilo en el motivo%'
+                                     then 'deposito_de_nomina' else left(sqlerrm, 120) end;
+    end;
+    v_obt := v_obt || ' clasificar=' || v_x;
+    if pg_temp.c6_est('1098', 'C6GD1') like 'pendiente:%' then
+      perform fn_banco_clasificar(v_m, '[{"cuenta": "2220"}]'::jsonb,
+                                  'c6-pruebas: devolución de Gusto, contra lo que la nómina dejó a favor (como la casa la nómina)');
+    end if;
+    v_obt := v_obt || ' con_motivo=' || pg_temp.c6_est('1098', 'C6GD1')
+             || ' falta=' || case when v_f like '%movimiento(s) del banco sin su línea en el libro%(2 de nómina: se casan desde Contabilidad → '
+                                                'Nómina → Cargos de Gusto%' then 'de_nomina' else coalesce(left(v_f, 160), '-') end;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when sqlstate 'MXT01' then v_obt := 'omitida: la apertura está cerrada y sin su asiento';
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 200);
+  end;
+  insert into _pruebas values (167, 'una devolución de Gusto (un depósito que dice nómina) va a la nómina, no al cobro de un cliente', v_esp,
+                               coalesce(v_obt, '-'), case when v_obt like 'omitida%' then null else coalesce(v_obt = v_esp, false) end);
 end $$;
 
 -- 61. NO DEJA RASTRO: todo lo de arriba se deshizo. El libro, los papeles,

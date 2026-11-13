@@ -1,6 +1,7 @@
 -- =====================================================================
 -- c12-pruebas.sql — el WIP por costo a costo se prueba a sí mismo
--- (c12-wip.sql). 12-nov-2026.
+-- (c12-wip.sql). 12-nov-2026; 13-nov-2026 (la Fase 11b, v3 de la capa): la
+-- 36 mira el aviso 170 también con horas que pagó una nómina.
 --
 -- CÓMO SE CORRE. En el SQL Editor de Supabase: DESPUÉS de c12-wip.sql (y de
 -- volver a pegar c9-cierre.sql, que trae las filas 174 a 177), pegar este
@@ -110,7 +111,8 @@
 --    vuelta, y el nombre de la fila 174 dice cuál;
 -- 36 los avisos (pérdida, facturado por encima del contrato, ingreso que no
 --    es factura, terminadas fuera del WIP, activas sin contrato, horas sin
---    costo en el libro, los hitos) y la fila 177 del cierre;
+--    costo en el libro —y que las que pagó una nómina ya no cuentan—, los
+--    hitos) y la fila 177 del cierre;
 -- 37 el 90 (las protecciones) en rojo y de vuelta;
 -- 38 las cuatro filas del cierre (fn_wip_cierre);
 -- 39 el cierre (c9) mira el WIP: sus filas 174 a 177, y MX010 al cerrar
@@ -422,6 +424,29 @@ $$;
 create or replace function pg_temp.c12_ctl_det(p_orden int, p_per text default null) returns text language sql as $$
   select c.detalle from fn_wip_control(coalesce(p_per, pg_temp.c12('mes'))) c where c.orden = p_orden
 $$;
+-- (v3, la Fase 11b) LA MARCA SIN DINERO DE LA NÓMINA, DE PRUEBA. La nómina
+-- (c15) se pega después y es opcional; lo que el costo por obra (c10) lee de
+-- ella —y, a través de él, el aviso 170 de aquí— es qué reportes de horas
+-- pagó una nómina posteada. La prueba 36 la pone DENTRO de un bloque que se
+-- deshace: una función con ese nombre que devuelve los reportes que se le
+-- digan. Si c15 está, su función de verdad queda como estaba al deshacerse
+-- (como el reloj fingido); nadie más la ve cambiada. Como el SQL Editor.
+create or replace function pg_temp.c12_marca(p_ids bigint[]) returns void language plpgsql as $$
+begin
+  perform pg_temp.c12_ser('editor');
+  if to_regprocedure('public.fn_nomina_horas_con_pago()') is not null then
+    drop function public.fn_nomina_horas_con_pago();
+  end if;
+  execute format($f$
+    create function public.fn_nomina_horas_con_pago()
+    returns table (horas_id bigint, corrida_id uuid, dia_pago date)
+    language sql stable
+    set search_path = public, pg_temp
+    as $b$ select x, '00000000-0000-4000-a000-0000000c12ff'::uuid, %L::date from unnest(%L::bigint[]) x $b$
+  $f$, pg_temp.c12_d(20), p_ids);
+  revoke execute on function public.fn_nomina_horas_con_pago() from public, anon, service_role;
+  grant  execute on function public.fn_nomina_horas_con_pago() to authenticated;
+end $$;
 -- Los cuadres del WIP del mes de las pruebas (sin el 40 y el 50, que tienen
 -- sus pruebas) contra cómo estaban ANTES de las pruebas: lo que ya estaba en
 -- rojo con los datos de esta base no se cuenta.
@@ -2537,18 +2562,28 @@ end $$;
 --     contrato que no es de servicio (165), horas sin costo en el libro (170,
 --     con c10) y hitos que no suman el contrato (180). La fila 177 del
 --     cierre los junta. (El 110, el 125 y el 130, en las pruebas 15, 12 y 20.)
+--     (v3, la Fase 11b) El 170 dice que a esas horas no las cubre «ni un pago
+--     repartido por horas ni una nómina»; y cuando una nómina las paga (la
+--     marca de prueba de la nómina, que lee el costo por obra de c10 en su
+--     v3) ya no las cuenta: su costo está en el libro.
 do $$
 declare
   v_obt text; f record; r jsonb; v_mes text := pg_temp.c12('mes'); v_horas boolean;
   a text; b text; c text; d text; e text; g text; h text; i text;
   v_esp text;
+  -- (¿el costo por obra de esta base es ya el del 13-nov, la v3 de c10, que lee la marca de la nómina? Si es el de antes, la
+  -- parte de la nómina no se prueba, y se dice qué pegar: la prueba no falla por el orden en que se peguen los archivos)
+  v_c10v3 boolean := to_regprocedure('public.fn_margen_horas_nomina()') is not null;
+  c_c10_viejo constant text := '; pagadas por una nómina: (no se prueba: el costo por obra de esta base es el de antes del 13-nov y no lee la '
+                               'marca de la nómina: vuelve a pegar c10-costo-obra.sql)';
 begin
   v_horas := pg_temp.c12('hay_c10') = 'true' and pg_temp.c12('equipo') is not null;
   v_esp := 'pérdida (120): nombra la obra, con la pérdida y lo provisionado: sí | facturado por encima del contrato (140): sí, y lo dice '
            'en su fila: sí | ingreso que no es factura (150): sí, y no cuenta como facturado: sí | terminada con costo en el mes y fuera '
            'del WIP (160): sí; revisada como terminada, entra y ya no la nombra: sí | activa sin contrato (165): sí; marcada «tm», ya no: '
            'sí | '
-           || case when v_horas then 'horas sin costo en el libro (170): sí'
+           || case when v_horas then 'horas sin costo en el libro (170): sí, y dice que no las cubre ni un pago repartido ni una nómina'
+                                     || case when v_c10v3 then '; pagadas por una nómina, ya no las cuenta: sí' else c_c10_viejo end
                    else '(sin el costo por obra (c10) o sin nadie del equipo en esta base: el aviso 170 no se prueba)' end
            || ' | los hitos no suman el contrato (180): sí | la fila 177 del cierre los junta a todos y su nombre dice cuáles, es un aviso y no detiene: sí; y los cuadres: '
               'nada nuevo en rojo';
@@ -2602,7 +2637,30 @@ begin
       insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas) overriding system value
       values (-1200036, pg_temp.c12_d(5), pg_temp.c12('equipo')::uuid, 'c12-prueba-a', 8, 'c12-pruebas');
       g := 'horas sin costo en el libro (170): '
-           || case when pg_temp.c12_ctl(170) = 'rojo' and pg_temp.c12_ctl_det(170) like '%C12 PRUEBA Obra A (8 h%' then 'sí' else 'no: ' || pg_temp.c12_ctl_det(170) end;
+           || case when pg_temp.c12_ctl(170) = 'rojo'
+                        and pg_temp.c12_ctl_det(170) like '%que no están en el libro (ni un pago repartido por horas ni una nómina las cubre): %C12 PRUEBA Obra A (8 h%'
+                   then 'sí, y dice que no las cubre ni un pago repartido ni una nómina' else 'no: ' || pg_temp.c12_ctl_det(170) end;
+      -- (v3) esas mismas horas, pagadas por una nómina (la marca de prueba; se deshace aquí mismo): ya no son de este aviso.
+      -- (Poner la marca pide un candado sobre esa función: con un tope de medio segundo, para no frenar a la app; si no se
+      -- consigue, esta parte no se prueba y se dice —en lo esperado y en lo obtenido—, sin fallo.)
+      if not v_c10v3 then
+        g := g || c_c10_viejo;
+      else
+      begin
+        set local lock_timeout = '500ms';
+        perform pg_temp.c12_marca(array[-1200036]::bigint[]);
+        g := g || '; pagadas por una nómina, ya no las cuenta: '
+               || case when pg_temp.c12_ctl_det(170) not like '%C12 PRUEBA Obra A (%' then 'sí'
+                       else 'NO: ' || left(pg_temp.c12_ctl_det(170), 300) end;
+        raise exception using errcode = 'MXT01';
+      exception
+        when sqlstate 'MXT01' then null;
+        when lock_not_available then
+          g := g || '; pagadas por una nómina: (no se probó: no se consiguió un candado en medio segundo; vuelve a pegar este archivo en un rato)';
+          v_esp := replace(v_esp, '; pagadas por una nómina, ya no las cuenta: sí',
+                           '; pagadas por una nómina: (no se probó: no se consiguió un candado en medio segundo; vuelve a pegar este archivo en un rato)');
+      end;
+      end if;
     else
       g := '(sin el costo por obra (c10) o sin nadie del equipo en esta base: el aviso 170 no se prueba)';
     end if;

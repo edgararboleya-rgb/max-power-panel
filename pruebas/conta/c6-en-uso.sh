@@ -156,7 +156,7 @@ done
 # Las del devengo, omitidas por el tope de fecha (el primer mes sin journal
 # es diciembre, y su último día pasa del tope de c2); las de amortizar
 # octubre, omitidas por noviembre ya amortizado.
-revisa "c3-pruebas: las del devengo salen «omitida» por el tope de fecha" "28,57,67,74,77,99,120" \
+revisa "c3-pruebas: las del devengo salen «omitida» por el tope de fecha" "28,57,67,74,77,99,120,121,122,123,124,125" \
   "$(grep -E '^[0-9]+\|omitida\|.*tope de fecha' "$TMP/c3-nov.out" | cut -d'|' -f1 | paste -sd, -)"
 revisa "c6-pruebas: las que amortizan octubre salen «omitida» (noviembre ya amortizado)" "22,46,88" \
   "$(grep -E '^[0-9]+\|omitida\|.*ya está amortizado' "$TMP/c6-nov.out" | cut -d'|' -f1 | paste -sd, -)"

@@ -8,10 +8,12 @@
 #   ./c13-sin-capas.sh [nombre_bd]      (por defecto c13_sin_capas)
 #
 # 1. LA CADENA MÍNIMA: c1 + c2 + c3 y nada más (ni c4, ni c6, ni c9, ni
-#    c12, ni p1). c13 se pega (dos veces): no pide ninguna de ellas. Su
-#    pegado dice que no encontró ninguna; la cédula sale completa; cada
-#    cuenta de una capa que falta dice «sin auxiliar: esa parte no está en
-#    esta base»; lo que sale del propio libro (por cobrar, por pagar, el use
+#    c12, ni p1, ni la nómina: c15). c13 se pega (dos veces): no pide
+#    ninguna de ellas. Su pegado dice que no encontró ninguna; la cédula
+#    sale completa; cada cuenta de una capa que falta dice «sin auxiliar:
+#    esa parte no está en esta base» (las de la nómina, «llega con la
+#    nómina (f11)», como antes del 13-nov: la nómina con c15 dentro se
+#    prueba en c13-nomina.sh); lo que sale del propio libro (por cobrar, por pagar, el use
 #    tax, el patrimonio) sigue teniendo su auxiliar, y la fila dice qué hay
 #    debajo (las partidas del libro, o el propio libro); QuickBooks sale vacío;
 #    el dueño, por la API, escribe un renglón a mano y una explicación; y
@@ -23,8 +25,8 @@
 #    escrito sigue ahí. Los activos, el WIP y Stripe siguen sin su capa.
 # 3. VOLVER A PEGAR c13 (dos veces) con un renglón, una explicación y la
 #    configuración cambiada dentro: no pisa nada (las mismas filas, tal
-#    cual). Y c13-pruebas.sql otra vez: ahora solo se omite lo de c9, c12 y
-#    p1.
+#    cual). Y c13-pruebas.sql otra vez: ahora solo se omite lo de c9, c12,
+#    p1 y c15.
 # 4. VOLVER A PEGAR c13 CON LA PANTALLA LEYENDO (una lectura larga de la
 #    cédula; el pegado medio segundo después): el pegado se rinde con 55P03
 #    («lock timeout») en menos de 3 s, o entra; nadie muere por 40P01; sin
@@ -103,8 +105,8 @@ ROJOS_C3="$(ed -c "select coalesce(string_agg(control, '; ' order by control), '
 # un banco de la base (la cuenta del puente «banco» de c3) para escribirle a mano
 BANCO="$(ed -c "select coalesce((select cuenta from puente_cuentas where rol = 'banco'), '1010')")"
 
-revisa "c13 no encontró ninguna capa opcional" "c12=false c4=false c6=false c9=false p1=false" "$(capas)"
-revisa "su pegado lo dice (las cinco, «NO está»), y no habla del cierre (aquí no hay cierre)" "5|no" \
+revisa "c13 no encontró ninguna capa opcional" "c12=false c15=false c4=false c6=false c9=false p1=false" "$(capas)"
+revisa "su pegado lo dice (las seis, «NO está»), y no habla del cierre (aquí no hay cierre)" "6|no" \
   "$(ed -c "select (select (length(g.detalle) - length(replace(g.detalle, 'NO está', ''))) / length('NO está') from fn_cedula_pegado() g where g.que = 'capas que lee')
                    || '|' || (select case when g.detalle like '%cierre%' then 'sí' else 'no' end from fn_cedula_pegado() g where g.que = 'siguiente paso')")"
 revisa "la cédula sale completa: una fila por cuenta de balance, y su control 10 y 90 en verde" "sí|verde|verde" \
@@ -119,6 +121,11 @@ revisa "cada cuenta de una capa que falta: sin auxiliar, y dice que esa parte no
                    || ' mal de ' || case when count(*) > 10 then 'más de 10' else count(*)::text end
               from fn_cedula('$HOY') x
              where x.fuente in ('conciliacion', 'prestamos', 'prepagados', 'activos', 'depreciacion', 'wip', 'stripe', 'stripe_paso')")"
+revisa "las cuentas de la nómina, sin la nómina (c15): sin auxiliar, «llega con la nómina (f11)», y sin saldo no piden nada (como antes del 13-nov)" "0 mal de 5" \
+  "$(ed -c "select count(*) filter (where not (x.estado = 'sin_auxiliar' and x.por_que = 'f11' and x.saldo_auxiliar is null and not x.pendiente
+                                                and x.detalle = 'Sin auxiliar: llega con la nómina (f11). No tiene saldo: no pide nada.'))
+                   || ' mal de ' || count(*)
+              from fn_cedula('$HOY') x where x.fuente = 'nomina'")"
 revisa "lo que sale del propio libro sigue con su auxiliar (por cobrar, la retención, por pagar, el use tax y el patrimonio)" "0" \
   "$(ed -c "select count(*) from fn_cedula('$HOY') x where x.fuente in ('partidas', 'dr15', 'devengos', 'mayor') and (x.estado = 'sin_auxiliar' or x.saldo_auxiliar is null)")"
 revisa "y la fila dice qué hay debajo: las partidas del propio libro, o el propio libro (que no se llama «cuadra»: «del libro»)" "0|0|sí" \
@@ -146,10 +153,10 @@ revisa "ese banco, sin su capa y con su renglón: tiene auxiliar (el renglón) y
 G1="$(guardado)"
 
 pruebas "$TMP/p1.out"
-revisa "c13-pruebas.sql sobre c1 + c2 + c3: 41 filas, ninguna falla" "41|0" \
+revisa "c13-pruebas.sql sobre c1 + c2 + c3: 48 filas, ninguna falla" "48|0" \
   "$(sed -n 's/^PRUEBAS total=\([0-9]*\) .* fallan=\([0-9]*\) .*/\1|\2/p' "$TMP/p1.out")"
-revisa "y lo que necesita una capa sale «omitida» diciéndolo (c6: 11, 12, 13, 16, 33, 35 y 37; c12: 14; c9: 15 y 30; p1: 19; c4: 26), y nada más" \
-  "11 12 13 14 15 16 19 26 30 33 35 37|11 12 13 14 15 16 19 26 30 33 35 37" \
+revisa "y lo que necesita una capa sale «omitida» diciéndolo (c6: 11, 12, 13, 16, 33, 35 y 37; c12: 14; c9: 15 y 30; p1: 19; c4: 26; c15: 47), y nada más" \
+  "11 12 13 14 15 16 19 26 30 33 35 37 47|11 12 13 14 15 16 19 26 30 33 35 37 47" \
   "$(sed -n 's/^OMITIDAS //p' "$TMP/p1.out")|$(sed -n 's/^POR CAPA //p' "$TMP/p1.out")"
 grep '^FALLA \|ERROR' "$TMP/p1.out" | head -n 12
 revisa "las pruebas no dejaron nada (lo guardado, tal cual)" "$G1" "$(guardado)"
@@ -158,7 +165,7 @@ echo
 echo "== 2. Llegan c4 y c6 después (encima, con c13 ya puesto), sin volver a pegar c13"
 pegar "$DOCS/c4-estados.sql" > "$TMP/2c4.out" 2>&1 || { tail -n 20 "$TMP/2c4.out"; echo "FALLÓ pegar c4 encima de c13" >&2; exit 2; }
 pegar "$DOCS/c6-banco.sql"   > "$TMP/2c6.out" 2>&1 || { tail -n 20 "$TMP/2c6.out"; echo "FALLÓ pegar c6 encima de c13" >&2; exit 2; }
-revisa "c13 las ve sin que nadie la toque" "c12=false c4=true c6=true c9=false p1=false" "$(capas)"
+revisa "c13 las ve sin que nadie la toque" "c12=false c15=false c4=true c6=true c9=false p1=false" "$(capas)"
 revisa "un banco sin renglones ya no dice «esa parte no está»: dice que todavía no tiene ninguna conciliación confirmada" "0|sí" \
   "$(ed -c "select (select count(*) from fn_cedula('$HOY') x where x.fuente in ('conciliacion', 'prestamos', 'prepagados') and x.por_que = 'capa')
                    || '|' || (select case when count(*) > 0 and bool_and(x.por_que = 'vacio' and x.detalle like 'Sin auxiliar: todavía no tiene ninguna conciliación confirmada.%')
@@ -180,9 +187,9 @@ revisa "no pisa nada: la configuración, el renglón y la explicación, tal cual
 revisa "la configuración sigue siendo la que puso el dueño (no vuelve a la de fábrica)" "2027-01|manual|1" \
   "$(ed -c "select avisar_desde || '|' || patrimonio || '|' || (select count(*) from cedula_config) from cedula_config where id = 1")"
 pruebas "$TMP/p3.out"
-revisa "c13-pruebas.sql con c4 y c6: 41 filas, ninguna falla" "41|0" \
+revisa "c13-pruebas.sql con c4 y c6: 48 filas, ninguna falla" "48|0" \
   "$(sed -n 's/^PRUEBAS total=\([0-9]*\) .* fallan=\([0-9]*\) .*/\1|\2/p' "$TMP/p3.out")"
-revisa "ahora solo se omite lo de c12 (14), c9 (15 y 30) y p1 (19)" "14 15 19 30|14 15 19 30" \
+revisa "ahora solo se omite lo de c12 (14), c9 (15 y 30), p1 (19) y la nómina (c15: 47)" "14 15 19 30 47|14 15 19 30 47" \
   "$(sed -n 's/^OMITIDAS //p' "$TMP/p3.out")|$(sed -n 's/^POR CAPA //p' "$TMP/p3.out")"
 grep '^FALLA \|ERROR' "$TMP/p3.out" | head -n 12
 revisa "las pruebas no dejaron nada" "$G1" "$(guardado)"

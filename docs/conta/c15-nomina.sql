@@ -39,6 +39,95 @@
 -- una columna con cifras que el mapeo no conozca FRENA la corrida en vez de
 -- perderse. Se confirma con el primer archivo real.
 --
+-- LO QUE CAMBIÓ EL 13-NOV, SEGUNDA VEZ (Fase 11b: los arreglos de la
+-- revisión contra el dinero y la seguridad, y de la verificación desde
+-- cero). Se pega ENCIMA del c15 que ya está, entero: no toca una corrida,
+-- una persona, un pago ni la configuración. En los datos solo cambian dos
+-- cosas: nace la columna nomina_pagos.traspaso_id (vacía), y en el mapeo la
+-- columna «Total employer contributions» deja de leerse si Edgar no la
+-- había tocado (queda apuntado en el historial, una vez). Las funciones
+-- son 66: las 63 del 12-nov, la marca sin dinero de la Fase 11b
+-- (fn_nomina_horas_con_pago) y dos de estos arreglos
+-- (fn_nomina_delicado_texto y fn_nomina_dentro). Cada arreglo tiene su
+-- prueba en c15-pruebas.sql (de la 53 a la 66; 66 filas) y la escena 11 de
+-- pruebas/conta/c15-concurrencia.sh.
+--   LO QUE PONÍA UN NÚMERO MAL EN EL LIBRO:
+--   · LA MISMA NÓMINA, POR PARTES. El journal de un solo empleado, con la
+--     nómina completa ya dentro (o al revés), entraba como «otra nómina» y
+--     su sueldo iba dos veces al libro. Ahora, si todas las personas de una
+--     (cada una con su mismo bruto y su mismo neto, sin mirar nombres)
+--     están dentro de la otra, el mismo día o con un período que se pisa,
+--     es la misma: fn_nomina_ya, importar, el freno «repetida» y el aviso
+--     32 la tratan como la que trae las mismas cifras (entra solo con su
+--     porqué escrito).
+--   · LA BOLSA DEL BURDEN, REPARTIDA FUERA DE ORDEN. Repartido primero un
+--     mes posterior (que se lleva todo lo que hay), el mes anterior seguía
+--     diciendo «quedan…» y se repartía otra vez. Ahora se reparte como
+--     mucho LO QUE HOY QUEDA en la bolsa; una bolsa al revés se dice como
+--     lo que es; y si después de repartir se anula la nómina por cuyas
+--     horas se repartió, lo dice anular y lo vigila el aviso 75.
+--   · «TOTAL EMPLOYER CONTRIBUTIONS» se leía como un beneficio aparte: lo
+--     del patrón, dos veces. De fábrica ya no se lee (se confirma con el
+--     primer archivo real); el COSTO TOTAL DEL PATRÓN deja de ser un aviso:
+--     si bruto + lo patronal no es esa columna, la corrida NO CUADRA; el
+--     freno de una columna sin cuenta dice cuándo es un total (no se le
+--     pone cuenta); y el ensayo ya no dice «se puede postear» si falta una
+--     cuenta.
+--   · EL RESUMEN DE UN RANGO (un mes, un trimestre) con el día dicho a mano
+--     entraba como una nómina más. Ahora frena («resumen») si cada persona
+--     trae justo la suma de su bruto y de su neto en dos o más nóminas
+--     vivas seguidas; y un archivo que no trae ni su día de pago ni su
+--     período pide que se diga el período antes de postear.
+--   LO DEMÁS:
+--   · un journal SIN LO QUE PAGA EL PATRÓN no cuadra (y sin la columna de
+--     los reembolsos, se avisa);
+--   · LO QUE UNA CORRECCIÓN DEJÓ A FAVOR EN OTRA CUENTA: el cargo que lo
+--     descuenta se casa entero contra la cuenta que paga, y un TRASPASO
+--     (un asiento de la nómina, apuntado en nomina_pagos.traspaso_id) pasa
+--     lo que estaba a favor de una cuenta a la otra; deshacer el cargo lo
+--     reversa. Antes la propuesta lo ofrecía y casarlo era imposible.
+--     ▶ A confirmar con Gusto cómo cobra una corrección;
+--   · dos cargos de Gusto que no se proponían: los embargos (cuando en su
+--     cuenta hay otra deducción) y el neto por depósito con sus reembolsos;
+--   · «es la cuota mensual» ya no vale para cualquier cargo (MX008 si no es
+--     de Gusto o si paga una nómina, salvo con una nota escrita);
+--   · SIN EL CÓDIGO DEL TELÉFONO, ninguna frase falsa: el amarre y la
+--     propuesta de un cargo dicen «entra con el código» en vez de «NO
+--     amarra… cero nóminas» y «no hay ninguna nómina posteada»;
+--   · tres errores técnicos, en llano: la misma llave de Gusto en dos
+--     nóminas del archivo (MX009), un nombre de más de 200 letras (MX005) y
+--     reemplazar una corrida que en otra pestaña se acaba de postear;
+--   · LO DELICADO SIN GUIONES: siete cifras seguidas (o nueve separadas por
+--     espacios o puntos) en lo que se guarda como texto, un identificador
+--     que es justo nueve cifras, y los motivos y las notas que Edgar
+--     escribe: no entran;
+--   · LO QUE EL CIERRE GUARDA Y MANDA AL TELÉFONO, SIN IMPORTES: la fila
+--     180 dice cuántos cargos y de qué días, y los controles 10, 25, 35 y
+--     62 tienen su texto corto;
+--   · el reparto y la lectura: la corrección en negativo del oficial vuelve
+--     por sus obras; una fila de totales con un rótulo que nadie espera se
+--     reconoce por sus cifras; se avisa de quien es de campo, tiene horas
+--     aprobadas y no viene en el journal, y de quien es de oficina con
+--     horas en obra;
+--   · CON EL c3 DE LA FASE 11b: postear dice la verdad sobre el devengo del
+--     mes (se pone al día; no «se deshizo»); ANULAR también lo pone al día
+--     (antes quedaba desfasado y el control «devengo» de c3 detenía el
+--     cierre); y «lo trabajado y todavía no pagado» de un mes (fn_nomina_cola
+--     y el aviso 80) es lo que ninguna nómina había pagado AL TERMINARLO,
+--     como el corte del devengo: el aviso dice si el mes está devengado.
+--   · (la revisión final, el mismo 13-nov) UNA DEVOLUCIÓN DE GUSTO ES LA QUE
+--     EL BANCO TOMA POR TAL: el depósito que la Bandeja (c6, marca
+--     2026111301) propone con el motivo «nomina», o el que nombra a Gusto
+--     como PALABRA ENTERA. La lista de los cargos de Gusto tomaba por
+--     devolución cualquier depósito con el descriptor DENTRO de otra palabra
+--     (el Zelle de un cliente que se llame Augusto), y el aviso 35 y la fila
+--     180 del cierre —que detiene— lo contaban como un cargo de Gusto sin
+--     casar. Su prueba: la 66 de c15-pruebas.sql.
+--   Lo que NO cambia: quién ve qué (lo de cada persona, con el código), la
+--   forma de fn_nomina_horas_con_pago() (la leen c3, c10 y c12), el origen
+--   de sus asientos y las filas 180 a 183 que le da al cierre (c9 no se
+--   toca; su texto de la 180 cambia solo).
+--
 -- LAS PIEZAS:
 --   (1) EL ARCHIVO (fn_nomina_ensayo, fn_nomina_importar). La pantalla lee
 --       el CSV en el navegador y manda SUS CELDAS COMO TEXTO: {nombre,
@@ -206,8 +295,9 @@
 --       cambia). Dos toques o dos pestañas dejan un asiento.
 --       · POR QUÉ UN TRIGGER CON LOS PERMISOS DEL DUEÑO DE LA BASE
 --         (fn_nomina_al_libro, la única función SECURITY DEFINER de la
---         capa). c3 exige que toda línea de 5000 y 5001 venga de un asiento
---         con origen «nomina…», y c2 solo deja poner el origen del primer
+--         capa que escribe). c3 exige que toda línea de 5000 y 5001 venga
+--         de un asiento con origen «nomina…», y c2 solo deja poner el
+--         origen del primer
 --         asiento de un papel a su puente (fn_postear_interno, sin API):
 --         fn_postear, la puerta del dueño, lo rechaza. La corrida entra como
 --         entran los recibos de c3: por el puente de su papel, que es un
@@ -224,14 +314,18 @@
 --         no reversa asientos de puente), el lote suelta sus horas y el
 --         archivo se puede volver a subir. Con cargos de Gusto casados,
 --         antes se des-casan.
---       · EL DEVENGO ESTÁNDAR DE c3. c3 no devenga un mes que tiene journal
---         de nómina, y no puede saber qué horas pagó cada journal (está
---         sellado). Al postear, si el mes tenía un devengo vivo, se deshace
---         aquí mismo por la función de c3 (contaría dos veces). Lo que queda
---         fuera es LA COLA: lo trabajado al final del mes que se paga el
---         mes siguiente no se devenga; su costo entra con la nómina que lo
---         paga. fn_nomina_cola(mes) dice cuánto es y el control lo avisa.
---         ▶ CPA: si al cierre del año hay que devengarla.
+--       · EL DEVENGO ESTÁNDAR DE c3. Desde la Fase 11b (13-nov) c3 devenga
+--         un mes con nómina por lo que ninguna nómina pagó: lee la marca sin
+--         dinero (fn_nomina_horas_con_pago) y deja fuera las horas cuyo
+--         journal tiene fecha de ese mes o de antes. Al postear, si el mes
+--         del journal tenía un devengo vivo, se PONE AL DÍA aquí mismo por
+--         la función de c3 (contaría dos veces lo que esta nómina pagó). LA
+--         COLA —lo trabajado al final del mes que se paga el mes siguiente—
+--         se dice (fn_nomina_cola, el aviso 80) y, si Edgar quiere ese costo
+--         en su mes, se devenga: select fn_horas_devengar('AAAA-MM'); (se
+--         deshace sola el día 1, y la nómina siguiente la paga una vez).
+--         ▶ CPA: si al cierre del año hay que devengarla. (Con un c3 de
+--         antes, un mes con nómina no se devenga y el devengo se deshace.)
 --   (6) EL CARGO DE GUSTO EN EL BANCO (fn_nomina_cargos, _cargo_propuesta,
 --       _cargo_casar, _cargo_cuota, _cargo_deshacer). c6 deja cada cargo de
 --       Gusto en la Bandeja «esperando su journal». Aquí se casa con lo que
@@ -287,8 +381,12 @@
 --       mes se reparte a las obras (5010) por las horas que la nómina pagó
 --       ese mes, por la puerta del dueño. ▶ CPA: la clave y si se reparte.
 --  (10) PARA LAS OTRAS CAPAS (solo lectura): fn_nomina_horas_pagadas() (qué
---       horas pagó cada corrida: lo que c10 necesita para no llevarlas,
---       además, a estándar), fn_nomina_pagado_hasta() (el «pagado hasta» de
+--       horas pagó cada corrida, con lo que le tocó a cada una: con el
+--       código), fn_nomina_horas_con_pago() (13-nov, Fase 11b: LA MARCA SIN
+--       DINERO —qué reporte de horas pagó qué corrida y su día de pago, y
+--       nada más—, que el costo por obra (c10) y el WIP (c12) leen SIN el
+--       código para no llevar esas horas, además, a estándar: sección 15),
+--       fn_nomina_pagado_hasta() (el «pagado hasta» de
 --       cada persona: el corte que el devengo de c3 esperaba),
 --       fn_nomina_cola(mes), fn_nomina_auxiliar(fecha) (el auxiliar de 2210,
 --       2220, 2225, 2230 y 2240 a una fecha, para la cédula de c13) y
@@ -297,10 +395,11 @@
 --
 -- LO QUE ESTA CAPA NO PUEDE ARREGLAR SOLA (las capas de al lado están
 -- selladas; cada cosa tiene aquí su función de lectura, lista para usar):
---   · c10 (el costo por obra) cuenta como «a estándar» las horas que ya
---     pagó una nómina (su mano de obra real sí la lee bien del libro): el
---     día que se ponga un burden estándar, su «costo con estándar» las
---     contaría de más. Lo que le falta leer: fn_nomina_horas_pagadas().
+--   · c10 (el costo por obra) contaba como «a estándar» las horas que ya
+--     pagó una nómina (su mano de obra real sí la leía bien del libro): con
+--     un burden estándar fijado, su «costo con estándar» las contaba de
+--     más. ARREGLADO el 13-nov (Fase 11b): c10 lee la marca sin dinero,
+--     fn_nomina_horas_con_pago(), y esas horas salen «con pago real».
 --   · c13 (la cédula de corte) enseña 2220 a 2240 como «sin auxiliar: llega
 --     con la nómina», y compara 2210 con los devengos de horas (con el neto
 --     de una nómina por pagar —o adelantado a Gusto— al corte dice «no
@@ -311,10 +410,13 @@
 --     protecciones del banco» se pone en rojo si cambia (probado). Con una
 --     nómina en el libro, la prueba 25 de c4-pruebas.sql («toda cifra baja
 --     a su asiento y a su papel») falla por eso.
---   · c12 (el WIP) avisa «horas sin costo en el libro» de las horas que una
---     nómina ya pagó (lee de c10 «con pago real»).
---   · c3 no devenga un mes con nómina: la cola del mes (lo trabajado y sin
---     pagar) se dice (fn_nomina_cola, el aviso 80) y no se devenga. ▶ CPA.
+--   · c12 (el WIP) avisaba «horas sin costo en el libro» de las horas que
+--     una nómina ya pagó (lee de c10 «con pago real»). ARREGLADO con c10
+--     el 13-nov (Fase 11b).
+--   · c3 no devengaba un mes con nómina. ARREGLADO el 13-nov (Fase 11b):
+--     c3 lee la marca sin dinero y devenga solo lo que ninguna nómina pagó;
+--     la cola del mes se dice (fn_nomina_cola, el aviso 80) y se devenga si
+--     Edgar lo pide (fn_horas_devengar). ▶ CPA: si al cierre del año.
 --   · c14 (el 1099): quien pasa a W-2 deja de ser de 1099 desde su primera
 --     nómina; se dice en su ficha de c14 (un tramo), no aquí.
 --
@@ -343,7 +445,12 @@
 --   · Las tablas se escriben solo por las funciones de aquí (la guarda, con
 --     su marca de transacción): a mano, MX003, aunque sea el dueño. Una
 --     corrida solo avanza: importada → posteada → anulada, o descartada.
---   · Ninguna función es SECURITY DEFINER salvo el trigger del puente.
+--   · Ninguna función es SECURITY DEFINER salvo el trigger del puente y,
+--     desde el 13-nov (Fase 11b), la marca sin dinero que leen c10 y c12
+--     (fn_nomina_horas_con_pago: sin argumentos, mira por dentro que sea el
+--     dueño y devuelve solo qué reporte de horas pagó qué corrida y su día
+--     de pago; el control 90 vigila que no devuelva otra cosa). Las
+--     policies no cambian: lo que lleva dinero sigue pidiendo el código.
 --
 -- LOS ERRORES (en llano; ninguno repite una celda del archivo):
 --   MX000  falta algo para pegar (no se tocó nada)
@@ -412,7 +519,8 @@ declare
   c_fn     constant text[] := array['fn_nomina_precondiciones', 'fn_nomina_por_api', 'fn_nomina_exigir_dueno', 'fn_nomina_ve', 'fn_nomina_aal2',
                                     'fn_nomina_exigir_codigo', 'fn_nomina_ve_personas', 'fn_nomina_guarda', 'fn_nomina_al_libro',
                                     'fn_nomina_usd', 'fn_nomina_h', 'fn_nomina_dia', 'fn_nomina_hoy', 'fn_nomina_lista', 'fn_nomina_norm', 'fn_nomina_clave',
-                                    'fn_nomina_monto', 'fn_nomina_fecha', 'fn_nomina_delicado', 'fn_nomina_etiqueta', 'fn_nomina_cuenta_mal',
+                                    'fn_nomina_monto', 'fn_nomina_fecha', 'fn_nomina_delicado', 'fn_nomina_delicado_texto', 'fn_nomina_dentro',
+                                    'fn_nomina_etiqueta', 'fn_nomina_cuenta_mal',
                                     'fn_nomina_cuenta_sin_obra', 'fn_nomina_cuentas', 'fn_nomina_fecha_asiento', 'fn_nomina_apunta',
                                     'fn_nomina_config', 'fn_nomina_columna', 'fn_nomina_journal', 'fn_nomina_leer', 'fn_nomina_propone', 'fn_nomina_ya',
                                     'fn_nomina_ensayo', 'fn_nomina_importar',
@@ -422,7 +530,8 @@ declare
                                     'fn_nomina_cargos_fuera',
                                     'fn_nomina_declaracion', 'fn_nomina_amarre', 'fn_nomina_por_horas', 'fn_nomina_horas_gusto', 'fn_nomina_lote',
                                     'fn_nomina_lote_csv',
-                                    'fn_nomina_horas_pagadas', 'fn_nomina_cola', 'fn_nomina_pagado_hasta', 'fn_nomina_auxiliar',
+                                    'fn_nomina_horas_pagadas', 'fn_nomina_horas_con_pago', 'fn_nomina_cola', 'fn_nomina_pagado_hasta',
+                                    'fn_nomina_auxiliar',
                                     'fn_nomina_bolsa', 'fn_nomina_bolsa_repartir', 'fn_nomina_control',
                                     'fn_nomina_cierre',
                                     'fn_nomina_pegado'];
@@ -860,6 +969,51 @@ revoke execute on function public.fn_nomina_delicado(text) from public, anon, se
 grant  execute on function public.fn_nomina_delicado(text) to authenticated;
 comment on function public.fn_nomina_delicado(text) is 'c15: verdadero si un texto lleva algo con la forma de un número de Seguro Social (###-##-####): no se guarda ni se repite en ningún mensaje.';
 
+-- LO DELICADO SIN GUIONES, EN LO QUE SÍ SE GUARDA COMO TEXTO (13-nov, la
+-- revisión de la Fase 11b). fn_nomina_delicado solo conoce ###-##-####; un
+-- Seguro Social escrito sin guiones, o una cuenta y una ruta de banco
+-- metidas en el «Payment method», pasaban a las tablas. Esta es la criba de
+-- lo que se guarda tal cual (el nombre y el apellido, el método de pago, el
+-- tipo de nómina) y de lo que Edgar teclea (un motivo, una nota): además de
+-- la forma con guiones, SIETE CIFRAS SEGUIDAS O MÁS, o nueve cifras en
+-- grupos de 3, 2 y 4 separados por espacios o puntos. Con p_id (el
+-- identificador de un empleado o la llave de una nómina, que en Gusto son
+-- letras y cifras con guiones y pueden traer cifras seguidas): la forma de
+-- un Seguro Social, con guiones o con espacios, o un valor que sea justo
+-- nueve cifras. Lo que la criba para no se guarda ni se repite.
+create or replace function public.fn_nomina_delicado_texto(p text, p_id boolean default false) returns boolean
+language sql immutable
+set search_path = public, pg_temp
+as $$
+  select coalesce(public.fn_nomina_delicado(p)
+                  or p ~ '(^|[^0-9])[0-9]{3}[ .][0-9]{2}[ .][0-9]{4}([^0-9]|$)'
+                  or case when coalesce(p_id, false) then btrim(p) ~ '^[0-9]{9}$' else p ~ '[0-9]{7}' end, false)
+$$;
+revoke execute on function public.fn_nomina_delicado_texto(text, boolean) from public, anon, service_role;
+grant  execute on function public.fn_nomina_delicado_texto(text, boolean) to authenticated;
+comment on function public.fn_nomina_delicado_texto(text, boolean) is 'c15: la criba de lo que se guarda como texto (un nombre, el método de pago, el tipo de nómina) y de lo que Edgar teclea (un motivo, una nota): verdadero si lleva algo con forma de Seguro Social (con guiones, con espacios o con puntos) o siete cifras seguidas o más (una cuenta, una ruta de banco, un Seguro Social sin guiones). Con p_id (un identificador de Gusto, que puede traer cifras seguidas): solo la forma de un Seguro Social, o un valor de justo nueve cifras. Lo que para no se guarda ni se repite en ningún mensaje.';
+
+-- ¿ESTÁN TODOS LOS DE UNA DENTRO DE LA OTRA? (13-nov, la revisión de la Fase
+-- 11b.) Las personas de una nómina, SIN SUS NOMBRES: cada una es su par
+-- «bruto:neto». Verdadero si cada par de p_chica está en p_grande, contando
+-- repetidos (dos personas con las mismas cifras son dos). Es la regla de «la
+-- misma nómina, POR PARTES»: el journal bajado de Gusto «empleado por
+-- empleado» trae a UNA persona con su mismo bruto y su mismo neto que ya
+-- están, con las demás, en la nómina completa de ese día; por su huella
+-- (cuántas son y sus cifras) no se reconocía, y entraba dos veces al libro.
+-- Una lista vacía, o con todos los brutos en cero, no está «dentro» de nada.
+create or replace function public.fn_nomina_dentro(p_chica text[], p_grande text[]) returns boolean
+language sql immutable
+set search_path = public, pg_temp
+as $$
+  select coalesce(cardinality(p_chica), 0) > 0
+     and exists (select 1 from unnest(p_chica) x where x !~ '^-?0(\.0+)?:')
+     and not exists (select x from unnest(p_chica) x except all select y from unnest(p_grande) y)
+$$;
+revoke execute on function public.fn_nomina_dentro(text[], text[]) from public, anon, service_role;
+grant  execute on function public.fn_nomina_dentro(text[], text[]) to authenticated;
+comment on function public.fn_nomina_dentro(text[], text[]) is 'c15: verdadero si cada persona de una nómina (su par «bruto:neto», sin su nombre) está también en la otra, contando repetidos: la regla de «la misma nómina, por partes» (el journal de un solo empleado contra el de todos). Una lista vacía o con todos los brutos en cero no está dentro de nada.';
+
 -- EL RÓTULO DE UNA COLUMNA, PARA ENSEÑARLO O GUARDARLO. Un rótulo es un
 -- nombre, no un dato: si lo que llegó como rótulo parece un dato (un número,
 -- un importe, algo con forma de Seguro Social, o es larguísimo) se enseña
@@ -1204,7 +1358,7 @@ create table if not exists public.nomina_pagos (
 );
 create unique index if not exists nomina_pagos_movimiento_vivo on public.nomina_pagos (movimiento_id) where estado = 'aplicado';
 create unique index if not exists nomina_pagos_asiento_unico on public.nomina_pagos (asiento_id);
-comment on table public.nomina_pagos is 'c15: cada movimiento del banco resuelto desde la nómina: el movimiento, su clase (nomina: un cargo de Gusto que paga lo que una o varias corridas dejaron por pagar, o una devolución de Gusto que baja lo que quedó a favor; fuera: un pago que NO es de Gusto —el cheque de papel de alguien, una deducción que se le paga a un tercero— casado con lo que una corrida dejó por pagar, con su nota; cuota: la cuota mensual de Gusto, que no es nómina y va a su gasto), su fecha y su monto (lo que salió del banco, en positivo; una devolución, en negativo), el asiento que puso el banco (c6) al clasificarlo, su estado (aplicado o deshecho), quién y cuándo; y, deshecho, por quién, cuándo, por qué y el reverso. Un movimiento, un pago vivo. Solo se añade; lo único que cambia es el paso a deshecho.';
+comment on table public.nomina_pagos is 'c15: cada movimiento del banco resuelto desde la nómina: el movimiento, su clase (nomina: un cargo de Gusto que paga lo que una o varias corridas dejaron por pagar, o una devolución de Gusto que baja lo que quedó a favor; fuera: un pago que NO es de Gusto —el cheque de papel de alguien, una deducción que se le paga a un tercero— casado con lo que una corrida dejó por pagar, con su nota; cuota: la cuota mensual de Gusto, que no es nómina y va a su gasto), su fecha y su monto (lo que salió del banco, en positivo; una devolución, en negativo), el asiento que puso el banco (c6) al clasificarlo, su estado (aplicado o deshecho), quién y cuándo; y, deshecho, por quién, cuándo, por qué y el reverso; y, si el cargo descontó lo que quedó a favor en otra cuenta, el asiento de la nómina que lo pasó de una cuenta a la otra (traspaso_id). Un movimiento, un pago vivo. Solo se añade; lo único que cambia es el paso a deshecho.';
 
 create table if not exists public.nomina_pago_partes (
   pago_id     uuid          not null references public.nomina_pagos (id),
@@ -1232,6 +1386,12 @@ begin
   end loop;
 end $$;
 create index if not exists nomina_pago_partes_corrida_idx on public.nomina_pago_partes (corrida_id);
+-- (13-nov, la revisión de la Fase 11b) EL TRASPASO de un cargo: cuando un cargo de Gusto descuenta lo que una corrección dejó a
+-- favor en OTRA cuenta (el FUTA o el reempleo a favor, descontados del cargo del 941), el banco no puede ponerlo: c6 lleva todas
+-- las líneas de un movimiento del mismo lado. El cargo entra entero contra la cuenta que paga, y un asiento de la nómina (a
+-- mano, por la puerta del dueño) pasa lo que estaba a favor de una cuenta a la otra: aquí se apunta cuál es, para deshacerlo con
+-- el cargo y para que el control no lo tome por algo que entró por otro lado.
+alter table public.nomina_pagos add column if not exists traspaso_id uuid references public.asientos (id);
 comment on table public.nomina_pago_partes is 'c15: las partes de cada cargo de Gusto casado: qué corrida y qué cuenta por pagar (2210 el neto y los reembolsos, 2220 el 941, 2225 el FUTA, 2230 el reempleo de Florida, 2240 las deducciones) paga, y cuánto (en positivo lo que paga; en negativo lo que descuenta de lo que una corrección dejó a favor, o lo que devuelve). Un cargo puede pagar varias cuentas de una corrida o de varias; una corrida se paga con uno o con varios cargos. Las partes de un cargo suman el cargo, al centavo. No se edita ni se borra.';
 
 -- Lo que Gusto presentó: los totales de cada 941, 940 y RT-6, tecleados.
@@ -1667,7 +1827,7 @@ begin
       ('total employer taxes', 'employer_taxes', 'imp_patron_total', null, null, null),
       ('employer benefit contributions', 'employer_benefit_contributions', 'ben_patron', null, null, 'Sin cuenta hasta que haya un beneficio: se dice a cuál va con el primero'),
       ('total employer benefit contributions', 'total_employer_benefit_contributions', 'ben_patron_total', null, null, 'Un total: control'),
-      ('total employer contributions', 'total_employer_benefit_contributions', 'ben_patron_total', null, null, 'Un total: control'),
+      ('total employer contributions', 'total_employer_contributions', 'ignorar', null, null, 'Un total que puede juntar los impuestos y los beneficios del patrón: no se lee (lo patronal entra por su detalle). Si en tu archivo es otra cosa, dile su clase'),
       ('employer cost', 'employer_cost', 'costo_total', null, null, 'Un total: solo se compara, como aviso'),
       ('total employer cost', 'employer_cost', 'costo_total', null, null, null),
       -- LO DELICADO: no se guarda nunca
@@ -1702,6 +1862,34 @@ begin
    where (v.cuenta is null or exists (select 1 from public.cuentas k where k.codigo = v.cuenta))
   on conflict (alias) do nothing;
   perform set_config('mx_nomina.escribe', '', true);
+end $$;
+
+-- (13-nov, la revisión de la Fase 11b) «TOTAL EMPLOYER CONTRIBUTIONS» DEJA DE LEERSE. De fábrica se tomaba por el total de los
+-- BENEFICIOS del patrón, y un total sin su detalle pasa a ser la línea: en un archivo con el detalle de los impuestos del patrón
+-- y esa columna con el total de TODO lo patronal, lo del patrón entraba dos veces (y pedía una cuenta que, puesta, lo llevaba al
+-- libro). No se sabe qué trae hasta ver el primer archivo real: no se lee (los beneficios del patrón, si un día los hay, entran
+-- por su columna «Employer benefit contributions»), y el costo total del patrón se comprueba con su columna. En una base que ya
+-- tenía la fila de fábrica se cambia aquí, UNA vez y solo si nadie la tocó; queda en el historial.
+do $$
+declare
+  v_a public.nomina_columnas;
+begin
+  select * into v_a from public.nomina_columnas k
+   where k.alias = 'total employer contributions' and k.de_fabrica and k.clase = 'ben_patron_total'
+     and k.concepto = 'total_employer_benefit_contributions' and k.cuenta is null and k.actualizado_por is null;
+  if found then
+    perform set_config('mx_nomina.escribe', 'nomina_columnas', true);
+    update public.nomina_columnas
+       set concepto = 'total_employer_contributions', clase = 'ignorar',
+           nota = 'Un total que puede juntar los impuestos y los beneficios del patrón: no se lee (lo patronal entra por su detalle). Si en tu archivo es otra cosa, dile su clase',
+           actualizado_el = clock_timestamp()
+     where alias = 'total employer contributions';
+    perform set_config('mx_nomina.escribe', 'nomina_historial', true);
+    insert into public.nomina_historial (que, ref, antes, despues)
+    values ('columna', 'total employer contributions', to_jsonb(v_a),
+            (select to_jsonb(k) from public.nomina_columnas k where k.alias = 'total employer contributions'));
+    perform set_config('mx_nomina.escribe', '', true);
+  end if;
 end $$;
 
 
@@ -2061,7 +2249,9 @@ comment on function public.fn_nomina_columna(jsonb) is 'c15: dice qué es una co
 
 -- ---------------------------------------------------------------------
 -- 7. EL PUENTE AL LIBRO: el trigger de nomina_corridas. ES LA ÚNICA
---    FUNCIÓN SECURITY DEFINER DE LA CAPA, y por qué:
+--    FUNCIÓN SECURITY DEFINER DE LA CAPA QUE ESCRIBE (la otra, desde la
+--    Fase 11b, solo lee y no lleva dinero: la marca de la sección 15), y
+--    por qué:
 --    · c3 exige (control «mano de obra») que toda línea de 5000 o de 5001
 --      venga de un journal de nómina: un asiento con origen «nomina…». Y
 --      c2 solo deja poner el origen del PRIMER asiento de un papel a su
@@ -2279,7 +2469,7 @@ begin
   return new;
 end $$;
 revoke execute on function public.fn_nomina_al_libro() from public, anon, authenticated, service_role;
-comment on function public.fn_nomina_al_libro() is 'c15: EL PUENTE de la nómina al libro, el trigger de nomina_corridas (la única función SECURITY DEFINER de la capa: el origen «nomina…» que c3 exige a la mano de obra solo lo puede poner un puente, por la puerta interna de c2). Al pasar una corrida a posteada, comprueba que el asiento del plan ES el journal guardado (cada cuenta de lo que queda por pagar y de los reembolsos al centavo, el sueldo y lo patronal en su total, ninguna cuenta ajena) y postea el journal (origen nomina_corridas, en la fecha del día de pago, con la regla del documento tardío) y el reparto del burden real a las obras (origen nomina_burden: 5010 por obra contra 5015). Al pasarla a anulada, reversa los dos. Vuelve a pedir al dueño y su código. Por ser de trigger nadie la puede llamar suelta; sin EXECUTE para nadie.';
+comment on function public.fn_nomina_al_libro() is 'c15: EL PUENTE de la nómina al libro, el trigger de nomina_corridas (la única función SECURITY DEFINER de la capa que escribe: el origen «nomina…» que c3 exige a la mano de obra solo lo puede poner un puente, por la puerta interna de c2). Al pasar una corrida a posteada, comprueba que el asiento del plan ES el journal guardado (cada cuenta de lo que queda por pagar y de los reembolsos al centavo, el sueldo y lo patronal en su total, ninguna cuenta ajena) y postea el journal (origen nomina_corridas, en la fecha del día de pago, con la regla del documento tardío) y el reparto del burden real a las obras (origen nomina_burden: 5010 por obra contra 5015). Al pasarla a anulada, reversa los dos. Vuelve a pedir al dueño y su código. Por ser de trigger nadie la puede llamar suelta; sin EXECUTE para nadie.';
 
 -- (por orden de nombre va después de trg_nomina_corridas_guarda)
 create or replace trigger trg_nomina_corridas_libro before update on public.nomina_corridas
@@ -2413,6 +2603,15 @@ declare
   v_nceros  int;
   v_sig     jsonb;
   v_rep     boolean;
+  -- (13-nov, la revisión de la Fase 11b)
+  v_acc     jsonb := '{}'::jsonb;   -- lo que suman las filas de datos de esta parte del archivo desde su cabecera
+  v_acc_n   int := 0;
+  v_acc2    jsonb := '{}'::jsonb;   -- y desde su última fila de total
+  v_acc2_n  int := 0;
+  v_sin_rot text;
+  v_costo   numeric;
+  v_dia_mano boolean := false;
+  v_dia_op  date;
 begin
   perform fn_nomina_exigir_dueno();
   if p_archivo is null or jsonb_typeof(p_archivo) <> 'object' then
@@ -2429,8 +2628,13 @@ begin
       message = format('Opción desconocida: %s. Valen fila_cabecera, dia_pago, periodo_desde, periodo_hasta, tipo, otra_nomina (con '
                        'otra_porque) y reemplazar.', v_txt);
   end if;
-  if coalesce(btrim(p_archivo->>'nombre'), '') = '' or length(p_archivo->>'nombre') > 200 or fn_nomina_delicado(p_archivo->>'nombre') then
+  if coalesce(btrim(p_archivo->>'nombre'), '') = '' or length(p_archivo->>'nombre') > 200 then
     raise exception using errcode = '22023', message = 'Falta el nombre del archivo (hasta 200 letras).';
+  end if;
+  if fn_nomina_delicado(p_archivo->>'nombre') then
+    raise exception using errcode = '22023',
+      message = 'El nombre del archivo lleva algo con forma de dato delicado (un número de Seguro Social): de un archivo solo se guarda su '
+                'nombre, y ese no se puede guardar. Cámbiale el nombre y vuelve a subirlo. No se guardó nada.';
   end if;
   if coalesce(p_archivo->>'sha256', '') !~ '^[0-9a-f]{64}$' then
     raise exception using errcode = '22023', message = 'Falta la huella del archivo (sha256: 64 caracteres en minúsculas): la calcula la pantalla al leerlo.';
@@ -2504,6 +2708,7 @@ begin
       v_sec := v_sec + 1;
       v_cab_fila := r;
       v_ult_tot := r;
+      v_acc := '{}'::jsonb; v_acc_n := 0; v_acc2 := '{}'::jsonb; v_acc2_n := 0;
       v_sdia := null; v_sdes := null; v_shas := null;
       a_label := '{}'; a_alias := '{}'; a_con := '{}'; a_clase := '{}'; a_cta := '{}'; a_dec := '{}'; a_cifras := '{}'; a_deli := '{}';
       for i in 1 .. v_nc loop
@@ -2591,10 +2796,15 @@ begin
           v_tiene := true;
         end if;
       else
-        if fn_nomina_delicado(v_txt) or length(v_txt) > 200 then
+        -- (lo que se guarda tal cual —el nombre, el método de pago, el tipo— pasa la criba de lo delicado SIN guiones: siete cifras
+        -- seguidas, un Seguro Social con espacios; un identificador de Gusto, solo la forma de un Seguro Social)
+        if fn_nomina_delicado(v_txt) or length(v_txt) > 200
+           or (a_clase[i] in ('nombre', 'apellido', 'nombre_completo', 'metodo_pago', 'tipo') and fn_nomina_delicado_texto(v_txt))
+           or (a_clase[i] in ('empleado_id', 'llave') and fn_nomina_delicado_texto(v_txt, true)) then
           raise exception using errcode = '22023',
-            message = format('La fila %s, columna «%s», trae algo que no es lo que esa columna dice (parece un dato delicado, o es demasiado '
-                             'largo). No se guardó nada: quita esa columna al bajar el archivo de Gusto y vuelve a subirlo.', r, a_label[i]);
+            message = format('La fila %s, columna «%s», trae algo que no es lo que esa columna dice (parece un dato delicado —un número de '
+                             'Seguro Social, una cuenta de banco—, o es demasiado largo). No se guardó nada: quita esa columna al bajar el '
+                             'archivo de Gusto (o di en los ajustes que no se lea: clase «delicado») y vuelve a subirlo.', r, a_label[i]);
         end if;
         case a_clase[i]
           when 'nombre' then v_nom := v_txt;
@@ -2640,11 +2850,29 @@ begin
                                                       fn_nomina_norm(v_emp), fn_nomina_norm(v_cand)]) q
                             where q ~ '^((grand|report|payroll|company|overall|all) )?(totals?|totales?)$')
                 or (v_cand is null and v_emp is null and v_tiene);
+    -- (13-nov, la revisión de la Fase 11b) UNA FILA DE TOTALES CON UN RÓTULO QUE NADIE ESPERA («All employees», el nombre de la
+    -- empresa…) entraba como una persona más, y la nómina salía al doble. Una fila que trae, columna por columna, JUSTO LA SUMA
+    -- de las dos o más filas de datos de arriba (desde la cabecera de su parte, o desde su última fila de total) es la fila de
+    -- totales: control, nunca suma. Se dice, con su fila (por si de verdad fuera una persona).
+    v_sin_rot := null;
+    if not v_es_tot and v_tiene and (v_cand is not null or v_emp is not null) then
+      if v_acc_n >= 2 and not exists (select 1 from jsonb_each_text(v_v) a full join jsonb_each_text(v_acc) b on b.key = a.key
+                                       where coalesce(a.value::numeric, 0) <> coalesce(b.value::numeric, 0)) then
+        v_es_tot := true; v_sin_rot := 'total';
+      elsif v_acc2_n >= 2 and v_acc2_n < v_acc_n
+            and not exists (select 1 from jsonb_each_text(v_v) a full join jsonb_each_text(v_acc2) b on b.key = a.key
+                             where coalesce(a.value::numeric, 0) <> coalesce(b.value::numeric, 0)) then
+        v_es_tot := true; v_es_sub := true; v_sin_rot := 'subtotal';
+      end if;
+    end if;
     if v_es_tot then
       -- una fila de total: CONTROL, nunca suma
-      v_tots := v_tots || jsonb_build_object('sec', v_sec, 'fila', r, 'desde_fila', case when v_es_sub then v_ult_tot else v_cab_fila end,
-                                             'clase', case when v_es_sub then 'subtotal' else 'total' end, 'v', v_v);
+      v_tots := v_tots || jsonb_strip_nulls(jsonb_build_object(
+                            'sec', v_sec, 'fila', r, 'desde_fila', case when v_es_sub then v_ult_tot else v_cab_fila end,
+                            'clase', case when v_es_sub then 'subtotal' else 'total' end, 'v', v_v,
+                            'sin_rotulo', case when v_sin_rot is not null then case when v_sin_rot = 'total' then v_acc_n else v_acc2_n end end));
       v_ult_tot := r;
+      v_acc2 := '{}'::jsonb; v_acc2_n := 0;
       continue;
     end if;
     continue when v_cand is null and v_emp is null;   -- ni persona ni cifras: no dice nada
@@ -2656,6 +2884,18 @@ begin
       continue;
     end if;
     v_cand := coalesce(v_cand, 'Empleado ' || left(v_emp, 12));
+    if length(v_cand) > 200 then
+      raise exception using errcode = 'MX005',
+        message = format('La fila %s trae un nombre de más de 200 letras (el nombre y el apellido juntos): eso no es el nombre de una '
+                         'persona. Mira esa fila en el archivo. No se guardó nada.', r);
+    end if;
+    select coalesce(jsonb_object_agg(q.k, q.s), '{}'::jsonb) into v_acc
+      from (select coalesce(a.key, b.key) as k, coalesce(a.value::numeric, 0) + coalesce(b.value::numeric, 0) as s
+              from jsonb_each_text(v_acc) a full join jsonb_each_text(v_v) b on b.key = a.key) q;
+    select coalesce(jsonb_object_agg(q.k, q.s), '{}'::jsonb) into v_acc2
+      from (select coalesce(a.key, b.key) as k, coalesce(a.value::numeric, 0) + coalesce(b.value::numeric, 0) as s
+              from jsonb_each_text(v_acc2) a full join jsonb_each_text(v_v) b on b.key = a.key) q;
+    v_acc_n := v_acc_n + 1; v_acc2_n := v_acc2_n + 1;
     v_data := v_data || jsonb_build_object(
       'sec', v_sec, 'fila', r, 'nombre', v_cand, 'clave', fn_nomina_clave(v_cand), 'gusto_emp', v_emp, 'metodo', v_met,
       'pk', coalesce('id:' || lower(v_emp), 'n:' || fn_nomina_clave(v_cand)),
@@ -2704,8 +2944,11 @@ begin
   --     Con dos posibilidades no se adivina: el archivo se para.
   select case when count(distinct x.dia) = 1 then min(x.dia) end into v_un_dia
     from jsonb_to_recordset(v_data) as x(dia date) where x.dia is not null;
-  v_un_dia := coalesce(v_un_dia, case when not exists (select 1 from jsonb_to_recordset(v_data) as x(dia date) where x.dia is not null)
-                                      then fn_nomina_fecha(v_op->>'dia_pago') end);
+  -- (el día de pago que diga la pantalla vale SOLO si el archivo no trae ninguno: entonces se dice que fue a mano —y sin su
+  -- período esa corrida no se postea hasta decirlo—; si el archivo trae los suyos, el dicho a mano no se usa, y también se dice)
+  v_dia_op := fn_nomina_fecha(v_op->>'dia_pago');
+  v_dia_mano := v_dia_op is not null and not exists (select 1 from jsonb_to_recordset(v_data) as x(dia date) where x.dia is not null);
+  v_un_dia := coalesce(v_un_dia, case when v_dia_mano then v_dia_op end);
   select coalesce(jsonb_agg(case when q->>'dia' is null and v_un_dia is not null then q || jsonb_build_object('dia', v_un_dia) else q end
                             order by (q->>'fila')::int), '[]'::jsonb)
     into v_data from jsonb_array_elements(v_data) q;
@@ -2762,6 +3005,22 @@ begin
                  or (q->>'hasta')::date - (q->>'desde')::date > 92) then
     raise exception using errcode = 'MX005',
       message = 'El período de pago de alguna fila viene a medias, al revés o es de más de tres meses. No se guardó nada.';
+  end if;
+  -- (13-nov, la revisión de la Fase 11b) LA MISMA LLAVE DE GUSTO («Payroll ID») EN DOS NÓMINAS DEL ARCHIVO (con otras fechas, o
+  -- de otro tipo): una llave es UNA nómina. Antes el ensayo decía «entrarían 2» y al importar salía un error técnico de la base
+  -- (la llave repetida). Se dice aquí, con sus filas, y no se adivina cuál es la buena.
+  select string_agg(format('las filas %s', q.filas), '; ') into v_txt
+    from (select string_agg(g.fila::text, ' y ' order by g.fila) as filas
+            from (select lower(x.llave) as llave, x.dia, x.desde, x.hasta, x.tn, min(x.fila) as fila
+                    from jsonb_to_recordset(v_data) as x(fila int, dia date, desde date, hasta date, tn text, llave text)
+                   where x.llave is not null
+                   group by lower(x.llave), x.dia, x.desde, x.hasta, x.tn) g
+           group by g.llave having count(*) > 1) q;
+  if v_txt is not null then
+    raise exception using errcode = 'MX009',
+      message = format('El archivo trae la misma llave de nómina de Gusto («Payroll ID») en filas con fechas o tipo distintos (%s): una '
+                       'llave es UNA nómina, y aquí saldrían dos. Mira esas filas en Gusto (¿esa columna es otra cosa?: dilo en los '
+                       'ajustes), o bájalo de una nómina cada vez. No se guardó nada.', left(v_txt, 300));
   end if;
 
   for k in
@@ -2852,6 +3111,7 @@ begin
       -- reembolso. Si en el archivo el neto de alguien ya trae su reembolso —y solo entonces cuadra—, se toma así y se dice.)
       v_base := v_bru - v_ime - v_ded;
       v_incl := v_pres ? 'neto' and v_net <> v_base and v_ree <> 0 and v_net = v_base + v_ree;
+      v_costo := coalesce((v_s->>'costo_total')::numeric, 0);
       -- (sus compuertas)
       select concat_ws('; ',
                pr.choque,
@@ -2886,7 +3146,15 @@ begin
                     then format('neto %s%s = %s, y su cheque dice %s', fn_nomina_usd(v_net),
                                 case when v_incl then ' (que ya trae su reembolso)' else ' + reembolsos ' || fn_nomina_usd(v_ree) end,
                                 fn_nomina_usd(case when v_incl then v_net else v_net + v_ree end),
-                                fn_nomina_usd(coalesce((v_s->>'cheque_total')::numeric, 0))) end)
+                                fn_nomina_usd(coalesce((v_s->>'cheque_total')::numeric, 0))) end,
+               -- (13-nov, la revisión de la Fase 11b) EL COSTO TOTAL DEL PATRÓN era solo un aviso («no frena»): es la única
+               -- ecuación que tiene el lado del patrón. Si bruto + lo patronal no es esa columna (ni con los reembolsos dentro), algo
+               -- de lo patronal entró dos veces —un total leído como si fuera un concepto— o falta: la fila no cuadra.
+               case when v_pres ? 'costo_total' and v_costo <> v_bru + v_imp + v_ben and v_costo <> v_bru + v_imp + v_ben + v_ree
+                    then format('bruto %s + lo que paga el patrón %s = %s, y la columna del costo total del patrón dice %s (si lo patronal '
+                                'sale de más, una de sus columnas es un TOTAL de las otras: dile al mapeo que no la lea; si de menos, '
+                                'falta una columna; y si esa columna no es el costo total, dile al mapeo que la ignore)',
+                                fn_nomina_usd(v_bru), fn_nomina_usd(v_imp + v_ben), fn_nomina_usd(v_bru + v_imp + v_ben), fn_nomina_usd(v_costo)) end)
         into v_txt;
       v_txt := nullif(v_txt, '');
       if v_txt is not null then
@@ -2906,11 +3174,6 @@ begin
         v_avisos := v_avisos || jsonb_build_object('codigo', 'neto_con_reembolso', 'texto',
           format('%s: en este archivo su neto (%s) ya trae su reembolso (%s): se tomó así (lo que se le paga es el neto, no el neto más el '
                  'reembolso).', pr.nombre, fn_nomina_usd(v_net), fn_nomina_usd(v_ree)));
-      end if;
-      if v_pres ? 'costo_total' and v_bru + v_imp + v_ben <> coalesce((v_s->>'costo_total')::numeric, 0) then
-        v_avisos := v_avisos || jsonb_build_object('codigo', 'costo_total', 'texto',
-          format('%s: bruto + lo patronal suma %s y la columna del costo total del patrón dice %s. No frena: esa columna no se postea.',
-                 pr.nombre, fn_nomina_usd(v_bru + v_imp + v_ben), fn_nomina_usd(coalesce((v_s->>'costo_total')::numeric, 0))));
       end if;
       -- (sus líneas: las partes de cada grupo, o su total si el archivo no trae las partes; el neto; las horas)
       select coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
@@ -2951,6 +3214,28 @@ begin
                 from jsonb_array_elements(v_lin) z
                where z->>'declara' is not null or z->>'clase' in ('imp_empleado', 'imp_patron') group by 1) q;
     end loop;
+    -- (13-nov, la revisión de la Fase 11b) UN JOURNAL SIN LO QUE PAGA EL PATRÓN (bajado sin esas columnas) cuadraba y se
+    -- posteaba: sus impuestos del patrón quedaban fuera del libro y el cargo de impuestos de Gusto ya no casaba. Con sueldo, lo
+    -- del patrón nunca es cero (Medicare): sin sus columnas, la corrida no cuadra, como sin el neto o sin el bruto.
+    if t_bru <> 0 and not (v_pres ? 'imp_patron' or v_pres ? 'imp_patron_total') then
+      v_desc := v_desc || ('el archivo no trae lo que paga el patrón (sus impuestos: «Employer social security tax», «Employer medicare '
+                           'tax», «Employer FUTA tax», «Employer SUTA tax»): con sueldo nunca es cero, y sin ello faltarían en el libro y '
+                           'el cargo de impuestos de Gusto no casaría. Bájalo otra vez de Gusto con esas columnas')::text;
+    end if;
+    if not (v_pres ? 'reembolso' or v_pres ? 'reembolso_total' or v_pres ? 'cheque_total') then
+      v_avisos := v_avisos || jsonb_build_object('codigo', 'sin_reembolsos', 'texto',
+        'El archivo no trae ni la columna de los reembolsos («Reimbursements») ni la del cheque («Check amount»): si esta nómina le '
+        'devolvió algún gasto a un empleado, no viene aquí, y el cargo del neto de Gusto no casará al centavo. Si no hubo reembolsos, '
+        'no pasa nada.');
+    end if;
+    if v_dia_mano then
+      v_avisos := v_avisos || jsonb_build_object('codigo', 'dia_a_mano', 'texto',
+        format('El archivo no trae su día de pago: se tomó el que dijiste (%s).', fn_nomina_dia(k.dia)));
+    elsif v_dia_op is not null and v_dia_op <> k.dia then
+      v_avisos := v_avisos || jsonb_build_object('codigo', 'dia_ignorado', 'texto',
+        format('Dijiste que su día de pago es el %s, pero el archivo trae el suyo (%s): se tomó el del archivo.', fn_nomina_dia(v_dia_op),
+               fn_nomina_dia(k.dia)));
+    end if;
     if v_rep then
       v_avisos := v_avisos || jsonb_build_object('codigo', 'parte_repetida', 'texto',
         'El archivo trae esta nómina en dos partes con las mismas columnas (el resumen por empleado y, otra vez, el de su nómina), y '
@@ -2960,7 +3245,7 @@ begin
     -- (las filas de total del archivo contra la suma de sus filas, parte por parte del archivo)
     v_tarch := null;
     for pr in
-      select t.sec, t.fila, t.desde_fila, t.clase, t.v,
+      select t.sec, t.fila, t.desde_fila, t.clase, t.v, t.sin_rotulo,
              (select coalesce(jsonb_object_agg(z.kk, z.vv), '{}'::jsonb)
                 from (select e.key as kk, sum(e.value::numeric) as vv
                         from jsonb_array_elements(v_data) q2, jsonb_each_text(q2->'v') e
@@ -2973,7 +3258,7 @@ begin
                  and (q2->>'dia')::date = k.dia and (q2->>'desde') is not distinct from k.desde::text
                  and (q2->>'hasta') is not distinct from k.hasta::text and (q2->>'llave') is not distinct from k.llave
                  and q2->>'tn' = k.tn) as suyas
-        from jsonb_to_recordset(v_tots) as t(sec int, fila int, desde_fila int, clase text, v jsonb)
+        from jsonb_to_recordset(v_tots) as t(sec int, fila int, desde_fila int, clase text, v jsonb, sin_rotulo int)
        where t.sec = any (v_secs)
        order by t.fila
     loop
@@ -2989,6 +3274,12 @@ begin
       end if;
       if pr.clase = 'total' and pr.suyas = pr.filas and pr.suyas = jsonb_array_length(v_pers) and v_tarch is null then
         v_tarch := pr.v;
+      end if;
+      if pr.sin_rotulo is not null then
+        v_avisos := v_avisos || jsonb_build_object('codigo', 'total_sin_rotulo', 'texto',
+          format('La fila %s del archivo trae, columna por columna, justo la suma de las %s filas de arriba: se tomó por la fila de '
+                 'totales (un control: no suma), no por una persona más. Si de verdad es una persona, baja el archivo con su fila de '
+                 '«Totals» o con el identificador del empleado.', pr.fila, pr.sin_rotulo));
       end if;
     end loop;
     if not exists (select 1 from jsonb_array_elements(v_tots) t where (t->>'sec')::int = any (v_secs)) then
@@ -3118,6 +3409,17 @@ comment on function public.fn_nomina_propone(text) is 'c15: el perfil de la app 
 --     traen a las mismas personas con el mismo bruto y el mismo neto el
 --     mismo día (y si alguna vez pasa —dos bonos iguales—, Edgar lo dice con
 --     su porqué).
+--   POR PARTES (13-nov, la revisión de la Fase 11b): el journal de Gusto se
+--     baja «resumen o empleado por empleado». El de UN empleado trae a una
+--     persona con su mismo bruto y su mismo neto que ya están, con los
+--     demás, en la nómina completa de ese día: no es la misma huella (una
+--     persona contra seis) y entraba como «otra nómina» sin porqué, con su
+--     sueldo dos veces en el libro. Si TODAS las personas de una (sus pares
+--     bruto y neto, sin sus nombres) están dentro de la otra —en cualquiera
+--     de los dos sentidos—, el mismo día de pago, con un período que se pisa
+--     o, si a una le falta el período, a menos de una semana, es la misma
+--     nómina bajada por partes: misma = sí y por_partes = sí (parte: dentro,
+--     si la que llega cabe en la que está; contiene, si es al revés).
 -- Devuelve nulo si ninguna; si no, {igual: hay una con las mismas cifras
 -- concepto por concepto; misma: por sus personas y sus cifras; otro_dia (y
 -- por qué es la misma con otro día: mismo_archivo, o cerca —sin período y a
@@ -3130,11 +3432,17 @@ create or replace function public.fn_nomina_ya(p_c jsonb) returns jsonb
 language sql stable
 set search_path = public, pg_temp
 as $$
-  with e0 as (
+  with nueva as materialized (
+    -- (las personas de la que llega, sin sus nombres: su par «bruto:neto»)
+    select coalesce(array_agg(round((p->>'bruto')::numeric, 2) || ':' || round((p->>'neto')::numeric, 2)), '{}') as pares
+      from jsonb_array_elements(case when jsonb_typeof(p_c->'personas') = 'array' then p_c->'personas' else '[]'::jsonb end) p),
+  e0 as (
     -- (mismo_archivo: sale del mismo archivo —su sha256— y es la misma nómina dentro de él —su número—: las varias nóminas de un
     -- archivo de un rango de fechas no son «la misma» entre sí por salir de él. cerca: a una de las dos le falta el período y
-    -- sus días de pago, distintos, quedan a menos de una semana)
+    -- sus días de pago, distintos, quedan a menos de una semana. pares: sus personas, sin sus nombres)
     select c.*,
+           (select coalesce(array_agg(round(cp.bruto, 2) || ':' || round(cp.neto, 2)), '{}')
+              from public.nomina_corrida_personas cp where cp.corrida_id = c.id) as pares,
            (p_c->>'sha256' is not null and c.n = (p_c->>'n')::int
             and exists (select 1 from public.nomina_archivos a where a.id = c.archivo_id and a.sha256 = p_c->>'sha256')) as mismo_archivo,
            ((c.periodo_desde is null or p_c->>'periodo_desde' is null) and c.dia_pago <> (p_c->>'dia_pago')::date
@@ -3143,7 +3451,7 @@ as $$
      where c.estado in ('importada', 'posteada')),
   e as (
     select c.id, c.estado, c.tipo, c.firma, c.dia_pago, c.bruto, c.neto, c.personas, c.importada_el, c.archivo_id,
-           c.cuadra, c.sin_clasificar, c.mismo_archivo, c.cerca,
+           c.cuadra, c.sin_clasificar, c.mismo_archivo, c.cerca, c.pares,
            (   split_part(c.llave, '#', 1) = p_c->>'llave'
             or (c.dia_pago = (p_c->>'dia_pago')::date and c.tipo = p_c->>'tipo'
                 and (c.periodo_desde is null or p_c->>'periodo_desde' is null
@@ -3153,13 +3461,26 @@ as $$
             and (   c.dia_pago = (p_c->>'dia_pago')::date
                  or (c.periodo_desde is not null and p_c->>'periodo_desde' is not null
                      and c.periodo_desde <= (p_c->>'periodo_hasta')::date and c.periodo_hasta >= (p_c->>'periodo_desde')::date)
-                 or c.cerca or c.mismo_archivo)) as por_cifras
-      from e0 c),
-  f as (select e.* from e where e.por_llave or e.por_cifras),
+                 or c.cerca or c.mismo_archivo)) as por_cifras,
+           -- (por partes: todas las personas de una, dentro de la otra; el mismo día, un período que se pisa, o —si a una le
+           -- falta el período— a menos de una semana)
+           (c.firma_personas is distinct from p_c->>'firma_personas'
+            and (   c.dia_pago = (p_c->>'dia_pago')::date
+                 or (c.periodo_desde is not null and p_c->>'periodo_desde' is not null
+                     and c.periodo_desde <= (p_c->>'periodo_hasta')::date and c.periodo_hasta >= (p_c->>'periodo_desde')::date)
+                 or c.cerca)
+            and (public.fn_nomina_dentro(nueva.pares, c.pares) or public.fn_nomina_dentro(c.pares, nueva.pares))) as por_partes,
+           case when public.fn_nomina_dentro(nueva.pares, c.pares) then 'dentro' else 'contiene' end as parte,
+           least(cardinality(nueva.pares), cardinality(c.pares)) as comunes
+      from e0 c cross join nueva),
+  f as (select e.* from e where e.por_llave or e.por_cifras or e.por_partes),
   m as (select f.* from f
-         order by (f.firma = p_c->>'firma') desc, f.por_cifras desc, (f.estado = 'posteada') desc, f.importada_el desc limit 1)
+         order by (f.firma = p_c->>'firma') desc, f.por_cifras desc, f.por_partes desc, (f.estado = 'posteada') desc, f.importada_el desc
+         limit 1)
   select case when m.id is null then null
-              else jsonb_build_object('igual', m.firma = p_c->>'firma', 'misma', m.por_cifras or m.firma = p_c->>'firma',
+              else jsonb_build_object('igual', m.firma = p_c->>'firma', 'misma', m.por_cifras or m.firma = p_c->>'firma' or m.por_partes,
+                                      'por_partes', m.por_partes and not m.por_cifras and m.firma is distinct from p_c->>'firma',
+                                      'parte', case when m.por_partes then m.parte end, 'comunes', case when m.por_partes then m.comunes end,
                                       'otro_dia', m.dia_pago <> (p_c->>'dia_pago')::date,
                                       'mismo_archivo', m.mismo_archivo and m.por_cifras and m.dia_pago <> (p_c->>'dia_pago')::date,
                                       'cerca', m.cerca and m.por_cifras,
@@ -3176,7 +3497,7 @@ as $$
 $$;
 revoke execute on function public.fn_nomina_ya(jsonb) from public, anon, service_role;
 grant  execute on function public.fn_nomina_ya(jsonb) to authenticated;
-comment on function public.fn_nomina_ya(jsonb) is 'c15: ¿esta nómina (leída de un archivo) ya está? Las corridas vivas —importadas o posteadas— que son la misma: por su llave (la misma; o su mismo día de pago y tipo con un período que no la contradiga y sin dos llaves de Gusto distintas) o por sus personas y sus cifras (las mismas personas con el mismo bruto y el mismo neto, el mismo día de pago —sea cual sea su tipo o su período—, o con otro día y un período que se pisa, o —si a una le falta el período— con el día de pago a menos de una semana, o si es la misma nómina del mismo archivo). Nulo si ninguna; si no, {igual (las mismas cifras concepto por concepto), misma (las mismas personas con su bruto y su neto), otro_dia (y por qué con otro día: mismo_archivo o cerca; si ninguno, por su período), corrida, estado, tipo, dia_pago, bruto, neto, personas, archivo, importada_el, lee_distinto, posteadas, importadas}. Solo lectura; con el código del teléfono.';
+comment on function public.fn_nomina_ya(jsonb) is 'c15: ¿esta nómina (leída de un archivo) ya está? Las corridas vivas —importadas o posteadas— que son la misma: por su llave (la misma; o su mismo día de pago y tipo con un período que no la contradiga y sin dos llaves de Gusto distintas), por sus personas y sus cifras (las mismas personas con el mismo bruto y el mismo neto, el mismo día de pago —sea cual sea su tipo o su período—, o con otro día y un período que se pisa, o —si a una le falta el período— con el día de pago a menos de una semana, o si es la misma nómina del mismo archivo) o POR PARTES (todas las personas de una, cada una con su mismo bruto y su mismo neto, están dentro de la otra: el journal de un solo empleado contra el de todos). Nulo si ninguna; si no, {igual (las mismas cifras concepto por concepto), misma (las mismas personas con su bruto y su neto, o por partes), por_partes (y parte: dentro —la que llega cabe en la que está— o contiene; comunes: cuántas personas), otro_dia (y por qué con otro día: mismo_archivo o cerca; si ninguno, por su período), corrida, estado, tipo, dia_pago, bruto, neto, personas, archivo, importada_el, lee_distinto, posteadas, importadas}. Solo lectura; con el código del teléfono.';
 
 create or replace function public.fn_nomina_ensayo(p_archivo jsonb, p_opciones jsonb default '{}'::jsonb) returns jsonb
 language plpgsql stable
@@ -3189,6 +3510,7 @@ declare
   v_ya   jsonb;
   v_per  jsonb;
   v_arch nomina_archivos;
+  v_sc   jsonb;
 begin
   perform fn_nomina_exigir_dueno();
   perform fn_nomina_exigir_codigo();
@@ -3210,11 +3532,18 @@ begin
                           where (q.p->>'gusto_id' is not null and o.gusto_id = q.p->>'gusto_id')
                              or (o.clave = q.p->>'clave' and (q.p->>'gusto_id' is null or o.gusto_id is null))
                           order by (o.gusto_id is not distinct from q.p->>'gusto_id') desc limit 1) pe on true;
+    -- (13-nov, la revisión de la Fase 11b: el ensayo decía «se puede postear» de una corrida que al mirarla frena por una columna
+    -- de dinero sin cuenta. Las columnas que traen dinero y el mapeo no dice a qué cuenta va: con alguna, no se puede postear.)
+    select coalesce(jsonb_agg(distinct l->>'columna'), '[]'::jsonb) into v_sc
+      from jsonb_array_elements(v_c->'personas') p cross join lateral jsonb_array_elements(p->'lineas') l
+     where l->>'clase' in ('imp_empleado', 'imp_patron', 'ben_patron', 'deduccion', 'reembolso', 'neto') and l->>'cuenta' is null;
     v_out := v_out || ((v_c - 'personas') || jsonb_build_object(
       'personas', v_per,
+      'sin_cuenta', v_sc,
       'ya_estaba', case when v_ya is null then null
                         else jsonb_build_object('corrida', v_ya->'corrida', 'estado', v_ya->'estado', 'mismas_cifras', v_ya->'igual',
-                                                'misma', v_ya->'misma', 'otro_dia', v_ya->'otro_dia', 'mismo_archivo', v_ya->'mismo_archivo',
+                                                'misma', v_ya->'misma', 'por_partes', v_ya->'por_partes', 'parte', v_ya->'parte',
+                                                'comunes', v_ya->'comunes', 'otro_dia', v_ya->'otro_dia', 'mismo_archivo', v_ya->'mismo_archivo',
                                                 'cerca', v_ya->'cerca', 'tipo', v_ya->'tipo',
                                                 'dia_pago', v_ya->'dia_pago', 'personas', v_ya->'personas',
                                                 'importada_el', v_ya->'importada_el', 'archivo', v_ya->'archivo', 'bruto', v_ya->'bruto',
@@ -3224,7 +3553,7 @@ begin
                                                                        and (not (v_ya->>'igual')::boolean or (v_ya->>'lee_distinto')::boolean),
                                                 -- (subirla como OTRA nómina del mismo día: solo si no es la misma por sus personas y sus cifras)
                                                 'se_puede_otra', not (v_ya->>'misma')::boolean) end,
-      'se_puede_postear', (v_c->>'cuadra')::boolean and jsonb_array_length(v_c->'sin_clasificar') = 0));
+      'se_puede_postear', (v_c->>'cuadra')::boolean and jsonb_array_length(v_c->'sin_clasificar') = 0 and jsonb_array_length(v_sc) = 0));
   end loop;
   return jsonb_build_object(
     'archivo', (v_l->'archivo') || jsonb_build_object('ya_importado', case when v_arch.id is null then null
@@ -3234,7 +3563,7 @@ begin
 end $$;
 revoke execute on function public.fn_nomina_ensayo(jsonb, jsonb) from public, anon, service_role;
 grant  execute on function public.fn_nomina_ensayo(jsonb, jsonb) to authenticated;
-comment on function public.fn_nomina_ensayo(jsonb, jsonb) is 'c15: EL ENSAYO de un archivo de nómina: lo que se entendería sin guardar nada. Devuelve {archivo (y si ese mismo archivo ya se importó), delicado (los rótulos de las columnas que no se leen), corridas: cada una con sus totales, cómo se leyó cada columna, sin_clasificar, cuadra y descuadres, avisos, sus personas (totales, si están enlazadas y confirmadas, y el perfil que se propone por el nombre), ya_estaba (si esa nómina ya está: su corrida, su estado, su tipo y su día de pago, mismas_cifras —concepto por concepto—, misma —las mismas personas con el mismo bruto y el mismo neto: es la misma nómina bajada de otra forma—, otro_dia, lee_distinto, se_puede_reemplazar y se_puede_otra) y se_puede_postear; entraria (cuántas son nuevas)}. Con el código del teléfono. Solo el dueño.';
+comment on function public.fn_nomina_ensayo(jsonb, jsonb) is 'c15: EL ENSAYO de un archivo de nómina: lo que se entendería sin guardar nada. Devuelve {archivo (y si ese mismo archivo ya se importó), delicado (los rótulos de las columnas que no se leen), corridas: cada una con sus totales, cómo se leyó cada columna, sin_clasificar, sin_cuenta (las columnas con dinero que el mapeo no dice a qué cuenta van), cuadra y descuadres, avisos, sus personas (totales, si están enlazadas y confirmadas, y el perfil que se propone por el nombre), ya_estaba (si esa nómina ya está: su corrida, su estado, su tipo y su día de pago, mismas_cifras —concepto por concepto—, misma —las mismas personas con el mismo bruto y el mismo neto: es la misma nómina bajada de otra forma—, por_partes —todas las personas de una están dentro de la otra: parte y comunes—, otro_dia, lee_distinto, se_puede_reemplazar y se_puede_otra) y se_puede_postear (cuadra, sin columnas por clasificar y sin dinero sin cuenta); entraria (cuántas son nuevas)}. Con el código del teléfono. Solo el dueño.';
 
 create or replace function public.fn_nomina_importar(p_archivo jsonb, p_opciones jsonb default '{}'::jsonb) returns jsonb
 language plpgsql
@@ -3264,6 +3593,7 @@ declare
   v_puede  boolean;
   v_cons   text;
   v_nd     int;
+  v_part   boolean;
 begin
   perform fn_nomina_exigir_dueno();
   perform fn_nomina_exigir_codigo();
@@ -3278,7 +3608,7 @@ begin
   end if;
   v_porque := nullif(btrim(p_opciones->>'otra_porque'), '');
   if p_opciones ? 'otra_porque'
-     and (not v_otra or v_porque is null or length(v_porque) < 3 or length(v_porque) > 300 or fn_nomina_delicado(v_porque)) then
+     and (not v_otra or v_porque is null or length(v_porque) < 3 or length(v_porque) > 300 or fn_nomina_delicado_texto(v_porque)) then
     raise exception using errcode = '22023',
       message = 'otra_porque va con otra_nomina: unas palabras que digan por qué una nómina que trae a las mismas personas con las mismas '
                 'cifras que otra es, de verdad, otra (dos bonos iguales el mismo día).';
@@ -3293,6 +3623,7 @@ begin
     if v_ya is not null then
       v_igual := (v_ya->>'igual')::boolean;
       v_misma := (v_ya->>'misma')::boolean;
+      v_part  := coalesce((v_ya->>'por_partes')::boolean, false);
       v_puede := (v_ya->>'posteadas')::int = 0 and jsonb_array_length(v_ya->'importadas') = 1;
       if v_reem and v_puede then
         -- EN LUGAR DE LA QUE ESTABA (una, importada y sin postear): aquella se descarta y entra esta. Vale también con las
@@ -3302,7 +3633,19 @@ begin
         update nomina_corridas set estado = 'descartada', descartada_el = clock_timestamp(), descartada_por = auth.uid(),
                                    descartada_motivo = left(format('La sustituye otra subida de su archivo («%s»).', v_l->'archivo'->>'nombre'), 300)
          where id = v_vieja and estado = 'importada';
+        get diagnostics v_nd = row_count;
         perform set_config('mx_nomina.escribe', '', true);
+        if v_nd = 0 then
+          -- (13-nov, la revisión de la Fase 11b: en otra pestaña la que se iba a reemplazar se posteó —o se descartó— mientras
+          -- esta esperaba. Ya no hay a quién reemplazar: antes seguía, y chocaba con su llave con un error técnico de la base.)
+          v_res := v_res || jsonb_build_object(
+            'n', v_c->'n', 'resultado', 'otra_distinta', 'corrida', v_vieja, 'dia_pago', v_c->'dia_pago', 'misma', v_misma,
+            'se_puede_reemplazar', false, 'se_puede_otra', false,
+            'texto', format('La nómina del %s que ibas a reemplazar ya no está sin postear: se acaba de postear (o de descartar) en otra '
+                            'pestaña. No entró nada. Mira la lista de nóminas: si ya está posteada y hay que cambiarla, se anula y se '
+                            'vuelve a subir.', fn_nomina_dia((v_c->>'dia_pago')::date)));
+          continue;
+        end if;
       elsif v_otra and (not v_misma or v_porque is not null) then
         -- OTRA NÓMINA DEL MISMO DÍA. Si trae a las mismas personas con el mismo bruto y el mismo neto que la que está, solo
         -- con su porqué escrito (si no, es la misma bajada de otra forma y entraría dos veces al libro).
@@ -3341,9 +3684,29 @@ begin
       else
         v_res := v_res || jsonb_build_object(
           'n', v_c->'n', 'resultado', 'otra_distinta', 'corrida', v_ya->'corrida', 'estado', v_ya->'estado', 'dia_pago', v_ya->'dia_pago',
-          'misma', v_misma, 'otro_dia', v_ya->'otro_dia', 'se_puede_reemplazar', v_puede, 'se_puede_otra', not v_misma,
+          'misma', v_misma, 'por_partes', v_part, 'otro_dia', v_ya->'otro_dia', 'se_puede_reemplazar', v_puede, 'se_puede_otra', not v_misma,
           'texto',
-          case when v_misma then
+          case when v_part and v_ya->>'parte' = 'dentro' then
+            -- (la que llega cabe entera en la que está: el journal de un empleado, con el de todos ya dentro)
+            format('Ya hay una nómina del %s (%s, del archivo «%s») que trae, entre sus %s persona(s), a la(s) %s de esta, cada una con su '
+                   'mismo bruto y su mismo neto: es la misma nómina, bajada de Gusto por partes (el journal de un empleado, con el de '
+                   'todos ya dentro). No entró: como «otra nómina», su sueldo y sus impuestos entrarían dos veces al libro. No hace falta '
+                   'subirla: esa gente ya está en aquella. Si de verdad es otra nómina (un bono por el mismo importe en los mismos '
+                   'días), súbela como otra nómina diciendo por qué.',
+                   fn_nomina_dia((v_ya->>'dia_pago')::date), v_ya->>'estado', v_ya->>'archivo', v_ya->>'personas', v_ya->>'comunes')
+               when v_part then
+            -- (al revés: la que está es una parte de esta —entró antes el journal de un empleado, y ahora llega el de todos—)
+            format('Ya hay una nómina del %s (%s, del archivo «%s») con %s persona(s), y esta trae a esa(s) misma(s) —cada una con su mismo '
+                   'bruto y su mismo neto— y a más gente (%s en total): parece la misma nómina, que entró antes solo con parte de su '
+                   'gente. No entró: como «otra nómina», el sueldo de aquella gente entraría dos veces al libro. %s Si de verdad son dos '
+                   'nóminas distintas, súbela como otra nómina diciendo por qué.',
+                   fn_nomina_dia((v_ya->>'dia_pago')::date), v_ya->>'estado', v_ya->>'archivo', v_ya->>'personas', v_c->'totales'->>'personas',
+                   case when (v_ya->>'posteadas')::int > 0
+                          then 'La que está ya se posteó: anúlala (des-casando antes sus cargos de Gusto, si los tiene) y sube esta, la completa.'
+                        when v_puede
+                          then 'Súbela diciendo que reemplaza a la que estaba: entra esta, la completa, y aquella queda descartada.'
+                        else 'Hay más de una sin postear de esa nómina: descarta la que sobre y vuelve a subir esta.' end)
+               when v_misma then
             format('Ya hay una nómina del %s (%s, del archivo «%s») con las MISMAS %s persona(s), cada una con su mismo bruto y su mismo '
                    'neto (en total, bruto %s y neto %s): es la misma nómina, bajada de Gusto de otra forma%s. No entró: como «otra '
                    'nómina» su sueldo y sus impuestos entrarían dos veces al libro. %s Si de verdad son dos nóminas distintas con las '
@@ -3395,6 +3758,7 @@ begin
                                                        'otra_porque', case when v_ya is not null and v_otra then v_porque end));
   end loop;
 
+  begin
   if jsonb_array_length(v_nuevas) > 0 then
     perform set_config('mx_nomina.escribe', 'nomina_archivos', true);
     insert into nomina_archivos (nombre, sha256, bytes, filas, corridas, delicado, importado_por)
@@ -3418,6 +3782,7 @@ begin
               v_c->'declara', (v_c->>'cuadra')::boolean, v_c->'descuadres', v_c->'columnas', v_c->'sin_clasificar',
               nullif(v_c->'totales_archivo', 'null'::jsonb), v_c->'avisos', auth.uid())
       returning id into v_id;
+      -- (si aun así su llave chocara con una viva —dos pestañas—, la base lo para con su índice único: abajo se dice en llano)
       for v_p in select value from jsonb_array_elements(v_c->'personas') loop
         -- la persona: por su identificador de Gusto si el archivo lo trae; si no, por su nombre (su clave)
         v_pe := null;
@@ -3502,6 +3867,18 @@ begin
                                          'reemplaza a esta.', jsonb_array_length(v_c->'sin_clasificar')) else '' end));
     end loop;
   end if;
+  exception when unique_violation then
+    -- (13-nov, la revisión de la Fase 11b: la llave de una nómina viva es única. Si aun así choca —dos pestañas a la vez—, se
+    -- dice en llano y no entra nada; cualquier otro choque sigue su camino)
+    get stacked diagnostics v_cons = constraint_name;
+    perform set_config('mx_nomina.escribe', '', true);
+    if v_cons is distinct from 'nomina_corridas_llave_viva' then
+      raise;
+    end if;
+    raise exception using errcode = 'MX008',
+      message = 'Esa nómina ya está en la base: se acaba de subir (o de postear) en otra pestaña mientras esta esperaba. No entró nada, '
+                'ni dos veces. Vuelve a mirar la lista de nóminas.';
+  end;
   perform set_config('mx_nomina.escribe', '', true);
   v_msg := case when v_n = 0 and exists (select 1 from jsonb_array_elements(v_res) q where q->>'resultado' = 'otra_distinta' and (q->>'misma')::boolean)
                   then 'No entró nada: esa nómina ya está, bajada de otra forma (mira el detalle).'
@@ -3518,7 +3895,7 @@ begin
 end $$;
 revoke execute on function public.fn_nomina_importar(jsonb, jsonb) from public, anon, service_role;
 grant  execute on function public.fn_nomina_importar(jsonb, jsonb) to authenticated;
-comment on function public.fn_nomina_importar(jsonb, jsonb) is 'c15: IMPORTA un archivo de nómina ({nombre, sha256, bytes, filas}; las celdas como texto): guarda cada nómina nueva (la corrida, sus personas —dadas de alta sin enlazar si no se conocían— y sus líneas por persona y concepto). No entra dos veces: la misma nómina —por su llave, o por sus personas y sus cifras— con las mismas cifras concepto por concepto contesta «ya_estaba»; con otras, «otra_distinta» (no entra): si trae a las mismas personas con el mismo bruto y el mismo neto es la misma bajada de otra forma (misma: true; se_puede_otra: false) y como «otra nómina» solo entra con su porqué ({"otra_nomina": true, "otra_porque": "…"}); si trae otras cifras, o {"reemplazar": true} —la que estaba, una y sin postear, se descarta y entra esta, conservando su período dicho a mano y lo decidido para cada persona— u {"otra_nomina": true}. {"reemplazar": true} vale también con las mismas cifras (para volver a leerla con el mapeo de hoy). Lo delicado no se guarda. Devuelve {archivo, nuevas, corridas: [{n, resultado: nueva | reemplazada | ya_estaba | otra_distinta, corrida, misma, se_puede_reemplazar, se_puede_otra, texto…}], delicado, mensaje}. Una importación a la vez. Con el código del teléfono. Solo el dueño.';
+comment on function public.fn_nomina_importar(jsonb, jsonb) is 'c15: IMPORTA un archivo de nómina ({nombre, sha256, bytes, filas}; las celdas como texto): guarda cada nómina nueva (la corrida, sus personas —dadas de alta sin enlazar si no se conocían— y sus líneas por persona y concepto). No entra dos veces: la misma nómina —por su llave, o por sus personas y sus cifras— con las mismas cifras concepto por concepto contesta «ya_estaba»; con otras, «otra_distinta» (no entra): si trae a las mismas personas con el mismo bruto y el mismo neto —o si todas las personas de una están dentro de la otra: la misma, bajada por partes (por_partes: true)— es la misma bajada de otra forma (misma: true; se_puede_otra: false) y como «otra nómina» solo entra con su porqué ({"otra_nomina": true, "otra_porque": "…"}); si trae otras cifras, o {"reemplazar": true} —la que estaba, una y sin postear, se descarta y entra esta, conservando su período dicho a mano y lo decidido para cada persona— u {"otra_nomina": true}. {"reemplazar": true} vale también con las mismas cifras (para volver a leerla con el mapeo de hoy). Lo delicado no se guarda. Devuelve {archivo, nuevas, corridas: [{n, resultado: nueva | reemplazada | ya_estaba | otra_distinta, corrida, misma, se_puede_reemplazar, se_puede_otra, texto…}], delicado, mensaje}. Una importación a la vez. Con el código del teléfono. Solo el dueño.';
 
 -- Lo que se le puede decir a una corrida IMPORTADA antes de postearla: su
 -- período de pago (si el archivo no lo traía, o venía mal) y si se queda
@@ -3580,23 +3957,42 @@ begin
   v_por := c.otra_porque;
   if p ? 'otra_porque' then
     v_por := nullif(btrim(p->>'otra_porque'), '');
-    if v_por is null or length(v_por) < 3 or length(v_por) > 300 or fn_nomina_delicado(v_por) then
+    if v_por is null or length(v_por) < 3 or length(v_por) > 300 or fn_nomina_delicado_texto(v_por) then
       raise exception using errcode = '22023',
-        message = 'otra_porque: unas palabras que digan por qué esta nómina, que trae a las mismas personas con las mismas cifras que otra, es otra.';
+        message = 'otra_porque: unas palabras que digan por qué esta nómina, que trae a las mismas personas con las mismas cifras que otra, es '
+                  'otra (sin números de cuenta ni de Seguro Social).';
     end if;
   end if;
   -- (con ese período, ¿pasa a ser LA MISMA que otra viva? Las mismas personas con el mismo bruto y el mismo neto, el mismo
   -- día de pago o con un período que se pisa —o, si a una le falta el período, a menos de una semana; o la misma nómina del
   -- mismo archivo, subido otra vez—: no sigue sin su porqué)
+  -- (13-nov, la revisión de la Fase 11b: o POR PARTES —todas las personas de una, cada una con su mismo bruto y su mismo neto,
+  -- dentro de la otra—, el mismo día, con un período que se pisa o, si a una le falta, a menos de una semana)
   select k.* into o from nomina_corridas k
-   where k.id <> c.id and k.estado in ('importada', 'posteada') and c.firma_personas is not null and k.firma_personas = c.firma_personas
-     and (k.dia_pago = c.dia_pago
-          or (k.periodo_desde is not null and v_des is not null and k.periodo_desde <= v_has and k.periodo_hasta >= v_des)
-          or ((k.periodo_desde is null or v_des is null) and abs(k.dia_pago - c.dia_pago) <= 6)
-          or (k.n = c.n and k.archivo_id <> c.archivo_id
-              and exists (select 1 from nomina_archivos a1 join nomina_archivos a2 on a2.sha256 = a1.sha256
-                           where a1.id = k.archivo_id and a2.id = c.archivo_id)))
+   cross join lateral (select coalesce(array_agg(round(cp.bruto, 2) || ':' || round(cp.neto, 2)), '{}') as pares
+                         from nomina_corrida_personas cp where cp.corrida_id = k.id) kp
+   cross join (select coalesce(array_agg(round(cp.bruto, 2) || ':' || round(cp.neto, 2)), '{}') as pares
+                 from nomina_corrida_personas cp where cp.corrida_id = c.id) mp
+   where k.id <> c.id and k.estado in ('importada', 'posteada')
+     and (   (c.firma_personas is not null and k.firma_personas = c.firma_personas
+              and (k.dia_pago = c.dia_pago
+                   or (k.periodo_desde is not null and v_des is not null and k.periodo_desde <= v_has and k.periodo_hasta >= v_des)
+                   or ((k.periodo_desde is null or v_des is null) and abs(k.dia_pago - c.dia_pago) <= 6)
+                   or (k.n = c.n and k.archivo_id <> c.archivo_id
+                       and exists (select 1 from nomina_archivos a1 join nomina_archivos a2 on a2.sha256 = a1.sha256
+                                    where a1.id = k.archivo_id and a2.id = c.archivo_id))))
+          or (k.firma_personas is distinct from c.firma_personas
+              and (k.dia_pago = c.dia_pago
+                   or (k.periodo_desde is not null and v_des is not null and k.periodo_desde <= v_has and k.periodo_hasta >= v_des)
+                   or ((k.periodo_desde is null or v_des is null) and abs(k.dia_pago - c.dia_pago) <= 6))
+              and (fn_nomina_dentro(mp.pares, kp.pares) or fn_nomina_dentro(kp.pares, mp.pares))))
    order by (k.estado = 'posteada') desc, k.importada_el limit 1;
+  if o.id is not null and v_por is null and o.firma_personas is distinct from c.firma_personas then
+    raise exception using errcode = 'MX008',
+      message = format('Con ese período esta nómina sería la misma que la del %s que ya está (%s), bajada por partes: todas las personas '
+                       'de una, cada una con su mismo bruto y su mismo neto, están en la otra. Si es la misma, descarta la que sobra; si '
+                       'de verdad son dos, di por qué.', fn_nomina_dia(o.dia_pago), o.estado);
+  end if;
   if o.id is not null and v_por is null then
     raise exception using errcode = 'MX008',
       message = format('Con ese período esta nómina sería la misma que la del %s que ya está (%s): las mismas %s persona(s), cada una '
@@ -3646,6 +4042,10 @@ begin
   perform fn_nomina_exigir_codigo();
   if coalesce(length(btrim(p_motivo)), 0) < 3 then
     raise exception using errcode = '22023', message = 'Descartar una corrida dice por qué (motivo).';
+  end if;
+  if fn_nomina_delicado_texto(p_motivo) then
+    raise exception using errcode = '22023',
+      message = 'El motivo lleva algo con forma de dato delicado (un número de Seguro Social, una cuenta de banco): escríbelo sin eso.';
   end if;
   select * into c from nomina_corridas where id = p_corrida for update;
   if not found then
@@ -3747,6 +4147,10 @@ begin
       raise exception using errcode = 'MX005', message = 'horas_periodo: las horas que cubre su sueldo en un período de pago (más de 0).';
     end if;
   end if;
+  if p ? 'nota' and fn_nomina_delicado_texto(p->>'nota') then
+    raise exception using errcode = '22023',
+      message = 'La nota lleva algo con forma de dato delicado (un número de Seguro Social, una cuenta de banco): escríbela sin eso.';
+  end if;
   v_cambia := v_u is distinct from a.usuario_id or v_cl is distinct from a.clase;
   v_conf := coalesce((p->>'confirmar')::boolean, false);
   if v_conf and (v_u is null or v_cl is null) then
@@ -3819,6 +4223,11 @@ begin
       raise exception using errcode = '22023',
         message = 'Lo que se puede decidir para quien tiene sueldo y ninguna hora aprobada en el período es «sin_obra» (su sueldo va entero a '
                   'la cuenta de lo sin obra), con su nota: por qué. Lo otro es aprobar sus horas en la app y volver a mirar.';
+    end if;
+    if fn_nomina_delicado_texto(p->>'nota') then
+      perform set_config('mx_nomina.escribe', '', true);
+      raise exception using errcode = '22023',
+        message = 'La nota lleva algo con forma de dato delicado (un número de Seguro Social, una cuenta de banco): escríbela sin eso.';
     end if;
     update nomina_corrida_personas set decision = 'sin_obra', decision_nota = btrim(p->>'nota'), decidido_el = clock_timestamp(),
                                        decidido_por = auth.uid()
@@ -3921,6 +4330,8 @@ declare
   v_cla    jsonb;
   v_ndd    numeric;
   v_y      text;
+  v_res    boolean;
+  v_base   numeric;
 begin
   perform fn_nomina_exigir_dueno();
   perform fn_nomina_exigir_codigo();
@@ -3949,10 +4360,25 @@ begin
    where l.corrida_id = c.id and l.clase in ('imp_empleado', 'imp_patron', 'ben_patron', 'deduccion', 'reembolso', 'neto')
      and l.cuenta is null;
   if v_x is not null then
+    -- (13-nov, la revisión de la Fase 11b: de las que frenan, las que son un TOTAL —su columna es de clase «…_total» y entró como
+    -- línea porque el archivo no trae sus partes—. Ponerle cuenta al total de algo que ya viene en detalle lo lleva dos veces al
+    -- libro: se dice antes de que Edgar se la ponga.)
+    select string_agg(distinct format('«%s»', k->>'columna'), ', ') into v_y
+      from jsonb_array_elements(c.columnas) k
+     where k->>'clase' like '%\_total'
+       and exists (select 1 from nomina_lineas l
+                    where l.corrida_id = c.id and l.cuenta is null and l.columna = k->>'columna'
+                      and l.clase in ('imp_empleado', 'imp_patron', 'ben_patron', 'deduccion', 'reembolso', 'neto'));
     v_frenos := v_frenos || jsonb_build_object('codigo', 'falta_cuenta', 'texto',
       format('La(s) columna(s) %s trae(n) dinero y el mapeo no dice a qué cuenta va (Florida no tiene impuesto estatal sobre el sueldo; un '
              'beneficio nuevo necesita su cuenta; y los impuestos del patrón en un solo total no se pueden separar: baja el archivo con su '
-             'detalle). Dile su cuenta y vuelve a subir su archivo diciendo que reemplaza a esta.', v_x));
+             'detalle).%s Dile su cuenta y vuelve a subir su archivo diciendo que reemplaza a esta.', v_x,
+             -- (format() no devuelve nulo con un argumento nulo —lo deja vacío—: el «OJO» va solo si de verdad hay un total)
+             case when v_y is not null
+                  then format(' OJO: %s es un TOTAL: si es el total de algo que este archivo ya trae en detalle (o de todo lo que paga el '
+                              'patrón), NO le pongas cuenta —entraría dos veces al libro—: di en los ajustes que esa columna no se lea '
+                              '(clase «ignorar»).', v_y)
+                  else '' end));
   end if;
   select string_agg(distinct fn_nomina_cuenta_mal(l.cuenta, 'pasivo'), '; ') into v_x
     from nomina_lineas l where l.corrida_id = c.id and l.cuenta is not null and fn_nomina_cuenta_mal(l.cuenta, 'pasivo') is not null;
@@ -3997,6 +4423,58 @@ begin
              'parece la misma, y posteada entraría dos veces. Si es la misma, descártala; si de verdad es otra (dos bonos iguales), '
              'di por qué y vuelve a mirar.', c.personas, v_x));
   end if;
+  -- (13-nov, la revisión de la Fase 11b) LA MISMA NÓMINA, POR PARTES: otra ya POSTEADA que trae a todas las personas de esta —o
+  -- esta a todas las de aquella—, cada una con su mismo bruto y su mismo neto, el mismo día de pago, con un período que se pisa
+  -- o, si a una le falta el período, a menos de una semana: el journal de UN empleado y el de todos. Posteada, esa gente entraría
+  -- dos veces. No se postea sin que Edgar diga por qué es otra.
+  if v_x is null and c.otra_porque is null then
+    select string_agg(format('la del %s (asiento %s, %s persona(s))', fn_nomina_dia(o.dia_pago), o.asiento_numero, o.personas), ', '
+                      order by o.dia_pago, o.id),
+           min(least(o.personas, c.personas))
+      into v_x, v_d
+      from nomina_corridas o
+      cross join lateral (select coalesce(array_agg(round(cp.bruto, 2) || ':' || round(cp.neto, 2)), '{}') as pares
+                            from nomina_corrida_personas cp where cp.corrida_id = o.id) op
+      cross join (select coalesce(array_agg(round(cp.bruto, 2) || ':' || round(cp.neto, 2)), '{}') as pares
+                    from nomina_corrida_personas cp where cp.corrida_id = c.id) mp
+     where o.id <> c.id and o.estado = 'posteada' and o.firma_personas is distinct from c.firma_personas
+       and (o.dia_pago = c.dia_pago
+            or (o.periodo_desde is not null and c.periodo_desde is not null
+                and o.periodo_desde <= c.periodo_hasta and o.periodo_hasta >= c.periodo_desde)
+            or ((o.periodo_desde is null or c.periodo_desde is null) and abs(o.dia_pago - c.dia_pago) <= 6))
+       and (fn_nomina_dentro(mp.pares, op.pares) or fn_nomina_dentro(op.pares, mp.pares));
+    if v_x is not null then
+      v_frenos := v_frenos || jsonb_build_object('codigo', 'repetida', 'texto',
+        format('Esta nómina y %s, que ya está en el libro, comparten a %s persona(s), cada una con su mismo bruto y su mismo neto: todas '
+               'las de una están en la otra. Parece la misma nómina, bajada de Gusto por partes (el journal de un empleado y el de '
+               'todos), y posteada esa gente entraría dos veces. Si es la misma, descártala; si de verdad es otra (un bono por el mismo '
+               'importe en los mismos días), di por qué y vuelve a mirar.', v_x, v_d));
+    end if;
+  end if;
+  -- (13-nov, la revisión de la Fase 11b) EL RESUMEN DE UN RANGO (un mes, un trimestre: la suma por empleado de varias nóminas)
+  -- no es una nómina: sin fechas, y con el día dicho a mano, entraba como una más y doblaba el libro. Si CADA persona de esta
+  -- corrida trae justo lo que suman su bruto y su neto en dos o más nóminas vivas suyas seguidas (por su día de pago, de un año
+  -- para acá), es el resumen de ellas. No se postea sin que Edgar diga por qué es una nómina aparte.
+  if c.otra_porque is null then
+    select count(*) > 0 and bool_and(z.ok) and bool_or(cp.bruto <> 0) into v_res
+      from nomina_corrida_personas cp
+      cross join lateral (
+        with s as (select o.bruto, o.neto, sum(o.bruto) over w as sb, sum(o.neto) over w as sn, row_number() over w as rn
+                     from nomina_corrida_personas o join nomina_corridas ko on ko.id = o.corrida_id
+                    where o.persona_id = cp.persona_id and ko.id <> c.id and ko.estado in ('importada', 'posteada')
+                      and ko.dia_pago between c.dia_pago - 366 and c.dia_pago + 92
+                   window w as (order by ko.dia_pago, ko.id))
+        select exists (select 1 from s a join s b on b.rn > a.rn
+                        where b.sb - a.sb + a.bruto = cp.bruto and b.sn - a.sn + a.neto = cp.neto) as ok) z
+     where cp.corrida_id = c.id;
+    if coalesce(v_res, false) then
+      v_frenos := v_frenos || jsonb_build_object('codigo', 'resumen', 'texto',
+        format('Esta «nómina» parece el RESUMEN de varias que ya están en la base: cada una de sus %s persona(s) trae justo lo que suman '
+               'su bruto y su neto en dos o más nóminas suyas seguidas. Posteada, todo eso entraría dos veces al libro. Si es el '
+               'resumen de un rango (un mes, un trimestre), descártala: sus nóminas ya entraron una por una. Si de verdad es una '
+               'nómina aparte, di por qué y vuelve a mirar.', c.personas));
+    end if;
+  end if;
   v_fa := fn_nomina_fecha_asiento(c.dia_pago);
   if v_fa ? 'nota' then
     v_avisos := v_avisos || jsonb_build_object('codigo', 'mes_cerrado', 'texto', v_fa->>'nota');
@@ -4025,6 +4503,13 @@ begin
     v_frenos := v_frenos || jsonb_build_object('codigo', 'sin_periodo', 'texto',
       'No sé el período de pago de esta nómina (el archivo no lo traía): sin él no hay horas con qué repartir a la gente de campo. Dilo '
       '(desde y hasta) y vuelve a mirar.');
+  elsif c.periodo_desde is null and c.avisos @> '[{"codigo": "dia_a_mano"}]'::jsonb then
+    -- (13-nov, la revisión de la Fase 11b: un archivo que no trae NI su día de pago NI su período —el día lo dijo Edgar— puede
+    -- ser el resumen de varias nóminas. No se postea hasta decir de qué período es: con sus fechas se compara con las demás.)
+    v_frenos := v_frenos || jsonb_build_object('codigo', 'sin_periodo', 'texto',
+      format('El archivo de esta nómina no traía ni su día de pago ni su período: el día (%s) lo dijiste tú. Sin sus fechas no se sabe si '
+             'es UNA nómina o el resumen de varias: di su período de pago (desde y hasta) y vuelve a mirar. Si es el resumen de un rango '
+             '(un mes, un trimestre), descártala: sus nóminas entran una por una.', v_dia));
   end if;
 
   -- PERSONA POR PERSONA
@@ -4105,44 +4590,47 @@ begin
       if p.clase = 'oficial' then
         -- la parte de obra de su sueldo: sus horas con obra entre las que cubre su sueldo (o las que reportó, si son más)
         select coalesce(array_agg(h.id order by h.id), '{}') into v_ids from horas h where h.id = any (v_ids) and h.proyecto_id is not null;
-        v_d := greatest(coalesce(p.horas_periodo, cfg.horas_periodo_oficial), v_ho + v_hs);
-        v_pb := case when p.a_obra and v_ho > 0 and v_bruto > 0 then least(round(v_bruto * v_ho / v_d, 2), v_bruto) else 0 end;
-        v_ppat := case when p.a_obra and v_ho > 0 and v_patron > 0 then least(round(v_patron * v_ho / v_d, 2), v_patron) else 0 end;
+        v_base := coalesce(p.horas_periodo, cfg.horas_periodo_oficial);
+        v_d := greatest(v_base, v_ho + v_hs);
+        -- (13-nov, la revisión de la Fase 11b: en valor absoluto y con su signo, como la gente de campo. Antes una corrección en
+        -- NEGATIVO del oficial salía entera de la compensación de oficiales y no volvía por sus obras.)
+        v_pb := case when p.a_obra and v_ho > 0 and v_bruto <> 0 then least(round(abs(v_bruto) * v_ho / v_d, 2), abs(v_bruto)) else 0 end;
+        v_ppat := case when p.a_obra and v_ho > 0 and v_patron <> 0 then least(round(abs(v_patron) * v_ho / v_d, 2), abs(v_patron)) else 0 end;
         v_rb := null; v_rp := null;
         if v_pb > 0 then
           select jsonb_agg(to_jsonb(q)) into v_rb from fn_jornal_repartir_ids(v_ids, v_pb) q;
           select v_pp || coalesce(jsonb_agg(jsonb_build_object('persona_id', p.persona_id, 'clase', 'bruto', 'destino', 'obra',
                                     'cuenta', v_ct->>'mano_obra_oficial', 'proyecto_id', g.proyecto_id, 'co', g.co, 'horas', g.horas_grupo,
-                                    'monto', g.monto_grupo) order by g.grupo), '[]'::jsonb)
+                                    'monto', v_sb * g.monto_grupo) order by g.grupo), '[]'::jsonb)
             into v_pp
             from (select distinct (q->>'grupo')::int as grupo, q->>'proyecto_id' as proyecto_id, q->>'co' as co,
                          (q->>'horas_grupo')::numeric as horas_grupo, (q->>'monto_grupo')::numeric as monto_grupo
                     from jsonb_array_elements(v_rb) q) g
            where g.monto_grupo <> 0;
         end if;
-        if v_bruto - v_pb <> 0 then
+        if v_bruto - v_sb * v_pb <> 0 then
           v_pp := v_pp || jsonb_build_object('persona_id', p.persona_id, 'clase', 'bruto', 'destino', 'oficial', 'cuenta', v_ct->>'oficial',
-                                             'monto', v_bruto - v_pb);
+                                             'monto', v_bruto - v_sb * v_pb);
         end if;
         if v_ppat > 0 then
           select jsonb_agg(to_jsonb(q)) into v_rp from fn_jornal_repartir_ids(v_ids, v_ppat) q;
           select v_pp || coalesce(jsonb_agg(jsonb_build_object('persona_id', p.persona_id, 'clase', 'patron', 'destino', 'obra',
                                     'cuenta', v_ct->>'bolsa', 'proyecto_id', g.proyecto_id, 'co', g.co, 'horas', g.horas_grupo,
-                                    'monto', g.monto_grupo) order by g.grupo), '[]'::jsonb)
+                                    'monto', v_sp * g.monto_grupo) order by g.grupo), '[]'::jsonb)
             into v_pp
             from (select distinct (q->>'grupo')::int as grupo, q->>'proyecto_id' as proyecto_id, q->>'co' as co,
                          (q->>'horas_grupo')::numeric as horas_grupo, (q->>'monto_grupo')::numeric as monto_grupo
                     from jsonb_array_elements(v_rp) q) g
            where g.monto_grupo <> 0;
         end if;
-        if v_patron - v_ppat <> 0 then
+        if v_patron - v_sp * v_ppat <> 0 then
           v_pp := v_pp || jsonb_build_object('persona_id', p.persona_id, 'clase', 'patron', 'destino', 'oficial', 'cuenta', v_ct->>'burden_admin',
-                                             'monto', v_patron - v_ppat);
+                                             'monto', v_patron - v_sp * v_ppat);
         end if;
         if v_pb > 0 or v_ppat > 0 then
           select v_horas || coalesce(jsonb_agg(jsonb_build_object(
                    'persona_id', p.persona_id, 'usuario_id', p.usuario_id, 'horas_id', b.horas_id, 'fecha', b.fecha, 'proyecto_id', b.proyecto_id,
-                   'co', b.co, 'fase', b.fase, 'horas', b.horas, 'bruto', coalesce(b.bruto, 0), 'patron', coalesce(b.patron, 0),
+                   'co', b.co, 'fase', b.fase, 'horas', b.horas, 'bruto', v_sb * coalesce(b.bruto, 0), 'patron', v_sp * coalesce(b.patron, 0),
                    'titular', c.toma_horas) order by b.horas_id), '[]'::jsonb)
             into v_horas
             from (select coalesce((x->>'horas_id')::bigint, (y->>'horas_id')::bigint) as horas_id,
@@ -4154,10 +4642,15 @@ begin
                     full join jsonb_array_elements(coalesce(v_rp, '[]'::jsonb)) y on (y->>'horas_id') = (x->>'horas_id')) b;
         end if;
         v_us_h := case when v_pb > 0 or v_ppat > 0 then v_ho else 0 end;
-        if p.a_obra and v_ho > 0 and v_bruto > 0 then
+        if p.a_obra and v_ho > 0 and v_bruto <> 0 then
+          -- (el divisor: las horas que cubre su sueldo o, si reportó más, las que reportó: se dice cuál)
           v_avisos := v_avisos || jsonb_build_object('codigo', 'oficial_en_obra', 'persona', p.persona_id, 'texto',
-            format('%s: %s h aprobadas en obra de las %s que cubre su sueldo en el período → %s de su sueldo va a sus obras (5001) y %s a la '
-                   'compensación de oficiales.', p.nombre, fn_nomina_h(v_ho), fn_nomina_h(v_d), fn_nomina_usd(v_pb), fn_nomina_usd(v_bruto - v_pb)));
+            format('%s: %s h aprobadas en obra de las %s → %s de su sueldo va a sus obras (5001) y %s a la compensación de oficiales.',
+                   p.nombre, fn_nomina_h(v_ho),
+                   case when v_d > v_base
+                        then format('%s que reportó en el período (más que las %s que cubre su sueldo)', fn_nomina_h(v_d), fn_nomina_h(v_base))
+                        else format('%s que cubre su sueldo en el período', fn_nomina_h(v_d)) end,
+                   fn_nomina_usd(v_sb * v_pb), fn_nomina_usd(v_bruto - v_sb * v_pb)));
         end if;
       elsif cardinality(v_ids) = 0 then
         -- campo, sin horas que valgan
@@ -4184,7 +4677,9 @@ begin
                    'mirar, o decide mandarlo sin obra (con una nota).', p.nombre, fn_nomina_usd(v_bruto), fn_nomina_dia(c.periodo_desde),
                    fn_nomina_dia(c.periodo_hasta),
                    case when v_sa_n > 0 then format(' (tiene %s reporte(s) sin aprobar, %s h)', v_sa_n, fn_nomina_h(v_sa_h)) else '' end,
-                   case when v_oc_h > 0 then format(' (sus %s h aprobadas ya las pagó %s)', fn_nomina_h(v_oc_h), v_oc_txt) else '' end));
+                   case when v_oc_h > 0
+                        then format(' (sus %s h aprobadas ya las pagó %s: si esta es esa misma nómina, bajada otra vez, descártala y no '
+                                    'lo mandes sin obra)', fn_nomina_h(v_oc_h), v_oc_txt) else '' end));
         end if;
       else
         -- campo, con horas: el bruto y lo patronal, por las mismas horas (el núcleo de c10)
@@ -4283,6 +4778,43 @@ begin
   if v_y is not null then
     v_avisos := v_avisos || jsonb_build_object('codigo', 'obra_sin_aprobar', 'texto',
       format('Hay horas en una obra que todavía no está aprobada: %s. Su parte del sueldo va a esa obra.', v_y));
+  end if;
+  -- (13-nov, la revisión de la Fase 11b: alguien de campo de la nómina con horas aprobadas en el período, sin pagar, que NO viene
+  -- en este journal —antes solo salía después, en lo trabajado y no pagado—; y alguien de oficina con horas aprobadas en obra,
+  -- cuyo sueldo va entero a oficina)
+  if c.toma_horas and c.periodo_desde is not null then
+    select count(*), fn_nomina_lista(array_agg(format('%s (%s h)', q.nombre, fn_nomina_h(q.h)) order by q.nombre), 400) into v_d, v_x
+      from (select pe.nombre, sum(h.horas) as h
+              from nomina_personas pe
+              join horas h on h.usuario_id = pe.usuario_id and h.fecha between c.periodo_desde and c.periodo_hasta
+                          and h.aprobado_el is not null and h.horas > 0 and h.horas < 100000
+             where pe.clase = 'campo' and pe.activo and pe.usuario_id is not null
+               and not exists (select 1 from nomina_corrida_personas cp where cp.corrida_id = c.id and cp.persona_id = pe.id)
+               and not exists (select 1 from nomina_reparto_horas rh where rh.horas_id = h.id and rh.titular and rh.vivo)
+               and not exists (select 1 from jornal_reparto_horas jh join jornal_repartos jr on jr.id = jh.reparto_id
+                                where jh.horas_id = h.id and jr.estado = 'aplicado')
+             group by pe.id, pe.nombre) q;
+    if v_d > 0 then
+      v_avisos := v_avisos || jsonb_build_object('codigo', 'fuera_del_journal', 'texto',
+        format('%s persona(s) de campo de la nómina tiene(n) horas aprobadas del período, sin pagar, y no viene(n) en este journal: %s. Si '
+               'Gusto no les pagó en esta nómina, mira por qué (sus horas quedan sin pagar); si cobraron por otro lado, no pasa nada.',
+               v_d, v_x));
+    end if;
+  end if;
+  if c.periodo_desde is not null then
+    select fn_nomina_lista(array_agg(format('%s (%s h)', q.nombre, fn_nomina_h(q.h)) order by q.nombre), 400) into v_x
+      from (select cp.nombre, sum(h.horas) as h
+              from nomina_corrida_personas cp
+              join nomina_personas pe on pe.id = cp.persona_id and pe.clase = 'oficina' and pe.usuario_id is not null
+              join horas h on h.usuario_id = pe.usuario_id and h.fecha between c.periodo_desde and c.periodo_hasta
+                          and h.aprobado_el is not null and h.proyecto_id is not null and h.horas > 0 and h.horas < 100000
+             where cp.corrida_id = c.id
+             group by cp.persona_id, cp.nombre) q;
+    if v_x is not null then
+      v_avisos := v_avisos || jsonb_build_object('codigo', 'oficina_en_obra', 'texto',
+        format('De oficina y con horas aprobadas en obra en el período: %s. Su sueldo va entero a oficina (no a esas obras). Si parte de '
+               'su sueldo es de obra, cámbiale la clase a campo antes de postear.', v_x));
+    end if;
   end if;
   if c.tipo = 'fuera_de_ciclo' then
     v_avisos := v_avisos || jsonb_build_object('codigo', 'fuera_de_ciclo', 'texto',
@@ -4479,12 +5011,14 @@ comment on function public.fn_nomina_propuesta(uuid) is 'c15: lo que la pantalla
 -- desaprobada o movida de obra, una cuenta, una persona), MX011 y no entra
 -- nada: se vuelve a mirar. Con frenos, MX008 con la lista. Dos toques (o dos
 -- pestañas) dejan UN asiento: el segundo recibe el que ya estaba.
--- Y EL DEVENGO ESTÁNDAR de c3: c3 no devenga un mes que tiene journal de
--- nómina (contaría dos veces lo que el journal ya pagó), y si el journal
--- llega DESPUÉS de un devengo dice que «volver a devengar lo deshace». Aquí
--- se hace solo, en la misma transacción: si el mes del asiento tiene un
--- devengo estándar vivo y sigue abierto, se deshace por la función de c3
--- (el dueño la puede llamar); el resultado lo dice.
+-- Y EL DEVENGO ESTÁNDAR de c3: es solo lo trabajado y todavía no pagado. Si
+-- el journal llega DESPUÉS de un devengo de su mes, ese devengo cuenta dos
+-- veces las horas que esta nómina paga, y c3 dice que «volver a devengar lo
+-- pone al día». Aquí se hace solo, en la misma transacción: si el mes del
+-- asiento tiene un devengo estándar vivo y sigue abierto, se llama a la
+-- función de c3 (el dueño la puede llamar) y el resultado lo dice: con el c3
+-- de la Fase 11b queda lo que sigue sin pagar (o se deshace, si esta nómina
+-- lo pagó todo); con un c3 de antes, se deshace entero.
 create or replace function public.fn_nomina_postear(p_corrida uuid, p_visto text) returns jsonb
 language plpgsql
 set search_path = public, pg_temp
@@ -4557,11 +5091,16 @@ begin
                 and not exists (select 1 from asientos r where r.reversa_a = a.id and r.camino = 'reverso')) then
     begin
       v_dev := fn_horas_devengar(v_mes);
-      v_devtxt := format('El mes %s tenía un devengo estándar de horas: con el journal de la nómina dentro contaba dos veces esas horas, y se '
-                         'deshizo aquí mismo.', v_mes);
+      v_devtxt := case v_dev->>'accion'
+                    when 'sustituido'
+                    then format('El mes %s tenía un devengo estándar de horas: se puso al día aquí mismo (asiento %s). Ya no lleva las horas '
+                                'que esta nómina pagó; quedan las trabajadas y todavía sin pagar.', v_mes, v_dev->>'asiento')
+                    when 'sin_cambios' then null
+                    else format('El mes %s tenía un devengo estándar de horas: con el journal de la nómina dentro contaba dos veces esas '
+                                'horas, y se deshizo aquí mismo.', v_mes) end;
     exception when others then
-      v_devtxt := format('El mes %s tiene un devengo estándar de horas que ya no se pudo deshacer (%s): cuenta dos veces lo que esta nómina '
-                         'pagó. Míralo antes de cerrar el mes.', v_mes, left(sqlerrm, 300));
+      v_devtxt := format('El mes %s tiene un devengo estándar de horas que no se pudo poner al día (%s): cuenta dos veces lo que esta nómina '
+                         'pagó. Ponlo al día antes de cerrar el mes: select fn_horas_devengar(%L);', v_mes, left(sqlerrm, 300), v_mes);
     end;
   end if;
   return jsonb_build_object(
@@ -4574,13 +5113,20 @@ begin
 end $$;
 revoke execute on function public.fn_nomina_postear(uuid, text) from public, anon, service_role;
 grant  execute on function public.fn_nomina_postear(uuid, text) to authenticated;
-comment on function public.fn_nomina_postear(uuid, text) is 'c15: POSTEA una corrida importada: vuelve a calcular su plan con las horas tomadas y, si no hay frenos (MX008, con la lista) y es lo que Edgar vio (p_visto: la huella de la propuesta; si no, MX011 y nada cambia), guarda el reparto y el lote de horas y pasa la corrida a posteada: su puente pone en el libro el journal (en la fecha del día de pago) y el reparto del burden real a las obras. Si el mes tenía un devengo estándar de horas vivo, lo deshace por la función de c3 y lo dice. Dos toques dejan un asiento (ya_estaba). Devuelve {corrida, posteada, ya_estaba, asiento, burden, pasivos, avisos, devengo, horas}. Con el código del teléfono. Solo el dueño.';
+comment on function public.fn_nomina_postear(uuid, text) is 'c15: POSTEA una corrida importada: vuelve a calcular su plan con las horas tomadas y, si no hay frenos (MX008, con la lista) y es lo que Edgar vio (p_visto: la huella de la propuesta; si no, MX011 y nada cambia), guarda el reparto y el lote de horas y pasa la corrida a posteada: su puente pone en el libro el journal (en la fecha del día de pago) y el reparto del burden real a las obras. Si el mes tenía un devengo estándar de horas vivo, lo pone al día por la función de c3 (queda lo que sigue sin pagar; con un c3 de antes de la Fase 11b, lo deshace) y lo dice. Dos toques dejan un asiento (ya_estaba). Devuelve {corrida, posteada, ya_estaba, asiento, burden, pasivos, avisos, devengo, horas}. Con el código del teléfono. Solo el dueño.';
 
 -- ANULAR una corrida posteada: no se borra nada. Sus dos asientos se
 -- reversan (por el puente: fn_reversar_interno de c2), su lote suelta sus
 -- horas y la corrida queda anulada, con su motivo; su archivo se puede
 -- volver a subir. Con cargos de Gusto casados contra ella, antes se
 -- des-casan (si no, lo pagado quedaría en el libro sin lo que pagaba).
+-- (13-nov, la revisión de la Fase 11b) Y EL DEVENGO ESTÁNDAR de c3, como al
+-- postear: con el c3 de esa fase el devengo de un mes con nómina lleva solo
+-- lo que ninguna nómina pagó; anulada esta, las horas que pagaba vuelven a
+-- estar sin pagar y el devengo vivo de su mes quedaba desfasado (el control
+-- «devengo» de c3 en rojo, y con él el cierre, hasta que Edgar lo corriera
+-- a mano). Se pone al día aquí mismo, y se dice. Y si la bolsa del burden
+-- de ese mes ya se repartió por las horas de esta nómina, también se dice.
 create or replace function public.fn_nomina_anular(p_corrida uuid, p_motivo text) returns jsonb
 language plpgsql
 set search_path = public, pg_temp
@@ -4589,11 +5135,20 @@ declare
   c   nomina_corridas;
   d   nomina_corridas;
   v_x text;
+  v_mes text;
+  v_dev jsonb;
+  v_devtxt text;
+  v_bol text;
 begin
   perform fn_nomina_exigir_dueno();
   perform fn_nomina_exigir_codigo();
   if coalesce(length(btrim(p_motivo)), 0) < 3 then
     raise exception using errcode = '22023', message = 'Anular una corrida dice por qué (motivo): queda escrito en su reverso.';
+  end if;
+  if fn_nomina_delicado_texto(p_motivo) then
+    raise exception using errcode = '22023',
+      message = 'El motivo lleva algo con forma de dato delicado (un número de Seguro Social, una cuenta de banco): escríbelo sin eso '
+                '(queda escrito en el libro, en su reverso).';
   end if;
   perform pg_advisory_xact_lock(820261115, hashtext('nomina:pagos'));
   perform pg_advisory_xact_lock(820261115, hashtext('nomina:corrida:' || p_corrida::text));
@@ -4627,14 +5182,45 @@ begin
   perform set_config('mx_nomina.escribe', 'nomina_reparto_horas', true);
   update nomina_reparto_horas set vivo = false where corrida_id = c.id and vivo;
   perform set_config('mx_nomina.escribe', '', true);
-  return jsonb_build_object('corrida', d.id, 'anulada', true, 'ya_estaba', false,
-                            'reverso', (select a.numero from asientos a where a.id = d.reverso_id),
-                            'reverso_burden', (select a.numero from asientos a where a.id = d.burden_reverso_id),
-                            'nota', 'Su archivo se puede volver a subir: entrará como una corrida nueva.');
+  -- el devengo estándar del mes de su journal, si lo había: se pone al día (vuelve a llevar las horas que esta nómina pagaba)
+  v_mes := to_char(c.fecha_asiento, 'YYYY-MM');
+  if exists (select 1 from asientos a
+              where a.origen_tabla = 'horas_devengo' and a.origen_id = v_mes and a.camino not in ('reverso', 'reverso_automatico')
+                and not exists (select 1 from asientos r where r.reversa_a = a.id and r.camino = 'reverso')) then
+    begin
+      v_dev := fn_horas_devengar(v_mes);
+      v_devtxt := case v_dev->>'accion'
+                    when 'sin_cambios' then null
+                    when 'reversado' then format('El mes %s tenía un devengo estándar de horas y, sin esta nómina, se deshizo aquí mismo.', v_mes)
+                    else format('El mes %s tenía un devengo estándar de horas: se puso al día aquí mismo (asiento %s). Vuelve a llevar las '
+                                'horas que esta nómina pagaba: ahora están trabajadas y sin pagar.', v_mes, v_dev->>'asiento') end;
+    exception when others then
+      v_devtxt := format('El mes %s tiene un devengo estándar de horas que no se pudo poner al día (%s): ya no cuenta las horas que esta '
+                         'nómina pagaba. Ponlo al día antes de cerrar el mes: select fn_horas_devengar(%L);', v_mes, left(sqlerrm, 300), v_mes);
+    end;
+  end if;
+  -- la bolsa del burden de ese mes, si ya se repartió a las obras por las horas que pagó esta nómina
+  if exists (select 1 from nomina_reparto_horas rh where rh.corrida_id = c.id and rh.titular and rh.proyecto_id is not null) then
+    select string_agg(a.numero, ', ' order by a.numero) into v_bol
+      from asientos a
+     where a.camino = 'mano' and a.reversa_a is null
+       and a.descripcion like 'Reparto a las obras de lo que quedó en la bolsa del burden real al terminar ' || v_mes || ' (%'
+       and not exists (select 1 from asientos r where r.reversa_a = a.id);
+  end if;
+  return jsonb_strip_nulls(jsonb_build_object(
+           'corrida', d.id, 'anulada', true, 'ya_estaba', false,
+           'reverso', (select a.numero from asientos a where a.id = d.reverso_id),
+           'reverso_burden', (select a.numero from asientos a where a.id = d.burden_reverso_id),
+           'devengo', v_devtxt,
+           'bolsa', case when v_bol is not null
+                         then format('Lo que quedó en la bolsa del burden de %s ya se repartió a las obras por las horas que pagaron sus '
+                                     'nóminas (asiento %s), y esta era una de ellas: reversa ese reparto en el Libro y, con la nómina otra '
+                                     'vez posteada, repártelo de nuevo (Nómina → Ajustes).', v_mes, v_bol) end,
+           'nota', 'Su archivo se puede volver a subir: entrará como una corrida nueva.'));
 end $$;
 revoke execute on function public.fn_nomina_anular(uuid, text) from public, anon, service_role;
 grant  execute on function public.fn_nomina_anular(uuid, text) to authenticated;
-comment on function public.fn_nomina_anular(uuid, text) is 'c15: ANULA una corrida posteada, con su motivo: su puente reversa su journal y el reparto de su burden (no se borra nada), su lote suelta sus horas y la corrida queda anulada; su archivo se puede volver a subir. Con cargos de Gusto casados contra ella, MX008: antes se des-casan. Dos toques, un reverso (ya_estaba). Con el código del teléfono. Solo el dueño.';
+comment on function public.fn_nomina_anular(uuid, text) is 'c15: ANULA una corrida posteada, con su motivo: su puente reversa su journal y el reparto de su burden (no se borra nada), su lote suelta sus horas y la corrida queda anulada; su archivo se puede volver a subir. Si el mes de su journal tenía un devengo estándar de horas vivo, lo pone al día por la función de c3 (vuelve a llevar las horas que pagaba) y lo dice (devengo); y si la bolsa del burden de ese mes ya se repartió por sus horas, lo dice (bolsa). Con cargos de Gusto casados contra ella, MX008: antes se des-casan. Dos toques, un reverso (ya_estaba). Con el código del teléfono. Solo el dueño.';
 
 
 -- ---------------------------------------------------------------------
@@ -4726,9 +5312,11 @@ declare
   v_res   jsonb := '[]'::jsonb;
   v_cerca text;
   v_pago  nomina_pagos;
+  v_gusto boolean;
   c_que   constant jsonb := '{"neto": "el neto", "reembolsos": "los reembolsos", "neto_y_reembolsos": "el neto y los reembolsos",
+                              "neto_deposito_y_reembolsos": "el neto de quienes cobran por depósito, con sus reembolsos",
                               "impuestos": "los impuestos (lo retenido y lo del patrón)", "deducciones": "las deducciones",
-                              "todo": "todo lo que quedó por pagar"}';
+                              "embargos": "los embargos (la manutención)", "todo": "todo lo que quedó por pagar"}';
 begin
   perform fn_nomina_exigir_dueno();
   select * into m from movimientos_banco where id = p_movimiento;
@@ -4736,6 +5324,12 @@ begin
     raise exception using errcode = '22023', message = 'No existe ese movimiento del banco.';
   end if;
   select * into cfg from nomina_config where id = 1;
+  -- (¿el banco lo nombra como de Gusto? Por su motivo en la Bandeja o por el descriptor de nómina de c6; en un DEPÓSITO, el
+  -- descriptor como PALABRA ENTERA, que es la regla de c6 para la devolución de Gusto: «GUSTO», no «AUGUSTO»)
+  v_gusto := m.estado_motivo is not distinct from 'nomina'
+             or coalesce(coalesce(m.desc_norm, m.descripcion, '')
+                         ~* (select case when m.monto > 0 then '\m(' || d.patron || ')\M' else d.patron end
+                               from banco_descriptores d where d.clave = 'nomina'), false);
   -- (su pago vivo DE VERDAD: aplicado y con el movimiento todavía casado con su asiento)
   select g.* into v_pago from nomina_pagos g
    where g.movimiento_id = m.id and g.estado = 'aplicado' and m.asiento_id = g.asiento_id and m.estado in ('casado', 'en_transito');
@@ -4754,9 +5348,27 @@ begin
                                             when m.monto = 0 then 'Este movimiento no mueve dinero.'
                                             else 'Este movimiento ya está resuelto en la Bandeja.' end);
   end if;
+  -- (13-nov, la revisión de la Fase 11b) SIN EL CÓDIGO DEL TELÉFONO las corridas no se leen: antes decía «no hay ninguna nómina
+  -- posteada cerca de este cargo… sube y postea antes su archivo», con su nómina posteada. Si algún archivo entró alguna vez,
+  -- se dice lo que es: para proponer hace falta el código.
+  if not fn_nomina_ve_personas() and exists (select 1 from nomina_archivos) then
+    return jsonb_build_object('movimiento', m.id, 'fecha', m.fecha, 'monto', v_x, 'descripcion', m.descripcion, 'estado', m.estado,
+                              'pago', null, 'clase_probable', v_hint, 'opciones', '[]'::jsonb, 'mejor', null, 'cuota', false,
+                              'sin_codigo', true,
+                              'texto', 'Para proponer con qué nómina casa este movimiento hace falta el código del teléfono: entra con él.');
+  end if;
   -- las opciones de cada corrida cercana
   for c in
     select k.id, k.dia_pago, k.neto, k.reembolsos, coalesce((k.plan->>'neto_deposito')::numeric, k.neto) as neto_dd,
+           -- (13-nov, la revisión de la Fase 11b: dos cargos normales de Gusto que nunca se proponían. El neto de quienes cobran
+           -- por depósito CON sus reembolsos, en un solo cargo, cuando alguien cobró con cheque de papel; y LOS EMBARGOS —la
+           -- manutención, que Gusto cobra aparte— cuando en su cuenta hay además otra deducción)
+           (select coalesce(sum(cp.neto + case when cp.neto_con_reembolso then 0 else cp.reembolsos end), 0)
+              from nomina_corrida_personas cp where cp.corrida_id = k.id and coalesce(cp.metodo_pago, '') !~* 'check') as dd_reem,
+           (select coalesce(jsonb_agg(jsonb_build_object('cuenta', q.cuenta, 'monto', q.s)), '[]'::jsonb)
+              from (select l.cuenta, sum(l.monto) as s from nomina_lineas l
+                     where l.corrida_id = k.id and l.clase = 'deduccion' and l.concepto = 'garnishments' and l.cuenta is not null
+                     group by l.cuenta having sum(l.monto) <> 0) q) as emb,
            (select coalesce(jsonb_agg(jsonb_build_object('cuenta', p.cuenta, 'clase', p.clase, 'pendiente', p.pendiente) order by p.cuenta), '[]'::jsonb)
               from fn_nomina_pendiente(k.id) p where p.pendiente <> 0) as pend
       from nomina_corridas k
@@ -4780,10 +5392,24 @@ begin
                                       'partes', jsonb_build_array(jsonb_build_object('corrida', c.id, 'cuenta', q->>'cuenta', 'monto', w.total))) as op
               from jsonb_array_elements(c.pend) q
               cross join lateral (values ('neto', c.neto_dd), ('neto', c.neto), ('reembolsos', c.reembolsos),
-                                         ('neto_y_reembolsos', (q->>'pendiente')::numeric)) w(clase, total)
+                                         ('neto_y_reembolsos', (q->>'pendiente')::numeric),
+                                         -- (solo si alguien cobró con cheque de papel y hay reembolsos: si no, es el neto, o el
+                                         -- neto con los reembolsos, que ya están arriba)
+                                         ('neto_deposito_y_reembolsos',
+                                          case when abs(c.dd_reem) < abs((q->>'pendiente')::numeric) and c.dd_reem not in (c.neto_dd, c.neto)
+                                               then c.dd_reem end)) w(clase, total)
              where q->>'clase' = 'neto' and w.total <> 0 and sign(w.total) = sign((q->>'pendiente')::numeric)
                and abs(w.total) <= abs((q->>'pendiente')::numeric)
              group by w.clase, w.total, q->>'cuenta') z;
+    -- los embargos (la manutención): la parte de su cuenta de deducciones que es de embargos, si no es la cuenta entera
+    select v_uno || coalesce(jsonb_agg(jsonb_build_object('clase', 'embargos', 'corrida', c.id, 'dia_pago', c.dia_pago, 'total', (g->>'monto')::numeric,
+                                      'partes', jsonb_build_array(jsonb_build_object('corrida', c.id, 'cuenta', g->>'cuenta',
+                                                                                     'monto', (g->>'monto')::numeric)))), '[]'::jsonb)
+      into v_uno
+      from jsonb_array_elements(c.emb) g
+      join jsonb_array_elements(c.pend) q on q->>'cuenta' = g->>'cuenta'
+     where sign((g->>'monto')::numeric) = sign((q->>'pendiente')::numeric)
+       and abs((g->>'monto')::numeric) < abs((q->>'pendiente')::numeric);
     -- los impuestos (todas sus cuentas, enteras), las deducciones, y todo
     select v_uno || coalesce(jsonb_agg(z.op), '[]'::jsonb) into v_uno
       from (select jsonb_build_object('clase', w.clase, 'corrida', c.id, 'dia_pago', c.dia_pago,
@@ -4831,14 +5457,17 @@ begin
     end loop;
   end if;
   -- lo que dice el banco ordena las opciones (la que coincide, primero)
-  select coalesce(jsonb_agg(r order by (case when r->>'clase' = v_hint or (v_hint = 'neto' and r->>'clase' = 'neto_y_reembolsos') then 0 else 1 end),
+  select coalesce(jsonb_agg(r order by (case when r->>'clase' = v_hint
+                                                  or (v_hint = 'neto' and r->>'clase' in ('neto_y_reembolsos', 'neto_deposito_y_reembolsos'))
+                                                  or (v_hint = 'deducciones' and r->>'clase' = 'embargos') then 0 else 1 end),
                             r->>'texto'), '[]'::jsonb)
     into v_res from jsonb_array_elements(v_res) r;
   return jsonb_build_object(
     'movimiento', m.id, 'fecha', m.fecha, 'monto', v_x, 'descripcion', m.descripcion, 'estado', m.estado, 'pago', null,
     'clase_probable', v_hint, 'opciones', v_res,
     'mejor', case when jsonb_array_length(v_res) = 1 and v_hint is distinct from 'cuota' then 0 end,
-    'cuota', m.monto < 0 and (v_hint = 'cuota' or (v_hint is null and v_cerca is null)),
+    -- (la cuota mensual solo se ofrece para un cargo que el banco nombra como de Gusto)
+    'cuota', m.monto < 0 and v_gusto and (v_hint = 'cuota' or (v_hint is null and v_cerca is null)),
     'texto', case when v_hint = 'cuota' and jsonb_array_length(v_res) = 0
                     then format('Parece la cuota mensual de Gusto (%s): no es nómina; va a su gasto (%s).', fn_nomina_usd(v_x), cfg.cuenta_cuota)
                   when jsonb_array_length(v_res) = 1 then v_res->0->>'texto' || format(' (%s, al centavo).', fn_nomina_usd(abs(v_x)))
@@ -4884,7 +5513,14 @@ as $$
             and (   (m.monto < 0 and (m.estado_motivo = 'nomina'
                                       or (m.estado_motivo is null and pat.nomina is not null
                                           and coalesce(m.desc_norm, m.descripcion, '') ~* pat.nomina)))
-                 or (m.monto > 0 and pat.nomina is not null and coalesce(m.desc_norm, m.descripcion, '') ~* pat.nomina)))
+                 -- (13-nov, la revisión final de la Fase 11b) UNA DEVOLUCIÓN DE GUSTO ES LA QUE EL BANCO TOMA POR TAL: el depósito
+                 -- que la Bandeja (c6, desde su marca 2026111301) propone con el motivo «nomina», o el que nombra a Gusto como
+                 -- PALABRA ENTERA (la regla de c6: «GUSTO», no «AUGUSTO»). Antes bastaba con que el descriptor apareciera DENTRO
+                 -- de otra palabra: el Zelle de un cliente que se llame Augusto salía aquí como una devolución de Gusto, y el
+                 -- aviso 35 y la fila 180 del cierre (que detiene) lo contaban como «un cargo de Gusto sin casar».
+                 or (m.monto > 0 and (m.estado_motivo = 'nomina'
+                                      or (pat.nomina is not null
+                                          and coalesce(m.desc_norm, m.descripcion, '') ~* ('\m(' || pat.nomina || ')\M'))))))
   select pend.id, pend.fecha, pend.monto, pend.descripcion, pend.cuenta, 'pendiente'::text, pend.p->>'clase_probable', null::uuid, null::uuid,
          null::text, null::text, pend.p->>'texto', jsonb_array_length(pend.p->'opciones')
     from pend
@@ -4910,7 +5546,7 @@ as $$
 $$;
 revoke execute on function public.fn_nomina_cargos() from public, anon, service_role;
 grant  execute on function public.fn_nomina_cargos() to authenticated;
-comment on function public.fn_nomina_cargos() is 'c15: los movimientos de Gusto en el banco: los PENDIENTES en la Bandeja (los cargos que el banco dejó esperando el journal de la nómina y las devoluciones de Gusto —un depósito con su nombre: monto en negativo—), con lo que sugiere su descripción, su propuesta en una línea y cuántas opciones tiene; y los ya resueltos desde la nómina (casado: con qué nóminas y qué cuentas pagó, también los pagados por fuera de Gusto; cuota: la mensual de Gusto; descasado: se casó aquí y después se des-casó en la Bandeja del banco: se deshace aquí), con su asiento. Solo lectura. A quien no es el dueño, nada.';
+comment on function public.fn_nomina_cargos() is 'c15: los movimientos de Gusto en el banco: los PENDIENTES en la Bandeja (los cargos que el banco dejó esperando el journal de la nómina y las devoluciones de Gusto —un depósito que la Bandeja propone como de nómina, o con su nombre como palabra entera («GUSTO», no «AUGUSTO»): monto en negativo—), con lo que sugiere su descripción, su propuesta en una línea y cuántas opciones tiene; y los ya resueltos desde la nómina (casado: con qué nóminas y qué cuentas pagó, también los pagados por fuera de Gusto; cuota: la mensual de Gusto; descasado: se casó aquí y después se des-casó en la Bandeja del banco: se deshace aquí), con su asiento. Solo lectura. A quien no es el dueño, nada.';
 
 -- LO QUE PUEDE SER UN PAGO «POR FUERA DE GUSTO»: un cargo del banco que NO
 -- es de Gusto y que da, al centavo, algo que una nómina posteada dejó por
@@ -4977,6 +5613,21 @@ comment on function public.fn_nomina_cargos_fuera() is 'c15: los cargos del banc
 -- Si el movimiento se había casado aquí y después se des-casó en la Bandeja
 -- del banco, el pago de antes se apunta deshecho aquí mismo y se casa de
 -- nuevo.
+-- (13-nov, la revisión de la Fase 11b) LO QUE QUEDÓ A FAVOR EN OTRA CUENTA.
+-- Una corrección deja a favor un poco en cada cuenta (el 941, el FUTA, el
+-- reempleo), y la nómina siguiente puede no traer FUTA ni reempleo (pasado
+-- el tope de 7,000 dólares por persona, lo normal): Gusto cobra el 941 de
+-- esa nómina menos TODO lo que había a favor, y el FUTA y el reempleo a
+-- favor no tienen de dónde descontarse en su propia cuenta. El banco (c6)
+-- pone todas las líneas de un movimiento del mismo lado: ese cargo no se
+-- podía casar (la propuesta lo ofrecía y esta función lo rechazaba; a mano,
+-- las cuentas quedaban con saldo para siempre). Ahora el cargo entra entero
+-- contra las cuentas que paga, y un segundo asiento DE LA NÓMINA (a mano,
+-- por la puerta del dueño, en la misma fecha) pasa lo que estaba a favor de
+-- esas otras cuentas a las que el cargo pagó: Dr 2220 / Cr 2225 y 2230. Las
+-- partes quedan como se dijeron (cada cuenta de cada nómina, con lo suyo),
+-- el pago apunta su traspaso, y deshacer el cargo lo reversa con él.
+-- ▶ A confirmar con Gusto cómo cobra de verdad una corrección.
 create or replace function public.fn_nomina_cargo_casar(p_movimiento uuid, p_partes jsonb, p_nota text default null) returns jsonb
 language plpgsql
 set search_path = public, pg_temp
@@ -4995,9 +5646,16 @@ declare
   v_gusto boolean;
   v_nota  text := nullif(btrim(p_nota), '');
   v_sig   int;
+  v_tras  jsonb;
+  v_tr    jsonb;
+  v_trn   numeric;
 begin
   perform fn_nomina_exigir_dueno();
   perform fn_nomina_exigir_codigo();
+  if fn_nomina_delicado_texto(v_nota) then
+    raise exception using errcode = '22023',
+      message = 'La nota lleva algo con forma de dato delicado (un número de Seguro Social, una cuenta de banco): escríbela sin eso.';
+  end if;
   if jsonb_typeof(p_partes) is distinct from 'array' or jsonb_array_length(p_partes) = 0 then
     raise exception using errcode = '22023',
       message = 'Di qué paga el cargo: una lista de partes [{"corrida": …, "cuenta": "2210", "monto": "…"}] (la que da su propuesta).';
@@ -5030,6 +5688,10 @@ begin
                             reverso_id = (select r2.id from asientos r2 where r2.reversa_a = v_pago.asiento_id and r2.camino = 'reverso' limit 1)
      where id = v_pago.id;
     perform set_config('mx_nomina.escribe', '', true);
+    -- (y su traspaso, si lo llevaba y sigue vivo: se reversa con él)
+    if v_pago.traspaso_id is not null and not exists (select 1 from asientos r2 where r2.reversa_a = v_pago.traspaso_id) then
+      perform fn_reversar(v_pago.traspaso_id, 'Nómina: el cargo que lo llevaba se des-casó en la Bandeja del banco.');
+    end if;
   end if;
   if m.estado <> 'pendiente' or m.monto = 0 then
     raise exception using errcode = 'MX008',
@@ -5037,8 +5699,11 @@ begin
                      else 'Ese movimiento ya está resuelto en la Bandeja del banco: si se resolvió mal, des-cásalo allí y vuelve aquí.' end;
   end if;
   v_sig := case when m.monto < 0 then 1 else -1 end;   -- (un cargo paga: +; una devolución baja lo que quedó a favor: −)
+  -- (en un DEPÓSITO, el descriptor como PALABRA ENTERA: la regla de c6 para la devolución de Gusto; «AUGUSTO» no es Gusto)
   v_gusto := m.estado_motivo is not distinct from 'nomina'
-             or coalesce(coalesce(m.desc_norm, m.descripcion, '') ~* (select d.patron from banco_descriptores d where d.clave = 'nomina'), false);
+             or coalesce(coalesce(m.desc_norm, m.descripcion, '')
+                         ~* (select case when m.monto > 0 then '\m(' || d.patron || ')\M' else d.patron end
+                               from banco_descriptores d where d.clave = 'nomina'), false);
   if not v_gusto and coalesce(length(v_nota), 0) < 3 then
     raise exception using errcode = '22023',
       message = case when m.monto > 0
@@ -5085,26 +5750,39 @@ begin
                                    fn_nomina_dia(r.dia_pago), r.cuenta, fn_nomina_usd(-r.pendiente)) end;
     end if;
   end loop;
-  -- (cada CUENTA del movimiento, sumadas sus partes, va en el sentido del movimiento: el banco pone una línea por cuenta)
-  select string_agg(z.cuenta, ', ' order by z.cuenta) into v_x
-    from (select x->>'cuenta' as cuenta, sum((x->>'monto')::numeric) as s from jsonb_array_elements(p_partes) x group by 1) z
-   where z.s * v_sig <= 0;
-  if v_x is not null then
+  -- CADA CUENTA del movimiento, sumadas sus partes (t: en el sentido del movimiento; un cargo paga, +). El banco pone una línea
+  -- por cuenta y todas del mismo lado: la cuenta que queda AL REVÉS (lo que se le descuenta es más que lo que se le paga: lo que
+  -- una corrección dejó a favor en una cuenta que este movimiento no paga) no va en el asiento del banco. Lo absorben las
+  -- cuentas que sí van (la mayor primero): su línea del banco baja en eso, y el traspaso de la nómina —abajo— lo pasa de una
+  -- cuenta a la otra. La suma de las líneas del banco sigue siendo el movimiento, al centavo.
+  with z as (select x->>'cuenta' as cuenta, sum((x->>'monto')::numeric) * v_sig as t,
+                    string_agg(distinct 'la nómina del ' || fn_nomina_dia(k.dia_pago), ' y ') as dias
+               from jsonb_array_elements(p_partes) x join nomina_corridas k on k.id = (x->>'corrida')::uuid
+              group by 1),
+       n as (select coalesce(sum(-z.t) filter (where z.t < 0), 0) as neg from z),
+       p as (select z.cuenta, z.t, z.dias,
+                    greatest(0, least(z.t, n.neg - coalesce(sum(z.t) over (order by z.t desc, z.cuenta rows between unbounded preceding
+                                                                                                             and 1 preceding), 0))) as abs_
+               from z cross join n where z.t > 0)
+  select (select jsonb_agg(jsonb_build_object('cuenta', p.cuenta, 'monto', (p.t - p.abs_)::text,
+                                              'memo', left(format('%s: %s lo de %s', case when v_gusto then 'Gusto' else 'Nómina, por fuera de Gusto' end,
+                                                                  case when m.monto < 0 then 'paga' else 'devuelve' end, p.dias), 200))
+                           order by p.cuenta) from p where p.t - p.abs_ > 0),
+         (select string_agg(z.cuenta, ', ' order by z.cuenta) from z),
+         (select neg from n),
+         (select jsonb_agg(q.l order by q.o, q.cuenta)
+            from (select 1 as o, p.cuenta, jsonb_build_object('cuenta', p.cuenta, 'monto', (v_sig * p.abs_)::text,
+                                                               'memo', 'Nómina: lo que este movimiento descontó de lo que había a favor en otra cuenta') as l
+                    from p where p.abs_ > 0
+                  union all
+                  select 2, z.cuenta, jsonb_build_object('cuenta', z.cuenta, 'monto', (v_sig * z.t)::text,
+                                                         'memo', 'Nómina: lo que quedó a favor aquí, descontado en el movimiento que pagó otra cuenta')
+                    from z where z.t < 0) q)
+    into v_lin, v_x, v_trn, v_tras;
+  if v_lin is null then
     raise exception using errcode = 'MX008',
-      message = format('En este movimiento la cuenta %s quedaría al revés (lo que se le descuenta es tanto o más que lo que se le paga): '
-                       'el banco no lo puede poner así. Cásalo sin esa parte, y lo que quedó a favor en esa cuenta, con el movimiento '
-                       'que de verdad lo descuente o lo devuelva. No se casó nada.', v_x);
+      message = 'Las partes de este movimiento se anulan entre sí: no queda nada que casar con el banco. No se casó nada.';
   end if;
-  select jsonb_agg(jsonb_build_object('cuenta', z.cuenta, 'monto', abs(z.monto)::text,
-                                      'memo', left(format('%s: %s lo de %s', case when v_gusto then 'Gusto' else 'Nómina, por fuera de Gusto' end,
-                                                          case when m.monto < 0 then 'paga' else 'devuelve' end, z.dias), 200)) order by z.cuenta),
-         string_agg(z.cuenta, ', ' order by z.cuenta)
-    into v_lin, v_x
-    from (select q.cuenta, sum(q.monto) as monto,
-                 string_agg(distinct 'la nómina del ' || fn_nomina_dia(k.dia_pago), ' y ') as dias
-            from (select (x->>'corrida')::uuid as c, x->>'cuenta' as cuenta, (x->>'monto')::numeric as monto from jsonb_array_elements(p_partes) x) q
-            join nomina_corridas k on k.id = q.c
-           group by q.cuenta) z;
   v_mot := left(format('%s: este %s %s lo que %s dejó %s (%s)%s',
                        case when v_gusto then 'Nómina de Gusto' else 'Nómina, pagado por fuera de Gusto' end,
                        case when m.monto < 0 then 'cargo' else 'depósito' end, case when m.monto < 0 then 'paga' else 'devuelve' end,
@@ -5117,9 +5795,21 @@ begin
   if v_as is null then
     raise exception using errcode = 'MX001', message = 'El banco no dejó el asiento del cargo: no se casó nada.';
   end if;
+  -- EL TRASPASO (si alguna cuenta quedaba al revés): en la fecha del asiento del banco, a mano y por la puerta del dueño
+  if v_trn > 0 then
+    v_tr := fn_postear(jsonb_build_object(
+              'fecha', (select a.fecha_contable from asientos a where a.id = v_as)::text,
+              'descripcion', left(format('Nómina: lo que quedó a favor en una cuenta, descontado en el %s de Gusto del %s por %s (asiento '
+                                         '%s), pasa a la cuenta que ese movimiento pagó', case when m.monto < 0 then 'cargo' else 'depósito' end,
+                                         fn_nomina_dia(m.fecha), fn_nomina_usd(abs(m.monto)),
+                                         (select a.numero from asientos a where a.id = v_as)), 500),
+              'lineas', v_tras,
+              'motivo', 'El banco pone todas las líneas de un movimiento del mismo lado: lo que una corrección de la nómina dejó a favor '
+                        'en una cuenta que ese movimiento no paga se pasa aquí a la que sí pagó. Se deshace con el cargo.'));
+  end if;
   perform set_config('mx_nomina.escribe', 'nomina_pagos', true);
-  insert into nomina_pagos (movimiento_id, clase, fecha, monto, asiento_id, nota, creado_por)
-  values (m.id, case when v_gusto then 'nomina' else 'fuera' end, m.fecha, -m.monto, v_as, v_nota, auth.uid())
+  insert into nomina_pagos (movimiento_id, clase, fecha, monto, asiento_id, nota, creado_por, traspaso_id)
+  values (m.id, case when v_gusto then 'nomina' else 'fuera' end, m.fecha, -m.monto, v_as, v_nota, auth.uid(), (v_tr->>'id')::uuid)
   returning id into v_id;
   perform set_config('mx_nomina.escribe', 'nomina_pago_partes', true);
   insert into nomina_pago_partes (pago_id, n, corrida_id, cuenta, monto)
@@ -5132,6 +5822,11 @@ begin
     'pago', v_id, 'movimiento', m.id, 'ya_estaba', false, 'clase', case when v_gusto then 'nomina' else 'fuera' end,
     'asiento', (select a.numero from asientos a where a.id = v_as),
     'fecha', (select a.fecha_contable from asientos a where a.id = v_as), 'monto', -m.monto,
+    'traspaso', case when v_tr is not null
+                     then jsonb_build_object('asiento', v_tr->>'numero', 'monto', v_trn,
+                                             'texto', format('Este movimiento descontó %s que estaban a favor en otra cuenta: un segundo '
+                                                             'asiento (%s) los pasó a la cuenta que pagó. Se deshace con el cargo.',
+                                                             fn_nomina_usd(v_trn), v_tr->>'numero')) end,
     'queda_por_pagar', (select coalesce(jsonb_agg(jsonb_build_object('corrida', p.corrida_id, 'dia_pago', p.dia_pago, 'cuenta', p.cuenta,
                                                                      'pendiente', p.pendiente) order by p.dia_pago, p.cuenta), '[]'::jsonb)
                           from fn_nomina_pendiente() p
@@ -5139,9 +5834,16 @@ begin
 end $$;
 revoke execute on function public.fn_nomina_cargo_casar(uuid, jsonb, text) from public, anon, service_role;
 grant  execute on function public.fn_nomina_cargo_casar(uuid, jsonb, text) to authenticated;
-comment on function public.fn_nomina_cargo_casar(uuid, jsonb, text) is 'c15: CASA un movimiento del banco con lo que paga: p_partes [{corrida, cuenta, monto}] (las de su propuesta, o las que diga Edgar). Suman el movimiento al centavo (MX001 con las dos cifras) y ninguna mueve más de lo que su corrida posteada tiene en esa cuenta (MX008 con las cifras). Un cargo de Gusto paga (partes en positivo) y puede descontar lo que una corrección dejó a favor (partes en negativo); una devolución de Gusto —un depósito— baja lo que quedó a favor (partes en negativo); un cargo que no es de Gusto (un cheque de papel, una deducción pagada a un tercero) se casa igual con su nota y queda «por fuera de Gusto». El asiento (en la fecha del movimiento) lo pone el banco por su puerta de clasificar, con su motivo, y deja el movimiento casado. Dos toques, un pago (ya_estaba); si se había des-casado en la Bandeja, el de antes se apunta deshecho. Devuelve {pago, clase, asiento, fecha, monto, queda_por_pagar}. Con el código del teléfono. Solo el dueño.';
+comment on function public.fn_nomina_cargo_casar(uuid, jsonb, text) is 'c15: CASA un movimiento del banco con lo que paga: p_partes [{corrida, cuenta, monto}] (las de su propuesta, o las que diga Edgar). Suman el movimiento al centavo (MX001 con las dos cifras) y ninguna mueve más de lo que su corrida posteada tiene en esa cuenta (MX008 con las cifras). Un cargo de Gusto paga (partes en positivo) y puede descontar lo que una corrección dejó a favor (partes en negativo; si lo que estaba a favor es de OTRA cuenta que el cargo no paga, un segundo asiento de la nómina lo pasa a la cuenta pagada y queda apuntado en el pago: traspaso); una devolución de Gusto —un depósito— baja lo que quedó a favor (partes en negativo); un cargo que no es de Gusto (un cheque de papel, una deducción pagada a un tercero) se casa igual con su nota y queda «por fuera de Gusto». El asiento (en la fecha del movimiento) lo pone el banco por su puerta de clasificar, con su motivo, y deja el movimiento casado. Dos toques, un pago (ya_estaba); si se había des-casado en la Bandeja, el de antes se apunta deshecho. Devuelve {pago, clase, asiento, fecha, monto, queda_por_pagar}. Con el código del teléfono. Solo el dueño.';
 
 -- LA CUOTA MENSUAL DE GUSTO: no es nómina. A su gasto, por la puerta del banco.
+-- (13-nov, la revisión de la Fase 11b) NO CUALQUIER CARGO. Aceptaba el cargo
+-- del NETO de una nómina (lo mandaba al gasto de software y el neto seguía
+-- «por pagar») y un cargo que ni siquiera es de Gusto. Ahora, MX008 si el
+-- banco no lo nombra como de Gusto, si su descripción dice que es el neto,
+-- los impuestos, los reembolsos o la manutención, o si casa al centavo con
+-- lo que una nómina dejó por pagar; salvo que Edgar lo diga con su nota
+-- (por qué ese cargo, que no lo parece, es la cuota).
 create or replace function public.fn_nomina_cargo_cuota(p_movimiento uuid, p_nota text default null) returns jsonb
 language plpgsql
 set search_path = public, pg_temp
@@ -5153,9 +5855,16 @@ declare
   v_as   uuid;
   v_id   uuid;
   v_res  jsonb;
+  v_nota text := nullif(btrim(p_nota), '');
+  v_prop jsonb;
+  v_no   text;
 begin
   perform fn_nomina_exigir_dueno();
   perform fn_nomina_exigir_codigo();
+  if fn_nomina_delicado_texto(v_nota) then
+    raise exception using errcode = '22023',
+      message = 'La nota lleva algo con forma de dato delicado (un número de Seguro Social, una cuenta de banco): escríbela sin eso.';
+  end if;
   perform pg_advisory_xact_lock(820261115, hashtext('nomina:pagos'));
   select * into m from movimientos_banco where id = p_movimiento;
   if not found then
@@ -5173,21 +5882,41 @@ begin
                             reverso_id = (select r2.id from asientos r2 where r2.reversa_a = v_pago.asiento_id and r2.camino = 'reverso' limit 1)
      where id = v_pago.id;
     perform set_config('mx_nomina.escribe', '', true);
+    if v_pago.traspaso_id is not null and not exists (select 1 from asientos r2 where r2.reversa_a = v_pago.traspaso_id) then
+      perform fn_reversar(v_pago.traspaso_id, 'Nómina: el cargo que lo llevaba se des-casó en la Bandeja del banco.');
+    end if;
   end if;
   if m.estado <> 'pendiente' or m.monto >= 0 then
     raise exception using errcode = 'MX008', message = 'Ese movimiento no es un cargo pendiente del banco.';
   end if;
   select * into cfg from nomina_config where id = 1;
+  -- ¿Parece la cuota? Lo dice su propia propuesta (qué sugiere su descripción, y si casa con lo que alguna nómina dejó por pagar)
+  v_prop := fn_nomina_cargo_propuesta(m.id);
+  v_no := concat_ws('; ',
+            case when not (m.estado_motivo is not distinct from 'nomina'
+                           or coalesce(coalesce(m.desc_norm, m.descripcion, '') ~* (select d.patron from banco_descriptores d where d.clave = 'nomina'), false))
+                 then 'el banco no lo nombra como de Gusto' end,
+            case v_prop->>'clase_probable' when 'neto' then 'su descripción dice que es el neto de una nómina'
+                                           when 'impuestos' then 'su descripción dice que son los impuestos de una nómina'
+                                           when 'reembolsos' then 'su descripción dice que son los reembolsos de una nómina'
+                                           when 'deducciones' then 'su descripción dice que es la manutención de una nómina' end,
+            case when jsonb_array_length(coalesce(v_prop->'opciones', '[]'::jsonb)) > 0
+                 then format('casa al centavo con lo que una nómina dejó por pagar (%s)', v_prop->'opciones'->0->>'texto') end);
+  if nullif(v_no, '') is not null and coalesce(length(v_nota), 0) < 3 then
+    raise exception using errcode = 'MX008',
+      message = format('Ese cargo (%s del %s) no parece la cuota mensual de Gusto: %s. Si paga una nómina, cásalo con ella; si de verdad '
+                       'es la cuota, dilo con una nota (por qué). No se movió nada.', fn_nomina_usd(-m.monto), fn_nomina_dia(m.fecha), v_no);
+  end if;
   if fn_nomina_cuenta_mal(cfg.cuenta_cuota, 'cuota') is not null then
     raise exception using errcode = 'MX004', message = format('La cuenta de la cuota de Gusto: %s.', fn_nomina_cuenta_mal(cfg.cuenta_cuota, 'cuota'));
   end if;
   v_res := fn_banco_clasificar(m.id, jsonb_build_array(jsonb_build_object('cuenta', cfg.cuenta_cuota)),
                                left('Cuota mensual de Gusto: un gasto de software, no es nómina'
-                                    || coalesce('. ' || nullif(btrim(p_nota), ''), ''), 400));
+                                    || coalesce('. ' || v_nota, ''), 400));
   select mm.asiento_id into v_as from movimientos_banco mm where mm.id = m.id;
   perform set_config('mx_nomina.escribe', 'nomina_pagos', true);
   insert into nomina_pagos (movimiento_id, clase, fecha, monto, asiento_id, nota, creado_por)
-  values (m.id, 'cuota', m.fecha, -m.monto, v_as, nullif(btrim(p_nota), ''), auth.uid())
+  values (m.id, 'cuota', m.fecha, -m.monto, v_as, v_nota, auth.uid())
   returning id into v_id;
   perform set_config('mx_nomina.escribe', '', true);
   return jsonb_build_object('pago', v_id, 'movimiento', m.id, 'ya_estaba', false, 'clase', 'cuota', 'cuenta', cfg.cuenta_cuota,
@@ -5195,7 +5924,7 @@ begin
 end $$;
 revoke execute on function public.fn_nomina_cargo_cuota(uuid, text) from public, anon, service_role;
 grant  execute on function public.fn_nomina_cargo_cuota(uuid, text) to authenticated;
-comment on function public.fn_nomina_cargo_cuota(uuid, text) is 'c15: resuelve un cargo de Gusto que es su CUOTA MENSUAL (no es nómina): a su gasto (la cuenta de la configuración, 6500), por la puerta de clasificar del banco, con su motivo. El movimiento queda casado y la conciliación sigue. Con el código del teléfono. Solo el dueño.';
+comment on function public.fn_nomina_cargo_cuota(uuid, text) is 'c15: resuelve un cargo de Gusto que es su CUOTA MENSUAL (no es nómina): a su gasto (la cuenta de la configuración, 6500), por la puerta de clasificar del banco, con su motivo. El movimiento queda casado y la conciliación sigue. Si el cargo no parece la cuota (el banco no lo nombra como de Gusto, su descripción dice que es el neto, los impuestos, los reembolsos o la manutención, o casa al centavo con lo que una nómina dejó por pagar), MX008 con el porqué, salvo que venga con su nota. Con el código del teléfono. Solo el dueño.';
 
 -- DESHACER un cargo casado desde aquí (se casó con la nómina que no era, o
 -- hay que anular su corrida): el banco lo des-casa por su puerta (reversa su
@@ -5216,6 +5945,10 @@ begin
   if coalesce(length(btrim(p_motivo)), 0) < 3 then
     raise exception using errcode = '22023', message = 'Deshacer un cargo casado dice por qué (motivo).';
   end if;
+  if fn_nomina_delicado_texto(p_motivo) then
+    raise exception using errcode = '22023',
+      message = 'El motivo lleva algo con forma de dato delicado (un número de Seguro Social, una cuenta de banco): escríbelo sin eso.';
+  end if;
   perform pg_advisory_xact_lock(820261115, hashtext('nomina:pagos'));
   select * into g from nomina_pagos where id = p_pago for update;
   if not found then
@@ -5231,6 +5964,10 @@ begin
     v_fuera := true;
   end if;
   select r.id into v_rev from asientos r where r.reversa_a = g.asiento_id and r.camino = 'reverso' limit 1;
+  -- (su traspaso, si lo llevaba y sigue vivo: se reversa con el cargo)
+  if g.traspaso_id is not null and not exists (select 1 from asientos r where r.reversa_a = g.traspaso_id) then
+    perform fn_reversar(g.traspaso_id, left('Nómina: ' || btrim(p_motivo), 400));
+  end if;
   perform set_config('mx_nomina.escribe', 'nomina_pagos', true);
   update nomina_pagos set estado = 'deshecho', deshecho_el = clock_timestamp(), deshecho_por = auth.uid(), deshecho_motivo = btrim(p_motivo),
                           reverso_id = v_rev
@@ -5371,7 +6108,12 @@ returns table (forma text, anio int, trimestre int, desde date, hasta date, camp
 language sql stable
 set search_path = public, pg_temp
 as $$
-  with cfg as materialized (select c.amarre_tolerancia as t from public.nomina_config c where c.id = 1),
+  with cfg as materialized (select c.amarre_tolerancia as t,
+                                   -- (13-nov, la revisión de la Fase 11b: por la API SIN el código del teléfono las corridas no se
+                                   -- leen. Con algún archivo ya subido, comparar con «cero nóminas» daba un «NO amarra» falso: lo
+                                   -- declarado se enseña, y lo del libro se deja vacío y se dice por qué)
+                                   (not public.fn_nomina_ve_personas() and exists (select 1 from public.nomina_archivos)) as tapa
+                              from public.nomina_config c where c.id = 1),
        k as (select extract(year from c.dia_pago)::int as anio, extract(quarter from c.dia_pago)::int as tri, c.bruto,
                     coalesce((c.declara->>'fit')::numeric, 0) as fit,
                     coalesce((c.declara->>'ss_ee')::numeric, 0) + coalesce((c.declara->>'med_ee')::numeric, 0)
@@ -5400,13 +6142,18 @@ as $$
   select z.forma, z.anio, z.tri,
          make_date(z.anio, case when z.tri is null then 1 else z.tri * 3 - 2 end, 1),
          (make_date(z.anio, case when z.tri is null then 12 else z.tri * 3 end, 1) + interval '1 month')::date - 1,
-         z.campo, z.declarado::numeric(14,2), z.libro::numeric(14,2), (z.declarado - z.libro)::numeric(14,2),
-         case when z.declarado is null then null else abs(z.declarado - z.libro) <= cfg.t end, z.n,
+         z.campo, z.declarado::numeric(14,2), case when cfg.tapa then null else z.libro end::numeric(14,2),
+         case when cfg.tapa then null else z.declarado - z.libro end::numeric(14,2),
+         case when z.declarado is null or cfg.tapa then null else abs(z.declarado - z.libro) <= cfg.t end,
+         case when cfg.tapa then null else z.n end,
          format('%s%s de %s, %s: ', case z.forma when '941' then 'El 941' when '940' then 'El 940' else 'El RT-6' end,
                 coalesce(' del trimestre ' || z.tri, ''), z.anio,
                 case z.campo when 'salarios' then 'salarios' when 'retencion' then 'retención federal'
                              when 'ss_medicare' then 'Social Security y Medicare' when 'futa' then 'FUTA' else 'contribución de reempleo' end)
-         || case when z.declarado is null
+         || case when cfg.tapa
+                   then format('la declaración dice %s. Para compararla con lo posteado en el libro hace falta el código del teléfono: '
+                               'entra con él.', public.fn_nomina_usd(z.declarado))
+                 when z.declarado is null
                    then format('el libro tiene %s en %s nómina(s) con día de pago en ese período, y la declaración no está tecleada.',
                                public.fn_nomina_usd(z.libro), z.n)
                  when abs(z.declarado - z.libro) <= cfg.t
@@ -5436,7 +6183,7 @@ as $$
 $$;
 revoke execute on function public.fn_nomina_amarre(int) from public, anon, service_role;
 grant  execute on function public.fn_nomina_amarre(int) to authenticated;
-comment on function public.fn_nomina_amarre(int) is 'c15: EL AMARRE de la nómina con sus declaraciones (de un año, o de todos): una fila por declaración, período y renglón (941: salarios, retencion, ss_medicare; 940: salarios, futa; rt6: salarios, contribucion) con lo declarado (lo que tecleó Edgar; vacío si falta), lo que el libro tiene en las corridas posteadas con DÍA DE PAGO en ese período, la diferencia, si amarra (ok: dentro de la tolerancia; vacío si la declaración no está tecleada), cuántas nóminas y el detalle en llano con las dos cifras. Solo lectura. A quien no es el dueño, nada.';
+comment on function public.fn_nomina_amarre(int) is 'c15: EL AMARRE de la nómina con sus declaraciones (de un año, o de todos): una fila por declaración, período y renglón (941: salarios, retencion, ss_medicare; 940: salarios, futa; rt6: salarios, contribucion) con lo declarado (lo que tecleó Edgar; vacío si falta), lo que el libro tiene en las corridas posteadas con DÍA DE PAGO en ese período, la diferencia, si amarra (ok: dentro de la tolerancia; vacío si la declaración no está tecleada), cuántas nóminas y el detalle en llano con las dos cifras. Por la API sin el código del teléfono (y con algún archivo ya subido) las corridas no se leen: lo del libro, la diferencia y ok salen vacíos y el detalle dice «entra con el código». Solo lectura. A quien no es el dueño, nada.';
 
 
 -- ---------------------------------------------------------------------
@@ -5624,17 +6371,28 @@ comment on function public.fn_nomina_lote(date, date, text) is 'c15: ARMA Y GUAR
 
 
 -- ---------------------------------------------------------------------
--- 15. PARA LAS OTRAS CAPAS (solo lectura; c3, c10 y c13 están sellados y
---     hoy no las llaman: quedan listas para cuando se abran).
+-- 15. PARA LAS OTRAS CAPAS (solo lectura; c3, c10 y c13 estaban sellados y
+--     no las llamaban: quedaron listas para cuando se abrieran. Desde la
+--     Fase 11b, c10 y, a través de él, c12 leen la marca sin dinero).
 --     · fn_nomina_horas_pagadas(): cada reporte de horas que una corrida
---       viva PAGÓ, con lo que le tocó. Es lo que c10 necesita para no
---       contar esas horas, además, a estándar; y lo que c3 necesita para
---       devengar solo lo trabajado y no pagado.
+--       viva PAGÓ, con lo que le tocó (dinero de cada persona: con el
+--       código). Es lo que c3 necesita para devengar solo lo trabajado y no
+--       pagado.
+--     · fn_nomina_horas_con_pago() (13-nov, Fase 11b): LA MARCA SIN DINERO.
+--       Los mismos reportes, y de cada uno solo su corrida y su día de
+--       pago. Es lo que el costo por obra (c10) y el WIP (c12) leen —SIN
+--       el código del teléfono, como se leen ellos— para no contar esas
+--       horas, además, a estándar.
 --     · fn_nomina_cola(mes): las horas aprobadas de un mes, de la gente de
---       campo de la nómina, que ninguna corrida ha pagado todavía (lo
---       trabajado al final del mes que se paga el mes siguiente), con su
---       costo estándar si lo hay. c3 no devenga un mes que tiene journal de
---       nómina: esto es lo que se queda fuera de ese mes.
+--       campo de la nómina, que ninguna nómina había pagado AL TERMINAR ESE
+--       MES (lo trabajado al final del mes que se paga el mes siguiente),
+--       con su costo estándar si lo hay. Es lo que el devengo estándar de
+--       c3 lleva a su mes si Edgar lo devenga (c3 no lee esto: lee la marca
+--       sin dinero, que contesta sin el código). El corte es el de c3: una
+--       hora «estaba pagada» si el journal de la nómina que la paga tiene
+--       fecha de ese mes o de antes (13-nov, la verificación de la Fase 11b:
+--       antes contaba lo sin pagar HOY, y las horas de noviembre dejaban de
+--       salir en cuanto las pagaba la nómina de diciembre).
 --     · fn_nomina_auxiliar(fecha): el auxiliar de las cuentas por pagar de
 --       la nómina a una fecha: qué corrida dejó qué por pagar y qué cargos
 --       lo pagaron. Para la cédula de corte (c13).
@@ -5654,6 +6412,46 @@ revoke execute on function public.fn_nomina_horas_pagadas() from public, anon, s
 grant  execute on function public.fn_nomina_horas_pagadas() to authenticated;
 comment on function public.fn_nomina_horas_pagadas() is 'c15: los reportes de horas (horas.id) que una corrida de nómina viva PAGÓ (su lote), con su día de pago, la fecha de su asiento, la persona, las horas y lo que le tocó del bruto y de lo patronal. Es «el pagado hasta» que c3 esperaba de la nómina y lo que el costo por obra (c10) necesita para no llevar esas horas, además, a estándar. Solo lectura; lo de cada persona, con el código del teléfono.';
 
+-- LA MARCA SIN DINERO (13-nov, Fase 11b). El costo por obra (c10) y el WIP
+-- (c12) los lee el dueño SIN el código del teléfono, y tienen que saber QUÉ
+-- horas pagó ya una nómina para no llevarlas, además, «a estándar» (con el
+-- burden estándar fijado contarían esa mano de obra dos veces: la real del
+-- libro y la estándar). fn_nomina_horas_pagadas() no les sirve: trae lo que
+-- le tocó a cada hora —el sueldo de una persona— y por eso pide el código.
+-- Esta dice solo CUÁLES: el reporte de horas, su corrida y su día de pago.
+-- Ni un importe, ni un nombre, ni de quién es la hora. (Nada que no esté ya
+-- a la vista de quien lee el libro: el asiento de cada corrida lleva su
+-- corrida y su día de pago; lo que NO estaba a la vista —cuánto le tocó a
+-- cada hora— sigue sin estarlo.)
+--   · POR QUÉ CORRE CON LOS PERMISOS DEL DUEÑO DE LA BASE (es la segunda y
+--     última función SECURITY DEFINER de la capa; la otra es el trigger del
+--     puente): el lote (nomina_reparto_horas) y las corridas llevan dinero
+--     y su policy pide el código; una función con los permisos de quien
+--     llama no vería ni una fila sin él, y c10 daría por «sin pago» horas
+--     ya pagadas. La puerta del dinero NO se abre: las policies siguen
+--     igual; la función no tiene argumentos ni arma SQL; mira por dentro
+--     que quien llama por la API sea el dueño (fn_nomina_ve: al equipo,
+--     cero filas); anon y service_role no la ejecutan; y lo que devuelve
+--     está fijado a esas tres columnas (bigint, uuid, date): el control 90
+--     lo vigila y, si un día devolviera otra cosa, se pone en rojo.
+--   · QUÉ HORA «TIENE PAGO»: la misma regla que fn_nomina_horas_pagadas: la
+--     corrida que la PAGA (titular), viva y posteada. Una fuera de ciclo que
+--     solo la usó de clave no la paga; una anulada, tampoco.
+create or replace function public.fn_nomina_horas_con_pago()
+returns table (horas_id bigint, corrida_id uuid, dia_pago date)
+language sql stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select rh.horas_id, rh.corrida_id, c.dia_pago
+    from public.nomina_reparto_horas rh
+    join public.nomina_corridas c on c.id = rh.corrida_id
+   where rh.titular and rh.vivo and c.estado = 'posteada' and (select public.fn_nomina_ve())
+$$;
+revoke execute on function public.fn_nomina_horas_con_pago() from public, anon, service_role;
+grant  execute on function public.fn_nomina_horas_con_pago() to authenticated;
+comment on function public.fn_nomina_horas_con_pago() is 'c15: LA MARCA SIN DINERO de las horas que una nómina ya pagó: cada reporte de horas (horas.id) con la corrida viva y posteada que lo PAGÓ y su día de pago, y nada más (ni un importe, ni un nombre, ni de quién es la hora). La leen el costo por obra (c10) y el WIP (c12), que el dueño ve sin el código del teléfono, para no llevar esas horas, además, a estándar; y el devengo estándar de c3 (lo corre el SQL Editor, la ronda o el dueño sin el código), para devengar solo las que ninguna nómina pagó. Corre con los permisos del dueño de la base (el lote pide el código y sin él no se vería ni una fila), sin argumentos, y por la API solo contesta al dueño; lo que lleva dinero sigue pidiendo el código (fn_nomina_horas_pagadas). Solo lectura.';
+
 create or replace function public.fn_nomina_cola(p_mes text)
 returns table (usuario_id uuid, persona text, proyecto_id text, obra text, horas numeric, estandar numeric(14,2), desde date, hasta date)
 language sql stable
@@ -5668,7 +6466,10 @@ as $$
     left join public.costos_equipo ce on ce.usuario_id = h.usuario_id
    where p.periodo = p_mes and p.tipo = 'mes' and h.aprobado_el is not null and h.horas > 0 and h.horas < 100000
      and public.fn_nomina_por_horas(h.usuario_id)
-     and not exists (select 1 from public.nomina_reparto_horas rh where rh.horas_id = h.id and rh.titular and rh.vivo)
+     -- (AL TERMINAR EL MES: la que pagó una nómina cuyo journal tiene fecha de ese mes o de antes ya estaba pagada; la que
+     -- paga la nómina del mes siguiente, no. Es el corte del devengo de c3)
+     and not exists (select 1 from public.nomina_reparto_horas rh join public.nomina_corridas k on k.id = rh.corrida_id
+                      where rh.horas_id = h.id and rh.titular and rh.vivo and k.estado = 'posteada' and k.fecha_asiento <= p.hasta)
      and not exists (select 1 from public.jornal_reparto_horas jh join public.jornal_repartos jr on jr.id = jh.reparto_id
                       where jh.horas_id = h.id and jr.estado = 'aplicado')
      and (select public.fn_nomina_ve_personas())
@@ -5676,7 +6477,7 @@ as $$
 $$;
 revoke execute on function public.fn_nomina_cola(text) from public, anon, service_role;
 grant  execute on function public.fn_nomina_cola(text) to authenticated;
-comment on function public.fn_nomina_cola(text) is 'c15: LA COLA de un mes: las horas aprobadas de ese mes, de quien cobra por horas, que ninguna corrida viva (ni un pago por Zelle) ha pagado todavía, por persona y obra, con su costo estándar (horas × la tarifa de costos_equipo; vacío sin tarifa) y sus fechas. Es lo trabajado y todavía no pagado que el journal llevará al mes siguiente: lo que el devengo estándar de c3 devengaría si supiera el corte. Solo lectura; con el código del teléfono.';
+comment on function public.fn_nomina_cola(text) is 'c15: LA COLA de un mes: las horas aprobadas de ese mes, de quien cobra por horas, que ninguna nómina había pagado AL TERMINAR EL MES (su journal tiene fecha posterior, o todavía no hay ninguno) ni un pago por Zelle, por persona y obra, con su costo estándar (horas × la tarifa de costos_equipo; vacío sin tarifa) y sus fechas. Es lo trabajado y todavía no pagado que el journal lleva al mes siguiente: lo que el devengo estándar de c3 pone en su mes si se devenga (c3 lo calcula con la marca sin dinero, no con esto). Solo lectura; con el código del teléfono.';
 
 -- EL «PAGADO HASTA» de cada persona: el último día del período de pago de la
 -- última nómina REGULAR viva (la que se queda con las horas) que la pagó. Es
@@ -5768,6 +6569,13 @@ comment on function public.fn_nomina_auxiliar(date) is 'c15: EL AUXILIAR de las 
 --     Un mes sin horas pagadas por la nómina no tiene con qué repartir: su
 --     saldo se arrastra y sale con el mes siguiente. Un mes ya cerrado
 --     tampoco se toca: lo mismo.
+--     NUNCA MÁS DE LO QUE HOY QUEDA EN LA BOLSA (13-nov, la revisión de la
+--     Fase 11b). «Lo que hay al terminar el mes» no descuenta lo que ya
+--     salió con el reparto de un mes POSTERIOR: repartido febrero (que se
+--     llevó lo de enero y lo suyo), enero seguía diciendo «quedan 300» y se
+--     repartían otra vez: la prima dos veces en el costo de las obras y la
+--     bolsa al revés. Se reparte como mucho lo que hoy queda (el menor entre
+--     el saldo de ese mes y el de hoy, con el mismo signo).
 --     ▶ CPA: la clave (las horas pagadas del mes; la prima de WC se calcula
 --     sobre los sueldos) y si se reparte cada mes. Si prefiere no repartir,
 --     la bolsa se cierra a la variación de burden (5019) al cierre del año
@@ -5788,6 +6596,8 @@ declare
   v_lin   jsonb;
   v_puede boolean;
   v_txt   text;
+  v_mes_s numeric;   -- lo que había en la bolsa al terminar el mes
+  v_hoy_s numeric;   -- lo que hay hoy
 begin
   perform fn_nomina_exigir_dueno();
   perform fn_nomina_exigir_codigo();
@@ -5802,6 +6612,10 @@ begin
   select coalesce(sum(l.monto), 0) into v_saldo
     from asiento_lineas l join asientos a on a.id = l.asiento_id
    where l.cuenta = cfg.cuenta_bolsa and a.fecha_contable <= per.hasta;
+  -- … y lo que queda HOY: de lo de ese mes se reparte como mucho eso (lo demás ya salió con el reparto de un mes posterior)
+  select coalesce(sum(l.monto), 0) into v_hoy_s from asiento_lineas l where l.cuenta = cfg.cuenta_bolsa;
+  v_mes_s := v_saldo;
+  v_saldo := case when sign(v_saldo) = sign(v_hoy_s) then sign(v_saldo) * least(abs(v_saldo), abs(v_hoy_s)) else 0 end;
   -- de dónde vino (lo que entró a la bolsa hasta ese día y no es de una corrida: lo último primero)
   select coalesce(jsonb_agg(jsonb_build_object('asiento', x.numero, 'fecha', x.fecha, 'monto', x.monto, 'que', x.que)
                             order by x.fecha desc, x.numero desc), '[]'::jsonb)
@@ -5844,7 +6658,13 @@ begin
     into v_lin
     from jsonb_array_elements(v_clave) q where (q->>'monto')::numeric <> 0;
   v_puede := v_saldo <> 0 and v_h > 0 and per.hasta < v_hoy and per.estado = 'abierto';
-  v_txt := case when v_saldo = 0 then format('Al terminar %s la bolsa del burden real (%s) no tiene nada sin repartir.', per.periodo, cfg.cuenta_bolsa)
+  v_txt := case when v_mes_s = 0 then format('Al terminar %s la bolsa del burden real (%s) no tiene nada sin repartir.', per.periodo, cfg.cuenta_bolsa)
+                when v_saldo = 0
+                  then format('Lo que había en la bolsa del burden real (%s) al terminar %s (%s) ya salió a las obras con el reparto de un '
+                              'mes posterior: de %s no queda nada sin repartir%s.', cfg.cuenta_bolsa, per.periodo, fn_nomina_usd(v_mes_s),
+                              per.periodo,
+                              case when v_hoy_s <> 0 then format(' (hoy la bolsa tiene %s: mira el mes en que entró)', fn_nomina_usd(v_hoy_s))
+                                   else '' end)
                 when per.hasta >= v_hoy
                   then format('%s todavía no termina: lo que quede en la bolsa del burden real (hoy, %s) se reparte al terminar el mes.',
                               per.periodo, fn_nomina_usd(v_saldo))
@@ -5854,18 +6674,29 @@ begin
                 when v_h = 0
                   then format('En %s ninguna nómina pagó horas en obra: no hay con qué repartir lo que quedó en la bolsa del burden real '
                               '(%s). Se arrastra y sale con el mes siguiente.', per.periodo, fn_nomina_usd(v_saldo))
+                when v_saldo < 0
+                  then format('Al terminar %s la bolsa del burden real (%s) está AL REVÉS: %s. O entró un ajuste a favor (la auditoría de '
+                              'WC devolvió prima), o se repartió a las obras más de lo que había. Si es un ajuste a favor, se reparte '
+                              'igual a %s obra(s), por las %s h que la nómina pagó ese mes en cada una, y les baja el costo. Si se '
+                              'repartió de más, NO lo repartas: reversa en el Libro el reparto que sobra.', per.periodo, cfg.cuenta_bolsa,
+                              fn_nomina_usd(v_saldo), jsonb_array_length(v_clave), fn_nomina_h(v_h))
                 else format('Al terminar %s quedan %s en la bolsa del burden real (%s) que no son de ninguna nómina (la prima de WC que '
-                            'se amortiza cada mes, su ajuste de auditoría). Se reparten a %s obra(s), por las %s h que la nómina pagó ese '
+                            'se amortiza cada mes, su ajuste de auditoría)%s. Se reparten a %s obra(s), por las %s h que la nómina pagó ese '
                             'mes en cada una, y así el costo por obra lleva su parte.', per.periodo, fn_nomina_usd(v_saldo),
-                            cfg.cuenta_bolsa, jsonb_array_length(v_clave), fn_nomina_h(v_h)) end;
+                            cfg.cuenta_bolsa,
+                            case when v_saldo <> v_mes_s
+                                 then format(' (al terminar el mes había %s; lo demás ya salió con el reparto de un mes posterior)',
+                                             fn_nomina_usd(v_mes_s)) else '' end,
+                            jsonb_array_length(v_clave), fn_nomina_h(v_h)) end;
   return jsonb_build_object(
-    'mes', per.periodo, 'hasta', per.hasta, 'saldo', v_saldo, 'de_donde', v_part, 'horas', v_h, 'clave', v_clave,
+    'mes', per.periodo, 'hasta', per.hasta, 'saldo', v_saldo, 'saldo_mes', v_mes_s, 'saldo_hoy', v_hoy_s,
+    'de_donde', v_part, 'horas', v_h, 'clave', v_clave,
     'lineas', case when v_puede then v_lin else '[]'::jsonb end, 'puede', v_puede, 'texto', v_txt,
     'visto', case when v_puede then md5(jsonb_build_object('mes', per.periodo, 'lineas', v_lin)::text) end);
 end $$;
 revoke execute on function public.fn_nomina_bolsa(text) from public, anon, service_role;
 grant  execute on function public.fn_nomina_bolsa(text) to authenticated;
-comment on function public.fn_nomina_bolsa(text) is 'c15: lo que queda en la bolsa del burden real al terminar un mes (sin mes, el último terminado) y no es de una nómina —la prima de WC amortizada, su ajuste de auditoría—: {mes, hasta, saldo, de_donde (los asientos que lo metieron), horas y clave (las horas que las nóminas con asiento en ese mes pagaron en cada obra y CO, con la parte que le toca a cada una, al centavo), lineas (el asiento que lo repartiría: el burden por obra contra la bolsa), puede (hay saldo, hay horas, el mes terminó y sigue abierto), texto en llano y visto (lo que hay que devolver al repartir)}. No escribe nada. Con el código del teléfono. Solo el dueño.';
+comment on function public.fn_nomina_bolsa(text) is 'c15: lo que queda en la bolsa del burden real al terminar un mes (sin mes, el último terminado) y no es de una nómina —la prima de WC amortizada, su ajuste de auditoría—: {mes, hasta, saldo (lo que se repartiría: como mucho lo que HOY queda en la bolsa; saldo_mes: lo que había al terminar el mes; saldo_hoy), de_donde (los asientos que lo metieron), horas y clave (las horas que las nóminas con asiento en ese mes pagaron en cada obra y CO, con la parte que le toca a cada una, al centavo), lineas (el asiento que lo repartiría: el burden por obra contra la bolsa), puede (hay saldo, hay horas, el mes terminó y sigue abierto), texto en llano y visto (lo que hay que devolver al repartir)}. No escribe nada. Con el código del teléfono. Solo el dueño.';
 
 create or replace function public.fn_nomina_bolsa_repartir(p_mes text, p_visto text) returns jsonb
 language plpgsql
@@ -5960,6 +6791,9 @@ declare
   v_ini   date;
   v_tapa  boolean;
   v_n2    int;
+  v_devn  text;
+  v_cerr  boolean;
+  v_x     text;
   c_sin   constant text := 'Hay nóminas en la base y para comprobar esto hace falta el código del teléfono: entra con él.';
   -- (los controles que miran el dinero de una nómina: sin el código del teléfono no se leen, y no se dan por buenos)
   c_dinero constant int[] := array[10, 15, 20, 25, 30, 32, 35, 45, 50, 55, 60, 62, 65, 80];
@@ -5969,7 +6803,8 @@ declare
   c_fn     constant text[] := array['fn_nomina_precondiciones', 'fn_nomina_por_api', 'fn_nomina_exigir_dueno', 'fn_nomina_ve', 'fn_nomina_aal2',
                                     'fn_nomina_exigir_codigo', 'fn_nomina_ve_personas', 'fn_nomina_guarda', 'fn_nomina_al_libro',
                                     'fn_nomina_usd', 'fn_nomina_h', 'fn_nomina_dia', 'fn_nomina_hoy', 'fn_nomina_lista', 'fn_nomina_norm', 'fn_nomina_clave',
-                                    'fn_nomina_monto', 'fn_nomina_fecha', 'fn_nomina_delicado', 'fn_nomina_etiqueta', 'fn_nomina_cuenta_mal',
+                                    'fn_nomina_monto', 'fn_nomina_fecha', 'fn_nomina_delicado', 'fn_nomina_delicado_texto', 'fn_nomina_dentro',
+                                    'fn_nomina_etiqueta', 'fn_nomina_cuenta_mal',
                                     'fn_nomina_cuenta_sin_obra', 'fn_nomina_cuentas', 'fn_nomina_fecha_asiento', 'fn_nomina_apunta',
                                     'fn_nomina_config', 'fn_nomina_columna', 'fn_nomina_journal', 'fn_nomina_leer', 'fn_nomina_propone', 'fn_nomina_ya',
                                     'fn_nomina_ensayo', 'fn_nomina_importar',
@@ -5979,7 +6814,8 @@ declare
                                     'fn_nomina_cargos_fuera',
                                     'fn_nomina_declaracion', 'fn_nomina_amarre', 'fn_nomina_por_horas', 'fn_nomina_horas_gusto', 'fn_nomina_lote',
                                     'fn_nomina_lote_csv',
-                                    'fn_nomina_horas_pagadas', 'fn_nomina_cola', 'fn_nomina_pagado_hasta', 'fn_nomina_auxiliar',
+                                    'fn_nomina_horas_pagadas', 'fn_nomina_horas_con_pago', 'fn_nomina_cola', 'fn_nomina_pagado_hasta',
+                                    'fn_nomina_auxiliar',
                                     'fn_nomina_bolsa', 'fn_nomina_bolsa_repartir', 'fn_nomina_control',
                                     'fn_nomina_cierre',
                                     'fn_nomina_pegado'];
@@ -6047,6 +6883,9 @@ begin
   orden := 10; control := 'cada corrida posteada es su asiento'; nivel := 'cuadre'; ok := v_n = 0;
   detalle := case when v_n = 0 then format('%s corrida(s) en el libro: cada una con su asiento, y cada asiento de la nómina con su corrida.', v_hay)
                   else format('%s no cuadra(n): %s. Avisa antes de tocar nada: el libro y la nómina ya no dicen lo mismo.', v_n, v_txt) end;
+  -- (13-nov, la revisión de la Fase 11b: el 10, el 25, el 35 y el 62 no tenían texto corto, y su detalle —con importes de una
+  -- nómina— era lo que el cierre guardaba y mandaba al teléfono)
+  corto := case when v_n > 0 then format('%s nómina(s) no cuadra(n) con su asiento en el libro: avisa antes de tocar nada.', v_n) end;
   if v_tapa and orden = any (c_dinero) then ok := false; detalle := c_sin; corto := c_sin; end if;
   corto := coalesce(corto, detalle);
   return next;
@@ -6150,15 +6989,24 @@ begin
                                then 'sus partes no suman el cargo' end,
                           case when g.clase <> 'cuota' and exists (select 1 from nomina_pago_partes pp join nomina_corridas k on k.id = pp.corrida_id
                                                                     where pp.pago_id = g.id and k.estado <> 'posteada')
-                               then 'paga una nómina que ya no está posteada' end)) as t
+                               then 'paga una nómina que ya no está posteada' end,
+                          case when g.traspaso_id is not null and exists (select 1 from asientos r where r.reversa_a = g.traspaso_id)
+                               then 'su traspaso (el asiento que pasó lo que había a favor de una cuenta a otra) se reversó sin deshacer el cargo' end)) as t
             from nomina_pagos g
             left join movimientos_banco m on m.id = g.movimiento_id
            where g.estado = 'aplicado'
              and (m.id is null or m.estado not in ('casado', 'en_transito') or m.asiento_id is distinct from g.asiento_id
+                  or (g.traspaso_id is not null and exists (select 1 from asientos r where r.reversa_a = g.traspaso_id))
                   or exists (select 1 from asientos r where r.reversa_a = g.asiento_id and r.camino = 'reverso')
                   or (g.clase <> 'cuota' and g.monto <> coalesce((select sum(pp.monto) from nomina_pago_partes pp where pp.pago_id = g.id), 0))
                   or (g.clase <> 'cuota' and exists (select 1 from nomina_pago_partes pp join nomina_corridas k on k.id = pp.corrida_id
                                                       where pp.pago_id = g.id and k.estado <> 'posteada')))
+          union all
+          -- (un cargo ya deshecho cuyo traspaso sigue vivo en el libro)
+          select format('el cargo del %s por %s está deshecho y su traspaso (el asiento %s, que pasó lo que había a favor de una cuenta a '
+                        'otra) sigue vivo: reversa ese asiento en el Libro', fn_nomina_dia(g.fecha), fn_nomina_usd(g.monto), a.numero)
+            from nomina_pagos g join asientos a on a.id = g.traspaso_id
+           where g.estado = 'deshecho' and not exists (select 1 from asientos r where r.reversa_a = g.traspaso_id)
           union all
           select format('la nómina del %s tiene pagado de más en %s: dejó %s %s y sus cargos suman %s', fn_nomina_dia(p.dia_pago), p.cuenta,
                         case when p.acreditado < 0 then 'a favor' else 'por pagar' end, fn_nomina_usd(abs(p.acreditado)), fn_nomina_usd(p.pagado))
@@ -6169,6 +7017,8 @@ begin
   detalle := case when v_n = 0 then format('%s cargo(s) de Gusto resueltos desde la nómina, cada uno con su asiento del banco.',
                                            (select count(*) from nomina_pagos g where g.estado = 'aplicado'))
                   else format('%s no cuadra(n): %s.', v_n, v_txt) end;
+  corto := case when v_n > 0 then format('%s cargo(s) de Gusto casado(s) —o lo pagado de una nómina— ya no cuadra(n) con su asiento del '
+                                         'banco: míralo en Nómina → Cargos de Gusto.', v_n) end;
   if v_tapa and orden = any (c_dinero) then ok := false; detalle := c_sin; corto := c_sin; end if;
   corto := coalesce(corto, detalle);
   return next;
@@ -6193,34 +7043,39 @@ begin
   -- 32. Nóminas que parecen la misma, dos veces (las mismas personas con el mismo bruto y el mismo neto, el mismo día de pago o
   -- con un período que se pisa; o, si a una le falta el período, a menos de una semana; o la misma nómina del mismo archivo,
   -- subido otra vez), sin que Edgar haya dicho por qué son dos.
-  select count(*), fn_nomina_lista(array_agg(q.t order by q.t)) into v_n, v_txt
-    from (select format('la del %s (%s%s) y la del %s (%s%s): %s persona(s), bruto %s', fn_nomina_dia(a1.dia_pago), a1.estado,
+  -- (13-nov, la revisión de la Fase 11b) … o POR PARTES: todas las personas de una, cada una con su mismo bruto y su mismo neto,
+  -- están dentro de la otra (el journal de un empleado y el de todos), el mismo día, con un período que se pisa o, si a una le
+  -- falta el período, a menos de una semana.
+  select count(*), fn_nomina_lista(array_agg(q.t order by q.t)), count(*) filter (where q.dos) into v_n, v_txt, v_n2
+    from (with kp as materialized (
+            select k.id, k.estado, k.dia_pago, k.periodo_desde, k.periodo_hasta, k.firma_personas, k.otra_porque, k.importada_el, k.n,
+                   k.archivo_id, k.asiento_numero, k.personas, k.bruto,
+                   (select coalesce(array_agg(round(cp.bruto, 2) || ':' || round(cp.neto, 2)), '{}')
+                      from nomina_corrida_personas cp where cp.corrida_id = k.id) as pares
+              from nomina_corridas k where k.estado in ('importada', 'posteada'))
+          select format('la del %s (%s%s) y la del %s (%s%s): %s', fn_nomina_dia(a1.dia_pago), a1.estado,
                         coalesce(', asiento ' || a1.asiento_numero, ''), fn_nomina_dia(b1.dia_pago), b1.estado,
-                        coalesce(', asiento ' || b1.asiento_numero, ''), a1.personas, fn_nomina_usd(a1.bruto)) as t
-            from nomina_corridas a1
-            join nomina_corridas b1 on b1.firma_personas = a1.firma_personas
-                                   and (b1.importada_el, b1.id) > (a1.importada_el, a1.id)
-                                   and b1.estado in ('importada', 'posteada') and b1.otra_porque is null
-                                   and (b1.dia_pago = a1.dia_pago
-                                        or (b1.periodo_desde is not null and a1.periodo_desde is not null
-                                            and b1.periodo_desde <= a1.periodo_hasta and b1.periodo_hasta >= a1.periodo_desde)
-                                        or ((b1.periodo_desde is null or a1.periodo_desde is null) and abs(b1.dia_pago - a1.dia_pago) <= 6)
-                                        or (b1.n = a1.n and b1.archivo_id <> a1.archivo_id
-                                            and exists (select 1 from nomina_archivos f1 join nomina_archivos f2 on f2.sha256 = f1.sha256
-                                                         where f1.id = a1.archivo_id and f2.id = b1.archivo_id)))
-           where a1.estado in ('importada', 'posteada') and a1.firma_personas is not null) q;
-  select count(*) into v_n2
-    from nomina_corridas a1
-    join nomina_corridas b1 on b1.firma_personas = a1.firma_personas and (b1.importada_el, b1.id) > (a1.importada_el, a1.id)
-                           and b1.estado = 'posteada' and b1.otra_porque is null
-                           and (b1.dia_pago = a1.dia_pago
-                                or (b1.periodo_desde is not null and a1.periodo_desde is not null
-                                    and b1.periodo_desde <= a1.periodo_hasta and b1.periodo_hasta >= a1.periodo_desde)
-                                or ((b1.periodo_desde is null or a1.periodo_desde is null) and abs(b1.dia_pago - a1.dia_pago) <= 6)
-                                or (b1.n = a1.n and b1.archivo_id <> a1.archivo_id
-                                    and exists (select 1 from nomina_archivos f1 join nomina_archivos f2 on f2.sha256 = f1.sha256
-                                                 where f1.id = a1.archivo_id and f2.id = b1.archivo_id)))
-   where a1.estado = 'posteada' and a1.firma_personas is not null;
+                        coalesce(', asiento ' || b1.asiento_numero, ''),
+                        case when b1.firma_personas = a1.firma_personas then format('%s persona(s), bruto %s', a1.personas, fn_nomina_usd(a1.bruto))
+                             else format('las %s persona(s) de una están en la otra, cada una con su mismo bruto y su mismo neto (por partes)',
+                                         least(a1.personas, b1.personas)) end) as t,
+                 a1.estado = 'posteada' and b1.estado = 'posteada' as dos
+            from kp a1
+            join kp b1 on (b1.importada_el, b1.id) > (a1.importada_el, a1.id) and b1.otra_porque is null
+                      and (   (a1.firma_personas is not null and b1.firma_personas = a1.firma_personas
+                               and (b1.dia_pago = a1.dia_pago
+                                    or (b1.periodo_desde is not null and a1.periodo_desde is not null
+                                        and b1.periodo_desde <= a1.periodo_hasta and b1.periodo_hasta >= a1.periodo_desde)
+                                    or ((b1.periodo_desde is null or a1.periodo_desde is null) and abs(b1.dia_pago - a1.dia_pago) <= 6)
+                                    or (b1.n = a1.n and b1.archivo_id <> a1.archivo_id
+                                        and exists (select 1 from nomina_archivos f1 join nomina_archivos f2 on f2.sha256 = f1.sha256
+                                                     where f1.id = a1.archivo_id and f2.id = b1.archivo_id))))
+                           or (b1.firma_personas is distinct from a1.firma_personas
+                               and (b1.dia_pago = a1.dia_pago
+                                    or (b1.periodo_desde is not null and a1.periodo_desde is not null
+                                        and b1.periodo_desde <= a1.periodo_hasta and b1.periodo_hasta >= a1.periodo_desde)
+                                    or ((b1.periodo_desde is null or a1.periodo_desde is null) and abs(b1.dia_pago - a1.dia_pago) <= 6))
+                               and (fn_nomina_dentro(a1.pares, b1.pares) or fn_nomina_dentro(b1.pares, a1.pares))))) q;
   orden := 32; control := 'nóminas que parecen la misma, dos veces'; nivel := 'aviso'; ok := v_n = 0;
   detalle := case when v_n = 0 then 'Ninguna nómina viva trae a las mismas personas con las mismas cifras que otra del mismo día (o del mismo período).'
                   else format('%s caso(s): %s. Traen a las mismas personas, cada una con su mismo bruto y su mismo neto: parecen la misma '
@@ -6242,6 +7097,8 @@ begin
   detalle := case when v_n = 0 then 'Ningún cargo de Gusto espera en la Bandeja del banco.'
                   else format('%s cargo(s) de Gusto por %s esperan en el banco: %s. Cada uno se casa con lo que su nómina dejó por pagar (o se '
                               'dice que es la cuota mensual): mientras no, la conciliación del banco no se confirma.', v_n, fn_nomina_usd(v_s), v_txt) end;
+  corto := case when v_n > 0 then format('%s cargo(s) de Gusto esperan en el banco sin casar con su nómina: mientras no, la conciliación del '
+                                         'banco no se confirma.', v_n) end;
   if v_tapa and orden = any (c_dinero) then ok := false; detalle := c_sin; corto := c_sin; end if;
   corto := coalesce(corto, detalle);
   return next;
@@ -6412,7 +7269,8 @@ begin
              where l.cuenta = any (v_ctas) and a.fecha_contable >= v_ini
                and a.reversa_a is null and not exists (select 1 from asientos r where r.reversa_a = a.id)
                and not exists (select 1 from nomina_corridas k where a.id in (k.asiento_id, k.reverso_id, k.burden_asiento_id, k.burden_reverso_id))
-               and not exists (select 1 from nomina_pagos g where a.id = g.asiento_id or a.reversa_a = g.asiento_id)
+               and not exists (select 1 from nomina_pagos g
+                                where a.id = g.asiento_id or a.reversa_a = g.asiento_id or a.id = g.traspaso_id or a.reversa_a = g.traspaso_id)
              group by l.cuenta having sum(l.monto) <> 0) q;
   end if;
   orden := 62; control := 'en las cuentas por pagar de la nómina, lo que entró por otro lado'; nivel := 'aviso'; ok := v_n = 0;
@@ -6425,6 +7283,9 @@ begin
                               'pasar por la nómina): míralo en el mayor de esa cuenta; el auxiliar de la nómina no lo explica. Si es un '
                               'movimiento del banco que paga lo de una nómina, des-cásalo en Movimientos y cásalo desde Nómina → Cargos de '
                               'Gusto: así la nómina sabe que está pagado.', v_n, fn_nomina_dia(v_ini), v_txt) end;
+  corto := case when v_ini is not null and v_n > 0
+                then format('%s cuenta(s) por pagar de la nómina tienen movimientos que no vienen de la nómina (un asiento a mano, un cargo '
+                            'de Gusto clasificado en la Bandeja): míralo en Nómina.', v_n) end;
   if v_tapa and orden = any (c_dinero) then ok := false; detalle := c_sin; corto := c_sin; end if;
   corto := coalesce(corto, detalle);
   return next;
@@ -6487,14 +7348,52 @@ begin
 
   -- 75. La bolsa del burden real.
   select coalesce(sum(l.monto), 0) into v_s from asiento_lineas l where l.cuenta = cfg.cuenta_bolsa;
-  orden := 75; control := 'la bolsa del burden real, repartida a las obras'; nivel := 'aviso'; ok := v_s = 0;
-  detalle := case when v_s = 0 then format('La bolsa del burden real (%s) no tiene nada sin repartir.', cfg.cuenta_bolsa)
+  -- (13-nov, la revisión de la Fase 11b: un reparto de la bolsa VIVO que llevó parte a una obra en la que ya ninguna nómina
+  -- posteada de ese mes pagó horas —se anuló su nómina después de repartir—. Mira lo de cada nómina: solo con el código)
+  v_x := null;
+  if v_vp then
+    select fn_nomina_lista(array_agg(format('el de %s (asiento %s)', q.mes, q.numero) order by q.mes, q.numero), 300) into v_x
+      from (select a.numero, substring(a.descripcion from 'al terminar ([0-9]{4}-[0-9]{2}) \(') as mes, a.id
+              from asientos a
+             where a.camino = 'mano' and a.reversa_a is null
+               and a.descripcion like 'Reparto a las obras de lo que quedó en la bolsa del burden real al terminar % (%'
+               and not exists (select 1 from asientos r where r.reversa_a = a.id)) q
+     where exists (select 1 from asiento_lineas l
+                    where l.asiento_id = q.id and l.cuenta = cfg.cuenta_burden_obra
+                      and not exists (select 1 from nomina_reparto_horas rh
+                                        join nomina_corridas k on k.id = rh.corrida_id
+                                        join periodos p on p.periodo = q.mes
+                                       where k.estado = 'posteada' and rh.vivo and rh.titular
+                                         and rh.proyecto_id is not distinct from l.proyecto_id and rh.co is not distinct from l.co
+                                         and k.fecha_asiento between p.desde and p.hasta));
+  end if;
+  orden := 75; control := 'la bolsa del burden real, repartida a las obras'; nivel := 'aviso'; ok := v_s = 0 and v_x is null;
+  detalle := case when v_s = 0 and v_x is null then format('La bolsa del burden real (%s) no tiene nada sin repartir.', cfg.cuenta_bolsa)
+                  when v_s = 0
+                    then format('La bolsa del burden real (%s) está en cero, pero un reparto suyo ya no es el de las horas que la nómina '
+                                'pagó: %s llevó parte a una obra en la que hoy ninguna nómina posteada de ese mes pagó horas (se anuló una '
+                                'nómina después de repartir). Reversa ese reparto en el Libro y repártelo otra vez (Nómina → Ajustes: «lo '
+                                'que queda en la bolsa del burden»).', cfg.cuenta_bolsa, v_x)
+                  when v_s < 0
+                    then format('La bolsa del burden real (%s) está AL REVÉS: %s. O se repartió a las obras más de lo que había (un mes '
+                                'repartido dos veces: reversa en el Libro el reparto que sobra), o entró un ajuste a favor (la auditoría de '
+                                'WC devolvió prima): ese se reparte igual al terminar su mes, y les baja el costo a las obras (Nómina → '
+                                'Ajustes: «lo que queda en la bolsa del burden»).%s', cfg.cuenta_bolsa, fn_nomina_usd(v_s),
+                                case when v_x is not null
+                                     then format(' Además, %s llevó parte a una obra en la que hoy ninguna nómina posteada de ese mes pagó '
+                                                 'horas: reversa ese reparto y repártelo otra vez.', v_x)
+                                     else '' end)
                   else format('La bolsa del burden real (%s) tiene %s sin repartir a las obras. Lo que el patrón paga en cada nómina por la gente '
                               'de obra sale solo a sus obras; lo que queda es lo que entra por otro lado (la prima de WC que se amortiza cada mes, '
                               'su ajuste de auditoría). Al terminar cada mes se reparte a las obras, por las horas que la nómina pagó ese mes '
                               '(Nómina → Ajustes: «lo que queda en la bolsa del burden»): así el costo de cada obra lleva su parte. Si el CPA '
-                              'prefiere no repartirlo, lo cierra él a la variación de burden al cierre del año.',
-                              cfg.cuenta_bolsa, fn_nomina_usd(v_s)) end;
+                              'prefiere no repartirlo, lo cierra él a la variación de burden al cierre del año.%s',
+                              cfg.cuenta_bolsa, fn_nomina_usd(v_s),
+                              case when v_x is not null
+                                   then format(' Además, %s llevó parte a una obra en la que hoy ninguna nómina posteada de ese mes pagó '
+                                               'horas (se anuló una nómina después de repartir): reversa ese reparto y repártelo otra vez.',
+                                               v_x)
+                                   else '' end) end;
   if v_tapa and orden = any (c_dinero) then ok := false; detalle := c_sin; corto := c_sin; end if;
   corto := coalesce(corto, detalle);
   return next;
@@ -6505,25 +7404,51 @@ begin
     from periodos p
    where p.tipo = 'mes' and p.hasta < v_hoy
      and exists (select 1 from nomina_corridas k where k.estado = 'posteada' and k.fecha_asiento between p.desde and p.hasta);
+  -- (13-nov, la verificación de la Fase 11b. La cola es lo que NINGUNA NÓMINA HABÍA PAGADO AL TERMINAR EL MES —el corte del
+  -- devengo de c3: antes contaba lo sin pagar HOY, y dejaba de salir en cuanto lo pagaba la nómina del mes siguiente—. Y dice
+  -- la verdad sobre el devengo: desde la Fase 11b c3 SÍ devenga un mes con nómina, por lo que ninguna nómina pagó. Devengado
+  -- el mes, o ya cerrado, no queda nada que hacer: el aviso no se pone en rojo.)
+  v_devn := null; v_cerr := false;
+  if v_mes is not null then
+    select a.numero into v_devn from asientos a
+     where a.origen_tabla = 'horas_devengo' and a.origen_id = v_mes and a.camino not in ('reverso', 'reverso_automatico')
+       and not exists (select 1 from asientos r where r.reversa_a = a.id and r.camino = 'reverso')
+     order by a.numero desc limit 1;
+    select coalesce(to_jsonb(p)->>'estado', 'abierto') <> 'abierto' into v_cerr from periodos p where p.periodo = v_mes;
+  end if;
   if v_mes is not null and v_vp then
     select count(distinct q.usuario_id), coalesce(sum(q.horas), 0),
            format('%s h de %s persona(s)%s', fn_nomina_h(coalesce(sum(q.horas), 0)), count(distinct q.usuario_id),
-                  coalesce(format(', unos %s a su tarifa estándar', fn_nomina_usd(sum(q.estandar))), ''))
+                  case when sum(q.estandar) is null then ''
+                       else format(', unos %s a su tarifa estándar', fn_nomina_usd(sum(q.estandar))) end
+                  || case when count(*) filter (where q.estandar is null) > 0
+                          then ' (parte, de quien no tiene tarifa estándar en Costos: esas no se pueden devengar)' else '' end)
       into v_n, v_s, v_txt from fn_nomina_cola(v_mes) q;
   else
     v_n := 0; v_s := 0; v_txt := null;
   end if;
   orden := 80; control := 'lo trabajado en el mes y todavía no pagado por ninguna nómina'; nivel := 'aviso';
-  ok := v_s = 0 and (v_vp or v_mes is null);
+  ok := (v_s = 0 or v_devn is not null or coalesce(v_cerr, false)) and (v_vp or v_mes is null);
   detalle := case when v_mes is null then 'Todavía no hay un mes terminado con nómina.'
                   when not v_vp then c_sin
-                  when v_s = 0 then format('En %s no quedó nada trabajado sin pagar: todas sus horas aprobadas las pagó una nómina.', v_mes)
-                  else format('En %s quedaron %s trabajadas y sin pagar al terminar el mes: su costo entra con la nómina que las pague, en el mes '
-                              'siguiente (un mes con nómina no lleva devengo de horas). No es un error: es el desfase de siempre entre lo '
-                              'trabajado y lo pagado; al cierre del año el CPA decide si lo ajusta.', v_mes, v_txt) end;
-  corto := case when v_mes is not null and v_vp and v_s <> 0
-                then format('En %s quedaron %s h trabajadas y sin pagar al terminar el mes: su costo entra con la nómina que las pague.',
-                            v_mes, fn_nomina_h(v_s)) end;
+                  when v_s = 0 then format('En %s no quedó nada trabajado sin pagar al terminar el mes: todas sus horas aprobadas las había '
+                                           'pagado una nómina.', v_mes)
+                  when v_devn is not null
+                    then format('En %s quedaron %s trabajadas y sin pagar al terminar el mes, y el mes está devengado (asiento %s): su costo '
+                                'está en %s a tarifa estándar, y se deshace solo el día 1 del mes siguiente, cuando lo paga su nómina. No '
+                                'hay nada que hacer.', v_mes, v_txt, v_devn, v_mes)
+                  when coalesce(v_cerr, false)
+                    then format('En %s quedaron %s trabajadas y sin pagar al terminar el mes, y %s se cerró sin devengarlas: su costo entra '
+                                'con la nómina que las paga, en el mes siguiente. No es un error: es el desfase de siempre entre lo '
+                                'trabajado y lo pagado; al cierre del año el CPA decide si lo ajusta.', v_mes, v_txt, v_mes)
+                  else format('En %s quedaron %s trabajadas y sin pagar al terminar el mes: sin devengo, su costo entra con la nómina que las '
+                              'paga, en el mes siguiente. Si quieres ese costo en su mes, devéngalo antes de cerrarlo: select '
+                              'fn_horas_devengar(%L); (lleva lo trabajado y todavía no pagado, a su tarifa estándar, y se deshace solo el día '
+                              '1). No es un error: es el desfase de siempre entre lo trabajado y lo pagado; al cierre del año el CPA decide '
+                              'si lo ajusta.', v_mes, v_txt, v_mes) end;
+  corto := case when v_mes is not null and v_vp and v_s <> 0 and v_devn is null and not coalesce(v_cerr, false)
+                then format('En %s quedaron %s h trabajadas y sin pagar al terminar el mes, sin devengar: su costo entra con la nómina que '
+                            'las pague.', v_mes, fn_nomina_h(v_s)) end;
   if v_tapa and orden = any (c_dinero) then ok := false; detalle := c_sin; corto := c_sin; end if;
   corto := coalesce(corto, detalle);
   return next;
@@ -6549,12 +7474,26 @@ begin
   select count(*), string_agg(y.que, '; ') into v_n, v_txt
     from (select pr.proname || ' corre con permisos de más' as que
             from pg_catalog.pg_proc pr
-           where pr.pronamespace = 'public'::regnamespace and pr.proname = any (c_fn) and pr.prosecdef and pr.proname <> 'fn_nomina_al_libro'
+           where pr.pronamespace = 'public'::regnamespace and pr.proname = any (c_fn) and pr.prosecdef
+             and pr.proname not in ('fn_nomina_al_libro', 'fn_nomina_horas_con_pago')
           union all
           select 'el puente al libro ya no es un trigger con los permisos del dueño de la base'
             from pg_catalog.pg_proc pr
            where pr.pronamespace = 'public'::regnamespace and pr.proname = 'fn_nomina_al_libro'
              and (not pr.prosecdef or pr.prorettype <> 'trigger'::regtype)
+          union all
+          -- (la marca sin dinero que c10 y c12 leen sin el código —Fase 11b—: corre con los permisos del dueño de la base, y por
+          -- eso su forma está fijada: sin argumentos, en SQL —no arma consultas—, con su search_path, y devuelve SOLO el reporte
+          -- de horas, su corrida y su día de pago. Con otra forma ya no es la que se revisó: podría sacar dinero de una nómina
+          -- sin el código.)
+          select 'la marca de las horas con pago (la que se lee sin el código) ya no devuelve solo el reporte de horas, su corrida y su día de pago'
+            from pg_catalog.pg_proc pr
+           where pr.pronamespace = 'public'::regnamespace and pr.proname = 'fn_nomina_horas_con_pago'
+             and (pr.pronargs <> 0 or not pr.proretset or pr.provolatile <> 's'
+                  or pr.prolang <> (select l.oid from pg_catalog.pg_language l where l.lanname = 'sql')
+                  or pr.proargnames is distinct from array['horas_id', 'corrida_id', 'dia_pago']::text[]
+                  or pr.proallargtypes is distinct from array['bigint'::regtype, 'uuid'::regtype, 'date'::regtype]::oid[]
+                  or not coalesce(pr.proconfig @> array['search_path=public, pg_temp'], false))
           union all
           select format('%s la puede ejecutar %s', pr.proname, g.r)
             from pg_catalog.pg_proc pr cross join (values ('anon'), ('service_role')) g(r)
@@ -6659,12 +7598,14 @@ begin
 
   orden := 180; control := 'nómina: cada cargo de Gusto del mes casado con su nómina'; nivel := 'detiene';
   if v_mes then
-    select count(*), coalesce(sum(g.monto), 0),
-           fn_nomina_lista(array_agg(format('%s del %s', fn_nomina_usd(g.monto), fn_nomina_dia(g.fecha)) order by g.fecha, g.movimiento_id), 600)
-      into v_n, v_s, v_txt from fn_nomina_cargos() g where g.estado = 'pendiente' and g.fecha between p.desde and p.hasta;
+    -- (13-nov, la revisión de la Fase 11b: SIN IMPORTES. Esta fila la guarda el cierre y sale al teléfono, y el cargo del neto
+    -- de una nómina de una sola persona —un bono— es lo que cobró esa persona: cuántos son y de qué días)
+    select count(*),
+           fn_nomina_lista(array_agg(format('el del %s', fn_nomina_dia(g.fecha)) order by g.fecha, g.movimiento_id), 600)
+      into v_n, v_txt from fn_nomina_cargos() g where g.estado = 'pendiente' and g.fecha between p.desde and p.hasta;
     ok := v_n = 0;
     detalle := case when v_n = 0 then 'Ningún cargo de Gusto del mes espera en el banco.'
-                    else format('%s cargo(s) de Gusto del mes por %s salieron del banco y no están en el libro: %s.', v_n, fn_nomina_usd(v_s), v_txt) end;
+                    else format('%s cargo(s) de Gusto del mes salieron del banco y no están en el libro: %s.', v_n, v_txt) end;
     que_hacer := case when v_n > 0 then 'Contabilidad → Nómina → Cargos de Gusto: cada uno se casa con lo que su nómina dejó por pagar (sube y '
                                         'postea antes su archivo si falta), o se dice que es la cuota mensual.' end;
   else

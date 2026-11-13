@@ -71,6 +71,51 @@
 --   · la marca de versión sube a 2026092601 (c6 la pide). Su prueba: la 119
 --     de c3-pruebas.sql.
 --
+-- CAMBIO PARA LA NÓMINA (c15, la Fase 11b, 13-nov-2026): EL DEVENGO ESTÁNDAR
+-- DE UN MES CON NÓMINA. Mínimo, y sin tocar un asiento ni un dato: cambian
+-- el plan del devengo, su cierre y su control; se añade una función interna
+-- (fn_puente_devengo_corte). Volver a pegar este archivo no mueve nada de lo
+-- que ya está en el libro (un devengo vivo de un mes sin nómina conserva su
+-- firma: sigue «al día»).
+--   · POR QUÉ. Un mes con journal de nómina no se devengaba (MX008): no se
+--     sabía qué horas había pagado cada journal, y devengarlas contaba dos
+--     veces la mano de obra. Con la nómina de Gusto en el libro (c15, desde
+--     enero de 2027) eso dejaba TODOS los meses sin devengo, y lo trabajado
+--     al final de cada mes —que se paga el mes siguiente— fuera de su mes.
+--   · QUÉ CAMBIA. El corte es hora por hora y a la fecha del fin de mes: la
+--     hora que una nómina ya pagó con su journal fechado en ese mes o antes
+--     no se devenga; la que nadie ha pagado, o que una nómina paga con su
+--     journal fechado después, sí (se deshace sola el día 1, y la nómina
+--     del mes siguiente la paga una vez). Qué reporte de horas pagó qué
+--     corrida lo dice c15 con su marca sin dinero (fn_nomina_horas_con_pago:
+--     ni un importe ni un nombre; contesta igual con el código del teléfono
+--     que sin él, en el SQL Editor y en la ronda); la fecha de cada journal
+--     se lee del libro. c15 se pega después y es opcional (to_regprocedure y
+--     execute): sin c15, todo como antes.
+--   · LO QUE NO CAMBIA. Un journal de nómina que no dice qué horas pagó (el
+--     del proveedor anterior, a mano; los de c15 mientras su marca no esté o
+--     no conteste) deja el mes sin devengo, como antes (MX008, y dice qué
+--     hacer); un devengo que convive con uno así sigue en rojo, y el mes no
+--     se cierra con los dos. El control «mano de obra» no cambia.
+--   · EL CONTROL «devengo» dice, además, cuándo un devengo vivo cuenta horas
+--     que una nómina ya pagó (la nómina llegó después): cuántas y con qué
+--     journal; fn_horas_devengar lo pone al día (c15 lo llama solo al
+--     postear), y el mes no se cierra así.
+--   · EL CONTROL CALCULA EL PLAN DE CADA MES UNA SOLA VEZ (la revisión final
+--     de la Fase 11b, el mismo 13-nov). Al contar las horas del devengo que
+--     una nómina ya pagó, el plan del mes se volvía a calcular una vez por
+--     cada reporte de horas devengado, y por cada mes devengado alguna vez
+--     (siguen «vivos»): con dos meses de 1,440 reportes, 38 s (el tope de la
+--     API son 8; con el c3 de antes del corte, 0.1 s), y se caían el control
+--     de los puentes, la fila del cierre que lo mira y la ronda. Ahora el
+--     plan de cada mes se calcula una vez (materializado): 0.1 s.
+--   · La marca de versión sube a 2026111301. Sus pruebas: la 74 (ya vale con
+--     una nómina de verdad en el mes siguiente) y de la 121 a la 126 de
+--     c3-pruebas.sql; con nóminas de verdad, pruebas/conta/c3-nomina.sh (y
+--     su escena 9b, el mes grande: el control dentro del tope de la API); y
+--     el devengo a la vez que una nómina, las escenas 10 y 11 de
+--     pruebas/conta/c3-concurrencia.sh.
+--
 -- =====================================================================
 -- EL CONTRATO DE LOS PUENTES (lo siguen todos)
 -- =====================================================================
@@ -323,14 +368,19 @@
 --     cambia, se vuelve a preguntar. El control duplicados vigila lo que
 --     ya está en el libro (y los cobros: el mismo depósito dos veces).
 -- 16. LA MANO DE OBRA ESTÁNDAR NO SE CUENTA DOS VECES. El devengo de cierre
---     es solo lo trabajado y todavía no pagado. Hasta que f11 traiga el
---     «pagado hasta» de cada corrida, un mes que ya tiene journal de
---     nómina no se devenga (MX008), y un devengo que convive con un
---     journal del mismo mes sale en rojo (control devengo); volver a
---     devengar lo deshace. Un mes no se CIERRA con su devengo así (ni con
---     uno que ya no es el de las horas aprobadas): el cierre lo para y dice
---     cómo ponerlo al día, que es cuando todavía se puede. Y si aun así un
---     mes cerrado quedó con devengo y journal juntos, el control lo sigue
+--     es solo lo trabajado y todavía no pagado. Desde el 13-nov-2026 (la
+--     nómina de c15) el corte es hora por hora y a la fecha del fin de mes:
+--     la hora que una nómina ya pagó con su journal fechado en ese mes o
+--     antes no se devenga; la que nadie ha pagado, o que una nómina paga
+--     con fecha posterior, sí (y se deshace sola el día 1). Un mes con un
+--     journal de nómina que no dice qué horas pagó (el del proveedor
+--     anterior; los de c15 sin su marca) no se devenga (MX008), y un
+--     devengo que convive con un journal así, o que cuenta horas que una
+--     nómina ya pagó, sale en rojo (control devengo); volver a devengar lo
+--     deshace o lo pone al día. Un mes no se CIERRA con su devengo así (ni
+--     con uno que ya no es el de las horas aprobadas): el cierre lo para y
+--     dice cómo ponerlo al día, que es cuando todavía se puede. Y si aun
+--     así un mes cerrado quedó con el doble dentro, el control lo sigue
 --     diciendo en rojo, con el ajuste que va en el mes abierto.
 -- 17. LA NOTA DE CRÉDITO SALDA LA FACTURA COMO ESTÁ HOY: lo que su partida
 --     debe en cada cuenta de cobrar (1110 y 1120, con su obra, también
@@ -426,7 +476,8 @@
 --   MX008  al puente le falta algo para contabilizar lo que se le pide a
 --          propósito (un cobro a una factura que no está en el libro, una
 --          nota de crédito de una factura con cobros o movida a mano, un
---          anticipo que no alcanza, un devengo en un mes con nómina, anular
+--          anticipo que no alcanza, un devengo en un mes cuyo journal de
+--          nómina no dice qué horas pagó (o sin nada por devengar), anular
 --          un papel cuyo asiento usa una cuenta inactiva, el mismo depósito
 --          otra vez, aprobar unas horas que ya no son las que se vieron…).
 --          En los triggers no sale: va a la bandeja. Y cerrar un mes con su
@@ -6575,24 +6626,120 @@ grant  execute on function public.fn_horas_aprobar(uuid, date, date, jsonb) to a
 --     salario por la nómina; su parte de obra es 5001, del journal (f11),
 --     nunca un sueldo devengado por horas × tarifa. Se cuentan aparte
 --     (fuera: oficial).
---   · Su firma lleva cada hora aprobada con su obra, su CO y su fase: si
+--   · Su firma lleva cada hora que entra con su obra, su CO y su fase: si
 --     unas horas cambian de obra (y se vuelven a aprobar), el devengo
 --     cambia; si no cambió nada, volver a llamarlo no hace nada.
 --   · Si cambió, dentro del mes, lo corrige (reverso en su fecha, que anula
 --     también su reverso del día 1, y el devengo nuevo). Si ya no queda
---     ninguna hora aprobada, lo deshace. Con el mes cerrado, ya no: ya se
---     deshizo solo.
---   · Solo lo trabajado y TODAVÍA NO PAGADO. El journal de nómina del
---     proveedor (origen nomina…, f11) es la única fuente de dólares de 5000
---     y ya pagó sus horas: devengarlas otra vez contaba dos veces la mano de
---     obra del mes (y dejaba en 2210 sueldos «por pagar» ya pagados; en
---     diciembre, pasaba costo de un año al otro). El corte bueno es el
---     «pagado hasta» de cada corrida, que trae f11. Hasta entonces, un mes
---     que ya tiene journal de nómina NO se devenga (MX008), y si el journal
---     llega después del devengo, volver a devengar lo deshace. El corte (el
---     journal del mes, o que no hay) va en la firma y en la procedencia.
+--     ninguna hora que devengar, lo deshace. Con el mes cerrado, ya no: ya
+--     se deshizo solo.
+--   · Solo lo trabajado y TODAVÍA NO PAGADO. El journal de nómina (origen
+--     nomina…) es la única fuente de dólares de 5000 y ya pagó sus horas:
+--     devengarlas otra vez contaba dos veces la mano de obra del mes (y
+--     dejaba en 2210 sueldos «por pagar» ya pagados; en diciembre, pasaba
+--     costo de un año al otro). Hasta el 13-nov-2026 un mes con journal de
+--     nómina no se devengaba (MX008): no se sabía qué horas había pagado.
+--     Desde la Fase 11b (la nómina de c15) EL CORTE ES HORA POR HORA Y A LA
+--     FECHA DEL FIN DE MES (fn_puente_devengo_corte, abajo):
+--       - la hora que una nómina ya pagó, con su journal en el libro con
+--         fecha de ese mes o de antes, NO entra: su costo real ya está en
+--         5000;
+--       - la hora trabajada en el mes que ninguna nómina ha pagado, o que
+--         una nómina paga con su journal fechado DESPUÉS del fin de mes,
+--         ENTRA: el mes lleva su costo a estándar, el devengo se deshace
+--         solo el día 1, y el journal del mes siguiente trae su costo real,
+--         una sola vez. Por eso el devengo de un mes no se mueve cuando
+--         llega la nómina del mes siguiente (diciembre devengado sigue
+--         igual con la nómina del 8 de enero, pague lo que pague);
+--       - no se usa el «pagado hasta» de la persona: una nómina no paga
+--         todas las horas de su período (las de diciembre de 2026 que se
+--         pagaron por Zelle no van en la del 8 de enero —el paso de 1099 a
+--         W-2—, y las que se aprueban tarde, tampoco). Se mira cada reporte
+--         de horas;
+--       - un journal de nómina del mes QUE NO DICE QUÉ HORAS PAGÓ deja el
+--         mes como antes, sin devengo (MX008, con lo que hay que hacer), y
+--         un devengo vivo que convive con él sigue saliendo en rojo: el del
+--         proveedor anterior (fn_banco_nomina de c6, a mano), uno con origen
+--         de nómina que no es de una corrida de c15, o los de c15 mientras
+--         su marca no esté (un c15 de antes del 13-nov) o no conteste.
+--     El corte queda escrito en el asiento: en la procedencia (corte_nomina)
+--     y, si dejó horas fuera, en su documento (cuántas y qué journal las
+--     pagó).
 -- El control devengo de fn_puentes_verificar compara cada devengo vivo con
--- las horas aprobadas de hoy, y lo marca si convive con un journal del mes.
+-- las horas aprobadas y sin pagar de hoy; dice si cuenta horas que una
+-- nómina ya pagó, y lo marca si convive con un journal que no dice qué pagó.
+
+-- EL CORTE DE LA NÓMINA (13-nov-2026, la Fase 11b). De unos reportes de
+-- horas (sus ids), cuáles tienen ya su PAGO REAL EN EL LIBRO con fecha hasta
+-- p_hasta, y qué asiento los pagó. Solo lee.
+--   · Qué reporte pagó qué corrida lo dice la nómina (c15) con su MARCA SIN
+--     DINERO, fn_nomina_horas_con_pago(): el reporte de horas, su corrida y
+--     su día de pago; ni un importe, ni un nombre. c15 SE PEGA DESPUÉS de
+--     este archivo y es opcional: aquí no se nombra nada suyo que rompa el
+--     pegado (to_regprocedure y execute). Sin c15, ninguna hora pagada: todo
+--     como antes.
+--   · CUÁNDO entró ese pago al libro se lee aquí, del libro: la fecha
+--     contable del journal vivo de esa corrida (origen nomina_corridas, su
+--     id). Con el día de pago en un mes ya cerrado, el journal entra el
+--     primer día del mes abierto (el documento tardío), y lo que cuenta es
+--     dónde está su costo.
+--   · LA MISMA RESPUESTA EN TODA SESIÓN. El devengo lo corre Edgar desde el
+--     SQL Editor, la nómina al postear (con el código del teléfono), y lo
+--     miran el control de los puentes desde la app (con el código o sin él),
+--     el cierre y la ronda de pg_cron. La marca contesta igual a todos (al
+--     dueño, sin pedir el código: no lleva dinero de nadie). Lo que la
+--     nómina guarda con el código (fn_nomina_cola, fn_nomina_horas_pagadas,
+--     fn_nomina_pagado_hasta: llevan lo de cada persona) aquí NO se lee: sin
+--     el código contestarían «nada», el devengo daría por sin pagar lo ya
+--     pagado y lo contaría otra vez, y el control saldría en rojo o en verde
+--     según quién mirara.
+--   · SI LA MARCA NO ESTÁ O NO CONTESTA, no se supone nada: lo dice
+--     («marca»: no_esta | ok | error) y el plan del devengo trata los
+--     journals de c15 del mes como los de antes: no dicen qué pagaron.
+-- Devuelve {marca, error, pagadas: [{horas_id, asiento, fecha}]}.
+create or replace function public.fn_puente_devengo_corte(p_ids bigint[], p_hasta date)
+returns jsonb
+language plpgsql
+stable
+set search_path = public, pg_temp
+as $$
+declare
+  v_marca text := 'no_esta';
+  v_error text;
+  v_h     bigint[] := '{}';
+  v_c     uuid[]   := '{}';
+  v_pag   jsonb;
+begin
+  if to_regprocedure('public.fn_nomina_horas_con_pago()') is not null then
+    -- (leída entera a dos listas antes de usar nada: si la lectura falla, no
+    -- queda media respuesta)
+    begin
+      execute 'select coalesce(array_agg(n.horas_id::bigint), ''{}''), coalesce(array_agg(n.corrida_id::uuid), ''{}'') '
+           || 'from public.fn_nomina_horas_con_pago() n '
+           || 'where n.horas_id = any ($1) and n.corrida_id is not null'
+         into v_h, v_c
+        using coalesce(p_ids, '{}'::bigint[]);
+      v_marca := 'ok';
+    exception when others then
+      v_marca := 'error';
+      v_error := sqlstate || ': ' || left(sqlerrm, 200);
+      v_h := '{}';
+      v_c := '{}';
+    end;
+  end if;
+  select coalesce(jsonb_agg(jsonb_build_object('horas_id', q.h, 'asiento', q.numero, 'fecha', q.fecha) order by q.h), '[]'::jsonb)
+    into v_pag
+    from (select distinct on (u.h) u.h, a.numero, a.fecha_contable as fecha
+            from unnest(v_h, v_c) as u(h, c)
+            join asientos a on a.origen_tabla = 'nomina_corridas' and a.origen_id = u.c::text
+           where a.camino not in ('reverso', 'reverso_automatico')
+             and not exists (select 1 from asientos r where r.reversa_a = a.id and r.camino = 'reverso')
+             and a.fecha_contable <= p_hasta
+           order by u.h, a.fecha_contable, a.cadena_pos) q;
+  return jsonb_strip_nulls(jsonb_build_object('marca', v_marca, 'error', v_error, 'pagadas', v_pag));
+end $$;
+revoke execute on function public.fn_puente_devengo_corte(bigint[], date) from public, anon, authenticated, service_role;
+
 create or replace function public.fn_puente_devengo_plan(p_mes text)
 returns jsonb
 language plpgsql
@@ -6610,16 +6757,56 @@ declare
   v_firma   text;
   v_nomina  jsonb;
   v_nom_txt text;
+  -- (13-nov-2026: el corte de la nómina)
+  v_corte   jsonb;
+  v_pag     bigint[];
+  v_pag_n   int;
+  v_pag_h   numeric;
+  v_pag_j   jsonb;
+  v_pag_txt text;
+  v_pag_ids jsonb;
+  v_ciegos  jsonb;
+  v_cie_txt text;
+  v_ajenos  boolean;
+  v_por     text;
+  v_res     jsonb;
 begin
   select * into v_per from periodos where periodo = p_mes and tipo = 'mes';
   if not found then
     return null;
   end if;
-  -- El journal de nómina del mes (f11): sus asientos vivos, fechados en el
-  -- mes. Lo que pagó ya está en 5000.
-  select jsonb_agg(a.numero order by a.cadena_pos), string_agg(a.numero, ', ' order by a.cadena_pos)
-    into v_nomina, v_nom_txt
+  -- EL CORTE (13-nov-2026): de las horas aprobadas del mes, las que una
+  -- nómina ya pagó con su journal en el libro con fecha hasta el fin del
+  -- mes. No entran: su costo real ya está en 5000. (v_pag_n, v_pag_h,
+  -- v_pag_j y v_pag_ids: cuántos reportes, cuántas horas, qué journals y
+  -- cuáles, de las que sin el corte entrarían.)
+  v_corte := fn_puente_devengo_corte(
+               array(select h.id from horas h
+                      where h.fecha between v_per.desde and v_per.hasta and h.aprobado_el is not null),
+               v_per.hasta);
+  v_pag := array(select (x->>'horas_id')::bigint from jsonb_array_elements(v_corte->'pagadas') x);
+  select count(*), coalesce(sum(h.horas), 0), jsonb_agg(distinct x.asiento), string_agg(distinct x.asiento, ', '),
+         jsonb_agg(h.id order by h.id)
+    into v_pag_n, v_pag_h, v_pag_j, v_pag_txt, v_pag_ids
+    from jsonb_to_recordset(v_corte->'pagadas') as x(horas_id bigint, asiento text)
+    join horas h on h.id = x.horas_id
+    join costos_equipo ce on ce.usuario_id = h.usuario_id
+   where h.fecha between v_per.desde and v_per.hasta and h.aprobado_el is not null and h.proyecto_id is not null
+     and scale(h.horas) is not null and h.horas > 0 and h.horas <= 24
+     and not exists (select 1 from perfiles p where p.id = h.usuario_id and p.rol = 'dueno');
+  -- El journal de nómina del mes: sus asientos vivos, fechados en el mes. Y
+  -- de ellos, LOS QUE NO DICEN QUÉ HORAS PAGARON (v_ciegos): los que no son
+  -- de una corrida de la nómina de c15 (el del proveedor anterior, a mano; o
+  -- uno con ese origen que no lleva el id de una corrida), y los de c15
+  -- mientras su marca no esté o no conteste.
+  select jsonb_agg(a.numero order by a.cadena_pos), string_agg(a.numero, ', ' order by a.cadena_pos),
+         jsonb_agg(a.numero order by a.cadena_pos) filter (where b.ajeno or v_corte->>'marca' <> 'ok'),
+         string_agg(a.numero, ', ' order by a.cadena_pos) filter (where b.ajeno or v_corte->>'marca' <> 'ok'),
+         coalesce(bool_or(b.ajeno), false)
+    into v_nomina, v_nom_txt, v_ciegos, v_cie_txt, v_ajenos
     from asientos a
+    cross join lateral (select not (a.origen_tabla in ('nomina_corridas', 'nomina_burden')
+                                    and coalesce(a.origen_id, '') ~ '^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$') as ajeno) b
    where coalesce(a.origen_tabla, '') like 'nomina%'
      and a.fecha_contable between v_per.desde and v_per.hasta
      and a.camino not in ('reverso', 'reverso_automatico')
@@ -6629,7 +6816,8 @@ begin
   -- unas horas negativas pasaban costo de una obra a otra sin mover el
   -- total, y unas de miles inflaban el 5000; la guarda de horas ya no las
   -- deja entrar desde el equipo, y aquí quedan fuera, contadas, las que
-  -- hubiera escrito el dueño).
+  -- hubiera escrito el dueño). Y que ninguna nómina haya pagado ya al fin
+  -- del mes (el corte).
   with h as (
     select h.id, h.proyecto_id, nullif(btrim(h.co), '') as co, h.horas, ce.costo_hora
       from horas h
@@ -6637,6 +6825,7 @@ begin
      where h.fecha between v_per.desde and v_per.hasta and h.aprobado_el is not null and h.proyecto_id is not null
        and scale(h.horas) is not null and h.horas > 0 and h.horas <= 24
        and not exists (select 1 from perfiles p where p.id = h.usuario_id and p.rol = 'dueno')
+       and h.id <> all (v_pag)
   ), g as (
     select h.proyecto_id, h.co, sum(h.horas) as horas, round(sum(h.horas * h.costo_hora), 2) as monto
       from h group by h.proyecto_id, h.co
@@ -6655,7 +6844,8 @@ begin
     from horas h join costos_equipo ce on ce.usuario_id = h.usuario_id
    where h.fecha between v_per.desde and v_per.hasta and h.aprobado_el is not null and h.proyecto_id is not null
      and scale(h.horas) is not null and h.horas > 0 and h.horas <= 24
-     and not exists (select 1 from perfiles p where p.id = h.usuario_id and p.rol = 'dueno');
+     and not exists (select 1 from perfiles p where p.id = h.usuario_id and p.rol = 'dueno')
+     and h.id <> all (v_pag);
   select jsonb_build_object(
            'sin_aprobar', count(*) filter (where h.aprobado_el is null),
            'sin_obra',    count(*) filter (where h.aprobado_el is not null and h.proyecto_id is null),
@@ -6670,31 +6860,68 @@ begin
     into v_fuera
     from horas h
    where h.fecha between v_per.desde and v_per.hasta;
+  -- (las que ya pagó una nómina, contadas con lo demás que queda fuera; la
+  -- clave solo va si hay alguna: sin nómina, «fuera» es el de siempre)
+  if v_pag_n > 0 then
+    v_fuera := v_fuera || jsonb_build_object('pagadas', v_pag_n);
+  end if;
+  -- Lo que el plan dice del corte (no va en la firma: la firma son las horas
+  -- que entran). «ids»: los reportes que entrarían y ya pagó una nómina.
+  v_res := jsonb_strip_nulls(jsonb_build_object(
+             'nomina', v_nomina,
+             'corte', jsonb_strip_nulls(jsonb_build_object(
+                        'marca', v_corte->>'marca', 'error', v_corte->>'error', 'hasta', v_per.hasta,
+                        'reportes', v_pag_n, 'horas', v_pag_h, 'journals', v_pag_j, 'ids', v_pag_ids))));
   v_firma := md5(coalesce(v_detalle, '[]'::jsonb)::text);
-  if v_nomina is not null then
-    -- Con journal de nómina en el mes: no se devenga (ver arriba). Su firma
-    -- lleva el journal: un devengo que ya estaba deja de ser «el de hoy».
+  if v_ciegos is not null then
+    -- Con un journal de nómina en el mes que no dice qué horas pagó: no se
+    -- devenga (ver arriba). Su firma lleva el journal: un devengo que ya
+    -- estaba deja de ser «el de hoy».
+    v_por := case when v_ajenos
+                  then 'no viene de la página de Nómina (es del proveedor anterior, registrado a mano, o entró por otro camino). '
+                       'Un mes así no se devenga.'
+                  when v_corte->>'marca' = 'no_esta'
+                  then 'la nómina de esta base todavía no lo dice. Vuelve a pegar c15-nomina.sql (su versión más nueva, la que '
+                       'dice qué horas pagó cada nómina) y devenga otra vez: entrará solo lo trabajado y todavía sin pagar.'
+                  else format('la nómina no pudo contestarlo (%s). Vuelve a pegar c15-nomina.sql y devenga otra vez; si sigue '
+                              'igual, avisa.', coalesce(v_corte->>'error', 'sin detalle')) end;
     v_firma := md5(jsonb_build_object('horas', coalesce(v_detalle, '[]'::jsonb), 'nomina', v_nomina)::text);
-    return jsonb_build_object(
+    return v_res || jsonb_build_object(
       'accion', 'no_aplica', 'codigo', 'nomina_en_el_mes', 'firma', v_firma, 'total', 0, 'fuera', v_fuera, 'nomina', v_nomina,
+      'ciegos', v_ciegos,
       'documento', jsonb_build_object('mes', p_mes, 'horas', coalesce(v_detalle, '[]'::jsonb), 'nomina', v_nomina),
       'motivo', format('El mes %s ya tiene journal de nómina (%s): ya pagó parte de estas horas, y el devengo estándar las contaría '
                        'dos veces (en 5000 por el journal y otra vez por el devengo, con un 2210 que ya se pagó). El devengo de '
-                       'cierre es solo lo trabajado y todavía no pagado; ese corte (el «pagado hasta» de cada corrida) lo trae f11. '
-                       'Hasta entonces, un mes con nómina no se devenga.', p_mes, v_nom_txt));
+                       'cierre es solo lo trabajado y todavía no pagado, y aquí no se sabe qué horas pagó ese journal: %s',
+                       p_mes, v_cie_txt, v_por));
   end if;
   if v_total = 0 then
-    return jsonb_build_object(
+    return v_res || jsonb_build_object(
       'accion', 'no_aplica', 'codigo', 'sin_horas', 'firma', v_firma, 'total', 0, 'fuera', v_fuera,
       'documento', jsonb_build_object('mes', p_mes, 'horas', coalesce(v_detalle, '[]'::jsonb)),
-      'motivo', format('No hay horas aprobadas con obra y con costo en %s (fuera: %s): no hay nada que devengar.', p_mes, v_fuera));
+      'motivo', case when v_pag_n > 0
+                     then format('En %s no queda nada trabajado y sin pagar: sus %s h aprobadas con obra y con costo (%s '
+                                 'reporte(s)) ya las pagó la nómina (%s), con fecha de ese mes o de antes, y su costo real ya '
+                                 'está en el libro (fuera: %s). No hay nada que devengar.',
+                                 p_mes, trim_scale(v_pag_h), v_pag_n, v_pag_txt, v_fuera)
+                     else format('No hay horas aprobadas con obra y con costo en %s (fuera: %s): no hay nada que devengar.',
+                                 p_mes, v_fuera) end);
   end if;
-  return jsonb_build_object(
+  return v_res || jsonb_build_object(
     'accion', 'postear', 'firma', v_firma, 'fecha_documento', v_per.hasta, 'total', v_total, 'fuera', v_fuera,
-    'documento', jsonb_build_object('mes', p_mes, 'horas', v_detalle),
+    'documento', jsonb_build_object('mes', p_mes, 'horas', v_detalle)
+                 || case when v_pag_n > 0
+                         then jsonb_build_object('pagadas', jsonb_build_object('reportes', v_pag_n, 'horas', v_pag_h,
+                                                                               'journals', v_pag_j))
+                         else '{}'::jsonb end,
     'asiento', jsonb_build_object(
-      'descripcion', format('Devengo ESTÁNDAR de mano de obra de %s (horas aprobadas × costo por hora; se reversa solo el día 1). '
-                            'No es la nómina real: esa es del journal del proveedor.', p_mes),
+      'descripcion', format('Devengo ESTÁNDAR de mano de obra de %s (horas aprobadas × costo por hora; se reversa solo el día 1). ',
+                            p_mes)
+                     || case when v_pag_n > 0
+                             then format('Solo lo trabajado y todavía sin pagar al %s: fuera %s h que la nómina ya había pagado '
+                                         '(%s). ', v_per.hasta, trim_scale(v_pag_h), v_pag_txt)
+                             else '' end
+                     || 'No es la nómina real: esa es del journal del proveedor.',
       'reversible', true,
       'lineas', v_lineas || jsonb_build_array(jsonb_build_object('cuenta', v_haber, 'monto', (-v_total)::text,
                                                                   'memo', 'ESTÁNDAR: sueldos devengados del mes')),
@@ -6703,8 +6930,19 @@ begin
                                         'regla', 'horas aprobadas × costos_equipo.costo_hora, por obra y CO; sin las del dueño '
                                                  '(oficial: su parte de obra es del journal, 5001) ni las de fuera de medida '
                                                  '(de más de 0 a 24 por reporte)',
-                                        'corte_nomina', 'sin journal de nómina en el mes al devengar: todas sus horas aprobadas '
-                                                        'están sin pagar (f11 traerá el «pagado hasta» de cada corrida)',
+                                        'corte_nomina',
+                                          case when v_pag_n > 0
+                                               then format('solo lo trabajado y todavía sin pagar al %s: fuera %s reporte(s), %s h, '
+                                                           'que la nómina ya había pagado con su journal fechado hasta ese día (%s); '
+                                                           'entran las aprobadas que nadie había pagado a esa fecha, también las que '
+                                                           'una nómina paga después (su costo real entra con ella, y este devengo se '
+                                                           'deshace el día 1)', v_per.hasta, v_pag_n, trim_scale(v_pag_h), v_pag_txt)
+                                               when v_corte->>'marca' = 'ok'
+                                               then format('ninguna de sus horas aprobadas tenía el pago de una nómina en el libro '
+                                                           'al %s (lo dice la nómina, reporte por reporte): todas están sin pagar',
+                                                           v_per.hasta)
+                                               else 'sin journal de nómina en el mes al devengar: todas sus horas aprobadas '
+                                                    'están sin pagar' end,
                                         'fuera', v_fuera)));
 end $$;
 revoke execute on function public.fn_puente_devengo_plan(text) from public, anon, authenticated, service_role;
@@ -6738,24 +6976,32 @@ begin
   perform 1 from periodos for share;
   v_plan := fn_puente_devengo_plan(p_mes);
   -- Sin horas que devengar: si no había devengo, no hay nada que hacer; si
-  -- lo había (se retiraron las aprobaciones), se deshace.
+  -- lo había (se retiraron las aprobaciones, o una nómina pagó dentro del
+  -- mes todas las que llevaba), se deshace.
   if v_plan->>'accion' <> 'postear' and (fn_puente_vivo('horas_devengo', p_mes)).id is null then
     raise exception using errcode = 'MX008', message = v_plan->>'motivo';
   end if;
   v_res := fn_puente_aplicar('horas_devengo', p_mes, v_plan, 'devengar');
-  return v_res || jsonb_build_object('total', v_plan->'total', 'fuera', v_plan->'fuera');
+  -- (13-nov-2026: «pagadas» dice lo que el corte de la nómina dejó fuera —
+  -- cuántos reportes, cuántas horas y qué journals—; solo va si hay algo.)
+  return v_res || jsonb_build_object('total', v_plan->'total', 'fuera', v_plan->'fuera')
+               || case when coalesce((v_plan->'corte'->>'reportes')::int, 0) > 0
+                       then jsonb_build_object('pagadas', (v_plan->'corte') - 'ids' - 'marca' - 'hasta')
+                       else '{}'::jsonb end;
 end $$;
 revoke execute on function public.fn_horas_devengar(text) from public, anon, authenticated, service_role;
 grant  execute on function public.fn_horas_devengar(text) to authenticated;
 
 -- EL CIERRE DE UN MES MIRA SU DEVENGO (cabecera, punto 16). Un mes no se
 -- cierra con un devengo estándar que ya no es el de hoy: el que convive con
--- el journal de nómina del mes (contaría dos veces esas horas: el 5000 del
--- mes al doble, y el siguiente sin ellas por el reverso del día 1) o el de
--- unas horas aprobadas que cambiaron. Abierto, fn_horas_devengar lo pone al
--- día o lo deshace; cerrado, ya no (MX002), y el control devengo lo tendría
--- que decir para siempre. Vale para fn_cerrar_periodo y para el SQL Editor
--- (es un trigger de periodos, no de la función). Lee lo mismo que
+-- un journal de nómina del mes que no dice qué horas pagó (contaría dos
+-- veces esas horas: el 5000 del mes al doble, y el siguiente sin ellas por
+-- el reverso del día 1), el de unas horas aprobadas que cambiaron, o el que
+-- cuenta horas que una nómina pagó después de devengarlo, dentro del mes
+-- (13-nov-2026: su firma ya no es la de hoy). Abierto, fn_horas_devengar lo
+-- pone al día o lo deshace; cerrado, ya no (MX002), y el control devengo lo
+-- tendría que decir para siempre. Vale para fn_cerrar_periodo y para el SQL
+-- Editor (es un trigger de periodos, no de la función). Lee lo mismo que
 -- fn_horas_devengar.
 create or replace function public.fn_puente_periodos_devengo()
 returns trigger
@@ -6782,13 +7028,15 @@ begin
       message = format('El mes %s no se cierra con su devengo estándar (%s) y el journal de nómina del mes (%s) juntos: contaría '
                        'dos veces esas horas, y cerrado ya no se deshace. Deshazlo antes: select fn_horas_devengar(%L); y '
                        'ciérralo después.', new.periodo, v_vivo.numero,
-                       (select string_agg(n.v, ', ') from jsonb_array_elements_text(v_plan->'nomina') n(v)), new.periodo);
+                       (select string_agg(n.v, ', ') from jsonb_array_elements_text(coalesce(v_plan->'ciegos', v_plan->'nomina')) n(v)),
+                       new.periodo);
   end if;
   if v_vivo.procedencia->>'firma' is distinct from v_plan->>'firma' then
     raise exception using errcode = 'MX008',
       message = format('El mes %s no se cierra con su devengo estándar (%s) desfasado: las horas aprobadas del mes cambiaron '
-                       'después de devengarlo, y cerrado ya no se pone al día. Ponlo al día antes: select '
-                       'fn_horas_devengar(%L); (lo rehace con las horas de hoy, o lo deshace si ya no hay), y ciérralo después.',
+                       'después de devengarlo (o una nómina pagó parte de ellas), y cerrado ya no se pone al día. Ponlo al día '
+                       'antes: select fn_horas_devengar(%L); (lo rehace con las horas de hoy que siguen sin pagar, o lo deshace '
+                       'si ya no hay), y ciérralo después.',
                        new.periodo, v_vivo.numero, new.periodo);
   end if;
   return new;
@@ -7256,11 +7504,12 @@ grant  execute on function public.fn_puentes_antes_del_corte(text, bigint, text)
 --                dos veces (en la apertura y por su puente: recibos,
 --                trabajos externos y facturas)
 --   devengo      cada devengo estándar vivo de un mes abierto es el de las
---                horas aprobadas de hoy, y el mes no tiene journal de
---                nómina (si no, fn_horas_devengar lo pone al día o lo
---                deshace); y ningún mes CERRADO con devengo y journal
---                juntos sin el asiento que lo corrige (que lo nombra en su
---                motivo)
+--                horas aprobadas y sin pagar de hoy: no cuenta horas que
+--                una nómina ya pagó dentro del mes, y el mes no tiene un
+--                journal de nómina que no diga qué horas pagó (si no,
+--                fn_horas_devengar lo pone al día o lo deshace); y ningún
+--                mes CERRADO con ese doble dentro sin el asiento que lo
+--                corrige (que lo nombra en su motivo)
 --   duplicados   ningún recibo dos veces en el libro: la misma foto en la
 --                misma obra o por el mismo total (un ticket repartido entre
 --                obras no cuenta), o el
@@ -7666,32 +7915,58 @@ begin
   return next;
 
   -- devengo: el estándar vivo de cada mes abierto, contra las horas
-  -- aprobadas de hoy (las mismas cuentas que haría fn_horas_devengar).
-  -- Y si el mes ya tiene journal de nómina, el devengo cuenta dos veces lo
-  -- que ese journal pagó (el 5000 del mes, journal más devengo, por encima
-  -- de las horas): se deshace. Un mes CERRADO así (el cierre ya no lo deja,
-  -- pero pudo pasar antes) sigue en rojo: el doble ya no se deshace con
-  -- fn_horas_devengar, y el mensaje dice el ajuste; queda en verde cuando
-  -- un asiento vivo lo corrige y lo nombra en su motivo (el número del
-  -- devengo). Un mes cerrado cuyas horas cambiaron DESPUÉS
-  -- de cerrarlo no pone el control en rojo (su devengo era el de entonces,
-  -- y ya se reversó el día 1): se enseña en «cerrados_con_horas_cambiadas».
+  -- aprobadas y sin pagar de hoy (las mismas cuentas que haría
+  -- fn_horas_devengar). Si cuenta horas que una nómina ya pagó dentro del
+  -- mes (13-nov-2026: la nómina llegó después del devengo), lo dice así, con
+  -- cuántas y qué journal: están dos veces, y fn_horas_devengar lo pone al
+  -- día. Y si el mes tiene un journal de nómina que no dice qué horas pagó,
+  -- el devengo cuenta dos veces lo que ese journal pagó (el 5000 del mes,
+  -- journal más devengo, por encima de las horas): se deshace. Un mes
+  -- CERRADO con el doble dentro (el cierre ya no lo deja, pero pudo pasar
+  -- antes) sigue en rojo: ya no se deshace con fn_horas_devengar, y el
+  -- mensaje dice el ajuste; queda en verde cuando un asiento vivo lo corrige
+  -- y lo nombra en su motivo (el número del devengo). Un mes cerrado cuyas
+  -- horas cambiaron DESPUÉS de cerrarlo no pone el control en rojo (su
+  -- devengo era el de entonces, y ya se reversó el día 1): se enseña en
+  -- «cerrados_con_horas_cambiadas».
+  -- (13-nov-2026, la revisión final de la Fase 11b) EL PLAN DE CADA MES SE
+  -- CALCULA UNA VEZ (pv, materializada). Con el plan en una subconsulta sin
+  -- materializar, la base lo volvía a calcular en cada sitio donde se
+  -- nombraba; y desde el corte de la nómina se nombra dentro de la cuenta de
+  -- las horas del documento del devengo: UNA VEZ POR CADA REPORTE DE HORAS
+  -- DEVENGADO. El control tardaba (reportes del mes × lo que tarda un plan)
+  -- por cada mes devengado alguna vez —siguen «vivos» para siempre—: medido
+  -- en el banco con dos meses devengados de 1,440 reportes, 38 s (el tope de
+  -- la API son 8), contra 0.1 s con el c3 de antes del corte; y con él se
+  -- caían el control de los puentes, la fila del cierre que lo mira y la
+  -- ronda. Así, 0.2 s. Lo vigila pruebas/conta/c3-nomina.sh (su escena del
+  -- mes grande).
+  with pv as materialized (
+         select p.periodo, p.estado, v.id, v.numero, v.procedencia, fn_puente_devengo_plan(p.periodo) as plan
+           from periodos p
+           cross join lateral fn_puente_vivo('horas_devengo', p.periodo) v
+          where p.tipo = 'mes' and v.id is not null)
   select coalesce(jsonb_agg(case when x.estado = 'cerrado'
                                  then format('el devengo de %s (%s) se quedó en el mes cerrado junto con el journal de nómina '
-                                             'del mes (%s): %s tiene esas horas dos veces en 5000 (y su reverso del día 1 las '
+                                             'del mes (%s)%s: %s tiene esas horas dos veces en 5000 (y su reverso del día 1 las '
                                              'saca del mes siguiente). El mes ya no se toca: si el mes siguiente es del mismo '
                                              'año, el año cuadra y solo el reparto por mes quedó mal; si es de otro año, el '
                                              'año del devengo quedó con ese costo de más y lo ajusta el CPA en el mes abierto. '
                                              'El asiento que lo corrija (o que lo deje dicho) nombra el devengo en su motivo '
-                                             '(«corrige el devengo %s»), y esto queda en verde.', x.periodo, x.numero,
-                                             (select string_agg(n.v, ', ') from jsonb_array_elements_text(x.plan->'nomina') n(v)),
+                                             '(«corrige el devengo %s»), y esto queda en verde.', x.periodo, x.numero, x.journals,
+                                             case when x.plan->>'codigo' is distinct from 'nomina_en_el_mes'
+                                                  then format(', que ya había pagado %s h de las que devengó', trim_scale(x.doble_h))
+                                                  else '' end,
                                              x.periodo, x.numero)
                                  when x.plan->>'codigo' = 'nomina_en_el_mes'
                                  then format('el devengo de %s (%s) convive con el journal de nómina del mes (%s): cuenta dos veces '
                                              'las horas que ese journal ya pagó (en 5000, y en 2210 como por pagar). select '
-                                             'fn_horas_devengar(''%s''); lo deshace.', x.periodo, x.numero,
-                                             (select string_agg(n.v, ', ') from jsonb_array_elements_text(x.plan->'nomina') n(v)),
-                                             x.periodo)
+                                             'fn_horas_devengar(''%s''); lo deshace.', x.periodo, x.numero, x.journals, x.periodo)
+                                 when x.doble_n > 0
+                                 then format('el devengo de %s (%s) cuenta %s h que la nómina ya pagó dentro del mes (%s): están dos '
+                                             'veces en 5000 (y en 2210 como por pagar). select fn_horas_devengar(''%s''); lo pone '
+                                             'al día: deja solo lo trabajado y todavía sin pagar.', x.periodo, x.numero,
+                                             trim_scale(x.doble_h), x.journals, x.periodo)
                                  else format('el devengo de %s (%s) ya no es el de las horas aprobadas de hoy: select '
                                              'fn_horas_devengar(''%s'');', x.periodo, x.numero, x.periodo) end
                             order by x.periodo) filter (where x.falla), '[]'::jsonb),
@@ -7699,21 +7974,32 @@ begin
                                    'entonces y ya se reversó el día 1. Si el cambio importa, se ajusta en el mes abierto.',
                                    x.periodo, x.numero) order by x.periodo) filter (where x.cambiado), '[]'::jsonb)
     into v_malos, v_mas
-    from (select p.periodo, p.estado, v.numero, pl.plan,
-                 case when p.estado = 'abierto'
-                      then v.procedencia->>'firma' is distinct from pl.plan->>'firma' or pl.plan->>'codigo' = 'nomina_en_el_mes'
-                      else pl.plan->>'codigo' = 'nomina_en_el_mes'
+    from (select v.periodo, v.estado, v.numero, v.plan, db.n as doble_n, db.h as doble_h,
+                 -- (los journals que nombra el mensaje: los que no dicen qué
+                 -- pagaron o, con el corte, los que pagaron horas del devengo)
+                 (select string_agg(n.v, ', ')
+                    from jsonb_array_elements_text(case when v.plan->>'codigo' = 'nomina_en_el_mes'
+                                                        then coalesce(v.plan->'ciegos', v.plan->'nomina')
+                                                        else coalesce(v.plan->'corte'->'journals', '[]'::jsonb) end) n(v)) as journals,
+                 case when v.estado = 'abierto'
+                      then v.procedencia->>'firma' is distinct from v.plan->>'firma' or v.plan->>'codigo' = 'nomina_en_el_mes'
+                      else (v.plan->>'codigo' = 'nomina_en_el_mes' or db.n > 0)
                            and not exists (select 1 from asientos c
                                             where c.id <> v.id and position(v.numero in coalesce(c.motivo, '')) > 0
                                               and c.camino not in ('reverso', 'reverso_automatico')
                                               and not exists (select 1 from asientos r
                                                                where r.reversa_a = c.id and r.camino = 'reverso')) end as falla,
-                 p.estado = 'cerrado' and pl.plan->>'codigo' is distinct from 'nomina_en_el_mes'
-                   and v.procedencia->>'firma' is distinct from pl.plan->>'firma' as cambiado
-            from periodos p
-            cross join lateral fn_puente_vivo('horas_devengo', p.periodo) v
-            cross join lateral (select fn_puente_devengo_plan(p.periodo) as plan) pl
-           where p.tipo = 'mes' and v.id is not null) x;
+                 v.estado = 'cerrado' and v.plan->>'codigo' is distinct from 'nomina_en_el_mes' and db.n = 0
+                   and v.procedencia->>'firma' is distinct from v.plan->>'firma' as cambiado
+            from pv v
+            -- (13-nov-2026) las horas que el devengo vivo cuenta y que una
+            -- nómina ya pagó con fecha hasta el fin de ese mes (el corte del
+            -- plan de hoy, contra el documento del devengo)
+            cross join lateral (select count(*) as n,
+                                       coalesce(sum(case when d->>'horas' ~ '^[0-9]+(\.[0-9]+)?$' then (d->>'horas')::numeric end), 0) as h
+                                  from jsonb_array_elements(case when jsonb_typeof(v.procedencia->'documento'->'horas') = 'array'
+                                                                 then v.procedencia->'documento'->'horas' else '[]'::jsonb end) d
+                                 where coalesce(v.plan->'corte'->'ids', '[]'::jsonb) @> jsonb_build_array(d->'horas_id')) db) x;
   control := 'devengo';
   ok      := jsonb_array_length(v_malos) = 0;
   detalle := jsonb_build_object('fallan', v_malos, 'cerrados_con_horas_cambiadas', v_mas);
@@ -7971,19 +8257,22 @@ comment on function public.fn_cobro_devolver(uuid, date, text, text) is 'La devo
 comment on function public.fn_anticipo_aplicar(uuid, bigint, text, date, boolean) is 'Aplica el anticipo de un cobro a una factura de su obra, sin dinero nuevo (a su retención, 1120, con es_retencion).';
 comment on function public.fn_factura_anular(bigint, text, date) is 'Anula una factura emitida con su nota de crédito (NC-AAAA-NNNN): el espejo de su asiento.';
 comment on function public.fn_horas_aprobar(uuid, date, date, jsonb) is 'Aprueba las horas de un trabajador en un período, las que Edgar vio (ids, o reportes y horas): si hay otras, no aprueba nada. Horas, nunca dinero.';
-comment on function public.fn_horas_devengar(text)            is 'El devengo ESTÁNDAR opcional de un mes: Dr 5000 / Cr 2210 por horas aprobadas × costo por hora (sin las del dueño), reversible el día 1; sin horas, o con journal de nómina en el mes, no devenga (y deshace el que había).';
+comment on function public.fn_horas_devengar(text)            is 'El devengo ESTÁNDAR opcional de un mes: Dr 5000 / Cr 2210 por horas aprobadas × costo por hora (sin las del dueño), reversible el día 1. Solo lo trabajado y todavía sin pagar al fin del mes: las horas que una nómina (c15) ya pagó con su journal fechado en ese mes o antes no entran; las que paga después, sí. Sin horas que devengar, o con un journal de nómina en el mes que no dice qué horas pagó, no devenga (y deshace el que había).';
 comment on function public.fn_recibo_anular(bigint, text)     is 'Anula un recibo (estado anulado) y el puente lo reversa con el motivo. Es lo que lo saca de las listas de la app.';
 comment on function public.fn_externo_anular(bigint, text)    is 'Anula un trabajo externo (costo 0) y el puente lo reversa con el motivo.';
 
 
 -- La MARCA de esta versión (ver la cabecera, ronda 4 de c4): AAAAMMDDNN.
 -- Sube cuando una fase necesita un c3 más nuevo; c4 la lee de su texto.
+-- (2026111301, la Fase 11b: el devengo de un mes con nómina devenga solo lo
+-- que ninguna nómina pagó. La nómina, c15, puede mirarla para saber qué
+-- decir de lo trabajado y sin pagar de un mes.)
 create or replace function public.fn_puente_version()
 returns bigint
 language sql
 immutable
 set search_path = public, pg_temp
-as $$ select 2026092601::bigint $$;
+as $$ select 2026111301::bigint $$;
 revoke execute on function public.fn_puente_version() from public, anon, authenticated, service_role;
 
 

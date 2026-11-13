@@ -32,8 +32,12 @@
 --                     corrida frena hasta que se decida)
 --   ZZ Oficial Tres   7-oct 10 h obra A · 8-oct 10 h obra A (aprobadas; es el
 --                     accionista-oficial, de sueldo fijo)
--- Los nombres de la semilla vieja del banco (dos perfiles y tres obras) se
--- cambian por inventados: salen en las tablas de horas de la pantalla.
+-- Los nombres de la semilla vieja del banco (dos perfiles y tres obras, y sus
+-- clientes) se cambian por inventados: salen en las tablas de horas de la
+-- pantalla (y, desde la 11b, en el costo por obra y el WIP).
+-- (13-nov, Fase 11b) La obra A lleva su contrato en la ficha (de mentira):
+-- así entra al WIP (c12) y su aviso 170 enseña, con la nómina posteada, que
+-- las horas que pagó una nómina ya no cuentan como «sin costo en el libro».
 -- =====================================================================
 \set ON_ERROR_STOP 1
 \set QUIET 1
@@ -48,6 +52,10 @@ update perfiles set nombre = 'ZZ Equipo Tres' where id = '00000000-0000-4000-a00
 update proyectos set nombre = 'ZZ Casa Uno'    where id = 'casa-perez-k3m9';
 update proyectos set nombre = 'ZZ Oficina Dos' where id = 'oficina-nch-7xq2';
 update proyectos set nombre = 'ZZ Taller Tres' where id = 'taller-ruiz-5b2n';
+-- (13-nov, Fase 11b) y sus clientes: el costo por obra y el WIP de las costuras los enseñan
+update proyectos set cliente = 'ZZ Cliente Uno'  where id = 'casa-perez-k3m9';
+update proyectos set cliente = 'ZZ Cliente Dos'  where id = 'oficina-nch-7xq2';
+update proyectos set cliente = 'ZZ Cliente Tres' where id = 'taller-ruiz-5b2n';
 
 insert into auth.users (id, email) values
   (:'uno',  'c15-p1@c15-pruebas.invalid'),
@@ -66,6 +74,8 @@ insert into proyectos (id, tipo, nombre, estado) values
   ('c15-prueba-a', 'comercial', 'C15 PRUEBA Obra A', 'ejecucion'),
   ('c15-prueba-b', 'servicio',  'C15 PRUEBA Obra B', 'ejecucion')
 on conflict (id) do nothing;
+insert into finanzas_proyecto (proyecto_id, contrato, cobrado, presupuesto_materiales) values ('c15-prueba-a', 24000.00, 0, 3000.00)
+on conflict (proyecto_id) do nothing;
 
 insert into horas (id, fecha, usuario_id, proyecto_id, horas, co, notas, aprobado_por, aprobado_el) overriding system value values
   (-1510000101, '2026-10-06', :'uno',  'c15-prueba-a', 8,  null,    'c15-pantalla', '00000000-0000-4000-a000-000000000001', '2026-10-10 15:00+00'),

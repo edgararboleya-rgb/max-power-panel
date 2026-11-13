@@ -220,6 +220,23 @@
    en los ajustes, un TIN pegado en un campo de texto (no sale) y el ZIP+4 sin
    guion, la ayuda de la LLC de un socio, las 18 filas del control y el 23505 de
    dos pestañas en llano.
+   Y (13-nov, Fase 11b) LAS COSTURAS CON LA NÓMINA: las bases simuladas de la cédula
+   (pantalla-f12.json) y de la nómina (pantalla-f15.json) se sacan ahora de g15a con
+   las capas de la 11b del árbol pegadas (c3, c6, c10, c12, c13, c15 y c9 otra vez;
+   la prueba compara la huella de cada una), y la de la nómina lee además, en cada
+   escena de su cadena, lo que dicen las otras capas con una nómina de verdad dentro
+   (las claves «x…», con el código y sin él): se comprueba el costo por obra (las
+   horas que pagó la nómina «con pago real», «en Nómina» por fase y por persona, las
+   nóminas que pagaron horas de la obra, «cobra por nómina» en Personas; igual sin el
+   código), el aviso 170 del WIP, la Bandeja (el texto nuevo de c6 del cargo de Gusto,
+   el depósito de Gusto con «Casar con la nómina» y un Zelle a quien ya cobra por
+   nómina con su aviso), los Estados (el papel lo da la vista de c6, la línea 2250 con
+   el nombre solo con el código; con la c6 de antes, como antes), la cédula (2210 al
+   revés entre el cargo de Gusto y el día de pago, 2240 con lo que su nómina dejó por
+   pagar, y sin el código «con el código», nunca un rojo), y la Nómina («Importar»
+   apagado cuando no hay nada que importar y el aviso 75 sin el código), a 390, 820 y
+   1280 px. En la mentira escrita a mano, c10 trae el cuadre 70 y horas_nomina_90_dias
+   y el 170 del WIP el texto de la v3 (los del banco).
    Los datos son inventados (la forma es la de las vistas de c4, c6 y p1).
    Uso: NODE_PATH=/opt/node22/lib/node_modules node pruebas/conta/pantalla.js
    (con --fotos guarda capturas en el temporal del sistema, o en FOTOS_DIR:
@@ -1318,7 +1335,9 @@ const jPersonasVista = () => J.personas.map(p => {
   const pend = jPendientes().filter(f => f.usuario_id === p.usuario_id), reps = J.repartos.filter(r => r.usuario_id === p.usuario_id && r.estado === 'aplicado'), hs = J.horas.filter(x => x.u === p.usuario_id), cub = jHorasCubiertas();
   return { usuario_id: p.usuario_id, nombre: p.nombre, rol: p.rol, perfil_activo: true, registrada: p.registrada, activa: p.activa, patron: p.patron, cuenta_propia: null, cuenta: '5200', tarifa: p.tarifa, nota: p.nota, creado_el: p.creado_el, actualizado_el: p.creado_el,
     pagos_pendientes: pend.length, pagos_pendientes_monto: pend.reduce((s, f) => s + f.monto, 0), repartos: reps.length, repartido: reps.reduce((s, r) => s + r.monto, 0), ultimo_reparto: reps.length ? reps[reps.length - 1].creado_el : null,
-    horas_90_dias: hs.reduce((s, x) => s + x.horas, 0), horas_sin_pago: hs.filter(x => !cub.has(x.id)).reduce((s, x) => s + x.horas, 0) };
+    horas_90_dias: hs.reduce((s, x) => s + x.horas, 0), horas_sin_pago: hs.filter(x => !cub.has(x.id)).reduce((s, x) => s + x.horas, 0),
+    // (11b, c10 v3) la columna nueva, al final: las horas de 90 días que pagó una nómina (aquí no hay nómina en la base)
+    horas_nomina_90_dias: 0 };
 });
 // v_jornal_control (v2): sus 11 filas con los nombres y los textos de la base; 35, 70 y 80 son avisos. El 35 sale de las horas
 // tardías y el 80 de lo de la IA que siguen abiertas en un pago repartido (jIA); J.ctlRojo pone en rojo el 20 (un pago suelto)
@@ -1358,7 +1377,9 @@ const jCtlMargen = () => {
     { orden: 30, cuadre: 'margen: los conceptos de cada obra suman su costo', nivel: 'cuadre', ok: true, detalle: 'En cada obra, material + mano de obra + subcontratos + equipo + otros = su costo real; y jornales + nómina = su mano de obra real.' },
     { orden: 40, cuadre: 'margen: la mano de obra de jornales en el libro = los repartos aplicados', nivel: 'cuadre', ok: true, detalle: `${rep.length} reparto(s) aplicado(s) con su asiento vivo: ${usd(jor)} de jornales en las obras, lo mismo en el libro.` },
     { orden: 50, cuadre: 'margen: las horas de cada obra = las de la app', nivel: 'cuadre', ok: true, detalle: `${jH(J.horas.filter(x => x.p).reduce((s, x) => s + x.horas, 0))} h con obra en la app, las mismas en el margen; y en cada obra, antes del libro + con pago real + a estándar + del dueño = sus horas.` },
-    { orden: 60, cuadre: 'margen: el costo de cada obra = el de Estados (c4)', nivel: 'cuadre', ok: true, detalle: 'Obra por obra, el costo real de aquí es el de «Estados» (su costo por obra, todo el libro, hasta el período 2026-11). Los jornales van a la cuenta de subcontratos: en «Estados» salen dentro de «Subcontratos» y aquí como mano de obra real; el total de cada obra es el mismo.' }
+    { orden: 60, cuadre: 'margen: el costo de cada obra = el de Estados (c4)', nivel: 'cuadre', ok: true, detalle: 'Obra por obra, el costo real de aquí es el de «Estados» (su costo por obra, todo el libro, hasta el período 2026-11). Los jornales van a la cuenta de subcontratos: en «Estados» salen dentro de «Subcontratos» y aquí como mano de obra real; el total de cada obra es el mismo.' },
+    // (11b, c10 v3) el cuadre nuevo; aquí no hay nómina en la base: su texto, el del banco (g12a + c10 v3)
+    { orden: 70, cuadre: 'margen: las horas que pagó una nómina cuentan como pago real', nivel: 'cuadre', ok: true, detalle: 'La nómina no está en esta base: el pago real de unas horas es el reparto de su pago por horas.' }
   ];
 };
 // v_margen_obra (v2): la A del ejemplo (estimado completo), la B sin nada estimado, la F terminada y parcial, y la G con el
@@ -2318,7 +2339,8 @@ function wControl(periodo) {
         p160b.length ? `${p160b.length} obra(s) de precio fijo ya tienen facturas en el libro y la app todavía no las tiene en obra: ${p160b.map(o => `${o.obra} (la app la tiene ${laTiene(o.obra_estado)}; facturado ${wUsd(wLibro(o.proyecto_id, per.periodo).fact)})`).join('; ')}. No están en el WIP: lo que se les facturó (un depósito, por ejemplo) cuenta entero como ingreso, de una vez. Si ya se aprobó, pásala a aprobada o en ejecución en su ficha: entra al WIP y se revisa como las demás. Si no va a ser obra, márcala como que no lleva WIP, con su nota, y deja de salir aquí.` : null].filter(Boolean).join(' ')),
     R(165, 'wip: obras activas sin contrato que no son de servicio', 'aviso', true, cerr ? noap : 'Toda obra activa con movimiento que no es de servicio tiene su contrato en la ficha (o su marca).'),
     R(170, 'wip: horas sin costo en el libro', 'aviso', cerr || !W.horas170, cerr ? noap : !W.horas170 ? 'Ninguna obra del WIP tiene hoy horas sin costo en el libro.'
-      : '1 obra(s) del WIP tienen hoy horas reportadas que no están en el libro (sin pago repartido): C12 PRUEBA Obra D (8 h). Su costo a la fecha va corto y su avance también. Reparte los pagos de mano de obra pendientes.'),
+      // (11b, c12 v3) el texto de la base: «ni un pago repartido por horas ni una nómina las cubre», y cómo se arregla con los dos
+      : '1 obra(s) del WIP tienen hoy horas reportadas que no están en el libro (ni un pago repartido por horas ni una nómina las cubre): C12 PRUEBA Obra D (8 h). Su costo a la fecha va corto y su avance también. Reparte los pagos de mano de obra pendientes; y si esa gente cobra por nómina, sube y postea su nómina.'),
     R(180, 'wip: la suma de los hitos no es el contrato', 'aviso', true, cerr ? noap : 'En cada obra del WIP con hitos, sus hitos suman el contrato de la ficha.')
   ];
 }
@@ -2770,6 +2792,8 @@ function nPaso(fn, a) {
 // lo que no hace la pantalla (una hora que se aprueba en la app): la prueba lo pasa a mano
 function nExterno(nombre) { const c = F15.c15; if (c.orden[N.e] !== nombre || !c.pasos[nombre].externo) throw new Error(`el paso que sigue en c15 no es «${nombre}»`); N.e += 1; }
 const nHasta = nombre => { const i = F15.c15.orden.indexOf(nombre); if (i < 0) throw new Error('no hay paso ' + nombre); N.e = i + 1; };
+// (11b) un paso del banco que la pantalla ya no da (importar_ya: con «Importar» apagado): la cadena sigue con lo que el banco dejó después
+const nSaltar = nombre => { if (F15.c15.orden[N.e] !== nombre) throw new Error(`el paso que sigue en c15 no es «${nombre}»`); N.e += 1; };
 const N_MESC = ['', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 const nDia = iso => { const [a, m, d] = String(iso).slice(0, 10).split('-').map(Number); return `${d}-${N_MESC[m]}-${a}`; };
 // lo que pide el código del teléfono (lo de cada persona y toda escritura); lo que es lectura
@@ -2836,8 +2860,32 @@ function xRpc15(fn, a, auth) {
     if (!(a.p_opciones && a.p_opciones.dia_pago === X.dia)) return xCopia(X.error);
     return xCopia(fn === 'fn_nomina_ensayo' ? X.ensayo : X.importar);
   }
+  // (11b, los arreglos de la revisión) EL JOURNAL DE UN SOLO EMPLEADO, fuera de la cadena: lo que contestó el banco al ensayarlo y al
+  // importarlo con la nómina completa ya posteada (F15.extras.por_partes)
+  if ((fn === 'fn_nomina_ensayo' || fn === 'fn_nomina_importar') && a.p_archivo && F15.archivos.solo && a.p_archivo.nombre === F15.archivos.solo.nombre)
+    return xCopia(fn === 'fn_nomina_ensayo' ? F15.extras.por_partes.ensayo : F15.extras.por_partes.importar);
   return nPaso(fn, a);
 }
+// (11b) LAS COSTURAS: la cédula con la nómina dentro (c13 del 13-nov), tal como la leyó el banco en la escena en que va la cadena, con el
+// código del teléfono o sin él (lo dice la sesión que pide: «@aal1» sin él); a uno de los dos días que leyó (el 21-oct, entre el cargo
+// de Gusto y el día de pago, o el 31-oct: cualquier otro día, como el 31-oct)
+const N13_DIAS = ['2026-10-21', '2026-10-31'];
+const n13Dia = f => N13_DIAS.includes(String(f || '')) ? String(f) : '2026-10-31';
+function nRpc13(fn, a, auth) {
+  const suf = xAal(auth) === 'aal2' ? '' : '@aal1', d = n13Dia(a.p_fecha);
+  const lee = k => { const v = nLeer('x13|' + k + suf); if (v === undefined) throw new Error(`la base simulada de la nómina no leyó x13|${k}${suf}: vuelve a correr f15-capturar.js`); return v; };
+  if (fn === 'fn_cedula_resumen') return lee(`fn_cedula_resumen|${d}`);
+  if (fn === 'fn_cedula') return lee(`fn_cedula|${d}`);
+  if (fn === 'fn_cedula_partidas') return F15.ids.cuentas.includes(a.p_cuenta) ? lee(`fn_cedula_partidas|${d}|${a.p_cuenta}`) : [];
+  if (fn === 'fn_cedula_control') return lee('fn_cedula_control|2026-10');
+  if (fn === 'fn_cedula_cierre') return lee('fn_cedula_cierre|2026-10');
+  if (fn === 'fn_cedula_cuentas') return lee('fn_cedula_cuentas|');
+  return xMal(`${fn}: con la nómina dentro, la cédula solo se lee`);
+}
+// las vistas del costo por obra que la página lee (c10 v3, del banco con la nómina dentro)
+const N10_VISTAS = ['v_margen_obra', 'v_margen_control', 'jornal_config', 'v_jornal_personas', 'v_jornal_repartos', 'v_jornal_control'];
+// la vista de los papeles de c6 de antes (la 2026100901, sin la rama de la nómina): lo que decía de un asiento de la nómina
+const papelViejo = p => ({ ...p, papel: `${p.origen_tabla} ${p.origen_id} (el papel ya no está)`, papel_existe: false });
 // las vistas y la tabla del mapeo (sin c15, 404 en simular; al equipo, nada) y las filas de la Bandeja de sus cargos de Gusto
 const N_VISTAS = ['v_nomina_control', 'v_nomina_corridas', 'v_nomina_personas', 'v_nomina_cargos', 'v_nomina_lotes', 'nomina_columnas'];
 function xVista15(nombre) {
@@ -2886,6 +2934,10 @@ const estado = { controlMal: false, controlFilas: null, fallar: false, casarRond
   // (revisión final) el asiento de una nómina en los Estados (c15Papel) y la propuesta de una nómina cuyo archivo no decía su tipo (c15SinTipo)
   // y el archivo sin día de pago ya importado, ensayado otra vez con otro día (c15SinDiaYa)
   c15Papel: false, c15SinTipo: false, c15SinDiaYa: false,
+  // (11b) las costuras con la nómina dentro, del banco: el papel con la c6 de antes (c15PapelViejo); el costo por obra (n10), el WIP (n12)
+  // y la cédula (n13) en la escena de la cadena de la nómina; los depósitos de Gusto en la Bandeja (c15Dep); un Zelle a quien ya cobra por
+  // nómina (c10ZelleNom, con la mentira de c10)
+  c15PapelViejo: false, n10: false, n12: false, n13: false, c15Dep: false, c10ZelleNom: false,
   // (fase 11, arreglos) lo visto de la bolsa del burden que cambió (MX011, una vez)
   c15BolsaVieja: false,
   // (tablero, c16) el tablero (c16) pegado o no (sin él, fn_tablero contesta 404); qué contestó el banco (hoy | marzo | enero | produccion | renta |
@@ -2911,7 +2963,19 @@ function tabla(nombre, q) {
   // (revisión final) el asiento del journal de una nómina en los Estados (sus líneas y lo que la vista sellada de los papeles dice de
   // él), con su interruptor; y su papel de verdad, v_nomina_papel (c15): con el código del teléfono, lo que dio el banco; sin él, nada
   if (estado.c15Papel && nombre === 'v_libro') filas = filas.concat(F15.extras.papel.libro);
-  if (estado.c15Papel && nombre === 'v_asiento_papel') filas = filas.concat(F15.extras.papel.asiento_papel);
+  // (11b) lo que dice la vista de los papeles con la rama de la nómina de c6 (marca 2026111301): con el código del teléfono, el papel de
+  // su nómina; sin él, el texto fijo. Con c15PapelViejo, lo que contestaba la c6 sellada de antes (la 2026100901: «el papel ya no está»,
+  // papel_existe = falso), con la forma exacta que tenía en la captura de antes del 13-nov
+  if (estado.c15Papel && nombre === 'v_asiento_papel') filas = filas.concat(estado.c15PapelViejo ? F15.extras.papel.asiento_papel.map(papelViejo)
+    : N.aalX === 'aal2' ? F15.extras.papel.asiento_papel : F15.extras.papel.asiento_papel_aal1);
+  // (11b) LAS COSTURAS, del banco (pantalla-f15.json, claves «x…»), en la escena en que va la cadena de la nómina: el costo por obra (c10
+  // v3), el WIP (c12 v3) y la Bandeja con los depósitos de Gusto (c6); y el Zelle a quien ya cobra por nómina (c10 v3, aparte)
+  if (estado.n10 && N10_VISTAS.includes(nombre)) filas = nLeer('x10|' + nombre) || [];
+  if (estado.n12 && nombre === 'v_wip_schedule') filas = nLeer('x12|v_wip_schedule|2026-10') || [];
+  if (estado.n13 && (nombre === 'v_cedula_manual' || nombre === 'v_cedula_explicaciones')) filas = nombre === 'v_cedula_manual' ? (nLeer('x13|v_cedula_manual' + (N.aalX === 'aal2' ? '' : '@aal1')) || []) : [];
+  if (nombre === 'v_banco_bandeja' && estado.c15Dep) filas = filas.concat(nLeer('x6|v_banco_bandeja') || []);
+  if (estado.c10ZelleNom && nombre === 'v_banco_bandeja') filas = filas.concat(F15.extras.zelle_nomina.bandeja);
+  if (estado.c10ZelleNom && nombre === 'v_jornal_pendientes') filas = filas.concat(F15.extras.zelle_nomina.pendiente);
   if (nombre === 'v_nomina_papel') filas = estado.c15 && !estado.c15NoDueno ? (F15.extras.papel.nomina_papel[N.aal] || []) : [];
   if (nombre === 'proyectos' && estado.c11App) filas = filas.concat([{ id: 'c11-prueba-a', nombre: 'C11 PRUEBA Oficina Uno', estado: 'ejecucion', tipo: 'comercial', cliente: 'ZZ Cliente Uno', cliente_email: 'zz.uno@c11-pruebas.invalid' }]);
   if (nombre === 'hitos' && estado.c11App) filas = F.hitos.filter(h => h.p === 'c11-prueba-a').map(h => ({ id: h.id, proyecto_id: h.p, titulo: h.titulo, condicion: h.condicion, monto: h.monto / 100, estado: h.estado, orden: h.orden, es_deposito: h.dep }));
@@ -2967,6 +3031,13 @@ function tabla(nombre, q) {
 function rpc(fn, a, auth) {
   // (tablero, c16) el tablero de la portada (c16): lo que contestó el banco
   if (fn === 'fn_tablero') return rpcTablero(a);
+  // (11b) las costuras con la nómina dentro (del banco, pantalla-f15.json): la cédula, el detalle de una obra y el WIP
+  if (estado.n13 && fn.startsWith('fn_cedula')) return nRpc13(fn, a, auth);
+  if (estado.n10 && fn === 'fn_margen_obra') { const v = nLeer(`x10|fn_margen_obra|${a.p_proyecto}`); return v === undefined ? xMal(`fn_margen_obra(${a.p_proyecto}): el banco no la leyó`) : v; }
+  if (estado.n12 && (fn === 'fn_wip_resumen' || fn === 'fn_wip_control')) {
+    const v = nLeer(fn === 'fn_wip_resumen' ? `x12|fn_wip_resumen|${a.p_periodo || ''}` : `x12|fn_wip_control|${a.p_periodo}`);
+    return v === undefined ? xMal(`${fn}(${a.p_periodo}): el banco no lo leyó`) : v;
+  }
   // (fase 12a) la cédula (c13) y los subs (c14): lo que contestó el banco
   if (fn.startsWith('fn_cedula')) return xRpc13(fn, a);
   if (fn.startsWith('fn_subs')) return xRpc14(fn, a, auth);
@@ -3275,6 +3346,8 @@ async function simular(ctx, rol) {
       // el equipo (no dueño) recibe [] con 200 de toda vista de c4: la RLS no deja ver el libro
       // (fase 11, arreglos) la nómina deja ver otra cosa sin el código del teléfono: el nivel de la sesión que pide
       if (/^(v_nomina_|nomina_)/.test(nombre)) N.aal = xAal(req.headers()['authorization'] || '') === 'aal2' ? 'aal2' : 'aal1';
+      // (11b) el nivel de la sesión de cada lectura (la vista de los papeles y la cédula dicen otra cosa sin el código)
+      N.aalX = xAal(req.headers()['authorization'] || '') === 'aal2' ? 'aal2' : 'aal1';
       let filas = estado.estadosNoDueno && nombre.startsWith('v_') ? [] : tabla(nombre, u.searchParams);
       if (nombre === 'perfiles') filas = [{ id: UID, nombre: rol === 'dueno' ? 'Edgar Prueba' : 'Campo Prueba', rol }];
       // (fase 11) con c15, la lista de perfiles para enlazar a cada persona de la nómina es la del banco (los de prueba, ZZ)
@@ -6681,7 +6754,11 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     // la base simulada es la de los c13 y c14 de este árbol (si cambian, se vuelve a capturar: node pruebas/conta/f12-capturar.js <bd nueva>)
     { const h = f => require('crypto').createHash('sha1').update(fs.readFileSync(path.join(ROOT, 'docs', 'conta', f))).digest('hex').slice(0, 12);
       ok('La base simulada de la cédula y de los subs (pantalla-f12.json) se sacó del banco con los c13-cedula.sql y c14-subs.sql de este árbol', F12.capturado.c13 === h('c13-cedula.sql') && F12.capturado.c14 === h('c14-subs.sql'),
-        `capturado ${F12.capturado.c13}/${F12.capturado.c14}, hoy ${h('c13-cedula.sql')}/${h('c14-subs.sql')}: vuelve a correr node pruebas/conta/f12-capturar.js <bd nueva>`); }
+        `capturado ${F12.capturado.c13}/${F12.capturado.c14}, hoy ${h('c13-cedula.sql')}/${h('c14-subs.sql')}: vuelve a correr node pruebas/conta/f12-capturar.js <bd nueva>`);
+      // (11b) y con las capas de la Fase 11b de este árbol, sobre g15a (lo que habrá en producción al pegar lo del 13-nov)
+      const hh = f => require('crypto').createHash('sha1').update(fs.readFileSync(path.join(ROOT, f))).digest('hex').slice(0, 12), capas = Object.entries(F12.capturado.capas || {});
+      ok('(11b) …sobre g15a, con las capas de la 11b de este árbol pegadas en el orden de producción (c3, c6, c10, c12, c13, c15 y c9 otra vez)', F12.capturado.plantilla === 'g15a' && capas.length >= 7 && capas.every(([f, v]) => hh(f) === v),
+        capas.filter(([f, v]) => hh(f) !== v).map(([f]) => f).join(', ') + ': vuelve a correr node pruebas/conta/f12-capturar.js <bd nueva>'); }
 
     // ==================== LA CÉDULA ====================
     let n0 = llamadas.length;
@@ -6979,7 +7056,9 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     ok('El COI · sin el día en que vence no sale (está en el certificado)', /Falta el día en que vence/.test(await txt(fP.locator('.ct-error'))) && !ultima(n0, 'storage:subir-subs'));
     await fP.locator('[name="vence"]').fill('2026-12-02'); await enviar(q, fP); await pintado(q);
     const cCoi = ultima(n0, 'fn_subs_archivo');
-    ok('…con su vencimiento: subido y registrado; el chip dice «COI vence en 20 días» (los días los cuenta la base)', !!cCoi && cCoi.args.p.clase === 'coi' && cCoi.args.p.vence === '2026-12-02' && X.e14 === 4 && /COI vence en 20 días/.test(await txt(q.locator('#ct-subs-w9 .ct-cab'))), JSON.stringify(cCoi && cCoi.args.p));
+    // (los días los contó la base el día que se capturó: hasta el 2-dic)
+    { const dias = Math.round((Date.UTC(2026, 11, 2) - Date.parse(F12.capturado.hoy + 'T00:00:00Z')) / 864e5);
+      ok(`…con su vencimiento: subido y registrado; el chip dice «COI vence en ${dias} días» (los días los cuenta la base)`, !!cCoi && cCoi.args.p.clase === 'coi' && cCoi.args.p.vence === '2026-12-02' && X.e14 === 4 && new RegExp(`COI vence en ${dias} días`).test(await txt(q.locator('#ct-subs-w9 .ct-cab'))), JSON.stringify(cCoi && cCoi.args.p)); }
     n0 = llamadas.length;
     await q.locator('#ct-subs-papeles [data-subs-ver]').first().click(); await q.waitForSelector('#ct-subs-ver a', { timeout: 5000 });
     ok('Ver un papel · se firma por diez minutos (con el código) y sale su enlace', !!ultima(n0, 'storage:firmar-subs') && /\/storage\/v1\/object\/sign\/subs\//.test(await q.locator('#ct-subs-ver a').getAttribute('href')));
@@ -7368,7 +7447,11 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     let { cx, q } = await abrirCtx(1280, true);
     { const h = f => require('crypto').createHash('sha1').update(fs.readFileSync(f)).digest('hex').slice(0, 12);
       ok('La base simulada de la nómina (pantalla-f15.json) se sacó del banco con el c15-nomina.sql y la f15-semilla.sql de este árbol', F15.capturado.c15 === h(path.join(ROOT, 'docs', 'conta', 'c15-nomina.sql')) && F15.capturado.semilla === h(path.join(__dirname, 'f15-semilla.sql')),
-        `capturado ${F15.capturado.c15}, hoy ${h(path.join(ROOT, 'docs', 'conta', 'c15-nomina.sql'))}: vuelve a correr node pruebas/conta/f15-capturar.js <bd nueva>`); }
+        `capturado ${F15.capturado.c15}, hoy ${h(path.join(ROOT, 'docs', 'conta', 'c15-nomina.sql'))}: vuelve a correr node pruebas/conta/f15-capturar.js <bd nueva>`);
+      // (11b) y con las capas de la Fase 11b de este árbol, sobre g15a: las costuras que leen las otras páginas (claves «x…») son de ellas
+      const capas = Object.entries(F15.capturado.capas || {});
+      ok('(11b) …sobre g15a, con las capas de la 11b de este árbol pegadas en el orden de producción (c3, c6, c10, c12, c13, c15 y c9 otra vez)', F15.capturado.plantilla === 'g15a' && capas.length === 7 && capas.every(([f, v]) => h(path.join(ROOT, f)) === v),
+        capas.filter(([f, v]) => h(path.join(ROOT, f)) !== v).map(([f]) => f).join(', ') + ': vuelve a correr node pruebas/conta/f15-capturar.js <bd nueva>'); }
 
     // ==================== LA PÁGINA, VACÍA ====================
     let n0 = llamadas.length, nL = lecturas.length;
@@ -7588,7 +7671,9 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
       !(await q.locator(`.ct-mov[data-id="${I.mov.net}"], .ct-mov[data-id="${I.mov.fee}"]`).count()) && !(await q.locator('#conta-raiz .ct-rojo').count()) && lecturas.slice(nL).some(l => l.startsWith('v_nomina_cargos')));
     await filaCsd.locator('.ct-mov-fila').click();
     t = await txt(filaCsd.locator('.ct-mov-det'));
-    ok('…desplegada: «La nómina dice: Paga las deducciones…» y el botón «Casar con la nómina» (con «Otra cosa…» como siempre)', /Débito de nómina: espera el journal de nómina/.test(t) && /La nómina dice: Paga las deducciones de la nómina del 23-oct-2026 \(\$50\.00, al centavo\)/.test(t) &&
+    // (11b) el texto de c6 de la marca 2026111301: el cargo de Gusto se casa desde Nómina → Cargos de Gusto (ya no «espera el journal (f11)»)
+    ok('…desplegada: el texto de c6 (11b: «Débito de nómina (Gusto): se casa desde Contabilidad → Nómina → Cargos de Gusto…», ya no «espera el journal (f11)»), «La nómina dice: Paga las deducciones…» y el botón «Casar con la nómina» (con «Otra cosa…» como siempre)',
+      /Débito de nómina \(Gusto\): se casa desde Contabilidad → Nómina → Cargos de Gusto, con lo que su nómina dejó por pagar/.test(t) && !/espera el journal|\(f11\)/.test(t) && /La nómina dice: Paga las deducciones de la nómina del 23-oct-2026 \(\$50\.00, al centavo\)/.test(t) &&
       await filaCsd.locator('[data-nom-bj-casar]').isEnabled() && (await filaCsd.locator('[data-otra]').count()) === 1);
     await filaCsd.locator('[data-nom-bj-casar]').click(); await pintado(q);
     n0 = llamadas.length;
@@ -7616,11 +7701,17 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     t = await txt(q.locator('#ct-nom-ensayo'));
     ok('El mismo archivo otra vez · el ensayo dice que ya entró (y la nómina, con las mismas cifras) y «no entra nada nuevo»', hecho('ensayo_ya') && /este mismo archivo ya entró el/.test(t) && /Esta nómina ya está \(posteada, regular, 3 personas, del archivo «zz-c15-journal-23oct\.csv»\) con las mismas cifras/.test(t) && /no entra nada nuevo/.test(t) &&
       !(await q.locator('#ct-nom-ensayo [data-nom-releer]').count()), t.slice(0, 200));
-    await toca(q, '#ct-nom-importar');
-    t = await txt(q.locator('#ct-nom-importe'));
-    ok('…importarlo igual: «Ese archivo ya estaba importado…» y la nómina que ya estaba, con su botón para abrirla (y, posteada, sin «Volver a leerla»)', hecho('importar_ya') && re(P.importar_ya.respuesta.mensaje).test(t) && re(P.importar_ya.respuesta.corridas[0].texto).test(t) &&
-      (await q.locator(`#ct-nom-importe [data-nom-abrir="${I.journal}"]`).count()) === 1 && !(await q.locator('#ct-nom-importe [data-nom-reemplazar]').count()));
-    await toca(q, '[data-nom-importe-cerrar]');
+    // (11b, de la revisión de la Fase 11) no hay nada que importar ni que decidir: «Importar» APAGADO, con su porqué; antes seguía
+    // encendido y la base contestaba «ya estaba». El paso del banco que lo importaba igual (importar_ya) no lo da la pantalla: se salta
+    { const n1 = llamadas.length;
+      ok('(11b) …y «Importar» se APAGA (no hay nada que importar ni que decidir): «No hay nada que importar: esta nómina ya está en la base con las mismas cifras», con «Cerrar»; tocarlo no llama a la base',
+        (await q.locator('#ct-nom-importar').isDisabled()) && /No hay nada que importar: esta nómina ya está en la base con las mismas cifras/.test(await txt(q.locator('#ct-nom-ensayo .ct-nom-nada'))) &&
+        /Cerrar/.test(await txt(q.locator('#ct-nom-ensayo [data-nom-ensayo-cerrar]'))) && P.importar_ya.respuesta.corridas[0].resultado === 'ya_estaba' &&
+        (await q.locator('#ct-nom-importar').evaluate(b => { b.click(); return true; })) && (await q.waitForTimeout(300), !desde(n1).some(l => l.fn === 'fn_nomina_importar')));
+      await foto(q, 'f15-6b-nada-que-importar');
+      // (con la pantalla de antes, «Importar» encendido contesta el paso del banco; con la de ahora, se salta)
+      if (F15.c15.orden[N.e] === 'importar_ya') nSaltar('importar_ya'); }
+    await toca(q, (await q.locator('#ct-nom-ensayo [data-nom-ensayo-cerrar]').count()) ? '#ct-nom-ensayo [data-nom-ensayo-cerrar]' : '[data-nom-importe-cerrar]');
     // (arreglo) la MISMA nómina bajada otra vez con otras columnas (sin el desglose del bruto): lo dice LA BASE (ya_estaba.misma; antes lo
     // adivinaba la pantalla comparando dos cifras); no se ofrece «otra» a secas: solo con su porqué
     await subir(q, 'misma');
@@ -7958,6 +8049,26 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     ok('…«Quitar»: fn_nomina_columna({columna, quitar: true})', JSON.stringify((ultima(n0, 'fn_nomina_columna') || {}).args.p) === '{"columna":"zz dato raro","quitar":true}' && hecho('columna_quitar') && !(await q.locator('#ct-nom-mapeo [data-nom-alias="zz dato raro"]').count()));
     ok('Al final de la cadena · cada paso de la base se dio, en su orden (' + F15.c15.orden.length + ')', N.e === F15.c15.orden.length);
 
+    // ==================== (11b, los arreglos de la revisión) FUERA DE LA CADENA ====================
+    // EL JOURNAL DE UN SOLO EMPLEADO, con la nómina completa ya posteada (Gusto lo baja «resumen o empleado por empleado»): la base dice
+    // que es la misma, bajada por partes, y la página lo dice así al ensayar y al importar; como «otra nómina», solo con su porqué
+    { const X = F15.extras.por_partes, y = X.ensayo.corridas[0].ya_estaba, i = X.importar.corridas[0];
+      await ve(q, 'nomina', { sub: 'nominas' });
+      n0 = await subir(q, 'solo');
+      t = await txt(q.locator('#ct-nom-ensayo .ct-nom-ya'));
+      ok(`(11b, arreglos) El journal de un solo empleado, con el de todos ya posteado · el ensayo de la base (misma: ${y.misma}, por_partes: ${y.por_partes}, parte: ${y.parte}): la página dice que es la misma nómina «bajada de Gusto por partes» y que su sueldo entraría dos veces; no «las mismas personas»`,
+        y.misma === true && y.por_partes === true && (await q.locator('#ct-nom-ensayo .ct-nom-ya[data-ya="partes"]').count()) === 1 && /bajada de Gusto por partes/.test(t) && /entraría dos veces al libro/.test(t) && !/persona por persona/.test(t), t.slice(0, 260));
+      const nP = llamadas.length;
+      await toca(q, '#ct-nom-importar');
+      const cP = ultima(nP, 'fn_nomina_importar');
+      t = await txt(q.locator('#ct-nom-importe'));
+      ok('…e «Importar»: la base no la deja entrar (otra_distinta: la misma, por partes) y la página enseña su texto, lo dice («bajada por partes») y solo ofrece «decir por qué»; nada de «Sí, es otra nómina» sin porqué',
+        !!cP && i.resultado === 'otra_distinta' && i.por_partes === true && t.includes(i.texto) && (await q.locator('#ct-nom-importe .ct-nom-misma[data-partes]').count()) === 1 &&
+        (await q.locator('#ct-nom-importe [data-nom-otra-porque]').count()) === 1 && !(await q.locator('#ct-nom-importe [data-nom-otra]').count()), t.slice(0, 260));
+      await foto(q, 'f15-10a-por-partes');
+      await q.locator('#ct-nom-importe [data-nom-importe-cerrar]').click(); await pintado(q);
+    }
+
     // ==================== (revisión final) FUERA DE LA CADENA ====================
     // UN ARCHIVO SIN DÍA DE PAGO (el resumen solo): la base no lo puede leer sola (MX009) y dice «di cuál es su día de pago». Antes el
     // archivo se soltaba y no había dónde decirlo. Y su columna «Home phone» (que el mapeo no conoce) no sale del navegador
@@ -8028,18 +8139,33 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
       estado.c15SinDiaYa = false;
       await ve(q, 'nomina', { sub: 'nominas' });
     }
-    // EL PAPEL DE UN ASIENTO DE LA NÓMINA, en los Estados. La vista de los papeles (c4 y c6, sellada) no conoce la nómina y dice «el
-    // papel ya no está»: antes la página lo pintaba en rojo, «rastro roto», en cada asiento de nómina. Ahora lee su papel de verdad
-    // (v_nomina_papel) y lleva a su nómina
+    // EL PAPEL DE UN ASIENTO DE LA NÓMINA, en los Estados. (11b) Desde la marca 2026111301 de c6, la vista de los papeles lo da ella
+    // misma: con el código del teléfono, el de su nómina (el mismo texto que v_nomina_papel), y la página lo enseña tal cual, sin leer
+    // aparte. Con la c6 de antes (papel_existe = no: «el papel ya no está») la página lo leía de v_nomina_papel: sigue igual
     { const PX = F15.extras.papel;
       estado.c15Papel = true;
       nL = lecturas.length;
       await q.evaluate(id => window.MXP_CONTA.ir('estados', { asiento: id }), PX.asiento_id);
       await q.waitForSelector('#ct-est-papel', { timeout: 8000 });
-      const papelTxt = await txt(q.locator('#ct-est-papel'));
-      ok('(revisión final) El asiento de una nómina en los Estados · la vista sellada de los papeles dice «' + PX.asiento_papel[0].papel.slice(-24) + '» (papel_existe = no), y la página NO dice «rastro roto»: enseña su papel de verdad, el de v_nomina_papel',
-        PX.asiento_papel[0].papel_existe === false && !/rastro roto/.test(papelTxt) && !/el papel ya no está/.test(papelTxt) && (await q.locator('#ct-est-papel .ct-aviso.bad').count()) === 0 &&
+      let papelTxt = await txt(q.locator('#ct-est-papel'));
+      ok('(11b) El asiento de una nómina en los Estados · la vista de los papeles (c4 con la rama de la nómina de c6) da su papel de verdad (papel_existe = sí, el mismo texto que v_nomina_papel) y la página lo enseña tal cual, sin leer aparte v_nomina_papel; NO dice «rastro roto»',
+        PX.asiento_papel[0].papel_existe === true && PX.asiento_papel[0].papel === PX.nomina_papel.aal2[0].papel && !/rastro roto/.test(papelTxt) && !/el papel ya no está/.test(papelTxt) && (await q.locator('#ct-est-papel .ct-aviso.bad').count()) === 0 &&
+        papelTxt.includes(PX.asiento_papel[0].papel.replace(/\s+/g, ' ').trim()) && !lecturas.slice(nL).some(l => l.startsWith('v_nomina_papel?')), papelTxt.slice(0, 240));
+      // (11b) LA LÍNEA 2250 (el reembolso, a nombre del empleado por su perfil): con el código, su nombre de la nómina, nunca su identificador
+      { const l2250 = PX.libro.find(l => l.cuenta === '2250'), nombre = (nLeer('v_nomina_personas') || []).find(x => x.usuario_id === (l2250 || {}).tercero_id);
+        const fila = await txt(q.locator('#ct-est-asiento tbody tr', { hasText: '2250' }));
+        ok(`(11b) …la línea 2250 del journal dice «a nombre de ${nombre ? nombre.nombre : '?'}» (v_nomina_personas, con el código del teléfono), no el identificador del empleado`, !!l2250 && l2250.tercero_tipo === 'empleado' && !!nombre &&
+          fila.includes(`a nombre de ${nombre.nombre}`) && !(await q.evaluate(() => document.body.innerHTML)).includes(l2250.tercero_id) && lecturas.slice(nL).some(l => l.startsWith('v_nomina_personas?') && l.includes(l2250.tercero_id)), fila.slice(0, 200)); }
+      // (11b) con la c6 de antes: la página sigue leyendo el papel de v_nomina_papel (lo que hacía desde la revisión final de la Fase 11)
+      estado.c15PapelViejo = true; nL = lecturas.length;
+      await q.evaluate(() => window.MXP_CONTA.ir('estados', { asiento: null })); await pintado(q);
+      await q.evaluate(id => window.MXP_CONTA.ir('estados', { asiento: id }), PX.asiento_id);
+      await q.waitForSelector('#ct-est-papel', { timeout: 8000 });
+      papelTxt = await txt(q.locator('#ct-est-papel'));
+      ok('(revisión final) …con la c6 de antes (la vista de los papeles dice «(el papel ya no está)», papel_existe = no), la página NO dice «rastro roto»: lee su papel de verdad de v_nomina_papel',
+        !/rastro roto/.test(papelTxt) && !/el papel ya no está/.test(papelTxt) && (await q.locator('#ct-est-papel .ct-aviso.bad').count()) === 0 &&
         papelTxt.includes(PX.nomina_papel.aal2[0].papel.replace(/\s+/g, ' ').trim()) && lecturas.slice(nL).some(l => l.startsWith('v_nomina_papel?') && l.includes('origen_id=eq.' + PX.corrida)), papelTxt.slice(0, 240));
+      estado.c15PapelViejo = false;
       ok('…con sus líneas como las da el libro (' + PX.libro.length + ') y «Ver su nómina»', (await q.locator('#ct-est-asiento tbody tr').count()) === PX.libro.length && (await q.locator('#ct-est-papel-nomina').count()) === 1);
       await foto(q, 'f15-11-papel-de-la-nomina');
       await toca(q, '#ct-est-papel-nomina');
@@ -8080,13 +8206,30 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
       ok(`…«Cargos de Gusto»: solo lo que espera en el banco (la base sin el código: ${pend.length}, ${pend.map(x => x.estado).join(', ')}), con los botones apagados; «Lo casado se ve con el código del teléfono»; ningún pago por fuera`,
         pend.every(x => x.estado === 'pendiente') && (await q.locator('#ct-nom-cargos .ct-nom-cargo').count()) === pend.length && (await q.locator('#ct-nom-cargos [data-nom-casar]').first().isDisabled()) &&
         /pide el código del teléfono/.test(await txt(q.locator('#ct-nom-cargos'))) && /Lo casado se ve con el código del teléfono/.test(await txt(q.locator('#ct-nom-hechos'))) && !(await q.locator('#ct-nom-fuera').count()) && (await q.locator('#ct-nom-pide').count()) === 1); }
+    // (11b, los arreglos de la revisión) EL AMARRE SIN EL CÓDIGO: la base ya no compara lo tecleado con un libro que no ve («NO amarra… el
+    // libro tiene $0.00 en 0 nóminas», con las nóminas posteadas): lo devuelve sin «ok» y diciendo que hace falta el código. La página lo
+    // enseña «con el código»: ni «no amarra» ni «sin teclear»
+    await ve(q, 'nomina', { sub: 'amarre' });
+    { const am = nLeerQ('fn_nomina_amarre|2026', 'aal1'), tec = am.filter(f => f.declarado != null);
+      ok(`(11b, arreglos) …«941 · 940 · RT-6» sin el código: lo tecleado (${tec.length} de ${am.length} renglones; la base los da sin comparar: «hace falta el código del teléfono») sale «con el código», nunca «no amarra» ni «sin teclear», y la cabecera lo dice`,
+        tec.length > 0 && tec.every(f => f.ok == null && f.libro == null && /hace falta el código del teléfono/.test(f.detalle)) &&
+        (await q.locator('.ct-nom-l .ct-pill', { hasText: 'con el código' }).count()) === tec.length && !(await q.locator('.ct-nom-l .ct-pill', { hasText: 'no amarra' }).count()) &&
+        (await q.locator('.ct-nom-l .ct-pill', { hasText: 'sin teclear' }).count()) === am.length - tec.length &&
+        /se comparan? con el código del teléfono/.test(await txt(q.locator('.ct-pag-sub'))) && /hace falta el código del teléfono: entra con él/.test(await txt(q.locator('#ct-nom-amarre')))); }
     { const PX = F15.extras.papel;
       estado.c15Papel = true;
       await q.evaluate(id => window.MXP_CONTA.ir('estados', { asiento: id }), PX.asiento_id);
       await q.waitForSelector('#ct-est-papel', { timeout: 8000 });
       const papelTxt = await txt(q.locator('#ct-est-papel'));
-      ok('…(revisión final) el asiento de una nómina en los Estados, sin el código: v_nomina_papel no da nada (lleva el bruto y el neto) y la página dice dónde está su papel, sin «rastro roto» ni cifras',
-        PX.nomina_papel.aal1.length === 0 && !/rastro roto/.test(papelTxt) && /Es un asiento de la nómina: su papel es su nómina/.test(papelTxt) && /Se ve con el código del teléfono/.test(papelTxt) && !/bruto \$/.test(papelTxt), papelTxt.slice(0, 200));
+      // (11b) sin el código, la vista de los papeles (c6) da su texto fijo: dónde está y que se ve con el código, sin cifras ni nombres
+      ok('…(11b) el asiento de una nómina en los Estados, sin el código: la vista de los papeles (c6) da su texto fijo y la página lo enseña tal cual (dónde está, que se ve con el código), sin «rastro roto» ni cifras',
+        PX.nomina_papel.aal1.length === 0 && PX.asiento_papel_aal1[0].papel_existe === true && !/rastro roto/.test(papelTxt) && papelTxt.includes(PX.asiento_papel_aal1[0].papel.replace(/\s+/g, ' ').trim()) &&
+        /código del teléfono/.test(papelTxt) && !/bruto \$|\$\d/.test(papelTxt), papelTxt.slice(0, 200));
+      // (11b) y la línea 2250, sin el código: ningún nombre ni su identificador, «a nombre de un empleado» y que a quién se ve con el código
+      { const l2250 = PX.libro.find(l => l.cuenta === '2250'), fila = await txt(q.locator('#ct-est-asiento tbody tr', { hasText: '2250' })), pag = await q.evaluate(() => document.body.innerHTML);
+        const nombres = (nLeer('v_nomina_personas') || []).map(x => x.nombre);
+        ok('…(11b) la línea 2250 sin el código: «a nombre de un empleado (a quién, se ve con el código del teléfono)», sin su nombre ni su identificador', /a nombre de un empleado \(a quién, se ve con el código del teléfono\)/.test(fila) &&
+          !pag.includes(l2250.tercero_id) && !nombres.some(n => fila.includes(n)), fila.slice(0, 200)); }
       estado.c15Papel = false; }
     await ve(q, 'nomina', { sub: 'ajustes' });
     ok('…«Ajustes»: la configuración y el mapeo se ven; la bolsa del burden dice que falta el código (la base no la da sin él)', (await q.locator('#ct-nom-cfg form').count()) === 1 && /Falta el código del teléfono/.test(await txt(q.locator('#ct-nom-bolsa'))) && !(await q.locator('#ct-nom-bolsa-b').count()));
@@ -8162,6 +8305,240 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     }
     estado.c15 = false; estado.c15Banco = false; nReset(); conCodigo(false);
     try { fs.rmSync(dirA, { recursive: true, force: true }); } catch { /* nada */ }
+  }
+
+  // ---- (11b, 13-nov) LAS COSTURAS CON LA NÓMINA: las otras páginas con una nómina de verdad dentro, del banco (pantalla-f15.json, las
+  // claves «x…»: g15a + las capas de la 11b + la cadena de la nómina), con el código del teléfono y sin él, a 390, 820 y 1280 px:
+  // Costo por obra (c10 v3: las horas que pagó la nómina son «con pago real»; por fase y por persona «en Nómina», nunca $0.00; las
+  // nóminas que pagaron horas de la obra; «cobra por nómina» en Personas), el WIP (c12 v3: el 170 tal como lo dice la base, sin la
+  // obra cuyas horas pagó la nómina), la Bandeja (los depósitos de Gusto con «Casar con la nómina»; un Zelle a quien ya cobra por
+  // nómina con su aviso en ámbar), la Cédula (2210 a 2240 con lo que cada nómina dejó por pagar; sin el código «con el código», nunca
+  // un rojo) y la Nómina (el aviso 75 sin el código) ----
+  {
+    estado.c15 = true; estado.c15Banco = true; nReset();
+    const conCodigo = si => { estado.mfaFactores = si ? [{ id: 'f-1', friendly_name: 'Teléfono de Edgar', factor_type: 'totp', status: 'verified' }] : []; estado.sesionAal = si ? 'aal2' : undefined; };
+    const abrirCtx = async (w, codigo) => {
+      conCodigo(codigo);
+      const cx = await b.newContext({ viewport: { width: w, height: w < 700 ? 844 : 1000 }, deviceScaleFactor: w < 1024 ? 2 : 1, isMobile: w < 1024, hasTouch: w < 1024, serviceWorkers: 'block' });
+      await simular(cx, 'dueno');
+      const q = await cx.newPage(); q.on('pageerror', e => errs.push(`11b ${w}: ` + String(e).slice(0, 160)));
+      await q.goto('http://localhost:8873/index.html'); await q.waitForSelector('#vista-app:not([hidden])', { timeout: 15000 }); await q.waitForTimeout(800);
+      await q.evaluate(() => document.querySelectorAll('dialog[open]').forEach(d => d.close()));
+      await q.locator('#btn-conta').evaluate(x => x.click()); await q.waitForSelector('#conta-raiz .ct-ficha', { timeout: 8000 }); await pintado(q);
+      return { cx, q };
+    };
+    const ve = async (q, k, op) => { await q.evaluate(([k, o]) => window.MXP_CONTA.ir(k, o || {}), [k, op || null]); await pintado(q); };
+    // (un botón que la pantalla de antes no tiene: sin él, la comprobación sale en falso y la prueba sigue)
+    const toca = async (q, sel) => { if (!(await q.locator(sel).count())) return false; await q.locator(sel).first().evaluate(x => x.click()); await pintado(q); return true; };
+    const txt = async loc => (await loc.evaluateAll(es => es.map(x => x.innerText).join(' '))).replace(/\s+/g, ' ').trim();
+    const ultima = (n0, fn) => desde(n0).filter(l => l.fn === fn).pop();
+    const usd = v => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(v));
+    const I = F15.ids;
+    const tras = nombre => nHasta(nombre);
+    const X10 = k => nLeer('x10|' + k), obraA = I.obras[0], obraB = I.obras[1];
+    const mide = async (q, mal, nombre) => { const m = await q.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth, rojo: !!document.querySelector('#conta-raiz .ct-rojo') })); if (m.sw > m.iw + 1 || m.rojo) mal.push(`${nombre}: ${m.sw} > ${m.iw}${m.rojo ? ' (rojo)' : ''}`); };
+
+    // ==================== COSTO POR OBRA (c10 v3) ====================
+    estado.c10 = true; jReset(); estado.n10 = true;
+    for (const w of [1280, 820, 390]) {
+      let { cx, q } = await abrirCtx(w, true);
+      const mal = [];
+      // antes de la nómina (la escena 0): la obra A con sus 60 h a estándar, sin nada de nómina
+      nReset(0);
+      await ve(q, 'obras', { sel: obraA });
+      const d0 = X10(`fn_margen_obra|${obraA}`);
+      let t = await txt(q.locator('#ct-ob-det .ct-ob-cobertura'));
+      if (w === 1280) ok(`(11b) Costo por obra, ANTES de la nómina · la obra A: «${d0.obra.horas_con_pago_real} h con pago real · ${d0.obra.horas_estandar} h a estándar», sin «las pagó una nómina» ni el apartado de las nóminas (lo que dice la base)`,
+        new RegExp(`^${d0.obra.horas_con_pago_real} h con pago real · ${d0.obra.horas_estandar} h a estándar`).test(t) && !/nómina/.test(t) && !(await q.locator('#ct-ob-nominas').count()) && !/en Nómina/.test(await txt(q.locator('#ct-ob-fase, #ct-ob-quien'))), t);
+      // con la nómina posteada: las horas que pagó son «con pago real»
+      tras('postear_journal');
+      await ve(q, 'obras', { sel: obraA });
+      const d = X10(`fn_margen_obra|${obraA}`), mo = d.conceptos.find(c => c.concepto === 'mano_obra_real');
+      t = await txt(q.locator('#ct-ob-det .ct-ob-cobertura'));
+      if (w === 1280) {
+        ok(`(11b) Costo por obra, CON la nómina posteada · la obra A: «${d.obra.horas_con_pago_real} h con pago real (de ellas, ${mo.horas_nomina} h las pagó una nómina) · ${d.obra.horas_estandar} h a estándar» (c10 v3: la marca sin dinero de c15)`,
+          mo.horas_nomina > 0 && d.obra.horas_estandar === 0 && t.startsWith(`${d.obra.horas_con_pago_real} h con pago real (de ellas, ${mo.horas_nomina} h las pagó una nómina) · 0 h a estándar`), t);
+        const kpi = await txt(q.locator('#ct-ob-det .ct-kpis'));
+        ok(`(11b) …el costo real ${usd(d.obra.costo_real)} es la mano de obra de nómina del libro (${usd(d.obra.mano_obra_nomina)}), sin «+ estándar»; y la mano de obra real dice «nómina ${usd(mo.nomina)}»`,
+          kpi.includes(usd(d.obra.costo_real)) && d.obra.costo_real === d.obra.mano_obra_nomina && !/estándar/.test(kpi) && (await txt(q.locator('#ct-ob-conceptos'))).includes(`nómina ${usd(mo.nomina)}`), kpi);
+        const fase = await txt(q.locator('#ct-ob-fase')), quien = await txt(q.locator('#ct-ob-quien')), nota = d.por_fase[0].nota;
+        const moFase = await txt(q.locator('#ct-ob-fase td[data-col="Mano de obra real"]')), pagado = await txt(q.locator('#ct-ob-quien td[data-col="Pagado"]'));
+        ok('(11b) …por fase y por persona la base deja vacío el dinero de esas horas (es el sueldo de alguien): «Mano de obra real» y «Pagado» dicen «en Nómina» (nunca «$0.00»), «N h de nómina» debajo de las horas con pago real, y la nota de la base UNA vez',
+          d.por_fase[0].mano_obra_real === null && d.cobertura.every(p => p.pagado === null) && /^en Nómina/.test(moFase) && !/\$/.test(moFase) && fase.includes(`${d.por_fase[0].horas_nomina} h de nómina`) &&
+          (await q.locator('#ct-ob-quien .ct-ob-nomtxt').count()) === d.cobertura.length && !/\$/.test(pagado) && fase.split(nota).length === 2 && quien.split(nota).length === 2, `${moFase} | ${pagado}`);
+        const nom = await txt(q.locator('#ct-ob-nominas'));
+        ok(`(11b) …y «Las nóminas que pagaron horas de esta obra»: la del ${nDia(d.nominas[0].dia_pago)}, ${d.nominas[0].horas} h, ${d.nominas[0].reportes} reportes (de la base, sin un importe), con su botón`,
+          d.nominas.length === 1 && nom.includes(`Nómina del ${nDia(d.nominas[0].dia_pago).replace(/-/g, ' ')}`) && nom.includes(`${d.nominas[0].horas} h`) && !/\$/.test(nom.split('Su costo')[0]) && (await q.locator('#ct-ob-nominas [data-ob-nomina]').count()) === 1, nom.slice(0, 200));
+        await foto(q, '11b-1-obra-con-nomina');
+        const tocoNom = await toca(q, '#ct-ob-nominas [data-ob-nomina]');
+        ok('(11b) …«Verla» abre esa nómina en «Nómina»', tocoNom && (await q.evaluate(() => [window.MXP_CONTA._estado.pagina, window.MXP_CONTA._estado.nom.corrida])).join('|') === `nomina|${d.nominas[0].corrida_id}`);
+        // la obra B: con horas a estándar todavía (las de un reporte sin aprobar y las de otra persona), su aviso de la base con la nómina
+        await ve(q, 'obras', { sel: obraB });
+        const dB = X10(`fn_margen_obra|${obraB}`), avB = (dB.avisos || []).find(a => /van a estándar/.test(a));
+        ok(`(11b) …la obra B, a medias: su aviso de la base «${avB}» tal cual`, !!avB && /ni un pago repartido por horas ni una nómina/.test(avB) && (await txt(q.locator('#ct-ob-det'))).includes(avB));
+        // sin el código del teléfono: lo mismo (c10 lee la marca sin dinero, que contesta igual; el capturador lo comprobó en cada escena)
+        await cx.close(); ({ cx, q } = await abrirCtx(w, false));
+        await ve(q, 'obras', { sel: obraA });
+        ok('(11b) …sin el código del teléfono, la obra A dice lo mismo (las mismas horas con pago real y de nómina, el apartado de las nóminas): c10 no abre la puerta del dinero',
+          (await txt(q.locator('#ct-ob-det .ct-ob-cobertura'))) === t && (await q.locator('#ct-ob-nominas [data-ob-nomina]').count()) === 1 && /en Nómina/.test(await txt(q.locator('#ct-ob-fase'))));
+      }
+      await mide(q, mal, 'obra-a'); await foto(q, `11b-${w}-obra-a`);
+      await ve(q, 'obras', { sub: 'obras', sel: null }); await mide(q, mal, 'lista');
+      // PERSONAS: quien cobra por nómina no está «sin dar de alta»
+      await ve(q, 'obras', { sub: 'personas' }); await mide(q, mal, 'personas'); await foto(q, `11b-${w}-personas`);
+      if (w === 1280) {
+        const pers = X10('v_jornal_personas'), nom = pers.filter(p => !p.registrada && p.horas_nomina_90_dias > 0), sin = pers.filter(p => !p.registrada && !(p.horas_nomina_90_dias > 0));
+        const tarj = async p => txt(q.locator(`.ct-per[data-usuario="${p.usuario_id}"]`));
+        const okNom = (await Promise.all(nom.map(async p => /cobra por nómina/.test(await tarj(p)) && !/sin dar de alta/.test(await tarj(p)) && !(await q.locator(`.ct-per[data-usuario="${p.usuario_id}"] [data-per-alta]`).count())))).every(Boolean);
+        const okSin = (await Promise.all(sin.map(async p => /sin dar de alta/.test(await tarj(p)) && (await q.locator(`.ct-per[data-usuario="${p.usuario_id}"] [data-per-alta]`).count()) === 1))).every(Boolean);
+        ok(`(11b) Costo por obra → Personas · ${nom.map(p => p.nombre).join(' y ')} «cobra(n) por nómina» (horas_nomina_90_dias de la base), sin «Dar de alta»; ${sin.map(p => p.nombre).join(' y ')}, «sin dar de alta» como siempre; y arriba lo cuenta`,
+          nom.length === 2 && sin.length === 2 && okNom && okSin && new RegExp(`${nom.length} cobran por nómina · ${sin.length} con horas sin dar de alta`).test(await txt(q.locator('.ct-pag-sub'))), await txt(q.locator('.ct-pag-sub')));
+      }
+      ok(`(11b) Costo por obra con la nómina dentro · ${w} px: la obra A, la lista y Personas sin desplazamiento lateral ni rojos`, !mal.length, mal.join(' | '));
+      await cx.close();
+    }
+    estado.n10 = false;
+
+    // ==================== UN ZELLE A QUIEN YA COBRA POR NÓMINA (c10 v3: «pagadas_por_nomina», en la Bandeja) ====================
+    estado.c10ZelleNom = true;
+    { const { cx, q } = await abrirCtx(1280, true);
+      const z = F15.extras.zelle_nomina, mz = z.bandeja[0], av = z.pendiente[0].avisos.find(a => a.codigo === 'pagadas_por_nomina');
+      await ve(q, 'bandeja');
+      const c = await fila(q, mz.movimiento_id);
+      const li = c.locator('[data-aviso="pagadas_por_nomina"]');
+      ok('(11b) La Bandeja · un Zelle a ZZ Ayudante Uno, que ya cobra por nómina: su tarjeta de mano de obra trae el aviso de la base («' + av.texto.slice(0, 60) + '…») en ámbar, y «Así es» sigue encendido (no frena)',
+        (await li.count()) === 1 && (await li.getAttribute('class')).includes('warn') && (await txt(li)).includes(av.texto) && z.pendiente[0].puede_aplicar === true && await c.locator('[data-jr-asi]').isEnabled());
+      await foto(q, '11b-2-zelle-con-nomina');
+      await cx.close(); }
+    estado.c10ZelleNom = false; estado.c10 = false; jReset();
+
+    // ==================== EL WIP (c12 v3: el aviso 170) ====================
+    estado.c12 = true; wReset(); estado.n12 = true;
+    for (const w of [1280, 820, 390]) {
+      const { cx, q } = await abrirCtx(w, true);
+      tras('postear_journal');
+      await ve(q, 'wip', { sub: 'mes', periodo: '2026-10' });
+      const f170 = nLeer('x12|fn_wip_control|2026-10').find(x => x.orden === 170), sch = nLeer('x12|v_wip_schedule|2026-10'), a = sch.find(x => x.proyecto_id === obraA);
+      const av = await txt(q.locator('#ct-wip-avisos'));
+      if (w === 1280) ok(`(11b) El WIP con la nómina posteada · el aviso 170 tal como lo dice la base («…ni un pago repartido por horas ni una nómina las cubre…»): nombra ${f170.detalle.match(/: (.*?)\. Su costo/)[1]}, y NO a la obra A, que está en el WIP con movimiento (${a.estado}) y cuyas horas pagó la nómina`,
+        !f170.ok && /ni un pago repartido por horas ni una nómina las cubre/.test(f170.detalle) && av.includes(f170.detalle) && !!a && a.estado !== 'sin_movimiento' && !f170.detalle.includes(a.obra) && !(await q.locator('#conta-raiz .ct-rojo').count()), av.slice(0, 300));
+      const mal = []; await mide(q, mal, 'wip-mes'); await foto(q, `11b-${w}-wip`);
+      ok(`(11b) El WIP con la nómina dentro · ${w} px: el mes con su aviso 170, sin desplazamiento lateral ni rojos`, !mal.length, mal.join(' | '));
+      await cx.close();
+    }
+    estado.n12 = false; estado.c12 = false; wReset();
+
+    // ==================== LA BANDEJA: LOS DEPÓSITOS DE GUSTO (c6: la devolución de una corrección) ====================
+    estado.c15Dep = true;
+    for (const w of [1280, 820, 390]) {
+      const { cx, q } = await abrirCtx(w, true);
+      tras('postear_corr');
+      await ve(q, 'bandeja');
+      const dep = nLeer('x6|v_banco_bandeja'), dev = dep.find(x => x.movimiento_id === I.mov.dev), cg = (nLeer('v_nomina_cargos') || []).find(x => x.movimiento_id === I.mov.dev);
+      const c = await fila(q, I.mov.dev);
+      const t = await txt(c.locator('.ct-mov-det'));
+      if (w === 1280) {
+        ok('(11b) La Bandeja · el depósito de Gusto de la corrección (+$82.35): con el motivo «Nómina» y el texto de c6 («Depósito que dice nómina (Gusto): parece una devolución de la nómina…»), lo que dice la nómina y «Casar con la nómina»',
+          dep.length === 2 && dev.motivo === 'nomina' && Number(dev.monto) > 0 && t.includes(dev.texto) && /Depósito que dice nómina \(Gusto\)/.test(t) && !!cg && t.includes(`La nómina dice: ${cg.texto}`) &&
+          await c.locator('[data-nom-bj-casar]').isEnabled(), t.slice(0, 300));
+        await c.locator('[data-nom-bj-casar]').click(); await pintado(q);
+        const prop = nLeer(`fn_nomina_cargo_propuesta|${I.mov.dev}`), ft = await txt(c.locator('.ct-form'));
+        ok('(11b) …«Casar con la nómina»: la propuesta de la base, con sus partes EN NEGATIVO («a favor»), y «Casar así»', prop.opciones.length >= 1 && prop.opciones[0].partes.every(x => Number(x.monto) < 0) && /a favor/.test(ft) && (await c.locator('[data-nom-op="0"]').count()) === 1, ft.slice(0, 300));
+        const n0 = llamadas.length;
+        await c.locator('[data-nom-op="0"]').click(); await pintado(q);
+        const cc = ultima(n0, 'fn_nomina_cargo_casar');
+        ok('(11b) …«Casar así» desde la Bandeja: fn_nomina_cargo_casar(el depósito, sus partes en negativo como texto, con sus centavos) —el paso «casar_dev» del banco— y la Bandeja se vuelve a pintar sin él',
+          !!cc && cc.args.p_movimiento === I.mov.dev && JSON.stringify(cc.args.p_partes) === JSON.stringify(prop.opciones[0].partes.map(x => ({ corrida: x.corrida, cuenta: x.cuenta, monto: Number(x.monto).toFixed(2) }))) &&
+          N.e === F15.c15.orden.indexOf('casar_dev') + 1 && !(await q.locator(`.ct-mov[data-id="${I.mov.dev}"]`).count()) && (await q.locator(`.ct-mov[data-id="${I.mov.dvt}"]`).count()) === 1);
+        await foto(q, '11b-3-deposito-casado');
+      }
+      const mal = []; await mide(q, mal, 'bandeja'); await foto(q, `11b-${w}-bandeja-deposito`);
+      ok(`(11b) La Bandeja con los depósitos de Gusto · ${w} px: sin desplazamiento lateral ni rojos`, !mal.length, mal.join(' | '));
+      await cx.close();
+    }
+    estado.c15Dep = false;
+
+    // ==================== LA CÉDULA (c13: 2210 a 2240 con lo que cada nómina dejó por pagar) ====================
+    estado.c13 = true; xReset(); estado.n13 = true;
+    for (const w of [1280, 820, 390]) {
+      let { cx, q } = await abrirCtx(w, true);
+      const mal = [];
+      // CON EL CÓDIGO, entre el cargo de Gusto (19-oct) y el día de pago (23-oct): 2210 al revés, «lo adelantado a Gusto», y cuadra
+      tras('casar_net');
+      await ve(q, 'cedula', { sub: 'cedula', fecha: '2026-10-21', cuenta: '2210' });
+      const f10 = nLeer('x13|fn_cedula|2026-10-21').find(x => x.cuenta === '2210'), p10 = nLeer('x13|fn_cedula_partidas|2026-10-21|2210');
+      let t = await txt(q.locator('#ct-ced-cta'));
+      if (w === 1280) {
+        ok(`(11b) La cédula al 21-oct, CON el código · 2210: «cuadra» ${usd(f10.saldo_libro)} = ${usd(f10.saldo_auxiliar)} con lo que su nómina dejó por pagar (Gusto cobró antes del día de pago: lo adelantado), como lo dice la base`,
+          f10.estado === 'cuadra' && Number(f10.saldo_libro) < 0 && f10.saldo_libro === f10.saldo_auxiliar && /cuadra/.test(await txt(q.locator('#ct-ced-cta .ct-cab'))) && t.includes(f10.detalle) && !(await q.locator('#conta-raiz .ct-rojo').count()), t.slice(0, 300));
+        const r = await txt(q.locator('#ct-ced-partidas'));
+        ok('(11b) …lo que la sostiene: el renglón de su nómina («' + p10[0].concepto + '») con su nota y su monto, y «Ver la nómina»', p10.length === 1 && p10[0].fuente === 'nomina' && r.includes(p10[0].concepto) && r.includes(p10[0].nota) && r.includes(usd(Math.abs(p10[0].monto)).slice(1)) &&
+          (await q.locator(`#ct-ced-partidas [data-ced-nomina="${p10[0].ref_id}"]`).count()) === 1, r.slice(0, 300));
+        await foto(q, '11b-4-cedula-2210-adelantado');
+        const tocoCed = await toca(q, '#ct-ced-partidas [data-ced-nomina]');
+        ok('(11b) …«Ver la nómina» abre esa nómina', tocoCed && (await q.evaluate(() => [window.MXP_CONTA._estado.pagina, window.MXP_CONTA._estado.nom.corrida])).join('|') === `nomina|${p10[0].ref_id}`);
+        // con el cargo de la deducción des-casado: 2240 con $50.00 que su nómina dejó por pagar, y cuadra
+        tras('deshacer_csd');
+        await ve(q, 'cedula', { sub: 'cedula', fecha: '2026-10-31', cuenta: '2240' });
+        const f40 = nLeer('x13|fn_cedula|2026-10-31').find(x => x.cuenta === '2240');
+        t = await txt(q.locator('#ct-ced-cta'));
+        ok(`(11b) …al 31-oct, 2240 con ${usd(f40.saldo_libro)}: «cuadra» con «Lo que cada nómina dejó por pagar» (antes: «sin auxiliar: llega con la nómina (f11)»), con su botón a «Nómina: los cargos de Gusto»`,
+          f40.estado === 'cuadra' && Number(f40.saldo_libro) === 50 && /Lo que cada nómina dejó por pagar/.test(t) && !/f11/.test(t) && (await q.locator('#ct-ced-cta [data-ced-ir="nomina"]').count()) === 1, t.slice(0, 300));
+        const tocoIr = await toca(q, '#ct-ced-cta [data-ced-ir="nomina"]');
+        ok('(11b) …y el botón lleva a Nómina → Cargos de Gusto', tocoIr && (await q.evaluate(() => [window.MXP_CONTA._estado.pagina, window.MXP_CONTA._estado.nom.sub])).join('|') === 'nomina|cargos');
+      }
+      tras('deshacer_csd');
+      await ve(q, 'cedula', { sub: 'cedula', fecha: '2026-10-31', cuenta: null }); await mide(q, mal, 'cedula-con-codigo');
+      // SIN EL CÓDIGO: las cuentas de la nómina «con el código», nunca un rojo
+      await cx.close(); ({ cx, q } = await abrirCtx(w, false));
+      await ve(q, 'cedula', { sub: 'cedula', fecha: '2026-10-31', cuenta: null, filtro: 'todas' });
+      const cc = nLeer('x13|fn_cedula|2026-10-31@aal1').filter(x => x.estado === 'con_codigo'), res1 = nLeer('x13|fn_cedula_resumen|2026-10-31@aal1');
+      if (w === 1280) {
+        const filasCc = await Promise.all(cc.map(async f => { const l = q.locator(`.ct-ced-fila[data-ced-cuenta="${f.cuenta}"]`); return (await l.count()) === 1 && /con el código/.test(await txt(l)) && !/(no cuadra|sin auxiliar)/.test(await txt(l)) && !(await l.getAttribute('class')).includes('mal'); }));
+        ok(`(11b) La cédula SIN el código del teléfono · ${cc.map(f => f.cuenta).join(', ')} salen «con el código» (en ámbar), ni «no cuadra» ni «sin auxiliar», sin lo que suma ni la diferencia; ninguna cuenta en rojo ni la página`,
+          cc.length === 6 && filasCc.every(Boolean) && !(await q.locator('#conta-raiz .ct-rojo').count()) && cc.every(f => f.saldo_auxiliar === null && f.diferencia === null) && res1.con_codigo === 6, JSON.stringify(filasCc));
+        const tc = await txt(q.locator('#ct-ced-codigo'));
+        ok('(11b) …arriba, «6 cuentas se miran con el código del teléfono»: cuáles, que no es que no cuadren y qué hacer, con «Conexiones y seguridad»; y el resumen lo cuenta aparte',
+          /6 cuentas se miran con el código del teléfono/.test(tc) && cc.every(f => tc.includes(f.cuenta)) && /No es que no cuadren/.test(tc) && (await q.locator('#ct-ced-codigo [data-ced-ir-cx]').count()) === 1 &&
+          /6 con el código del teléfono/.test(await txt(q.locator('.ct-pag-sub'))), tc.slice(0, 300));
+        await foto(q, '11b-5-cedula-sin-codigo');
+        await ve(q, 'cedula', { sub: 'cedula', fecha: '2026-10-31', cuenta: '2240' });
+        const f40 = nLeer('x13|fn_cedula|2026-10-31@aal1').find(x => x.cuenta === '2240'), part = await txt(q.locator('#ct-ced-partidas'));
+        t = await txt(q.locator('#ct-ced-cta'));
+        ok('(11b) …la 2240 sin el código: «con el código», su qué hacer de la base, sin «Explicar» ni «Añadir un renglón a mano», con «Conexiones y seguridad»; debajo, el dato de la base («…se ve con el código del teléfono») y ni una cifra de la nómina',
+          f40.estado === 'con_codigo' && t.includes(f40.que_hacer) && !(await q.locator('#ct-ced-cta [data-ced-explicar], #ct-ced-cta [data-ced-renglon]').count()) && (await q.locator('#ct-ced-cta [data-ced-ir-cx]').count()) === 1 &&
+          /con el código del teléfono/.test(part) && !/\$50\.00/.test(part) && !(await q.locator('#conta-raiz .ct-rojo, #ct-ced-cta .ct-aviso.bad').count()), part.slice(0, 200));
+        const tocoCx = await toca(q, '#ct-ced-cta [data-ced-ir-cx]');
+        ok('(11b) …y «Conexiones y seguridad» lleva ahí (a activar o pedir el código)', tocoCx && (await titulo2(q)) === 'Conexiones y seguridad');
+      }
+      await ve(q, 'cedula', { sub: 'cedula', fecha: '2026-10-31', cuenta: null }); await mide(q, mal, 'cedula-sin-codigo'); await foto(q, `11b-${w}-cedula-sin-codigo`);
+      await ve(q, 'cedula', { sub: 'cedula', fecha: '2026-10-31', cuenta: '2210' }); await mide(q, mal, 'cedula-2210-sin-codigo');
+      ok(`(11b) La cédula con la nómina dentro · ${w} px: con el código y sin él, la lista y una cuenta, sin desplazamiento lateral ni rojos`, !mal.length, mal.join(' | '));
+      await cx.close();
+    }
+    estado.n13 = false; estado.c13 = false; xReset();
+
+    // ==================== LA NÓMINA: EL AVISO 75 SIN EL CÓDIGO ====================
+    for (const w of [1280, 820, 390]) {
+      const { cx, q } = await abrirCtx(w, false);
+      nReset(0);
+      await ve(q, 'nomina', { sub: 'nominas' });
+      const f75 = nLeerQ('v_nomina_control', 'aal1').find(x => Number(x.orden) === 75);
+      const li = q.locator('#ct-nom-avisos [data-orden="75"]');
+      await li.locator('details').evaluate(d => { d.open = true; });
+      const t = await txt(li);
+      if (w === 1280) ok('(11b) La Nómina sin el código · el aviso 75 trae la cifra de la base (la bolsa del burden: es de la empresa, no de nadie) y dice por qué se ve sin el código y que repartirla sí lo pide; sin el botón a Ajustes (llevaría a donde no se puede)',
+        !!f75 && f75.ok === false && t.includes(f75.detalle) && /Esta cifra se ve sin el código del teléfono porque es de la empresa/.test(t) && /No es un error/.test(t) && !(await li.locator('[data-nom-va]').count()), t.slice(0, 300));
+      const mal = []; await mide(q, mal, 'nomina-75'); await foto(q, `11b-${w}-nomina-75-sin-codigo`);
+      ok(`(11b) La Nómina sin el código, con el aviso 75 abierto · ${w} px: sin desplazamiento lateral ni rojos`, !mal.length, mal.join(' | '));
+      await cx.close();
+    }
+    { const { cx, q } = await abrirCtx(1280, true);
+      nReset(0);
+      await ve(q, 'nomina', { sub: 'nominas' });
+      ok('(11b) …y CON el código, el 75 lleva su botón a Ajustes y no esa frase', (await q.locator('#ct-nom-avisos [data-orden="75"] [data-nom-va="ajustes"]').count()) === 1 && !(await q.locator('#ct-nom-avisos .ct-nom-sincod').count()));
+      await cx.close(); }
+    estado.c15 = false; estado.c15Banco = false; nReset(); conCodigo(false);
   }
 
   // ---- (tablero, c16) EL TABLERO de la portada (c16), con la base simulada SACADA DEL BANCO (pantalla-f16.json): las acciones rápidas,

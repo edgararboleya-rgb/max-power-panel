@@ -10,8 +10,10 @@
 -- ESTA MISMA ENTREGA (sus marcas: c2 2026100201, c3 2026092601 y c4
 -- 2026100901; ver «CAMBIOS A c2, c3 Y c4», abajo: en la ronda 4 cambiaron
 -- c2 y c4, y en la ronda 5 c4 —la 2540 corriente—; se pegan ANTES que este,
--- que pide c2 y c4 con 2026100201 al menos). La marca de este archivo es 2026100901
--- (fn_banco_version). Si falta alguno o es anterior, para con MX000 y dice qué volver
+-- que pide c2 y c4 con 2026100201 al menos). La marca de este archivo es 2026111301
+-- (fn_banco_version; la del 13-nov-2026, la Fase 11b: la costura con la nómina
+-- de c15, ver «LA FASE 11b», abajo. La anterior, 2026100901, la ronda 5).
+-- Si falta alguno o es anterior, para con MX000 y dice qué volver
 -- a pegar, sin tocar nada. Se puede volver a pegar encima de sí mismo las
 -- veces que haga falta: no duplica nada, no pisa lo que Edgar ajustó (un
 -- descriptor, un préstamo, una póliza) y no toca el libro. Después se pega
@@ -54,9 +56,16 @@
 --      FIJAS: el interés de la cuenta del banco a 4910 y los cargos del
 --      banco a 6130, cuando el tipo del banco, el signo y el descriptor
 --      dicen lo mismo. El resto propone y espera.
---   6. La nómina entra solo por su journal: el de Gusto (f11), y antes de
---      f11 el del proveedor anterior (fn_banco_nomina, desde el SQL
---      Editor). Su débito en el banco espera ese journal y casa con él.
+--   6. La nómina entra solo por su journal: el de Gusto (f11: c15-nomina.sql,
+--      la página Nómina), y antes de f11 el del proveedor anterior
+--      (fn_banco_nomina, desde el SQL Editor). Su débito en el banco NO se
+--      clasifica a mano. (13-nov-2026, Fase 11b: el journal de Gusto no
+--      lleva línea del banco —Gusto cobra antes y en varios cargos—, así que
+--      su débito ya no «espera ese journal y casa con él»: se casa desde
+--      Contabilidad → Nómina → Cargos de Gusto, con lo que su nómina dejó
+--      por pagar, por la puerta de clasificar de este archivo. Una
+--      devolución de Gusto —un depósito—, igual, contra lo que quedó a
+--      favor.)
 --
 -- EL SIGNO. El monto de un movimiento lleva el signo que tiene en el libro
 -- la línea de SU cuenta: en el banco (1010, 1030), un depósito es positivo
@@ -228,7 +237,9 @@
 --   v_conciliacion_partidas lo de cada conciliación en tres grupos
 --   v_prestamos            cada préstamo: saldo, porción corriente, cuotas
 --   v_prepagados           cada póliza: amortizado, por amortizar, atrasado
---   (y v_papel_fases, para v_asiento_papel de c4)
+--   (y v_papel_fases, para v_asiento_papel de c4; desde el 13-nov-2026 trae
+--   también el papel de los asientos de la nómina de Gusto —c15—, que lee
+--   por fn_banco_papel_nomina(): 9.1)
 --
 -- LOS ERRORES CON NOMBRE (los de c2 y c3, y uno nuevo):
 --   MX000  falta algo que este archivo da por hecho (al pegarlo)
@@ -1433,6 +1444,95 @@
 --   · c6-volumen.sh: el tope de 40 s de la suite con un año de banco avisa
 --     hasta 60 s en vez de fallar (la máquina del banco varía).
 --
+-- LA FASE 11b (13-nov-2026; marca 2026111301): LA COSTURA CON LA NÓMINA DE
+-- GUSTO (c15-nomina.sql, la Fase 11). La nómina entra al libro por su
+-- archivo (el «Payroll journal» de cada corrida: un asiento con origen
+-- «nomina_corridas» y el reparto de su burden real, con origen
+-- «nomina_burden») y sus cargos del banco se casan desde su página
+-- (Contabilidad → Nómina → Cargos de Gusto), por fn_banco_clasificar. Este
+-- archivo es anterior a c15 y no la conocía: decía de sus asientos «el
+-- papel ya no está» y mandaba sus cargos a «esperar el journal (f11)». Lo
+-- que cambia, y nada más (ninguna tabla, ningún dato de Edgar, ninguna
+-- regla de casado de lo que no es de nómina):
+--   · EL PAPEL DE LOS ASIENTOS DE LA NÓMINA (9.1). v_papel_fases trae dos
+--     ramas más, «nomina_corridas» y «nomina_burden», que leen el papel de
+--     c15 (su vista v_nomina_papel) por una función nueva de aquí,
+--     fn_banco_papel_nomina(). Por una función y con «execute» porque este
+--     archivo se pega ANTES que c15 (una vista no puede nombrar otra que
+--     todavía no existe) y porque c15 borra y rehace sus vistas en cada
+--     pegado (con una dependencia directa no podría). Desde c15 no se
+--     podía arreglar: esta vista está sellada (las huellas de 10) y su
+--     cuadre «protecciones del banco» se pone en rojo si otro la cambia.
+--       – SIN c15 la función no devuelve nada: el banco se pega y funciona
+--         igual sin la nómina (c15 es opcional).
+--       – CON EL CÓDIGO DEL TELÉFONO (o desde el SQL Editor), el papel es
+--         el de c15, tal cual: la nómina con su día de pago, su período,
+--         sus personas, su bruto y su neto. Una corrida que ya no esté en
+--         su tabla sale como lo que es: «el papel ya no está».
+--       – SIN EL CÓDIGO (el dueño por la API en una sesión sin segundo
+--         factor), c15 no deja leer sus corridas (llevan lo que cobra cada
+--         persona) y esta función NO abre esa puerta: lee con los permisos
+--         de quien mira (no es SECURITY DEFINER). El papel dice entonces
+--         que es su nómina, dónde está y que se ve con el código, en vez de
+--         «el papel ya no está» (un rojo falso: el papel está). Sin una
+--         cifra ni un nombre: solo lo que ya dice el libro (que ese asiento
+--         es de una nómina).
+--     Es la única función de este archivo que una vista llama, y por eso
+--     la única que no es de conta.js con EXECUTE para authenticated (la
+--     vista es security_invoker: la ejecuta quien la lee). No tiene
+--     argumentos ni arma SQL con nada de fuera. El control la conoce
+--     («protecciones del banco»: está en su lista) y el resumen del pegado
+--     cuenta 22 funciones con la API (las 21 de conta.js y esta).
+--     Con eso la prueba 25 de c4-pruebas.sql («toda cifra de toda vista
+--     baja a su asiento y a su papel») pasa con una nómina en el libro; c4
+--     no cambia.
+--   · LOS TEXTOS DEL DÉBITO DE NÓMINA (R6). Decían «espera el journal de
+--     nómina (f11) y casa solo con su línea del banco»: con c15 el journal
+--     no lleva línea del banco y el cargo no casa solo. Ahora dicen el
+--     camino de hoy, «se casa desde Contabilidad → Nómina → Cargos de
+--     Gusto, con lo que su nómina dejó por pagar»: la propuesta de la
+--     Bandeja (fn_banco_proponer_base, 2), el freno de clasificar a mano
+--     (fn_banco_clasificar: sigue empezando «Es un débito de nómina» y
+--     terminando «dilo en el motivo»), lo que le falta a una conciliación
+--     (fn_conciliar: sigue ofreciendo fn_banco_nomina para la del proveedor
+--     anterior) y el «para» del descriptor «nomina» (1.13: en una base que
+--     ya lo tenía se pone al día solo si sigue diciendo lo que se sembró;
+--     su patrón, que Edgar puede haber ajustado, no se toca).
+--   · UNA DEVOLUCIÓN DE GUSTO (un depósito que dice nómina: una corrección
+--     que devuelve) salía en la Bandeja como un depósito cualquiera
+--     («deposito_sin_factura», o «deposito_parcial» con facturas abiertas:
+--     sus botones registraban el cobro de un cliente con el dinero de
+--     Gusto). Ahora, si nada más lo explica (ni un cobro anotado, ni una
+--     factura por ese monto exacto, ni una cuenta propia o personal, ni
+--     una devolución o un reembolso de un proveedor), sale con el motivo
+--     «nomina» (R6), como el débito: su tarjeta manda a Nómina → Cargos de
+--     Gusto (la pantalla le pone su botón «Casar con la nómina» por ese
+--     motivo), y registrarle el cobro de un cliente (los botones de las
+--     facturas, si los hay, o fn_banco_cobrar a mano) pide su porqué en las
+--     notas, como clasificarlo a mano pide su motivo. En un depósito el
+--     descriptor tiene que casar como PALABRA ENTERA («GUSTO», no
+--     «AUGUSTO»: el Zelle de un cliente que se llame así sigue siendo el
+--     cobro de un cliente). Si otra cosa lo explica, se queda como estaba y
+--     su texto lo avisa («Ojo: su descripción dice nómina»). Solo en un
+--     banco: el abono en una tarjeta sigue como estaba.
+--   · LA MARCA NUEVA rehace lo pendiente en el primer «Casar» después del
+--     pegado (153): los débitos de Gusto que esperan en la Bandeja salen ya
+--     con el texto nuevo. Hasta ese «Casar», la Bandeja dice de cada
+--     pendiente que su propuesta es de antes del pegado y no enseña sus
+--     botones (como en cada pegado con marca nueva, 9.3). Lo casado no se
+--     toca.
+--   Encima de producción (c1…c16 pegadas): este archivo (entero o sus dos
+--   partes); c4 no cambia y ninguna otra capa hay que volver a pegarla por
+--   esto. Las mismas 14 tablas y 8 vistas; 22 funciones con la API (antes
+--   21). Se pega igual sin c15 (se mira con to_regclass / to_regprocedure
+--   y «execute»: ninguna referencia directa) y con c15 pegada antes o
+--   después.
+--   Pruebas: la 164 (el papel de la nómina, con y sin c15), la 165 (sin el
+--   código del teléfono: dice que está y cómo se ve, sin dinero), la 166
+--   (los textos) y la 167 (la devolución de Gusto) de c6-pruebas.sql, que
+--   piden esta marca; y la 25 de c4-pruebas.sql con una nómina de verdad en
+--   el libro.
+--
 -- EL TIEMPO (banco de pruebas, pruebas/conta/c6-volumen.sh, 27-sep, con
 -- la ronda 3: el libro de c4-volumen, 10.333 asientos, con 2026 ya
 -- cerrado —así lo deja: las pruebas corren en enero de 2027—, y 12 meses
@@ -1688,7 +1788,7 @@ returns bigint
 language sql
 immutable
 set search_path = public, pg_temp
-as $$ select 2026100901::bigint $$;
+as $$ select 2026111301::bigint $$;
 revoke execute on function public.fn_banco_version() from public, anon, authenticated, service_role;
 -- =====================================================================
 -- 1 · LAS TABLAS
@@ -3111,7 +3211,8 @@ end $$;
 -- faltan: lo que Edgar ajustó no se pisa al volver a pegar. Uno que sigue
 -- como lo sembró una versión anterior (nadie lo tocó) se pone al día.
 --   nomina           la nómina (Gusto; ADP o Paychex del proveedor viejo
---                    hasta el 31-dic): espera al journal de f11
+--                    hasta el 31-dic): no se clasifica a mano; la de Gusto
+--                    se casa desde su página (c15; 13-nov-2026, Fase 11b)
 --   cargo_banco      un cargo del banco o de la tarjeta → 6130 (fijo si
 --                    además el tipo es FEE o SRVCHG y el signo es de cargo).
 --                    También la COMISIÓN de un cheque devuelto («RETURNED
@@ -3144,7 +3245,9 @@ declare
 begin
   for r in select * from (values
       ('nomina',          '(GUSTO|PAYROLL|\mADP\M|PAYCHEX)',
-       'Débito de nómina: espera el journal de nómina (f11) y casa con su línea del banco.', null),
+       'Débito de nómina (Gusto): se casa desde Contabilidad → Nómina → Cargos de Gusto, con lo que su nómina dejó por pagar. '
+       || 'Un depósito de Gusto (una devolución), igual, contra lo que quedó a favor. La nómina del proveedor anterior, con su '
+       || 'journal (fn_banco_nomina).', null),
       ('cargo_banco',     '(SERVICE (FEE|CHARGE)|MONTHLY (SERVICE |MAINTENANCE )?FEE|MAINTENANCE FEE|WIRE (TRANSFER )?FEE|'
                           || 'OVERDRAFT|INSUFFICIENT FUNDS|\mNSF\M|ATM FEE|FOREIGN TRANSACTION FEE|ANNUAL (MEMBERSHIP )?FEE|'
                           || 'LATE (PAYMENT )?FEE|RETURNED PAYMENT FEE|STOP PAYMENT FEE|RETURN(ED)? (DEPOSITED )?ITEM (FEE|CHARGE)|'
@@ -3182,6 +3285,17 @@ begin
     elsif r.viejo is not null and exists (select 1 from public.banco_descriptores d where d.clave = r.clave and d.patron = r.viejo) then
       perform public.fn_banco_marca('descriptor:' || r.clave);
       update public.banco_descriptores set patron = r.patron, para = r.para where clave = r.clave;
+      perform public.fn_banco_marca(null);
+    -- (13-nov-2026, Fase 11b) El «para» de la nómina que sembró una versión
+    -- anterior («espera el journal (f11)») se pone al día: solo ese texto y
+    -- solo si sigue siendo el sembrado. El patrón, la cuenta y las notas
+    -- —lo que Edgar ajusta— no se tocan. Con su rastro; una sola vez.
+    elsif r.clave = 'nomina'
+          and exists (select 1 from public.banco_descriptores d
+                       where d.clave = 'nomina'
+                         and d.para = 'Débito de nómina: espera el journal de nómina (f11) y casa con su línea del banco.') then
+      perform public.fn_banco_marca('descriptor:nomina');
+      update public.banco_descriptores set para = r.para where clave = 'nomina';
       perform public.fn_banco_marca(null);
     end if;
   end loop;
@@ -6374,8 +6488,11 @@ revoke execute on function public.fn_banco_archivo_retirar(uuid, text) from publ
 --       pago y no cuadra con lo que se le debe) es un cargo sin ticket; el
 --       pago queda como otra opción.
 --   R5  retiro de cajero: pregunta «¿caja chica (1050) o para ti (3200)?».
---   R6  débito de nómina (Gusto): espera al journal de f11 y lo dice; la
---       del proveedor anterior, su journal con fn_banco_nomina.
+--   R6  débito de nómina (Gusto): no se clasifica a mano y lo dice; se casa
+--       desde la página de la nómina (c15), con lo que su nómina dejó por
+--       pagar (hasta el 13-nov-2026: «espera al journal de f11»). Una
+--       devolución de Gusto (un depósito que dice nómina y que nada más
+--       explica), igual. La del proveedor anterior, con fn_banco_nomina.
 --   R7  intereses del banco → 4910 y cargos del banco o de la tarjeta →
 --       6130: reglas FIJAS (automáticas) solo si el tipo del banco (INT;
 --       FEE o SRVCHG), el signo y el descriptor dicen lo mismo; si solo
@@ -8067,6 +8184,8 @@ declare
   v_mio_txt text;
   v_mot    text;
   v_txt_fin text;
+  v_dice_nom boolean := false;
+  v_nom_dep  boolean := false;
 begin
   v_tipo := coalesce(k->'tipos'->>m.cuenta, fn_banco_tipo_cuenta(m.cuenta));
   -- (Ronda 4c) EL CRITERIO, una vez y antes de todo: ¿quién es el otro lado
@@ -8315,13 +8434,17 @@ begin
                           else '[]'::jsonb end));
   end if;
 
-  -- 2. La nómina: espera su journal.
+  -- 2. La nómina: no se clasifica a mano. (13-nov-2026, Fase 11b: decía
+  -- «espera el journal (f11) y casa solo». El journal de Gusto, c15, no
+  -- lleva línea del banco: su cargo se casa desde la página de la nómina.)
   if m.monto < 0 and coalesce(v_txt ~* (k->'pat'->>'nomina'), false) then
     return jsonb_build_object(
       'motivo', 'nomina', 'regla', 'R6',
-      'texto', 'Débito de nómina: espera el journal de nómina (f11); cuando entre, casa solo con su línea del banco. No se '
-               'clasifica a mano: la mano de obra entra solo por su journal. Si es la nómina del proveedor anterior (antes de '
-               'Gusto), registra su journal desde el SQL Editor: fn_banco_nomina(movimiento, las líneas de su journal).');
+      'texto', 'Débito de nómina (Gusto): se casa desde Contabilidad → Nómina → Cargos de Gusto, con lo que su nómina dejó por '
+               'pagar (el neto, los impuestos, las deducciones); la cuota mensual de Gusto también se resuelve ahí. Si su nómina '
+               'todavía no está, sube antes su «Payroll journal» en Contabilidad → Nómina. No se clasifica a mano: la mano de '
+               'obra entra solo por su nómina. Si es la nómina del proveedor anterior (antes de Gusto), registra su journal '
+               'desde el SQL Editor: fn_banco_nomina(movimiento, las líneas de su journal).');
   end if;
 
   -- 3. Un depósito devuelto (cheque rebotado) o revertido: la devolución de
@@ -9537,8 +9660,25 @@ begin
                                 || coalesce(v_pers, '[]'::jsonb) || coalesce(v_otro_cobro, '[]'::jsonb)
                                 || coalesce(v_devol, '[]'::jsonb) || coalesce(v_reemb, '[]'::jsonb) || coalesce(v_fact, '[]'::jsonb)
                                 || coalesce(v_tr, '[]'::jsonb) end end;
+    -- (13-nov-2026, Fase 11b) UNA DEVOLUCIÓN DE GUSTO: el depósito que dice
+    -- nómina (el descriptor de R6, aquí como PALABRA ENTERA: «GUSTO», no
+    -- «AUGUSTO») y que nada más explica sale con el motivo «nomina» (R6),
+    -- como el débito, y sus botones (las facturas abiertas, si las hay) piden
+    -- su motivo. Si otra cosa lo explica, sigue como estaba y el texto avisa.
+    v_dice_nom := coalesce(v_txt ~* ('\m(' || (k->'pat'->>'nomina') || ')\M'), false);
+    v_nom_dep := v_dice_nom and not v_personal and v_cobros is null and v_grupos is null and not v_desconocida
+                 and v_otro_cobro is null and v_devol is null and v_reemb is null and not (v_fact is not null and v_exacta)
+                 and not v_nombrado and v_tr is null;
+    if v_nom_dep and v_lista is not null then
+      select jsonb_agg(fn_banco_opcion_motivo(o)
+                       || jsonb_build_object('texto', (o->>'texto') || case when o->>'texto' like '%(con su motivo)' then ''
+                                                                            else ' (con su motivo)' end) order by n)
+        into v_lista
+        from jsonb_array_elements(v_lista) with ordinality as x(o, n);
+    end if;
     return jsonb_strip_nulls(jsonb_build_object(
-      'motivo', case when v_personal then 'transferencia_personal'
+      'motivo', case when v_nom_dep then 'nomina'
+                     when v_personal then 'transferencia_personal'
                      when v_cobros is not null then 'deposito_cobro' when v_grupos is not null then 'deposito_cobros'
                      when v_desconocida then 'cuenta_desconocida'
                      when v_otro_cobro is not null then 'deposito_otro_cobro'
@@ -9550,9 +9690,20 @@ begin
                      when v_tr is not null then 'transferencia_un_lado'
                      else 'deposito_sin_factura' end,
       'otro_lado', case when v_nombrado then v_ol end,
-      'regla', case when v_tr is not null and v_cobros is null and v_grupos is null and v_fact is null and v_reemb is null then 'R3'
+      'regla', case when v_nom_dep then 'R6'
+                    when v_tr is not null and v_cobros is null and v_grupos is null and v_fact is null and v_reemb is null then 'R3'
                     when v_reemb is not null and v_cobros is null and v_grupos is null then 'R4' else 'R2' end,
-      'texto', (case when v_cobros is not null
+      'texto', (case when v_nom_dep
+                    then 'Depósito que dice nómina (Gusto): parece una devolución de la nómina (una corrección que devuelve). Se '
+                         'casa desde Contabilidad → Nómina → Cargos de Gusto, contra lo que su nómina dejó a favor; si esa '
+                         'corrección todavía no está, sube antes su «Payroll journal» en Contabilidad → Nómina. No es un ingreso '
+                         'ni el cobro de un cliente.'
+                         || case when v_lista is not null
+                                 then ' Si de verdad es otra cosa (el cobro de un cliente: una parte de una factura, su retención), '
+                                      'está abajo, con su motivo.'
+                                 else ' Si de verdad es otra cosa (el cobro de un cliente, un aporte de Edgar, un préstamo), '
+                                      'regístrala con su motivo escrito.' end
+                    when v_cobros is not null
                     then 'Hay un cobro registrado por ese monto, pero con otra fecha: si es este depósito, cásalo.'
                     when v_grupos is not null
                     then 'Estos cobros ya registrados suman el depósito (varios cheques depositados juntos): cásalo con ellos. '
@@ -9624,6 +9775,11 @@ begin
                                             or v_devol is not null or v_reemb is not null or v_fact is not null)
                        then format(' Ojo: el banco dice que viene de «%s», sin número de cuenta: si es tu cuenta personal o una de la '
                                    'empresa, está abajo, con su motivo.', v_ol->>'nombra')
+                       else '' end
+               -- (13-nov-2026, Fase 11b: dice nómina y otra cosa lo explica)
+               || case when v_dice_nom and not v_nom_dep
+                       then ' Ojo: su descripción dice nómina (Gusto). Si es una devolución de Gusto, no es nada de esto: se casa '
+                            'desde Contabilidad → Nómina → Cargos de Gusto, contra lo que su nómina dejó a favor.'
                        else '' end,
       'opciones', v_lista));
   end if;
@@ -12154,6 +12310,16 @@ begin
   if fn_banco_limpio(p_notas) is null then
     perform fn_banco_cobro_propia(m, 'las notas (p_notas)');
   end if;
+  -- (13-nov-2026, Fase 11b) UNA DEVOLUCIÓN DE GUSTO (el depósito que la
+  -- bandeja propone con el motivo «nomina») no es el cobro de un cliente:
+  -- solo con su porqué en las notas, como lo piden sus botones. Sin esto,
+  -- pulsados tal cual, la factura de un cliente quedaba cobrada con el
+  -- dinero de Gusto.
+  if m.estado_motivo = 'nomina' and fn_banco_limpio(p_notas) is null then
+    raise exception using errcode = 'MX008',
+      message = 'Es un depósito de nómina (una devolución de Gusto): se casa desde Contabilidad → Nómina → Cargos de Gusto, '
+                'contra lo que su nómina dejó a favor. Si de verdad es el cobro de un cliente, di por qué en las notas (p_notas).';
+  end if;
   if jsonb_typeof(v_apps) is distinct from 'array' or jsonb_array_length(v_apps) = 0 then
     raise exception using errcode = '22023',
       message = 'Di a qué va el depósito: a una o varias facturas ({"factura_id": …}), o de anticipo de una obra ({"proyecto_id": …}).';
@@ -13127,10 +13293,19 @@ begin
                 'varios cheques, con la aplicación del que rebotó) y la factura vuelve a quedar por cobrar. No es un gasto. Si de '
                 'verdad es otra cosa, dilo en el motivo.';
   end if;
+  -- (13-nov-2026, Fase 11b: decía «espera su journal (f11) y casa solo». El
+  -- cargo de Gusto —y su cuota— se casan desde la página de la nómina, c15,
+  -- que llama aquí CON su motivo. El mensaje del débito sigue empezando «Es
+  -- un débito de nómina» y terminando «dilo en el motivo»: c10 lo reconoce
+  -- así. La devolución de Gusto —un depósito— dice lo suyo.)
   if m.estado_motivo = 'nomina' and v_motivo is null then
     raise exception using errcode = 'MX008',
-      message = 'Es un débito de nómina: espera su journal (f11) y casa solo. Si de verdad es otra cosa (la cuota mensual de Gusto, '
-                'por ejemplo), dilo en el motivo.';
+      message = case when m.monto > 0
+                     then 'Es un depósito de nómina (una devolución de Gusto): se casa desde Contabilidad → Nómina → Cargos de '
+                          'Gusto, contra lo que su nómina dejó a favor. Si de verdad es otra cosa, dilo en el motivo.'
+                     else 'Es un débito de nómina (Gusto): se casa desde Contabilidad → Nómina → Cargos de Gusto, con lo que su '
+                          'nómina dejó por pagar (la cuota mensual de Gusto también se resuelve ahí). Si de verdad es otra cosa, '
+                          'dilo en el motivo.' end;
   end if;
   -- Una partida en tránsito de la conciliación de APERTURA que este
   -- movimiento puede ser (fn_banco_apertura_opciones: lo que falta de ella
@@ -15269,16 +15444,21 @@ begin
   -- LO QUE FALTA para confirmarla, en palabras (y guardado: v_conciliacion
   -- lo enseña, ronda 4).
   v_falta := case when v_banco is null then 'el saldo del statement (fn_conciliar con p_saldo_statement)'
+                  -- (13-nov-2026, Fase 11b: decía «débito(s) de nómina sin su
+                  -- journal: espera el journal de nómina (f11) o…»; y abajo,
+                  -- «su journal, f11 o fn_banco_nomina»)
                   when v_nsb > 0 and v_nnom = v_nsb
-                  then format('%s débito(s) de nómina sin su journal: espera el journal de nómina (f11) o, si es del proveedor '
-                              'anterior, regístralo desde el SQL Editor con fn_banco_nomina (no se clasifica a mano)', v_nsb)
+                  then format('%s movimiento(s) de nómina (Gusto) sin casar: se casan desde Contabilidad → Nómina → Cargos de '
+                              'Gusto, con lo que su nómina dejó por pagar; o, si es del proveedor anterior, regístralo desde el SQL '
+                              'Editor con fn_banco_nomina (no se clasifica a mano)', v_nsb)
                   when v_nsb > 0
                   then concat_ws('; ',
                          case when v_nsb - v_ncas > 0
                               then format('%s movimiento(s) del banco sin su línea en el libro: cásalos o clasifícalos%s%s%s',
                                           v_nsb - v_ncas,
                                           case when v_nnom > 0
-                                               then format(' (%s de nómina: su journal, f11 o fn_banco_nomina)', v_nnom)
+                                               then format(' (%s de nómina: se casan desde Contabilidad → Nómina → Cargos de '
+                                                           'Gusto; el del proveedor anterior, con fn_banco_nomina)', v_nnom)
                                                else '' end,
                                           case when v_nblq > 0
                                                then format(' (%s espera que reabras otra conciliación antes: lo dice su propuesta)',
@@ -17200,7 +17380,10 @@ grant  execute on function public.fn_prepagados_amortizar(text) to authenticated
 -- los permisos de quien las mira, así que el banco solo lo ve el dueño (la
 -- policy de sus tablas): el equipo lee 0 filas y anon no las abre.
 -- Ninguna llama a una función de este archivo (sin grant a la API: la
--- vista se caería con 42501 al abrirla): casan y suman con SQL llano. Cada
+-- vista se caería con 42501 al abrirla): casan y suman con SQL llano.
+-- (Salvo, desde el 13-nov-2026, v_papel_fases: lee el papel de la nómina
+-- por fn_banco_papel_nomina(), que por eso sí lleva EXECUTE para
+-- authenticated: 9.1.) Cada
 -- cifra lleva su clic: el movimiento (movimiento_id), el asiento
 -- (asiento_id, asiento_numero) y el papel (papel_tabla, papel_id).
 -- Las que cambian de columnas entre versiones se borran antes de crearlas,
@@ -17228,7 +17411,86 @@ end $$;
 -- fase la rehace con los suyos («create or replace»: v_asiento_papel
 -- depende de ella, y así no se borra nada). Mismas columnas siempre, en
 -- el mismo orden.
+-- (13-nov-2026, Fase 11b) Y EL PAPEL DE LOS ASIENTOS DE LA NÓMINA DE GUSTO
+-- (c15-nomina.sql): el journal de cada corrida (origen «nomina_corridas») y
+-- el reparto de su burden real (origen «nomina_burden»), los dos con
+-- origen_id = la corrida. Su papel está en c15 (la vista v_nomina_papel,
+-- con estas mismas cuatro columnas) y aquí se lee por una FUNCIÓN,
+-- fn_banco_papel_nomina(), con «execute», porque:
+--   · este archivo se pega ANTES que c15 (y c15 es opcional): una rama que
+--     nombrara v_nomina_papel no se podría crear sin ella. La función mira
+--     si está (to_regclass) y, si no, no devuelve nada;
+--   · c15 borra y rehace sus vistas en cada pegado, y no se pega si algo
+--     ajeno depende de ellas: leída con «execute» no hay dependencia;
+--   · c15 no puede añadir esta rama desde allí: esta vista está sellada
+--     (10) y «protecciones del banco» se pone en rojo si otro la cambia.
+-- EL CÓDIGO DEL TELÉFONO. Las corridas llevan lo que cobra cada persona y
+-- c15 solo deja leerlas con el código (aal2); v_nomina_papel trae el bruto
+-- y el neto de la nómina. La función corre CON LOS PERMISOS DE QUIEN MIRA
+-- (no es SECURITY DEFINER: no abre esa puerta) y no tiene argumentos ni arma
+-- SQL con nada de fuera:
+--   · con el código (y desde el SQL Editor o pg_cron), devuelve el papel de
+--     c15 tal cual. Un asiento de la nómina cuya corrida ya no está sale sin
+--     papel («el papel ya no está»): un rastro roto se sigue viendo;
+--   · sin el código (el dueño por la API en una sesión sin segundo factor:
+--     lo dice c15, fn_nomina_ve_personas), no se puede leer la corrida. El
+--     papel ESTÁ: decir «el papel ya no está» sería un rojo falso. Devuelve,
+--     de cada asiento de la nómina que el libro le deja ver, que su papel es
+--     su nómina, dónde está y que se ve con el código. Sin una cifra ni un
+--     nombre: solo lo que el asiento ya dice de sí mismo (que es de una
+--     nómina). Que la corrida siga en su tabla se comprueba con el código;
+--   · al equipo, nada (no lee el libro ni la nómina); anon y service_role
+--     no la ejecutan.
+-- Es la única función de este archivo que una vista llama: lleva EXECUTE
+-- para authenticated (la vista es security_invoker: la ejecuta quien la
+-- lee) y «protecciones del banco» la tiene en su lista. En la vista, una
+-- rama por origen, con su origen fijo como las demás: Postgres ni llama a
+-- la función para un asiento que no es de la nómina, y la llama una vez por
+-- rama y por consulta (no una por asiento) cuando sí lo hay (medido con 42
+-- asientos de nómina: 2 llamadas).
 -- ---------------------------------------------------------------------
+create or replace function public.fn_banco_papel_nomina()
+returns table (origen_tabla text, origen_id text, papel text, ruta text)
+language plpgsql
+stable
+set search_path = public, pg_temp
+as $$
+declare
+  v_ve boolean := true;
+begin
+  -- Sin c15 (este archivo se pega antes, y la nómina es opcional): nada.
+  if to_regclass('public.v_nomina_papel') is null then
+    return;
+  end if;
+  -- ¿Quien mira puede leer lo de la nómina? Lo dice c15 (el dueño con el
+  -- código del teléfono; el SQL Editor y pg_cron, siempre).
+  if to_regprocedure('public.fn_nomina_ve_personas()') is not null then
+    execute 'select public.fn_nomina_ve_personas()' into v_ve;
+  end if;
+  if coalesce(v_ve, false) then
+    return query execute
+      'select p.origen_tabla::text, p.origen_id::text, p.papel::text, p.ruta::text from public.v_nomina_papel p';
+    return;
+  end if;
+  -- Sin el código: el papel está y se ve con él. (Solo los asientos de la
+  -- nómina que el libro deja ver a quien mira: al equipo, ninguno.)
+  return query
+    select distinct a.origen_tabla, a.origen_id,
+           case a.origen_tabla
+             when 'nomina_corridas'
+             then 'Nómina de Gusto: el papel de este asiento es su nómina (el «Payroll journal» que se subió) y está en '
+                  'Contabilidad → Nómina. Lleva lo que cobra cada persona: se ve con el código del teléfono (actívalo en '
+                  'Contabilidad → Conexiones y seguridad si no lo tienes, y entra otra vez escribiéndolo).'
+             else 'Reparto del burden real de una nómina de Gusto a sus obras: su papel es esa nómina y está en Contabilidad → '
+                  'Nómina. Se ve con el código del teléfono (actívalo en Contabilidad → Conexiones y seguridad si no lo tienes, '
+                  'y entra otra vez escribiéndolo).' end,
+           null::text
+      from public.asientos a
+     where a.origen_tabla in ('nomina_corridas', 'nomina_burden');
+end $$;
+revoke execute on function public.fn_banco_papel_nomina() from public, anon, authenticated, service_role;
+grant  execute on function public.fn_banco_papel_nomina() to authenticated;
+
 create or replace view public.v_papel_fases with (security_invoker = true) as
 select 'movimientos_banco'::text as origen_tabla,
        m.id::text                as origen_id,
@@ -17258,7 +17520,18 @@ select 'prepagados'::text, x.origen_id, x.papel, null::text
                format('Amortización de prepagados de %s%s', a.periodo,
                       case when a.grupo = 'mano_de_obra' then ' (prima de WC)' else '' end) as papel
           from public.prepagados_amortizaciones a
-         group by a.periodo, a.grupo) x;
+         group by a.periodo, a.grupo) x
+union all
+-- (13-nov-2026, Fase 11b: la nómina de Gusto, c15. El journal de cada
+-- corrida…)
+select 'nomina_corridas'::text, n.origen_id, n.papel, n.ruta
+  from public.fn_banco_papel_nomina() n
+ where n.origen_tabla = 'nomina_corridas'
+union all
+-- (… y el reparto de su burden real a las obras)
+select 'nomina_burden'::text, n.origen_id, n.papel, n.ruta
+  from public.fn_banco_papel_nomina() n
+ where n.origen_tabla = 'nomina_burden';
 
 -- ---------------------------------------------------------------------
 -- 9.2 · v_banco_movimientos — cada movimiento del banco como llegó, con su
@@ -18039,7 +18312,9 @@ declare
                             'prestamo_cuotas', 'prepagados', 'prepagados_amortizaciones', 'banco_cuentas_personales'];
   v_vistas  text[] := array['v_papel_fases', 'v_banco_movimientos', 'v_banco_bandeja', 'v_banco_saldos', 'v_conciliacion',
                             'v_conciliacion_partidas', 'v_prestamos', 'v_prepagados'];
-  -- lo que conta.js llama (el resto, sin grant a la API)
+  -- lo que conta.js llama (el resto, sin grant a la API). (13-nov-2026, Fase
+  -- 11b: y, al final, fn_banco_papel_nomina(), que no la llama conta.js sino
+  -- v_papel_fases —security_invoker: la ejecuta quien lee la vista—: 9.1.)
   v_app     text[] := array['fn_banco_importar_ofx(text,text,text)', 'fn_banco_importar_filas(jsonb)', 'fn_banco_casar(uuid)',
                             'fn_banco_casar_todo(text,date)', 'fn_banco_casar_con(uuid,jsonb,text)',
                             'fn_banco_cobrar(uuid,jsonb,text)', 'fn_banco_pagar_proveedor(uuid,uuid,jsonb)',
@@ -18049,7 +18324,7 @@ declare
                             'fn_conciliacion_partida(uuid,text,text)', 'fn_conciliacion_confirmar(uuid)',
                             'fn_conciliacion_reabrir(uuid,text)', 'fn_conciliacion_apertura(text,text,jsonb,text)',
                             'fn_prestamo_cuota(uuid,uuid,date,text,text,text,text)', 'fn_prepagados_amortizar(text)',
-                            'fn_banco_control(text,text[])'];
+                            'fn_banco_control(text,text[])', 'fn_banco_papel_nomina()'];
   v_hoy     boolean := p_periodo = 'hoy';
   v_pp      periodos;
   v_pid     text;
@@ -19990,7 +20265,7 @@ comment on table public.prepagados                 is 'c6: cada póliza (seguro,
 comment on table public.prepagados_amortizaciones  is 'c6: lo amortizado de cada póliza en cada mes, con su asiento (uno por mes, estándar).';
 comment on table public.banco_cuentas_personales   is 'c6: las cuentas PERSONALES de Edgar que él dio de alta a propósito (sus 4 últimos): el dinero que va y viene de ellas es patrimonio del accionista y sus botones entran sin motivo. Un número que no se conoce no es personal. Se da de alta y de baja (con su motivo) con fn_banco_cuenta_personal.';
 
-comment on view public.v_papel_fases               is 'c6: el papel de los asientos del banco (movimiento, nómina del proveedor anterior, cuota, mes de prepagados), para v_asiento_papel de c4.';
+comment on view public.v_papel_fases               is 'c6: el papel de los asientos del banco (movimiento, nómina del proveedor anterior, cuota, mes de prepagados) y, desde el 13-nov-2026, el de los asientos de la nómina de Gusto (c15: su journal y el reparto de su burden; por fn_banco_papel_nomina), para v_asiento_papel de c4.';
 comment on view public.v_banco_movimientos         is 'c6: cada movimiento con su estado, su regla, su asiento y su papel.';
 comment on view public.v_banco_bandeja             is 'c6: lo pendiente, con su motivo, su propuesta en palabras y sus opciones (qué función llamar); y lo clasificado cuyo ticket llegó después (llego_su_ticket).';
 comment on view public.v_banco_saldos              is 'c6: cada banco y tarjeta: saldo en libros, el último del banco, lo pendiente, su última conciliación y hasta dónde llegan sus archivos (el mes terminado y sin cerrar al que no llegan).';
@@ -20029,6 +20304,7 @@ comment on function public.fn_banco_nomina(uuid, jsonb, text)       is 'c6: el j
 comment on function public.fn_banco_descriptor(text, text, text, text) is 'c6: cambia lo que se reconoce en la descripción de un movimiento (SQL Editor).';
 comment on function public.fn_banco_cuenta_personal(text, text, boolean, text) is 'c6: da de alta una cuenta personal de Edgar por sus 4 últimos, o la da de baja con su motivo (SQL Editor). Solo con ella el dinero de o a esa cuenta va al patrimonio del accionista sin motivo.';
 comment on function public.fn_banco_version()                       is 'c6: la marca de esta versión del banco (AAAAMMDDNN).';
+comment on function public.fn_banco_papel_nomina()                  is 'c6: el papel de los asientos de la nómina de Gusto (c15: orígenes nomina_corridas y nomina_burden) para v_papel_fases, con sus cuatro columnas. Lee v_nomina_papel de c15 si está (sin c15, nada), con los permisos de quien mira: con el código del teléfono (o desde el SQL Editor), el papel de c15 tal cual; sin él, de cada asiento de la nómina dice que su papel es su nómina y que se ve con el código, sin cifras ni nombres. No es SECURITY DEFINER. La llama la vista, no conta.js.';
 
 
 -- =====================================================================
@@ -20068,13 +20344,14 @@ select 'c6 · ' || x.que as control, x.ok, to_jsonb(x.detalle) as detalle
                    and v.relname in ('v_papel_fases', 'v_banco_movimientos', 'v_banco_bandeja', 'v_banco_saldos', 'v_conciliacion',
                                      'v_conciliacion_partidas', 'v_prestamos', 'v_prepagados')),
      '8 vistas, todas security_invoker, solo SELECT para authenticated'),
-    ('funciones de la app', (select count(*) = 21 from pg_proc p
+    ('funciones de la app', (select count(*) = 22 from pg_proc p
                               where p.pronamespace = 'public'::regnamespace
                                 and has_function_privilege('authenticated', p.oid, 'execute')
                                 and not has_function_privilege('anon', p.oid, 'execute')
                                 and (p.proname like 'fn\_banco\_%' or p.proname like 'fn\_conciliacion\_%' or p.proname = 'fn_conciliar'
                                      or p.proname like 'fn\_prestamo\_%' or p.proname like 'fn\_prepagado%')),
-     '21 funciones que llama conta.js (anon ninguna); el resto, sin grant a la API'),
+     '21 funciones que llama conta.js y fn_banco_papel_nomina, la que lee la vista de los papeles (anon ninguna); el resto, '
+     || 'sin grant a la API'),
     ('en el reparto de c2', not exists (select 1 from pg_proc p
                                           where p.pronamespace = 'public'::regnamespace and p.prosecdef
                                             and has_function_privilege('authenticated', p.oid, 'execute')

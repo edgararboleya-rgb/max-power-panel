@@ -6,9 +6,13 @@
    127.0.0.1:5433) a la misma llamada, como el dueño (authenticated, aal2).
    Este script:
      1. arma <bd> (BORRA la que haya con ese nombre): un clon de la plantilla
-        (de fábrica g10a: la cadena entera pegada como en producción) con
-        06-produccion-facturas.sql, c13-cedula.sql, c14-subs.sql y
-        f12-semilla.sql (un libro de octubre y noviembre en uso, inventado);
+        (de fábrica g15a: la cadena entera pegada como en producción, con la
+        nómina c15 y el cierre con sus filas 180 a 183) con las capas de la
+        Fase 11b del árbol en el orden de producción (CAPAS: c3, c6, c10,
+        c12, c13, c15 y c9 otra vez), 06-produccion-facturas.sql,
+        c14-subs.sql y f12-semilla.sql (un libro de octubre y noviembre en
+        uso, inventado; sin ninguna nómina: la cédula con la nómina dentro
+        es de f15-capturar.js);
      2. lee todo lo que la pantalla lee (la ESCENA 0), y después hace, EN EL
         ORDEN DE LA PRUEBA, cada cosa que la pantalla escribe (un PASO), y tras
         cada paso vuelve a leerlo todo (la escena siguiente). c13 y c14 son dos
@@ -33,7 +37,10 @@
    cambian, se vuelve a correr y la prueba de la pantalla sigue con lo nuevo.
 
    Uso (solo el banco; nada de red):
-     node pruebas/conta/f12-capturar.js <bd> [plantilla=g10a]
+     node pruebas/conta/f12-capturar.js <bd> [plantilla=g15a]
+   (13-nov, Fase 11b: de fábrica g15a + las capas de la 11b; antes, g10a. La
+   salida guarda la huella de cada archivo pegado: pantalla.js la compara con
+   la del árbol.)
    Con --solo-montar arma la base (paso 1), escribe sus ids en una línea de
    JSON y para: así se compara la base simulada con un banco recién armado.
    Tarda unos 30 s. La base queda (con lo que escribieron los pasos); se borra
@@ -43,9 +50,9 @@ const fs = require('fs'), path = require('path'), crypto = require('crypto');
 const { execFileSync } = require('child_process');
 
 const ARGS = process.argv.slice(2).filter(a => !a.startsWith('--')), SOLO_MONTAR = process.argv.includes('--solo-montar');
-const BD = ARGS[0], PLANTILLA = ARGS[1] || 'g10a';
-if (!BD || !/^[a-z][a-z0-9_]*$/.test(BD) || ['g10a', 'g9a', 'g8a', 'f9fix', 'p1fab', 'c9perf', PLANTILLA].includes(BD)) {
-  console.error('uso: node pruebas/conta/f12-capturar.js <bd nueva> [plantilla=g10a]   (nunca una plantilla)'); process.exit(2);
+const BD = ARGS[0], PLANTILLA = ARGS[1] || 'g15a';
+if (!BD || !/^[a-z][a-z0-9_]*$/.test(BD) || ['g15a', 'g12a', 'g10a', 'g9a', 'g8a', 'f9fix', 'p1fab', 'c9perf', PLANTILLA].includes(BD)) {
+  console.error('uso: node pruebas/conta/f12-capturar.js <bd nueva> [plantilla=g15a]   (nunca una plantilla)'); process.exit(2);
 }
 const ROOT = path.resolve(__dirname, '..', '..');
 const SALIDA = path.join(__dirname, 'pantalla-f12.json');
@@ -110,7 +117,10 @@ console.log(`armando ${BD} desde ${PLANTILLA}…`);
 su(`drop database if exists ${BD}`);
 su(`create database ${BD} template ${PLANTILLA} owner editor_sql`);
 su(`grant create on database ${BD} to editor_sql`);
-for (const f of ['pruebas/conta/06-produccion-facturas.sql', 'docs/conta/c13-cedula.sql', 'docs/conta/c14-subs.sql']) { pegar(path.join(ROOT, f)); console.log('  pegado', f); }
+// (13-nov, Fase 11b) las capas de la 11b como las pega Edgar en producción (c15 ya está en g15a: encima, la del árbol; c9 otra vez al final)
+const CAPAS = ['docs/conta/c3-puentes.sql', 'docs/conta/c6-banco.sql', 'docs/conta/c10-costo-obra.sql', 'docs/conta/c12-wip.sql', 'docs/conta/c13-cedula.sql',
+  'docs/conta/c15-nomina.sql', 'docs/conta/c9-cierre.sql', 'pruebas/conta/06-produccion-facturas.sql', 'docs/conta/c14-subs.sql'];
+for (const f of CAPAS) { pegar(path.join(ROOT, f)); console.log('  pegado', f); }
 execFileSync('psql', ['-X', '-q', '-U', 'editor_sql', '-d', BD, '-f', path.join(__dirname, 'f12-semilla.sql')], { env: ENV, stdio: ['ignore', 'pipe', 'pipe'] });
 // los nombres de la semilla de la plantilla que quedaron escritos en el libro (un trabajo externo y su asiento), cambiados por
 // inventados con «ZZ»: solo en este clon, como superusuario (las guardas del libro no dejan cambiar un asiento, con razón)
@@ -371,7 +381,8 @@ for (const t of ['000-00-0003', '00-0000071', '000000003', '000000071', '000-00-
 }
 const salida = {
   _leeme: 'La base simulada de «Cédula de corte» (c13) y «Subs y 1099» (c14) que usa pantalla.js: lo que contestó el banco. La genera pruebas/conta/f12-capturar.js; no se edita a mano. Datos inventados (ZZ).',
-  capturado: { hoy, plantilla: PLANTILLA, c13: crypto.createHash('sha1').update(fs.readFileSync(path.join(ROOT, 'docs/conta/c13-cedula.sql'))).digest('hex').slice(0, 12), c14: crypto.createHash('sha1').update(fs.readFileSync(path.join(ROOT, 'docs/conta/c14-subs.sql'))).digest('hex').slice(0, 12) },
+  capturado: { hoy, plantilla: PLANTILLA, c13: crypto.createHash('sha1').update(fs.readFileSync(path.join(ROOT, 'docs/conta/c13-cedula.sql'))).digest('hex').slice(0, 12), c14: crypto.createHash('sha1').update(fs.readFileSync(path.join(ROOT, 'docs/conta/c14-subs.sql'))).digest('hex').slice(0, 12),
+    capas: Object.fromEntries(CAPAS.map(f => [f, crypto.createHash('sha1').update(fs.readFileSync(path.join(ROOT, f))).digest('hex').slice(0, 12)])) },
   ids: { ...ID, ficha_dos: fichaDos, coi_dos: coiDos, tramo_uno: tramoUno, renglon_nuevo: renglonNuevo, renglon_corregido: renglonCorregido },
   textos: { ...T13, ...Object.fromEntries(Object.entries(T14).map(([k, v]) => ['subs_' + k, v])), renglon: R1600, bytes: BYTES, sha: { w9: sha(BYTES.w9), coi: sha(BYTES.coi) } },
   filas: FILAS, c13, c14

@@ -46,6 +46,12 @@
 #      la bolsa en cero. (El reparto es de un mes TERMINADO: para esta escena
 #      el reloj de la base se pone en el día 1 del mes siguiente y al acabar
 #      se deja el de verdad.)
+#  11. POSTEAR UNA NÓMINA EN UNA PESTAÑA Y, A LA VEZ, SUBIR EN OTRA SU ARCHIVO
+#      CORREGIDO DICIENDO QUE REEMPLAZA (13-nov, la revisión de la Fase 11b):
+#      la primera la postea; la segunda espera y, como ya no queda nada sin
+#      postear que reemplazar, se le dice en llano («ya no está sin postear…
+#      No entró nada»). Antes seguía y chocaba con la llave de la nómina: un
+#      23505 en crudo. Nada entra dos veces.
 # Y comprueba al final: ningún 23505 ni 40P01 en ninguna salida, la cadena
 # del libro en verde (los permisos también), c3 «mano de obra» en verde y los
 # cuadres del control de la nómina en verde.
@@ -330,6 +336,28 @@ revisa "un solo asiento del reparto, y la bolsa en cero" "1|0.00" \
                    || (select coalesce(sum(l.monto), 0)::numeric(14,2) from asiento_lineas l where l.cuenta = '5015')")"
 ed -c "$RELOJ" > "$TMP/10reloj2.out" 2>&1
 revisa "el reloj de la base, el de verdad otra vez" "$HOY" "$(ed -c "select fn_fecha_miami(now())")"
+
+echo
+echo "== 11. Postear una nómina en una pestaña y, a la vez, subir en otra su archivo corregido diciendo que reemplaza"
+# (un bono con día de pago ayer y cifras que no son las de ninguna otra; y el mismo «corregido por Gusto»: otras cifras, la
+# misma nómina —su día de pago, su período y su tipo—. Van en :'arch' y :'bono'.)
+DP1="$(us 1)"
+B11_CAB='Employee first name,Employee last name,Pay period start,Pay period end,Check date,Payroll type,Payment method,Bonus,Gross earnings,Employee federal income tax,Employee social security tax,Employee medicare tax,Employee taxes,Net pay,Check amount,Employer social security tax,Employer medicare tax,Employer FUTA tax,Employer SUTA tax,Employer taxes'
+printf '%s\n%s\n' "$B11_CAB" "ZZ Ayudante,Uno,$D0,$D13,$DP1,Bonus,Direct Deposit,700.00,700.00,70.00,43.40,10.15,123.55,576.45,576.45,43.40,10.15,4.20,18.90,76.65" > "$TMP/zz-bono-11.csv"
+printf '%s\n%s\n' "$B11_CAB" "ZZ Ayudante,Uno,$D0,$D13,$DP1,Bonus,Direct Deposit,710.00,710.00,71.00,44.02,10.30,125.32,584.68,584.68,44.02,10.30,4.26,19.17,77.75" > "$TMP/zz-bono-11-corregido.csv"
+ARCH="$(archivo zz-bono-11.csv "$TMP/zz-bono-11.csv")"
+BONO="$(archivo zz-bono-11-corregido.csv "$TMP/zz-bono-11-corregido.csv")"
+dueno "$TMP/11i.out" "fn_nomina_importar(:'arch'::jsonb)->'corridas'->0->>'corrida'"
+K11="$(res "$TMP/11i.out")"
+dueno "$TMP/11f.out" "(select coalesce(string_agg(f->>'codigo', ','), 'ninguno') from jsonb_array_elements(fn_nomina_propuesta('$K11')->'frenos') f)"
+revisa "la escena: el bono de ayer, importado y sin frenos" "importada|ninguno" \
+  "$(ed -c "select estado from nomina_corridas where id = '$K11'")|$(res "$TMP/11f.out")"
+dos 11 "(select 'posteada ' || (r->'asiento'->>'numero') from fn_nomina_postear('$K11', fn_nomina_propuesta('$K11')->>'visto') r)" \
+       "(select (r->'corridas'->0->>'resultado') || ' · ' || (r->'corridas'->0->>'texto') from fn_nomina_importar(:'bono'::jsonb, '{\"reemplazar\": true}') r)"
+revisa "una la postea; a la otra se le dice en llano que la que iba a reemplazar ya no está sin postear (ni un 23505, ni otro error)" "1|1|0|0" \
+  "$(con 11 'RESULTADO posteada')|$(con 11 'RESULTADO otra_distinta · .*ya no está sin postear.*No entró nada')|$(con 11 '23505')|$(con 11 'ERROR')"
+revisa "la posteada sigue posteada con sus cifras (700.00), y la corregida no entró" "posteada 700.00|0" \
+  "$(ed -c "select estado || ' ' || bruto from nomina_corridas where id = '$K11'")|$(ed -c "select count(*) from nomina_corridas where bruto = 710.00")"
 
 echo
 echo "== Al final"

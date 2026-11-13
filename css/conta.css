@@ -1321,6 +1321,18 @@ body[data-vista="conta"] .fab { display: none; }
 #conta-raiz .ct-nom-bolsa-mes { margin-top: .5rem; border-top: 1px dashed var(--mp-line); padding-top: .4rem; }
 #conta-raiz .ct-nom-bolsa-mes input[type="month"] { max-width: 12rem; }
 #conta-raiz .ct-nom-avisos details .ct-acciones { margin: 0 0 .3rem; }
+/* (Fase 11b, 13-nov) LAS COSTURAS CON LA NÓMINA: en Costo por obra, las horas «de nómina» (en su celda, debajo) y lo que no se
+   inventa («en Nómina», sin cifra), la nota de la base una vez y la persona que «cobra por nómina»; en la Cédula, la tarjeta de lo
+   que se mira con el código del teléfono (no es un rojo: la raya de cobre, como «Falta el código» de la nómina); en la Nómina, «no
+   hay nada que importar» y la frase del aviso 75 sin el código */
+#conta-raiz .ct-ob-nomh { color: var(--mp-ink-2); }
+#conta-raiz .ct-ob-tabla td .ct-ob-nomh { display: block; font-size: .76rem; }
+#conta-raiz .ct-ob-nomtxt { color: var(--mp-ink-2); font-style: italic; white-space: nowrap; }
+#conta-raiz .ct-ob-nomnota, #conta-raiz .ct-per-nom { margin: .35rem 0 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-ced-codigo { border-left: 4px solid var(--cu-dark); }
+#conta-raiz .ct-ced-codigo p { overflow-wrap: anywhere; }
+#conta-raiz .ct-nom-nada { margin: .4rem 0 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-nom-sincod { margin: 0 0 .35rem; color: var(--mp-ink-2); overflow-wrap: anywhere; }
 
 /* (tablero, c16) la Bandeja abierta desde un enlace del tablero: las fechas de ese período (y si son depósitos o cargos), dichas, con «Ver todos» */
 #conta-raiz .ct-bj-rango { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .6rem; margin-top: .55rem; padding: .35rem .6rem; border-radius: 10px;

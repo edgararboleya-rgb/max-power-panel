@@ -3,9 +3,13 @@
 -- sub-facturado por obra, y la pérdida provisionada) · c12 (la mitad de la
 -- Fase 10; f10 llama al entregable «c10-facturacion-wip.sql» por un nombre
 -- viejo: c10 ya es el costo por obra, y la factura de la app es c11).
--- 12-nov-2026, v2 (con lo que encontraron los dos revisores). Se pega en el SQL Editor DESPUÉS de c1, c2 y c3 (y de
--- c4, c6, c7, s1, p1, c8, c9 y c10 si se usan: la cadena de siempre; c11
--- puede faltar, esta capa no la mira). Idempotente: se puede volver a pegar
+-- 12-nov-2026, v2 (con lo que encontraron los dos revisores); 13-nov-2026,
+-- v3 (la Fase 11b: el aviso 170 con la nómina; ver «LO QUE CAMBIÓ EN LA
+-- v3», al final de esta cabecera). Se pega en el SQL Editor DESPUÉS de c1,
+-- c2 y c3 (y de c4, c6, c7, s1, p1, c8, c9 y c10 si se usan: la cadena de
+-- siempre; c11 puede faltar, esta capa no la mira; la nómina, c15, se pega
+-- después y tampoco se mira desde aquí: lo que el WIP necesita saber de ella
+-- se lo dice el costo por obra, c10). Idempotente: se puede volver a pegar
 -- entero (no pisa la configuración, ni una revisión, ni lo confirmado de
 -- antes del libro, ni un ajuste). Después se pega c12-pruebas.sql.
 --
@@ -240,7 +244,8 @@
 --            movimiento en el mes, y las que la app todavía no tiene en obra
 --            (en estimación, enviada, no aprobada) con facturas en el libro
 --        165 (aviso) obras activas sin contrato que no son de servicio
---        170 (aviso) horas sin costo en el libro (a estándar, c10)
+--        170 (aviso) horas sin costo en el libro (a estándar, c10: las que
+--            no tienen ni un pago repartido por horas ni una nómina)
 --        180 (aviso) la suma de los hitos no es el contrato
 --       fn_wip_cierre(periodo) los resume en las cuatro filas que el cierre
 --       (c9) enseña: 174 los cuadres (detiene), 175 las revisiones del mes
@@ -278,9 +283,14 @@
 --     (ingreso_otro) y se avisa (150). El WIP no lo absorbe: ajustaría un
 --     activo por algo que nunca se va a facturar.
 --   · LA MANO DE OBRA QUE NO ESTÁ EN EL LIBRO no está en el costo a la
---     fecha: las horas sin pago repartido salen «a estándar» en c10 y nunca
---     se postean. Con horas así el avance va corto. Se avisa (170); se
---     arregla repartiendo los pagos (c10) o, desde enero, con la nómina.
+--     fecha: las horas sin pago real salen «a estándar» en c10 y nunca se
+--     postean. Con horas así el avance va corto. Se avisa (170); se arregla
+--     repartiendo los pagos (c10) o, desde enero, con la nómina. (v3: las
+--     horas que YA pagó una nómina tienen su costo en el libro —5000, 5001
+--     y 5010 con su obra— y no son de este aviso: c10 las da «con pago
+--     real» desde su v3, con la marca sin dinero de c15. El 170 las contaba
+--     como «sin pago repartido»: decía que el costo iba corto de unas horas
+--     cuyo costo ya estaba dentro.)
 --   · UNA OBRA TERMINADA se cierra en el WIP el mes en que Edgar la revisa
 --     como terminada (100 %: ganado = precio; lo que falte por facturar
 --     queda sub-facturado ese mes). Si quedó algo por facturar (o facturado
@@ -406,6 +416,18 @@
 --     con ese reverso. ¿Va contra 3900, o el ajuste de diciembre entra
 --     también en el 2026 oficial?
 --   · La provisión por pérdida como «lo que falta por reconocer» (arriba).
+--
+-- LO QUE CAMBIÓ EN LA v3 (13-nov-2026, la Fase 11b; nada renombrado, ninguna
+-- tabla ni columna nueva, ningún dato se toca al volver a pegar):
+--   · EL AVISO 170 CON LA NÓMINA. Con una nómina en el libro (c15, desde
+--     enero de 2027) el 170 nombraba como «horas que no están en el libro
+--     (sin pago repartido)» las que la nómina ya había pagado. La cuenta
+--     sale de «Costo por obra» (c10: horas a estándar), que desde su v3 no
+--     lleva a estándar las horas que pagó una nómina: con c10 al día, el 170
+--     ya no las cuenta. Aquí cambia lo que DICE: «ni un pago repartido por
+--     horas ni una nómina las cubre», y cómo se arregla (repartir los pagos
+--     pendientes o subir y postear la nómina). Hay que volver a pegar c10
+--     (su v3) para que la cuenta cambie; esta capa sola solo cambia el texto.
 -- =====================================================================
 -- (Lo primero, como en c4, c6 y c10: el pegado espera un candado como mucho
 -- medio segundo. Con la app leyendo, para con 55P03 («lock timeout»), no se
@@ -2776,9 +2798,11 @@ begin
          where s.estado <> 'sin_movimiento' and v_j ? s.proyecto_id;
         v_horas_ok := v_horas_n = 0;
         v_horas_det := case when v_horas_n = 0 then 'Ninguna obra del WIP tiene hoy horas sin costo en el libro.'
-                            else format('%s obra(s) del WIP tienen hoy horas reportadas que no están en el libro (sin pago repartido): %s. Su '
-                                        'costo a la fecha va corto y su avance también. Reparte los pagos de mano de obra pendientes.',
-                                        v_horas_n, v_t) end;
+                            -- (v3: «no están en el libro» es sin ninguno de los dos pagos; y cómo se arregla, con los dos)
+                            else format('%s obra(s) del WIP tienen hoy horas reportadas que no están en el libro (ni un pago repartido '
+                                        'por horas ni una nómina las cubre): %s. Su costo a la fecha va corto y su avance también. '
+                                        'Reparte los pagos de mano de obra pendientes; y si esa gente cobra por nómina, sube y postea '
+                                        'su nómina.', v_horas_n, v_t) end;
       exception when others then
         v_horas_ok := true; v_horas_n := 0;
         v_horas_det := format('No se pudo leer el costo por obra (c10) para ver las horas sin costo: %s.', sqlerrm);
@@ -3302,7 +3326,8 @@ begin
   return next;
 
   -- 170. Horas de obras del WIP que no tienen costo en el libro (c10: «a
-  --      estándar»): su costo a la fecha va corto, y su avance también. (Se
+  --      estándar»: sin un pago repartido por horas y sin una nómina que las
+  --      pagara): su costo a la fecha va corto, y su avance también. (Se
   --      leyó arriba: el texto del ajuste del mes también lo dice.)
   orden := 170; cuadre := 'wip: horas sin costo en el libro'; nivel := 'aviso';
   if not v_vivo then

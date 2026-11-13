@@ -2,10 +2,21 @@
 -- c10-pruebas.sql — el jornal repartido por horas y el costo por obra se
 -- prueban a sí mismos (c10-costo-obra.sql). 9-nov-2026; 10-nov-2026: las
 -- pruebas 48 a 57, una por cada hallazgo de las dos revisiones (v2 de la
--- capa), y el cierre de la suite pasa a ser 58, 59 y 60.
+-- capa), y el cierre de la suite pasa a ser 58, 59 y 60. 13-nov-2026 (la
+-- Fase 11b, v3 de la capa): las pruebas 62, 63 y 64 (las horas que pagó una
+-- nómina), y la 20 y la 39 valen también en un mes con nómina. 13-nov, los
+-- arreglos de la verificación de la Fase 11b (la capa no cambia): la 20 y
+-- la 39 valen también en un mes con nómina QUE CONSERVA SU DEVENGO (con el
+-- c3 de la Fase 11b es lo normal: salían «omitida»), y la 59 ya no falla
+-- cuando el mes de sus horas está devengado (fallaba los primeros días de
+-- cada mes, con el anterior devengado y sin cerrar: aprobar una hora de un
+-- mes devengado deja viejo su devengo, y eso lo dice c3, no es de c10). (Lo que
+-- esta suite no puede ver con sus pocas horas —que el costo por obra
+-- aguanta años de horas, y de horas pagadas por nómina, dentro del tope de
+-- la API— lo mira el banco: pruebas/conta/c10-volumen.sh.)
 --
 -- CÓMO SE CORRE. En el SQL Editor de Supabase: DESPUÉS de c10-costo-obra.sql,
--- pegar este archivo entero → Run. Sale la tabla _pruebas: 60 filas, todas
+-- pegar este archivo entero → Run. Sale la tabla _pruebas: 64 filas, todas
 -- con ok = true (las que salen «omitida» dicen por qué y no son un fallo).
 -- Si el editor se cansa antes del final, la corrida sigue en el servidor y
 -- se lee después en pruebas.c10_resultado (ver el final).
@@ -51,7 +62,7 @@
 -- (su apertura sin cuadrar…), sale «omitida» con lo que dijo c2.
 --
 -- Lo que mira, una prueba cada una:
---  1 el pegado (precondiciones, 5 tablas, 6 vistas, las 38 funciones por su
+--  1 el pegado (precondiciones, 5 tablas, 6 vistas, las 39 funciones por su
 --    nombre exacto, la configuración, cada objeto con su comentario «c10: …»);
 --  2 las precondiciones en rojo (desde la app; sin una función de c6; una
 --    función con nombre de c10 que no es de c10; una vista ajena colgada);
@@ -84,7 +95,8 @@
 --    cuenta de lo sin obra, una cuenta que ya no sirve;
 -- 19 los avisos: horas ya cubiertas, se pisa con otro reparto, «es otro pago
 --    de las mismas horas», fechas posteriores al pago;
--- 20 los avisos: posible duplicado sin decidir y devengo estándar en el mes;
+-- 20 los avisos: posible duplicado sin decidir y devengo estándar en el mes
+--    (también en un mes con nómina: ver «EL DEVENGO DE LAS PRUEBAS 20 Y 39»);
 -- 21 la propuesta pendiente de la IA (c8) se devuelve y nada de c8 se rompe
 --    (lo que un jornal deja abierto en c8, entero, en la 51);
 -- 22 APLICAR: el asiento (N líneas con su obra, su CO y la persona, contra
@@ -109,7 +121,7 @@
 -- 37 el control 30 (las horas cambiaron) en rojo y de vuelta;
 -- 38 el control 40 (una hora en dos repartos sin aceptarlo);
 -- 39 el control 50 (la misma hora en el devengo estándar de un mes y en un
---    jornal que entró al libro ese mes);
+--    jornal que entró al libro ese mes; también en un mes con nómina);
 -- 40 el control 60 (dos personas casan con un pago; una cuenta que no sirve);
 -- 41 el control 90 (las protecciones de la capa);
 -- 42 EL MARGEN: una obra con material, jornales, un subcontrato de verdad
@@ -152,7 +164,20 @@
 -- 60 el cierre de la suite: c2, c3, c6 y c4 como estaban, c8 sin cuadres
 --    rojos, nada de c10 en la API de anon o service_role ni SECURITY
 --    DEFINER; y fn_jornal_pegado responde (pegar dos veces no hace daño: lo
---    corre el banco).
+--    corre el banco);
+-- 61 el cierre (c9) mira la mano de obra repartida (sus filas 170 y 171).
+-- La Fase 11b (v3 de la capa): las horas que pagó una nómina (c15):
+-- 62 tienen pago real y no van, además, a estándar: con el burden estándar
+--    sin fijar, en 0 y en 12.5 la mano de obra cuenta una vez; con el código
+--    del teléfono y sin él; la obra, el detalle y el cuadre 70 lo dicen; y a
+--    quien cobra por nómina no se le pide darse de alta en el jornal;
+-- 63 lo que dice «sin pago» en el jornal: el aviso de la propuesta
+--    (pagadas_por_nomina), las «sin pago» de la semana y de la persona, los
+--    pagos sin repartir, las horas tardías (35) y los pagos resueltos por
+--    fuera (70);
+-- 64 con las nóminas de verdad de la base (si las hay): cada hora que su
+--    marca da por pagada sale con pago real, con el código y sin él; y el
+--    cuadre 70 en verde, con qué pegar, y en rojo.
 -- Última sentencia: select * from _pruebas order by n;
 -- =====================================================================
 create temp table if not exists _pruebas(n int, prueba text, esperado text, obtenido text, ok boolean);
@@ -179,6 +204,8 @@ insert into _c10
 select 'mes_d', p.periodo from periodos p where p.tipo = 'mes' and (select v from _c10 where k = 'd')::date between p.desde and p.hasta;
 insert into _c10 values ('hay_c8', (to_regclass('public.contador_propuestas') is not null)::text);
 insert into _c10 values ('hay_c9', (to_regprocedure('public.fn_cierre_revisar(text)') is not null)::text);
+-- (la «corrida» de la nómina de prueba de las pruebas 62 a 64: un identificador que ninguna corrida de verdad lleva)
+insert into _c10 values ('corrida', '00000000-0000-4000-a000-0000000c10ff');
 grant select on _c10 to public;  -- las pruebas cambian de rol y siguen leyendo lo común
 
 -- El control de c4 sin tope por reloj para la sesión (como c8 y c9), y
@@ -196,7 +223,7 @@ create or replace function pg_temp.c10_d() returns date language sql as $$ selec
 create or replace function pg_temp.c10_w1(p_dia int default 0) returns date language sql as $$ select pg_temp.c10('lunes')::date - 7 + p_dia $$;
 create or replace function pg_temp.c10_w2(p_dia int default 0) returns date language sql as $$ select pg_temp.c10('lunes')::date - 14 + p_dia $$;
 
--- Las funciones que crea c10-costo-obra.sql, por su nombre exacto (las 38).
+-- Las funciones que crea c10-costo-obra.sql, por su nombre exacto (las 39).
 -- No se buscan por prefijo: otra sesión escribe esta misma base.
 create or replace function pg_temp.c10_es_suya(p_nombre text) returns boolean language sql immutable as $$
   select p_nombre = any (array[
@@ -206,8 +233,8 @@ create or replace function pg_temp.c10_es_suya(p_nombre text) returns boolean la
     'fn_jornal_periodo', 'fn_jornal_regla', 'fn_jornal_repartir_ids', 'fn_jornal_repartir', 'fn_jornal_tardias',
     'fn_jornal_fuera', 'fn_jornal_ia', 'fn_jornal_opciones', 'fn_jornal_calcular', 'fn_jornal_propuesta', 'fn_jornal_aplicar',
     'fn_jornal_deshacer', 'fn_jornal_config', 'fn_jornal_persona', 'fn_jornal_pegado', 'fn_margen_libro_desde',
-    'fn_margen_lineas', 'fn_margen_horas', 'fn_margen_estimado', 'fn_margen_obras', 'fn_margen_bajar',
-    'fn_margen_obra', 'fn_margen_control'])
+    'fn_margen_horas_nomina', 'fn_margen_lineas', 'fn_margen_horas', 'fn_margen_estimado', 'fn_margen_obras',
+    'fn_margen_bajar', 'fn_margen_obra', 'fn_margen_control'])
 $$;
 create or replace function pg_temp.c10_tablas() returns text[] language sql immutable as $$
   select array['jornal_config', 'jornal_personas', 'jornal_repartos', 'jornal_reparto_lineas', 'jornal_reparto_horas']
@@ -612,18 +639,113 @@ begin
   return 'rojo: ' || left(coalesce(v_resto, v_det), 300);
 end $$;
 
+-- EL DEVENGO DE LAS PRUEBAS 20 Y 39 (13-nov, la Fase 11b). Las dos necesitan
+-- un devengo estándar de horas (c3) en el mes del pago. c3 NO devenga un mes
+-- que ya tiene el journal de una nómina («ya pagó parte de estas horas»), o
+-- devenga solo lo que la nómina no pagó, según su versión: en un mes con
+-- nómina estas pruebas salían «omitida», y lo que miran —lo que hace c10 con
+-- un devengo en el mes— se quedaba sin probar justo desde la primera nómina.
+-- Ahora: sin nómina en el mes, el devengo lo pone c3 como siempre
+-- (fn_horas_devengar); CON nómina, lo pone la prueba por la puerta de los
+-- puentes, con la misma forma con que lo deja c3 (origen horas_devengo del
+-- mes, reversible, 5000 por obra contra 2210, y en su documento cada hora),
+-- con SOLO las horas de la prueba. Se deshace con ella. «Omitida» queda solo
+-- para cuando de verdad no se puede (c3 y el libro no dejan: se dice qué
+-- dijeron).
+-- 13-nov, los arreglos de la verificación de la Fase 11b: CON nómina en el
+-- mes, PRIMERO SE LE PIDE A c3. El c3 de la Fase 11b sí devenga un mes con
+-- nómina (lo que ninguna nómina pagó: las horas de la prueba entre ellas) y
+-- ese mes CONSERVA su devengo de verdad al postear la nómina: ponerle otro
+-- aparte chocaba con él (23505) y las dos pruebas salían «omitida» en
+-- cuanto hubiera una nómina y un devengo en el mes. Si c3 es el de antes y
+-- no deja (MX008), lo pone la prueba, como hasta ahora.
+create or replace function pg_temp.c10_mes_con_nomina(p_mes text) returns boolean language sql as $$
+  select exists (select 1 from asientos a join periodos p on p.periodo = p_mes
+                  where coalesce(a.origen_tabla, '') like 'nomina%' and a.fecha_contable between p.desde and p.hasta
+                    and a.camino not in ('reverso', 'reverso_automatico')
+                    and not exists (select 1 from asientos r where r.reversa_a = a.id and r.camino = 'reverso'))
+$$;
+-- Devuelve {asiento: su número, como: 'c3' | 'prueba'}. Como el SQL Editor.
+create or replace function pg_temp.c10_devengar(p_mes text, p_ids bigint[]) returns jsonb language plpgsql as $$
+declare
+  r jsonb; v_hasta date; v_lin jsonb; v_doc jsonb; v_tot numeric;
+  v_debe text := fn_puente_cuenta_de('mano_obra'); v_haber text := fn_puente_cuenta_de('sueldos_devengados');
+begin
+  perform pg_temp.c10_ser('editor');
+  if not pg_temp.c10_mes_con_nomina(p_mes) then
+    return fn_horas_devengar(p_mes) || jsonb_build_object('como', 'c3');
+  end if;
+  begin   -- (con nómina en el mes: primero c3; el de la Fase 11b lo devenga)
+    return fn_horas_devengar(p_mes) || jsonb_build_object('como', 'c3');
+  exception when others then null;   -- (el c3 de antes: MX008, «ya pagó parte de estas horas». Lo pone la prueba.)
+  end;
+  select q.hasta into v_hasta from periodos q where q.periodo = p_mes and q.tipo = 'mes';
+  select coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object('cuenta', v_debe, 'monto', g.monto::text, 'proyecto_id', g.proyecto_id, 'co', g.co,
+                                                                 'memo', 'ESTÁNDAR (c10-pruebas): horas aprobadas × costo_hora'))
+                            order by g.proyecto_id, g.co), '[]'::jsonb), coalesce(sum(g.monto), 0)
+    into v_lin, v_tot
+    from (select h.proyecto_id, nullif(btrim(h.co), '') as co, round(sum(h.horas * ce.costo_hora), 2) as monto
+            from horas h join costos_equipo ce on ce.usuario_id = h.usuario_id
+           where h.id = any (p_ids) and h.proyecto_id is not null
+           group by 1, 2) g;
+  select jsonb_agg(jsonb_build_object('horas_id', h.id, 'horas', h.horas, 'costo_hora', ce.costo_hora, 'proyecto_id', h.proyecto_id,
+                                      'co', nullif(btrim(h.co), ''), 'fase', h.fase) order by h.id)
+    into v_doc
+    from horas h join costos_equipo ce on ce.usuario_id = h.usuario_id
+   where h.id = any (p_ids) and h.proyecto_id is not null;
+  r := fn_postear_interno(jsonb_build_object(
+         'camino', 'puente', 'fecha', v_hasta::text, 'reversible', true,
+         'descripcion', format('C10 PRUEBA: devengo ESTÁNDAR de mano de obra de %s, como lo deja c3 (se deshace)', p_mes),
+         'lineas', v_lin || jsonb_build_array(jsonb_build_object('cuenta', v_haber, 'monto', (-v_tot)::text, 'memo', 'ESTÁNDAR (c10-pruebas)')),
+         'origen_tabla', 'horas_devengo', 'origen_id', p_mes,
+         'procedencia', jsonb_build_object('funcion', 'c10-pruebas', 'etiqueta', 'estándar',
+                                           'documento', jsonb_build_object('mes', p_mes, 'horas', v_doc))));
+  return jsonb_build_object('asiento', r->>'numero', 'como', 'prueba');
+end $$;
+
+-- EL DEVENGO DE UN MES YA DEVENGADO (13-nov, los arreglos de la verificación
+-- de la Fase 11b; para la 59). Aplicar un jornal APRUEBA sus horas (y
+-- deshacerlo les quita la aprobación que puso). Si el mes de esas horas ya
+-- tenía su devengo estándar (c3) y sigue abierto, ese devengo deja de ser el
+-- de las horas aprobadas de hoy, y c3 lo dice con su control «devengo» (la
+-- fila 131 del cierre): no es un fallo de c10 —pasa con cualquier hora que
+-- se apruebe en un mes ya devengado, y c3 dice qué hacer—. La 59 —que mira
+-- que un jornal no ponga en rojo nada de las otras capas— fallaba por eso
+-- los primeros días de cada mes, con el anterior devengado y sin cerrar.
+-- Ahora, si alguno de los meses de sus horas de prueba tiene su devengo
+-- vivo, ese rojo de c3 (y su fila del cierre) no se cuenta, y se dice.
+-- (No se pone al día el devengo dentro de la prueba: c3 todavía no aparta
+-- del devengo las horas que un jornal pagó DENTRO de ese mes, y al
+-- devengarlas otra vez saltaría el cuadre 50 de c10, que es justo lo que
+-- ese cuadre vigila. Ver la cabecera de c10-costo-obra.sql.)
+-- Los meses abiertos de las horas de prueba con su devengo vivo ('' si
+-- ninguno). Como el SQL Editor.
+create or replace function pg_temp.c10_devengo_vivo() returns text language sql as $$
+  select coalesce(string_agg(distinct p.periodo, ', ' order by p.periodo), '')
+    from horas h join periodos p on p.tipo = 'mes' and p.estado = 'abierto' and h.fecha between p.desde and p.hasta
+   where h.notas = 'c10-pruebas' and h.id < 0
+     and exists (select 1 from asientos a
+                  where a.origen_tabla = 'horas_devengo' and a.origen_id = p.periodo
+                    and a.camino not in ('reverso', 'reverso_automatico')
+                    and not exists (select 1 from asientos x where x.reversa_a = a.id and x.camino = 'reverso'))
+$$;
+-- (los rojos, sin el «devengo» de c3 ni su fila del cierre)
+create or replace function pg_temp.c10_sin_devengo(p text[]) returns text[] language sql as $$
+  select coalesce(array_agg(x order by x), '{}') from unnest(p) x where x <> 'c3: devengo' and x !~ '^c9: [0-9]+ puentes: devengo$'
+$$;
+
 
 -- =====================================================================
 -- Las pruebas
 -- =====================================================================
 
--- 1. El pegado: precondiciones, tablas, vistas, las 38 funciones por su
+-- 1. El pegado: precondiciones, tablas, vistas, las 39 funciones por su
 --    nombre exacto, la configuración (una fila, con una cuenta que sirve) y
 --    cada objeto con su comentario «c10: …».
 do $$
 declare
   v_obt text; v_pre text; v_tab int; v_vis int; v_fn int; v_fn2 int; v_sin text; v_cfg text;
-  v_esp text := 'nada falta | 5 tablas | 6 vistas | 38 funciones (38 nombres) | sin comentario c10: ninguno | '
+  v_esp text := 'nada falta | 5 tablas | 6 vistas | 39 funciones (39 nombres) | sin comentario c10: ninguno | '
                 'configuración: 1 fila, id 1, cuenta del jornal que sirve';
 begin
   begin
@@ -649,7 +771,7 @@ begin
                     v_pre, v_tab, v_vis, v_fn, v_fn2, v_sin, v_cfg);
   exception when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (1, 'el pegado: nada falta, 5 tablas, 6 vistas, las 38 funciones por su nombre exacto, la configuración (una fila con una cuenta que sirve) y cada objeto con su comentario «c10: …»',
+  insert into _pruebas values (1, 'el pegado: nada falta, 5 tablas, 6 vistas, las 39 funciones por su nombre exacto, la configuración (una fila con una cuenta que sirve) y cada objeto con su comentario «c10: …»',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
@@ -708,14 +830,15 @@ end $$;
 --    anon y service_role no ejecutan ni leen nada; el equipo (una persona
 --    de prueba, con un reparto SUYO ya en el libro) recibe 42501 de las
 --    siete funciones de la pantalla y cero filas de las cinco tablas, las
---    seis vistas y las auxiliares de lectura; el dueño entra y ve.
+--    seis vistas y las auxiliares de lectura (también la que pregunta qué
+--    horas pagó una nómina); el dueño entra y ve.
 do $$
 declare
   v_obt text; v_mov uuid; v_r jsonb;
   v_api text; v_sin text; v_anon text; v_srv text; v_x text; v_n int := 0; v_filas bigint := 0; v_k bigint; v_calc text; v_due text;
   v_esp text := 'pantalla mal: ninguna | internas con API: ninguna | anon 42501 y 42501 | service_role 42501 y 42501 | '
-                'equipo: 7 de 7 funciones 42501, 0 filas en 5 tablas, 6 vistas y 8 auxiliares, y el cálculo le dice que el movimiento no '
-                'existe | dueño: 1 reparto suyo, 12 obras de prueba, el detalle de la obra y 11 + 6 controles';
+                'equipo: 7 de 7 funciones 42501, 0 filas en 5 tablas, 6 vistas y 9 auxiliares, y el cálculo le dice que el movimiento no '
+                'existe | dueño: 1 reparto suyo, 12 obras de prueba, el detalle de la obra y 11 + 7 controles';
 begin
   if pg_temp.c10_omitir(3, 'la API por rol', v_esp) then return; end if;
   begin
@@ -776,6 +899,8 @@ begin
     select count(*) into v_k from fn_jornal_tardias(null); v_filas := v_filas + v_k;
     select count(*) into v_k from fn_jornal_fuera();       v_filas := v_filas + v_k;
     select count(*) into v_k from fn_jornal_ia(v_mov);     v_filas := v_filas + v_k;
+    -- (ni qué horas pagó una nómina)
+    select count(*) into v_k from fn_margen_horas_nomina(); v_filas := v_filas + v_k;
     -- (sus horas sí las lee, como siempre; el reparto de un pago por ellas, no)
     select count(*) into v_k from fn_jornal_repartir_ids(array(select h.id from horas h where h.usuario_id = pg_temp.c10('p1')::uuid), 100);
     v_filas := v_filas + v_k;
@@ -791,7 +916,7 @@ begin
       into v_due;
     perform pg_temp.c10_ser('editor');
     v_obt := format('pantalla mal: %s | internas con API: %s | anon %s | service_role %s | equipo: %s de 7 funciones 42501, %s filas en 5 '
-                    'tablas, 6 vistas y 8 auxiliares, y el cálculo le dice que %s | dueño: %s',
+                    'tablas, 6 vistas y 9 auxiliares, y el cálculo le dice que %s | dueño: %s',
                     v_api, v_sin, v_anon, v_srv, v_n, v_filas,
                     case when v_calc = 'No existe ese movimiento del banco.' and v_x = 'nada' then 'el movimiento no existe' else v_calc || ' / ' || v_x end,
                     v_due);
@@ -1726,6 +1851,8 @@ end $$;
 -- 20. Los avisos (d): un posible duplicado sin decidir (el banco trajo el
 --     mismo pago con otro número: no deja hasta que Edgar diga), y un mes
 --     con devengo estándar de horas (c3: avisa de que saldría dos veces).
+--     (En un mes con nómina el devengo lo pone la prueba, como lo deja c3:
+--     arriba, «EL DEVENGO DE LAS PRUEBAS 20 Y 39».)
 do $$
 declare
   v_obt text; m1 uuid; m2 uuid; m3 uuid; v_j jsonb; a text; b text; c text; d text; v_mes text; v_dia date; v_dev jsonb; v_no text;
@@ -1754,12 +1881,12 @@ begin
     perform pg_temp.c10_ser('editor');
     v_j := pg_temp.c10_propuesta(m2, pg_temp.c10_w1(0), pg_temp.c10_w1(6));
     c := format('%s [%s]', case when (v_j->>'puede_aplicar')::boolean then 'deja' else 'NO deja: ' || (v_j->>'por_que') end, pg_temp.c10_avisos(v_j));
-    -- el devengo estándar del mes de esas horas (aprobadas antes, como pide c3)
+    -- el devengo estándar del mes de esas horas (aprobadas antes, como pide c3; con nómina en el mes, puesto por la prueba)
     begin
       perform pg_temp.c10_ser('dueno');
       perform fn_horas_aprobar(pg_temp.c10('p2')::uuid, v_dia, v_dia, '{"ids": [-1010000002]}'::jsonb);
       perform pg_temp.c10_ser('editor');
-      v_dev := fn_horas_devengar(v_mes);
+      v_dev := pg_temp.c10_devengar(v_mes, array[-1010000002]::bigint[]);
     exception when others then
       v_no := sqlstate || ': ' || sqlerrm;
       perform pg_temp.c10_ser('editor');
@@ -1771,7 +1898,10 @@ begin
                   pg_temp.c10_avisos(v_j));
       v_obt := format('el parecido: %s | el primero: %s | dicho «no es el mismo»: %s | con el devengo estándar de ese mes: %s', a, b, c, d);
     else
-      v_obt := format('omitida: c3 no dejó devengar %s (%s); lo demás: el parecido: %s | el primero: %s | dicho «no es el mismo»: %s', v_mes, left(v_no, 300), a, b, c);
+      v_obt := format('omitida: %s (%s); lo demás: el parecido: %s | el primero: %s | dicho «no es el mismo»: %s',
+                      case when pg_temp.c10_mes_con_nomina(v_mes)
+                           then format('%s tiene nómina y el libro no dejó poner el devengo de la prueba', v_mes)
+                           else format('c3 no dejó devengar %s', v_mes) end, left(v_no, 300), a, b, c);
     end if;
     raise exception using errcode = 'MXT00';
   exception
@@ -2544,7 +2674,8 @@ begin
                      and (select string_agg(a2.attname, ',' order by a2.attnum) from pg_attribute a2
                            where a2.attrelid = 'public.v_jornal_personas'::regclass and a2.attnum > 0)
                      = 'usuario_id,nombre,rol,perfil_activo,registrada,activa,patron,cuenta_propia,cuenta,tarifa,nota,creado_el,actualizado_el,'
-                       'pagos_pendientes,pagos_pendientes_monto,repartos,repartido,ultimo_reparto,horas_90_dias,horas_sin_pago'
+                       'pagos_pendientes,pagos_pendientes_monto,repartos,repartido,ultimo_reparto,horas_90_dias,horas_sin_pago,'
+                       'horas_nomina_90_dias'   -- (13-nov, v3: una columna más, al final: las que pagó una nómina)
                      and (select string_agg(a2.attname, ',' order by a2.attnum) from pg_attribute a2
                            where a2.attrelid = 'public.v_jornal_control'::regclass and a2.attnum > 0) = 'orden,cuadre,nivel,ok,detalle'
                      and (select string_agg(a2.attname, ',' order by a2.attnum) from pg_attribute a2
@@ -2746,7 +2877,9 @@ end $$;
 --     tenga jornales reales que también choquen: entonces lo que se mira es
 --     que el de la prueba ya no esté). Y en la obra el devengo no cuenta
 --     como real (se anula solo con su reverso del día 1). (Lo que NO es
---     doble —el pago que entra al mes siguiente— lo prueba la 54.)
+--     doble —el pago que entra al mes siguiente— lo prueba la 54.) (En un
+--     mes con nómina el devengo lo pone la prueba, como lo deja c3: «EL
+--     DEVENGO DE LAS PRUEBAS 20 Y 39».)
 do $$
 declare
   v_obt text; v_mov uuid; v_r jsonb; v_mes text; v_dia date; v_dev jsonb; v_no text; a text; b text; c text; d text; v_n1 int; v_h1 numeric; v_n2 int; v_h2 numeric;
@@ -2767,7 +2900,7 @@ begin
     v_r := pg_temp.c10_aplicar(v_mov, v_dia, v_dia);
     a := pg_temp.c10_jc(50);
     begin
-      v_dev := fn_horas_devengar(v_mes);
+      v_dev := pg_temp.c10_devengar(v_mes, array[-1010000001]::bigint[]);
     exception when others then v_no := sqlstate || ': ' || sqlerrm;
     end;
     if v_no is null then
@@ -2789,7 +2922,10 @@ begin
       v_obt := format('con el jornal: %s | con el devengo estándar del mismo mes: %s | en la obra, el devengo no cuenta como real: %s | deshecho '
                       'el jornal: %s', a, b, c, d);
     else
-      v_obt := format('omitida: c3 no dejó devengar %s (%s); con el jornal: %s', v_mes, left(v_no, 300), a);
+      v_obt := format('omitida: %s (%s); con el jornal: %s',
+                      case when pg_temp.c10_mes_con_nomina(v_mes)
+                           then format('%s tiene nómina y el libro no dejó poner el devengo de la prueba', v_mes)
+                           else format('c3 no dejó devengar %s', v_mes) end, left(v_no, 300), a);
     end if;
     raise exception using errcode = 'MXT00';
   exception
@@ -4142,10 +4278,14 @@ end $$;
 --     puentes (c3), el banco (c6), los estados (c4), los cuadres de la IA
 --     (c8, si está) y lo que detiene el cierre del mes (c9, si está). Se
 --     compara con cómo estaban con el pago ya en la Bandeja (lo que ya
---     estaba en rojo se dice, y no cuenta).
+--     estaba en rojo se dice, y no cuenta). (Si el mes de esas horas ya
+--     estaba devengado y sigue abierto, aprobarlas deja su devengo viejo y
+--     c3 lo dice: ese rojo —el «devengo» de c3 y su fila del cierre— no es
+--     de c10 y no se cuenta, y se dice: «EL DEVENGO DE UN MES YA
+--     DEVENGADO», arriba.)
 do $$
 declare
-  v_obt text; v_mov uuid; m2 uuid; v_r jsonb; s0 text[]; s1 text[]; s2 text[]; s3 text[]; s4 text[]; v_antes text := '';
+  v_obt text; v_mov uuid; m2 uuid; v_r jsonb; s0 text[]; s1 text[]; s2 text[]; s3 text[]; s4 text[]; v_antes text := ''; v_dev text := '';
   v_esp text := 'al aplicar: ninguno | al deshacer: ninguno | al volver a aplicar con otras fechas: ninguno | con otro pago de las mismas '
                 'horas: ninguno';
 begin
@@ -4160,6 +4300,7 @@ begin
     m2 := pg_temp.c10_cargo('c10-t59-2', pg_temp.c10_d(), 125.00, 'Zelle payment to C10 PRUEBA ZZANA 9592');
     perform pg_temp.c10_alta('p1');
     s0 := pg_temp.c10_rojos();
+    v_dev := pg_temp.c10_devengo_vivo();
     v_r := pg_temp.c10_aplicar(v_mov, pg_temp.c10_w1(0), pg_temp.c10_w1(6));
     s1 := pg_temp.c10_rojos();
     perform pg_temp.c10_deshacer((v_r->>'reparto_id')::uuid, 'c10-pruebas: no era esa semana');
@@ -4168,6 +4309,9 @@ begin
     s3 := pg_temp.c10_rojos();
     perform pg_temp.c10_aplicar(m2, pg_temp.c10_w2(0), pg_temp.c10_w2(6), '{"incluir_cubiertas": true}');
     s4 := pg_temp.c10_rojos();
+    if v_dev <> '' then   -- (un mes de esas horas ya estaba devengado: el «devengo» de c3 no es de esta prueba)
+      s1 := pg_temp.c10_sin_devengo(s1); s2 := pg_temp.c10_sin_devengo(s2); s3 := pg_temp.c10_sin_devengo(s3); s4 := pg_temp.c10_sin_devengo(s4);
+    end if;
     v_obt := format('al aplicar: %s | al deshacer: %s | al volver a aplicar con otras fechas: %s | con otro pago de las mismas horas: %s',
                     pg_temp.c10_nuevos(s0, s1), pg_temp.c10_nuevos(s0, s2), pg_temp.c10_nuevos(s0, s3), pg_temp.c10_nuevos(s0, s4));
     v_antes := array_to_string(s0, '; ');
@@ -4177,7 +4321,9 @@ begin
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
   insert into _pruebas values (59, 'con jornales aplicados, deshechos, vueltos a aplicar y un segundo pago de las mismas horas, NINGÚN control de las otras capas pasa a rojo: la cadena y «permisos» (c2), los puentes (c3), el banco (c6), los estados (c4), los cuadres de la IA (c8) y lo que detiene el cierre del mes (c9)',
-    v_esp, v_obt || case when v_antes <> '' then ' (ya en rojo antes, con el pago en la Bandeja: ' || v_antes || ')' else '' end, v_obt = v_esp);
+    v_esp, v_obt || case when v_antes <> '' then ' (ya en rojo antes, con el pago en la Bandeja: ' || v_antes || ')' else '' end
+                 || case when v_dev <> '' then format(' (%s ya estaba devengado y sigue abierto: aprobar sus horas deja viejo ese devengo, y c3 lo dice —su control «devengo»—; no se cuenta aquí)', v_dev) else '' end,
+    v_obt = v_esp);
 end $$;
 
 -- 60. El cierre de la suite: c2 (la cadena y «permisos»), c3, c6 y c4 como
@@ -4290,6 +4436,451 @@ begin
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
   insert into _pruebas values (61, v_nom, v_esp, v_obt, case when v_obt like 'omitida:%' then null else v_obt = v_esp end);
+end $$;
+
+-- =====================================================================
+-- LA FASE 11b (v3 de la capa, 13-nov-2026): LAS HORAS QUE PAGÓ UNA NÓMINA
+-- =====================================================================
+-- La nómina (c15) se pega DESPUÉS de c10 y es opcional. Lo único que c10 lee
+-- de ella es su marca sin dinero: qué reporte de horas pagó qué corrida
+-- posteada y viva, y su día de pago (ni un importe, ni un nombre). Las
+-- pruebas 62 y 63 ponen esa marca DE PRUEBA dentro de su subtransacción: una
+-- función con ese nombre que devuelve los reportes que la prueba diga. Así
+-- valen con c15 pegada y sin ella; si c15 está, su función de verdad queda
+-- como estaba al deshacerse la prueba (como el reloj fingido de c2-pruebas),
+-- y nadie más la ve cambiada. El journal de la nómina de prueba entra al
+-- libro por la puerta de los puentes, con el origen de una nómina, como lo
+-- deja c15. La 64 mira, además, las nóminas DE VERDAD de la base (si las
+-- hay) con la marca de verdad, con el código del teléfono y sin él.
+-- NO FRENAN A LA APP: poner y quitar la marca de prueba pide un candado
+-- sobre esa función; cada una de estas pruebas pone, DENTRO de su bloque,
+-- un tope de MEDIO SEGUNDO a cualquier espera (lock_timeout; se deshace con
+-- ella). Si alguien lo tiene ocupado, la prueba no espera más: sale
+-- «omitida» y lo dice (no es un fallo: se vuelve a pegar en un rato).
+create or replace function pg_temp.c10_sin_candado() returns text language sql immutable as $$
+  select 'omitida: no se consiguió un candado en medio segundo (alguien está usando la app o pegando un archivo en este momento); '
+         || 'nada quedó a medias: vuelve a pegar este archivo en un rato'::text
+$$;
+
+-- La marca de prueba. p_modo: 'ok' (devuelve esos reportes, con ese día de
+-- pago), 'falla' (existe y no contesta) o 'quitar' (no está: como una nómina
+-- de antes del 13-nov, que no la trae).
+create or replace function pg_temp.c10_marca(p_ids bigint[], p_dia date default null, p_modo text default 'ok') returns void
+language plpgsql as $$
+begin
+  perform pg_temp.c10_ser('editor');
+  -- (si la de verdad está, se quita y se pone la de prueba: «create or replace» no deja cambiar lo que devuelve, y una
+  -- nómina de otra versión podría devolver otra cosa; todo se deshace con la prueba)
+  if to_regprocedure('public.fn_nomina_horas_con_pago()') is not null then
+    drop function public.fn_nomina_horas_con_pago();
+  end if;
+  if p_modo = 'quitar' then
+    return;
+  end if;
+  if p_modo = 'falla' then
+    create function public.fn_nomina_horas_con_pago()
+    returns table (horas_id bigint, corrida_id uuid, dia_pago date)
+    language plpgsql stable
+    set search_path = public, pg_temp
+    as $b$ begin raise exception 'c10-pruebas: la marca de prueba no contesta'; end $b$;
+  else
+    execute format($f$
+      create function public.fn_nomina_horas_con_pago()
+      returns table (horas_id bigint, corrida_id uuid, dia_pago date)
+      language sql stable
+      set search_path = public, pg_temp
+      as $b$ select x, %L::uuid, %L::date from unnest(%L::bigint[]) x $b$
+    $f$, pg_temp.c10('corrida'), p_dia, p_ids);
+  end if;
+  revoke execute on function public.fn_nomina_horas_con_pago() from public, anon, service_role;
+  grant  execute on function public.fn_nomina_horas_con_pago() to authenticated;
+end $$;
+
+-- El journal de una nómina de prueba en el libro, por la puerta de los
+-- puentes y con el origen de una nómina (como lo deja c15): el sueldo por
+-- obra y CO contra lo que queda por pagar y, aparte, el burden real a cada
+-- obra contra su bolsa. Devuelve el número del journal.
+create or replace function pg_temp.c10_nomina(p_fecha date, p_journal jsonb, p_burden jsonb default null) returns text
+language plpgsql as $$
+declare
+  r jsonb;
+begin
+  perform pg_temp.c10_ser('editor');
+  r := fn_postear_interno(jsonb_build_object(
+         'camino', 'puente', 'fecha', p_fecha::text, 'descripcion', 'C10 PRUEBA: el journal de una nómina de prueba (se deshace)',
+         'lineas', p_journal, 'origen_tabla', 'nomina_corridas', 'origen_id', pg_temp.c10('corrida'),
+         'procedencia', jsonb_build_object('funcion', 'c10-pruebas')));
+  if p_burden is not null then
+    perform fn_postear_interno(jsonb_build_object(
+         'camino', 'puente', 'fecha', p_fecha::text, 'descripcion', 'C10 PRUEBA: el burden real de esa nómina de prueba (se deshace)',
+         'lineas', p_burden, 'origen_tabla', 'nomina_burden', 'origen_id', pg_temp.c10('corrida'),
+         'procedencia', jsonb_build_object('funcion', 'c10-pruebas')));
+  end if;
+  return r->>'numero';
+end $$;
+
+-- El dueño por la API SIN el código del teléfono (aal1): «Costo por obra» se
+-- lee así, y tiene que decir lo mismo.
+create or replace function pg_temp.c10_ser_sin_codigo() returns void language plpgsql as $$
+begin
+  execute 'reset role';
+  perform set_config('request.jwt.claims', json_build_object('sub', pg_temp.c10('dueno'), 'role', 'authenticated', 'aal', 'aal1')::text, true);
+  perform set_config('request.jwt.claim.sub', pg_temp.c10('dueno'), true);
+  execute 'set local role authenticated';
+end $$;
+
+-- Una obra del margen en una línea (para comparar con el código y sin él)
+create or replace function pg_temp.c10_obra_txt(p_obra text) returns text language sql as $$
+  select format('%s h, %s con pago real, %s a estándar, nómina %s, estándar %s, costo con estándar %s', trim_scale(o.horas_reales),
+                trim_scale(o.horas_con_pago_real), trim_scale(o.horas_estandar), o.mano_obra_nomina,
+                coalesce(o.mano_obra_estandar::text, 'vacío'), coalesce(o.costo_con_estandar::text, 'vacío'))
+    from v_margen_obra o where o.proyecto_id = p_obra
+$$;
+
+-- 62. LAS HORAS QUE PAGÓ UNA NÓMINA TIENEN PAGO REAL. Dos obras con la
+--     mano de obra de una nómina en el libro (5000 y 5010 con su obra): la
+--     A con 36 h que esa nómina pagó (16 de Zzana y 20 de Zzbeto) y 6 h más
+--     de Zzana sin pago; la B con 18 h, todas pagadas por la nómina. Antes
+--     (la v2) las 54 h salían «a estándar» y, con el burden estándar fijado,
+--     su mano de obra contaba dos veces en el costo con estándar. Con la
+--     marca de la nómina: con pago real, sin importe por reporte; solo las 6
+--     h sin pago van a estándar; con el burden sin fijar, en 0 y en 12.5;
+--     con el código del teléfono y sin él. El detalle de la obra dice
+--     cuántas horas son de nómina y no inventa lo que le tocó a cada quien.
+--     Y a quien cobra por nómina ya no se le pide darse de alta en el jornal.
+do $$
+declare
+  v_obt text; o record; p record; v_j jsonb; v_ids bigint[];
+  a text; b text; c text; d text; e text; f text; g text; h text; i text; k text; x1 text; x2 text;
+  v_esp text := 'sin fijar el burden: A 42 h, 36 con pago real y 6 a estándar, nómina 1000.00, estándar sin cifra (falta el burden); B 18 h, 18 '
+                'y 0, nómina 500.00, estándar 0.00, costo con estándar 500.00 | burden 0: A estándar 150.00, costo con estándar 1150.00; B '
+                '0.00 y 500.00 | burden 12.5: A 168.75 y 1168.75; B 0.00 y 500.00 | la obra lo dice: sí | sin el código del teléfono: lo '
+                'mismo | reporte por reporte: los 6 de la nómina con pago real y sin importe; el otro, a estándar | el detalle de la A: '
+                'la mano de obra real 1000.00 en 36 h (36 de nómina); quién trabajó: Zzana C10 PRUEBA 22 h, 16 de nómina, pagado vacío, 6 a '
+                'estándar; Zzbeto C10 PRUEBA 20 h, 20 de nómina, pagado vacío, 0 a estándar; con su nota: sí; por fase: rough 10 h, 10 de '
+                'nómina, vacía; Sin fase 32 h, 26 de nómina, vacía; nóminas: 1, con 4 reportes y 36 h | el control 70: verde, 54 h en 6 '
+                'reporte(s) | las personas: Zzana C10 PRUEBA 6 h sin pago y 26 de nómina en 90 días; Zzbeto C10 PRUEBA 0 h sin pago y 28 de '
+                'nómina en 90 días; al pegar ya no se pide darlas de alta | sin la marca (como en la v2): A 42 h a estándar, costo con '
+                'estándar 2158.75; y al pegar se pide dar de alta a las dos';
+begin
+  if pg_temp.c10_omitir(62, 'las horas que pagó una nómina tienen pago real', v_esp) then return; end if;
+  begin
+    set local lock_timeout = '500ms';
+    perform pg_temp.c10_sembrar();
+    perform pg_temp.c10_hora(1, 'p1', pg_temp.c10_w1(0), 'c10-prueba-a', 8);
+    perform pg_temp.c10_hora(2, 'p1', pg_temp.c10_w1(1), 'c10-prueba-a', 8);
+    perform pg_temp.c10_hora(3, 'p2', pg_temp.c10_w1(0), 'c10-prueba-a', 10, null, 'rough');
+    perform pg_temp.c10_hora(4, 'p2', pg_temp.c10_w1(1), 'c10-prueba-a', 10);
+    perform pg_temp.c10_hora(5, 'p1', pg_temp.c10_w1(2), 'c10-prueba-b', 10, 'CO #1');
+    perform pg_temp.c10_hora(6, 'p2', pg_temp.c10_w1(2), 'c10-prueba-b', 8);
+    perform pg_temp.c10_hora(7, 'p1', pg_temp.c10_w2(0), 'c10-prueba-a', 6);
+    v_ids := array[-1010000001, -1010000002, -1010000003, -1010000004, -1010000005, -1010000006];
+    -- la nómina en el libro: el sueldo por obra y CO, y el burden real a cada obra (A: 880 + 120; B: 250 + 192 + 58)
+    perform pg_temp.c10_nomina(pg_temp.c10_d(),
+      jsonb_build_array(jsonb_build_object('cuenta', '5000', 'monto', '880.00', 'proyecto_id', 'c10-prueba-a'),
+                        jsonb_build_object('cuenta', '5000', 'monto', '250.00', 'proyecto_id', 'c10-prueba-b', 'co', 'CO #1'),
+                        jsonb_build_object('cuenta', '5000', 'monto', '192.00', 'proyecto_id', 'c10-prueba-b'),
+                        jsonb_build_object('cuenta', '2210', 'monto', '-1322.00')),
+      jsonb_build_array(jsonb_build_object('cuenta', '5010', 'monto', '120.00', 'proyecto_id', 'c10-prueba-a'),
+                        jsonb_build_object('cuenta', '5010', 'monto', '58.00', 'proyecto_id', 'c10-prueba-b'),
+                        jsonb_build_object('cuenta', '5015', 'monto', '-178.00')));
+    perform pg_temp.c10_marca(v_ids, pg_temp.c10_d());
+    -- (a) sin fijar el burden
+    perform pg_temp.c10_ser('dueno');
+    perform fn_jornal_config('{"burden_estandar_pct": null}');
+    select * into o from v_margen_obra where proyecto_id = 'c10-prueba-a';
+    select * into p from v_margen_obra where proyecto_id = 'c10-prueba-b';
+    a := format('A %s h, %s con pago real y %s a estándar, nómina %s, estándar %s; B %s h, %s y %s, nómina %s, estándar %s, costo con estándar %s',
+                trim_scale(o.horas_reales), trim_scale(o.horas_con_pago_real), trim_scale(o.horas_estandar), o.mano_obra_nomina,
+                case when o.mano_obra_estandar is null and o.costo_con_estandar is null and o.mano_obra_estandar_falta like 'Falta fijar el burden estándar%'
+                     then 'sin cifra (falta el burden)' else 'con cifra: ' || coalesce(o.mano_obra_estandar::text, 'nula') end,
+                trim_scale(p.horas_reales), trim_scale(p.horas_con_pago_real), trim_scale(p.horas_estandar), p.mano_obra_nomina,
+                coalesce(p.mano_obra_estandar::text, 'vacío'), coalesce(p.costo_con_estandar::text, 'vacío'));
+    -- (b) burden 0
+    perform fn_jornal_config('{"burden_estandar_pct": 0}');
+    select * into o from v_margen_obra where proyecto_id = 'c10-prueba-a';
+    select * into p from v_margen_obra where proyecto_id = 'c10-prueba-b';
+    b := format('A estándar %s, costo con estándar %s; B %s y %s', o.mano_obra_estandar, o.costo_con_estandar, p.mano_obra_estandar, p.costo_con_estandar);
+    -- (c) burden 12.5
+    perform fn_jornal_config('{"burden_estandar_pct": 12.5}');
+    select * into o from v_margen_obra where proyecto_id = 'c10-prueba-a';
+    select * into p from v_margen_obra where proyecto_id = 'c10-prueba-b';
+    c := format('A %s y %s; B %s y %s', o.mano_obra_estandar, o.costo_con_estandar, p.mano_obra_estandar, p.costo_con_estandar);
+    -- (d) lo que dice la obra
+    d := case when exists (select 1 from unnest(o.avisos) x
+                            where x = '6 h van a estándar (sin pago real: ni un pago repartido por horas ni una nómina): $168.75, estándar, no real.')
+                   and not exists (select 1 from unnest(p.avisos) x where x like '%van a estándar%')
+              then 'sí' else 'no: ' || array_to_string(o.avisos, ' · ') end;
+    -- (e) sin el código del teléfono (aal1), lo mismo
+    x1 := pg_temp.c10_obra_txt('c10-prueba-a') || ' / ' || pg_temp.c10_obra_txt('c10-prueba-b');
+    perform pg_temp.c10_ser_sin_codigo();
+    x2 := pg_temp.c10_obra_txt('c10-prueba-a') || ' / ' || pg_temp.c10_obra_txt('c10-prueba-b');
+    e := case when x1 = x2 and x1 like '42 h, 36 con pago real, 6 a estándar, nómina 1000.00, estándar 168.75, costo con estándar 1168.75 / 18 h, 18 con pago real,%'
+              then 'lo mismo' else 'con el código: ' || x1 || ' · sin él: ' || x2 end;
+    -- (f) reporte por reporte
+    select format('los %s de la nómina con pago real y sin importe; el otro, %s',
+                  count(*) filter (where q.horas_id = any (v_ids) and q.clase = 'pago_real' and q.monto_real = 0 and q.repartos = 0),
+                  coalesce(max(case when q.horas_id = -1010000007 then case q.clase when 'estandar' then 'a estándar' else q.clase end end), 'no sale'))
+      into f from fn_margen_horas(null) q where q.horas_id = any (v_ids || array[-1010000007::bigint]);
+    -- (g) el detalle de la obra A
+    v_j := fn_margen_obra('c10-prueba-a');
+    select format('la mano de obra real %s en %s h (%s de nómina)', x->>'real', trim_scale((x->>'horas')::numeric), trim_scale((x->>'horas_nomina')::numeric))
+      into g from jsonb_array_elements(v_j->'conceptos') x where x->>'concepto' = 'mano_obra_real';
+    select g || '; quién trabajó: '
+             || string_agg(format('%s %s h, %s de nómina, pagado %s, %s a estándar', x->>'persona', trim_scale((x->>'horas')::numeric),
+                                  trim_scale((x->>'horas_nomina')::numeric), coalesce(x->>'pagado', 'vacío'), trim_scale((x->>'horas_estandar')::numeric)),
+                           '; ' order by x->>'persona')
+             || '; con su nota: ' || case when bool_and(x->>'nota' like 'Parte de estas horas las pagó una nómina:%con el código del teléfono.') then 'sí' else 'no' end
+      into g from jsonb_array_elements(v_j->'cobertura') x;
+    select g || '; por fase: '
+             || string_agg(format('%s %s h, %s de nómina, %s', x->>'etiqueta', trim_scale((x->>'horas')::numeric), trim_scale((x->>'horas_nomina')::numeric),
+                                  coalesce(x->>'mano_obra_real', 'vacía')), '; ' order by t.o)
+      into g from jsonb_array_elements(v_j->'por_fase') with ordinality as t(x, o);
+    g := g || format('; nóminas: %s, con %s reportes y %s h', jsonb_array_length(v_j->'nominas'), v_j->'nominas'->0->>'reportes',
+                     trim_scale((v_j->'nominas'->0->>'horas')::numeric));
+    perform pg_temp.c10_ser('editor');
+    -- (h) el cuadre 70
+    select case when k7.ok and k7.detalle = '54 h con obra, en 6 reporte(s), las pagó una nómina posteada: cuentan como pago real y no van, además, a estándar.'
+                then 'verde, 54 h en 6 reporte(s)' else case when k7.ok then 'verde: ' else 'rojo: ' end || k7.detalle end
+      into h from v_margen_control k7 where k7.orden = 70;
+    -- (i) las personas del jornal (ninguna de las dos está dada de alta): sus horas sin pago y las que les pagó la nómina;
+    --     y el «qué falta» del pegado ya no pide darlas de alta (cobran por nómina, no por Zelle)
+    select string_agg(format('%s %s h sin pago y %s de nómina en 90 días', v.nombre, trim_scale(v.horas_sin_pago), trim_scale(v.horas_nomina_90_dias)),
+                      '; ' order by v.nombre)
+      into i from v_jornal_personas v where v.usuario_id in (pg_temp.c10('p1')::uuid, pg_temp.c10('p2')::uuid);
+    select i || '; al pegar ' || case when q.detalle !~ 'Zz(ana|beto) C10 PRUEBA' then 'ya no se pide darlas de alta' else 'SE PIDE darlas de alta: ' || left(q.detalle, 300) end
+      into i from fn_jornal_pegado() q where q.que = 'qué falta';
+    -- (k) sin la marca: lo de antes (la mano de obra, dos veces; y las dos, por dar de alta)
+    perform pg_temp.c10_marca('{}');
+    perform pg_temp.c10_ser('dueno');
+    select format('A %s h a estándar, costo con estándar %s', trim_scale(q.horas_estandar), q.costo_con_estandar)
+      into k from v_margen_obra q where q.proyecto_id = 'c10-prueba-a';
+    perform pg_temp.c10_ser('editor');
+    select k || '; y al pegar ' || case when q.detalle ~ 'sin dar de alta: [^)]*Zzana C10 PRUEBA' and q.detalle ~ 'sin dar de alta: [^)]*Zzbeto C10 PRUEBA'
+                                        then 'se pide dar de alta a las dos' else 'NO se pide: ' || left(q.detalle, 300) end
+      into k from fn_jornal_pegado() q where q.que = 'qué falta';
+    v_obt := format('sin fijar el burden: %s | burden 0: %s | burden 12.5: %s | la obra lo dice: %s | sin el código del teléfono: %s | reporte por '
+                    'reporte: %s | el detalle de la A: %s | el control 70: %s | las personas: %s | sin la marca (como en la v2): %s',
+                    a, b, c, d, e, f, g, h, i, k);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when lock_not_available then v_obt := pg_temp.c10_sin_candado();
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.c10_ser('editor');
+  insert into _pruebas values (62, 'LAS HORAS QUE PAGÓ UNA NÓMINA TIENEN PAGO REAL (la Fase 11b): con la mano de obra de una nómina en el libro, sus horas ya no van además a estándar —con el burden estándar sin fijar, en 0 y en 12.5 la mano de obra cuenta UNA vez en el costo con estándar—, con el código del teléfono y sin él; solo las horas sin ningún pago van a estándar, y la obra lo dice; el detalle dice cuántas horas son de nómina sin inventar lo que le tocó a cada quien; el cuadre 70 lo cuenta; a quien cobra por nómina no se le pide darse de alta en el jornal; y sin la marca de la nómina todo sale como antes',
+    v_esp, v_obt, case when v_obt like 'omitida:%' then null else v_obt = v_esp end);
+end $$;
+
+-- 63. LO QUE DICE «SIN PAGO» CON UNA NÓMINA, EN EL JORNAL. (a) El Zelle a
+--     alguien que ya cobra por nómina se reconoce igual por su patrón:
+--     repartido por sus horas, las contaría otra vez; la propuesta lo AVISA
+--     (pagadas_por_nomina) y deja (qué horas entran no cambia). (b) Las «sin
+--     pago» de esa semana, las de la persona y los pagos sin repartir de la
+--     obra ya no cuentan esas horas. (c) Una hora que llega tarde a una
+--     semana ya repartida deja de ser tardía cuando la paga una nómina. (d)
+--     El pago de esa persona clasificado a mano en la Bandeja ya no deja
+--     «horas suyas sin pago» si las pagó la nómina.
+do $$
+declare
+  v_obt text; m1 uuid; m2 uuid; v_j jsonb; o record; a text; b text; c text; d text; e text; f text; g text; x text; y text;
+  v_dia text;
+  v_esp text := 'antes de la nómina: a 8→200.00, b 8→200.00 [-] | con esas horas pagadas por una nómina: a 8→200.00, b 8→200.00 '
+                '[pagadas_por_nomina], lo avisa y deja | la semana anterior: 16 h, 0 sin pago | la obra A: 0 pago(s) sin repartir, sin ese '
+                'aviso | las personas: Zzana C10 PRUEBA 5 h sin pago | una hora que llega tarde a una semana repartida: el 35 la nombra y '
+                'la obra la lleva a estándar; la paga una nómina: el 35 ya no, y en su obra sale con pago real | el pago de Zzana '
+                'clasificado a mano en la Bandeja: el 70 no lo nombra; sin la marca, sí (16 h suyas sin pago)';
+begin
+  if pg_temp.c10_omitir(63, 'lo que dice «sin pago» con una nómina, en el jornal', v_esp) then return; end if;
+  begin
+    set local lock_timeout = '500ms';
+    perform pg_temp.c10_sembrar();
+    v_dia := fn_jornal_dia(pg_temp.c10_d(), true);
+    perform pg_temp.c10_hora(1, 'p1', pg_temp.c10_w1(0), 'c10-prueba-a', 8);
+    perform pg_temp.c10_hora(2, 'p1', pg_temp.c10_w1(1), 'c10-prueba-b', 8);
+    perform pg_temp.c10_hora(3, 'p1', pg_temp.c10_w2(0), 'c10-prueba-h', 5);
+    perform pg_temp.c10_hora(4, 'p2', pg_temp.c10_w2(0), 'c10-prueba-h', 4);
+    m1 := pg_temp.c10_cargo('c10-t63-1', pg_temp.c10_d(), 400.00, 'Zelle payment to C10 PRUEBA ZZANA 9631');
+    m2 := pg_temp.c10_cargo('c10-t63-2', pg_temp.c10_d(), 96.00, 'Zelle payment to C10 PRUEBA ZZBETO 9632');
+    perform pg_temp.c10_alta('p1');
+    perform pg_temp.c10_alta('p2');
+    perform pg_temp.c10_ser('dueno');
+    perform fn_jornal_config('{"burden_estandar_pct": 0}');
+    perform pg_temp.c10_ser('editor');
+    -- (a) la propuesta del pago de Zzana por esa semana, antes y después de que una nómina pague esas horas
+    perform pg_temp.c10_marca('{}');
+    v_j := pg_temp.c10_propuesta(m1, pg_temp.c10_w1(0), pg_temp.c10_w1(6));
+    a := format('%s [%s]', pg_temp.c10_lineas(v_j), pg_temp.c10_avisos(v_j));
+    perform pg_temp.c10_marca(array[-1010000001, -1010000002], pg_temp.c10_d());
+    v_j := pg_temp.c10_propuesta(m1, pg_temp.c10_w1(0), pg_temp.c10_w1(6));
+    b := format('%s [%s], %s', pg_temp.c10_lineas(v_j), pg_temp.c10_avisos(v_j),
+                case when pg_temp.c10_aviso(v_j, 'pagadas_por_nomina') like '16 h de este reparto ya las pagó una nómina (día de pago ' || v_dia
+                                 || '): su costo ya está en su obra por la nómina, y con este pago entraría otra vez.%Es solo un aviso.'
+                          and (v_j->>'puede_aplicar')::boolean
+                     then 'lo avisa y deja' else coalesce(pg_temp.c10_aviso(v_j, 'pagadas_por_nomina'), 'no lo avisa') end);
+    -- (b) las «sin pago» de esa semana, los pagos sin repartir de la obra y las horas sin pago de la persona
+    select format('%s h, %s sin pago', trim_scale((q->>'horas')::numeric), trim_scale((q->>'horas_sin_pago')::numeric))
+      into c from jsonb_array_elements(v_j->'periodo'->'opciones') q where q->>'regla' = 'semana_anterior';
+    perform pg_temp.c10_ser('dueno');
+    select * into o from v_margen_obra where proyecto_id = 'c10-prueba-a';
+    d := format('%s pago(s) sin repartir, %s', o.pagos_sin_repartir,
+                case when exists (select 1 from unnest(o.avisos) q where q like '%siguen sin repartir en la Bandeja%') then 'CON el aviso' else 'sin ese aviso' end);
+    select format('%s %s h sin pago', v.nombre, trim_scale(v.horas_sin_pago)) into e from v_jornal_personas v where v.usuario_id = pg_temp.c10('p1')::uuid;
+    perform pg_temp.c10_ser('editor');
+    -- (c) repartido el pago de Zzbeto por su semana, llega tarde un reporte suyo de esa semana; después lo paga una nómina
+    perform pg_temp.c10_aplicar(m2, pg_temp.c10_w2(0), pg_temp.c10_w2(6));
+    perform pg_temp.c10_hora(5, 'p2', pg_temp.c10_w2(3), 'c10-prueba-a', 3);
+    perform pg_temp.c10_ser('dueno');
+    select * into o from v_margen_obra where proyecto_id = 'c10-prueba-a';
+    perform pg_temp.c10_ser('editor');
+    x := case when (select k.detalle like '%Zzbeto C10 PRUEBA: 3 h en 1 reporte(s)%' and not k.ok from v_jornal_control k where k.orden = 35)
+                   and o.horas_estandar = 3 and exists (select 1 from unnest(o.avisos) q where q like '3 h de esta obra son de una semana ya repartida%')
+              then 'el 35 la nombra y la obra la lleva a estándar'
+              else 'el 35: ' || pg_temp.c10_jc(35) || ' · la obra: ' || trim_scale(o.horas_estandar) || ' h a estándar' end;
+    perform pg_temp.c10_marca(array[-1010000001, -1010000002, -1010000005], pg_temp.c10_d());
+    perform pg_temp.c10_ser('dueno');
+    select * into o from v_margen_obra where proyecto_id = 'c10-prueba-a';
+    perform pg_temp.c10_ser('editor');
+    y := case when not coalesce((select k.detalle like '%Zzbeto C10 PRUEBA%' from v_jornal_control k where k.orden = 35), false)
+                   and (select count(*) from fn_jornal_tardias(pg_temp.c10('p2')::uuid)) = 0
+                   and o.horas_estandar = 0 and o.horas_con_pago_real = 11
+                   and not exists (select 1 from unnest(o.avisos) q where q like '%semana ya repartida%')
+              then 'el 35 ya no, y en su obra sale con pago real'
+              else 'el 35: ' || pg_temp.c10_jc(35) || ' · la obra: ' || trim_scale(o.horas_estandar) || ' h a estándar y ' || trim_scale(o.horas_con_pago_real) || ' con pago real' end;
+    f := x || '; la paga una nómina: ' || y;
+    -- (d) el pago de Zzana, clasificado a mano en la Bandeja (5200 entero a la obra A)
+    perform pg_temp.c10_ser('dueno');
+    perform fn_banco_clasificar(m1, '[{"cuenta": "5200", "proyecto_id": "c10-prueba-a"}]'::jsonb, 'c10-pruebas: clasificado a mano, sin repartir');
+    perform pg_temp.c10_ser('editor');
+    x := case when coalesce((select k.detalle like '%a Zzana C10 PRUEBA por $400.00%' from v_jornal_control k where k.orden = 70), false)
+              then 'el 70 LO NOMBRA' else 'el 70 no lo nombra' end;
+    perform pg_temp.c10_marca(array[-1010000005], pg_temp.c10_d());
+    y := case when (select k.detalle like '%a Zzana C10 PRUEBA por $400.00 (%): 16 h suyas sin pago del %' and not k.ok from v_jornal_control k where k.orden = 70)
+              then 'sí (16 h suyas sin pago)' else 'no: ' || pg_temp.c10_jc(70) end;
+    g := x || '; sin la marca, ' || y;
+    v_obt := format('antes de la nómina: %s | con esas horas pagadas por una nómina: %s | la semana anterior: %s | la obra A: %s | las personas: %s | '
+                    'una hora que llega tarde a una semana repartida: %s | el pago de Zzana clasificado a mano en la Bandeja: %s',
+                    a, b, c, d, e, f, g);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when lock_not_available then v_obt := pg_temp.c10_sin_candado();
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.c10_ser('editor');
+  insert into _pruebas values (63, 'LO QUE DICE «SIN PAGO» CON UNA NÓMINA, EN EL JORNAL (la Fase 11b): la propuesta del Zelle a alguien cuyas horas ya pagó una nómina lo avisa antes de aceptar (pagadas_por_nomina) y deja, sin cambiar qué horas entran; esas horas ya no cuentan como «sin pago» ni en la semana, ni en la persona, ni en los pagos sin repartir de su obra; una hora que llegó tarde a una semana repartida deja de ser tardía cuando la paga una nómina (el control 35 y la obra); y un pago suyo clasificado a mano en la Bandeja ya no deja «horas suyas sin pago» (el control 70)',
+    v_esp, v_obt, case when v_obt like 'omitida:%' then null else v_obt = v_esp end);
+end $$;
+
+-- 64. CON LAS NÓMINAS DE VERDAD DE ESTA BASE, Y EL CUADRE 70. (a) Si la
+--     nómina (c15) está, cada reporte de horas con obra que su marca DE
+--     VERDAD da por pagado sale en el margen con pago real: con el código
+--     del teléfono y sin él (sin él la marca contesta igual: no lleva
+--     dinero). Con nóminas de verdad en la base esto las mira a ellas; sin
+--     ninguna, se cumple en vacío, y se dice. (b) El cuadre 70 del margen:
+--     verde con la marca; si la nómina de la base no la trae (la de antes
+--     del 13-nov), verde con qué pegar mientras no haya ninguna nómina en el
+--     libro y EN ROJO desde que la hay; y si la marca no contesta, en rojo
+--     —y el costo por obra sigue contestando, con esas horas a estándar,
+--     como antes—.
+do $$
+declare
+  v_obt text; a text; b text; c text; d text; e text; v_n1 bigint; v_n2 bigint; v_m1 bigint; v_m2 bigint; v_t text; v_q1 text; v_q2 text;
+  v_c15 boolean := to_regclass('public.nomina_corridas') is not null;
+  v_marca boolean := to_regprocedure('public.fn_nomina_horas_con_pago()') is not null;
+  v_hay boolean := exists (select 1 from asientos q where q.origen_tabla = 'nomina_corridas' and q.camino not in ('reverso', 'reverso_automatico')
+                                        and not exists (select 1 from asientos r where r.reversa_a = q.id and r.camino = 'reverso'));
+  v_nom text := 'CON LAS NÓMINAS DE VERDAD DE ESTA BASE, Y EL CUADRE 70 (la Fase 11b): cada reporte de horas que la marca de la nómina da por pagado sale con pago real en el costo por obra, con el código del teléfono y sin él; el cuadre 70 del margen está verde con la marca, dice qué pegar si la nómina de la base no la trae y todavía no hay ninguna en el libro, se pone en rojo si ya la hay o si la marca no contesta, y aun así el costo por obra sigue contestando';
+  v_esp text;
+begin
+  v_esp := 'las horas que la nómina de esta base ya pagó: '
+           || case when v_marca then 'todas con pago real, con el código del teléfono y sin él'
+                   when v_c15 then 'la nómina de esta base es la de antes del 13-nov y no lo dice: vuelve a pegar c15-nomina.sql'
+                   else '(la nómina no está en esta base)' end
+           || ' | el cuadre 70 con la marca: verde'
+           || ' | sin la marca y sin nóminas en el libro: '
+           || case when v_hay then '(no se prueba: esta base ya tiene nóminas en el libro)'
+                   when v_c15 then 'verde, y dice qué pegar antes de la primera'
+                   else 'verde: la nómina no está en esta base' end
+           || ' | sin la marca y con una nómina en el libro: '
+           || case when v_c15 then 'rojo, y dice qué pegar' else 'verde: la nómina no está en esta base' end
+           || ' | la marca no contesta, con una nómina en el libro: rojo, y el costo por obra sigue contestando (las horas, a estándar)'
+           || ' | con la marca otra vez: verde';
+  if pg_temp.c10_omitir(64, v_nom, v_esp) then return; end if;
+  begin
+    set local lock_timeout = '500ms';
+    -- (a) la marca de verdad de esta base, tal como está
+    if v_marca then
+      -- (los reportes con obra que la marca da por pagados, y cuántos de ellos saca el margen con pago real: tienen que ser
+      -- todos. Sin cruces: la lista de la nómina, como expresión con su tabla hash; con años de horas un cruce se hace eterno)
+      v_q1 := 'select count(*) from public.horas x where x.proyecto_id is not null and x.horas > 0 and x.horas < 100000 '
+           || 'and (x.id in (select n.horas_id from public.fn_nomina_horas_con_pago() n)) is true';
+      v_q2 := 'select count(*) from public.fn_margen_horas(null) h where h.clase = ''pago_real'' '
+           || 'and (h.horas_id in (select n.horas_id from public.fn_nomina_horas_con_pago() n)) is true';
+      perform pg_temp.c10_ser('dueno');
+      execute v_q1 into v_n1;
+      execute v_q2 into v_m1;
+      v_m1 := v_n1 - v_m1;
+      perform pg_temp.c10_ser_sin_codigo();
+      execute v_q1 into v_n2;
+      execute v_q2 into v_m2;
+      v_m2 := v_n2 - v_m2;
+      perform pg_temp.c10_ser('editor');
+      a := case when v_m1 = 0 and v_m2 = 0 and v_n1 = v_n2 then 'todas con pago real, con el código del teléfono y sin él'
+                else format('con el código, %s de %s reporte(s) NO salen con pago real; sin él, %s de %s', v_m1, v_n1, v_m2, v_n2) end;
+      v_t := format(' (%s reporte(s) de horas con obra pagados por nóminas de verdad)', v_n1);
+    elsif v_c15 then
+      a := 'la nómina de esta base es la de antes del 13-nov y no lo dice: vuelve a pegar c15-nomina.sql';
+    else
+      a := '(la nómina no está en esta base)';
+    end if;
+    -- (b) el cuadre 70, con una marca de prueba
+    perform pg_temp.c10_sembrar();
+    perform pg_temp.c10_hora(1, 'p1', pg_temp.c10_w1(0), 'c10-prueba-a', 8);
+    perform pg_temp.c10_marca(array[-1010000001], pg_temp.c10_d());
+    b := case when (select k.ok from v_margen_control k where k.orden = 70) then 'verde' else pg_temp.c10_mc(70) end;
+    perform pg_temp.c10_marca(null, null, 'quitar');
+    if v_hay then
+      c := '(no se prueba: esta base ya tiene nóminas en el libro)';
+    else
+      select case when k.ok and v_c15 and k.detalle like 'Todavía no hay ninguna nómina en el libro, pero la nómina de esta base es la de antes del 13-nov-2026%'
+                                             || 'vuelve a pegar c15-nomina.sql%' then 'verde, y dice qué pegar antes de la primera'
+                  when k.ok and not v_c15 and k.detalle like 'La nómina no está en esta base:%' then 'verde: la nómina no está en esta base'
+                  else pg_temp.c10_mc(70) || ' · ' || k.detalle end
+        into c from v_margen_control k where k.orden = 70;
+    end if;
+    -- (una nómina en el libro: el journal de prueba)
+    perform pg_temp.c10_nomina(pg_temp.c10_d(),
+      jsonb_build_array(jsonb_build_object('cuenta', '5000', 'monto', '200.00', 'proyecto_id', 'c10-prueba-a'),
+                        jsonb_build_object('cuenta', '2210', 'monto', '-200.00')));
+    select case when not k.ok and v_c15 and k.detalle like 'Hay % nómina(s) en el libro y la nómina de esta base es la de antes del 13-nov-2026%las horas que '
+                                                 || 'pagaron salen a estándar%Vuelve a pegar c15-nomina.sql%' then 'rojo, y dice qué pegar'
+                when k.ok and not v_c15 and k.detalle like 'La nómina no está en esta base:%' then 'verde: la nómina no está en esta base'
+                else pg_temp.c10_mc(70) || ' · ' || k.detalle end
+      into d from v_margen_control k where k.orden = 70;
+    perform pg_temp.c10_marca(null, null, 'falla');
+    perform pg_temp.c10_ser('dueno');
+    select case when not k.ok and k.detalle like 'Hay % nómina(s) en el libro y no se pudo leer qué horas pagó cada nómina (la base contestó %)%'
+                     and k.detalle !~ 'fn_|v_margen|v_jornal'
+                     and (select o.horas_estandar = 8 and o.horas_con_pago_real = 0 and o.mano_obra_nomina = 200.00 from v_margen_obra o where o.proyecto_id = 'c10-prueba-a')
+                then 'rojo, y el costo por obra sigue contestando (las horas, a estándar)'
+                else case when k.ok then 'verde' else 'rojo' end || ' · ' || k.detalle end
+      into e from v_margen_control k where k.orden = 70;
+    perform pg_temp.c10_ser('editor');
+    perform pg_temp.c10_marca(array[-1010000001], pg_temp.c10_d());
+    v_obt := format('las horas que la nómina de esta base ya pagó: %s | el cuadre 70 con la marca: %s | sin la marca y sin nóminas en el libro: %s | sin '
+                    'la marca y con una nómina en el libro: %s | la marca no contesta, con una nómina en el libro: %s | con la marca otra vez: %s',
+                    a, b, c, d, e, case when (select k.ok from v_margen_control k where k.orden = 70) then 'verde' else pg_temp.c10_mc(70) end);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when lock_not_available then v_obt := pg_temp.c10_sin_candado();
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.c10_ser('editor');
+  insert into _pruebas values (64, v_nom, v_esp, v_obt || case when v_obt like 'omitida:%' then '' else coalesce(v_t, '') end,
+                               case when v_obt like 'omitida:%' then null else v_obt = v_esp end);
 end $$;
 
 -- Lo que se puso para la sesión, como estaba

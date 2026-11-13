@@ -111,6 +111,23 @@
 // son las de la base: aquí no se suma dinero. Sin c16, la portada de siempre con una línea que dice
 // qué pegar. La cabecera de su sección lo cuenta.
 //
+// Y (13-nov, Fase 11b: LAS COSTURAS CON LA NÓMINA) las otras páginas enseñan lo que sus capas dicen ahora
+// de una nómina: Costo por obra (c10 v3: las horas que pagó una nómina, «con pago real»; por fase y por
+// persona su dinero no se inventa: «de nómina», con su nota; las nóminas que pagaron horas de la obra; y
+// en Personas, «cobra por nómina» en vez de «sin dar de alta»), el WIP (c12 v3: su aviso 170, como lo
+// dice la base), Estados (el papel de un asiento de la nómina sale de la vista de los papeles, con la
+// rama de c6; y la línea 2250, a nombre de quién, solo con el código del teléfono), la Bandeja (el texto
+// del cargo de Gusto de c6 y su depósito, con «Casar con la nómina») y la Cédula (c13: 2210 a 2240 con lo
+// que cada nómina dejó por pagar, y sin el código «con el código», nunca un rojo). En la Nómina,
+// «Importar» se apaga cuando no hay nada que importar, y el aviso 75 sin el código dice qué es.
+// Y (13-nov, los arreglos de la revisión de la Fase 11b: c15 cambió, y la Nómina enseña lo nuevo que dice)
+// la misma nómina BAJADA POR PARTES (el journal de un empleado con el de todos ya dentro) se dice así al
+// ensayar y al importar; una columna con dinero y sin cuenta, antes de importar («no se puede postear
+// hasta decirlo»); el freno «resumen» (el resumen de un rango no es una nómina) con su «decir por qué»; el
+// amarre SIN el código del teléfono, «con el código» y no «sin teclear»; «es la cuota» cuando la base pide
+// una nota (MX008), con su nota; y lo que contestan casar (su traspaso) y anular (el devengo del mes y la
+// bolsa del burden). Todo es lo que dice la base: aquí no se compara ni se suma nada.
+//
 // Cómo está organizada (v290, «que se parezca a un programa de contabilidad»):
 // una portada («Resumen») con las cifras y lo que hay que atender, y una
 // página por tarea: Bancos y tarjetas, Bandeja (el bank feed), Conciliar,
@@ -3028,7 +3045,8 @@
   // los avisos que no dejan aplicar (los demás son para saber, no frenan)
   const AVISOS_FRENAN = ["sin_horas", "falta_cuenta_sin_obra", "cuenta_mal", "posible_duplicado", "reparto_suelto"];
   // los que no frenan pero piden mirar antes de aceptar (en ámbar), y los que son solo información (sin color)
-  const AVISOS_MIRAR = ["tarifa_lejos", "horas_tardias", "cubiertas_sin_aprobar", "no_parece_pago", "co_parecidos", "se_pisa", "devengo_estandar", "periodo_futuro", "mes_cerrado"];
+  // (11b) «pagadas_por_nomina» (c10 v3): un Zelle a quien ya cobra por nómina, repartido por sus horas, las contaría otra vez; no frena
+  const AVISOS_MIRAR = ["tarifa_lejos", "horas_tardias", "cubiertas_sin_aprobar", "no_parece_pago", "co_parecidos", "se_pisa", "devengo_estandar", "periodo_futuro", "mes_cerrado", "pagadas_por_nomina"];
   const AVISOS_INFO = ["otro_mes", "otro_anio"];
   const claseAviso = c => AVISOS_FRENAN.includes(c) || AVISOS_MIRAR.includes(c) ? "warn" : AVISOS_INFO.includes(c) ? "ct-jr-info" : "";
   const nHoras = v => { const n = num(v); return n == null || Number.isNaN(n) ? "—" : n.toLocaleString("en-US", { maximumFractionDigits: 2 }); };
@@ -4892,15 +4910,33 @@
       if (!Array.isArray(ls) || ls.length < 2) throw errorControl("El asiento no apareció entero", [{ vista: "v_libro", filas: Array.isArray(ls) ? ls.length : 0, esperadas: "2 o más", detalle: id }]);
       if (!Array.isArray(ps) || ps.length !== 1) throw errorControl("El papel del asiento no apareció", [{ vista: "v_asiento_papel", filas: Array.isArray(ps) ? ps.length : 0, esperadas: 1, detalle: id }]);
       lineas = ls; papel = ps[0];
-      // (fase 11) EL PAPEL DE UN ASIENTO DE LA NÓMINA ES SU NÓMINA. La vista de los papeles (c4 y c6, sellada) no conoce la nómina y
-      // contesta «el papel ya no está»: no es un rastro roto. Se lee de v_nomina_papel (c15; lleva el bruto y el neto: solo con el
-      // código del teléfono). Si no llega (sin el código, o una base sin esa vista), se dice dónde está su papel, sin alarma
+      // (fase 11) EL PAPEL DE UN ASIENTO DE LA NÓMINA ES SU NÓMINA. (11b) Desde la marca 2026111301 de c6, la vista de los papeles lo
+      // da ella misma (lee v_nomina_papel de c15 con los permisos de quien mira): con el código del teléfono, el de su nómina; sin él,
+      // un texto fijo sin cifras ni nombres que dice dónde está y que se ve con el código. Se enseña lo que dice la base. Solo con la
+      // vista de antes (papel_existe = falso: «el papel ya no está», que no es un rastro roto) se lee aparte de v_nomina_papel (lleva
+      // el bruto y el neto: solo con el código); si no llega, se dice dónde está su papel, sin alarma
       if (papel.origen_tabla === "nomina_corridas" || papel.origen_tabla === "nomina_burden") {
-        papel = { ...papel, _nomina: true, _papelNom: null };
+        papel = { ...papel, _nomina: true, _papelNom: papel.papel_existe !== false && papel.papel ? String(papel.papel) : null };
+        if (!papel._papelNom) {
+          try {
+            const pn = await DB._leer(`v_nomina_papel?select=papel&origen_tabla=eq.${encodeURIComponent(papel.origen_tabla)}&origen_id=eq.${encodeURIComponent(papel.origen_id || "")}`);
+            if (Array.isArray(pn) && pn.length === 1 && pn[0].papel) { papel._papelNom = String(pn[0].papel); papel._deNomPapel = true; }
+          } catch (e) { if (esFalloDeRed(e)) throw e; }
+          if (!vivo(mia)) return;
+        }
+      }
+      // (11b) LA LÍNEA A NOMBRE DE UN EMPLEADO (2250: el reembolso de una nómina va a su nombre por su perfil, no escrito): el libro trae
+      // su identificador, no su nombre. Con el código del teléfono, su nombre de la nómina (v_nomina_personas, por su perfil); sin él,
+      // ningún nombre (ni el identificador): «a nombre de un empleado», y que con el código se ve a quién
+      const emps = [...new Set(lineas.filter(l => l.tercero_tipo === "empleado" && l.tercero_id).map(l => String(l.tercero_id)))];
+      papel._empleados = null;
+      if (emps.length) await leerMfa();
+      if (!vivo(mia)) return;
+      if (emps.length && mfaActivo()) {
         try {
-          const pn = await DB._leer(`v_nomina_papel?select=papel&origen_tabla=eq.${encodeURIComponent(papel.origen_tabla)}&origen_id=eq.${encodeURIComponent(papel.origen_id || "")}`);
-          if (Array.isArray(pn) && pn.length === 1 && pn[0].papel) papel._papelNom = String(pn[0].papel);
-        } catch (e) { if (esFalloDeRed(e)) throw e; }
+          const pe = await DB._leer(`v_nomina_personas?select=usuario_id,nombre&usuario_id=in.(${emps.map(encodeURIComponent).join(",")})`);
+          papel._empleados = new Map((Array.isArray(pe) ? pe : []).filter(x => x.usuario_id && x.nombre).map(x => [String(x.usuario_id), String(x.nombre)]));
+        } catch (e) { if (esFalloDeRed(e)) throw e; papel._empleados = null; }
         if (!vivo(mia)) return;
       }
       if (papel.papel_ruta && papel.origen_tabla === "recibos" && typeof DB.firmarFotos === "function") {
@@ -4915,7 +4951,14 @@
     const obra = pid => { const p = (S.proyectos || []).find(x => x.id === pid); return p ? p.nombre : (pid || ""); };
     const celda = (v, col) => `<td class="r ct-num${cero(v)}" data-col="${col}">${fmtNeg(v)}</td>`;
     // en el teléfono la tabla se apila: la cuenta arriba, la obra en su renglón y debe | haber debajo (data-col pone las etiquetas)
-    const tabla = lineas.map(l => { const o = obra(l.proyecto_id); return `<tr><td>${cuentaBtn(l.cuenta, l.cuenta_nombre)}<small>${[l.memo, l.tercero_tipo || l.tercero_id ? `${l.tercero_tipo || ""} ${l.tercero_id || ""}`.trim() : "", l.cost_code].filter(Boolean).map(esc).join(" · ")}</small></td><td class="ct-obra"${o ? ` data-col="Obra"` : ""}>${esc(o)}</td>${celda(l.debe, "Debe")}${celda(l.haber, "Haber")}</tr>`; }).join("");
+    // (11b) a nombre de quién: un empleado (la nómina) con su nombre solo con el código del teléfono; los demás terceros, como siempre
+    const tercero = l => {
+      if (!(l.tercero_tipo || l.tercero_id)) return "";
+      if (l.tercero_tipo !== "empleado") return `${l.tercero_tipo || ""} ${l.tercero_id || ""}`.trim();
+      const n = papel._empleados && papel._empleados.get(String(l.tercero_id || ""));
+      return n ? `a nombre de ${n}` : mfaActivo() ? "a nombre de un empleado" : "a nombre de un empleado (a quién, se ve con el código del teléfono)";
+    };
+    const tabla = lineas.map(l => { const o = obra(l.proyecto_id); return `<tr><td>${cuentaBtn(l.cuenta, l.cuenta_nombre)}<small>${[l.memo, tercero(l), l.cost_code].filter(Boolean).map(esc).join(" · ")}</small></td><td class="ct-obra"${o ? ` data-col="Obra"` : ""}>${esc(o)}</td>${celda(l.debe, "Debe")}${celda(l.haber, "Haber")}</tr>`; }).join("");
     const camino = CAMINO[a.camino] || a.camino || "";
     const ruta = papel.papel_ruta || "";
     cuerpo().innerHTML = `<section class="ct-card" id="ct-est-asiento">
@@ -4938,7 +4981,7 @@
       ${ruta.startsWith("docs/") ? `<p class="ct-noche-meta">Documento: <span class="ct-num">${esc(ruta)}</span></p>` : ""}
       ${!ruta && papel.origen_tabla && !papel._nomina ? `<p class="ct-noche-meta">Se ve en la app: ${esc(papel.origen_tabla)} ${esc(papel.origen_id || "")}</p>` : ""}
     </section>
-    <p class="ct-nota">Fuente: v_libro · v_asiento_papel${papel._nomina ? " · v_nomina_papel" : ""} · fn_estados_control</p>`;
+    <p class="ct-nota">Fuente: v_libro · v_asiento_papel${papel._deNomPapel ? " · v_nomina_papel" : ""}${papel._empleados ? " · v_nomina_personas" : ""} · fn_estados_control</p>`;
     engancharBotones();
     // (fase 11) del asiento de una nómina, a su nómina (la página la pinta con el código del teléfono)
     { const bn = $("ct-est-papel-nomina"); if (bn) bn.addEventListener("click", () => { if (!S.ocupado) ir("nomina", { sub: "nominas", corrida: papel.origen_id || null }); }); }
@@ -6042,6 +6085,17 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
   // rojo y la página no pinta números (el rojo con el detalle); sus avisos
   // salen arriba. Sin c10 pegado, la página lo dice en llano. Ninguna cifra
   // se calcula aquí: vienen listas de la base.
+  // (11b, c10 v3) LAS HORAS QUE PAGÓ UNA NÓMINA son «con pago real»: la
+  // cobertura lo dice («de ellas, N h las pagó una nómina»); por fase y por
+  // persona la base no inventa su dinero (es el sueldo de alguien: vive en
+  // la nómina, con el código del teléfono) y deja vacíos la mano de obra
+  // real y lo pagado con su nota: aquí «en Nómina» y la nota una vez, nunca
+  // un «$0.00»; las nóminas que pagaron horas de la obra salen en su
+  // apartado, con su botón a la nómina. En Personas, quien tiene horas que
+  // pagó una nómina (horas_nomina_90_dias) «cobra por nómina»: no se le pide
+  // darse de alta en el jornal (y si ya lo estaba, se dice que conviene
+  // darlo de baja). Una base de antes de la v3 no trae nada de eso: la
+  // página es la de siempre.
   // UN ESTIMADO A MEDIAS NO SE COMPARA (c10 v2): si a la obra le falta una
   // parte del estimado y ya lleva real de esa parte, la base deja vacíos el
   // costo estimado, el margen estimado y la diferencia, con estimado_completo
@@ -6144,7 +6198,7 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
           `<button type="button" class="ct-chip" data-ob-filtro="${k}" aria-pressed="${S.obras.filtro === k ? "true" : "false"}">${t} (${n})</button>`).join("")}</div>
         <div class="ct-ob-cab" aria-hidden="true"><span>Obra</span><span class="r">Contrato</span><span class="r">Costo real</span><span class="r">Margen</span><span>Contra el estimado</span></div>
         <div id="ct-ob-filas" class="ct-ob-filas"></div>
-        ${ayudaHTML(`<p class="ct-nota">El costo real es lo que el libro tiene con esa obra desde el 1-oct (lo de antes está en QuickBooks: esa obra sale «parcial»). La mano de obra real es lo pagado y repartido por horas; la de las horas que aún no tienen pago va aparte como «estándar, no real», y se suma solo para comparar con el estimado. El margen es lo facturado menos el costo real.</p>`, "¿De dónde sale cada número?")}
+        ${ayudaHTML(`<p class="ct-nota">El costo real es lo que el libro tiene con esa obra desde el 1-oct (lo de antes está en QuickBooks: esa obra sale «parcial»). La mano de obra real es lo pagado: lo que pagó la nómina (por obra, en el libro) y los pagos repartidos por horas; la de las horas que aún no tienen ningún pago va aparte como «estándar, no real», y se suma solo para comparar con el estimado. El margen es lo facturado menos el costo real.</p>`, "¿De dónde sale cada número?")}
       </section>`;
     wireConfig(cfg);
     const pintaFilas = () => {
@@ -6255,7 +6309,9 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     // (sin estimado completo, el margen estimado no sale: «—» con su porqué; sin facturar, el real no tiene %)
     filasC.push({ clase: "ct-ob-margen", celdas: ["Margen", o.margen_estimado == null ? `—${o.estimado_completo === false ? "<small>sin estimado completo</small>" : ""}` : `${fmtNeg(o.margen_estimado)}<small>${pctTxt(o.margen_estimado_pct)}</small>`,
       `${fmtNeg(o.margen_real)}<small>${sinFacturar(o) ? "sin facturar" : pctTxt(o.margen_real_pct)}</small>`, "—", "—"] });
-    const cob = `<p class="ct-ob-cobertura"><b class="ct-num">${horasTxt(o.horas_con_pago_real)}</b> con pago real · <b class="ct-num">${horasTxt(o.horas_estandar)}</b> a estándar${num(o.horas_dueno) ? ` · ${horasTxt(o.horas_dueno)} del dueño (van aparte)` : ""}${num(o.horas_antes_libro) ? ` · ${horasTxt(o.horas_antes_libro)} de antes del libro (en QuickBooks)` : ""}${num(o.horas_sin_aprobar) ? ` · ${horasTxt(o.horas_sin_aprobar)} sin aprobar` : ""}</p>`;
+    // (11b) cuántas de las horas con pago real las pagó una nómina (lo dice la base en la mano de obra real; una base de antes no lo trae)
+    const moReal = conceptos.find(c => c.concepto === "mano_obra_real") || {}, hNom = num(moReal.horas_nomina);
+    const cob = `<p class="ct-ob-cobertura"><b class="ct-num">${horasTxt(o.horas_con_pago_real)}</b> con pago real${hNom ? ` <span class="ct-ob-nomh">(de ellas, ${horasTxt(hNom)} las pagó una nómina)</span>` : ""} · <b class="ct-num">${horasTxt(o.horas_estandar)}</b> a estándar${num(o.horas_dueno) ? ` · ${horasTxt(o.horas_dueno)} del dueño (van aparte)` : ""}${num(o.horas_antes_libro) ? ` · ${horasTxt(o.horas_antes_libro)} de antes del libro (en QuickBooks)` : ""}${num(o.horas_sin_aprobar) ? ` · ${horasTxt(o.horas_sin_aprobar)} sin aprobar` : ""}</p>`;
     const he = num(o.horas_estimadas), hr = num(o.horas_reales) || 0, uso = he ? Math.round(hr / he * 100) : null;
     const horasEst = `<div class="ct-ob-horas"><p><b class="ct-num">${horasTxt(hr)}</b> reales${he ? ` de <b class="ct-num">${horasTxt(he)}</b> estimadas (${uso} %)` : " · sin horas estimadas"}${num(o.horas_co) ? ` · ${horasTxt(o.horas_co)} de CO` : ""}${o.tarifa_estimada != null ? ` · tarifa estimada <span class="ct-num">${fmt(o.tarifa_estimada)}</span>/h (escenario ${esc(o.escenario || "—")})` : ""}</p>
       ${he ? `<div class="ct-ob-barra-h${uso > 100 ? " pasa" : ""}" role="img" aria-label="${uso} % de las horas estimadas"><span style="width:${Math.min(uso, 100)}%"></span></div>` : ""}</div>`;
@@ -6268,14 +6324,23 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     const porCuenta = (d.por_cuenta || []).map(c => ({ celdas: [`<span class="ct-num">${esc(c.cuenta)}</span> ${esc(c.nombre || "")}${c.jornal ? ` ${pill("jornales", "cu")}` : ""}`, bajarBtn(c.real, c.bajar, `${c.cuenta} ${c.nombre || ""}${c.jornal ? " · jornales" : ""}`), esc(c.asientos == null ? "—" : c.asientos)] }));
     const porCo = (d.por_co || []).map(c => ({ celdas: [`${esc(c.etiqueta || c.co || "Base")}${c.alcance != null ? `<small>estimado del CO <span class="ct-num">${fmt(typeof c.alcance === "object" ? c.alcance.monto : c.alcance)}</span></small>` : ""}`, horasTxt(c.horas), fmt(c.mano_obra_real),
       num(c.mano_obra_estandar) ? `<span class="ct-ob-estnum">${fmt(c.mano_obra_estandar)}</span>` : fmt(c.mano_obra_estandar), fmt(c.material_real), fmt(c.costo_real), fmt(c.ingreso_libro)] }));
-    const porFase = (d.por_fase || []).map(f => ({ celdas: [esc(f.etiqueta || f.fase || "Sin fase"), horasTxt(f.horas), horasTxt(f.horas_con_pago_real), fmt(f.mano_obra_real), horasTxt(f.horas_estandar),
+    // (11b) las horas de nómina de una fase o de una persona, y su dinero: la base lo deja vacío (es el sueldo de alguien y vive en la
+    // nómina, con el código del teléfono): «en Nómina», con lo repartido de los pagos por horas si lo hay; nunca «$0.00»
+    const deNomina = h => num(h) ? `<small class="ct-ob-nomh">${horasTxt(h)} de nómina</small>` : "";
+    const enNomina = (v, h, jor) => v == null && num(h) ? `<span class="ct-ob-nomtxt">en Nómina</span>${num(jor) ? `<small>+ jornales <span class="ct-num">${fmt(jor)}</span></small>` : ""}` : fmt(v);
+    const porFase = (d.por_fase || []).map(f => ({ celdas: [esc(f.etiqueta || f.fase || "Sin fase"), horasTxt(f.horas), `${horasTxt(f.horas_con_pago_real)}${deNomina(f.horas_nomina)}`, enNomina(f.mano_obra_real, f.horas_nomina, f.mano_obra_jornales), horasTxt(f.horas_estandar),
       num(f.mano_obra_estandar) ? `<span class="ct-ob-estnum">${fmt(f.mano_obra_estandar)}</span>` : fmt(f.mano_obra_estandar)] }));
+    // (la nota de la base, una vez, debajo de la tabla: es la misma en cada fila)
+    const notaNom = lista => { const t = [...new Set(lista.map(x => x && x.nota).filter(Boolean))]; return t.length ? t.map(x => `<p class="ct-nota ct-ob-nomnota">${esc(x)}</p>`).join("") : ""; };
     const cc = d.por_cost_code || {};
     const ccHTML = cc.hay && Array.isArray(cc.filas) && cc.filas.length
       ? tablaOb([{ t: "Código" }, { t: "Horas", r: true }, { t: "Real", r: true }, { t: "Estimado", r: true }], cc.filas.map(f => ({ celdas: [`${esc(f.cost_code || f.codigo || "")}${f.etiqueta || f.nombre ? `<small>${esc(f.etiqueta || f.nombre)}</small>` : ""}`, f.horas == null ? "—" : horasTxt(f.horas), fmt(f.real != null ? f.real : f.costo_real), f.estimado == null ? "—" : fmt(f.estimado)] })))
       : `<p class="ct-vacio ct-ob-sincc">${esc(cc.nota || "Todavía no hay nada capturado con código en esta obra: se compara por obra y por cuenta.")}</p>`;
-    const cober = (d.cobertura || []).map(p => ({ celdas: [`${esc(p.persona || "")}${p.es_dueno ? ` ${pill("dueño: va aparte")}` : ""}${p.tarifa != null ? `<small>tarifa <span class="ct-num">${fmt(p.tarifa)}</span>/h</small>` : ""}`, horasTxt(p.horas), horasTxt(p.horas_con_pago_real), fmt(p.pagado),
+    const cober = (d.cobertura || []).map(p => ({ celdas: [`${esc(p.persona || "")}${p.es_dueno ? ` ${pill("dueño: va aparte")}` : ""}${p.tarifa != null ? `<small>tarifa <span class="ct-num">${fmt(p.tarifa)}</span>/h</small>` : ""}`, horasTxt(p.horas), `${horasTxt(p.horas_con_pago_real)}${deNomina(p.horas_nomina)}`, enNomina(p.pagado, p.horas_nomina, p.pagado_jornales),
       horasTxt(p.horas_estandar), p.estandar == null ? "—" : `<span class="ct-ob-estnum">${fmt(p.estandar)}</span>`, horasTxt(p.horas_sin_aprobar)] }));
+    // (11b) las nóminas que pagaron horas de esta obra (la base: su día de pago, cuántos reportes y cuántas horas; ni un importe)
+    const noms = (Array.isArray(d.nominas) ? d.nominas : []).map(n => ({ celdas: [`Nómina del ${fechaLarga(n.dia_pago)}`, horasTxt(n.horas), esc(n.reportes == null ? "—" : n.reportes),
+      n.corrida_id ? `<button type="button" class="accion secundaria chica" data-ob-nomina="${esc(n.corrida_id)}">Verla</button>` : "—"] }));
     const reps = (d.repartos || []).map(r => ({ clase: r.estado === "deshecho" ? "ct-ob-deshecho" : "", celdas: [`${fechaLarga(r.fecha_pago)} · ${esc(r.persona || "")}${r.estado === "deshecho" ? ` ${pill("deshecho", "warn")}` : ""}<small>${esc(rangoCorto(r.desde, r.hasta))} · pago de <span class="ct-num">${fmt(r.monto)}</span> por ${horasTxt(r.horas)}</small>`,
       horasTxt(r.horas_obra), fmt(r.monto_obra), r.asiento_id ? asientoBtn(r.asiento_id, r.asiento) : esc(r.asiento || "—")] }));
     const seccion = (t, html, extra) => `<section class="ct-card ct-ob-sec"${extra || ""}><h2>${esc(t)}</h2>${html}</section>`;
@@ -6293,16 +6358,20 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
         <div class="ct-acciones"><button type="button" class="accion secundaria" id="ct-ob-volver">‹ Todas las obras</button></div>
       </section>` + avisosCtlHTML(avisos) +
       seccion("Estimado contra real", `${tablaOb([{ t: "Concepto" }, { t: "Estimado", r: true }, { t: "Real", r: true }, { t: "Estándar", r: true }, { t: "Diferencia", r: true }], filasC, "ct-ob-conceptos")}
-        <p class="ct-nota">La mano de obra real es lo pagado y repartido; la estándar son las horas que aún no tienen pago, a la tarifa del equipo con el burden: <b>no está en el libro</b> y solo se suma para comparar. La diferencia es lo estimado menos lo gastado: en verde lo que sobra, en rojo lo que se pasa. Toca un número del real para ver sus asientos.</p>`, ` id="ct-ob-conceptos"`) +
+        <p class="ct-nota">La mano de obra real es lo pagado: lo que pagó la nómina y lo repartido de los pagos por horas; la estándar son las horas que aún no tienen ningún pago, a la tarifa del equipo con el burden: <b>no está en el libro</b> y solo se suma para comparar. La diferencia es lo estimado menos lo gastado: en verde lo que sobra, en rojo lo que se pasa. Toca un número del real para ver sus asientos.</p>`, ` id="ct-ob-conceptos"`) +
       seccion("Por cuenta", porCuenta.length ? tablaOb([{ t: "Cuenta" }, { t: "Real", r: true }, { t: "Asientos", r: true }], porCuenta) : `<p class="ct-vacio">Ningún costo en el libro con esta obra todavía.</p>`, ` id="ct-ob-cuentas"`) +
       seccion("Base y CO, aparte", porCo.length ? tablaOb([{ t: "Base o CO" }, { t: "Horas", r: true }, { t: "Mano de obra real", r: true }, { t: "Estándar", r: true }, { t: "Material", r: true }, { t: "Costo real", r: true }, { t: "Facturado", r: true }], porCo) : `<p class="ct-vacio">Sin horas ni costos con CO.</p>`, ` id="ct-ob-co"`) +
-      seccion("Por fase", porFase.length ? tablaOb([{ t: "Fase" }, { t: "Horas", r: true }, { t: "Con pago real", r: true }, { t: "Mano de obra real", r: true }, { t: "A estándar", r: true }, { t: "Estándar", r: true }], porFase) : `<p class="ct-vacio">Sin horas reportadas con fase.</p>`, ` id="ct-ob-fase"`) +
+      seccion("Por fase", porFase.length ? tablaOb([{ t: "Fase" }, { t: "Horas", r: true }, { t: "Con pago real", r: true }, { t: "Mano de obra real", r: true }, { t: "A estándar", r: true }, { t: "Estándar", r: true }], porFase) + notaNom(d.por_fase || []) : `<p class="ct-vacio">Sin horas reportadas con fase.</p>`, ` id="ct-ob-fase"`) +
       seccion("Por cost code", ccHTML, ` id="ct-ob-cc"`) +
-      seccion("Quién trabajó", cober.length ? tablaOb([{ t: "Persona" }, { t: "Horas", r: true }, { t: "Con pago real", r: true }, { t: "Pagado", r: true }, { t: "A estándar", r: true }, { t: "Estándar", r: true }, { t: "Sin aprobar", r: true }], cober) : `<p class="ct-vacio">Nadie ha reportado horas en esta obra.</p>`, ` id="ct-ob-quien"`) +
+      seccion("Quién trabajó", cober.length ? tablaOb([{ t: "Persona" }, { t: "Horas", r: true }, { t: "Con pago real", r: true }, { t: "Pagado", r: true }, { t: "A estándar", r: true }, { t: "Estándar", r: true }, { t: "Sin aprobar", r: true }], cober) + notaNom(d.cobertura || []) : `<p class="ct-vacio">Nadie ha reportado horas en esta obra.</p>`, ` id="ct-ob-quien"`) +
+      (noms.length ? seccion("Las nóminas que pagaron horas de esta obra", `${tablaOb([{ t: "Nómina" }, { t: "Horas aquí", r: true }, { t: "Reportes", r: true }, { t: "" }], noms)}
+        <p class="ct-nota">Su costo está en el libro con esta obra (la mano de obra de nómina: sueldo y burden real, por las horas aprobadas que pagó). Lo que le tocó a cada persona se ve en Nómina, con el código del teléfono.</p>`, ` id="ct-ob-nominas"`) : "") +
       seccion("Pagos repartidos a esta obra", reps.length ? tablaOb([{ t: "Pago" }, { t: "Horas aquí", r: true }, { t: "Le tocó", r: true }, { t: "Asiento", r: true }], reps) : `<p class="ct-vacio">Todavía ningún pago de mano de obra repartido a esta obra.</p>`, ` id="ct-ob-repartos"`);
     $("ct-ob-volver").addEventListener("click", () => { S.obras.sel = null; pintarObras(); });
     obCuerpo().querySelectorAll("[data-bajar]").forEach(b => b.addEventListener("click", () => { S.obras.bajar = S.obras.piezas[Number(b.dataset.bajar)]; window.scrollTo(0, 0); pintarObras(); }));
     obCuerpo().querySelectorAll(".ct-asiento-btn").forEach(b => b.addEventListener("click", () => ir("estados", { cuenta: null, asiento: b.dataset.asiento })));
+    // (11b) de una nómina que pagó horas de la obra, a esa nómina (la página la pinta con el código del teléfono)
+    obCuerpo().querySelectorAll("[data-ob-nomina]").forEach(b => b.addEventListener("click", () => { if (!S.ocupado) ir("nomina", { sub: "nominas", corrida: b.dataset.obNomina }); }));
   }
   // La consulta de un pedazo de «bajar» (la llave de c4): solo v_libro, con sus filtros (cuenta, obra, asientos que entran o no)
   function consultaBajar(pz) {
@@ -6397,7 +6466,9 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
       if (!vivaOb(mia)) return;
     } catch (err) { if (!vivaOb(mia)) return; return errorOb(err, pintarObras); }
     const act = filas.filter(p => p.registrada && p.activa);
-    subOb(`${plural(act.length, "persona cobra", "personas cobran")} por horas${filas.some(p => !p.registrada) ? ` · ${plural(filas.filter(p => !p.registrada).length, "con horas sin dar de alta", "con horas sin dar de alta")}` : ""}`);
+    // (11b) quien cobra por nómina (horas pagadas por una nómina en 90 días) no está «sin dar de alta»: no cobra por Zelle
+    const sinAlta = filas.filter(p => !p.registrada && !porNomina(p)), conNom = filas.filter(p => !p.registrada && porNomina(p));
+    subOb(`${plural(act.length, "persona cobra", "personas cobran")} por horas${conNom.length ? ` · ${plural(conNom.length, "cobra por nómina", "cobran por nómina")}` : ""}${sinAlta.length ? ` · ${plural(sinAlta.length, "con horas sin dar de alta", "con horas sin dar de alta")}` : ""}`);
     obCuerpo().innerHTML = filas.length ? `<div class="ct-ob-pers">${filas.map(personaHTML).join("")}</div>
         ${ayudaHTML(`<p class="ct-nota">Dar de alta a alguien dice: «sus pagos por Zelle se reparten por sus horas». La base lo reconoce por cómo escribe el banco su nombre en la descripción (el patrón). Si el banco lo escribe distinto, cambia el patrón; si deja de cobrar así, dalo de baja (lo ya repartido se queda).</p>`, "¿Cómo funciona?")}`
       : `<section class="ct-card ct-vacio">Nadie de la cuadrilla tiene horas en los últimos 90 días.</section>`;
@@ -6413,14 +6484,19 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
       const vuelve = card.querySelector("[data-per-vuelve]"); if (vuelve) vuelve.addEventListener("click", () => accionOb(card, "fn_jornal_persona", { p: { usuario_id: p.usuario_id, activa: true } }, x => notaPersona(x, `${p.nombre}: otra vez cobra por horas`)));
     });
   }
+  // (11b, c10 v3) horas de los últimos 90 días que pagó una nómina: esa persona cobra por nómina (una base de antes no trae la columna)
+  const porNomina = p => num(p.horas_nomina_90_dias) > 0;
   function personaHTML(p) {
-    const estado = !p.registrada ? pill("sin dar de alta", "warn") : p.activa ? pill("cobra por horas", "ok") : pill("de baja");
+    const nom = porNomina(p);
+    const estado = !p.registrada ? (nom ? pill("cobra por nómina", "ok") : pill("sin dar de alta", "warn")) : p.activa ? pill("cobra por horas", "ok") : pill("de baja");
     return `<article class="ct-card ct-per" data-usuario="${esc(p.usuario_id)}">
       <div class="ct-cab"><h2>${esc(p.nombre || "")}</h2>${estado}</div>
-      <p class="ct-nota">${p.registrada && p.patron ? `Se reconoce por «<b>${esc(patronLlano(p.patron))}</b>» · ` : ""}${p.tarifa != null ? `tarifa <span class="ct-num">${fmt(p.tarifa)}</span>/h` : "sin tarifa en Costos del equipo"}${p.cuenta ? ` · va a ${esc(p.cuenta)}` : ""}${num(p.horas_90_dias) ? ` · ${horasTxt(p.horas_90_dias)} en 90 días` : ""}${num(p.horas_sin_pago) ? ` · ${horasTxt(p.horas_sin_pago)} sin pago` : ""}</p>
+      <p class="ct-nota">${p.registrada && p.patron ? `Se reconoce por «<b>${esc(patronLlano(p.patron))}</b>» · ` : ""}${p.tarifa != null ? `tarifa <span class="ct-num">${fmt(p.tarifa)}</span>/h` : "sin tarifa en Costos del equipo"}${p.cuenta ? ` · va a ${esc(p.cuenta)}` : ""}${num(p.horas_90_dias) ? ` · ${horasTxt(p.horas_90_dias)} en 90 días` : ""}${nom ? ` · ${horasTxt(p.horas_nomina_90_dias)} las pagó la nómina` : ""}${num(p.horas_sin_pago) ? ` · ${horasTxt(p.horas_sin_pago)} sin pago` : ""}</p>
+      ${nom && !p.registrada ? `<p class="ct-sub ct-per-nom">Cobra por nómina (Gusto): sus horas las paga su nómina, no un Zelle. No hace falta darlo de alta aquí.</p>` : ""}
+      ${nom && p.registrada && p.activa ? `<p class="ct-aviso warn ct-per-nom">Ya cobra por nómina (${horasTxt(p.horas_nomina_90_dias)} en 90 días) y sigue dado de alta para cobrar por Zelle: si ya no cobra así, dalo de baja, para que un pago suyo no se reparta otra vez por horas que pagó su nómina.</p>` : ""}
       ${p.registrada ? `<p class="ct-sub">${num(p.pagos_pendientes) ? `<b>${plural(p.pagos_pendientes, "pago espera", "pagos esperan")}</b> en la Bandeja (<span class="ct-num">${fmt(p.pagos_pendientes_monto)}</span>) · ` : ""}${plural(num(p.repartos) || 0, "pago repartido", "pagos repartidos")} · <span class="ct-num">${fmt(p.repartido)}</span>${p.ultimo_reparto ? ` · el último el ${esc(fechaHora(p.ultimo_reparto))}` : ""}</p>` : ""}
       ${p.nota ? `<p class="ct-nota">${esc(p.nota)}</p>` : ""}
-      <div class="ct-acciones">${!p.registrada ? `<button type="button" class="accion" data-per-alta>Dar de alta</button>`
+      <div class="ct-acciones">${!p.registrada ? (nom ? "" : `<button type="button" class="accion" data-per-alta>Dar de alta</button>`)
         : p.activa ? `<button type="button" class="accion secundaria" data-per-patron>Cambiar el patrón</button><button type="button" class="accion secundaria" data-per-baja>Dar de baja</button>`
         : `<button type="button" class="accion secundaria" data-per-vuelve>Volver a dar de alta</button>`}</div>
       <div class="ct-form" hidden></div>
@@ -7862,6 +7938,14 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
   // cuentas de balance con el saldo del libro; 90: las protecciones) en rojo,
   // o la cédula con otro número de cuentas que el resumen, y no se pinta
   // ninguna cifra. Los avisos (20 a 50) son trabajo por hacer: salen abajo.
+  // (11b, c13 del 13-nov) LA NÓMINA: 2210 a 2240 se sostienen con lo que cada
+  // nómina dejó por pagar (fn_nomina_auxiliar de c15): un renglón por nómina,
+  // con su nota y su botón a esa nómina. Eso solo se enseña con el código del
+  // teléfono: sin él, la base da esas cuentas «con_codigo» (ni se comparan ni
+  // traen auxiliar, diferencia ni sostén). Aquí son «con el código» en ámbar,
+  // NUNCA «no cuadra» ni «sin auxiliar»: una tarjeta arriba dice cuántas y
+  // qué hacer (entrar con el código), la cuenta no ofrece explicar ni
+  // escribir un renglón (no hace falta), y su partida «dato» lo dice.
   // Quien no es el dueño no ve nada (la base le contesta 42501 o nada). Los
   // montos que se escriben van como texto (dos decimales como mucho; con
   // signo, en el lado natural de la cuenta); los que se enseñan, tal como los
@@ -7885,7 +7969,7 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     : `La base contestó con un error que no es de las reglas de la cédula: ${err.message || "sin texto"}. Recarga la app; si sigue, avisa.`;
   // el estado de una cuenta en una píldora (el de la base; «explicación vieja» encima, en rojo)
   // («del libro», neutra y nunca verde: sale del propio libro, ordenado, o de un papel de otro día llevado a la fecha; no pide nada)
-  const ESTADO_CED = { cuadra: ["cuadra", "ok"], del_libro: ["del libro", ""], explicada: ["explicada", ""], no_cuadra: ["no cuadra", "bad"], sin_auxiliar: ["sin auxiliar", "warn"] };
+  const ESTADO_CED = { cuadra: ["cuadra", "ok"], del_libro: ["del libro", ""], explicada: ["explicada", ""], no_cuadra: ["no cuadra", "bad"], sin_auxiliar: ["sin auxiliar", "warn"], con_codigo: ["con el código", "warn"] };
   function pillCed(f) {
     const [t, c] = ESTADO_CED[f.estado] || [f.estado || "—", ""];
     return pill(t, f.estado === "sin_auxiliar" && !f.pendiente ? "" : c) + (f.explicacion_vieja ? " " + pill("explicación vieja", "bad") : "");
@@ -7901,7 +7985,16 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
   const esTelefono = () => !!(window.matchMedia && window.matchMedia("(max-width: 699px)").matches);
   // a qué página lleva el auxiliar de una cuenta (donde se arregla lo que no cuadra)
   const IR_CED = { conciliacion: ["conciliar", "Conciliar"], partidas: ["movimientos", "Movimientos"], activos: ["cierre", "Activos fijos", "activos"], depreciacion: ["cierre", "Activos fijos", "activos"],
-    wip: ["wip", "WIP"], stripe: ["cobros", "Cobros en línea"], stripe_paso: ["cobros", "Cobros en línea"] };
+    wip: ["wip", "WIP"], stripe: ["cobros", "Cobros en línea"], stripe_paso: ["cobros", "Cobros en línea"], nomina: ["nomina", "Nómina: los cargos de Gusto", "cargos"] };
+  // (11b) las cuentas que la base no compara sin el código del teléfono (con_codigo): cuántas y cuáles, con qué hacer. No es un rojo
+  const conCodigoCedHTML = filas => {
+    const cc = (filas || []).filter(f => f.estado === "con_codigo"); if (!cc.length) return "";
+    return `<section class="ct-card ct-ced-codigo" id="ct-ced-codigo" role="status"><h2>${plural(cc.length, "cuenta se mira", "cuentas se miran")} con el código del teléfono</h2>
+      <p>${cc.map(f => `<span class="ct-num">${esc(f.cuenta)}</span>`).join(", ")}: lo que las sostiene es lo que cada nómina dejó por pagar, y eso lleva lo que cobra cada persona: solo se ve con el código del teléfono. Esta sesión entró sin él, así que no se comparan. No es que no cuadren.</p>
+      <p class="ct-nota">Entra otra vez escribiendo el código; si todavía no lo tienes, actívalo en Conexiones y seguridad. No hace falta explicar nada ni escribir renglones.</p>
+      <div class="ct-acciones"><button type="button" class="accion secundaria" data-ced-ir-cx>Conexiones y seguridad</button></div></section>`;
+  };
+  const wireCodigoCed = c => c.querySelectorAll("[data-ced-ir-cx]").forEach(b => b.addEventListener("click", () => { if (!S.ocupado) ir("conexiones"); }));
   // lo que se escribe como monto en la cédula: dólares con dos decimales como mucho, con su signo (un renglón que resta)
   const montoCedOk = t => /^-?\d{1,11}(\.\d{1,2})?$/.test(t) && Number(t) !== 0;
   const MONTO_CED_MAL = "Escribe el monto en dólares, con dos decimales como mucho (por ejemplo 150 o 150.25; con «-» delante si resta). Cero no sostiene nada.";
@@ -7994,7 +8087,7 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     catch (err) { if (!vivaCed(mia)) return; return errorCed(err, pintarCedula); }
     const r = d.res;
     S.ced.fecha = r.fecha;
-    subCed(`<b>Al ${esc(fechaLarga(r.fecha))}</b> · ${plural(num(r.cuadran) || 0, "cuadra", "cuadran")}${num(r.del_libro) ? ` · ${r.del_libro} del libro` : ""}${num(r.explicadas) ? ` · ${plural(r.explicadas, "explicada", "explicadas")}` : ""}${num(r.no_cuadran) ? ` · <span class="bad-txt">${r.no_cuadran} no cuadran</span>` : ""}${num(r.sin_auxiliar) ? ` · ${r.sin_auxiliar} con saldo y sin auxiliar` : ""}`);
+    subCed(`<b>Al ${esc(fechaLarga(r.fecha))}</b> · ${plural(num(r.cuadran) || 0, "cuadra", "cuadran")}${num(r.del_libro) ? ` · ${r.del_libro} del libro` : ""}${num(r.explicadas) ? ` · ${plural(r.explicadas, "explicada", "explicadas")}` : ""}${num(r.no_cuadran) ? ` · <span class="bad-txt">${r.no_cuadran} no cuadran</span>` : ""}${num(r.sin_auxiliar) ? ` · ${r.sin_auxiliar} con saldo y sin auxiliar` : ""}${num(r.con_codigo) ? ` · ${r.con_codigo} con el código del teléfono` : ""}`);
     const piden = d.filas.filter(f => f.pendiente).length, conSaldo = d.filas.filter(f => noCero(f.saldo_libro) || noCero(f.saldo_auxiliar) || f.pendiente || f.explicacion).length;
     const FILTROS = { todas: `Todas (${d.filas.length})`, piden: `Piden algo (${piden})`, saldo: `Con saldo (${conSaldo})` };
     // (de fábrica: en el teléfono, las que tienen saldo —las 45 en fila no caben—; en el iPad y la computadora, todas)
@@ -8006,7 +8099,7 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
       return `<h3 class="ct-ced-grupo">${esc(titulo)}</h3><div class="ct-ced-filas">${fs.map(filaCedHTML).join("")}</div>`;
     };
     const c = cedCuerpo();
-    c.innerHTML = notaCedHTML() +
+    c.innerHTML = notaCedHTML() + conCodigoCedHTML(d.filas) +
       `<section class="ct-card ct-ced-res" id="ct-ced-res">
         <div class="ct-cab"><h2>La cédula de corte al ${esc(fechaLarga(r.fecha))}</h2>${r.listo ? pill("lista: todo cuadra o está explicado", "ok") : pill(plural(num(r.pendientes) || 0, "cuenta pide algo", "cuentas piden algo"), num(r.pendientes) ? "warn" : "")}</div>
         ${barraFechaCed(r)}
@@ -8017,7 +8110,7 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
           ${r.resultado == null ? "" : `<div class="ct-kpi"><span class="ct-lbl">Resultado sin cerrar</span><span class="ct-val ct-num">${fmt(r.resultado)}</span></div>`}
         </div>
         ${r.resultado == null ? "" : `<p class="ct-nota ct-ced-ecuacion">Activo <span class="ct-num">${fmt(r.activo)}</span> = Pasivo <span class="ct-num">${fmt(r.pasivo)}</span> + Patrimonio <span class="ct-num">${fmt(r.capital)}</span> + el resultado del año sin cerrar <span class="ct-num">${fmt(r.resultado)}</span> (ingresos menos costos y gastos a la fecha; pasa al patrimonio al cerrar el año). ${r.balance_cuadra === false ? pill("el balance no cuadra", "bad") : pill("el balance cuadra", "ok")}</p>`}
-        <p class="ct-nota">${plural(num(r.cuentas) || 0, "cuenta de balance", "cuentas de balance")}, ${num(r.con_saldo) || 0} con saldo: ${plural(num(r.cuadran) || 0, "cuadra", "cuadran")} con su auxiliar${r.cuadran_papel != null ? ` (${num(r.cuadran_papel) || 0} con un papel, ${num(r.cuadran_partidas) || 0} por sus partidas del libro)` : ""}${num(r.del_libro) ? `, ${plural(r.del_libro, "sale del propio libro (no se compara con ningún papel de fuera)", "salen del propio libro (no se comparan con ningún papel de fuera)")}` : ""}, ${plural(num(r.explicadas) || 0, "explicada", "explicadas")}, ${num(r.no_cuadran) || 0} no cuadran y ${num(r.sin_auxiliar) || 0} con saldo no tienen auxiliar.</p>
+        <p class="ct-nota">${plural(num(r.cuentas) || 0, "cuenta de balance", "cuentas de balance")}, ${num(r.con_saldo) || 0} con saldo: ${plural(num(r.cuadran) || 0, "cuadra", "cuadran")} con su auxiliar${r.cuadran_papel != null ? ` (${num(r.cuadran_papel) || 0} con un papel, ${num(r.cuadran_partidas) || 0} por sus partidas del libro)` : ""}${num(r.del_libro) ? `, ${plural(r.del_libro, "sale del propio libro (no se compara con ningún papel de fuera)", "salen del propio libro (no se comparan con ningún papel de fuera)")}` : ""}, ${plural(num(r.explicadas) || 0, "explicada", "explicadas")}, ${num(r.no_cuadran) || 0} no cuadran y ${num(r.sin_auxiliar) || 0} con saldo no tienen auxiliar${num(r.con_codigo) ? `; ${plural(r.con_codigo, "se mira", "se miran")} con el código del teléfono (la nómina)` : ""}.</p>
         ${noCero(r.diferencia_pendiente) || noCero(r.reparto_pendiente) || noCero(r.sin_respaldo) ? `<ul class="ct-datos">${noCero(r.diferencia_pendiente) ? `<li>Diferencia sin explicar: <b class="ct-num">${fmt(r.diferencia_pendiente)}</b> (lo que no cuadra y nadie explicó, cuenta por cuenta)</li>` : ""}${noCero(r.reparto_pendiente) ? `<li class="ct-ced-reparto">El reparto de un préstamo entre lo corriente y lo de largo plazo: <b class="ct-num">${fmt(r.reparto_pendiente)}</b> en ${plural(num(r.reparto_cuentas) || 0, "cuenta", "cuentas")} (el total del préstamo sí cuadra: lo arregla un asiento entre sus dos cuentas)</li>` : ""}${noCero(r.sin_respaldo) ? `<li>Saldo sin nada debajo: <b class="ct-num">${fmt(r.sin_respaldo)}</b> (cuentas con saldo y sin auxiliar)</li>` : ""}</ul>` : ""}
         ${num(r.explicaciones_viejas) ? `<p class="ct-aviso bad">${plural(r.explicaciones_viejas, "explicación se quedó vieja", "explicaciones se quedaron viejas")}: los números cambiaron después de explicarlas. Ábrelas y vuelve a explicarlas.</p>` : ""}
         ${ayudaHTML(`<p>Cada saldo del balance tiene que tener algo debajo que lo sostenga: su <b>auxiliar</b> (las facturas por cobrar, lo que se le debe a cada supply, el statement de cada banco y tarjeta, la carta de cada préstamo, cada póliza, cada activo, cada obra del WIP). La base lo busca sola y lo compara al centavo con la cuenta.</p>
@@ -8029,7 +8122,7 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
         <div class="ct-ced-cab" aria-hidden="true"><span>Cuenta</span><span class="r">En el libro</span><span>Su auxiliar</span><span class="r">Lo que suma</span><span class="r">Diferencia</span><span>Estado</span></div>
         ${vis.length ? grupo("activo", "Activo") + grupo("pasivo", "Pasivo") + grupo("capital", "Patrimonio") : `<p class="ct-vacio">Ninguna cuenta pide nada al ${esc(fechaLarga(r.fecha))}.</p>`}
       </section>` + avisosCedHTML(d.avisos);
-    wireFechaCed(c);
+    wireFechaCed(c); wireCodigoCed(c);
     c.querySelectorAll("[data-ced-filtro]").forEach(b => b.addEventListener("click", () => { S.ced.filtro = b.dataset.cedFiltro; pintarCedLista(++S.ced.serie); }));
     c.querySelectorAll("[data-ced-cuenta]").forEach(b => b.addEventListener("click", () => { if (S.ocupado) return; S.ced.cuenta = b.dataset.cedCuenta; S.ced.nota = null; pintarCedula(); }));
   }
@@ -8078,6 +8171,8 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     const vigentes = (Array.isArray(manual) ? manual : []).filter(m => m.vigente);
     const irA = IR_CED[f.fuente];
     const puedeExplicar = (f.estado === "no_cuadra" || (f.estado === "sin_auxiliar" && f.pendiente) || f.explicacion_vieja);
+    // (11b) sin el código del teléfono (con_codigo) no se explica ni se escribe un renglón: no hace falta (con el código se compara sola)
+    const conCodigo = f.estado === "con_codigo";
     const datos = [
       f.auxiliar_al && f.auxiliar_al !== d.res.fecha ? `Su auxiliar es del ${esc(fechaLarga(f.auxiliar_al))}.` : "",
       noCero(f.despues) ? `Lo que el libro movió después de la última conciliación: <b class="ct-num">${fmt(f.despues)}</b>.` : "",
@@ -8105,8 +8200,8 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
         <div class="ct-acciones">
           ${puedeExplicar ? `<button type="button" class="accion" data-ced-explicar>${f.explicacion ? "Volver a explicarla" : "Explicar la diferencia"}</button>` : ""}
           ${f.explicacion ? `<button type="button" class="accion secundaria" data-ced-retirar>Retirar la explicación</button>` : ""}
-          <button type="button" class="accion secundaria" data-ced-renglon>Añadir un renglón a mano</button>
-          ${irA ? `<button type="button" class="accion secundaria" data-ced-ir="${esc(irA[0])}"${irA[2] ? ` data-ced-ir-sub="${esc(irA[2])}"` : ""}>${esc(irA[1])}</button>` : ""}
+          ${conCodigo ? `<button type="button" class="accion secundaria" data-ced-ir-cx>Conexiones y seguridad</button>` : `<button type="button" class="accion secundaria" data-ced-renglon>Añadir un renglón a mano</button>`}
+          ${irA && !conCodigo ? `<button type="button" class="accion secundaria" data-ced-ir="${esc(irA[0])}"${irA[2] ? ` data-ced-ir-sub="${esc(irA[2])}"` : ""}>${esc(irA[1])}</button>` : ""}
           ${f.par ? `<button type="button" class="accion secundaria" data-ced-par="${esc(f.par)}">La otra cuenta del préstamo (${esc(f.par)})</button>` : ""}
         </div>
         <div class="ct-form" hidden></div>
@@ -8126,8 +8221,10 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
       const k = bIr.dataset.cedIr;
       if (k === "conciliar" || k === "movimientos") ir(k, { cuenta: f.cuenta });
       else if (k === "cierre") ir("cierre", { sub: bIr.dataset.cedIrSub || "cierre" });
+      else if (k === "nomina") ir("nomina", { sub: bIr.dataset.cedIrSub || "nominas", corrida: null });
       else ir(k);
     });
+    wireCodigoCed(card);
     const bExp = card.querySelector("[data-ced-explicar]");
     if (bExp) bExp.addEventListener("click", () => montarForma(card, formaHTML(`Por qué no cuadra la ${esc(f.cuenta)} al ${esc(fechaLarga(d.res.fecha))}. Queda con tu nombre y la fecha, y vale para estos números: si cambian, se vuelve a explicar.`,
       `<label class="ct-campo">La explicación (con tus palabras: qué es esa diferencia y con qué papel se sostiene)<textarea name="texto" rows="3" required data-falta="Falta la explicación: qué es esa diferencia y con qué papel se sostiene."></textarea></label>`, "Guardar la explicación"), v =>
@@ -8136,8 +8233,10 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     if (bRet) bRet.addEventListener("click", () => montarForma(card, formaHTML(`Retirar la explicación de la ${esc(f.cuenta)} al ${esc(fechaLarga(d.res.fecha))}. No se borra: queda en el historial con tu motivo.`,
       `<label class="ct-campo">Por qué se retira<input name="motivo" required data-falta="Falta el motivo: por qué se retira la explicación."></label>`, "Retirarla"), v =>
       accionCed(card, "fn_cedula_explicacion_retirar", { p_cuenta: f.cuenta, p_fecha: d.res.fecha, p_motivo: v.motivo }, r => ({ tipo: "ok", texto: `Retirada la explicación de la ${r.cuenta} al ${fechaLarga(r.fecha)}.` }), { aviso: "Explicación retirada" })));
-    card.querySelector("[data-ced-renglon]").addEventListener("click", () => formaRenglon(card, { cuenta: f.cuenta, nombre: f.nombre, desde: d.res.fecha }));
+    { const bR = card.querySelector("[data-ced-renglon]"); if (bR) bR.addEventListener("click", () => formaRenglon(card, { cuenta: f.cuenta, nombre: f.nombre, desde: d.res.fecha })); }
     const cardP = $("ct-ced-partidas");
+    // (11b) de un renglón de la nómina, a esa nómina
+    cardP.querySelectorAll("[data-ced-nomina]").forEach(b => b.addEventListener("click", () => { if (!S.ocupado) ir("nomina", { sub: "nominas", corrida: b.dataset.cedNomina }); }));
     cardP.querySelectorAll("[data-ced-corregir]").forEach(b => b.addEventListener("click", () => { const m = vigentes.find(x => x.renglon_id === b.dataset.cedCorregir); if (m) formaRenglon(cardP, { cuenta: m.cuenta, nombre: m.cuenta_nombre, renglon: m }); }));
     cardP.querySelectorAll("[data-ced-anular]").forEach(b => b.addEventListener("click", () => { const m = vigentes.find(x => x.renglon_id === b.dataset.cedAnular); if (m) formaAnular(cardP, m); }));
   }
@@ -8145,7 +8244,8 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
   // propio libro ordenado (libro: su importe en «monto»), lo que está en el libro sin decir de qué es (suelto), lo que el libro movió
   // después (de la conciliación, en un banco; del día, en una póliza o en Stripe), un error, y la meta de la reserva (dato: no suma)
   const CLASE_CED = { suelto: ["sin papel", "bad"], despues: ["movido después del día", "warn"], error: ["no se pudo leer", "bad"], dato: ["dato: no suma", ""], libro: ["del libro", ""] };
-  const claseCed = x => x.clase === "despues" && x.fuente === "conciliacion" ? ["después de la conciliación", "warn"] : CLASE_CED[x.clase];
+  // (11b) el «dato» de la nómina sin el código («se ve con el código del teléfono»): en ámbar, sin monto
+  const claseCed = x => x.clase === "despues" && x.fuente === "conciliacion" ? ["después de la conciliación", "warn"] : x.clase === "dato" && x.clave === "codigo" ? ["con el código del teléfono", "warn"] : CLASE_CED[x.clase];
   function partidasCedHTML(lista, vigentes) {
     const grupos = [];
     for (const x of lista) { const g = x.grupo || ""; let e = grupos.find(y => y.g === g); if (!e) grupos.push(e = { g, filas: [] }); e.filas.push(x); }
@@ -8158,6 +8258,7 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
               x.libro != null && x.clase === "auxiliar" ? `en el libro <span class="ct-num">${fmt(x.libro)}</span>` : ""].filter(Boolean).join(" · ")}</small></span>
           <span class="ct-ced-r-m ct-num">${monto == null ? "—" : fmt(monto)}</span>
           ${esManual ? `<span class="ct-ced-r-b"><button type="button" class="accion secundaria chica" data-ced-corregir="${esc(x.ref_id)}">Corregir</button><button type="button" class="accion secundaria chica" data-ced-anular="${esc(x.ref_id)}">Anular</button></span>` : ""}
+          ${x.ref_tabla === "nomina_corridas" && x.ref_id ? `<span class="ct-ced-r-b"><button type="button" class="accion secundaria chica" data-ced-nomina="${esc(x.ref_id)}">Ver la nómina</button></span>` : ""}
         </li>`;
     }).join("")}</ul>`).join("");
   }
@@ -9310,11 +9411,15 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
   const wireRojoNom = c => { const b = c.querySelector("[data-nom-remirar]"); if (b) b.addEventListener("click", () => { if (!S.ocupado) repintar(); }); };
   // (arreglo) un aviso que se arregla en otro apartado de la nómina lleva su botón: el 75 (la bolsa del burden real) a Ajustes
   const AVISO_VA = { 75: ["ajustes", "Repartir la bolsa del burden"] };
+  // (11b) el 75 SIN EL CÓDIGO: la base lo da igual (la bolsa del burden es una cifra de la empresa, no lo que cobra nadie), y su frase no
+  // es un error: se dice por qué se ve sin el código y que repartirla sí lo pide (en vez del botón, que llevaría a donde no se puede)
+  const AVISO_SIN_CODIGO = { 75: "Esta cifra se ve sin el código del teléfono porque es de la empresa (lo que el patrón pagó y queda por repartir), no lo que cobra una persona. No es un error: es trabajo por hacer al terminar el mes. Repartirla a las obras sí pide el código: entra con él y ve a Nómina → Ajustes." };
   const avisosNomHTML = (avisos, solo) => {
     const vis = solo ? avisos.filter(f => solo.includes(Number(f.orden))) : avisos;
-    const va = f => { const d = AVISO_VA[Number(f.orden)]; return d && d[0] !== S.nom.sub ? `<div class="ct-acciones"><button type="button" class="accion secundaria chica" data-nom-va="${esc(d[0])}">${esc(d[1])}</button></div>` : ""; };
+    const sinCod = f => !mfaActivo() && AVISO_SIN_CODIGO[Number(f.orden)];
+    const va = f => { const d = AVISO_VA[Number(f.orden)]; return d && d[0] !== S.nom.sub && !sinCod(f) ? `<div class="ct-acciones"><button type="button" class="accion secundaria chica" data-nom-va="${esc(d[0])}">${esc(d[1])}</button></div>` : ""; };
     return vis.length ? `<section class="ct-card ct-nom-avisos" id="ct-nom-avisos"><h2>Lo que hay que mirar (${vis.length})</h2><ul class="ct-jr-avisos">${vis.map(f =>
-      `<li class="ct-aviso warn" data-orden="${esc(f.orden)}"><details><summary>${esc(cap(f.control))}</summary><p>${esc(f.detalle || "")}</p>${va(f)}</details></li>`).join("")}</ul></section>` : "";
+      `<li class="ct-aviso warn" data-orden="${esc(f.orden)}"><details><summary>${esc(cap(f.control))}</summary><p>${esc(f.detalle || "")}</p>${sinCod(f) ? `<p class="ct-nota ct-nom-sincod">${esc(sinCod(f))}</p>` : ""}${va(f)}</details></li>`).join("")}</ul></section>` : "";
   };
   const wireAvisosNom = c => c.querySelectorAll("[data-nom-va]").forEach(b => b.addEventListener("click", () => { if (!S.ocupado) ir("nomina", { sub: b.dataset.nomVa }); }));
   // Una escritura de la nómina: la tarjeta se apaga, el error va a su forma; si salió, la nota arriba, el aviso y se vuelve a pintar.
@@ -9575,13 +9680,18 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     const deliBase = Array.isArray(e.delicado) ? e.delicado : [];
     const quitadasTxt = q.columnas.length ? `No salieron del teléfono: ${q.columnas.map(x => `«${x.columna}»${x.por === "forma" ? " (traía algo con forma de número de Seguro Social)" : x.por === "nombre" ? " (por su nombre es un dato de la persona, no dinero; si es dinero, dilo en Ajustes → el mapeo de las columnas y vuelve a subirlo)" : ""}`).join(", ")}.` : "";
     const corridas = Array.isArray(e.corridas) ? e.corridas : [];
+    // (11b) NADA QUE IMPORTAR: no entra ninguna nómina nueva y cada una ya está con las mismas cifras, sin nada que decidir (ni volver a
+    // leerla en su lugar, ni otro día de pago por el que pudiera ser otra): «Importar» se apaga y se dice por qué. Si hay algo que
+    // decidir (la misma de otra forma, otras cifras, volver a leerla, otro día), «Importar» sigue: la base pregunta
+    const nada = !num(e.entraria) && corridas.length > 0 && corridas.every(k => k.ya_estaba && k.ya_estaba.mismas_cifras === true && !k.ya_estaba.se_puede_reemplazar && !k.ya_estaba.lee_distinto && k.ya_estaba.otro_dia !== true);
     return `<section class="ct-card ct-nom-ensayo" id="ct-nom-ensayo">
         <div class="ct-cab"><h2>Lo que dice la base del archivo</h2>${num(e.entraria) ? pill(`entraría ${plural(e.entraria, "nómina", "nóminas")}`, "ok") : pill("no entra nada nuevo", "warn")}</div>
         <p class="ct-nota">«${esc(a.nombre)}» · ${esc(kb(a.bytes))} · ${plural(num(a.filas) || 0, "fila", "filas")}${a.ya_importado ? ` · <b>este mismo archivo ya entró el ${esc(fechaLarga(a.ya_importado.importado_el))}</b>` : ""}. Todavía no se guardó nada.</p>
         ${quitadasTxt || q.preambulo ? `<p class="ct-aviso ok ct-nom-quitadas">${esc(quitadasTxt)}${q.preambulo ? ` ${plural(q.preambulo, "celda de arriba se vació", "celdas de arriba se vaciaron")} (traían algo con forma de número de Seguro Social).` : ""} El sha256 es el del archivo entero.</p>` : ""}
         ${deliBase.length ? `<p class="ct-aviso ok">La base tampoco guardó: ${esc(deliBase.join(", "))}.</p>` : ""}
         ${corridas.map(ensayoCorridaHTML).join("")}
-        <div class="ct-acciones"><button type="button" class="accion" id="ct-nom-importar"${deshab()}>Importar${num(e.entraria) ? ` (entra${num(e.entraria) === 1 ? "" : "n"} ${plural(e.entraria, "nómina", "nóminas")})` : ""}</button><button type="button" class="accion secundaria" data-nom-ensayo-cerrar>Cancelar</button></div>
+        ${nada ? `<p class="ct-nota ct-nom-nada" role="status">No hay nada que importar: ${corridas.length === 1 ? "esta nómina ya está" : "estas nóminas ya están"} en la base con las mismas cifras. Si buscabas otra nómina, sube su archivo.</p>` : ""}
+        <div class="ct-acciones"><button type="button" class="accion${nada ? " secundaria" : ""}" id="ct-nom-importar"${nada ? " disabled" : deshab()}>Importar${num(e.entraria) ? ` (entra${num(e.entraria) === 1 ? "" : "n"} ${plural(e.entraria, "nómina", "nóminas")})` : ""}</button><button type="button" class="accion secundaria" data-nom-ensayo-cerrar>${nada ? "Cerrar" : "Cancelar"}</button></div>
         <div class="ct-form" hidden></div>
       </section>`;
   }
@@ -9598,12 +9708,20 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     // una de las dos le falta el período y sus días quedan a menos de una semana; o, si nada de eso, su período se pisa con el suyo)
     const dia = y.otro_dia ? ` Su día de pago es el ${esc(fechaLarga(y.dia_pago))}, pero trae a las mismas personas ${y.mismo_archivo ? "y sale del mismo archivo: es el mismo, subido otra vez con otro día" : y.cerca ? "y su día de pago queda a menos de una semana del que dices, sin un período que las distinga" : "con un período que se pisa con el suyo"}.` : "";
     if (y.mismas_cifras) return `<p class="ct-aviso ct-nom-ya" data-ya="igual">${de} con las mismas cifras: no entra dos veces.${dia}${y.lee_distinto && y.se_puede_reemplazar ? " La que está se leyó de otra forma (le quedaban columnas sin clasificar, o no cuadraba): con lo que el mapeo dice hoy se leería distinto y se puede volver a leer en su lugar." : ""}</p>`;
+    // (11b, los arreglos) LA MISMA, POR PARTES: lo dice la base (por_partes; parte: «dentro» = las de este archivo ya están en aquella;
+    // «contiene» = este trae a las de aquella y a más). No es «las mismas personas»: son parte de ellas
+    if (y.misma && y.por_partes) return `<p class="ct-aviso bad ct-nom-ya" data-ya="partes">${de}${y.parte === "contiene"
+      ? `, y este archivo trae a esa gente —cada una con su mismo bruto y su mismo neto— y a más: parece la misma nómina, que entró antes solo con parte de su gente`
+      : ` y trae, entre su gente, a ${plural(num(y.comunes) || 0, "la persona", "las personas")} de este archivo, cada una con su mismo bruto y su mismo neto: es la misma nómina, bajada de Gusto por partes (el journal de un empleado, con el de todos ya dentro)`}. Como «otra nómina», ese sueldo entraría dos veces al libro.${dia} Al importar, la base dice qué hacer.</p>`;
     if (y.misma) return `<p class="ct-aviso bad ct-nom-ya" data-ya="misma">${de} con su MISMO bruto (${fmt(y.bruto)}) y su mismo neto (${fmt(y.neto)}), persona por persona: es la misma nómina bajada de Gusto de otra forma, no otra del mismo día.${dia} ${y.se_puede_reemplazar ? "Si prefieres esta forma del archivo, al importar di que reemplaza a la que estaba." : y.estado === "posteada" ? "La que está ya se posteó: no hace falta subirla otra vez (si le faltaba algo, anúlala y sube esta)." : ""} Solo si de verdad son dos nóminas iguales (dos bonos iguales el mismo día) entra como otra, diciendo por qué.</p>`;
     return `<p class="ct-aviso warn ct-nom-ya" data-ya="otra">${de}, con OTRAS cifras: bruto ${fmt(y.bruto)} y neto ${fmt(y.neto)}.${dia} Al importar, la base pregunta qué es.</p>`;
   }
   function ensayoCorridaHTML(k) {
     const sc = Array.isArray(k.sin_clasificar) ? k.sin_clasificar : [], ds = Array.isArray(k.descuadres) ? k.descuadres : [];
     const ps = Array.isArray(k.personas) ? k.personas : [];
+    // (11b, los arreglos) las columnas que traen dinero y el mapeo no dice a qué cuenta va (sin_cuenta: sus rótulos, de la base): la
+    // nómina entra pero no se puede postear; antes el ensayo no lo decía y el freno salía después de importar
+    const sinCta = (Array.isArray(k.sin_cuenta) ? k.sin_cuenta : []).map(x => String(x));
     return `<article class="ct-nom-ens" data-nom-n="${esc(k.n)}">
         <div class="ct-cab"><h3>Nómina del ${esc(fechaLarga(k.dia_pago))}</h3>${k.cuadra ? pill("cuadra al centavo", "ok") : pill("no cuadra", "bad")}</div>
         <p class="ct-sub">${esc(k.tipo_texto || k.tipo)}${k.periodo_desde ? ` · período del ${esc(fecha(k.periodo_desde))} al ${esc(fechaLarga(k.periodo_hasta))}` : " · sin período"}</p>
@@ -9614,6 +9732,7 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
         ${sc.length ? `<div class="ct-nom-sc"><p class="ct-aviso bad"><b>${plural(sc.length, "columna trae", "columnas traen")} cifras que el mapeo no conoce:</b> di qué es cada una antes de importar (se queda en el mapeo para las próximas). Sin eso, la nómina entra pero no se puede postear.</p>
           <ul class="ct-wip-his">${sc.map(x => `<li class="ct-wip-hi" data-nom-col="${esc(x.columna)}"><p><b>«${esc(x.columna)}»</b>${x.celdas != null ? ` · ${plural(x.celdas, "celda con cifras", "celdas con cifras")}` : ""}</p>
             <div class="ct-acciones"><button type="button" class="accion secundaria chica" data-nom-clasificar="${esc(x.columna)}"${deshab()}>Decir qué es</button></div></li>`).join("")}</ul></div>` : ""}
+        ${sinCta.length ? `<p class="ct-aviso bad ct-nom-sincta"><b>${plural(sinCta.length, "columna trae", "columnas traen")} dinero y el mapeo no dice a qué cuenta va:</b> ${esc(sinCta.map(x => `«${x}»`).join(", "))}. La nómina entra, pero no se puede postear hasta decirlo en Ajustes (el mapeo de columnas). Si es el TOTAL de algo que el archivo ya trae en detalle, no le pongas cuenta: di que esa columna no se lea.</p>` : ""}
         ${(Array.isArray(k.avisos) ? k.avisos : []).map(x => `<p class="ct-aviso warn" data-codigo="${esc(x.codigo)}">${esc(x.texto)}</p>`).join("")}
         ${ps.length ? `<details class="ct-wip-mas ct-nom-ens-per"><summary>Las ${plural(ps.length, "persona", "personas")} del archivo</summary><ul class="ct-wip-his">${ps.map(p => `<li class="ct-wip-hi"><p><b>${esc(p.nombre)}</b> · bruto <span class="ct-num">${fmt(p.bruto)}</span> · neto <span class="ct-num">${fmt(p.neto)}</span>${p.horas != null ? ` · ${esc(horasTxt(p.horas))} en Gusto` : ""}${p.cuadra === false ? ` ${pill("no cuadra", "bad")}` : ""}</p>
             <p class="ct-sub">${p.confirmada ? `Enlazada: ${esc(p.perfil || "")} (${esc(CLASE_PER_CORTA[p.clase] || p.clase || "")})` : p.propuesta ? `Se propone: ${esc(p.propuesta.nombre)} (${esc(CLASE_PER_CORTA[p.propuesta.clase] || p.propuesta.clase || "")}); se confirma después de importar` : "Sin enlazar: se dice quién es después de importar"}</p></li>`).join("")}</ul></details>` : ""}
@@ -9690,7 +9809,7 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
         <h2>${esc(r.mensaje || "Lo que contestó la base")}</h2>
         <ul class="ct-wip-his">${cs.map(x => { const misma = x.resultado === "otra_distinta" && x.misma === true;
           return `<li class="ct-wip-hi" data-resultado="${esc(x.resultado)}"${misma ? ` data-misma` : ""}><p>${esc(x.texto || "")}</p>
-          ${misma ? `<p class="ct-aviso bad ct-nom-misma">Trae a las mismas personas con su mismo bruto y su mismo neto que la que está: es la misma nómina, no otra del mismo día, y como «otra» entraría dos veces al libro. Solo entra como otra si de verdad lo es, diciendo por qué.</p>` : ""}
+          ${misma ? `<p class="ct-aviso bad ct-nom-misma"${x.por_partes ? " data-partes" : ""}>${x.por_partes ? "Es la misma nómina, bajada por partes (parte de su gente, cada una con su mismo bruto y su mismo neto, ya está en la otra)" : "Trae a las mismas personas con su mismo bruto y su mismo neto que la que está: es la misma nómina, no otra del mismo día,"} y como «otra» entraría dos veces al libro. Solo entra como otra si de verdad lo es, diciendo por qué.</p>` : ""}
           <div class="ct-acciones">${x.resultado === "otra_distinta" ? `${x.se_puede_reemplazar ? `<button type="button" class="accion secundaria chica" data-nom-reemplazar>Reemplaza a la que estaba</button>` : ""}${misma ? `<button type="button" class="accion secundaria chica" data-nom-otra-porque="${esc(x.n)}"${deshab()}>Son dos de verdad: decir por qué</button>` : `<button type="button" class="accion secundaria chica" data-nom-otra="${esc(x.n)}">Es otra nómina del mismo día</button>`}` : ""}
             ${x.resultado === "ya_estaba" && x.se_puede_reemplazar ? `<button type="button" class="accion secundaria chica" data-nom-reemplazar>Volver a leerla con lo que el mapeo dice hoy</button>` : ""}
             ${x.resultado === "ya_estaba" && x.otro_dia === true ? `<button type="button" class="accion secundaria chica" data-nom-otra-porque="${esc(x.n)}"${deshab()}>Son dos de verdad: decir por qué</button>` : ""}
@@ -9790,7 +9909,8 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
             ${f.codigo === "sin_horas" && f.persona ? `<button type="button" class="accion secundaria chica" data-nom-decidir="${esc(f.persona)}"${deshab()}>Mandarlo sin obra</button>` : ""}
             ${["sin_enlazar", "sin_confirmar", "perfil_no_existe"].includes(f.codigo) && f.persona ? `<button type="button" class="accion secundaria chica" data-nom-ir-per="${esc(f.persona)}">Decir quién es</button>` : ""}
             ${f.codigo === "sin_periodo" ? `<button type="button" class="accion secundaria chica" data-nom-periodo${deshab()}>Decir el período</button>` : ""}
-            ${f.codigo === "repetida" ? `<button type="button" class="accion secundaria chica" data-nom-porque${deshab()}>Es otra: decir por qué</button>` : ""}</div></li>`).join("")}</ul>
+            ${f.codigo === "repetida" ? `<button type="button" class="accion secundaria chica" data-nom-porque="repetida"${deshab()}>Es otra: decir por qué</button>` : ""}
+            ${f.codigo === "resumen" ? `<button type="button" class="accion secundaria chica" data-nom-porque="resumen"${deshab()}>No es un resumen: decir por qué</button>` : ""}</div></li>`).join("")}</ul>
         ${sinCodigoNomHTML("Lo que se decide aquí")}
         <div class="ct-form" hidden></div>
       </section>`;
@@ -9910,6 +10030,9 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
         <div class="ct-acciones"><button type="submit" class="accion secundaria" data-nom-mano${deshab()}>Casar con estas partes</button></div>
       </form></details>`;
   // lo que contestó la base al casar, en llano: un cargo, un depósito de Gusto, o un pago por fuera de Gusto
+  // (11b, los arreglos) si el cargo descontó lo que una corrección dejó a favor en OTRA cuenta, la base lo pasa con un segundo asiento
+  // (su traspaso) y lo dice: se enseña tal cual
+  const traspasoTxt = r => r && r.traspaso && r.traspaso.texto ? ` ${r.traspaso.texto}` : "";
   const casadoTxt = r => r.clase === "fuera" ? `Pago de ${fmt(r.monto)} del ${fechaLarga(r.fecha)} casado con la nómina, por fuera de Gusto`
     : num(r.monto) < 0 ? `Depósito de Gusto de ${fmtAbs(r.monto)} del ${fechaLarga(r.fecha)} casado con lo que quedó a favor` : `Cargo de ${fmt(r.monto)} del ${fechaLarga(r.fecha)} casado con la nómina`;
   async function abrirCasarNom(card, movimiento, alTerminar) {
@@ -9936,7 +10059,7 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
       const o = ops[Number(b.dataset.nomOp)]; if (!o) return;
       // el monto de cada parte, como texto con sus centavos (la base lo lee en numeric; aquí no se suma nada)
       const partesTxt = (o.partes || []).map(q => ({ corrida: q.corrida, cuenta: q.cuenta, monto: Number(q.monto).toFixed(2) }));
-      accionNom(card, "fn_nomina_cargo_casar", { p_movimiento: movimiento, p_partes: partesTxt, p_nota: null }, r => ({ tipo: "ok", texto: `${casadoTxt(r)}: asiento ${r.asiento}.` }),
+      accionNom(card, "fn_nomina_cargo_casar", { p_movimiento: movimiento, p_partes: partesTxt, p_nota: null }, r => ({ tipo: "ok", texto: `${casadoTxt(r)}: asiento ${r.asiento}.${traspasoTxt(r)}` }),
         { aviso: "Cargo casado con la nómina", mfa: "Casar un cargo", despues: alTerminar });
     }));
     const fm = f.querySelector(".ct-nom-mano-f");
@@ -9948,12 +10071,24 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
       const nota = String(fm.elements.nota.value || "").trim();
       if (!partesTxt.length) { mostrarErrorForma(card, "Escribe cuánto paga este cargo de al menos una de las líneas."); return; }
       if (!nota) { mostrarErrorForma(card, "Falta la nota: por qué este cargo se parte así (por ejemplo, «Gusto cobró los impuestos en dos cargos»)."); return; }
-      accionNom(card, "fn_nomina_cargo_casar", { p_movimiento: movimiento, p_partes: partesTxt, p_nota: nota }, r => ({ tipo: "ok", texto: `${casadoTxt(r)}, con las partes que dijiste: asiento ${r.asiento}.` }),
+      accionNom(card, "fn_nomina_cargo_casar", { p_movimiento: movimiento, p_partes: partesTxt, p_nota: nota }, r => ({ tipo: "ok", texto: `${casadoTxt(r)}, con las partes que dijiste: asiento ${r.asiento}.${traspasoTxt(r)}` }),
         { aviso: "Cargo casado con la nómina", mfa: "Casar un cargo", despues: alTerminar });
     });
     const bc = f.querySelector("[data-nom-cuota]");
-    if (bc) bc.addEventListener("click", () => accionNom(card, "fn_nomina_cargo_cuota", { p_movimiento: movimiento, p_nota: null }, r => ({ tipo: "ok", texto: `La cuota de Gusto (${fmt(r.monto)}) va a su gasto (${r.cuenta}): asiento ${r.asiento}.` }),
-      { aviso: "Cuota de Gusto a su gasto", mfa: "Decir que es la cuota", despues: alTerminar }));
+    // (11b, los arreglos) «es la cuota» ya no vale para cualquier cargo: si su descripción o su importe dicen que paga una nómina, la
+    // base contesta MX008 con su porqué y pide una nota. Se enseña lo que dijo y se pide la nota (queda en su asiento)
+    const cuota = nota => accionNom(card, "fn_nomina_cargo_cuota", { p_movimiento: movimiento, p_nota: nota }, r => ({ tipo: "ok", texto: `La cuota de Gusto (${fmt(r.monto)}) va a su gasto (${r.cuenta}): asiento ${r.asiento}.` }),
+      { aviso: "Cuota de Gusto a su gasto", mfa: "Decir que es la cuota", despues: alTerminar,
+        alFallar: err => {
+          if (nota || err.codigo !== "MX008" || !/dilo con una nota/.test(String(err.message || ""))) return false;
+          montarForma(card, formaHTML(esc(err.message), `<label class="ct-campo">Por qué es la cuota y no el pago de una nómina (queda en su asiento)<input name="nota" required maxlength="300" data-falta="Falta la nota: por qué es la cuota." autocomplete="off"></label>`, "Sí, es la cuota: a su gasto"), v => {
+            const n = String(v.nota || "").trim();
+            if (n.length < 3) { mostrarErrorForma(card, "La nota son unas palabras (3 letras o más): por qué es la cuota."); return; }
+            cuota(n);
+          });
+          return true;
+        } });
+    if (bc) bc.addEventListener("click", () => cuota(null));
   }
   function wireCorrida(x, prop, personas, perfiles, cargos) {
     const id = x.corrida_id;
@@ -9977,13 +10112,16 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
       }));
       // (arreglo) «repetida»: otra posteada trae a las mismas personas con las mismas cifras; si de verdad es otra, su porqué (si es la
       // misma, se descarta abajo). La base lo guarda en la corrida y vuelve a mirar
-      const bq = cf.querySelector("[data-nom-porque]");
-      if (bq) bq.addEventListener("click", () => montarForma(cf, formaHTML("¿Por qué es otra nómina y no la misma que ya está en el libro? Al postearla, su sueldo y sus impuestos entran además de los de aquella.",
-        `<label class="ct-campo">Por qué son dos (queda en la nómina)<input name="porque" required maxlength="300" data-falta="Falta el porqué: qué hace que sean dos nóminas distintas." autocomplete="off"></label>`, "Guardar el porqué"), v => {
+      // (11b, los arreglos) «resumen»: cada persona trae justo lo que suman su bruto y su neto en dos o más nóminas suyas que ya están
+      // (el resumen de un mes o de un trimestre, no una nómina): si de verdad es una nómina aparte, el mismo porqué; si no, se descarta
+      cf.querySelectorAll("[data-nom-porque]").forEach(bq => bq.addEventListener("click", () => { const res = bq.dataset.nomPorque === "resumen";
+        montarForma(cf, formaHTML(res ? "¿Por qué esta SÍ es una nómina aparte y no el resumen de las que ya están? Al postearla, su sueldo y sus impuestos entran además de los de aquellas."
+          : "¿Por qué es otra nómina y no la misma que ya está en el libro? Al postearla, su sueldo y sus impuestos entran además de los de aquella.",
+        `<label class="ct-campo">${res ? "Por qué es una nómina aparte" : "Por qué son dos"} (queda en la nómina)<input name="porque" required maxlength="300" data-falta="Falta el porqué: qué hace que ${res ? "sea una nómina aparte" : "sean dos nóminas distintas"}." autocomplete="off"></label>`, "Guardar el porqué"), v => {
         const porque = String(v.porque || "").trim();
-        if (porque.length < 3) { mostrarErrorForma(cf, "El porqué son unas palabras (3 letras o más): qué hace que sean dos nóminas distintas."); return; }
+        if (porque.length < 3) { mostrarErrorForma(cf, `El porqué son unas palabras (3 letras o más): qué hace que ${res ? "sea una nómina aparte" : "sean dos nóminas distintas"}.`); return; }
         accionNom(cf, "fn_nomina_corrida", { p_corrida: id, p: { otra_porque: porque } }, r => ({ tipo: "ok", texto: `Guardado: es otra nómina («${r.otra_porque}»). La base la vuelve a mirar.` }), { aviso: "Porqué guardado", mfa: "Cambiar la nómina" });
-      }));
+      }); }));
       const bp = cf.querySelector("[data-nom-periodo]");
       if (bp) bp.addEventListener("click", () => montarForma(cf, formaHTML("El período que paga esta nómina (lo trabajado)",
         `<div class="ct-fila"><label class="ct-campo">Desde<input type="date" name="desde" required data-falta="Falta el primer día."></label><label class="ct-campo">Hasta<input type="date" name="hasta" required data-falta="Falta el último día."></label></div>`, "Guardarlo"), v =>
@@ -10021,7 +10159,9 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     const ca = $("ct-nom-anular");
     if (ca) $("ct-nom-anular-b").addEventListener("click", () => montarForma(ca, formaHTML(`Anular la nómina del ${esc(fechaLarga(x.dia_pago))}: sus asientos se reversan con tu motivo.`,
       `<label class="ct-campo">Por qué se anula (queda en su reverso)<input name="motivo" required data-falta="Falta el motivo: por qué se anula." autocomplete="off"></label>`, "Anularla"), v =>
-      accionNom(ca, "fn_nomina_anular", { p_corrida: id, p_motivo: v.motivo }, r => ({ tipo: "ok", texto: `Anulada: reverso ${r.reverso}${r.reverso_burden ? ` (y ${r.reverso_burden})` : ""}. ${r.nota || ""}`.trim() }), { aviso: "Nómina anulada", mfa: "Anular" })));
+      // (11b, los arreglos) y lo que la base dice del devengo estándar de su mes (lo pone al día aquí mismo) y de la bolsa del burden, si
+      // ya se había repartido por sus horas (hay que reversar ese reparto): en ámbar si pide algo
+      accionNom(ca, "fn_nomina_anular", { p_corrida: id, p_motivo: v.motivo }, r => ({ tipo: r.bolsa ? "warn" : "ok", texto: `Anulada: reverso ${r.reverso}${r.reverso_burden ? ` (y ${r.reverso_burden})` : ""}. ${r.nota || ""}${r.devengo ? ` ${r.devengo}` : ""}${r.bolsa ? ` ${r.bolsa}` : ""}`.trim() }), { aviso: "Nómina anulada", mfa: "Anular" })));
     // casar sus cargos
     document.querySelectorAll("#ct-nom-cargos-c [data-nom-casar]").forEach(b => b.addEventListener("click", () => abrirCasarNom(b.closest(".ct-nom-cargo"), b.dataset.nomCasar)));
   }
@@ -10203,8 +10343,11 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     filas = Array.isArray(filas) ? filas : [];
     const grupos = new Map();
     for (const f of filas) { const k = `${f.forma}|${f.trimestre == null ? "" : f.trimestre}`; if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(f); }
-    const mal = filas.filter(f => f.ok === false).length, sin = filas.filter(f => f.ok == null).length;
-    subNom(`<b>${esc(S.nom.anio)}</b> · ${mal ? `<span class="bad-txt">${plural(mal, "renglón no amarra", "renglones no amarran")}</span>` : "lo tecleado amarra"}${sin ? ` · ${plural(sin, "renglón sin teclear", "renglones sin teclear")}` : ""}`);
+    // (11b, los arreglos) SIN EL CÓDIGO DEL TELÉFONO la base no compara con el libro (no ve las nóminas): lo tecleado sale sin «ok» y con
+    // su texto («hace falta el código»). No es «sin teclear» ni «no amarra»: es «con el código»
+    const conCod = f => f.ok == null && f.declarado != null;
+    const mal = filas.filter(f => f.ok === false).length, sin = filas.filter(f => f.ok == null && !conCod(f)).length, cod = filas.filter(conCod).length;
+    subNom(`<b>${esc(S.nom.anio)}</b> · ${mal ? `<span class="bad-txt">${plural(mal, "renglón no amarra", "renglones no amarran")}</span>` : cod ? `${plural(cod, "renglón se compara", "renglones se comparan")} con el código del teléfono` : "lo tecleado amarra"}${sin ? ` · ${plural(sin, "renglón sin teclear", "renglones sin teclear")}` : ""}`);
     const nombreG = (forma, tri) => `${FORMAS[forma] || forma}${tri ? ` del trimestre ${tri}` : ""} de ${S.nom.anio}`;
     const c = nomCuerpo();
     c.innerHTML = notaNomHTML() + `<section class="ct-card ct-nom-amarre" id="ct-nom-amarre">
@@ -10212,7 +10355,7 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
         <p class="ct-nota">Gusto presenta el 941 (cada trimestre), el 940 (el año) y el RT-6 de Florida (cada trimestre). Teclea sus totales de la copia que deja Gusto; la base los compara con lo posteado, por día de pago. Nada de esto postea.</p>
         ${grupos.size ? [...grupos.entries()].map(([k, fs]) => { const [forma, tri] = k.split("|");
           return `<article class="ct-nom-dec" data-nom-forma="${esc(forma)}" data-nom-tri="${esc(tri)}"><div class="ct-cab"><h3>${esc(nombreG(forma, tri))}</h3><button type="button" class="accion secundaria chica" data-nom-teclear="${esc(k)}"${deshab()}>Teclearla</button></div>
-            <ul class="ct-nom-lineas">${fs.map(f => `<li class="ct-nom-l${f.ok === false ? " falta" : ""}" data-campo="${esc(f.campo)}"><span class="ct-nom-l-t"><b>${esc(cap(CAMPO_AMARRE[f.campo] || f.campo))}</b> ${f.ok == null ? pill("sin teclear", "warn") : f.ok ? pill("amarra", "ok") : pill("no amarra", "bad")}<small>${esc(f.detalle || "")}</small></span><span class="ct-num">${fmt(f.libro)}</span></li>`).join("")}</ul>
+            <ul class="ct-nom-lineas">${fs.map(f => `<li class="ct-nom-l${f.ok === false ? " falta" : ""}" data-campo="${esc(f.campo)}"><span class="ct-nom-l-t"><b>${esc(cap(CAMPO_AMARRE[f.campo] || f.campo))}</b> ${conCod(f) ? pill("con el código", "warn") : f.ok == null ? pill("sin teclear", "warn") : f.ok ? pill("amarra", "ok") : pill("no amarra", "bad")}<small>${esc(f.detalle || "")}</small></span><span class="ct-num">${fmt(f.libro)}</span></li>`).join("")}</ul>
             <div class="ct-form" hidden></div></article>`; }).join("") : `<p class="ct-vacio">Ninguna nómina posteada en ${esc(S.nom.anio)}: no hay nada que amarrar.</p>`}
         <div class="ct-acciones"><button type="button" class="accion secundaria" id="ct-nom-dec-otra"${deshab()}>Teclear otra declaración</button></div>
         ${sinCodigoNomHTML("Teclear una declaración")}

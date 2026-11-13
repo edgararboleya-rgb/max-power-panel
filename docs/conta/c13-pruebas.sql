@@ -1,10 +1,12 @@
 -- =====================================================================
 -- c13-pruebas.sql — la cédula de corte se prueba a sí misma
--- (c13-cedula.sql). 12-nov-2026.
+-- (c13-cedula.sql). 12-nov-2026; ampliada el 13-nov-2026 (Fase 11b: la
+-- cédula con el auxiliar de la nómina, las pruebas 42 a 47; y la 48, de los
+-- arreglos de su verificación: una cuenta por pagar al revés no «cuadra»).
 --
 -- CÓMO SE CORRE. En el SQL Editor de Supabase: DESPUÉS de c13-cedula.sql (y,
 -- si el c9-cierre.sql que tienes trae la fila 178, después de volver a
--- pegarlo), pegar este archivo entero → Run. Sale la tabla _pruebas: 41
+-- pegarlo), pegar este archivo entero → Run. Sale la tabla _pruebas: 48
 -- filas, todas con ok = true (las que salen «omitida» dicen por qué y no
 -- son un fallo; una fila 99 solo sale si algo de este archivo falló). Si el
 -- editor se cansa antes del final, la corrida sigue en el servidor y se lee
@@ -17,8 +19,9 @@
 -- Cada prueba escribe dentro de una subtransacción y lo deshace (MXT00):
 -- nada queda (ni las cuentas de prueba, ni sus obras, ni sus asientos, ni
 -- sus facturas, ni los renglones, ni las explicaciones, ni la revisión del
--- cierre que c9 guarda, ni el reloj); la 40 lo comprueba, y la 41 otra vez
--- al final de todo.
+-- cierre que c9 guarda, ni el reloj, ni lo que se finge de la nómina); la 40
+-- lo comprueba, y la 41 otra vez al final de todo (las 42 a 48 corren antes
+-- que ellas, aunque su número sea mayor: así las cubren).
 --
 -- VALEN CON DATOS REALES, SIN SUPONER NADA DE PRODUCCIÓN. Lo que siembran es
 -- suyo y se deshace:
@@ -66,6 +69,21 @@
 --   · El patrimonio se prueba sostenido con su mayor (c13_sembrar lo pone
 --     así dentro de cada prueba, diga lo que diga la configuración de esta
 --     base); la 22 prueba el otro modo.
+--   · LA NÓMINA (c15), QUE PUEDE ESTAR O NO EN ESTA BASE (13-nov). Las
+--     pruebas de siempre (1 a 41) corren «SIN LA NÓMINA»: al sembrar, la
+--     función de c13 que dice qué capas hay pasa a decir que c15 no está (y
+--     se deshace con la prueba). Así dan lo mismo con c15 pegada que sin
+--     ella, y la cuenta de nómina de prueba (2293) sigue siendo «una cuenta
+--     con saldo y sin auxiliar». Las 42 a 45 corren «CON UNA NÓMINA
+--     FINGIDA»: la función de c13 que lee la nómina (fn_cedula_nomina) pasa
+--     a leer una tabla temporal de esta sesión (qué dejó por pagar cada
+--     nómina de prueba cada día), y el «journal» de esa nómina es un asiento
+--     de verdad con su origen, por la puerta interna de c2. Dan lo mismo en
+--     las tres bases. La 46 prueba la lectura de verdad (sin fingir la
+--     función de c13): con c15, la de c15; sin c15, con dos funciones de
+--     reemplazo que solo existen dentro de la prueba. La 47 compara, con lo
+--     que esta base tenga, la cédula con lo que la nómina dice («omitida»
+--     sin c15). NINGUNA TOCA NADA DE c15: ni una tabla, ni una función suya.
 --   · Ninguna prueba hace DDL sobre una tabla de otra capa. «La capa no
 --     está» se finge reemplazando, dentro de la prueba, la función de c13
 --     que dice qué capas hay (como el reloj fingido de c2-pruebas); la
@@ -78,7 +96,7 @@
 -- cuenta.
 --
 -- Lo que mira, una prueba cada una:
---  1 el pegado (precondiciones, 3 tablas, 5 vistas, las 24 funciones por su
+--  1 el pegado (precondiciones, 3 tablas, 5 vistas, las 25 funciones por su
 --    nombre exacto, la configuración, cada objeto con su comentario «c13: …»);
 --  2 las precondiciones en rojo (desde la app; sin una función de c2; una
 --    función con nombre de c13 que no es de c13; una vista ajena colgada);
@@ -124,8 +142,8 @@
 -- 19 Stripe (1020 y 1140): lo que falta depositar, a una fecha anterior
 --    («del libro»: no la comprueba), y un asiento a mano;
 -- 20 el use tax (2300) por mes: sale del propio libro («del libro»);
--- 21 la nómina: sin auxiliar («llega con la nómina»), con saldo, y con su
---    renglón a mano;
+-- 21 la nómina, SIN c15 en la base: sin auxiliar («llega con la nómina»),
+--    con saldo, y con su renglón a mano (con c15, las 42 a 47);
 -- 22 el patrimonio: su mayor («del libro»); «manual» en la configuración; y
 --    con renglones a mano se compara con ellos;
 -- LAS EXPLICACIONES:
@@ -145,7 +163,7 @@
 -- 30 el cierre (c9) mira la cédula: su fila 178, y no detiene («omitida»
 --    mientras c9-cierre.sql no traiga el bloque de c13);
 -- 31 el texto de la cédula y de su control no nombra funciones;
--- 32 los totales (la pantalla no suma; sus 25 llaves) y los renglones suman
+-- 32 los totales (la pantalla no suma; sus 26 llaves) y los renglones suman
 --    lo que dice la cédula, cuenta por cuenta; la vista es la función; y el
 --    dueño por la API ve exactamente lo que el SQL Editor (ninguna capa
 --    ilegible);
@@ -159,10 +177,34 @@
 -- 36 el balance cierra a la vista (activo = pasivo + patrimonio + resultado
 --    sin cerrar), y lo que sale del libro no se cuenta como cuadrado;
 -- 37 la caja no es un banco que el banco trae;
+-- LA CÉDULA CON EL AUXILIAR DE LA NÓMINA (13-nov, Fase 11b; corren antes
+-- que el cierre de la suite):
+-- 42 una cuenta de la nómina contra lo que cada nómina dejó por pagar, al
+--    centavo: sin ninguna nómina; con su journal; ENTRE EL CARGO DE GUSTO Y
+--    EL DÍA DE PAGO (la cuenta al revés: lo adelantado a Gusto, y cuadra);
+--    pagada a medias; algo que entra por otro lado (la diferencia, y dónde
+--    mirarlo); con su renglón a mano; y una corrección que deja algo a favor;
+-- 43 los sueldos acumulados: el devengo de las horas MÁS lo de la nómina, y
+--    nada dos veces (ni un journal de nómina marcado como los devengos);
+-- 44 sin el código del teléfono: «con_codigo» (ni «no cuadra» ni «sin
+--    auxiliar»), sin un renglón ni una cifra de ninguna nómina; el control y
+--    la fila 178 no avisan de eso y lo dicen; no se explica; con el código,
+--    cuadra; y sin ninguna nómina en el libro, lo mismo con él que sin él;
+-- 45 la nómina en el control y en la fila 178 del cierre: lo que cuadra no
+--    cuenta; lo que entró por otro lado cuenta en el 20 (no en el 30);
+-- 46 la lectura de verdad (fn_cedula_nomina): no está, está, sin el código,
+--    el equipo, lo que devuelve es lo que dice la nómina, y si cambió de
+--    forma («no se pudo leer», y lo demás sigue);
+-- 47 con lo que esta base tenga de nómina: en cada cuenta y cada día, lo de
+--    la nómina en la cédula es lo que la nómina dice; el dueño con su código
+--    ve lo que el SQL Editor, y sin él, «con_codigo»;
 -- Y el cierre de la suite:
 -- 38 con renglones, explicaciones y la configuración escritos, NINGÚN
 --    control de c2, c3, c4, c6, c8, c9, c10, c11 ni c12 pasa a rojo;
 -- 39 la cédula solo mira: con todo lo anterior, ni un asiento más;
+-- 48 (13-nov, los arreglos de la verificación) una cuenta por pagar al
+--    revés (saldo deudor) no «cuadra» aunque su auxiliar sume lo mismo: lo
+--    dice, el aviso 20 la cuenta, se puede explicar, y al activo no le toca;
 -- 40 nada queda al deshacer;
 -- 41 el cierre de la suite: c2, c3, c6 y c4 como estaban, c8, c10, c11 y c12
 --    sin cuadres rojos nuevos, nada de c13 para anon o service_role ni
@@ -224,6 +266,11 @@ insert into _c13 select 'c6', coalesce(fn_cedula_capas()->>'c6', 'false');
 insert into _c13 select 'c9', coalesce(fn_cedula_capas()->>'c9', 'false');
 insert into _c13 select 'c12', coalesce(fn_cedula_capas()->>'c12', 'false');
 insert into _c13 select 'p1', coalesce(fn_cedula_capas()->>'p1', 'false');
+-- la nómina (c15): si está de verdad en esta base (por su función del auxiliar); y lo que la función de c13 que dice
+-- qué capas hay contesta al empezar, y su definición (las pruebas la fingen dentro de su subtransacción)
+insert into _c13 values ('c15', (to_regprocedure('public.fn_nomina_auxiliar(date)') is not null)::text);
+insert into _c13 select 'capas', fn_cedula_capas()::text;
+insert into _c13 select 'capas_def', pg_get_functiondef('public.fn_cedula_capas()'::regprocedure);
 insert into _c13 values ('hay_c8', (to_regclass('public.v_contador_control') is not null)::text);
 insert into _c13 values ('hay_c9', (to_regprocedure('public.fn_cierre_revisar(text)') is not null)::text);
 insert into _c13 values ('hay_c10', (to_regclass('public.v_jornal_control') is not null and to_regclass('public.v_margen_control') is not null)::text);
@@ -264,12 +311,12 @@ create or replace function pg_temp.c13_h() returns date language sql as $$
   select p.hasta from periodos p where p.periodo = pg_temp.c13('mes')
 $$;
 
--- Las funciones que crea c13-cedula.sql, por su nombre exacto (las 24). No
+-- Las funciones que crea c13-cedula.sql, por su nombre exacto (las 25). No
 -- se buscan por prefijo: otra sesión escribe esta misma base.
 create or replace function pg_temp.c13_es_suya(p_nombre text) returns boolean language sql immutable as $$
   select p_nombre = any (array[
     'fn_cedula_precondiciones', 'fn_cedula_exigir_dueno', 'fn_cedula_ve', 'fn_cedula_guarda', 'fn_cedula_usd', 'fn_cedula_dia',
-    'fn_cedula_mes', 'fn_cedula_monto', 'fn_cedula_capas', 'fn_cedula_toca', 'fn_cedula_cuentas', 'fn_cedula_partidas', 'fn_cedula',
+    'fn_cedula_mes', 'fn_cedula_monto', 'fn_cedula_capas', 'fn_cedula_nomina', 'fn_cedula_toca', 'fn_cedula_cuentas', 'fn_cedula_partidas', 'fn_cedula',
     'fn_cedula_resumen', 'fn_cedula_qb', 'fn_cedula_qb_periodos', 'fn_cedula_config', 'fn_cedula_renglon', 'fn_cedula_renglon_anular',
     'fn_cedula_explicar', 'fn_cedula_explicacion_retirar', 'fn_cedula_control', 'fn_cedula_cierre', 'fn_cedula_pegado'])
 $$;
@@ -298,8 +345,11 @@ begin
 end $$;
 
 -- Ser: el SQL Editor (editor: sin rol ni sesión), el dueño o alguien del
--- equipo por la API (authenticated, en aal2), anon o service_role.
+-- equipo por la API (authenticated, en aal2), el dueño SIN el código del
+-- teléfono (dueno_aal1), anon o service_role.
 create or replace function pg_temp.c13_ser(quien text) returns void language plpgsql as $$
+declare
+  v_id text := pg_temp.c13(case when quien = 'dueno_aal1' then 'dueno' else quien end);
 begin
   execute 'reset role';
   if quien = 'editor' then
@@ -310,8 +360,9 @@ begin
     perform set_config('request.jwt.claim.sub', '', true);
     execute format('set local role %I', quien);
   else
-    perform set_config('request.jwt.claims', json_build_object('sub', pg_temp.c13(quien), 'role', 'authenticated', 'aal', 'aal2')::text, true);
-    perform set_config('request.jwt.claim.sub', coalesce(pg_temp.c13(quien), ''), true);
+    perform set_config('request.jwt.claims', json_build_object('sub', v_id, 'role', 'authenticated',
+                                                               'aal', case when quien = 'dueno_aal1' then 'aal1' else 'aal2' end)::text, true);
+    perform set_config('request.jwt.claim.sub', coalesce(v_id, ''), true);
     execute 'set local role authenticated';
   end if;
 end $$;
@@ -348,7 +399,8 @@ begin
 end $$;
 
 -- SEMBRAR (como el SQL Editor; se deshace con la prueba): el reloj de las
--- pruebas (si esta base lo pide), la regla del tipo de obra confirmada, los puentes de c3 en «immediate» (la factura entra al
+-- pruebas (si esta base lo pide), «sin la nómina» (c15 fingida fuera: las pruebas dan lo mismo con ella pegada que sin ella;
+-- las que la quieren, la ponen), la regla del tipo de obra confirmada, los puentes de c3 en «immediate» (la factura entra al
 -- libro en el momento, como en c3-pruebas), las nueve cuentas de prueba, la
 -- tarjeta, las obras, el proveedor, y el patrimonio sostenido con su mayor.
 create or replace function pg_temp.c13_sembrar() returns void language plpgsql as $$
@@ -357,6 +409,7 @@ declare
 begin
   perform pg_temp.c13_ser('editor');
   perform pg_temp.c13_reloj();
+  perform pg_temp.c13_sin_nomina();
   perform fn_mapeo_confirmar('tipo_proyecto');
   select string_agg(quote_ident(t.tgname), ', ' order by t.tgname) into v
     from pg_trigger t
@@ -392,7 +445,7 @@ end $$;
 -- si la puso). p_pide: lo que la prueba necesita además del dueño: 'mes' (el
 -- mes de las pruebas y el siguiente, abiertos), 'cuentas' (que nada de la
 -- base choque con lo que se siembra), 'en_curso' (que el libro tenga el mes
--- de hoy) y las capas ('c4', 'c6', 'c9', 'c12', 'p1').
+-- de hoy) y las capas ('c4', 'c6', 'c9', 'c12', 'p1'; y 'c15', la nómina de verdad).
 create or replace function pg_temp.c13_omitir(p_n int, p_prueba text, p_esperado text, p_pide text[] default array['mes', 'cuentas'])
 returns boolean language plpgsql as $$
 declare
@@ -411,7 +464,7 @@ begin
     v := 'el libro no tiene el mes en curso (el de hoy): no hay un mes sin terminar con que probar';
   else
     foreach x in array p_pide loop
-      if x in ('c4', 'c6', 'c9', 'c12', 'p1') and pg_temp.c13(x) <> 'true' then
+      if x in ('c4', 'c6', 'c9', 'c12', 'p1', 'c15') and pg_temp.c13(x) <> 'true' then
         v := format('esa parte de la contabilidad (%s) no está en esta base', x);
         exit;
       end if;
@@ -728,17 +781,116 @@ begin
 end $$;
 
 
+-- LA NÓMINA (c15) EN LAS PRUEBAS (13-nov, Fase 11b). Tres maneras, todas
+-- DENTRO de la subtransacción de una prueba (su MXT00 las deshace), y sin
+-- tocar nada de c15:
+--   c13_sin_nomina()    la función de c13 que dice qué capas hay contesta lo
+--                       de verdad con c15 en falso (lo llama c13_sembrar: las
+--                       pruebas de siempre corren así). A quien no es el
+--                       dueño, {} como siempre.
+--   c13_con_nomina()    c15 en verdadero, y la función de c13 que LEE la
+--                       nómina (fn_cedula_nomina) pasa a leer _c13_nomina: lo
+--                       que cada nómina de prueba dejó por pagar, por fechas.
+--                       Hace lo que la de verdad: sin ninguna nómina de
+--                       prueba en el libro no tapa nada; con alguna y sin el
+--                       código del teléfono, «codigo»; al equipo, {}.
+--   c13_capas_reales()  la función de las capas, otra vez la de verdad (la 46
+--                       y la 47 leen la nómina sin fingir).
+-- _c13_nomina: lo que la nómina fingida dice de una cuenta entre dos días
+-- (hasta vacío = sigue): la corrida (el id del asiento de su journal), su
+-- día de pago, lo que su journal dejó por pagar (acreditado) y lo que sus
+-- cargos casados ya pagaron (pagado); el saldo es la resta.
+create temp table if not exists _c13_nomina (desde date, hasta date, cuenta text, corrida uuid, dia_pago date, descripcion text,
+                                             acreditado numeric, pagado numeric, asiento text, cargos text);
+truncate _c13_nomina;
+grant select on _c13_nomina to public;
+create or replace function pg_temp.c13_capas_fingidas(p jsonb) returns void language plpgsql as $$
+begin
+  execute format($f$
+    create or replace function public.fn_cedula_capas() returns jsonb
+    language sql stable
+    set search_path = public, pg_temp
+    as $b$ select case when not public.fn_cedula_ve() then '{}'::jsonb else %L::jsonb end $b$
+  $f$, p::text);
+end $$;
+create or replace function pg_temp.c13_sin_nomina() returns void language plpgsql as $$
+begin
+  perform pg_temp.c13_capas_fingidas(coalesce(pg_temp.c13('capas'), '{}')::jsonb || '{"c15": false}'::jsonb);
+end $$;
+create or replace function pg_temp.c13_capas_reales() returns void language plpgsql as $$
+begin
+  execute pg_temp.c13('capas_def');
+end $$;
+create or replace function pg_temp.c13_con_nomina() returns void language plpgsql as $$
+begin
+  perform pg_temp.c13_ser('editor');
+  delete from _c13_nomina;
+  perform pg_temp.c13_capas_fingidas(coalesce(pg_temp.c13('capas'), '{}')::jsonb || '{"c15": true}'::jsonb);
+  execute $f$
+    create or replace function public.fn_cedula_nomina(p_fecha date default null) returns jsonb
+    language sql stable
+    set search_path = public, pg_temp
+    as $b$
+      select case
+        when not public.fn_cedula_ve() then '{}'::jsonb
+        when not exists (select 1 from public.asientos a where a.origen_tabla = 'nomina_corridas' and a.descripcion like 'C13 PRUEBA: %')
+          then jsonb_build_object('estado', 'ok', 'nominas', false, 'filas', '[]'::jsonb)
+        when current_user in ('authenticated', 'anon', 'service_role')
+             and coalesce(nullif(current_setting('request.jwt.claims', true), '')::jsonb->>'aal', '') <> 'aal2'
+          then jsonb_build_object('estado', 'codigo', 'nominas', true)
+        when p_fecha is null then jsonb_build_object('estado', 'ok', 'nominas', true)
+        else jsonb_build_object('estado', 'ok', 'nominas', true, 'filas',
+               (select coalesce(jsonb_agg(jsonb_build_object('cuenta', n.cuenta, 'corrida', n.corrida, 'dia_pago', n.dia_pago,
+                                 'descripcion', n.descripcion, 'acreditado', n.acreditado, 'pagado', n.pagado, 'saldo', n.acreditado - n.pagado,
+                                 'asiento', n.asiento, 'cargos', n.cargos) order by n.cuenta, n.dia_pago, n.corrida), '[]'::jsonb)
+                  from _c13_nomina n
+                 where p_fecha >= n.desde and (n.hasta is null or p_fecha <= n.hasta) and n.acreditado - n.pagado <> 0))
+      end
+    $b$
+  $f$;
+end $$;
+-- EL JOURNAL DE UNA NÓMINA DE PRUEBA, como lo deja el puente de la nómina: un
+-- asiento con origen «nomina_corridas» (desde el SQL Editor, por la puerta
+-- interna de c2, la única que deja decir de qué papel sale un asiento).
+-- Devuelve su id (hace de «corrida»). p_reversible: para ver que ni marcado
+-- como los devengos cuenta como devengo.
+create or replace function pg_temp.c13_journal(p_fecha date, p_que text, p_lineas jsonb, p_reversible boolean default false)
+returns uuid language plpgsql as $$
+declare
+  r jsonb;
+begin
+  perform pg_temp.c13_ser('editor');
+  r := fn_postear_interno(jsonb_strip_nulls(jsonb_build_object('camino', 'puente', 'fecha', p_fecha::text,
+         'descripcion', 'C13 PRUEBA: ' || p_que || ' (se deshace)', 'lineas', p_lineas,
+         'origen_tabla', 'nomina_corridas', 'origen_id', gen_random_uuid()::text, 'reversible', case when p_reversible then true end)));
+  return (r->>'id')::uuid;
+end $$;
+-- (lo que la nómina fingida dice de una cuenta entre dos días)
+create or replace function pg_temp.c13_nomina_dice(p_desde date, p_hasta date, p_cuenta text, p_corrida uuid, p_dia_pago date,
+                                                   p_acreditado numeric, p_pagado numeric, p_cargos text default null)
+returns void language sql as $$
+  insert into _c13_nomina (desde, hasta, cuenta, corrida, dia_pago, descripcion, acreditado, pagado, asiento, cargos)
+  values (p_desde, p_hasta, p_cuenta, p_corrida, p_dia_pago, 'C13 PRUEBA Nómina del ' || fn_cedula_dia(p_dia_pago), p_acreditado, p_pagado,
+          (select a.numero from asientos a where a.id = p_corrida), p_cargos)
+$$;
+-- (¿algún texto de la cédula nombra una función, una tabla o una vista? Los mismos patrones que la 31: 'ninguno' o cuáles)
+create or replace function pg_temp.c13_llano(p_txt text[]) returns text language sql as $$
+  select coalesce(string_agg(left(t, 160), ' || ') filter (where t ~ '(fn_|cedula_|v_cedula|mx_|select |\(\)|security|jsonb|null)'), 'ninguno')
+    from unnest(p_txt) t
+$$;
+
+
 -- =====================================================================
 -- Las pruebas
 -- =====================================================================
 
--- 1. El pegado: precondiciones, tablas, vistas, las 24 funciones por su
+-- 1. El pegado: precondiciones, tablas, vistas, las 25 funciones por su
 --    nombre exacto, la configuración (una fila) y cada objeto con su
 --    comentario «c13: …».
 do $$
 declare
   v_obt text; v_pre text; v_tab int; v_vis int; v_fn int; v_fn2 int; v_sin text; v_cfg text;
-  v_esp text := 'nada falta | 3 tablas | 5 vistas | 24 funciones (24 nombres) | sin comentario c13: ninguno | configuración: 1 fila, id 1';
+  v_esp text := 'nada falta | 3 tablas | 5 vistas | 25 funciones (25 nombres) | sin comentario c13: ninguno | configuración: 1 fila, id 1';
 begin
   begin
     perform pg_temp.c13_ser('editor');
@@ -761,7 +913,7 @@ begin
                     v_pre, v_tab, v_vis, v_fn, v_fn2, v_sin, v_cfg);
   exception when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (1, 'el pegado: nada falta, 3 tablas, 5 vistas, las 24 funciones por su nombre exacto, la configuración (una fila) y cada objeto con su comentario «c13: …»',
+  insert into _pruebas values (1, 'el pegado: nada falta, 3 tablas, 5 vistas, las 25 funciones por su nombre exacto, la configuración (una fila) y cada objeto con su comentario «c13: …»',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
@@ -1838,10 +1990,11 @@ begin
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
--- 21. LA NÓMINA (22xx): su auxiliar llega con la nómina (f11). Sin saldo no
---     pide nada; con saldo, pide y dice por qué; con su renglón a mano,
---     cuadra. Los sueldos devengados (el puente de c3) sí tienen el suyo: el
---     devengo de las horas.
+-- 21. LA NÓMINA (22xx) SIN c15 EN LA BASE (como corre c13_sembrar): su
+--     auxiliar llega con la nómina (f11). Sin saldo no pide nada; con saldo,
+--     pide y dice por qué; con su renglón a mano, cuadra. Los sueldos
+--     devengados (el puente de c3) sí tienen el suyo: el devengo de las
+--     horas. (Con la nómina puesta, las pruebas 42 a 47.)
 do $$
 declare
   v_obt text; v_h date := pg_temp.c13_h(); a text; b text; c text; d text;
@@ -1868,7 +2021,7 @@ begin
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (21, 'LA NÓMINA (22xx): su auxiliar llega con la nómina (f11): sin saldo no pide nada y lo dice; con saldo, pide (sin auxiliar todavía) y dice qué hacer; con su renglón a mano, cuadra; los sueldos devengados (el puente de c3) sí tienen su auxiliar: el devengo de las horas',
+  insert into _pruebas values (21, 'LA NÓMINA (22xx), SIN c15 EN LA BASE: su auxiliar llega con la nómina (f11): sin saldo no pide nada y lo dice; con saldo, pide (sin auxiliar todavía) y dice qué hacer; con su renglón a mano, cuadra; los sueldos devengados (el puente de c3) sí tienen su auxiliar: el devengo de las horas',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
@@ -2625,7 +2778,7 @@ declare
   v_obt text; v_f date := pg_temp.c13('hoy')::date; r jsonb; a text; b text; c text; d text; e text; f text;
   v_m0 text; v_m1 text; v_p0 text; v_p1 text; v_q0 text := '-'; v_q1 text := '-'; v_err bigint;
   v_perq text := coalesce(fn_cedula_toca(), pg_temp.c13('en_curso'), pg_temp.c13('mes'));
-  v_esp text := 'los totales son los de la cédula, sus 25 llaves: sí | el auxiliar de cada cuenta es la suma de sus renglones: sí, en todas | '
+  v_esp text := 'los totales son los de la cédula, sus 26 llaves: sí | el auxiliar de cada cuenta es la suma de sus renglones: sí, en todas | '
                 'los renglones de una cuenta son los mismos que al pedirlos todos: sí | sin fecha es el último día del período que toca: sí | '
                 'las vistas son sus funciones: sí | el dueño por la API ve lo mismo que el SQL Editor, y ninguna capa le sale ilegible: sí';
 begin
@@ -2654,6 +2807,8 @@ begin
                      and (r->>'explicadas')::int = count(*) filter (where x.estado = 'explicada') and (r->>'explicadas')::int >= 1
                      and (r->>'no_cuadran')::int = count(*) filter (where x.estado = 'no_cuadra') and (r->>'no_cuadran')::int >= 1
                      and (r->>'sin_auxiliar')::int = count(*) filter (where x.estado = 'sin_auxiliar' and x.saldo_libro <> 0)
+                     -- (lo que solo falta mirar con el código del teléfono: aquí, con el código, ninguna)
+                     and (r->>'con_codigo')::int = count(*) filter (where x.estado = 'con_codigo')
                      and (r->>'pendientes')::int = count(*) filter (where x.pendiente) and (r->>'pendientes')::int >= 1
                      and (r->>'explicaciones_viejas')::int = count(*) filter (where x.explicacion_vieja)
                      and (r->>'listo')::boolean = (count(*) filter (where x.pendiente) = 0)
@@ -2678,7 +2833,7 @@ begin
                      and (r->>'fecha')::date = v_f and (r->>'hoy')::date = v_f
                      and r->>'periodo' is not distinct from (select q.periodo from periodos q where q.tipo in ('mes', 'apertura') and q.hasta = v_f
                                                               order by q.desde limit 1)
-                     and (select count(*) from jsonb_object_keys(r)) = 25
+                     and (select count(*) from jsonb_object_keys(r)) = 26
                 then 'sí' else 'no: ' || r::text end
       into a from fn_cedula(v_f) x;
     -- cuenta por cuenta, a hoy y al día que toca (sin fecha)
@@ -2700,7 +2855,7 @@ begin
                 or x.renglones <> coalesce(s.n, 0) or x.sueltas is distinct from s.sueltas or x.despues is distinct from s.despues
                 or x.descuadres <> coalesce(s.x, 0) or x.manual <> coalesce(s.manual, 0)
                 or (x.saldo_auxiliar is not null and x.diferencia <> x.saldo_libro - x.saldo_auxiliar)
-                or (x.saldo_auxiliar is null and (x.diferencia is not null or x.estado not in ('sin_auxiliar', 'explicada')))) z;
+                or (x.saldo_auxiliar is null and (x.diferencia is not null or x.estado not in ('sin_auxiliar', 'explicada', 'con_codigo')))) z;
     select case when not exists (select i.n, i.clase, i.clave, i.concepto, i.monto, i.libro from fn_cedula_partidas(v_f, '1693') i
                                  except
                                  select i.n, i.clase, i.clave, i.concepto, i.monto, i.libro from fn_cedula_partidas(v_f, null) i where i.cuenta = '1693')
@@ -2756,7 +2911,7 @@ begin
     f := case when v_m0 = v_m1 and v_p0 = v_p1 and v_q0 = v_q1 and v_err = 0 then 'sí'
               else format('no: la cédula %s, los renglones %s, QuickBooks %s, y %s de «error»', case when v_m0 = v_m1 then 'igual' else 'DISTINTA' end,
                           case when v_p0 = v_p1 then 'iguales' else 'DISTINTOS' end, case when v_q0 = v_q1 then 'igual' else 'DISTINTO' end, v_err) end;
-    v_obt := format('los totales son los de la cédula, sus 25 llaves: %s | el auxiliar de cada cuenta es la suma de sus renglones: %s | '
+    v_obt := format('los totales son los de la cédula, sus 26 llaves: %s | el auxiliar de cada cuenta es la suma de sus renglones: %s | '
                     'los renglones de una cuenta son los mismos que al pedirlos todos: %s | sin fecha es el último día del período que toca: %s | '
                     'las vistas son sus funciones: %s | el dueño por la API ve lo mismo que el SQL Editor, y ninguna capa le sale ilegible: %s',
                     a, b, c, d, e, f);
@@ -2765,7 +2920,7 @@ begin
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (32, 'LA PANTALLA NO SUMA: los totales (fn_cedula_resumen, sus 25 llaves) son los de la cédula contados otra vez, con lo que cuadra contra un papel, lo que cuadra por las partidas del libro y lo que sale del propio libro contados aparte, el resultado sin cerrar con que el balance cierra (activo = pasivo + patrimonio + resultado) y el reparto de los préstamos fuera de la diferencia pendiente; el auxiliar de cada cuenta es la suma de sus renglones (y lo suelto, lo de después y lo que no casa, lo de los suyos), cuenta por cuenta, a hoy y al día que toca, con lo de esta base y lo de la prueba; los renglones de una cuenta son los mismos pedidos sola o con todas; sin fecha, la cédula es la del último día del período que toca; cada vista es su función; y el dueño por la API ve exactamente lo que el SQL Editor (ninguna capa le sale ilegible por permisos)',
+  insert into _pruebas values (32, 'LA PANTALLA NO SUMA: los totales (fn_cedula_resumen, sus 26 llaves) son los de la cédula contados otra vez, con lo que cuadra contra un papel, lo que cuadra por las partidas del libro y lo que sale del propio libro contados aparte, el resultado sin cerrar con que el balance cierra (activo = pasivo + patrimonio + resultado) y el reparto de los préstamos fuera de la diferencia pendiente; el auxiliar de cada cuenta es la suma de sus renglones (y lo suelto, lo de después y lo que no casa, lo de los suyos), cuenta por cuenta, a hoy y al día que toca, con lo de esta base y lo de la prueba; los renglones de una cuenta son los mismos pedidos sola o con todas; sin fecha, la cédula es la del último día del período que toca; cada vista es su función; y el dueño por la API ve exactamente lo que el SQL Editor (ninguna capa le sale ilegible por permisos)',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
@@ -2954,9 +3109,11 @@ begin
   if pg_temp.c13_omitir(36, 'el balance cierra a la vista', v_esp) then return; end if;
   begin
     -- (los totales de antes se toman SIN las cuentas de prueba —la de patrimonio es la «nueva»— y, como en todas las
-    -- pruebas, con el patrimonio sostenido por su mayor, diga lo que diga la configuración de esta base)
+    -- pruebas, con el patrimonio sostenido por su mayor, diga lo que diga la configuración de esta base, y «sin la nómina»,
+    -- como las deja sembrar: si no, las cuentas de la nómina cambiarían de estado entre el antes y el después)
     perform pg_temp.c13_ser('editor');
     perform pg_temp.c13_reloj();
+    perform pg_temp.c13_sin_nomina();
     perform pg_temp.c13_config('{"patrimonio": "mayor"}');
     perform pg_temp.c13_ser('dueno');
     r0 := fn_cedula_resumen(v_h);
@@ -3035,6 +3192,657 @@ begin
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
+-- =====================================================================
+-- LA CÉDULA CON EL AUXILIAR DE LA NÓMINA (13-nov-2026, Fase 11b): las
+-- pruebas 42 a 47. Corren aquí, antes que el cierre de la suite (38 a 41),
+-- para que «nada queda» las cubra. De la 42 a la 45, con una nómina
+-- FINGIDA (c13_con_nomina): dan lo mismo sin c15, con c15 y con nóminas de
+-- verdad en la base. La 46 y la 47, con la lectura de verdad.
+-- =====================================================================
+
+-- 42. UNA CUENTA DE LA NÓMINA CONTRA LO QUE CADA NÓMINA DEJÓ POR PAGAR, al
+--     centavo (la cuenta de prueba 2293). La nómina de prueba: su journal el
+--     día 20 deja 1,000 por pagar; Gusto cobra 600 el día 16 (ANTES del día
+--     de pago) y 250 el día 23. Sin ninguna nómina en el libro la cuenta
+--     cuadra en cero. Entre el cargo y el día de pago la cuenta está al
+--     revés (−600) y CUADRA: es lo adelantado a Gusto, y lo dice. El día de
+--     pago quedan 400; al final, 150. Algo que entra por otro lado (77.77)
+--     es la diferencia: lo dice, con lo que la nómina sí explica y dónde
+--     mirarlo; con su renglón a mano, cuadra. Y una corrección que devuelve
+--     (82.35 a favor) entra con su signo.
+do $$
+declare
+  v_obt text; v_h date := pg_temp.c13_h(); k1 uuid; k2 uuid; n1 text; v_c text := 'un cargo del día 16 por $600.00';
+  a text; b0 text; b text; c text; d text; e text; f text; g text; h text; v_txt text[] := '{}';
+  v_esp text := 'sin ninguna nómina en el libro: nomina | libro 0.00 | aux 0.00 | dif 0.00 | cuadra, con un papel, «Sin saldo al …, y nada abierto en lo '
+                'que cada nómina dejó por pagar.» | antes del primer cargo: nomina | libro 0.00 | aux 0.00 | dif 0.00 | cuadra | '
+                'entre el cargo de Gusto y el día de pago: nomina | libro -600.00 | aux -600.00 | dif 0.00 | cuadra, con un papel; su renglón: '
+                'auxiliar: C13 PRUEBA Nómina del … = -600.00; dice que es lo adelantado a Gusto: sí | '
+                'el día de pago: nomina | libro 400.00 | aux 400.00 | dif 0.00 | cuadra; dice qué dejó su journal y qué pagaron sus cargos: sí | '
+                'pagado otro cargo, el último día: nomina | libro 150.00 | aux 150.00 | dif 0.00 | cuadra | '
+                'algo que entra por otro lado: nomina | libro 72.23 | aux 150.00 | dif -77.77 | no_cuadra (pendiente); suelto -77.77; lo dice, con '
+                'lo que la nómina sí explica y dónde mirarlo: sí | con su renglón a mano: nomina | libro 72.23 | aux 72.23 | dif 0.00 | cuadra | '
+                'una corrección que deja algo a favor: nomina | libro -10.12 | aux -10.12 | dif 0.00 | cuadra; lo dice: sí | '
+                'textos que nombran funciones: ninguno';
+begin
+  if pg_temp.c13_omitir(42, 'la nómina con su auxiliar', v_esp) then return; end if;
+  begin
+    perform pg_temp.c13_sembrar();
+    perform pg_temp.c13_con_nomina();
+    a := format('%s, %s, «%s»', pg_temp.c13_fila('2293', v_h),
+                case pg_temp.c13_col('2293', v_h, 'sosten') when 'papel' then 'con un papel' else pg_temp.c13_col('2293', v_h, 'sosten') end,
+                regexp_replace(pg_temp.c13_col('2293', v_h, 'detalle'), ' al [0-9]+-[a-z]+-[0-9]+', ' al …'));
+    -- la nómina de prueba: su journal (el día 20) y sus dos cargos (el 16 y el 23), y lo que la nómina dice cada día
+    k1 := pg_temp.c13_journal(pg_temp.c13_d(19), 'el journal de una nómina', jsonb_build_array(
+            jsonb_build_object('cuenta', '6200', 'monto', '1000.00'), jsonb_build_object('cuenta', '2293', 'monto', '-1000.00')));
+    select x.numero into n1 from asientos x where x.id = k1;
+    perform pg_temp.c13_dh(pg_temp.c13_d(15), 'el cargo de Gusto, antes del día de pago', '2293', '1093', 600);
+    perform pg_temp.c13_dh(pg_temp.c13_d(22), 'otro cargo de Gusto', '2293', '1093', 250);
+    perform pg_temp.c13_nomina_dice(pg_temp.c13_d(15), pg_temp.c13_d(18), '2293', k1, pg_temp.c13_d(19), 0, 600, v_c);
+    perform pg_temp.c13_nomina_dice(pg_temp.c13_d(19), pg_temp.c13_d(21), '2293', k1, pg_temp.c13_d(19), 1000, 600, v_c);
+    perform pg_temp.c13_nomina_dice(pg_temp.c13_d(22), null, '2293', k1, pg_temp.c13_d(19), 1000, 850, v_c || '; otro del día 23 por $250.00');
+    b0 := pg_temp.c13_fila('2293', pg_temp.c13_d(14));
+    b := format('%s, %s; su renglón: %s; dice que es lo adelantado a Gusto: %s', pg_temp.c13_fila('2293', pg_temp.c13_d(16)),
+                case pg_temp.c13_col('2293', pg_temp.c13_d(16), 'sosten') when 'papel' then 'con un papel' else pg_temp.c13_col('2293', pg_temp.c13_d(16), 'sosten') end,
+                regexp_replace(pg_temp.c13_renglon('2293', pg_temp.c13_d(16), 'C13 PRUEBA Nómina%'), ' del [0-9]+-[a-z]+-[0-9]+', ' del …'),
+                case when pg_temp.c13_col('2293', pg_temp.c13_d(16), 'detalle')
+                          like '%ya se pagaron $600.00 (' || v_c || ') y su journal todavía no está en el libro ese día (Gusto cobra antes del día de pago): '
+                               'hasta que entre, es lo adelantado a Gusto.%'
+                     then 'sí' else 'no: ' || pg_temp.c13_col('2293', pg_temp.c13_d(16), 'detalle') end);
+    c := format('%s; dice qué dejó su journal y qué pagaron sus cargos: %s', pg_temp.c13_fila('2293', pg_temp.c13_d(19)),
+                case when pg_temp.c13_col('2293', pg_temp.c13_d(19), 'detalle')
+                          like '%quedan $400.00 por pagar: su journal (' || n1 || ') dejó $1,000.00 y sus cargos casados ya pagaron $600.00 (' || v_c || ').%'
+                     then 'sí' else 'no: ' || pg_temp.c13_col('2293', pg_temp.c13_d(19), 'detalle') end);
+    d := pg_temp.c13_fila('2293', v_h);
+    select v_txt || array_agg(format('%s · %s · %s · %s', x.auxiliar, x.origen, x.detalle, coalesce(x.que_hacer, ''))) into v_txt
+      from (select * from fn_cedula(pg_temp.c13_d(16)) union all select * from fn_cedula(pg_temp.c13_d(19)) union all select * from fn_cedula(v_h)) x
+     where x.cuenta = '2293';
+    -- algo que entra a la cuenta por otro lado: un pago a mano que no pasó por la nómina
+    perform pg_temp.c13_dh(pg_temp.c13_d(24), 'un pago a mano que no pasó por la nómina', '2293', '1093', 77.77);
+    e := format('%s; suelto %s; lo dice, con lo que la nómina sí explica y dónde mirarlo: %s', pg_temp.c13_fila('2293', v_h),
+                pg_temp.c13_col('2293', v_h, 'sueltas'),
+                case when pg_temp.c13_col('2293', v_h, 'detalle')
+                          like '%-$77.77 están en el libro sin ser lo que una nómina dejó por pagar ni un cargo casado con ella: entraron por otro lado.%'
+                               'Lo que la nómina sí explica: de la nómina del % quedan $150.00 por pagar%'
+                          and pg_temp.c13_col('2293', v_h, 'que_hacer') like 'Lo que entró por otro lado lo dice, asiento por asiento, el control de la nómina%Nómina → Cargos de Gusto%'
+                          and (select count(*) from fn_cedula_partidas(v_h, '2293') i where i.clase = 'suelto' and i.libro = -77.77 and i.monto is null) = 1
+                     then 'sí' else 'no: ' || pg_temp.c13_col('2293', v_h, 'detalle') || ' / ' || pg_temp.c13_col('2293', v_h, 'que_hacer') end);
+    select v_txt || array_agg(format('%s · %s', x.detalle, coalesce(x.que_hacer, ''))) into v_txt from fn_cedula(v_h) x where x.cuenta = '2293';
+    select v_txt || array_agg(format('%s · %s', case when i.clase = 'suelto' then i.concepto else '' end, coalesce(i.nota, ''))) into v_txt
+      from (select * from fn_cedula_partidas(pg_temp.c13_d(16), '2293') union all select * from fn_cedula_partidas(v_h, '2293')) i;
+    select v_txt || array_agg(format('%s · %s · %s', k.auxiliar, k.origen, coalesce(k.vacio, ''))) into v_txt from fn_cedula_cuentas() k where k.nomina is not null;
+    perform pg_temp.c13_renglon_pon(jsonb_build_object('cuenta', '2293', 'concepto', 'C13 PRUEBA: una deducción que se pagó a mano', 'monto', '-77.77',
+              'desde', pg_temp.c13_d(24)::text, 'documento', 'C13 PRUEBA recibo'));
+    f := pg_temp.c13_fila('2293', v_h);
+    -- una corrección que devuelve: su journal (el día 26) deja 82.35 A FAVOR
+    k2 := pg_temp.c13_journal(pg_temp.c13_d(25), 'el journal de una corrección que devuelve', jsonb_build_array(
+            jsonb_build_object('cuenta', '2293', 'monto', '82.35'), jsonb_build_object('cuenta', '6200', 'monto', '-82.35')));
+    perform pg_temp.c13_nomina_dice(pg_temp.c13_d(25), null, '2293', k2, pg_temp.c13_d(25), -82.35, 0);
+    g := format('%s; lo dice: %s', pg_temp.c13_fila('2293', v_h),
+                case when pg_temp.c13_col('2293', v_h, 'detalle') like '% tiene $82.35 a favor: su journal (%) dejó -$82.35 y sus cargos casados movieron $0.00. '
+                                                                       'Lo descuenta Gusto de un cargo o lo devuelve.%'
+                     then 'sí' else 'no: ' || pg_temp.c13_col('2293', v_h, 'detalle') end);
+    select v_txt || array_agg(x.detalle) into v_txt from fn_cedula(v_h) x where x.cuenta = '2293';
+    h := pg_temp.c13_llano(v_txt);
+    v_obt := format('sin ninguna nómina en el libro: %s | antes del primer cargo: %s | entre el cargo de Gusto y el día de pago: %s | el día de pago: %s | '
+                    'pagado otro cargo, el último día: %s | algo que entra por otro lado: %s | con su renglón a mano: %s | '
+                    'una corrección que deja algo a favor: %s | textos que nombran funciones: %s', a, b0, b, c, d, e, f, g, h);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (42, 'UNA CUENTA DE LA NÓMINA CONTRA LO QUE CADA NÓMINA DEJÓ POR PAGAR (una nómina fingida: su journal de 1,000 el día 20 y sus cargos de 600 el día 16 y de 250 el día 23): sin ninguna nómina en el libro cuadra en cero; ENTRE EL CARGO DE GUSTO Y EL DÍA DE PAGO la cuenta está al revés (−600) y cuadra con un papel, diciendo que es lo adelantado a Gusto; el día de pago quedan 400 (dice qué dejó su journal y qué pagaron sus cargos) y al final 150; algo que entra por otro lado (77.77) es la diferencia, al centavo, y la fila lo dice con lo que la nómina sí explica y dónde mirarlo; con su renglón a mano cuadra; y una corrección que devuelve (82.35 a favor) entra con su signo',
+    v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 43. LOS SUELDOS ACUMULADOS (la cuenta del puente de c3: 2210): EL DEVENGO
+--     DE LAS HORAS MÁS LO DE LA NÓMINA, Y NADA DOS VECES. Por lo que la
+--     prueba mueve (la cuenta es la de verdad): Gusto cobra 200 del neto el
+--     día 16, antes del día de pago (−200, y cuadra); el último día hay un
+--     devengo vivo de 300 y la nómina debe 300 de su journal de 500 (+600:
+--     sus dos renglones, cada uno una vez); el día 1 el devengo se deshace
+--     solo y queda lo de la nómina (+300). Un journal de nómina MARCADO como
+--     los devengos (reversible) cuenta como nómina y NO como devengo (+40,
+--     no +80). Lo que no es ni lo uno ni lo otro (80) va suelto; con su
+--     renglón a mano, cuadra.
+do $$
+declare
+  v_obt text; v_h date := pg_temp.c13_h(); v_sd text; k1 uuid; k2 uuid; f0 jsonb; g0 jsonb; h0 jsonb; a text; b text; c text; d text; e text; f text;
+  v_c text := 'un cargo del día 16 por $200.00';
+  v_esp text := 'entre el cargo de Gusto y el día de pago: libro -200.00 | aux -200.00 | dif +0.00 | cuadra | '
+                'el último día, el devengo vivo y lo de la nómina: libro +600.00 | aux +600.00 | dif +0.00 | cuadra; sus renglones: el devengo 300.00 y '
+                'la nómina 300.00; por sus partidas, y dice las dos cosas: sí | el día 1, deshecho el devengo: libro +300.00 | aux +300.00 | dif +0.00 | cuadra | '
+                'un journal de nómina marcado como los devengos: libro +640.00 | aux +640.00 | dif +0.00 | cuadra; cuenta como nómina y no como devengo: sí | '
+                'lo que no es ni lo uno ni lo otro: libro +720.00 | aux +640.00 | dif +80.00 | no_cuadra; suelto +80.00; lo dice: sí | '
+                'con su renglón a mano: libro +720.00 | aux +720.00 | dif +0.00 | cuadra';
+begin
+  if pg_temp.c13_omitir(43, 'los sueldos acumulados: el devengo más la nómina', v_esp) then return; end if;
+  begin
+    perform pg_temp.c13_sembrar();
+    perform pg_temp.c13_con_nomina();
+    v_sd := coalesce((select pc.cuenta from puente_cuentas pc where pc.rol = 'sueldos_devengados'), '2210');
+    h0 := pg_temp.c13_foto(v_sd, pg_temp.c13_d(16)); f0 := pg_temp.c13_foto(v_sd, v_h); g0 := pg_temp.c13_foto(v_sd, v_h + 1);
+    -- la nómina de prueba: su journal (el día 20) deja 500 de neto por pagar; Gusto cobra 200 el día 16
+    k1 := pg_temp.c13_journal(pg_temp.c13_d(19), 'el journal de una nómina', jsonb_build_array(
+            jsonb_build_object('cuenta', '6200', 'monto', '500.00'), jsonb_build_object('cuenta', v_sd, 'monto', '-500.00')));
+    perform pg_temp.c13_dh(pg_temp.c13_d(15), 'el cargo de Gusto del neto, antes del día de pago', v_sd, '1093', 200);
+    perform pg_temp.c13_nomina_dice(pg_temp.c13_d(15), pg_temp.c13_d(18), v_sd, k1, pg_temp.c13_d(19), 0, 200, v_c);
+    perform pg_temp.c13_nomina_dice(pg_temp.c13_d(19), null, v_sd, k1, pg_temp.c13_d(19), 500, 200, v_c);
+    a := pg_temp.c13_cambio(h0, v_sd, pg_temp.c13_d(16));
+    -- el devengo de las horas del último día (se deshace solo el día 1)
+    perform pg_temp.c13_asiento(v_h, 'el devengo de las horas aprobadas', jsonb_build_array(
+              jsonb_build_object('cuenta', '6200', 'monto', '300.00'), jsonb_build_object('cuenta', v_sd, 'monto', '-300.00')), true);
+    b := format('%s; sus renglones: el devengo %s y la nómina %s; por sus partidas, y dice las dos cosas: %s', pg_temp.c13_cambio(f0, v_sd, v_h),
+                coalesce((select string_agg(i.monto::text, '+') from fn_cedula_partidas(v_h, v_sd) i
+                           where i.clase = 'auxiliar' and i.fuente = 'devengos' and i.concepto like 'C13 PRUEBA: el devengo de las horas%'), 'no sale'),
+                coalesce((select string_agg(i.monto::text, '+') from fn_cedula_partidas(v_h, v_sd) i
+                           where i.clase = 'auxiliar' and i.fuente = 'nomina' and i.ref_id = k1::text), 'no sale'),
+                case when pg_temp.c13_col(v_sd, v_h, 'sosten') = 'partidas'
+                          and pg_temp.c13_col(v_sd, v_h, 'detalle') ilike '%de la nómina del % quedan $300.00 por pagar: su journal (%) dejó $500.00 y sus cargos casados ya pagaron $200.00%'
+                          and (pg_temp.c13_col(v_sd, v_h, 'estado') <> 'cuadra'
+                               or pg_temp.c13_col(v_sd, v_h, 'detalle') like '%Lo del devengo sale del propio libro (su asiento, que se deshace solo el día 1); lo de la '
+                                                                             'nómina, de su journal y de sus cargos casados.%')
+                     then 'sí' else 'no: ' || pg_temp.c13_col(v_sd, v_h, 'sosten') || ' / ' || pg_temp.c13_col(v_sd, v_h, 'detalle') end);
+    c := pg_temp.c13_cambio(g0, v_sd, v_h + 1);
+    -- un journal de nómina MARCADO como los devengos (40, el último día): la nómina lo trae; como devengo no cuenta
+    k2 := pg_temp.c13_journal(v_h, 'un journal de nómina marcado como los devengos', jsonb_build_array(
+            jsonb_build_object('cuenta', '6200', 'monto', '40.00'), jsonb_build_object('cuenta', v_sd, 'monto', '-40.00')), true);
+    perform pg_temp.c13_nomina_dice(v_h, v_h, v_sd, k2, v_h, 40, 0);
+    d := format('%s; cuenta como nómina y no como devengo: %s', pg_temp.c13_cambio(f0, v_sd, v_h),
+                case when (select count(*) from fn_cedula_partidas(v_h, v_sd) i where i.fuente = 'devengos' and i.ref_id = k2::text) = 0
+                          and (select count(*) from fn_cedula_partidas(v_h, v_sd) i where i.fuente = 'nomina' and i.ref_id = k2::text and i.monto = 40) = 1
+                     then 'sí' else 'no' end);
+    -- lo que no es ni un devengo ni de una nómina
+    perform pg_temp.c13_dh(pg_temp.c13_d(20), 'una provisión a mano en los sueldos acumulados', '6200', v_sd, 80);
+    e := format('%s; suelto %s; lo dice: %s', pg_temp.c13_cambio(f0, v_sd, v_h),
+                to_char((pg_temp.c13_foto(v_sd, v_h)->>'s')::numeric - (f0->>'s')::numeric, 'FMS999999990.00'),
+                case when pg_temp.c13_col(v_sd, v_h, 'detalle') like '% no son un devengo de los que se deshacen solos, ni lo que una nómina dejó por pagar, ni un '
+                                                                    'cargo casado con ella: entraron por otro lado.%'
+                          and (select count(*) from fn_cedula_partidas(v_h, v_sd) i where i.clase = 'suelto' and i.fuente = 'devengos') = 1
+                     then 'sí' else 'no: ' || pg_temp.c13_col(v_sd, v_h, 'detalle') end);
+    perform pg_temp.c13_renglon_pon(jsonb_build_object('cuenta', v_sd, 'concepto', 'C13 PRUEBA: unas vacaciones devengadas a mano', 'monto', '80.00',
+              'desde', pg_temp.c13_d(20)::text, 'documento', 'C13 PRUEBA cálculo de vacaciones'));
+    f := pg_temp.c13_cambio(f0, v_sd, v_h);
+    v_obt := format('entre el cargo de Gusto y el día de pago: %s | el último día, el devengo vivo y lo de la nómina: %s | el día 1, deshecho el devengo: %s | '
+                    'un journal de nómina marcado como los devengos: %s | lo que no es ni lo uno ni lo otro: %s | con su renglón a mano: %s', a, b, c, d, e, f);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (43, 'LOS SUELDOS ACUMULADOS (la cuenta del puente de c3), EL DEVENGO DE LAS HORAS MÁS LO DE LA NÓMINA, Y NADA DOS VECES (por lo que la prueba mueve): entre el cargo de Gusto y el día de pago la cuenta baja 200 y cuadra; el último día el devengo vivo (300) y lo que la nómina dejó por pagar (300 de 500) suman 600, cada uno en su renglón y una sola vez, y la fila dice de dónde sale cada cosa; el día 1 el devengo se deshace solo y queda lo de la nómina; un journal de nómina marcado como los devengos cuenta como nómina y no como devengo (+40, no +80); lo que no es ni lo uno ni lo otro (80) va suelto y es la diferencia; con su renglón a mano, cuadra',
+    v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 44. SIN EL CÓDIGO DEL TELÉFONO. La nómina no enseña lo de nadie sin él, y
+--     la cédula no abre esa puerta ni da un rojo falso: con una nómina en el
+--     libro, sus cuentas salen «con_codigo» (ni «no cuadra» ni «sin
+--     auxiliar»), sin compararse, sin un renglón ni una cifra de ninguna
+--     nómina; y piden entrar con el código TENGAN SALDO O NO (en cero en el
+--     libro, una puede tener algo abierto en su nómina: darla por buena sin
+--     verlo sería un verde falso). Los totales las cuentan aparte y entre
+--     las pendientes; el control (el 20 y el 30) y la fila del cierre no se
+--     ponen en rojo por eso, y el 20 las nombra todas; no se explica
+--     (MX008). Con el código, la misma cuenta cuadra. Y sin ninguna nómina
+--     en el libro no hay nada que tapar: sale lo mismo con el código que
+--     sin él.
+do $$
+declare
+  v_obt text; v_h date := pg_temp.c13_h(); v_per text := pg_temp.c13('mes'); v_sd text; k1 uuid; k20 int; k30 int; v_ok0 boolean; r jsonb;
+  a text; b text; c text; d text; e text; f text; g text; h text; i text; j text; v_txt text[] := '{}';
+  v_esp text := 'sin ninguna nómina en el libro, sin el código: nomina | libro 0.00 | aux 0.00 | dif 0.00 | cuadra | '
+                'con su nómina, sin el código: nomina | libro 1000.00 | aux - | dif - | con_codigo (pendiente), codigo; no la compara y dice cómo verla: sí; '
+                'los sueldos acumulados: con_codigo | ni un renglón de la nómina (0), y al pedir la cuenta, un dato que lo dice: sí | '
+                'los totales las cuentan aparte y entre las pendientes, y no está lista: sí | el 20: +0 y el 30: +0, y el 20 las nombra todas: sí | '
+                'la fila del cierre: como antes, y lo dice: sí | '
+                'explicarla: MX008 | una sin saldo: nomina | libro 0.00 | aux - | dif - | con_codigo (pendiente), y también dice cómo verla: sí | '
+                'con el código: nomina | libro 1000.00 | aux 1000.00 | dif 0.00 | cuadra | textos que nombran funciones: ninguno';
+begin
+  if pg_temp.c13_omitir(44, 'sin el código del teléfono', v_esp) then return; end if;
+  begin
+    perform pg_temp.c13_sembrar();
+    perform pg_temp.c13_con_nomina();
+    perform pg_temp.c13_config(jsonb_build_object('avisar_desde', v_per));
+    v_sd := coalesce((select pc.cuenta from puente_cuentas pc where pc.rol = 'sueldos_devengados'), '2210');
+    -- sin ninguna nómina de prueba en el libro: sin el código sale lo mismo
+    perform pg_temp.c13_ser('dueno_aal1');
+    a := pg_temp.c13_fila('2293', v_h);
+    perform pg_temp.c13_ser('editor');
+    -- una nómina en el libro que no toca estas cuentas (desde aquí, sin el código, la nómina se tapa): cómo está el control
+    perform pg_temp.c13_journal(pg_temp.c13_d(1), 'el journal de otra nómina, que no toca estas cuentas', jsonb_build_array(
+              jsonb_build_object('cuenta', '6200', 'monto', '1.00'), jsonb_build_object('cuenta', '3193', 'monto', '-1.00')));
+    perform pg_temp.c13_ser('dueno_aal1');
+    k20 := pg_temp.c13_ctl_n(20); k30 := pg_temp.c13_ctl_n(30);
+    select k.ok into v_ok0 from fn_cedula_cierre(v_per) k;
+    perform pg_temp.c13_ser('editor');
+    -- la nómina de prueba: su journal (el día 20) deja 1,000 en la 2293 y 500 en los sueldos acumulados
+    k1 := pg_temp.c13_journal(pg_temp.c13_d(19), 'el journal de una nómina', jsonb_build_array(
+            jsonb_build_object('cuenta', '6200', 'monto', '1500.00'), jsonb_build_object('cuenta', '2293', 'monto', '-1000.00'),
+            jsonb_build_object('cuenta', v_sd, 'monto', '-500.00')));
+    perform pg_temp.c13_nomina_dice(pg_temp.c13_d(19), null, '2293', k1, pg_temp.c13_d(19), 1000, 0);
+    perform pg_temp.c13_nomina_dice(pg_temp.c13_d(19), null, v_sd, k1, pg_temp.c13_d(19), 500, 0);
+    perform pg_temp.c13_ser('dueno_aal1');
+    b := format('%s, %s; no la compara y dice cómo verla: %s; los sueldos acumulados: %s', pg_temp.c13_fila('2293', v_h), pg_temp.c13_col('2293', v_h, 'por_que'),
+                (select case when x.saldo_auxiliar is null and x.diferencia is null and x.sosten is null and x.auxiliar_al is null
+                                  and x.detalle like '$1,000.00 en el libro al %solo se ve con el código del teléfono: esta sesión entró sin él%No es que no cuadre: falta mirarla con el código.'
+                                  and x.que_hacer like 'Entra con el código del teléfono y vuelve a mirar%' and x.explicacion is null
+                             then 'sí' else 'no: ' || x.detalle || ' / ' || coalesce(x.que_hacer, 'nulo') end
+                   from fn_cedula(v_h) x where x.cuenta = '2293'),
+                pg_temp.c13_col(v_sd, v_h, 'estado'));
+    c := format('ni un renglón de la nómina (%s), y al pedir la cuenta, un dato que lo dice: %s',
+                (select count(*) from fn_cedula_partidas(v_h, null) p where p.fuente = 'nomina'),
+                case when (select count(*) from fn_cedula_partidas(v_h, '2293') p
+                            where p.clase = 'dato' and p.clave = 'codigo' and p.monto is null and p.libro is null
+                              and p.concepto = 'Lo que cada nómina dejó por pagar en esta cuenta se ve con el código del teléfono') = 1
+                          and (select count(*) from fn_cedula_partidas(v_h, '2293') p where p.clase <> 'dato') = 0
+                          and not (fn_cedula_nomina(v_h) ? 'filas')
+                     then 'sí' else 'no' end);
+    r := fn_cedula_resumen(v_h);
+    d := case when (r->>'con_codigo')::int >= 2 and (r->>'con_codigo')::int = (select count(*) from fn_cedula(v_h) x where x.estado = 'con_codigo')
+                   and (r->>'con_codigo')::int = (select count(*) from fn_cedula_cuentas() k where k.nomina = 'codigo')
+                   and (select count(*) from fn_cedula(v_h) x where x.estado = 'con_codigo' and not x.pendiente) = 0
+                   and (r->>'pendientes')::int = (select count(*) from fn_cedula(v_h) x where x.pendiente)
+                   and (r->>'pendientes')::int >= (r->>'con_codigo')::int and not (r->>'listo')::boolean
+                   and (r->>'no_cuadran')::int = (select count(*) from fn_cedula(v_h) x where x.estado = 'no_cuadra')
+                   and (r->>'sin_auxiliar')::int = (select count(*) from fn_cedula(v_h) x where x.estado = 'sin_auxiliar' and x.saldo_libro <> 0)
+              then 'sí' else 'no: ' || r::text end;
+    -- (el 20 las nombra TODAS, con saldo o sin él: las que esta sesión no pudo comparar)
+    e := format('el 20: %s y el 30: %s, y el 20 las nombra todas: %s', to_char(pg_temp.c13_ctl_n(20) - k20, 'FMS990'), to_char(pg_temp.c13_ctl_n(30) - k30, 'FMS990'),
+                case when pg_temp.c13_ctl_det(20) like '%' || (select format(' Con el código del teléfono se ven %s cuenta(s) de la nómina que aquí no se comprobaron (%s): entra con él.',
+                                                                              count(*), left(string_agg(x.cuenta, ', ' order by x.cuenta), 200))
+                                                                 from fn_cedula(v_h) x where x.estado = 'con_codigo')
+                          and (select count(*) from fn_cedula(v_h) x where x.estado = 'con_codigo' and x.saldo_libro = 0) >= 1
+                          and pg_temp.c13_ctl_det(20) like '%2293%'
+                          and pg_temp.c13_ctl_det(20) not like '%2293 C13 PRUEBA%' and pg_temp.c13_ctl_det(30) not like '%2293%'
+                     then 'sí' else 'no: ' || pg_temp.c13_ctl_det(20) || ' / ' || pg_temp.c13_ctl_det(30) end);
+    f := (select format('%s, y lo dice: %s', case when k.ok is not distinct from v_ok0 then 'como antes' else 'CAMBIÓ' end,
+                        case when k.detalle like '% Con el código del teléfono se ven % cuenta(s) de la nómina que aquí no se comprobaron (%2293%): entra con él.'
+                                  and length(k.detalle) <= 1500 and k.orden = 178
+                             then 'sí' else 'no: ' || k.detalle end)
+            from fn_cedula_cierre(v_per) k);
+    -- (una SIN SALDO en el libro —antes de su journal—: también pide entrar con el código, y lo dice igual)
+    h := format('%s, y también dice cómo verla: %s', pg_temp.c13_fila('2293', pg_temp.c13_d(10)),
+                (select case when x.saldo_auxiliar is null and x.diferencia is null and x.por_que = 'codigo'
+                                  and x.detalle like 'Sin saldo en el libro al %solo se ve con el código del teléfono: esta sesión entró sin él%No es que no cuadre: falta mirarla con el código.'
+                                  and x.que_hacer like 'Entra con el código del teléfono y vuelve a mirar%'
+                             then 'sí' else 'no: ' || x.detalle || ' / ' || coalesce(x.que_hacer, 'nulo') end
+                   from fn_cedula(pg_temp.c13_d(10)) x where x.cuenta = '2293'));
+    select v_txt || array_agg(format('%s · %s · %s · %s', x.auxiliar, x.origen, x.detalle, coalesce(x.que_hacer, ''))) into v_txt
+      from fn_cedula(v_h) x where x.estado = 'con_codigo';
+    select v_txt || array_agg(format('%s · %s', p.concepto, coalesce(p.nota, ''))) into v_txt from fn_cedula_partidas(v_h, '2293') p where p.clase = 'dato';
+    select v_txt || array_agg(k.detalle) into v_txt from fn_cedula_control(v_per) k where k.orden in (20, 30);
+    select v_txt || array_agg(k.detalle || ' · ' || coalesce(k.que_hacer, '')) into v_txt from fn_cedula_cierre(v_per) k;
+    select v_txt || array_agg(format('%s · %s · %s', k.auxiliar, k.origen, coalesce(k.vacio, ''))) into v_txt from fn_cedula_cuentas() k where k.nomina is not null;
+    perform pg_temp.c13_ser('editor');
+    g := pg_temp.c13_estado(format('select public.fn_cedula_explicar(%L, %L, %L)', '2293', v_h, 'C13 PRUEBA: no se puede explicar lo que no se ve'), 'dueno_aal1');
+    v_txt := v_txt || pg_temp.c13_dice(format('select public.fn_cedula_explicar(%L, %L, %L)', '2293', v_h, 'C13 PRUEBA: no se puede explicar lo que no se ve'), 'dueno_aal1');
+    perform pg_temp.c13_ser('dueno');
+    i := pg_temp.c13_fila('2293', v_h);
+    perform pg_temp.c13_ser('editor');
+    j := pg_temp.c13_llano(v_txt);
+    v_obt := format('sin ninguna nómina en el libro, sin el código: %s | con su nómina, sin el código: %s | %s | los totales las cuentan aparte y entre las pendientes, y no está lista: %s | '
+                    '%s | la fila del cierre: %s | explicarla: %s | una sin saldo: %s | con el código: %s | textos que nombran funciones: %s',
+                    a, b, c, d, e, f, g, h, i, j);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (44, 'SIN EL CÓDIGO DEL TELÉFONO (una nómina fingida; el dueño por la API con la sesión en aal1): con una nómina en el libro, la cuenta de la nómina y los sueldos acumulados salen «con_codigo» (ni «no cuadra» ni «sin auxiliar»), sin auxiliar que sumar ni diferencia, diciendo cómo verla; no sale ni un renglón de ninguna nómina, y al pedir la cuenta un dato lo dice; los totales las cuentan aparte y entre las pendientes (no está «lista»); el control (el 20 y el 30) y la fila del cierre no se ponen en rojo por eso, y el 20 las nombra todas; no se explica (MX008); una sin saldo en el libro también pide entrar con el código (puede tener algo abierto en su nómina); con el código, la misma cuenta cuadra; y sin ninguna nómina en el libro sale lo mismo con el código que sin él',
+    v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 45. LA NÓMINA EN EL CONTROL Y EN LA FILA 178 DEL CIERRE (por lo que la
+--     prueba mueve): una cuenta de la nómina que cuadra con lo que su nómina
+--     dejó por pagar no cuenta en ningún aviso; lo que entró por otro lado
+--     la deja sin cuadrar: cuenta en el 20 (no en el 30: SÍ tiene auxiliar),
+--     la fila del cierre va en rojo nombrándola (y el cierre de c9, si está,
+--     trae esa misma fila); explicada, vuelve.
+do $$
+declare
+  v_obt text; v_h date := pg_temp.c13_h(); v_per text := pg_temp.c13('mes'); k1 uuid; k20 int; k30 int; v_ok0 boolean; v_c9 text := 'sí';
+  a text; b text; c text; d text;
+  v_esp text := 'la nómina que cuadra: el 20 +0 y el 30 +0 | lo que entró por otro lado: el 20 +1 y rojo, el 30 +0, y la nombra: sí | '
+                'la fila del cierre: rojo, la nombra, dice qué hacer y cabe en 1500: sí; y la del cierre (c9) es esa misma: sí | '
+                'explicada: el 20 +0 y la fila como antes';
+begin
+  if pg_temp.c13_omitir(45, 'la nómina en el control y en la fila del cierre', v_esp) then return; end if;
+  begin
+    perform pg_temp.c13_sembrar();
+    perform pg_temp.c13_con_nomina();
+    perform pg_temp.c13_config(jsonb_build_object('avisar_desde', v_per));
+    k20 := pg_temp.c13_ctl_n(20); k30 := pg_temp.c13_ctl_n(30);
+    select k.ok into v_ok0 from fn_cedula_cierre(v_per) k;
+    k1 := pg_temp.c13_journal(pg_temp.c13_d(19), 'el journal de una nómina', jsonb_build_array(
+            jsonb_build_object('cuenta', '6200', 'monto', '1000.00'), jsonb_build_object('cuenta', '2293', 'monto', '-1000.00')));
+    perform pg_temp.c13_nomina_dice(pg_temp.c13_d(19), null, '2293', k1, pg_temp.c13_d(19), 1000, 0);
+    a := format('el 20 %s y el 30 %s', to_char(pg_temp.c13_ctl_n(20) - k20, 'FMS990'), to_char(pg_temp.c13_ctl_n(30) - k30, 'FMS990'));
+    -- (contra una cuenta de resultados: así lo único que cambia en la cédula es la cuenta de la nómina)
+    perform pg_temp.c13_dh(pg_temp.c13_d(24), 'un ajuste a mano que no pasó por la nómina', '2293', '6200', 77.77);
+    b := format('el 20 %s y %s, el 30 %s, y la nombra: %s', to_char(pg_temp.c13_ctl_n(20) - k20, 'FMS990'), pg_temp.c13_ctl(20),
+                to_char(pg_temp.c13_ctl_n(30) - k30, 'FMS990'),
+                case when pg_temp.c13_ctl_det(20) like '%2293 C13 PRUEBA nómina (-$77.77 de diferencia)%' and pg_temp.c13_ctl_det(30) not like '%2293%'
+                     then 'sí' else 'no: ' || pg_temp.c13_ctl_det(20) end);
+    if pg_temp.c13('hay_c9') = 'true' and pg_temp.c13('c9_cedula') = 'true' then
+      execute $q$ select case when not k.ok and k.detalle = left(z.detalle, 1500) and k.que_hacer = z.que_hacer then 'sí' else 'no: ' || coalesce(k.detalle, 'nulo') end
+                    from public.fn_cierre_revisar($1) k cross join public.fn_cedula_cierre($1) z where k.orden = 178 $q$ into v_c9 using v_per;
+    end if;
+    c := (select format('%s, la nombra, dice qué hacer y cabe en 1500: %s; y la del cierre (c9) es esa misma: %s', case when k.ok then 'verde' else 'rojo' end,
+                        case when k.detalle like '%2293 C13 PRUEBA nómina (-$77.77 de diferencia)%' and k.que_hacer like 'No detiene el cierre.%'
+                                  and length(k.detalle) <= 1500 and k.orden = 178 and k.nivel = 'aviso'
+                             then 'sí' else 'no: ' || k.detalle end, coalesce(v_c9, 'no: sin fila 178'))
+            from fn_cedula_cierre(v_per) k);
+    perform pg_temp.c13_explicar('2293', v_h, 'C13 PRUEBA: los 77.77 son una deducción que se pagó con un cheque de papel');
+    d := format('el 20 %s y la fila %s', to_char(pg_temp.c13_ctl_n(20) - k20, 'FMS990'),
+                (select case when k.ok is not distinct from v_ok0 then 'como antes' else 'NO' end from fn_cedula_cierre(v_per) k));
+    v_obt := format('la nómina que cuadra: %s | lo que entró por otro lado: %s | la fila del cierre: %s | explicada: %s', a, b, c, d);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (45, 'LA NÓMINA EN EL CONTROL Y EN LA FILA 178 DEL CIERRE (una nómina fingida; por lo que la prueba mueve): una cuenta de la nómina que cuadra con lo que su nómina dejó por pagar no cuenta en ningún aviso; lo que entró por otro lado (77.77) la deja sin cuadrar y cuenta en el 20 —no en el 30: sí tiene auxiliar—, que la nombra con su diferencia; la fila del cierre va en rojo nombrándola, dice qué hacer y cabe en lo que el cierre guarda (y la revisión del cierre de c9, si está, trae esa misma fila); explicada, vuelve a como estaba',
+    v_esp, v_obt || case when not (pg_temp.c13('hay_c9') = 'true' and pg_temp.c13('c9_cedula') = 'true')
+                         then ' (el cierre de c9 no está en esta base, o todavía no trae la fila 178: esa parte no se miró)' else '' end,
+    v_obt = v_esp);
+end $$;
+
+-- 46. LA LECTURA DE VERDAD (fn_cedula_nomina, sin fingirla). Si la nómina
+--     (c15) está en esta base, se lee la suya; si no, primero se comprueba
+--     que la cédula lo dice («no_esta») y después, DENTRO de la prueba, se
+--     ponen dos funciones de reemplazo con los nombres que la cédula busca
+--     (la del auxiliar a una fecha y la que dice si la sesión pasó el
+--     código), que leen _c13_nomina. Sin ninguna nómina en el libro no hay
+--     nada que tapar; con una, el SQL Editor y el dueño con su código la
+--     leen, sin el código sale «codigo» SIN renglones, y el equipo recibe
+--     {}. Lo que devuelve es lo que dice la nómina, renglón por renglón. Y si
+--     la nómina cambia de forma (solo con las de reemplazo: la de verdad no
+--     se toca), la cuenta dice «no se pudo leer» y lo demás sigue.
+do $$
+declare
+  v_obt text; v_h date := pg_temp.c13_h(); v_real boolean := pg_temp.c13('c15') = 'true'; v_hay0 boolean; k1 uuid; v_dir jsonb; v_ed jsonb; v_n0 bigint;
+  a text; b text; c text; d text; e text; f text; v_info text := '';
+  v_esp text;
+begin
+  v_esp := 'antes: ' || case when v_real then 'la nómina está' else 'la nómina no está (no_esta), y lo dicen las capas' end
+        || ' | sin ninguna nómina en el libro: ok, sin nada que tapar, con el código y sin él | con una nómina en el libro: el SQL Editor ok, el dueño con su '
+        || 'código ok, sin el código codigo y sin renglones, el equipo {} | lo que devuelve es lo que dice la nómina, renglón por renglón: sí | la cuenta de prueba: '
+        || case when v_real then 'no cuadra por 100.00 (la nómina de verdad no conoce ese journal), y sin el código: con_codigo'
+                else 'cuadra por 100.00 con lo que dice la nómina, y sin el código: con_codigo' end
+        || ' | si la nómina cambia de forma: '
+        || case when v_real then 'no se finge sobre la nómina de verdad'
+                else 'no se pudo leer, sin auxiliar por error, las demás cuentas siguen y el control 10 verde; sin la función del código, lo mismo' end;
+  if pg_temp.c13_omitir(46, 'la lectura de verdad de la nómina', v_esp) then return; end if;
+  begin
+    perform pg_temp.c13_sembrar();
+    perform pg_temp.c13_capas_reales();
+    select exists (select 1 from asientos x where x.origen_tabla = 'nomina_corridas') into v_hay0;
+    a := case when v_real
+              then case when (fn_cedula_capas()->>'c15')::boolean and fn_cedula_nomina(v_h)->>'estado' = 'ok' then 'la nómina está'
+                        else 'no: ' || fn_cedula_capas()::text || ' ' || fn_cedula_nomina(v_h)::text end
+              else case when not (fn_cedula_capas()->>'c15')::boolean and fn_cedula_nomina(v_h) = '{"estado": "no_esta", "nominas": false}'::jsonb
+                             and fn_cedula_nomina(null) = '{"estado": "no_esta", "nominas": false}'::jsonb
+                             and pg_temp.c13_col('2293', v_h, 'por_que') = 'f11'
+                        then 'la nómina no está (no_esta), y lo dicen las capas' else 'no: ' || fn_cedula_capas()::text || ' ' || fn_cedula_nomina(v_h)::text end end;
+    if not v_real then
+      -- (las dos funciones de reemplazo: solo existen dentro de esta prueba)
+      create function public.fn_nomina_aal2() returns boolean language sql stable set search_path = public, pg_temp as $f$
+        select current_user not in ('authenticated', 'anon', 'service_role')
+               or coalesce(nullif(current_setting('request.jwt.claims', true), '')::jsonb->>'aal', '') = 'aal2' $f$;
+      create function public.fn_nomina_auxiliar(p_fecha date default null)
+      returns table (cuenta text, clase text, corrida_id uuid, dia_pago date, descripcion text, acreditado numeric(14,2), pagado numeric(14,2),
+                     saldo numeric(14,2), asiento text, cargos text)
+      language sql stable set search_path = public, pg_temp as $f$
+        select n.cuenta, 'impuestos'::text, n.corrida, n.dia_pago, n.descripcion, n.acreditado::numeric(14,2), n.pagado::numeric(14,2),
+               (n.acreditado - n.pagado)::numeric(14,2), n.asiento, n.cargos
+          from _c13_nomina n
+         where p_fecha >= n.desde and (n.hasta is null or p_fecha <= n.hasta) and n.acreditado - n.pagado <> 0 $f$;
+      delete from _c13_nomina;
+    end if;
+    -- sin ninguna nómina en el libro (si esta base ya tiene alguna, eso no se puede mirar aquí: se dice)
+    if v_hay0 then
+      b := 'ok, sin nada que tapar, con el código y sin él';
+      v_info := ' (esta base ya tiene nóminas en el libro: lo de «sin ninguna nómina» no se pudo mirar aquí)';
+    else
+      b := fn_cedula_nomina(v_h)::text;
+      perform pg_temp.c13_ser('dueno_aal1');
+      b := case when b::jsonb = '{"estado": "ok", "nominas": false, "filas": []}'::jsonb and fn_cedula_nomina(v_h) = b::jsonb
+                     and fn_cedula_nomina(null) = b::jsonb and pg_temp.c13_col('2293', v_h, 'estado') = 'cuadra'
+                then 'ok, sin nada que tapar, con el código y sin él' else 'no: ' || b || ' / ' || fn_cedula_nomina(v_h)::text end;
+      perform pg_temp.c13_ser('editor');
+    end if;
+    -- una nómina en el libro: su journal (el día 20) deja 100 en la cuenta de prueba
+    k1 := pg_temp.c13_journal(pg_temp.c13_d(19), 'el journal de una nómina', jsonb_build_array(
+            jsonb_build_object('cuenta', '6200', 'monto', '100.00'), jsonb_build_object('cuenta', '2293', 'monto', '-100.00')));
+    if not v_real then
+      perform pg_temp.c13_nomina_dice(pg_temp.c13_d(19), null, '2293', k1, pg_temp.c13_d(19), 100, 0);
+    end if;
+    v_ed := fn_cedula_nomina(v_h);
+    c := format('el SQL Editor %s', case when v_ed->>'estado' = 'ok' and (v_ed->>'nominas')::boolean and jsonb_typeof(v_ed->'filas') = 'array'
+                                              and fn_cedula_nomina(null) = '{"estado": "ok", "nominas": true}'::jsonb then 'ok' else 'no: ' || v_ed::text end);
+    perform pg_temp.c13_ser('dueno');
+    c := c || format(', el dueño con su código %s', case when fn_cedula_nomina(v_h) = v_ed then 'ok' else 'no: ' || fn_cedula_nomina(v_h)::text end);
+    perform pg_temp.c13_ser('dueno_aal1');
+    c := c || format(', sin el código %s', case when fn_cedula_nomina(v_h) = '{"estado": "codigo", "nominas": true}'::jsonb
+                                                     and fn_cedula_nomina(null) = '{"estado": "codigo", "nominas": true}'::jsonb
+                                                then 'codigo y sin renglones' else 'no: ' || fn_cedula_nomina(v_h)::text end);
+    e := pg_temp.c13_col('2293', v_h, 'estado');
+    if pg_temp.c13('equipo') is not null then
+      perform pg_temp.c13_ser('equipo');
+      c := c || format(', el equipo %s', fn_cedula_nomina(v_h)::text);
+    else
+      c := c || ', el equipo {}';
+      v_info := v_info || ' (no hay nadie del equipo con quien probar: lo del equipo no se miró)';
+    end if;
+    perform pg_temp.c13_ser('editor');
+    -- lo que devuelve es lo que dice la nómina
+    execute 'select coalesce(jsonb_agg(jsonb_build_object(''cuenta'', x.cuenta, ''corrida'', x.corrida_id, ''dia_pago'', x.dia_pago, '
+         || '''descripcion'', x.descripcion, ''acreditado'', x.acreditado, ''pagado'', x.pagado, ''saldo'', x.saldo, ''asiento'', x.asiento, '
+         || '''cargos'', x.cargos) order by x.cuenta, x.dia_pago, x.corrida_id), ''[]''::jsonb) from public.fn_nomina_auxiliar($1) x' into v_dir using v_h;
+    d := case when v_ed->'filas' = v_dir
+                   and (v_real or (jsonb_array_length(v_dir) = 1 and v_dir->0->>'cuenta' = '2293' and (v_dir->0->>'saldo')::numeric = 100
+                                   and v_dir->0->>'corrida' = k1::text))
+              then 'sí' else 'no: ' || coalesce(v_ed->'filas', 'null'::jsonb)::text || ' / ' || v_dir::text end;
+    e := format('%s, y sin el código: %s',
+                case when v_real
+                     then case when pg_temp.c13_fila('2293', v_h) = 'nomina | libro 100.00 | aux 0.00 | dif 100.00 | no_cuadra (pendiente)'
+                                    and pg_temp.c13_col('2293', v_h, 'detalle') like '%$100.00 están en el libro sin ser lo que una nómina dejó por pagar ni un cargo casado '
+                                                                                  'con ella: entraron por otro lado. Ninguna nómina tiene nada por pagar en esta cuenta ese día.%'
+                               then 'no cuadra por 100.00 (la nómina de verdad no conoce ese journal)' else 'no: ' || pg_temp.c13_fila('2293', v_h) end
+                     else case when pg_temp.c13_fila('2293', v_h) = 'nomina | libro 100.00 | aux 100.00 | dif 0.00 | cuadra'
+                               then 'cuadra por 100.00 con lo que dice la nómina' else 'no: ' || pg_temp.c13_fila('2293', v_h) end end, e);
+    -- si la nómina cambia de forma (solo con las de reemplazo: la de verdad no se toca)
+    if v_real then
+      f := 'no se finge sobre la nómina de verdad';
+    else
+      select count(*) into v_n0 from fn_cedula(v_h);
+      drop function public.fn_nomina_auxiliar(date);
+      create function public.fn_nomina_auxiliar(p_fecha date default null) returns table (cuenta text, cuanto numeric)
+      language sql stable set search_path = public, pg_temp as $f$ select n.cuenta, n.acreditado from _c13_nomina n $f$;
+      f := case when fn_cedula_nomina(v_h)->>'estado' = 'error' and nullif(fn_cedula_nomina(v_h)->>'error', '') is not null
+                     and pg_temp.c13_fila('2293', v_h) = 'nomina | libro 100.00 | aux - | dif - | sin_auxiliar (pendiente)'
+                     and pg_temp.c13_col('2293', v_h, 'por_que') = 'error'
+                     and pg_temp.c13_col('2293', v_h, 'detalle') like 'Sin auxiliar: no se pudo leer (%). Tiene $100.00 en el libro al %'
+                     and pg_temp.c13_col('2293', v_h, 'que_hacer') like 'Avisa:%'
+                     and (select count(*) from fn_cedula(v_h)) = v_n0 and pg_temp.c13_ctl(10) = 'verde'
+                then 'no se pudo leer, sin auxiliar por error, las demás cuentas siguen y el control 10 verde'
+                else 'no: ' || fn_cedula_nomina(v_h)::text || ' / ' || pg_temp.c13_fila('2293', v_h) || ' / ' || pg_temp.c13_col('2293', v_h, 'detalle') end;
+      drop function public.fn_nomina_aal2();
+      f := f || '; sin la función del código, ' || case when fn_cedula_nomina(v_h)->>'estado' = 'error' and fn_cedula_nomina(null)->>'estado' = 'error'
+                                                             and pg_temp.c13_col('2293', v_h, 'estado') = 'sin_auxiliar' and pg_temp.c13_col('2293', v_h, 'por_que') = 'error'
+                                                             and (select count(*) from fn_cedula(v_h)) = v_n0
+                                                        then 'lo mismo' else 'no: ' || fn_cedula_nomina(v_h)::text || ' / ' || pg_temp.c13_fila('2293', v_h) end;
+    end if;
+    v_obt := format('antes: %s | sin ninguna nómina en el libro: %s | con una nómina en el libro: %s | lo que devuelve es lo que dice la nómina, renglón por '
+                    'renglón: %s | la cuenta de prueba: %s | si la nómina cambia de forma: %s', a, b, c, d, e, f);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (46, 'LA LECTURA DE VERDAD DE LA NÓMINA (la función de la cédula que la lee, sin fingirla; con la nómina de esta base si está y, si no, con dos funciones de reemplazo que solo existen dentro de la prueba): si no está lo dice (y sus cuentas siguen «llega con la nómina»); sin ninguna nómina en el libro no hay nada que tapar, con el código o sin él; con una, el SQL Editor y el dueño con su código la leen, sin el código sale «codigo» sin un solo renglón, y el equipo recibe {}; lo que devuelve es lo que dice la nómina, renglón por renglón; y si la nómina cambia de forma, la cuenta dice «no se pudo leer», lo demás sigue y el control 10 queda verde',
+    v_esp, v_obt || v_info, v_obt = v_esp);
+end $$;
+
+-- 47. CON LO QUE ESTA BASE TENGA DE NÓMINA (c15 de verdad; «omitida» si no
+--     está). Sin sembrar nada y sin fingir nada: en hoy, en el día que toca y
+--     alrededor de cada journal de nómina que haya en el libro (su fecha y
+--     los cuatro días anteriores: cuando Gusto cobra), y en cada cuenta que
+--     se sostiene con la nómina: lo que la cédula pone «de la nómina» es lo
+--     que la nómina dice ese día, al centavo y renglón por renglón; en los
+--     sueldos acumulados, el auxiliar es el devengo más lo de la nómina más
+--     lo escrito a mano, una vez cada cosa; el dueño con su código ve lo
+--     mismo que el SQL Editor; y sin el código, si hay nóminas en el libro,
+--     esas cuentas salen «con_codigo» sin un renglón de nómina (si no las
+--     hay, lo mismo que con él).
+do $$
+declare
+  v_obt text; v_hoy date := pg_temp.c13('hoy')::date; v_fechas date[]; v_hay boolean; v_ctas int; v_m0 text; v_m1 text; v_m2 text;
+  a text; b text; c text; d text; v_info text := '';
+  v_esp text := 'lo de la nómina en la cédula es lo que dice la nómina, cuenta por cuenta y día por día: sí | en los sueldos acumulados, el devengo más la '
+                'nómina más lo escrito a mano, una vez cada cosa: sí | el dueño con su código ve lo que el SQL Editor: sí | sin el código: sí';
+begin
+  if pg_temp.c13_omitir(47, 'con lo que esta base tenga de nómina', v_esp, array['c15']) then return; end if;
+  begin
+    perform pg_temp.c13_ser('editor');
+    perform pg_temp.c13_reloj();
+    select exists (select 1 from asientos x where x.origen_tabla = 'nomina_corridas') into v_hay;
+    select array_agg(z.f order by z.f) into v_fechas
+      from (select y.f from (select distinct x.fecha_contable - g.n as f
+                               from asientos x cross join generate_series(0, 4) g(n)
+                              where x.origen_tabla = 'nomina_corridas'
+                             union select v_hoy
+                             union select coalesce((select q.hasta from periodos q where q.periodo = fn_cedula_toca()), v_hoy)) y
+             where y.f <= v_hoy order by y.f desc limit 12) z;
+    select count(*) into v_ctas from fn_cedula_cuentas() k where k.nomina is not null;
+    -- (lo que dice la nómina, por su función; y lo que la cédula pone «de la nómina»: mismas cuentas, mismas nóminas, mismos montos)
+    execute $q$
+      select case when count(*) = 0 then 'sí' else 'no: ' || left(string_agg(format('%s al %s (%s)', z.cuenta, z.f, z.que), '; '), 400) end
+        from (select coalesce(n.f, p.f) as f, coalesce(n.cuenta, p.cuenta) as cuenta,
+                     case when n.cuenta is null then 'la cédula trae ' || p.monto || ' que la nómina no dice'
+                          when p.cuenta is null then 'la nómina dice ' || n.monto || ' y la cédula no lo trae'
+                          else 'la nómina dice ' || n.monto || ' y la cédula ' || p.monto end as que
+                from (select u.f, x.cuenta, x.corrida_id::text as corrida, (-k.signo * x.saldo)::numeric(14,2) as monto
+                        from unnest($1) u(f) cross join lateral public.fn_nomina_auxiliar(u.f) x
+                        join public.fn_cedula_cuentas() k on k.cuenta = x.cuenta and k.nomina is not null) n
+                full join (select u.f, i.cuenta, i.ref_id as corrida, i.monto
+                             from unnest($1) u(f) cross join lateral public.fn_cedula_partidas(u.f, null) i
+                            where i.clase = 'auxiliar' and i.fuente = 'nomina') p
+                  on p.f = n.f and p.cuenta = n.cuenta and p.corrida = n.corrida
+               where n.cuenta is null or p.cuenta is null or n.monto <> p.monto) z $q$ into a using v_fechas;
+    if fn_cedula_nomina(v_hoy)->>'estado' <> 'ok' then
+      a := 'no: la cédula no pudo leer la nómina (' || fn_cedula_nomina(v_hoy)::text || ')';
+    end if;
+    select case when count(*) = 0 then 'sí' else 'no: ' || left(string_agg(format('%s al %s', z.cuenta, z.f), '; '), 300) end into b
+      from (select u.f, x.cuenta
+              from unnest(v_fechas) u(f) cross join lateral fn_cedula(u.f) x
+              join fn_cedula_cuentas() k on k.cuenta = x.cuenta and k.nomina is not null
+              left join lateral (select coalesce(sum(i.monto), 0) as s, count(*) as n,
+                                        count(*) filter (where i.fuente not in ('devengos', 'nomina', 'manual')) as otros,
+                                        count(*) - count(distinct (i.fuente, i.clave)) as repetidos
+                                   from fn_cedula_partidas(u.f, x.cuenta) i where i.clase = 'auxiliar') s on true
+             where x.estado not in ('cuadra', 'no_cuadra', 'explicada') or x.saldo_auxiliar is distinct from s.s::numeric(14,2) or x.renglones <> s.n
+                or s.otros > 0 or s.repetidos > 0) z;
+    select md5(coalesce(string_agg(z::text, '|' order by z.fecha, z.cuenta), '')) into v_m0
+      from (select x.fecha, x.cuenta, x.saldo_libro, x.saldo_auxiliar, x.diferencia, x.estado, x.pendiente, x.por_que, x.renglones, x.detalle
+              from unnest(v_fechas) u(f) cross join lateral fn_cedula(u.f) x) z;
+    perform pg_temp.c13_ser('dueno');
+    select md5(coalesce(string_agg(z::text, '|' order by z.fecha, z.cuenta), '')) into v_m1
+      from (select x.fecha, x.cuenta, x.saldo_libro, x.saldo_auxiliar, x.diferencia, x.estado, x.pendiente, x.por_que, x.renglones, x.detalle
+              from unnest(v_fechas) u(f) cross join lateral fn_cedula(u.f) x) z;
+    c := case when v_m0 = v_m1 and (select count(*) from fn_cedula(v_hoy) x where x.por_que in ('error', 'codigo')) = 0 then 'sí' else 'no' end;
+    perform pg_temp.c13_ser('dueno_aal1');
+    if v_hay then
+      d := (select case when count(*) filter (where x.estado <> 'con_codigo' or x.saldo_auxiliar is not null or x.diferencia is not null
+                                                    or x.por_que is distinct from 'codigo' or x.pendiente is distinct from true) = 0
+                             and count(*) > 0
+                             and (select count(*) from unnest(v_fechas) w(f) cross join lateral fn_cedula_partidas(w.f, null) i where i.fuente = 'nomina') = 0
+                             and not (fn_cedula_nomina(v_hoy) ? 'filas') and fn_cedula_nomina(v_hoy)->>'estado' = 'codigo'
+                        then 'sí' else 'no: ' || left(string_agg(x.cuenta || ' ' || x.estado, ', ') filter (where x.estado <> 'con_codigo'), 300) end
+              from unnest(v_fechas) u(f) cross join lateral fn_cedula(u.f) x
+              join fn_cedula_cuentas() k on k.cuenta = x.cuenta and k.nomina is not null);
+    else
+      select md5(coalesce(string_agg(z::text, '|' order by z.fecha, z.cuenta), '')) into v_m2
+        from (select x.fecha, x.cuenta, x.saldo_libro, x.saldo_auxiliar, x.diferencia, x.estado, x.pendiente, x.por_que, x.renglones, x.detalle
+                from unnest(v_fechas) u(f) cross join lateral fn_cedula(u.f) x) z;
+      d := case when v_m2 = v_m0 then 'sí' else 'no: sin nóminas en el libro, la cédula sin el código no es la misma' end;
+    end if;
+    perform pg_temp.c13_ser('editor');
+    v_info := format(' (%s cuenta(s) de la nómina en %s día(s); %s)', v_ctas, cardinality(v_fechas),
+                     case when v_hay then 'con nóminas en el libro: sin el código salen «con_codigo»'
+                          else 'sin ninguna nómina en el libro todavía: sin el código sale lo mismo que con él' end);
+    v_obt := format('lo de la nómina en la cédula es lo que dice la nómina, cuenta por cuenta y día por día: %s | en los sueldos acumulados, el devengo más la '
+                    'nómina más lo escrito a mano, una vez cada cosa: %s | el dueño con su código ve lo que el SQL Editor: %s | sin el código: %s', a, b, c, d);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (47, 'CON LO QUE ESTA BASE TENGA DE NÓMINA (c15 de verdad, sin sembrar ni fingir nada): en hoy, en el día que toca y alrededor de cada journal de nómina del libro, y en cada cuenta que se sostiene con la nómina, lo que la cédula pone «de la nómina» es lo que la nómina dice ese día, al centavo y nómina por nómina; el auxiliar de esas cuentas es el devengo más la nómina más lo escrito a mano, una vez cada cosa; el dueño con su código ve exactamente lo que el SQL Editor; y sin el código, si hay nóminas en el libro, esas cuentas salen «con_codigo» sin un renglón de nómina (si no las hay, lo mismo que con él)',
+    v_esp, v_obt || v_info, v_obt = v_esp);
+end $$;
+
+-- 48. UNA CUENTA POR PAGAR AL REVÉS NO «CUADRA» (13-nov, los arreglos de la
+--     verificación de la Fase 11b). La nómina paga un reembolso cuyo gasto
+--     no está registrado y la cuenta por pagar queda con saldo DEUDOR; su
+--     auxiliar dice lo mismo (en negativo) y la cédula la daba por buena.
+--     Ahora, una cuenta de pasivo con el saldo al revés que por lo demás
+--     cuadraría sale «no_cuadra» diciéndolo, con su qué hacer; el aviso 20
+--     la cuenta y la nombra así; se puede explicar; y con lo que se debía
+--     ya registrado (la cuenta vuelve a su lado) cuadra. A una cuenta de
+--     ACTIVO con el saldo al revés no le toca.
+do $$
+declare
+  v_obt text; v_h date := pg_temp.c13_h(); v_per text := pg_temp.c13('mes'); k20 int; a text; b text; c text; d text; e text;
+  v_esp text := 'una cuenta por pagar con 80.00 de saldo deudor y su auxiliar por lo mismo: no_cuadra, pide algo, y dice que está al revés y '
+                'qué hacer: sí | el aviso 20: +1, y la nombra así: sí | explicada: explicada, y el 20: +0 | con lo que se debía ya '
+                'registrado (vuelve a su lado): cuadra | una cuenta de activo con el saldo al revés y su auxiliar por lo mismo: cuadra '
+                '(esto es de las cuentas por pagar)';
+begin
+  if pg_temp.c13_omitir(48, 'una cuenta por pagar al revés no cuadra', v_esp) then return; end if;
+  begin
+    perform pg_temp.c13_sembrar();
+    perform pg_temp.c13_config(jsonb_build_object('avisar_desde', v_per));
+    k20 := pg_temp.c13_ctl_n(20);
+    -- (se pagaron 80.00 que no se debían —o cuyo gasto no está registrado—: la cuenta por pagar de prueba queda deudora; su
+    -- auxiliar, escrito a mano, dice lo mismo)
+    perform pg_temp.c13_dh(pg_temp.c13_d(5), 'un pago de más en una cuenta por pagar', '2293', '1093', 80);
+    perform pg_temp.c13_renglon_pon(jsonb_build_object('cuenta', '2293', 'concepto', 'C13 PRUEBA: pagado de más a un tercero', 'monto', '-80.00',
+              'desde', pg_temp.c13_d(5)::text, 'documento', 'C13 PRUEBA recibo del pago'));
+    a := format('%s, %s, y dice que está al revés y qué hacer: %s', pg_temp.c13_col('2293', v_h, 'estado'),
+                case when pg_temp.c13_col('2293', v_h, 'pendiente') = 'true' then 'pide algo' else 'no pide nada' end,
+                case when pg_temp.c13_col('2293', v_h, 'detalle')
+                          like '-$80.00 en el libro al % y lo mismo en %, pero está AL REVÉS: es una cuenta por pagar y su saldo es deudor ($80.00 a favor de la empresa)%'
+                      and pg_temp.c13_col('2293', v_h, 'que_hacer') like '%regístralo a nombre de quien es%explícalo con sus palabras%'
+                     then 'sí' else 'no' end);
+    b := format('%s, y la nombra así: %s', to_char(pg_temp.c13_ctl_n(20) - k20, 'FMS990'),
+                case when pg_temp.c13_ctl_det(20) like '%2293 C13 PRUEBA nómina (está al revés: una cuenta por pagar con $80.00 de saldo deudor)%'
+                     then 'sí' else 'no' end);
+    perform pg_temp.c13_explicar('2293', v_h, 'C13 PRUEBA: se le pagó de más y lo devuelve el mes que viene');
+    c := format('%s, y el 20: %s', pg_temp.c13_col('2293', v_h, 'estado'), to_char(pg_temp.c13_ctl_n(20) - k20, 'FMS990'));
+    -- (lo que se debía, registrado después: 100.00. La cuenta vuelve a su lado —20.00 por pagar—, y su auxiliar con ella)
+    perform pg_temp.c13_dh(pg_temp.c13_d(9), 'lo que se debía, registrado', '6200', '2293', 100);
+    perform pg_temp.c13_renglon_pon(jsonb_build_object('cuenta', '2293', 'concepto', 'C13 PRUEBA: lo que se debía', 'monto', '100.00',
+              'desde', pg_temp.c13_d(9)::text, 'documento', 'C13 PRUEBA factura'));
+    d := pg_temp.c13_col('2293', v_h, 'estado');
+    -- (una cuenta de ACTIVO al revés: los depósitos de prueba, con 30.00 de saldo acreedor y su renglón a mano por lo mismo)
+    perform pg_temp.c13_dh(pg_temp.c13_d(6), 'un depósito devuelto de más', '1093', '1693', 30);
+    perform pg_temp.c13_renglon_pon(jsonb_build_object('cuenta', '1693', 'concepto', 'C13 PRUEBA: devuelto de más', 'monto', '-30.00',
+              'desde', pg_temp.c13_d(6)::text, 'documento', 'C13 PRUEBA recibo'));
+    e := pg_temp.c13_col('1693', v_h, 'estado');
+    v_obt := format('una cuenta por pagar con 80.00 de saldo deudor y su auxiliar por lo mismo: %s | el aviso 20: %s | explicada: %s | con lo que '
+                    'se debía ya registrado (vuelve a su lado): %s | una cuenta de activo con el saldo al revés y su auxiliar por lo mismo: %s '
+                    '(esto es de las cuentas por pagar)', a, b, c, d, e);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (48, 'UNA CUENTA POR PAGAR AL REVÉS NO «CUADRA»: una cuenta de pasivo que no sostiene la nómina, con saldo deudor y un auxiliar que suma lo mismo (la nómina pagó un reembolso cuyo gasto no está registrado; a un proveedor se le pagó de más), sale «no_cuadra» diciendo que está al revés y qué hacer; el aviso 20 la cuenta y la nombra así; se puede explicar; con lo que se debía ya registrado cuadra; y a una cuenta de activo con el saldo al revés no le toca',
+    v_esp, v_obt, v_obt = v_esp);
+end $$;
+
 -- 38. CON LA CÉDULA EN USO, NINGÚN CONTROL DE LAS OTRAS CAPAS PASA A ROJO.
 --     En cuentas DE VERDAD de esta base (sin tocar el libro): un renglón a
 --     mano, la explicación de la primera cuenta que pida algo hoy (si la
@@ -3110,6 +3918,9 @@ begin
     select count(*) into v_k from fn_cedula_partidas(v_h, null);
     select count(*) into v_k from fn_cedula_partidas(v_hoy, '1030');
     select count(*) into v_k from fn_cedula_cuentas();
+    if to_regprocedure('public.fn_cedula_nomina(date)') is not null then
+      execute 'select count(*) from jsonb_object_keys(public.fn_cedula_nomina($1))' into v_k using v_hoy;
+    end if;
     select count(*) into v_k from fn_cedula_control(v_per);
     select count(*) into v_k from fn_cedula_cierre(v_per);
     if v_per is not null then

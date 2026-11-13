@@ -41,6 +41,22 @@
 #      confirmó y la ve: una en el libro y la otra pendiente
 #      (duplicado). (Antes miraban las dos antes de que la otra confirmara
 #      y entraban las dos: la deuda doble.)
+#  10. (13-nov-2026, la Fase 11b) UNA NÓMINA POSTEA MIENTRAS EDGAR DEVENGA
+#      SU MES, la nómina primero: el devengo espera su turno (el candado de
+#      la cadena) y entra con las horas que vio ANTES de que la nómina
+#      confirmara, también la que ella pagó. No queda callado: el control
+#      devengo lo dice (cuenta 8 h que la nómina ya pagó: están dos veces) y
+#      devengar otra vez lo pone al día (solo la hora que nadie pagó).
+#  11. Lo mismo, el devengo primero: la nómina espera, ve el devengo y lo
+#      pone al día en su misma transacción (lo que hace c15 al postear):
+#      queda solo la hora que nadie pagó, y el control en verde. Nadie se
+#      queda esperando a nadie (ningún interbloqueo).
+#      (La nómina es de prueba: c15 no está en esta base. Su journal entra
+#      por la puerta de los puentes con el origen de una corrida, y su marca
+#      sin dinero —fn_nomina_horas_con_pago, la que c3 lee— es una función
+#      de este script que lee de una tabla lo que cada «nómina» paga: se ve
+#      al confirmar, como el lote de c15. Con una nómina de verdad:
+#      c3-nomina.sh.)
 # Y comprueba: fn_verificar_cadena y los controles de los puentes en true
 # (también partidas: ninguna factura en negativo ni anulada con cobro).
 #
@@ -102,6 +118,26 @@ values (-930, 'casa-perez-k3m9', 'recibos/banco/930.jpg', 'breakers 20A', 'por_l
 insert into facturas (id, proyecto_id, num, fecha, monto, pagada, retencion) overriding system value
 values (-950, 'casa-perez-k3m9', 'C3-950', date '2026-10-10', 1000.00, false, 0),
        (951, 'casa-perez-k3m9', 'C3-951', date '2026-10-10', 700.00, false, 0);
+-- (Escenarios 10 y 11) El devengo estándar y una nómina a la vez: las horas
+-- aprobadas de Gustavo (30 la hora) en noviembre y en octubre, con su CO, y
+-- la marca sin dinero de la nómina (c15), DE PRUEBA: lee de una tabla lo que
+-- la «nómina» de cada escenario paga.
+insert into costos_equipo (usuario_id, costo_hora) values ('00000000-0000-4000-a000-000000000002', 30.00)
+on conflict (usuario_id) do update set costo_hora = 30.00;
+insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas, co, aprobado_por, aprobado_el) overriding system value
+values (-940, date '2026-11-03', '00000000-0000-4000-a000-000000000002', 'casa-perez-k3m9', 8, 'c3-concurrencia', 'C3-CONC', '00000000-0000-4000-a000-000000000001', now()),
+       (-941, date '2026-11-10', '00000000-0000-4000-a000-000000000002', 'casa-perez-k3m9', 4, 'c3-concurrencia', 'C3-CONC', '00000000-0000-4000-a000-000000000001', now()),
+       (-942, date '2026-10-06', '00000000-0000-4000-a000-000000000002', 'casa-perez-k3m9', 8, 'c3-concurrencia', 'C3-CONC', '00000000-0000-4000-a000-000000000001', now()),
+       (-943, date '2026-10-20', '00000000-0000-4000-a000-000000000002', 'casa-perez-k3m9', 4, 'c3-concurrencia', 'C3-CONC', '00000000-0000-4000-a000-000000000001', now());
+create table public.c3c_pagadas (horas_id bigint primary key, corrida_id uuid not null, dia_pago date not null);
+alter table public.c3c_pagadas enable row level security;
+revoke all on public.c3c_pagadas from public, anon, authenticated, service_role;
+create function public.fn_nomina_horas_con_pago() returns table (horas_id bigint, corrida_id uuid, dia_pago date)
+language sql stable
+set search_path = public, pg_temp
+as $f$ select p.horas_id, p.corrida_id, p.dia_pago from public.c3c_pagadas p $f$;
+revoke execute on function public.fn_nomina_horas_con_pago() from public, anon, service_role;
+grant  execute on function public.fn_nomina_horas_con_pago() to authenticated;
 SQL
 
 echo "== Base $BD: c1 + c2 + c3 + las reglas"
@@ -256,11 +292,45 @@ revisa "el ticket entró UNA vez: una foto en el libro y la otra pendiente (dupl
                     (select string_agg(d.estado || ':' || d.codigo, ',') from puente_documentos d
                       where d.tabla = 'recibos' and d.documento_id in ('-930', '-931') and d.estado <> 'contabilizado')")"
 
+# El devengo vivo de un mes: su línea de 5000 con el CO de estas escenas, y el control devengo mirando ese mes.
+dev_linea() { ed -c "select coalesce((select l.monto::text from asientos a join asiento_lineas l on l.asiento_id = a.id where a.origen_tabla = 'horas_devengo' and a.origen_id = '$1' and a.camino not in ('reverso', 'reverso_automatico') and not exists (select 1 from asientos r where r.reversa_a = a.id and r.camino = 'reverso') and l.cuenta = '5000' and l.co = 'C3-CONC'), '-')"; }
+dev_control() { ed -c "select coalesce((select 'f/' || coalesce(substring(f.v from 'cuenta ([0-9.]+) h que la nómina ya pagó dentro del mes'), 'otro') from fn_puentes_verificar() c cross join lateral jsonb_array_elements_text(c.detalle->'fallan') f(v) where c.control = 'devengo' and f.v like 'el devengo de $1 (%' limit 1), 't')"; }
+# El journal de una nómina de prueba (por la puerta de los puentes, con el origen de una corrida): journal <corrida> <fecha>
+journal() { echo "select fn_postear_interno(jsonb_build_object('camino', 'puente', 'fecha', '$2', 'origen_tabla', 'nomina_corridas', 'origen_id', '$1', 'descripcion', 'c3-concurrencia: el journal de una nómina de prueba', 'lineas', jsonb_build_array(jsonb_build_object('cuenta', '5000', 'monto', '250.00', 'proyecto_id', 'casa-perez-k3m9', 'co', 'C3-CONC'), jsonb_build_object('cuenta', '2210', 'monto', '-250.00')))) is not null;"; }
+
+echo "== 10. Una nómina postea mientras Edgar devenga su mes (la nómina, primero)"
+K10=00000000-0000-4000-a000-00000c3c0010
+ed -c "begin; insert into c3c_pagadas values (-940, '$K10', date '2026-11-13'); $(journal $K10 2026-11-13) select pg_sleep(2); commit;" > "$TMP/10a.out" 2>&1 &
+sleep 0.5
+ed -c "begin; $APP select fn_horas_devengar('2026-11')->>'accion'; commit;" > "$TMP/10b.out" 2>&1 &
+wait
+revisa "las dos confirmaron sin error" "0" "$(cat "$TMP/10a.out" "$TMP/10b.out" | grep -ci error)"
+revisa "el devengo esperó a la nómina y entró con lo que vio antes (las dos horas): el control lo dice, con las 8 h que ella pagó" "posteado/360.00/f/8" \
+  "$(tail -n 1 "$TMP/10b.out")/$(dev_linea 2026-11)/$(dev_control 2026-11)"
+revisa "devengar otra vez lo pone al día: solo la hora que nadie pagó (4 h × 30), y el control en verde" "sustituido/120.00/t" \
+  "$(ed -c "begin; $APP select fn_horas_devengar('2026-11')->>'accion'; commit;" 2>&1 | tail -n 1)/$(dev_linea 2026-11)/$(dev_control 2026-11)"
+
+echo "== 11. Lo mismo, el devengo primero: la nómina espera, lo ve y lo pone al día"
+K11=00000000-0000-4000-a000-00000c3c0011
+ed -c "begin; $APP select fn_horas_devengar('2026-10')->>'accion'; select pg_sleep(2); commit;" > "$TMP/11a.out" 2>&1 &
+sleep 0.5
+ed -c "begin; insert into c3c_pagadas values (-942, '$K11', date '2026-10-16'); $(journal $K11 2026-10-16)
+       select case when exists (select 1 from asientos a where a.origen_tabla = 'horas_devengo' and a.origen_id = '2026-10'
+                                  and a.camino not in ('reverso', 'reverso_automatico')
+                                  and not exists (select 1 from asientos r where r.reversa_a = a.id and r.camino = 'reverso'))
+                   then fn_horas_devengar('2026-10')->>'accion' else 'no vio el devengo' end; commit;" > "$TMP/11b.out" 2>&1 &
+wait
+revisa "las dos confirmaron sin error (nadie se quedó esperando a nadie)" "0" "$(cat "$TMP/11a.out" "$TMP/11b.out" | grep -ci error)"
+revisa "la nómina esperó al devengo, lo vio y lo puso al día en su misma transacción" "sustituido" "$(tail -n 1 "$TMP/11b.out")"
+revisa "queda devengada solo la hora que nadie pagó, y el control en verde" "120.00/t" "$(dev_linea 2026-10)/$(dev_control 2026-10)"
+revisa "en el libro, el 5000 de esas horas: en cada mes, el journal y el devengo de la que nadie pagó; nada dos veces" "2026-10 370.00 · 2026-11 250.00 · 2026-12 -120.00" \
+  "$(ed -c "select string_agg(q.periodo || ' ' || q.s, ' · ' order by q.periodo) from (select a.periodo, sum(l.monto) as s from asiento_lineas l join asientos a on a.id = l.asiento_id where l.cuenta = '5000' and l.co = 'C3-CONC' group by a.periodo having sum(l.monto) <> 0) q")"
+
 revisa "ningún papel quedó en error en la bandeja" "0" "$(ed -c "select count(*) from puente_documentos where estado = 'error'")"
 revisa "fn_verificar_cadena: todos los controles en true" "" "$(ed -c "select coalesce(string_agg(control, ', '), '') from fn_verificar_cadena() where not ok")"
-revisa "los controles de los puentes (triggers, documentos, bandeja, use_tax, mano_de_obra, partidas) en true" "" \
+revisa "los controles de los puentes (triggers, documentos, bandeja, use_tax, mano_de_obra, partidas, devengo) en true" "" \
   "$(ed -c "select coalesce(string_agg(control, ', '), '') from fn_puentes_verificar()
-             where not ok and control in ('triggers', 'documentos', 'bandeja', 'use_tax', 'mano_de_obra', 'partidas')")"
+             where not ok and control in ('triggers', 'documentos', 'bandeja', 'use_tax', 'mano_de_obra', 'partidas', 'devengo')")"
 sin_hueco="$(ed -c "select count(*) = max(secuencia) and count(distinct secuencia) = count(*) and min(secuencia) = 1 from asientos where anio = 2026")"
 revisa "numeración de 2026 sin huecos ni repetidos" "t" "$sin_hueco"
 

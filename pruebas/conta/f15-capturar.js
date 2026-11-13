@@ -6,10 +6,12 @@
    127.0.0.1:5433) a la misma llamada, como el dueño (authenticated, aal2).
    Este script:
      1. arma <bd> (BORRA la que haya con ese nombre): un clon de la plantilla
-        (de fábrica g12a: la cadena entera pegada como en producción, sin
-        nómina) con c15-nomina.sql y f15-semilla.sql (tres personas, dos
-        obras, sus horas de un período de octubre y los cargos de Gusto en el
-        banco, todo inventado);
+        (de fábrica g15a: la cadena entera pegada como en producción, con
+        c15 y el cierre con sus filas 180 a 183) con las capas de la Fase
+        11b del árbol en el orden de producción (CAPAS: c3, c6, c10, c12,
+        c13, c15 y c9 otra vez) y f15-semilla.sql (tres personas, dos obras
+        —la A con su contrato: entra al WIP—, sus horas de un período de
+        octubre y los cargos de Gusto en el banco, todo inventado);
      2. lee todo lo que la pantalla lee (la ESCENA 0), y después hace, EN EL
         ORDEN DE LA PRUEBA, cada cosa que la pantalla escribe (un PASO: subir
         el journal, decir qué es una columna, enlazar a la gente, postear,
@@ -24,7 +26,7 @@
         casado, un monto mal escrito, las partes de un cargo que no lo suman…);
      4. escribe pruebas/conta/pantalla-f15.json: cada fila una vez (por su
         huella), de cada escena solo lo que cambió respecto de la anterior, y
-        los SIETE ARCHIVOS que sube la prueba (los CSV sintéticos, con sus
+        los OCHO ARCHIVOS que sube la prueba (los CSV sintéticos, con sus
         columnas delicadas DE MENTIRA: «SSN» 000-00-000N, que no existe, y
         «Home address» en una calle falsa). Lo que la pantalla manda de ellos
         es lo que este script manda: las celdas como texto, SIN las columnas
@@ -51,14 +53,28 @@
    una columna «Home phone» que el mapeo no conoce: no sale del navegador): el
    MX009 de la base, lo que contesta con el día dicho y lo que contesta
    importarlo así.
+   (13-nov, los arreglos de la revisión de la Fase 11b) y el journal de UN SOLO
+   EMPLEADO del mismo día, con la nómina completa ya posteada: lo que la base
+   contesta al ensayarlo y al importarlo (la misma nómina, bajada por partes).
    pantalla.js lo carga: una lectura sale de la escena en que va la cadena;
    una escritura que coincide con el paso siguiente (por su función y sus
    llaves) pasa a la escena de ese paso y contesta lo que contestó el banco;
    los errores los elige la mentira con la misma regla que la base y contesta
    el del banco.
 
+   (13-nov, Fase 11b: LAS COSTURAS) cada escena se lee además en las capas
+   que ahora entienden la nómina («x…»: con el código y sin él): el costo por
+   obra (c10 v3: v_margen_obra, su control, fn_margen_obra de las dos obras,
+   las personas del jornal), el WIP (c12 v3: su resumen, el schedule y su
+   control con el aviso 170), la cédula (c13: el resumen, las filas, las
+   partidas de 2210 a 2250 al 21-oct —entre el cargo de Gusto y el día de
+   pago— y al 31-oct, su control, sus cuentas y la fila 178), el papel de los
+   asientos de la nómina (v_asiento_papel de c4, con la rama de c6, y su
+   v_libro) y la Bandeja con los dos depósitos de Gusto (c6). pantalla.js las
+   sirve cuando la prueba pone esas páginas «con la nómina dentro».
+
    Uso (solo el banco; nada de red):
-     node pruebas/conta/f15-capturar.js <bd> [plantilla=g12a]
+     node pruebas/conta/f15-capturar.js <bd> [plantilla=g15a]
    Tarda un minuto. La base queda (con lo que escribieron los pasos); se borra
    a mano: runuser -u postgres -- psql -X -h /var/run/postgresql -p 5433 -c "drop database <bd>". */
 'use strict';
@@ -66,10 +82,10 @@ const fs = require('fs'), path = require('path'), crypto = require('crypto');
 const { execFileSync } = require('child_process');
 
 const ARGS = process.argv.slice(2).filter(a => !a.startsWith('--'));
-const BD = ARGS[0], PLANTILLA = ARGS[1] || 'g12a';
-const PLANTILLAS = ['g12a', 'g10a', 'g9a', 'g8a', 'f9fix', 'p1fab', 'c9perf'];
+const BD = ARGS[0], PLANTILLA = ARGS[1] || 'g15a';
+const PLANTILLAS = ['g15a', 'g12a', 'g10a', 'g9a', 'g8a', 'f9fix', 'p1fab', 'c9perf'];
 if (!BD || !/^[a-z][a-z0-9_]*$/.test(BD) || PLANTILLAS.includes(BD) || BD === PLANTILLA) {
-  console.error('uso: node pruebas/conta/f15-capturar.js <bd nueva> [plantilla=g12a]   (nunca una plantilla)'); process.exit(2);
+  console.error('uso: node pruebas/conta/f15-capturar.js <bd nueva> [plantilla=g15a]   (nunca una plantilla)'); process.exit(2);
 }
 const ROOT = path.resolve(__dirname, '..', '..');
 const SALIDA = path.join(__dirname, 'pantalla-f15.json');
@@ -134,7 +150,10 @@ console.log(`armando ${BD} desde ${PLANTILLA}…`);
 su(`drop database if exists ${BD}`);
 su(`create database ${BD} template ${PLANTILLA} owner editor_sql`);
 su(`grant create on database ${BD} to editor_sql`);
-pegar(path.join(ROOT, 'docs/conta/c15-nomina.sql')); console.log('  pegado docs/conta/c15-nomina.sql');
+// (13-nov, Fase 11b) las capas de la 11b como las pega Edgar en producción (c15 ya está en g15a: encima, la del árbol; c9 otra vez al final)
+const CAPAS = ['docs/conta/c3-puentes.sql', 'docs/conta/c6-banco.sql', 'docs/conta/c10-costo-obra.sql', 'docs/conta/c12-wip.sql', 'docs/conta/c13-cedula.sql',
+  'docs/conta/c15-nomina.sql', 'docs/conta/c9-cierre.sql'];
+for (const f of CAPAS) { pegar(path.join(ROOT, f)); console.log('  pegado', f); }
 execFileSync('psql', ['-X', '-q', '-v', 'ON_ERROR_STOP=1', '-U', 'editor_sql', '-d', BD, '-f', path.join(__dirname, 'f15-semilla.sql')], { env: ENV, stdio: ['ignore', 'pipe', 'pipe'] });
 console.log('  semilla puesta');
 
@@ -187,7 +206,12 @@ const CORR = ['Employee first name,Employee last name,Pay period start,Pay perio
 // nombre es un dato de la persona («Home phone», de mentira): la base no lo puede leer sola (MX009) hasta que se dice su día de pago;
 // el teléfono no sale del navegador. No entra en la cadena: se ensaya y se importa fuera de ella, y se deshace.
 const SINDIA = ['Employee,Home phone,Gross earnings,Employee taxes,Net pay', '"ZZ Ayudante Dos",555-0100,100.00,10.00,90.00'].join('\n') + '\n';
+// (13-nov, los arreglos de la revisión de la Fase 11b) EL JOURNAL DE UN SOLO EMPLEADO del mismo día (el oficial, con su mismo bruto y su
+// mismo neto; sin la fila de totales): con la nómina completa ya posteada es la misma, bajada de Gusto por partes. No entra en la
+// cadena: se ensaya y se importa fuera de ella, y se deshace.
+const SOLO = [CAB.join(','), FILAS_J[2]].join('\n') + '\n';
 const ARCHIVOS = { journal: { nombre: 'zz-c15-journal-23oct.csv', texto: JOURNAL }, bono: { nombre: 'zz-c15-bono-23oct.csv', texto: BONO }, sindia: { nombre: 'zz-c15-sin-dia.csv', texto: SINDIA },
+  solo: { nombre: 'zz-c15-journal-23oct-un-empleado.csv', texto: SOLO },
   otra: { nombre: 'zz-c15-journal-23oct-v2.csv', texto: OTRA }, misma: { nombre: 'zz-c15-journal-23oct-columnas.csv', texto: MISMA },
   bono2: { nombre: 'zz-c15-bono-23oct-otra-forma.csv', texto: BONO2 }, corr: { nombre: 'zz-c15-correccion-26oct.csv', texto: CORR } };
 
@@ -268,6 +292,8 @@ for (const k of Object.keys(ARCHIVOS)) {
 // (los cinco cargos de Gusto de octubre; y, de los arreglos, los dos depósitos de Gusto de la corrección y la cuota sindical, que no es de Gusto)
 const MOV = Object.fromEntries(['fee', 'net', 'tax', 'sui', 'csd', 'dev', 'dvt', 'sin'].map(k => [k, uno(`select id from movimientos_banco where id_externo = 'c15-pantalla-${k}'`)]));
 const MOV_BJ = ['fee', 'net', 'tax', 'sui', 'csd'].map(k => MOV[k]);
+// (13-nov, Fase 11b) los dos depósitos de Gusto de la corrección: c6 (marca 2026111301) los deja en la Bandeja como «nomina»
+const MOV_DEP = ['dev', 'dvt'].map(k => MOV[k]);
 for (const [k, v] of Object.entries(MOV)) if (!v) throw new Error('falta el movimiento ' + k);
 const persona = nombre => uno(`select id from nomina_personas where nombre = ${q(nombre)}`);
 
@@ -307,11 +333,55 @@ function lecturas() {
   for (const p of ['2026-10', '2026-11']) o.push({ k: `fn_nomina_cierre|${p}`, sql: 'select ' + filasDe(`select * from fn_nomina_cierre('${p}') order by orden`) });
   // (la Bandeja del banco: las filas de los cargos de Gusto, como las da c6, para la tarjeta con «Casar con la nómina»)
   o.push({ k: 'v_banco_bandeja', sql: 'select ' + filasDe(`select * from v_banco_bandeja where movimiento_id in (${MOV_BJ.map(m => q(m) + '::uuid').join(', ')}) order by fecha, movimiento_id`) });
+  return o.concat(cruces());
+}
+// (13-nov, Fase 11b) LAS COSTURAS: lo que leen las otras páginas de la app en las capas que ahora entienden la nómina (claves «x…»).
+// Como las pide la pantalla (su orden, sus filtros); la cédula, a dos días: el 21-oct (entre el cargo de Gusto del 19 y el día de pago
+// del 23: lo adelantado a Gusto) y el 31-oct (el fin del mes: la fecha de fábrica de la cédula en noviembre)
+const OBRAS = ['c15-prueba-a', 'c15-prueba-b'];
+const X_DIAS = ['2026-10-21', '2026-10-31'];
+const X_CUENTAS = ['2210', '2215', '2220', '2225', '2230', '2240', '2250'];
+const NOM_ORIGEN = `origen_tabla in ('nomina_corridas', 'nomina_burden')`;
+function cruces() {
+  const o = [];
+  // c10 · Costo por obra (v3: las horas que pagó una nómina son «con pago real»)
+  o.push({ k: 'x10|v_margen_obra', sql: 'select ' + filasDe(`select * from v_margen_obra order by obra`) });
+  o.push({ k: 'x10|v_margen_control', sql: 'select ' + filasDe(`select * from v_margen_control order by orden`) });
+  o.push({ k: 'x10|jornal_config', sql: 'select ' + filasDe(`select * from jornal_config`) });
+  for (const p of OBRAS) o.push({ k: `x10|fn_margen_obra|${p}`, sql: `select fn_margen_obra(${q(p)})` });
+  o.push({ k: 'x10|v_jornal_personas', sql: 'select ' + filasDe(`select * from v_jornal_personas order by registrada desc, nombre`) });
+  o.push({ k: 'x10|v_jornal_repartos', sql: 'select ' + filasDe(`select * from v_jornal_repartos order by creado_el desc`) });
+  o.push({ k: 'x10|v_jornal_control', sql: 'select ' + filasDe(`select * from v_jornal_control order by orden`) });
+  // c12 · el WIP (v3: el aviso 170 con la nómina)
+  o.push({ k: 'x12|fn_wip_resumen|', sql: `select fn_wip_resumen(null)` });
+  o.push({ k: 'x12|fn_wip_resumen|2026-10', sql: `select fn_wip_resumen('2026-10')` });
+  o.push({ k: 'x12|v_wip_schedule|2026-10', sql: 'select ' + filasDe(`select * from v_wip_schedule where periodo = '2026-10' order by obra, proyecto_id`) });
+  o.push({ k: 'x12|fn_wip_control|2026-10', sql: 'select ' + filasDe(`select * from fn_wip_control('2026-10') order by orden`) });
+  // c13 · la cédula (2210 a 2240 con el auxiliar de la nómina; sin el código, «con_codigo»)
+  for (const d of X_DIAS) {
+    o.push({ k: `x13|fn_cedula_resumen|${d}`, sql: `select fn_cedula_resumen('${d}')` });
+    o.push({ k: `x13|fn_cedula|${d}`, sql: 'select ' + filasDe(`select * from fn_cedula('${d}') order by orden, cuenta`) });
+    for (const c of X_CUENTAS) o.push({ k: `x13|fn_cedula_partidas|${d}|${c}`, sql: 'select ' + filasDe(`select * from fn_cedula_partidas('${d}', '${c}')`) });
+  }
+  o.push({ k: 'x13|fn_cedula_control|2026-10', sql: 'select ' + filasDe(`select * from fn_cedula_control('2026-10') order by orden`) });
+  o.push({ k: 'x13|fn_cedula_cierre|2026-10', sql: 'select ' + filasDe(`select * from fn_cedula_cierre('2026-10') order by orden`) });
+  o.push({ k: 'x13|fn_cedula_cuentas|', sql: 'select ' + filasDe(`select * from fn_cedula_cuentas() order by cuenta`) });
+  o.push({ k: 'x13|v_cedula_manual', sql: 'select ' + filasDe(`select * from v_cedula_manual order by cuenta, desde, creado_el`) });
+  // c4 / c6 · el papel de los asientos de la nómina (la rama de c6) y sus líneas
+  o.push({ k: 'x4|v_asiento_papel', sql: 'select ' + filasDe(`select * from v_asiento_papel where ${NOM_ORIGEN} order by fecha, numero`) });
+  o.push({ k: 'x4|v_libro', sql: 'select ' + filasDe(`select * from v_libro where asiento_id in (select asiento_id from v_asiento_papel where ${NOM_ORIGEN}) order by fecha, numero, orden`) });
+  o.push({ k: 'x4|v_nomina_papel', sql: 'select ' + filasDe(`select * from v_nomina_papel order by origen_tabla, origen_id`) });
+  // c6 · la Bandeja con los depósitos de Gusto
+  o.push({ k: 'x6|v_banco_bandeja', sql: 'select ' + filasDe(`select * from v_banco_bandeja where movimiento_id in (${MOV_DEP.map(m => q(m) + '::uuid').join(', ')}) order by fecha, movimiento_id`) });
   return o;
 }
 // (arreglos) lo mismo SIN el código del teléfono (aal1): lo que la base deja ver sin él (sin corridas ni lo de nadie; el control que
 // pide el código en lo que mira dinero). Solo las lecturas que la pantalla hace sin el código; las que lo exigen dan su error en la mentira.
-const SIN_CODIGO = /^(v_nomina_control|v_nomina_corridas|v_nomina_personas|v_nomina_cargos|v_nomina_lotes|nomina_columnas|fn_nomina_config\||fn_nomina_amarre\||fn_nomina_pendiente\|$|fn_nomina_cargos_fuera\||fn_nomina_cierre\||fn_nomina_horas_gusto\|)/;
+const SIN_CODIGO = /^(v_nomina_control|v_nomina_corridas|v_nomina_personas|v_nomina_cargos|v_nomina_lotes|nomina_columnas|fn_nomina_config\||fn_nomina_amarre\||fn_nomina_pendiente\|$|fn_nomina_cargos_fuera\||fn_nomina_cierre\||fn_nomina_horas_gusto\||x(4|6|10|12|13)\|)/;
+// (13-nov, Fase 11b) de las costuras, solo el papel (c4/c6) y la cédula (c13) cambian sin el código: se guardan las dos. El costo por
+// obra (c10), el WIP (c12) y la Bandeja (c6) se leen también sin él y TIENEN que dar lo mismo (c10 lee la marca sin dinero de c15, que
+// contesta igual con el código o sin él): si no, este script para; no se guardan dos veces
+const X_IGUAL = /^x(6|10|12)\|/;
 
 // ---------- 4. el almacén: cada fila una vez, por su huella ----------
 const FILAS = {};
@@ -323,9 +393,13 @@ function guardar(v) {
 function escena(acumulado, paso) {
   const lect = lecturas(), sin = lect.filter(x => SIN_CODIGO.test(x.k)).map(x => ({ ...x, k: x.k + '@aal1', aal: 'aal1' }));
   const todas = lect.concat(sin), r = pedir(todas.map(x => ({ sql: x.sql, aal: x.aal })));
-  const cambia = {};
+  const cambia = {}, de = new Map(todas.map((x, i) => [x.k, r[i]]));
   todas.forEach((x, i) => {
     if (r[i] && r[i].ERROR) throw new Error(`la lectura ${x.k} dio ${r[i].ERROR}: ${r[i].message}`);
+    if (X_IGUAL.test(x.k) && x.k.endsWith('@aal1')) {
+      if (JSON.stringify(r[i]) !== JSON.stringify(de.get(x.k.slice(0, -5)))) throw new Error(`${x.k.slice(0, -5)} dio otra cosa sin el código del teléfono (${paso || 'escena 0'}): no puede ser`);
+      return;
+    }
     const g = guardar(r[i]), s = JSON.stringify(g);
     if (acumulado[x.k] !== s) { cambia[x.k] = g; acumulado[x.k] = s; }
   });
@@ -543,8 +617,9 @@ debe(leidoTras('postear_journal', 'v_nomina_corridas@aal1').length === 0 && leid
   'sin el código: ninguna corrida y el control que lo pide');
 // ---------- 7b. (revisión final) lo que la pantalla lee o manda FUERA de la cadena, con la base como quedó al final (cada orden se deshace) ----------
 //   · EL PAPEL DE UN ASIENTO DE LA NÓMINA en los Estados: las líneas del journal del 23-oct (v_libro), lo que la vista de los papeles de
-//     c4/c6 dice de él («el papel ya no está»: está sellada y no conoce la nómina) y su papel de verdad (v_nomina_papel), con el código
-//     del teléfono y sin él;
+//     c4/c6 dice de él (13-nov, Fase 11b: c6 con la rama de la nómina da su papel de verdad, el de v_nomina_papel, con el código del
+//     teléfono; sin él, un texto fijo sin cifras ni nombres que dice dónde está y que se ve con el código) y v_nomina_papel, con el
+//     código y sin él;
 //   · EL ARCHIVO SIN DÍA DE PAGO: el error de la base (MX009), lo que contesta cuando se le dice el día, lo que contesta importarlo así
 //     y —ya importado— lo que contesta ensayarlo OTRA VEZ diciendo otro día (ya está: sale del mismo archivo).
 const leeComo = (consulta, aal = 'aal2') => pedir([{ sql: `select ${filasDe(consulta)}`, aal }], 'rollback')[0];
@@ -562,17 +637,48 @@ const otraVez = () => { const r = pedir([{ sql: `select to_jsonb(${importar('sin
   if (r.some(x => x && x.ERROR)) throw new Error(`fuera de la cadena, el archivo sin día otra vez dio ${JSON.stringify(r.find(x => x && x.ERROR)).slice(0, 200)}`);
   return { dia: DIA_OTRO, ensayo: r[1], importar: r[2], porque: PORQUE_OTRA, importar_porque: r[3] }; };
 const PAPEL_NOM = `select origen_tabla, origen_id, papel, ruta from v_nomina_papel where origen_tabla = 'nomina_corridas' and origen_id = ${q(ID.journal)}`;
+// (13-nov, Fase 11b) UN ZELLE A QUIEN YA COBRA POR NÓMINA: ZZ Ayudante Uno dado de alta en el jornal (c10) y un Zelle suyo del 20-oct;
+// la propuesta de su reparto (v_jornal_pendientes) trae el aviso nuevo de c10 v3, «pagadas_por_nomina» (no frena). Como el dueño por
+// la API, en una transacción que se deshace
+const zelleNomina = () => {
+  const previo = `select set_config('request.jwt.claims', json_build_object('sub', '${DUENO}', 'role', 'authenticated', 'aal', 'aal2')::text, true), set_config('request.jwt.claim.sub', '${DUENO}', true);
+    set local role authenticated;
+    select fn_jornal_persona(jsonb_build_object('usuario_id', '${P_UNO}', 'patron', 'ZZ AYUDANTE UNO', 'activa', true));
+    select fn_banco_importar_filas(jsonb_build_object('origen', 'plaid', 'cuenta', '1010', 'nombre', 'Plaid · c15 zelle', 'filas', jsonb_build_array(
+      jsonb_build_object('id', 'c15-pantalla-zelle', 'fecha', '2026-10-20', 'plaid_monto', '500.00', 'descripcion', 'Zelle payment to ZZ AYUDANTE UNO C15 PRUEBA', 'tipo', 'DEBIT', 'pendiente', false))));
+    select count(fn_banco_casar(m.id)) from movimientos_banco m where m.id_externo = 'c15-pantalla-zelle';
+    reset role;`;
+  const sql = ['begin;', AYUDA, previo,
+    `select coalesce(pg_temp.pedir(${dolar('select ' + filasDe(`select b.* from v_banco_bandeja b join movimientos_banco m on m.id = b.movimiento_id where m.id_externo = 'c15-pantalla-zelle'`))}, 'dueno', 'aal2')::text, 'null');`,
+    `select coalesce(pg_temp.pedir(${dolar('select ' + filasDe(`select p.* from v_jornal_pendientes p join movimientos_banco m on m.id = p.movimiento_id where m.id_externo = 'c15-pantalla-zelle'`))}, 'dueno', 'aal2')::text, 'null');`,
+    'rollback;'].join('\n');
+  const out = psql(sql).split('\n').filter(l => l.startsWith('[') || l.startsWith('{') || l === 'null').slice(-2).map(l => JSON.parse(l));
+  return { bandeja: out[0], pendiente: out[1] };
+};
 const extras = {
   papel: { asiento_id: ASIENTO_J, corrida: ID.journal,
     libro: leeComo(`select * from v_libro where asiento_id = ${q(ASIENTO_J)}::uuid order by orden`),
     asiento_papel: leeComo(`select * from v_asiento_papel where asiento_id = ${q(ASIENTO_J)}::uuid`),
+    asiento_papel_aal1: leeComo(`select * from v_asiento_papel where asiento_id = ${q(ASIENTO_J)}::uuid`, 'aal1'),
     nomina_papel: { aal2: leeComo(PAPEL_NOM), aal1: leeComo(PAPEL_NOM, 'aal1') } },
   sin_dia: { dia: DIA_SIN, error: errorDe(ensayo('sindia')()), ensayo: valorDe(ensayo('sindia', { dia_pago: DIA_SIN })()), importar: valorDe(importar('sindia', { dia_pago: DIA_SIN })()),
-    otra_vez: otraVez() }
+    otra_vez: otraVez() },
+  zelle_nomina: zelleNomina(),
+  // (13-nov, los arreglos) el journal de un solo empleado, con el de todos ya posteado: lo que contesta el ensayo y lo que contesta
+  // importarlo (cada uno en su transacción, que se deshace)
+  por_partes: { ensayo: valorDe(ensayo('solo')()), importar: valorDe(importar('solo')()) }
 };
-debe(extras.papel.libro.length >= 2 && extras.papel.asiento_papel.length === 1 && extras.papel.asiento_papel[0].papel_existe === false && /el papel ya no está/.test(extras.papel.asiento_papel[0].papel) &&
-  extras.papel.nomina_papel.aal2.length === 1 && /^Nómina de Gusto del 23-oct-2026/.test(extras.papel.nomina_papel.aal2[0].papel) && extras.papel.nomina_papel.aal1.length === 0,
-  'el papel del asiento de la nómina: la vista sellada dice que no está, v_nomina_papel lo da con el código y nada sin él');
+{ const y = (extras.por_partes.ensayo.corridas[0] || {}).ya_estaba || {}, i = extras.por_partes.importar.corridas[0] || {};
+  debe(y.misma === true && y.por_partes === true && y.parte === 'dentro' && Number(y.comunes) === 1 && i.resultado === 'otra_distinta' && i.misma === true && i.por_partes === true &&
+    i.se_puede_otra === false && /por partes/.test(i.texto || '') && Number(extras.por_partes.importar.nuevas) === 0,
+    'el journal de un solo empleado, con el de todos ya posteado: la misma nómina, por partes; no entra'); }
+{ const z = extras.zelle_nomina, p = (z.pendiente || [])[0], av = p && (p.avisos || []).find(a => a.codigo === 'pagadas_por_nomina');
+  debe(Array.isArray(z.bandeja) && z.bandeja.length === 1 && p && av && Number(av.horas) > 0 && /ya las pagó una nómina/.test(av.texto) && uno(`select count(*) from movimientos_banco where id_externo = 'c15-pantalla-zelle'`) === 0,
+    'un Zelle a quien ya cobra por nómina: su propuesta trae «pagadas_por_nomina» (y no se quedó nada)'); }
+{ const ap = extras.papel.asiento_papel, a1 = extras.papel.asiento_papel_aal1, np = extras.papel.nomina_papel;
+  debe(extras.papel.libro.length >= 2 && ap.length === 1 && ap[0].papel_existe === true && np.aal2.length === 1 && /^Nómina de Gusto del 23-oct-2026/.test(np.aal2[0].papel) && ap[0].papel === np.aal2[0].papel &&
+    np.aal1.length === 0 && a1.length === 1 && a1[0].papel_existe === true && /código del teléfono/.test(a1[0].papel) && !/\$|ZZ /.test(a1[0].papel),
+    'el papel del asiento de la nómina (c6, marca 2026111301): con el código, el de v_nomina_papel; sin él, el texto fijo sin cifras ni nombres; v_nomina_papel sin el código, nada'); }
 debe(extras.sin_dia.error.error.code === 'MX009' && /día de pago/.test(extras.sin_dia.error.error.message) && extras.sin_dia.ensayo.corridas.length === 1 && extras.sin_dia.ensayo.corridas[0].dia_pago === DIA_SIN &&
   Number(extras.sin_dia.ensayo.corridas[0].totales.bruto) === 100 && extras.sin_dia.importar.corridas[0].resultado === 'nueva' &&
   uno(`select count(*) from nomina_corridas where dia_pago = ${q(DIA_SIN)}::date`) === 0,
@@ -592,8 +698,9 @@ for (const t of ['000-00-0001', '000-00-0002', '000-00-0003', '000-00-0009', 'Ca
 const salida = {
   _leeme: 'La base simulada de «Nómina» (c15) que usa pantalla.js: lo que contestó el banco. La genera pruebas/conta/f15-capturar.js; no se edita a mano. Datos inventados (ZZ y C15 PRUEBA); las columnas delicadas de los archivos son de mentira (000-00-000N no existe).',
   capturado: { hoy, plantilla: PLANTILLA, c15: crypto.createHash('sha1').update(fs.readFileSync(path.join(ROOT, 'docs/conta/c15-nomina.sql'))).digest('hex').slice(0, 12),
+    capas: Object.fromEntries(CAPAS.map(f => [f, crypto.createHash('sha1').update(fs.readFileSync(path.join(ROOT, f))).digest('hex').slice(0, 12)])),
     semilla: crypto.createHash('sha1').update(fs.readFileSync(path.join(__dirname, 'f15-semilla.sql'))).digest('hex').slice(0, 12) },
-  ids: { ...ID, rangos: RANGOS },
+  ids: { ...ID, rangos: RANGOS, obras: OBRAS, dias: X_DIAS, cuentas: X_CUENTAS },
   textos: { ...T, cfg: CFG },
   archivos: Object.fromEntries(Object.entries(ARCHIVOS).map(([k, a]) => [k, { nombre: a.nombre, texto: a.texto, sha256: sha(a.texto) }])),
   filas: FILAS, c15, extras

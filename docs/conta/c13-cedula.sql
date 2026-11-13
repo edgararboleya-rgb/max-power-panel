@@ -3,12 +3,71 @@
 -- balance, de dónde sale, y si cuadra) · c13 (la mitad de la Fase 12a; f12
 -- llama al entregable «c12-cedula.sql» por un nombre viejo: c12 ya es el
 -- WIP. La otra mitad, W-9, COI y 1099, es c14-subs.sql: no dependen una de
--- la otra). 12-nov-2026. Se pega en el SQL Editor DESPUÉS de c1, c2 y c3 (en
--- producción, al final de la cadena: c1, c2, c3, c4, c6, c7, s1, p1, c8,
--- c9, c10, c11, c12 y esta; c4, c6, c9, c12 y p1 pueden faltar: lo que no
--- está no se mira, y la fila de esa cuenta lo dice). Idempotente: se puede
+-- la otra). 12-nov-2026; cambiada el 13-nov-2026 (Fase 11b: la cédula
+-- entiende la nómina; abajo, «LO QUE CAMBIÓ EL 13-NOV»). Se pega en el SQL
+-- Editor DESPUÉS de c1, c2 y c3 (en producción, al final de la cadena: c1,
+-- c2, c3, c4, c6, c7, s1, p1, c8, c9, c10, c11, c12 y esta; c4, c6, c9,
+-- c12, p1 y la nómina, c15, pueden faltar o llegar después: lo que no está
+-- no se mira, y la fila de esa cuenta lo dice). Idempotente: se puede
 -- volver a pegar entero (no pisa la configuración, ni un renglón escrito a
 -- mano, ni una explicación). Después se pega c13-pruebas.sql.
+--
+-- LO QUE CAMBIÓ EL 13-NOV-2026 (Fase 11b) Y POR QUÉ. La nómina
+-- (c15-nomina.sql, el puente con Gusto) ya tiene el auxiliar de sus cuentas
+-- por pagar: de cada nómina posteada, lo que su journal dejó por pagar en
+-- cada cuenta menos lo que ya pagaron sus cargos de Gusto casados, a una
+-- fecha. La cédula no lo leía: 2220, 2225, 2230 y 2240 salían «sin
+-- auxiliar: llega con la nómina (f11)» aunque la nómina ya estuviera, y los
+-- sueldos acumulados (2210) se comparaban solo con el devengo de las horas,
+-- así que el neto de una nómina por pagar —o lo que Gusto cobra ANTES del
+-- día de pago— salía «no cuadra». Desde hoy:
+--   · 2210 se sostiene con el devengo de las horas MÁS lo que cada nómina
+--     dejó por pagar de su neto; 2215, 2220, 2225, 2230, 2240 (y cualquier
+--     otra 22xx de la nómina), con lo que cada nómina dejó por pagar. Cada
+--     renglón es una nómina: su día de pago, su journal, sus cargos casados
+--     y lo que queda. Cuadra cuando el libro y eso dicen lo mismo; si no,
+--     dice la diferencia en llano, qué nómina y qué cargos explican el
+--     resto, y dónde mirar lo que entró por otro lado.
+--   · ENTRE EL CARGO DE GUSTO Y EL DÍA DE PAGO la cuenta queda al revés (lo
+--     adelantado a Gusto): el auxiliar lo trae en negativo ese día, y la
+--     cuenta cuadra diciéndolo.
+--   · NADA SE CUENTA DOS VECES en 2210: el devengo es el asiento que se
+--     deshace solo; lo de la nómina, su journal y sus cargos. Un asiento de
+--     una nómina nunca cuenta como devengo.
+--   · SIN EL CÓDIGO DEL TELÉFONO la nómina no enseña lo de nadie (c15 lo
+--     pide para todo lo que lleva dinero). La cédula no abre esa puerta ni
+--     da un rojo falso: esas cuentas salen «con_codigo» («se ve con el
+--     código del teléfono»), sin compararse; el control y la fila 178 del
+--     cierre no las cuentan como «no cuadra» ni como «sin auxiliar», y lo
+--     dicen. Mientras no haya ninguna nómina en el libro no hay nada que
+--     tapar: con el código o sin él sale lo mismo.
+--   · SIN c15, COMO ANTES: «sin auxiliar: llega con la nómina (f11)». c15
+--     es opcional y se lee al vuelo (por su nombre, sin colgar de ella): se
+--     pega antes o después de esta capa, y no hace falta volver a pegar
+--     ninguna de las dos cuando llega la otra.
+--   · Lo nuevo: una función (fn_cedula_nomina: lo que la nómina dice, leído
+--     al vuelo), un estado (con_codigo), un porqué (codigo), una columna en
+--     fn_cedula_cuentas (nomina), una llave en los totales (con_codigo) y
+--     «c15» en fn_cedula_capas. Ninguna tabla cambia y no se toca un dato
+--     (ni la configuración, ni un renglón, ni una explicación): pegar esto
+--     encima de lo que hay en producción solo cambia funciones y vistas.
+--   · 2250 (los reembolsos a empleados) no cambia: el reembolso que paga una
+--     nómina entra a nombre de su empleado y ya sale en sus partidas.
+--   · UNA CUENTA POR PAGAR AL REVÉS YA NO «CUADRA» (13-nov, los arreglos de
+--     la verificación de la Fase 11b). La nómina paga un reembolso cuyo
+--     gasto no está registrado y la 2250 queda con saldo DEUDOR: sus
+--     partidas suman lo mismo (el empleado, en negativo) y la cédula la
+--     daba por buena. Un contador no: una cuenta por pagar con saldo deudor
+--     es que se pagó de más o que falta registrar lo que se debía. Desde
+--     hoy, una cuenta de PASIVO cuyo saldo queda al revés y que por lo demás
+--     cuadraría sale «no_cuadra», diciéndolo («está AL REVÉS»), con su qué
+--     hacer; el aviso 20 (y la fila 178 del cierre) la cuentan, y se puede
+--     explicar como cualquier otra. NO les toca a las cuentas que sostiene
+--     la nómina (2210 a 2240: entre el cargo de Gusto y el día de pago
+--     quedan al revés, y eso ya se dice; lo demás lo vigila el control de la
+--     nómina), ni a lo que sale del propio libro (el use tax), ni al activo
+--     ni al patrimonio. No cambia ninguna tabla ni la forma de ninguna
+--     función: solo lo que contestan fn_cedula y el detalle del aviso 20.
 --
 -- Qué hace. Max Power deja QuickBooks el 1-ene-2027. Para cortar con
 -- confianza hace falta saber, cuenta por cuenta del balance, QUÉ HAY DEBAJO
@@ -20,12 +79,16 @@
 --     saldo en el libro  |  su auxiliar (qué es y de dónde sale)  |
 --     lo que suma el auxiliar  |  la diferencia  |  el estado
 --
--- y el estado es uno de cinco:
+-- y el estado es uno de seis (los cinco de siempre y, desde el 13-nov,
+-- «con_codigo»):
 --     cuadra        el auxiliar suma lo mismo que la cuenta, al centavo, Y
 --                   ese auxiliar vale para ese día (un banco con la
 --                   conciliación de otro día no cuadra aunque la resta dé
 --                   cero) Y nada queda suelto que se compense (dos obras con
---                   saldos sin factura de signo contrario no cuadran)
+--                   saldos sin factura de signo contrario no cuadran) Y, si
+--                   es una cuenta por pagar que no sostiene la nómina, su
+--                   saldo no está al revés (13-nov: con saldo deudor es
+--                   «no_cuadra», y lo dice)
 --     del_libro     el «auxiliar» es el propio libro, ordenado (el
 --                   patrimonio por su mayor, el use tax por mes), o es un
 --                   papel de otro día llevado a la fecha con lo que el
@@ -41,6 +104,10 @@
 --                   dice por qué: «llega con la nómina (f11)», «se escribe a
 --                   mano», «todavía no hay activos cargados», «esa capa no
 --                   está en esta base»
+--     con_codigo    su auxiliar es el de la nómina (c15), que solo se enseña
+--                   con el código del teléfono, y esta sesión entró sin él:
+--                   no se lee ni se compara. No es «no cuadra» ni «sin
+--                   auxiliar»: solo falta mirarla con el código
 -- Y cada fila dice QUÉ HAY DEBAJO (sosten), para no confundir «cuadra con
 -- un papel» con «sale del libro»:
 --     papel      algo que no es el libro: el statement conciliado ese día,
@@ -137,10 +204,25 @@
 --     confirmación), la cuenta pasa a compararse con eso.
 --   · LO DEVENGADO (2050) y LOS SUELDOS ACUMULADOS (2210): cada asiento de
 --     devengo que sigue vivo ese día (los que c2 deshace solos el día 1: el
---     devengo de cierre, el estándar de horas de c3). La nómina devengada de
---     verdad, partida en dos años, llega con f11.
---   · EL RESTO DE LA NÓMINA (2215, 2220, 2225, 2230, 2240): sin auxiliar
---     todavía: llega con la nómina (f11, el diario de Gusto).
+--     devengo de cierre, el estándar de horas de c3). En 2210, ADEMÁS, lo
+--     que cada nómina dejó por pagar de su neto (lo que sigue).
+--   · LA NÓMINA (2210, 2215, 2220, 2225, 2230, 2240 y cualquier otra 22xx
+--     que no sea de un puente de c3): lo que cada nómina posteada dejó por
+--     pagar en esa cuenta a esa fecha, como lo lleva la nómina (c15): lo
+--     que su journal de Gusto acreditó menos lo que ya pagaron sus cargos
+--     casados. CON SU SIGNO: en negativo, lo que Gusto ya cobró de una
+--     nómina cuyo journal todavía no está en el libro ese día (Gusto cobra
+--     ANTES del día de pago: lo adelantado a Gusto), o lo que una
+--     corrección dejó a favor. Lo que la cuenta tiene sin ser de una nómina
+--     ni de un cargo casado con ella (un asiento a mano, un pago del banco
+--     clasificado en la Bandeja sin pasar por la nómina) no está en el
+--     auxiliar: es la diferencia, y sale aparte. En 2210 nada se cuenta dos
+--     veces: el devengo es el asiento que se deshace solo; un asiento de
+--     una nómina no cuenta nunca como devengo. SIN c15: sin auxiliar,
+--     «llega con la nómina (f11)». SIN EL CÓDIGO DEL TELÉFONO (y con alguna
+--     nómina ya en el libro): «con_codigo»: no se lee ni se compara. La
+--     regla de qué nómina cuenta cada día es de c15 (su función del
+--     auxiliar, a una fecha): aquí no se rehace.
 --   · LA RESERVA DE IMPUESTOS (1030): es un banco: su auxiliar es su
 --     conciliación. Lo que c9 calcula (cuánto DEBERÍA haber: la utilidad
 --     por el % del contador menos los estimados pagados) es una meta, no lo
@@ -166,8 +248,11 @@
 --     caja es la 1050 de siempre.
 -- LOS RENGLONES A MANO SUMAN AL AUXILIAR de su cuenta, tenga o no uno
 -- automático: así se sostiene lo que una capa no cubre (una línea de
--- crédito que c6 no lleva como préstamo, una fianza que no es póliza, el
--- 941 por depositar mientras no llega f11) sin tocar esa capa. La excepción
+-- crédito que c6 no lleva como préstamo, una fianza que no es póliza, las
+-- vacaciones devengadas que ninguna nómina trae) sin tocar esa capa. (OJO:
+-- un renglón escrito a mano en una cuenta de la nómina mientras no había
+-- nómina SUMA a lo que la nómina traiga: cuando ella ya trae ese saldo, al
+-- renglón se le pone su «hasta».) La excepción
 -- es lo que sale del propio libro (el patrimonio por su mayor, el use tax
 -- por mes): ahí los renglones a mano no suman, SUSTITUYEN: la cuenta pasa a
 -- compararse con lo escrito (el mayor queda debajo, de referencia), que es
@@ -176,8 +261,8 @@
 --
 -- LA FECHA. La cédula se pide a un día (fn_cedula('2026-11-30')); todo se
 -- toma con lo fechado hasta ese día inclusive. Los auxiliares que tienen
--- fecha (partidas, cuotas, activos, ajustes de WIP, devengos, renglones a
--- mano) se cortan a ese día. Una conciliación es de SU día (arriba). Dos no
+-- fecha (partidas, cuotas, activos, ajustes de WIP, devengos, lo que cada
+-- nómina dejó por pagar, renglones a mano) se cortan a ese día. Una conciliación es de SU día (arriba). Dos no
 -- tienen fecha —lo que Stripe dice que falta depositar y lo que les falta a
 -- las pólizas son «hoy», como en los cuadres de p1 y de c6—: la fila dice
 -- que su auxiliar es el de hoy (auxiliar_al), y a una fecha anterior NO se
@@ -242,6 +327,10 @@
 -- cuentas: la ronda de c9 avisa al teléfono de cada rojo nuevo por el
 -- nombre de la fila, y una lista que se va acortando mientras Edgar la
 -- trabaja sería un aviso cada mañana. El detalle sí la trae.
+-- LO QUE SOLO FALTA MIRAR CON EL CÓDIGO DEL TELÉFONO (las cuentas de la
+-- nómina, en una sesión que entró sin él) NO PONE NADA EN ROJO: ni el 20 ni
+-- el 30 las cuentan; el 20 —y con él la fila 178— dice cuántas son y que
+-- se entra con el código. (La ronda de c9 no va por la API: las ve todas.)
 --
 -- Decisiones de diseño (lo que f12 y el encargo dejaban abierto):
 --   · «PATRIMONIO» EN EL PLAN ES EL TIPO «capital» (3000, 3100, 3200,
@@ -281,6 +370,29 @@
 --     están): esta capa no cuelga de ninguna; si una falta, o si cambia de
 --     forma y no se puede leer, sus cuentas salen «sin auxiliar» con ese
 --     porqué y lo demás sigue.
+--   · (13-nov) DE LA NÓMINA SE LEE SOLO SU FUNCIÓN DEL AUXILIAR, no sus
+--     tablas: qué corrida cuenta cada día, qué cargo sigue casado y qué
+--     quedó a favor son reglas de c15 y no se rehacen aquí. El precio: lo
+--     que entró a una cuenta de la nómina por otro lado sale en UN renglón
+--     (la diferencia), sin decir qué asiento es; eso lo dice, asiento por
+--     asiento, el control de la propia nómina («lo que entró por otro
+--     lado»), y la fila manda allí.
+--   · (13-nov) «con_codigo» ES UN ESTADO, NO UN «sin auxiliar»: decir «sin
+--     auxiliar» de una cuenta que sí lo tiene sería un rojo falso, y
+--     compararla sin ver la nómina, otro. SIEMPRE pide lo mismo (entrar con
+--     el código), TENGA SALDO O NO: una cuenta en cero en el libro puede
+--     tener algo abierto en su nómina (lo que una nómina dejó por pagar y
+--     alguien pagó por otro lado), y darla por buena sin verlo sería un
+--     verde falso. Por eso cuenta entre las pendientes de los totales (la
+--     cédula no está «lista» mientras haya algo sin mirar); pero no es un
+--     descuadre: ni el control ni el cierre se ponen en rojo por ella, y
+--     lo dicen. Y solo sale si hay alguna nómina en el libro (el journal de
+--     una corrida, que lee quien lee el libro): sin ninguna, el auxiliar de
+--     la nómina está vacío con seguridad y no hay nada que tapar.
+--   · (13-nov) LO DE LA NÓMINA ES «PAPEL» (el journal de Gusto y los cargos
+--     del banco casados con él), no «partidas»: una 22xx de la nómina que
+--     cuadra, cuadra con un papel. En 2210, mezclado con un devengo vivo,
+--     se dice lo más débil («partidas») y la fila explica las dos cosas.
 --
 -- LA SEGURIDAD (la regla de c2, B.20, y lo que c4, c6, c8, c9, c10 y c12
 -- sellan):
@@ -295,6 +407,13 @@
 --     partes de la contabilidad hay instaladas: fn_cedula_capas le da {}).
 --   · fn_cedula_pegado y fn_cedula_precondiciones: sin API (solo el SQL
 --     Editor).
+--   · (13-nov) LA NÓMINA NO SE ABRE DESDE AQUÍ. fn_cedula_nomina es
+--     SECURITY INVOKER como todas: llama a la función del auxiliar de c15
+--     con los permisos de quien llama, y c15 solo enseña lo que lleva
+--     dinero de una nómina al dueño con su código (aal2). Sin el código la
+--     cédula ni la llama: dice «se ve con el código del teléfono». Lo que sí
+--     enseña sin él es lo que ya lee quien lee el libro (el saldo de la
+--     cuenta), nada de ninguna nómina.
 --   · Las tablas nacen con RLS y policies solo-dueño, y con la guarda de c6,
 --     c9, c10 y c12: un trigger (fn_cedula_guarda) que solo deja escribir
 --     con la marca de la transacción (mx_cedula.escribe = la tabla) que
@@ -323,8 +442,9 @@
 --          patrimonio) o es de grupo
 --   MX005  un monto mal: no es un número, cero, o con más de dos decimales
 --   MX008  no procede: la cuenta cuadra a esa fecha o sale del propio
---          libro (no hay nada que explicar), no hay explicación que retirar,
---          el renglón ya estaba anulado o sustituido
+--          libro (no hay nada que explicar), es de la nómina y falta el
+--          código del teléfono (no se ve qué explicar), no hay explicación
+--          que retirar, el renglón ya estaba anulado o sustituido
 --   22023  entrada mal formada: falta un dato (qué es, desde cuándo, el
 --          texto), una clave desconocida, una fecha o un mes mal escritos,
 --          un texto demasiado corto, una fecha que todavía no llega, un
@@ -333,8 +453,10 @@
 --   55P03  (de Postgres, «lock timeout») la app estaba usando las tablas de
 --          c13 mientras se pegaba: no se aplicó nada, se vuelve a pegar
 --
--- Lo que este archivo NO toca: c1..c12, s1, p1, es_dueno(), docs/sql, el
--- libro (ni postea ni reversa: solo lee), el banco, las tablas de la app
+-- Lo que este archivo NO toca: c1..c12, c14, c15, s1, p1, es_dueno(),
+-- docs/sql, el libro (ni postea ni reversa: solo lee), el banco, la nómina
+-- (de c15 llama, si están, a su función del auxiliar y a la que dice si la
+-- sesión pasó el código; ninguna tabla suya), las tablas de la app
 -- (lee proyectos, facturas, cobros, recibos, trabajos_externos, proveedores
 -- y perfiles). No pone índices, triggers ni policies en tablas ajenas (sus
 -- tres tablas apuntan a cuentas con una llave foránea, como las de c9 y
@@ -358,21 +480,24 @@
 --      que tienes no la nombra, volver a pegarlo no cambia nada: la cédula
 --      funciona entera sin él, y solo falta su aviso en la lista del
 --      cierre; la prueba que lo comprueba sale «omitida» diciéndolo).
---   3. SQL Editor → pegar docs/conta/c13-pruebas.sql → sus 41 filas, todas
+--   3. SQL Editor → pegar docs/conta/c13-pruebas.sql → sus 47 filas, todas
 --      en true (las «omitida» dicen por qué; no es un fallo). Corre también
 --      con todos los meses terminados ya cerrados: entonces prueba en el
 --      mes que corre, con el reloj fingido dentro de cada prueba.
 --   4. En la app: Contabilidad → Cédula.
+--   (Y LA NÓMINA: c15-nomina.sql se pega cuando toque, antes o después de
+--   este archivo. No hay que volver a pegar nada: la cédula la lee sola.)
 --
 -- Lo que llama la pantalla (RPC, como el dueño; las que escriben, con POST):
 --   fn_cedula(p_fecha date)                       solo lee: la cédula, una fila por cuenta (estado: cuadra | del_libro |
---                                                 explicada | no_cuadra | sin_auxiliar; sosten: papel | partidas | libro |
---                                                 llevado; par y solo_reparto en un préstamo)
+--                                                 explicada | no_cuadra | sin_auxiliar | con_codigo; sosten: papel |
+--                                                 partidas | libro | llevado; par y solo_reparto en un préstamo)
 --   fn_cedula_partidas(p_fecha date, p_cuenta text)   solo lee: los renglones del auxiliar de una cuenta (o de todas); clase:
 --                                                 auxiliar | libro (sale del propio libro) | suelto | despues | dato | error
 --   fn_cedula_resumen(p_fecha date)               solo lee: los totales (la pantalla no suma), con resultado,
 --                                                 patrimonio_total, balance_cuadra, del_libro, cuadran_papel,
---                                                 cuadran_partidas, reparto_pendiente y reparto_cuentas
+--                                                 cuadran_partidas, reparto_pendiente, reparto_cuentas y con_codigo
+--                                                 (las cuentas de la nómina que solo falta mirar con el código)
 --   fn_cedula_qb(p_periodo text)                  solo lee: la cédula al lado de QuickBooks (c4)
 --   fn_cedula_explicar(p_cuenta text, p_fecha date, p_texto text)
 --   fn_cedula_explicacion_retirar(p_cuenta text, p_fecha date, p_motivo text)
@@ -384,6 +509,9 @@
 --   fn_cedula_control(p_periodo text) / fn_cedula_cierre(p_periodo text)
 -- Y lee: v_cedula (la del día que toca), v_cedula_control, v_cedula_manual,
 -- v_cedula_explicaciones, v_cedula_qb (filtrada por periodo), cedula_config.
+-- (fn_cedula_nomina(p_fecha) es de uso interno de la cédula: lo que la
+-- nómina dice de sus cuentas por pagar a una fecha. La pantalla no la llama;
+-- el dueño la puede leer, y a los demás no les da nada.)
 -- Montos en dólares, numeric(14,2), CADA UNO EN EL LADO NATURAL DE SU
 -- CUENTA: positivo = lo normal (un activo, lo que hay; un pasivo, lo que se
 -- debe; la depreciación acumulada, lo depreciado). «signo» (1 o −1) lo pasa
@@ -432,8 +560,8 @@ declare
   c_vistas constant text[] := array['v_cedula', 'v_cedula_control', 'v_cedula_manual', 'v_cedula_explicaciones', 'v_cedula_qb'];
   c_fn     constant text[] := array['fn_cedula_precondiciones', 'fn_cedula_exigir_dueno', 'fn_cedula_ve', 'fn_cedula_guarda',
                                     'fn_cedula_usd', 'fn_cedula_dia', 'fn_cedula_mes', 'fn_cedula_monto', 'fn_cedula_capas',
-                                    'fn_cedula_toca', 'fn_cedula_cuentas', 'fn_cedula_partidas', 'fn_cedula', 'fn_cedula_resumen',
-                                    'fn_cedula_qb', 'fn_cedula_qb_periodos', 'fn_cedula_config', 'fn_cedula_renglon',
+                                    'fn_cedula_nomina', 'fn_cedula_toca', 'fn_cedula_cuentas', 'fn_cedula_partidas', 'fn_cedula',
+                                    'fn_cedula_resumen', 'fn_cedula_qb', 'fn_cedula_qb_periodos', 'fn_cedula_config', 'fn_cedula_renglon',
                                     'fn_cedula_renglon_anular', 'fn_cedula_explicar', 'fn_cedula_explicacion_retirar',
                                     'fn_cedula_control', 'fn_cedula_cierre', 'fn_cedula_pegado'];
 begin
@@ -449,7 +577,7 @@ begin
     end if;
   end loop;
   if cardinality(v_falta) > 0 then
-    return format('c13 se pega después de c1, c2 y c3 (y de c4, c6, c7, s1, p1, c8, c9, c10, c11 y c12 si se usan), con las tablas de '
+    return format('c13 se pega después de c1, c2 y c3 (y de c4, c6, c7, s1, p1, c8, c9, c10, c11 y c12 si se usan; la nómina, c15, antes o después), con las tablas de '
                   'la app: falta %s.', array_to_string(v_falta, ', '));
   end if;
   -- La versión de c2 que va con esta capa (la del tiempo en producción).
@@ -883,6 +1011,9 @@ comment on function public.fn_cedula_monto(text, text) is 'c13: un monto que lle
 --   c9   el cierre: los activos fijos y su depreciación
 --   c12  el WIP: sus ajustes
 --   p1   los cobros en línea (Stripe)
+--   c15  la nómina (13-nov): su función del auxiliar a una fecha. De ella no
+--        se lee ninguna tabla: solo esa función (y la que dice si la sesión
+--        pasó el código del teléfono), por fn_cedula_nomina
 create or replace function public.fn_cedula_capas() returns jsonb
 language sql stable
 set search_path = public, pg_temp
@@ -896,11 +1027,92 @@ as $$
     'c12', to_regclass('public.wip_ajustes') is not null and to_regclass('public.wip_ajuste_obras') is not null,
     'p1',  to_regclass('public.stripe_config') is not null and to_regclass('public.stripe_pagos') is not null
            and to_regclass('public.stripe_payouts') is not null and to_regclass('public.stripe_payout_lineas') is not null
-           and to_regclass('public.v_stripe_pagos') is not null) end
+           and to_regclass('public.v_stripe_pagos') is not null,
+    'c15', to_regprocedure('public.fn_nomina_auxiliar(date)') is not null) end
 $$;
 revoke execute on function public.fn_cedula_capas() from public, anon, service_role;
 grant  execute on function public.fn_cedula_capas() to authenticated;
-comment on function public.fn_cedula_capas() is 'c13: qué capas opcionales están en esta base ({"c4", "c6", "c9", "c12", "p1"}: verdadero o falso), por sus tablas y vistas. La cédula las lee al vuelo solo si están; si una falta, sus cuentas salen sin auxiliar con ese porqué. A quien no es el dueño, nada ({}).';
+comment on function public.fn_cedula_capas() is 'c13: qué capas opcionales están en esta base ({"c4", "c6", "c9", "c12", "p1", "c15"}: verdadero o falso), por sus tablas y vistas (la nómina, c15, por su función del auxiliar). La cédula las lee al vuelo solo si están; si una falta, sus cuentas salen sin auxiliar con ese porqué. A quien no es el dueño, nada ({}).';
+
+-- LO QUE LA NÓMINA (c15) DICE DE SUS CUENTAS POR PAGAR (13-nov, Fase 11b).
+-- La nómina es una capa opcional: se lee al vuelo y SOLO por su función del
+-- auxiliar a una fecha (por su nombre, con to_regprocedure y execute: nada
+-- de aquí cuelga de c15, que se pega antes o después de esta capa). Qué
+-- nómina cuenta cada día, qué cargo sigue casado y qué quedó a favor son
+-- reglas suyas: aquí no se rehacen. Devuelve siempre un objeto:
+--   estado   'no_esta'  la nómina no está en esta base
+--            'ok'       está y se puede leer (o todavía no hay ninguna
+--                       nómina en el libro: su auxiliar está vacío con
+--                       seguridad, con el código o sin él)
+--            'codigo'   está, hay nóminas en el libro y esta sesión entró
+--                       sin el código del teléfono: c15 no enseña lo de
+--                       ninguna nómina sin él, y aquí NO SE INTENTA LEER
+--                       (sin el código su función devuelve cero filas, sin
+--                       error: se tomarían por «no hay nada por pagar» y la
+--                       cuenta saldría en un rojo falso)
+--            'error'    está y no se pudo leer (cambió de forma): error
+--                       dice lo que contestó
+--   nominas  si hay alguna nómina en el libro: el journal de una corrida,
+--            un asiento con origen «nomina_corridas» (lo lee quien lee el
+--            libro: no hace falta el código para saberlo)
+--   filas    CON FECHA y estado 'ok': un renglón por cuenta y nómina con
+--            saldo ese día: {cuenta, corrida, dia_pago, descripcion,
+--            acreditado (lo que su journal dejó por pagar), pagado (lo que
+--            sus cargos casados ya movieron), saldo (en positivo, lo que se
+--            debe; en negativo, lo que ya se pagó de una nómina cuyo journal
+--            todavía no está en el libro ese día —Gusto cobra antes del día
+--            de pago—, o lo que una corrección dejó a favor), asiento (el
+--            número de su journal), cargos (qué cargos la pagaron)}
+-- SIN FECHA no lee renglones: dice solo si está y si se puede leer (lo que
+-- necesita fn_cedula_cuentas). SECURITY INVOKER: lee con los permisos de
+-- quien llama; a quien no es el dueño, {}.
+create or replace function public.fn_cedula_nomina(p_fecha date default null) returns jsonb
+language plpgsql stable
+set search_path = public, pg_temp
+as $$
+declare
+  v_hay  boolean;
+  v_cod  boolean;
+  v_j    jsonb;
+begin
+  if not fn_cedula_ve() then
+    return '{}'::jsonb;
+  end if;
+  if not coalesce((fn_cedula_capas()->>'c15')::boolean, false) then
+    return jsonb_build_object('estado', 'no_esta', 'nominas', false);
+  end if;
+  -- ¿Hay alguna nómina en el libro? Sin ninguna, nadie ha dejado nada por pagar ni hay cargo que casar: no hay nada que
+  -- leer ni que tapar, y la cuenta se compara igual con el código que sin él.
+  select exists (select 1 from asientos a where a.origen_tabla = 'nomina_corridas') into v_hay;
+  if not v_hay then
+    return jsonb_build_object('estado', 'ok', 'nominas', false, 'filas', '[]'::jsonb);
+  end if;
+  -- El código del teléfono, como lo mira la propia nómina (fuera de la API —el SQL Editor, la ronda— no hace falta).
+  begin
+    execute 'select public.fn_nomina_aal2()' into v_cod;
+  exception when others then
+    return jsonb_build_object('estado', 'error', 'nominas', true, 'error', left(sqlerrm, 200));
+  end;
+  if not coalesce(v_cod, false) then
+    return jsonb_build_object('estado', 'codigo', 'nominas', true);
+  end if;
+  if p_fecha is null then
+    return jsonb_build_object('estado', 'ok', 'nominas', true);
+  end if;
+  begin
+    execute 'select coalesce(jsonb_agg(jsonb_build_object(''cuenta'', x.cuenta, ''corrida'', x.corrida_id, ''dia_pago'', x.dia_pago, '
+         || '''descripcion'', x.descripcion, ''acreditado'', x.acreditado, ''pagado'', x.pagado, ''saldo'', x.saldo, '
+         || '''asiento'', x.asiento, ''cargos'', x.cargos) order by x.cuenta, x.dia_pago, x.corrida_id), ''[]''::jsonb) '
+         || 'from public.fn_nomina_auxiliar($1) x'
+       into v_j using p_fecha;
+  exception when others then
+    return jsonb_build_object('estado', 'error', 'nominas', true, 'error', left(sqlerrm, 200));
+  end;
+  return jsonb_build_object('estado', 'ok', 'nominas', true, 'filas', v_j);
+end $$;
+revoke execute on function public.fn_cedula_nomina(date) from public, anon, service_role;
+grant  execute on function public.fn_cedula_nomina(date) to authenticated;
+comment on function public.fn_cedula_nomina(date) is 'c13: lo que la nómina (c15, opcional: se lee al vuelo, solo por su función del auxiliar) dice de sus cuentas por pagar a una fecha: {estado (no_esta: la nómina no está en esta base; ok: está y se puede leer, o todavía no hay ninguna nómina en el libro; codigo: hay nóminas y esta sesión entró sin el código del teléfono, así que no se lee; error: no se pudo leer), nominas (si hay alguna nómina en el libro), error, filas (con fecha y estado ok: por cuenta y nómina con saldo ese día, su día de pago, su descripción, lo que su journal dejó por pagar, lo que sus cargos casados ya pagaron, el saldo con su signo, su asiento y sus cargos)}. Sin fecha no lee renglones: solo dice si está y si se puede leer. Lee con los permisos de quien llama: no abre lo que la nómina solo enseña con el código. Solo lectura; a quien no es el dueño, {}.';
 
 -- EL PERÍODO QUE TOCA: el mes (o la apertura) abierto más viejo que ya
 -- terminó —el que se está cerrando—; si no hay ninguno, el último cerrado;
@@ -940,7 +1152,8 @@ comment on function public.fn_cedula_toca() is 'c13: el período que toca: el me
 --   fuente       de dónde sale su auxiliar automático: conciliacion |
 --                partidas | prestamos | prepagados | activos | depreciacion |
 --                wip | stripe | stripe_paso | dr15 | devengos | mayor |
---                nomina | manual (los dos últimos no tienen automático)
+--                nomina (lo tiene si la nómina, c15, está y se puede leer) |
+--                manual (no tiene automático)
 --   forma        dentro de «partidas»: cobrar (por factura) o pagar (por
 --                proveedor o empleado)
 --   auxiliar     su nombre en llano; origen, de dónde sale, en llano
@@ -950,6 +1163,11 @@ comment on function public.fn_cedula_toca() is 'c13: el período que toca: el me
 --                salen del libro, siempre); vacio dice qué falta si no
 --   par          en un préstamo, la otra cuenta del mismo (corriente ↔ largo
 --                plazo)
+--   nomina       (13-nov) en las cuentas que se sostienen con lo que cada
+--                nómina dejó por pagar (las de fuente «nomina» y los sueldos
+--                acumulados, que suman el devengo y lo de la nómina): cómo
+--                está la nómina para esta sesión: no_esta | ok | codigo
+--                (falta el código del teléfono) | error. En las demás, nulo
 -- La regla, en orden: Stripe (las cuentas de su configuración); el WIP
 -- (1200, 2400, 2410); 1590; las demás 15xx; las cuentas de los préstamos y
 -- toda 25xx; las de las pólizas y 1410, 1420; la caja chica (la del
@@ -961,7 +1179,7 @@ comment on function public.fn_cedula_toca() is 'c13: el período que toca: el me
 drop function if exists public.fn_cedula_cuentas();
 create function public.fn_cedula_cuentas()
 returns table (cuenta text, nombre text, tipo text, activa boolean, signo int, fuente text, forma text, auxiliar text, origen text,
-               capa text, capa_esta boolean, hay boolean, vacio text, par text)
+               capa text, capa_esta boolean, hay boolean, vacio text, par text, nomina text)
 language plpgsql stable
 set search_path = public, pg_temp
 as $$
@@ -991,10 +1209,21 @@ declare
   v_act     text[] := '{}';     -- cuentas con un activo
   v_banco   text[] := '{}';     -- cuentas que el banco trae (con movimientos importados)
   v_err     jsonb  := '{}'::jsonb;  -- {capa: por qué no se pudo leer}
+  v_nom     text   := 'no_esta';    -- la nómina (c15) para esta sesión: no_esta | ok | codigo | error
+  v_nomerr  text;
+  v_nj      jsonb;
 begin
   if not fn_cedula_ve() then
     return;
   end if;
+  -- La nómina (c15), al vuelo: ¿está?, ¿la puede leer esta sesión? (sin fecha: no lee ni un renglón)
+  begin
+    v_nj     := fn_cedula_nomina(null);
+    v_nom    := coalesce(v_nj->>'estado', 'no_esta');
+    v_nomerr := v_nj->>'error';
+  exception when others then
+    v_nom := 'error'; v_nomerr := sqlerrm;
+  end;
   v_c6  := coalesce((v_capas->>'c6')::boolean, false);
   v_c9  := coalesce((v_capas->>'c9')::boolean, false);
   v_c12 := coalesce((v_capas->>'c12')::boolean, false);
@@ -1119,9 +1348,11 @@ begin
             when 'stripe' then 'Lo cobrado en línea que falta depositar'
             when 'stripe_paso' then 'Los depósitos de Stripe en camino'
             when 'dr15' then 'El use tax por mes'
-            when 'devengos' then case when g.codigo = v_sdev then 'El devengo de las horas aprobadas' else 'Los devengos del cierre, uno por uno' end
+            when 'devengos' then case when g.codigo <> v_sdev then 'Los devengos del cierre, uno por uno'
+                                      when v_nom = 'no_esta' then 'El devengo de las horas aprobadas'
+                                      else 'El devengo de las horas aprobadas y lo que cada nómina dejó por pagar' end
             when 'mayor' then 'Su propio mayor'
-            when 'nomina' then 'El diario de la nómina'
+            when 'nomina' then case when v_nom = 'no_esta' then 'El diario de la nómina' else 'Lo que cada nómina dejó por pagar' end
             else case when g.codigo is not distinct from v_caja then 'El arqueo de caja' else 'Renglones escritos a mano' end end),
          -- de dónde sale, en llano
          (case g.fuente
@@ -1143,10 +1374,12 @@ begin
             when 'stripe' then 'Cada cobro en línea que Stripe todavía no ha depositado en el banco (Cobros en línea).'
             when 'stripe_paso' then 'Es una cuenta de paso entre Stripe y el banco: debe estar en cero.'
             when 'dr15' then 'Lo devengado y lo pagado de use tax cada mes, del propio libro (y lo que trajo la apertura): dice de qué mes es cada saldo, no lo compara con nada. Para compararlo, escribe a mano lo que dice cada DR-15 presentado (con su número de confirmación): entonces la cuenta se compara con eso.'
-            when 'devengos' then case when g.codigo = v_sdev then 'El asiento de devengo de las horas aprobadas que sigue vivo (se deshace solo el día 1). La nómina devengada de verdad llega con la nómina (f11).'
-                                      else 'Cada asiento de devengo que sigue vivo (se deshace solo el día 1 del mes siguiente). Lo demás se escribe a mano.' end
+            when 'devengos' then case when g.codigo <> v_sdev then 'Cada asiento de devengo que sigue vivo (se deshace solo el día 1 del mes siguiente). Lo demás se escribe a mano.'
+                                      when v_nom = 'no_esta' then 'El asiento de devengo de las horas aprobadas que sigue vivo (se deshace solo el día 1). La nómina devengada de verdad llega con la nómina (f11).'
+                                      else 'El asiento de devengo de las horas aprobadas que sigue vivo (se deshace solo el día 1), más lo que cada nómina posteada en Contabilidad → Nómina dejó por pagar de su neto: lo que su journal de Gusto acreditó menos lo que ya pagaron sus cargos casados. Entre el cargo de Gusto y el día de pago sale en negativo: lo adelantado a Gusto.' end
             when 'mayor' then 'Lo que trajo la apertura (la balanza de QuickBooks) más cada asiento posterior, mes por mes: es el propio libro, ordenado; no lo compara con nada. Lo amarra la comparación con QuickBooks; y si se escriben a mano sus renglones (el acta, la declaración), se compara con eso.'
-            when 'nomina' then 'Llega con la nómina (f11): el diario de Gusto. Mientras, lo que tenga se escribe a mano.'
+            when 'nomina' then case when v_nom = 'no_esta' then 'Llega con la nómina (f11): el diario de Gusto. Mientras, lo que tenga se escribe a mano.'
+                                    else 'Cada nómina posteada en Contabilidad → Nómina: lo que su journal de Gusto dejó por pagar en esta cuenta menos lo que ya pagaron sus cargos casados. Si Gusto cobró antes del día de pago, sale en negativo hasta ese día (lo adelantado a Gusto). Lo que no sea de una nómina se escribe a mano.' end
             else case when g.codigo is not distinct from v_caja then 'El efectivo contado, escrito a mano con su fecha.'
                       when g.tarjeta_sin_alta then 'Es una subcuenta de tarjetas que todavía no está dada de alta como tarjeta de la empresa: sin su alta no se concilia en Conciliar. Mientras, lo que dice su statement se escribe a mano.'
                       else 'La base no lo sabe: lo que Edgar escribe (qué es, cuánto, con qué documento).' end end),
@@ -1161,7 +1394,9 @@ begin
                when g.fuente = 'depreciacion' then v_c9 and cardinality(v_act) > 0
                when g.fuente = 'wip' then v_c12
                when g.fuente in ('stripe', 'stripe_paso') then v_p1
-               when g.fuente in ('manual', 'nomina') then false
+               when g.fuente = 'manual' then false
+               -- (la nómina: si está y esta sesión la puede leer; sin el código, o si cambió de forma, no)
+               when g.fuente = 'nomina' then v_nom = 'ok'
                else true end),
          -- por qué no, en llano (nulo si lo tiene)
          (case when g.capa = 'c6' and not v_c6 then 'la parte del banco (c6) no está en esta base'
@@ -1174,18 +1409,22 @@ begin
                when g.fuente = 'prepagados' and not g.codigo = any (v_prep) then 'no hay ninguna póliza registrada en esta cuenta'
                when g.fuente = 'activos' and not g.codigo = any (v_act) then 'todavía no hay activos fijos cargados en esta cuenta (llegan con la cédula del contador)'
                when g.fuente = 'depreciacion' and cardinality(v_act) = 0 then 'todavía no hay activos fijos cargados (llegan con la cédula del contador)'
-               when g.fuente = 'nomina' then 'llega con la nómina (f11)'
+               when g.fuente = 'nomina' then case v_nom when 'no_esta' then 'llega con la nómina (f11)'
+                                                         when 'codigo' then 'se ve con el código del teléfono'
+                                                         when 'error' then 'no se pudo leer su auxiliar (' || left(coalesce(v_nomerr, 'la nómina no contestó'), 160) || ')' end
                when g.fuente = 'manual' then case when g.codigo is not distinct from v_caja then 'se cuenta el efectivo y se escribe a mano'
                                                   when g.tarjeta_sin_alta then 'es una tarjeta que no está dada de alta (sin su alta no se concilia); mientras, su statement se escribe a mano'
                                                   else 'la base no lo sabe: se escribe a mano' end
           end),
-         (case when g.fuente = 'prestamos' then v_pares->>g.codigo end)
+         (case when g.fuente = 'prestamos' then v_pares->>g.codigo end),
+         -- (las cuentas que se sostienen con lo que cada nómina dejó por pagar: cómo está la nómina para esta sesión)
+         (case when g.fuente = 'nomina' or (g.fuente = 'devengos' and g.codigo = v_sdev) then v_nom end)
     from g
    order by g.codigo;
 end $$;
 revoke execute on function public.fn_cedula_cuentas() from public, anon, service_role;
 grant  execute on function public.fn_cedula_cuentas() to authenticated;
-comment on function public.fn_cedula_cuentas() is 'c13: de dónde sale el auxiliar de cada cuenta de balance (activo, pasivo y patrimonio, imputable): su signo (1 deudora, −1 acreedora), la fuente de su auxiliar automático (conciliacion, partidas, prestamos, prepagados, activos, depreciacion, wip, stripe, stripe_paso, dr15, devengos, mayor; nomina y manual no lo tienen), su nombre y su origen en llano, la capa que lo lleva y si está, si tiene con qué (hay) y, si no, por qué (vacio), y en un préstamo la otra cuenta del par. La regla sale de lo que la cuenta es (un banco, una tarjeta, la cuenta de un puente de c3, de un préstamo, de una póliza), no de una lista fija. La caja chica es la cuenta de la forma de pago «efectivo» de c3, salvo que el banco la traiga (un estado de cuenta importado, movimientos o una conciliación): entonces sigue siendo un banco, su origen lo avisa, y la caja es la 1050. Solo lectura; a quien no es el dueño, nada.';
+comment on function public.fn_cedula_cuentas() is 'c13: de dónde sale el auxiliar de cada cuenta de balance (activo, pasivo y patrimonio, imputable): su signo (1 deudora, −1 acreedora), la fuente de su auxiliar automático (conciliacion, partidas, prestamos, prepagados, activos, depreciacion, wip, stripe, stripe_paso, dr15, devengos, mayor; nomina lo tiene si la nómina está y se puede leer; manual no lo tiene), su nombre y su origen en llano, la capa que lo lleva y si está, si tiene con qué (hay) y, si no, por qué (vacio), en un préstamo la otra cuenta del par y, en las cuentas que se sostienen con lo que cada nómina dejó por pagar (las de la nómina y los sueldos acumulados), cómo está la nómina para esta sesión (nomina: no_esta, ok, codigo —falta el código del teléfono— o error). La regla sale de lo que la cuenta es (un banco, una tarjeta, la cuenta de un puente de c3, de un préstamo, de una póliza), no de una lista fija. La caja chica es la cuenta de la forma de pago «efectivo» de c3, salvo que el banco la traiga (un estado de cuenta importado, movimientos o una conciliación): entonces sigue siendo un banco, su origen lo avisa, y la caja es la 1050. Solo lectura; a quien no es el dueño, nada.';
 
 -- LOS RENGLONES DEL AUXILIAR de cada cuenta (o de una) a una fecha: lo que
 -- hay DEBAJO de cada saldo. Es de donde la cédula saca lo que suma el
@@ -1199,9 +1438,12 @@ comment on function public.fn_cedula_cuentas() is 'c13: de dónde sale el auxili
 --                                renglones a mano: con ellos, se compara con
 --                                ellos y estos quedan como detalle
 --                    'suelto'    lo que el libro tiene en la cuenta sin decir
---                                de qué es (sin factura, sin proveedor, o
---                                que no es un devengo vivo): no es auxiliar;
---                                va en «libro» y es parte de la diferencia
+--                                de qué es (sin factura, sin proveedor, que
+--                                no es un devengo vivo, o —en una cuenta de
+--                                la nómina— que no es lo que una nómina dejó
+--                                por pagar ni un cargo casado con ella): no
+--                                es auxiliar; va en «libro» y es parte de la
+--                                diferencia
 --                    'despues'   (bancos y tarjetas) lo que el libro movió
 --                                después de la última conciliación
 --                                confirmada, hasta la fecha; (pólizas) lo
@@ -1211,11 +1453,15 @@ comment on function public.fn_cedula_cuentas() is 'c13: de dónde sale el auxili
 --                                por qué)
 --                    'dato'      algo que se enseña al lado y no suma ni se
 --                                compara: en la reserva de impuestos (1030),
---                                lo que el cierre dice que debería haber.
+--                                lo que el cierre dice que debería haber; en
+--                                una cuenta de la nómina mirada sin el código
+--                                del teléfono, que lo suyo se ve con él.
 --                                Solo sale al pedir esa cuenta
---   fuente           de dónde sale: la de fn_cedula_cuentas, o 'manual'
+--   fuente           de dónde sale: la de fn_cedula_cuentas, o 'manual'; en
+--                    los sueldos acumulados, 'devengos' (el asiento vivo) o
+--                    'nomina' (lo que una nómina dejó por pagar)
 --   clave            lo que identifica el renglón (el id de la factura, del
---                    préstamo, del activo, del renglón a mano…)
+--                    préstamo, del activo, de la nómina, del renglón a mano…)
 --   grupo            la obra (de la factura; de lo suelto en las cuentas por
 --                    cobrar), o «proveedor» / «empleado»
 --   concepto, referencia, fecha, nota   lo que es, en llano
@@ -1241,21 +1487,49 @@ declare
   c_int   constant text := '^-?[0-9]{1,18}$';
   v_f     date;
   v_hoy   date := fn_fecha_miami(now());
-  v_cat   jsonb;                  -- {cuenta: {f: fuente, m: forma, s: signo, ok: su capa está}}
+  v_cat   jsonb;                  -- {cuenta: {f: fuente, m: forma, s: signo, ok: su capa está, n: cómo está la nómina}}
   v_all   jsonb := '[]'::jsonb;
   v_j     jsonb;
   v_ctas  text[];
+  v_nom   jsonb;                  -- lo que la nómina (c15) dice ese día (fn_cedula_nomina)
+  v_nest  text;                   -- y cómo salió su lectura: ok | error (o nulo: ninguna cuenta pedida la usa)
+  v_nt    jsonb := '{}'::jsonb;   -- {cuenta: lo que la nómina explica de su saldo ese día, en debe − haber}
 begin
   if not fn_cedula_ve() then
     return;
   end if;
   v_f := coalesce(p_fecha, (select q.hasta from periodos q where q.periodo = fn_cedula_toca()), v_hoy);
-  select coalesce(jsonb_object_agg(c.cuenta, jsonb_build_object('f', c.fuente, 'm', c.forma, 's', c.signo, 'ok', c.capa_esta)), '{}'::jsonb)
+  select coalesce(jsonb_object_agg(c.cuenta, jsonb_build_object('f', c.fuente, 'm', c.forma, 's', c.signo, 'ok', c.capa_esta, 'n', c.nomina)),
+                  '{}'::jsonb)
     into v_cat
     from fn_cedula_cuentas() c
    where p_cuenta is null or c.cuenta = p_cuenta;
   if v_cat = '{}'::jsonb then
     return;
+  end if;
+
+  -- (0) LA NÓMINA (c15), UNA SOLA LECTURA: lo que cada nómina dejó por pagar
+  --     ese día en las cuentas pedidas que se sostienen con ella (las 22xx de
+  --     la nómina y los sueldos acumulados), solo si esta sesión la puede
+  --     leer. Va delante porque el bloque de los devengos (C) lo necesita: en
+  --     los sueldos acumulados, lo suelto es lo que no es ni un devengo vivo
+  --     ni de una nómina. Si no se pudo leer (ahora, o ya al mirar si
+  --     estaba), sus cuentas llevan un renglón 'error' (C2) y lo demás sigue.
+  v_ctas := array(select e.key from jsonb_each(v_cat) e where e.value->>'n' in ('ok', 'error'));
+  if cardinality(v_ctas) > 0 then
+    begin
+      v_nom := fn_cedula_nomina(v_f);
+    exception when others then
+      v_nom := jsonb_build_object('estado', 'error', 'error', left(sqlerrm, 200));
+    end;
+    v_nest := case when v_nom->>'estado' = 'ok' then 'ok' else 'error' end;
+    if v_nest = 'ok' then
+      select coalesce(jsonb_object_agg(x.cuenta, x.s), '{}'::jsonb) into v_nt
+        from (select f.cuenta, -sum(f.saldo) as s
+                from jsonb_to_recordset(coalesce(v_nom->'filas', '[]'::jsonb)) as f(cuenta text, saldo numeric)
+               where f.cuenta = any (v_ctas) and f.saldo is not null
+               group by f.cuenta) x;
+    end if;
   end if;
 
   -- (A) LAS PARTIDAS ABIERTAS DEL LIBRO (c2 y c3): por cobrar, por factura o
@@ -1373,7 +1647,12 @@ begin
 
   -- (C) LOS DEVENGOS VIVOS (c2): cada asiento reversible que a esa fecha
   --     todavía no se ha deshecho (ni por su reverso del día 1 ni por una
-  --     corrección). Lo demás de la cuenta va suelto.
+  --     corrección). Lo demás de la cuenta va suelto. En los sueldos
+  --     acumulados con la nómina puesta, lo suelto es lo que no es NI un
+  --     devengo vivo NI lo que una nómina dejó por pagar (C2); y un asiento
+  --     de una nómina no cuenta nunca como devengo, lleve la marca que lleve:
+  --     lo suyo lo trae la nómina, una vez. Sin el código del teléfono (o si
+  --     la nómina no se pudo leer) lo suelto no se puede saber: no sale.
   v_ctas := array(select e.key from jsonb_each(v_cat) e where e.value->>'f' = 'devengos');
   if cardinality(v_ctas) > 0 then
     select coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) into v_j
@@ -1383,6 +1662,7 @@ begin
                  from asiento_lineas l
                  join asientos a on a.id = l.asiento_id
                 where l.cuenta = any (v_ctas) and a.reversible and a.fecha_contable <= v_f
+                  and a.origen_tabla is distinct from 'nomina_corridas'
                   and not exists (select 1 from asientos r where r.reversa_a = a.id and r.fecha_contable <= v_f)
                 group by l.cuenta, a.id, a.numero, a.descripcion, a.fecha_contable
                having sum(l.monto) <> 0),
@@ -1398,13 +1678,80 @@ begin
                'Se deshace solo el día 1 del mes siguiente'::text as nota, 'asientos'::text as ref_tabla, v.id::text as ref_id
           from vivos v
         union all
-        select t.cuenta, 9, 'suelto', 'devengos', 'suelto', null,
-               'Lo demás de la cuenta: no es un devengo que se deshaga solo', null, null, null,
-               ((v_cat->t.cuenta->>'s')::int * (t.s - coalesce((select sum(v.s) from vivos v where v.cuenta = t.cuenta), 0)))::numeric(14,2),
-               null, null, null, null
-          from tot t
-         where t.s - coalesce((select sum(v.s) from vivos v where v.cuenta = t.cuenta), 0) <> 0) x;
+        select u.cuenta, 9, 'suelto', 'devengos', 'suelto', null,
+               case when v_cat->u.cuenta->>'n' in ('ok', 'error')
+                    then 'Lo demás de la cuenta: no es un devengo que se deshaga solo, ni lo que una nómina dejó por pagar, ni un cargo casado con ella'
+                    else 'Lo demás de la cuenta: no es un devengo que se deshaga solo' end, null, null, null,
+               ((v_cat->u.cuenta->>'s')::int * r.resto)::numeric(14,2), null, null, null, null
+          from unnest(v_ctas) u(cuenta)
+          left join tot t on t.cuenta = u.cuenta
+          cross join lateral (select coalesce(t.s, 0) - coalesce((select sum(v.s) from vivos v where v.cuenta = u.cuenta), 0)
+                                     - coalesce((v_nt->>u.cuenta)::numeric, 0) as resto) r
+         where r.resto <> 0
+           and (v_cat->u.cuenta->>'n' is null or v_cat->u.cuenta->>'n' = 'no_esta'
+                or (v_cat->u.cuenta->>'n' in ('ok', 'error') and v_nest = 'ok'))) x;
     v_all := v_all || v_j;
+  end if;
+
+  -- (C2) LA NÓMINA (c15, 13-nov): un renglón por nómina con saldo ese día en
+  --     la cuenta, como lo dice ella (0): lo que su journal dejó por pagar
+  --     menos lo que ya pagaron sus cargos casados, con su signo en el lado
+  --     natural de la cuenta (en positivo, lo que se debe; en negativo, lo
+  --     que ya se pagó de una nómina cuyo journal todavía no está en el libro
+  --     ese día, o lo que quedó a favor). La nota lo dice entero, en llano:
+  --     la cédula la repite en el detalle de la cuenta. Y, en las 22xx de la
+  --     nómina, lo suelto: lo que el libro tiene en la cuenta y ninguna
+  --     nómina explica (lo de los sueldos acumulados lo saca C).
+  v_ctas := array(select e.key from jsonb_each(v_cat) e where e.value->>'n' in ('ok', 'error'));
+  if cardinality(v_ctas) > 0 and v_nest = 'ok' then
+    select coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) into v_j
+      from (
+        with nf as materialized (
+               select f.cuenta, f.corrida, f.dia_pago, f.descripcion, coalesce(f.acreditado, 0) as acreditado, coalesce(f.pagado, 0) as pagado,
+                      f.saldo, nullif(btrim(coalesce(f.asiento, '')), '') as asiento, nullif(btrim(coalesce(f.cargos, '')), '') as cargos,
+                      coalesce(fn_cedula_dia(f.dia_pago), '(sin día de pago)') as dia
+                 from jsonb_to_recordset(coalesce(v_nom->'filas', '[]'::jsonb))
+                      as f(cuenta text, corrida text, dia_pago date, descripcion text, acreditado numeric, pagado numeric, saldo numeric,
+                           asiento text, cargos text)
+                where f.cuenta = any (v_ctas) and coalesce(f.saldo, 0) <> 0),
+             tot as (
+               select l.cuenta, sum(l.monto) as s
+                 from asiento_lineas l
+                 join asientos a on a.id = l.asiento_id
+                where l.cuenta = any (v_ctas) and a.fecha_contable <= v_f
+                group by l.cuenta)
+        select nf.cuenta, 2 as o, 'auxiliar'::text as clase, 'nomina'::text as fuente, coalesce(nf.corrida, 'nomina') as clave, null::text as grupo,
+               coalesce(nullif(btrim(nf.descripcion), ''), 'Nómina del ' || nf.dia) as concepto, nf.asiento as referencia, nf.dia_pago as fecha,
+               (-(v_cat->nf.cuenta->>'s')::int * nf.saldo)::numeric(14,2) as monto, null::numeric as libro, null::boolean as ok,
+               case when nf.acreditado = 0 and nf.pagado > 0
+                      then format('De la nómina del %s ya se pagaron %s%s y su journal todavía no está en el libro ese día (Gusto cobra antes '
+                                  'del día de pago): hasta que entre, es lo adelantado a Gusto', nf.dia, fn_cedula_usd(nf.pagado),
+                                  coalesce(' (' || left(nf.cargos, 240) || ')', ''))
+                    when nf.saldo > 0 and nf.pagado = 0
+                      then format('De la nómina del %s quedan %s por pagar: es lo que dejó su journal%s, y ningún cargo casado lo ha pagado '
+                                  'todavía', nf.dia, fn_cedula_usd(nf.saldo), coalesce(' (' || nf.asiento || ')', ''))
+                    when nf.saldo > 0
+                      then format('De la nómina del %s quedan %s por pagar: su journal%s dejó %s y sus cargos casados ya pagaron %s%s', nf.dia,
+                                  fn_cedula_usd(nf.saldo), coalesce(' (' || nf.asiento || ')', ''), fn_cedula_usd(nf.acreditado),
+                                  fn_cedula_usd(nf.pagado), coalesce(' (' || left(nf.cargos, 240) || ')', ''))
+                    else format('La nómina del %s tiene %s a favor: su journal%s dejó %s y sus cargos casados movieron %s%s. Lo descuenta '
+                                'Gusto de un cargo o lo devuelve', nf.dia, fn_cedula_usd(-nf.saldo), coalesce(' (' || nf.asiento || ')', ''),
+                                fn_cedula_usd(nf.acreditado), fn_cedula_usd(nf.pagado), coalesce(' (' || left(nf.cargos, 240) || ')', '')) end as nota,
+               'nomina_corridas'::text as ref_tabla, nf.corrida as ref_id
+          from nf
+        union all
+        select u.cuenta, 9, 'suelto', 'nomina', 'suelto', null,
+               'En el libro, sin ser lo que una nómina dejó por pagar ni un cargo casado con ella: entró por otro lado', null, null, null,
+               ((v_cat->u.cuenta->>'s')::int * (coalesce(t.s, 0) - coalesce((v_nt->>u.cuenta)::numeric, 0)))::numeric(14,2), null, null, null, null
+          from unnest(v_ctas) u(cuenta)
+          left join tot t on t.cuenta = u.cuenta
+         where v_cat->u.cuenta->>'f' = 'nomina'
+           and coalesce(t.s, 0) - coalesce((v_nt->>u.cuenta)::numeric, 0) <> 0) x;
+    v_all := v_all || v_j;
+  elsif cardinality(v_ctas) > 0 then
+    v_all := v_all || coalesce((select jsonb_agg(jsonb_build_object('cuenta', u, 'o', 0, 'clase', 'error', 'fuente', 'nomina', 'clave', 'error',
+                                                                   'concepto', left(coalesce(v_nom->>'error', 'la nómina no contestó'), 300)))
+                                  from unnest(v_ctas) u), '[]'::jsonb);
   end if;
 
   -- (D) BANCOS Y TARJETAS (c6): la conciliación confirmada que cubre el día
@@ -1830,6 +2177,16 @@ begin
     end;
   end if;
 
+  -- (K2) OTRO DATO, también solo al pedir esa cuenta: una cuenta de la nómina
+  --     mirada SIN EL CÓDIGO DEL TELÉFONO no enseña lo de ninguna nómina. Se
+  --     dice, para que «nada debajo» no se lea como «no hay nada».
+  if p_cuenta is not null and v_cat->p_cuenta->>'n' = 'codigo' then
+    v_all := v_all || jsonb_build_array(jsonb_build_object(
+               'cuenta', p_cuenta, 'o', 20, 'clase', 'dato', 'fuente', 'nomina', 'clave', 'codigo',
+               'concepto', 'Lo que cada nómina dejó por pagar en esta cuenta se ve con el código del teléfono',
+               'nota', 'Esta sesión entró sin él: aquí no se enseña lo de ninguna nómina. Entra con el código y vuelve a mirar'));
+  end if;
+
   return query
   select x.cuenta, (row_number() over (partition by x.cuenta order by x.o, x.fecha nulls last, x.concepto, x.clave))::int,
          x.clase, x.fuente, x.clave, x.grupo, x.concepto, x.referencia, x.fecha, x.monto::numeric(14,2), x.libro::numeric(14,2), x.ok,
@@ -1841,7 +2198,7 @@ begin
 end $$;
 revoke execute on function public.fn_cedula_partidas(date, text) from public, anon, service_role;
 grant  execute on function public.fn_cedula_partidas(date, text) to authenticated;
-comment on function public.fn_cedula_partidas(date, text) is 'c13: los renglones del auxiliar de cada cuenta de balance (o de una) a una fecha (sin fecha, el último día del período que toca): cuenta, n, clase (auxiliar: su monto suma al auxiliar; libro: sale del propio libro, ordenado —el patrimonio y el use tax—, y es el auxiliar de su cuenta solo mientras no tenga renglones a mano; suelto: lo que el libro tiene en la cuenta sin decir de qué es; despues: en un banco o una tarjeta, lo que el libro movió después de su última conciliación confirmada, y en las pólizas lo que movió después del día sin ser de una póliza; error: no se pudo leer; dato: algo que se enseña al lado sin sumar, como la meta de la reserva de impuestos al pedir la 1030), fuente, clave, grupo, concepto, referencia, fecha, monto (lo que dice el auxiliar, en el lado natural de la cuenta), libro y ok (donde se compara renglón a renglón: el WIP por obra), nota, y el papel que hay detrás (ref_tabla, ref_id). Lee las partidas abiertas del libro, las conciliaciones, los préstamos y las pólizas de c6, los activos de c9, el ajuste de WIP de c12, lo de Stripe de p1 y los renglones escritos a mano. Solo lectura; a quien no es el dueño, nada.';
+comment on function public.fn_cedula_partidas(date, text) is 'c13: los renglones del auxiliar de cada cuenta de balance (o de una) a una fecha (sin fecha, el último día del período que toca): cuenta, n, clase (auxiliar: su monto suma al auxiliar; libro: sale del propio libro, ordenado —el patrimonio y el use tax—, y es el auxiliar de su cuenta solo mientras no tenga renglones a mano; suelto: lo que el libro tiene en la cuenta sin decir de qué es; despues: en un banco o una tarjeta, lo que el libro movió después de su última conciliación confirmada, y en las pólizas lo que movió después del día sin ser de una póliza; error: no se pudo leer; dato: algo que se enseña al lado sin sumar, como la meta de la reserva de impuestos al pedir la 1030, o que lo de la nómina se ve con el código del teléfono), fuente, clave, grupo, concepto, referencia, fecha, monto (lo que dice el auxiliar, en el lado natural de la cuenta), libro y ok (donde se compara renglón a renglón: el WIP por obra), nota, y el papel que hay detrás (ref_tabla, ref_id). Lee las partidas abiertas del libro, las conciliaciones, los préstamos y las pólizas de c6, los activos de c9, el ajuste de WIP de c12, lo de Stripe de p1, lo que cada nómina dejó por pagar según c15 (una nómina por renglón, con su signo: en negativo lo adelantado a Gusto antes del día de pago) y los renglones escritos a mano. Solo lectura; a quien no es el dueño, nada.';
 
 -- LA CÉDULA: una fila por cuenta de balance a una fecha (sin fecha, el último
 -- día del período que toca). Las columnas:
@@ -1864,12 +2221,17 @@ comment on function public.fn_cedula_partidas(date, text) is 'c13: los renglones
 --                    en las pólizas, después del día sin ser de una póliza
 --   sueltas          lo que el libro tiene en la cuenta sin decir de qué es
 --   estado           cuadra | explicada | no_cuadra | sin_auxiliar | del_libro
+--                    | con_codigo (su auxiliar es el de la nómina y esta
+--                    sesión entró sin el código del teléfono: no se compara)
 --   pendiente        pide algo: no cuadra, o no tiene auxiliar y sí saldo, y
---                    nadie lo ha explicado (o la explicación se quedó vieja)
+--                    nadie lo ha explicado (o la explicación se quedó vieja);
+--                    o solo falta mirarla con el código (con_codigo: siempre,
+--                    tenga saldo o no)
 --   por_que          sin auxiliar: 'capa' (esa capa no está) | 'vacio'
 --                    (todavía no hay con qué: ni conciliación, ni préstamo,
 --                    ni póliza, ni activo) | 'manual' (la base no lo sabe) |
---                    'f11' (llega con la nómina) | 'error' (no se pudo leer)
+--                    'f11' (llega con la nómina: c15 no está) | 'error' (no
+--                    se pudo leer); y con_codigo: 'codigo'
 --   detalle, que_hacer   en llano
 --   explicacion, explicada_el, explicada_por, explicada_por_nombre,
 --   explicacion_id   la explicación viva de esa cuenta y ese día
@@ -1907,6 +2269,12 @@ comment on function public.fn_cedula_partidas(date, text) is 'c13: los renglones
 --     por mes) y lo que se lleva a la fecha con los movimientos del libro
 --     (una conciliación posterior; lo que Stripe debe hoy) no es «cuadra»:
 --     es «del_libro». No pide nada, y se cuenta aparte.
+-- «con_codigo» (13-nov) no es ninguno de los dos: la cuenta se sostiene con
+-- lo que cada nómina dejó por pagar, que c15 solo enseña con el código del
+-- teléfono, y sin él la cédula no la lee ni la compara (saldo_auxiliar y
+-- diferencia, nulos). Pide entrar con el código, tenga saldo o no (en cero
+-- en el libro puede tener algo abierto en su nómina); no se explica (no hay
+-- una diferencia que explicar) y el control no la cuenta: la nombra.
 -- Salen las cuentas activas y las que tienen movimiento o renglones.
 drop function if exists public.fn_cedula(date);
 create function public.fn_cedula(p_fecha date default null)
@@ -1947,6 +2315,9 @@ begin
                 (count(*) filter (where i.clase = 'auxiliar' and i.ok is false))::int as descuadres,
                 coalesce(sum(i.monto) filter (where i.clase = 'auxiliar' and i.fuente = 'manual'), 0)::numeric(14,2) as manual,
                 (count(*) filter (where i.clase = 'auxiliar' and i.fuente = 'manual'))::int as manual_n,
+                -- (lo que cada nómina dejó por pagar: cuántos renglones, y lo que dicen —los tres primeros— en llano)
+                (count(*) filter (where i.clase = 'auxiliar' and i.fuente = 'nomina'))::int as nomina_n,
+                (array_agg(i.nota order by i.fecha, i.clave) filter (where i.clase = 'auxiliar' and i.fuente = 'nomina' and i.nota is not null))[1:3] as nomina_notas,
                 (sum(i.libro) filter (where i.clase = 'despues'))::numeric(14,2) as despues,
                 max(i.nota) filter (where i.clase = 'despues') as despues_nota,
                 (sum(i.libro) filter (where i.clase = 'suelto'))::numeric(14,2) as sueltas,
@@ -1962,7 +2333,17 @@ begin
           group by i.cuenta),
        b as (
          select cu.cuenta, cu.nombre, cu.tipo, cu.signo, cu.fuente, cu.forma, cu.auxiliar, cu.origen, cu.capa_esta, cu.vacio, cu.par,
+                cu.nomina,
+                -- (su auxiliar es el de la nómina y esta sesión entró sin el código del teléfono: ni se lee ni se compara)
+                (cu.nomina is not distinct from 'codigo') as codigo,
+                coalesce(ag.nomina_n, 0) as nomina_n,
+                case when coalesce(ag.nomina_n, 0) > 0 and ag.nomina_notas is not null
+                     then array_to_string(ag.nomina_notas, '. ')
+                          || case when ag.nomina_n > 3 then format('. Y %s nómina(s) más, abajo', ag.nomina_n - 3) else '' end || '.' end as nomina_txt,
                 (cu.signo * coalesce(sl.s, 0))::numeric(14,2) as saldo,
+                -- (13-nov: UNA CUENTA POR PAGAR AL REVÉS —un pasivo con saldo deudor—. No las que sostiene la nómina cuando la
+                -- nómina está: entre el cargo de Gusto y el día de pago quedan al revés, y eso ya lo dice su auxiliar)
+                (cu.tipo = 'pasivo' and coalesce(cu.nomina, 'no_esta') = 'no_esta' and (cu.signo * coalesce(sl.s, 0)) < 0) as al_reves,
                 -- (lo que sale del propio libro solo es el auxiliar mientras nadie haya escrito a mano con qué compararlo)
                 (coalesce(ag.aux, 0) + case when cu.fuente in ('mayor', 'dr15') and coalesce(ag.manual_n, 0) = 0
                                             then coalesce(ag.libro_aux, 0) else 0 end)::numeric(14,2) as aux,
@@ -1975,8 +2356,10 @@ begin
                 -- enseña —se compensan—, y la resta contra el auxiliar tampoco)
                 (coalesce(ag.sueltas_abs, 0) <> abs(coalesce(ag.sueltas, 0))) as se_compensan,
                 coalesce(ag.sueltas_abs, 0)::numeric(14,2) as sueltas_abs,
-                -- ¿tiene auxiliar? El automático (su capa está, tiene con qué y se pudo leer) o algún renglón a mano
-                ((cu.capa_esta and cu.hay and ag.error is null) or coalesce(ag.manual_n, 0) > 0) as tiene
+                -- ¿tiene auxiliar? El automático (su capa está, tiene con qué y se pudo leer) o algún renglón a mano; y nunca
+                -- si lo suyo es de la nómina y falta el código (con lo que se ve —un devengo, un renglón a mano— no basta)
+                (((cu.capa_esta and cu.hay and ag.error is null) or coalesce(ag.manual_n, 0) > 0)
+                 and cu.nomina is distinct from 'codigo') as tiene
            from cu
            left join sl on sl.cuenta = cu.cuenta
            left join ag on ag.cuenta = cu.cuenta
@@ -1990,16 +2373,21 @@ begin
                 case when not b.tiene then null
                      when b.fuente in ('mayor', 'dr15') and b.manual_n = 0 then 'libro'
                      when b.llevado_nota is not null then 'llevado'
-                     when b.fuente in ('partidas', 'devengos') and not (b.manual_n > 0 and b.renglones = b.manual_n) then 'partidas'
+                     -- (lo de la nómina es un papel —el journal de Gusto y los cargos casados con él—: en los sueldos acumulados,
+                     -- «papel» solo si todo lo que hay debajo es de una nómina o está escrito a mano; con un devengo vivo, «partidas»)
+                     when b.fuente in ('partidas', 'devengos') and not (b.renglones > 0 and b.renglones = b.manual_n + b.nomina_n) then 'partidas'
                      else 'papel' end as sosten
            from b),
        d2 as (
          select d.*,
-                case when not d.tiene then 'sin_auxiliar'
+                case when d.codigo then 'con_codigo'
+                     when not d.tiene then 'sin_auxiliar'
                      when d.sosten = 'libro' then 'del_libro'
                      when d.saldo - d.aux <> 0 or d.descuadres > 0 then 'no_cuadra'
                      when d.se_compensan then 'no_cuadra'
                      when d.conc_antes then 'no_cuadra'
+                     -- (suma lo mismo que su auxiliar, pero es una cuenta por pagar con saldo deudor: no se da por buena)
+                     when d.al_reves then 'no_cuadra'
                      when d.sosten = 'llevado' then 'del_libro'
                      else 'cuadra' end as base
            from d),
@@ -2025,9 +2413,12 @@ begin
                      else lower(left(e.auxiliar, 1)) || substr(e.auxiliar, 2) end as aux_llano,
                 (e.fuente = 'prestamos' and e.par is not null and o.dif is not null and e.dif is not null and e.dif <> 0
                  and e.dif + o.dif = 0) as solo_reparto,
-                case when e.base in ('cuadra', 'del_libro') then e.base
+                case when e.base in ('cuadra', 'del_libro', 'con_codigo') then e.base
                      when e.falta and e.ex_vale then 'explicada'
-                     else e.base end as estado_final
+                     else e.base end as estado_final,
+                -- (lo que solo falta mirar con el código pide eso, entrar con él, TENGA SALDO O NO: en cero en el libro
+                -- puede haber algo abierto en su nómina, y darla por buena sin verlo sería un verde falso)
+                (e.base = 'con_codigo') as pide_codigo
            from e
            left join e o on o.cuenta = e.par)
   select v_f,
@@ -2040,8 +2431,9 @@ begin
                else v_f end),
          g.saldo_aux, g.dif, g.renglones, g.descuadres, g.manual, g.despues, g.sueltas,
          g.estado_final,
-         (g.falta and not g.ex_vale),
-         (case when g.tiene then null
+         ((g.falta and not g.ex_vale) or g.pide_codigo),
+         (case when g.codigo then 'codigo'
+               when g.tiene then null
                when g.error is not null then 'error'
                when not g.capa_esta then 'capa'
                when g.fuente = 'nomina' then 'f11'
@@ -2049,6 +2441,11 @@ begin
                else 'vacio' end),
          -- EL DETALLE, en llano
          (case
+            when g.base = 'con_codigo' then
+              format('%s al %s. Lo que la sostiene es lo que cada nómina dejó por pagar, y eso solo se ve con el código del teléfono: '
+                     'esta sesión entró sin él, así que aquí ni se enseña ni se compara. No es que no cuadre: falta mirarla con el código.',
+                     case when g.saldo <> 0 then fn_cedula_usd(g.saldo) || ' en el libro' else 'Sin saldo en el libro' end,
+                     fn_cedula_dia(v_f))
             when g.base = 'cuadra' and g.saldo = 0 and g.renglones = 0 then
               format('Sin saldo al %s, y nada abierto en %s.', fn_cedula_dia(v_f), g.aux_llano)
             when g.base = 'cuadra' then
@@ -2062,7 +2459,11 @@ begin
                                 else ' Su auxiliar es el de hoy; desde ese día el libro no ha movido la cuenta.' end else '' end
               || case when g.fuente in ('mayor', 'dr15') and g.manual_n > 0
                       then ' Se compara con lo que está escrito a mano; lo que sale del propio libro queda abajo, de referencia.' else '' end
-              || case when g.sosten = 'partidas'
+              -- (lo de la nómina, nómina por nómina: qué dejó por pagar cada una, o qué se pagó ya antes de su día de pago)
+              || case when g.nomina_txt is not null then ' ' || g.nomina_txt else '' end
+              || case when g.sosten = 'partidas' and g.nomina_n > 0
+                      then ' Lo del devengo sale del propio libro (su asiento, que se deshace solo el día 1); lo de la nómina, de su journal y de sus cargos casados.'
+                      when g.sosten = 'partidas'
                       then format(' Sale de las partidas del propio libro: dice que cada línea tiene %s y que nada queda suelto, no que case con un papel de fuera.',
                                   case g.forma when 'cobrar' then 'su factura' when 'pagar' then 'su proveedor o su papel' else 'su asiento de devengo' end)
                       else '' end
@@ -2083,6 +2484,14 @@ begin
               format('Sin auxiliar: %s.', coalesce('no se pudo leer (' || g.error || ')', g.vacio, 'no tiene'))
               || case when g.saldo <> 0 then format(' Tiene %s en el libro al %s.', fn_cedula_usd(g.saldo), fn_cedula_dia(v_f))
                       else ' No tiene saldo: no pide nada.' end
+            when g.dif = 0 and g.descuadres = 0 and not g.se_compensan and not g.conc_antes and g.al_reves then
+              format('%s en el libro al %s y lo mismo en %s%s, pero está AL REVÉS: es una cuenta por pagar y su saldo es deudor (%s a '
+                     'favor de la empresa). O se pagó más de lo que se debía, o falta registrar lo que se debía%s. Por eso no se da por '
+                     'buena aunque la resta dé cero.', fn_cedula_usd(g.saldo), fn_cedula_dia(v_f), g.aux_llano,
+                     case when g.renglones > 0 then format(' (%s renglón(es))', g.renglones) else '' end, fn_cedula_usd(abs(g.saldo)),
+                     case when g.auxiliar = 'Lo que se le debe a cada empleado'
+                          then ' (aquí, lo normal: la nómina le pagó a alguien un reembolso y el gasto que se le reembolsó todavía no está '
+                               'registrado a su nombre)' else '' end)
             when g.dif = 0 and g.descuadres = 0 and g.se_compensan then
               format('%s en el libro al %s y lo mismo en %s, pero NO cuadra: la cuenta tiene %s renglón(es) sin decir %s que se compensan entre '
                      'sí (%s). Cada uno está abajo, con su obra.', fn_cedula_usd(g.saldo), fn_cedula_dia(v_f), g.aux_llano, g.sueltas_n,
@@ -2110,6 +2519,12 @@ begin
                    when g.fuente = 'partidas' and g.sueltas is not null
                      then format(' %s están en el libro sin decir %s (%s).', fn_cedula_usd(g.sueltas),
                                  case g.forma when 'cobrar' then 'de qué factura son' else 'a quién se le deben' end, g.sueltas_nota)
+                   when g.nomina = 'ok' and g.fuente = 'nomina' and g.sueltas is not null
+                     then format(' %s están en el libro sin ser lo que una nómina dejó por pagar ni un cargo casado con ella: entraron '
+                                 'por otro lado.', fn_cedula_usd(g.sueltas))
+                   when g.nomina = 'ok' and g.fuente = 'devengos' and g.sueltas is not null
+                     then format(' %s no son un devengo de los que se deshacen solos, ni lo que una nómina dejó por pagar, ni un cargo '
+                                 'casado con ella: entraron por otro lado.', fn_cedula_usd(g.sueltas))
                    when g.fuente = 'devengos' and g.sueltas is not null
                      then format(' %s no son un devengo de los que se deshacen solos.', fn_cedula_usd(g.sueltas))
                    when g.fuente = 'prestamos' and g.par is not null and g.par_dif is not null and g.dif + g.par_dif = 0
@@ -2127,6 +2542,10 @@ begin
                    else '' end
               || case when g.manual_n > 0 and g.renglones > g.manual_n
                       then format(' (De su auxiliar, %s son renglones escritos a mano.)', fn_cedula_usd(g.manual)) else '' end
+              -- (y de qué nómina y qué cargos es lo que el auxiliar sí explica)
+              || case when g.nomina_txt is not null then ' Lo que la nómina sí explica: ' || lower(left(g.nomina_txt, 1)) || substr(g.nomina_txt, 2)
+                      when g.nomina = 'ok' and g.fuente = 'nomina' then ' Ninguna nómina tiene nada por pagar en esta cuenta ese día.'
+                      else '' end
           end)
          || case when g.falta and g.ex_vale
                  then format(' Explicada por %s el %s: «%s»', coalesce(g.ex_nombre, 'el SQL Editor'), fn_cedula_dia(fn_fecha_miami(g.ex_el)),
@@ -2140,7 +2559,10 @@ begin
                              coalesce(fn_cedula_usd(g.ex_aux), 'nada'))
                  else '' end,
          -- QUÉ HACER (si pide algo; y, sin pedir nada, cómo comprobar de verdad lo que solo sale del libro)
-         (case when g.base = 'del_libro' and g.fuente = 'conciliacion'
+         (case when g.pide_codigo
+                 then 'Entra con el código del teléfono y vuelve a mirar (si todavía no lo tienes activado: Contabilidad → Conexiones y '
+                      'seguridad). No hace falta explicar nada ni escribir renglones: con el código, la cuenta se compara sola con su nómina.'
+               when g.base = 'del_libro' and g.fuente = 'conciliacion'
                  then format('No pide nada. Para comprobar el saldo de este día, concilia la cuenta al %s en Conciliar y confirma.', fn_cedula_dia(v_f))
                when g.base = 'del_libro' and g.sosten = 'llevado'
                  then 'No pide nada. Para comprobarla, mírala el mismo día del corte, o compara a mano con lo que Stripe decía ese día.'
@@ -2160,6 +2582,11 @@ begin
                  then 'Su auxiliar llega con la nómina (f11). Mientras, escribe a mano de qué es el saldo (un renglón con su documento) o explícalo.'
                when g.base = 'sin_auxiliar'
                  then 'Escribe sus renglones a mano (qué es, cuánto, con qué documento y desde cuándo) hasta que sumen el saldo, o explícalo.'
+               when g.dif = 0 and g.descuadres = 0 and not g.se_compensan and not g.conc_antes and g.al_reves
+                 then 'Mira sus renglones, abajo: a quién se le pagó de más, o qué falta por registrar. Si falta lo que se debía (el gasto '
+                      'de un reembolso que pagó la nómina, la factura de un proveedor), regístralo a nombre de quien es y la cuenta vuelve '
+                      'a su lado; si de verdad se pagó de más y te lo deben, explícalo con sus palabras (al corte del año el contador lo '
+                      'pasa a cuentas por cobrar).'
                when g.fuente = 'conciliacion' and (g.despues is not null or g.conc_antes)
                  then format('Concilia la cuenta hasta el %s en Conciliar y confirma (si de verdad no se movió, es un minuto: el saldo del statement de ese día).', fn_cedula_dia(v_f))
                when g.fuente = 'conciliacion'
@@ -2182,6 +2609,12 @@ begin
                  then 'Vuelve a postear el ajuste del WIP de ese mes; un asiento a mano en estas cuentas se reversa.'
                when g.fuente in ('stripe', 'stripe_paso')
                  then 'Mira Cobros en línea; un asiento a mano en esta cuenta se reversa.'
+               when g.nomina = 'ok' and g.fuente in ('nomina', 'devengos')
+                 then 'Lo que entró por otro lado lo dice, asiento por asiento, el control de la nómina (Contabilidad → Nómina: «lo que entró '
+                      'por otro lado»). Si es un pago del banco que paga lo de una nómina y se clasificó en la Bandeja, des-cásalo en '
+                      'Movimientos y cásalo desde Nómina → Cargos de Gusto (así la nómina sabe que está pagado); si es un asiento a mano que '
+                      'no debía estar, revérsalo; y si de verdad es otra cosa (unas vacaciones devengadas, un saldo que venía de antes), '
+                      'escríbele su renglón a mano con su documento o explícalo.'
                when g.fuente = 'devengos'
                  then 'Lo que no es un devengo que se deshace solo se escribe a mano (qué es y con qué documento) o se explica.'
                else 'Corrige sus renglones a mano hasta que sumen el saldo, o explica la diferencia.' end),
@@ -2197,7 +2630,7 @@ begin
 end $$;
 revoke execute on function public.fn_cedula(date) from public, anon, service_role;
 grant  execute on function public.fn_cedula(date) to authenticated;
-comment on function public.fn_cedula(date) is 'c13: LA CÉDULA DE CORTE a una fecha (sin fecha, el último día del período que toca): una fila por cuenta de balance (activo, pasivo y patrimonio) con su saldo en el libro (saldo_libro, en su lado natural; signo lo pasa a debe − haber), de dónde sale su auxiliar (fuente, auxiliar, origen, auxiliar_al), lo que suma el auxiliar (saldo_auxiliar), la diferencia, cuántos renglones tiene y cuántos no casan uno a uno (descuadres), lo que es a mano (manual), lo que el libro movió después de la última conciliación (despues) y lo que tiene sin decir de qué es (sueltas); su estado (cuadra | explicada | no_cuadra | sin_auxiliar | del_libro: sale del propio libro, o su papel es de otro día y se lleva a la fecha con el libro; no pide nada y no cuenta como «cuadra»), si pide algo (pendiente), por qué no tiene auxiliar (por_que: capa | vacio | manual | f11 | error), el detalle y qué hacer en llano, la explicación viva de esa fecha (texto, quién, cuándo) con explicacion_vieja si el saldo cambió después, qué hay debajo (sosten: papel | partidas | libro | llevado), y en un préstamo su otra cuenta (par) y si su diferencia es solo el reparto entre corriente y largo plazo (solo_reparto). «cuadra» pide que el auxiliar valga para ese día (un banco con su última conciliación anterior al día no cuadra aunque la resta dé cero) y que nada quede suelto (dos obras que se compensan no cuadran). Solo lectura; a quien no es el dueño, nada.';
+comment on function public.fn_cedula(date) is 'c13: LA CÉDULA DE CORTE a una fecha (sin fecha, el último día del período que toca): una fila por cuenta de balance (activo, pasivo y patrimonio) con su saldo en el libro (saldo_libro, en su lado natural; signo lo pasa a debe − haber), de dónde sale su auxiliar (fuente, auxiliar, origen, auxiliar_al), lo que suma el auxiliar (saldo_auxiliar), la diferencia, cuántos renglones tiene y cuántos no casan uno a uno (descuadres), lo que es a mano (manual), lo que el libro movió después de la última conciliación (despues) y lo que tiene sin decir de qué es (sueltas); su estado (cuadra | explicada | no_cuadra | sin_auxiliar | del_libro: sale del propio libro, o su papel es de otro día y se lleva a la fecha con el libro; no pide nada y no cuenta como «cuadra» | con_codigo: se sostiene con lo que cada nómina dejó por pagar y esta sesión entró sin el código del teléfono: no se lee ni se compara), si pide algo (pendiente), por qué no tiene auxiliar (por_que: capa | vacio | manual | f11 | error; y codigo en con_codigo), el detalle y qué hacer en llano, la explicación viva de esa fecha (texto, quién, cuándo) con explicacion_vieja si el saldo cambió después, qué hay debajo (sosten: papel | partidas | libro | llevado), y en un préstamo su otra cuenta (par) y si su diferencia es solo el reparto entre corriente y largo plazo (solo_reparto). «cuadra» pide que el auxiliar valga para ese día (un banco con su última conciliación anterior al día no cuadra aunque la resta dé cero) y que nada quede suelto (dos obras que se compensan no cuadran). Solo lectura; a quien no es el dueño, nada.';
 
 -- LOS TOTALES de la cédula de un día, para la pantalla (que no suma):
 --   {fecha, hoy, periodo (el mes de esa fecha, si es su último día),
@@ -2205,7 +2638,10 @@ comment on function public.fn_cedula(date) is 'c13: LA CÉDULA DE CORTE a una fe
 --    no es el libro; cuadran_partidas, por las partidas del propio libro),
 --    del_libro (salen del propio libro o se llevan a la fecha con él: no se
 --    cuentan entre las que cuadran), explicadas, no_cuadran, sin_auxiliar
---    (con saldo), pendientes, explicaciones_viejas, listo (nada pendiente),
+--    (con saldo), con_codigo (13-nov: las cuentas de la nómina que esta
+--    sesión no pudo comparar porque entró sin el código del teléfono;
+--    cuentan además entre las pendientes, con saldo o sin él: piden entrar
+--    con él), pendientes, explicaciones_viejas, listo (nada pendiente),
 --    activo, pasivo, capital (cada total como sale en el balance: lo
 --    contrario resta), resultado (el resultado acumulado que todavía no
 --    está en el patrimonio: ingresos menos costos y gastos hasta ese día,
@@ -2249,6 +2685,7 @@ begin
            'explicadas', count(*) filter (where c.estado = 'explicada'),
            'no_cuadran', count(*) filter (where c.estado = 'no_cuadra'),
            'sin_auxiliar', count(*) filter (where c.estado = 'sin_auxiliar' and c.saldo_libro <> 0),
+           'con_codigo', count(*) filter (where c.estado = 'con_codigo'),
            'pendientes', count(*) filter (where c.pendiente),
            'explicaciones_viejas', count(*) filter (where c.explicacion_vieja),
            'listo', count(*) filter (where c.pendiente) = 0,
@@ -2268,7 +2705,7 @@ begin
 end $$;
 revoke execute on function public.fn_cedula_resumen(date) from public, anon, service_role;
 grant  execute on function public.fn_cedula_resumen(date) to authenticated;
-comment on function public.fn_cedula_resumen(date) is 'c13: los totales de la cédula de un día (sin fecha, el último día del período que toca), para la pantalla, que no suma: {fecha, hoy, periodo, cuentas, con_saldo, cuadran (cuadran_papel, cuadran_partidas), del_libro, explicadas, no_cuadran, sin_auxiliar (con saldo), pendientes, explicaciones_viejas, listo, activo, pasivo, capital, resultado (el resultado acumulado sin cerrar: activo = pasivo + capital + resultado), patrimonio_total, balance_cuadra, diferencia_pendiente (sin el reparto de un préstamo cuyo total cuadra), reparto_pendiente, reparto_cuentas, sin_respaldo}. Solo el dueño.';
+comment on function public.fn_cedula_resumen(date) is 'c13: los totales de la cédula de un día (sin fecha, el último día del período que toca), para la pantalla, que no suma: {fecha, hoy, periodo, cuentas, con_saldo, cuadran (cuadran_papel, cuadran_partidas), del_libro, explicadas, no_cuadran, sin_auxiliar (con saldo), con_codigo (las cuentas de la nómina que solo falta mirar con el código del teléfono), pendientes, explicaciones_viejas, listo, activo, pasivo, capital, resultado (el resultado acumulado sin cerrar: activo = pasivo + capital + resultado), patrimonio_total, balance_cuadra, diferencia_pendiente (sin el reparto de un préstamo cuyo total cuadra), reparto_pendiente, reparto_cuentas, sin_respaldo}. Solo el dueño.';
 
 -- LOS PERÍODOS QUE TIENEN UNA BALANZA DE QUICKBOOKS con que comparar (c4): la
 -- de la apertura y las que Edgar haya cargado. Sin c4, ninguno.
@@ -2665,6 +3102,11 @@ begin
     raise exception using errcode = 'MX008',
       message = format('La %s (%s) no tiene saldo al %s: no hay nada que explicar.', v_cta, k.nombre, fn_cedula_dia(p_fecha));
   end if;
+  if v_base = 'con_codigo' then
+    raise exception using errcode = 'MX008',
+      message = format('La %s (%s) se sostiene con lo que cada nómina dejó por pagar, y eso solo se ve con el código del teléfono: entra con '
+                       'él y vuelve a mirarla. Sin verlo no hay una diferencia que explicar.', v_cta, k.nombre);
+  end if;
   perform set_config('mx_cedula.escribe', 'cedula_explicaciones', true);
   update cedula_explicaciones x set sustituida_el = now()
    where x.cuenta = v_cta and x.fecha = p_fecha and x.sustituida_el is null and x.retirada_el is null
@@ -2678,7 +3120,7 @@ begin
 end $$;
 revoke execute on function public.fn_cedula_explicar(text, date, text) from public, anon, service_role;
 grant  execute on function public.fn_cedula_explicar(text, date, text) to authenticated;
-comment on function public.fn_cedula_explicar(text, date, text) is 'c13: explica por qué una cuenta de balance no cuadra con su auxiliar (o no lo tiene) a una fecha: guarda el texto, quién, cuándo y los números con que se explicó (saldo del libro, del auxiliar, la diferencia y lo que la cuenta tenía suelto, sin decir de qué es); si ya había una explicación viva de esa cuenta y esa fecha, la sustituye (queda). Vale para esa fecha y esos números. MX004 si la cuenta no es de balance, MX008 si la cuenta cuadra, sale del propio libro o no tiene saldo (nada que explicar), 22023 si falta la fecha, todavía no llega o el texto es demasiado corto. Devuelve la explicación y «sustituye_a». Solo el dueño.';
+comment on function public.fn_cedula_explicar(text, date, text) is 'c13: explica por qué una cuenta de balance no cuadra con su auxiliar (o no lo tiene) a una fecha: guarda el texto, quién, cuándo y los números con que se explicó (saldo del libro, del auxiliar, la diferencia y lo que la cuenta tenía suelto, sin decir de qué es); si ya había una explicación viva de esa cuenta y esa fecha, la sustituye (queda). Vale para esa fecha y esos números. MX004 si la cuenta no es de balance, MX008 si la cuenta cuadra, sale del propio libro, no tiene saldo (nada que explicar) o es de la nómina y la sesión entró sin el código del teléfono (no se ve qué explicar), 22023 si falta la fecha, todavía no llega o el texto es demasiado corto. Devuelve la explicación y «sustituye_a». Solo el dueño.';
 
 -- RETIRAR UNA EXPLICACIÓN que ya no vale, con su motivo (queda como rastro;
 -- la cuenta vuelve a como esté).
@@ -2739,6 +3181,7 @@ declare
   v_t       text;
   v_s       numeric;
   v_s2      numeric;
+  v_cod     text := '';        -- lo que solo falta mirar con el código del teléfono, dicho en el 20 (vacío: nada)
 begin
   if not fn_cedula_ve() then
     return;
@@ -2799,15 +3242,28 @@ begin
   -- 20. Cada saldo con su auxiliar cuadrado o explicado.
   select count(*),
          left(string_agg(format('%s %s (%s)', c.cuenta, c.nombre,
-                                case when c.diferencia = 0 then 'su auxiliar no vale para ese día, o tiene renglones sueltos'
+                                case when c.diferencia = 0 and c.detalle like '%pero está AL REVÉS:%'
+                                     then 'está al revés: una cuenta por pagar con ' || fn_cedula_usd(abs(c.saldo_libro)) || ' de saldo deudor'
+                                     when c.diferencia = 0 then 'su auxiliar no vale para ese día, o tiene renglones sueltos'
                                      else fn_cedula_usd(c.diferencia) || ' de diferencia' end), '; ' order by c.cuenta), 900)
     into v_n, v_t
     from jsonb_to_recordset(v_filas)
-         as c(cuenta text, nombre text, estado text, pendiente boolean, diferencia numeric, explicacion_vieja boolean)
+         as c(cuenta text, nombre text, estado text, pendiente boolean, diferencia numeric, explicacion_vieja boolean, detalle text,
+              saldo_libro numeric)
    where c.pendiente and c.estado = 'no_cuadra' and not c.explicacion_vieja;
   select count(*) filter (where c.estado = 'cuadra'), count(*) filter (where c.estado = 'explicada'),
          count(*) filter (where c.estado = 'del_libro') into v_n2, v_s, v_s2
     from jsonb_to_recordset(v_filas) as c(estado text);
+  -- (LO QUE SOLO FALTA MIRAR CON EL CÓDIGO DEL TELÉFONO: las cuentas de la nómina —con saldo o sin él—, en una sesión que
+  -- entró sin él. No es un descuadre ni una cuenta sin auxiliar: ni este aviso ni el 30 las cuentan. Se dice aquí, siempre
+  -- igual —la fila del cierre lo recoge—, para que nadie lea «ninguna cuenta está sin cuadrar» como «las comprobé todas».)
+  select coalesce(format(' Con el código del teléfono se ven %s cuenta(s) de la nómina que aquí no se comprobaron (%s): entra con él.',
+                         count(*), left(string_agg(c.cuenta, ', ' order by c.cuenta), 200)), '')
+    into v_cod
+    from jsonb_to_recordset(v_filas) as c(cuenta text, estado text, pendiente boolean)
+   where c.estado = 'con_codigo' and c.pendiente
+  having count(*) > 0;
+  v_cod := coalesce(v_cod, '');
   orden := 20; control := 'cédula: cada saldo con su auxiliar cuadrado o explicado'; nivel := 'aviso';
   ok := v_n = 0 or not v_mira;
   detalle := case when not v_mira
@@ -2816,7 +3272,8 @@ begin
                   then format('Al %s ninguna cuenta está sin cuadrar: %s cuadran con su auxiliar, %s están explicadas y %s salen del '
                               'propio libro (no se comparan con un papel).', fn_cedula_dia(v_f), v_n2, v_s::int, v_s2::int)
                   else format('%s cuenta(s) no cuadran con su auxiliar al %s y nadie lo ha explicado: %s. Cada una dice en la cédula '
-                              'qué le falta; lo que no se pueda arreglar se explica con sus palabras.', v_n, fn_cedula_dia(v_f), v_t) end;
+                              'qué le falta; lo que no se pueda arreglar se explica con sus palabras.', v_n, fn_cedula_dia(v_f), v_t) end
+             || v_cod;
   return next;
 
   -- 30. Ninguna cuenta con saldo sin auxiliar ni explicación.
@@ -2873,7 +3330,7 @@ begin
                        where p.pronamespace = 'public'::regnamespace
                          and p.proname in ('fn_cedula_precondiciones', 'fn_cedula_exigir_dueno', 'fn_cedula_ve', 'fn_cedula_guarda',
                                            'fn_cedula_usd', 'fn_cedula_dia', 'fn_cedula_mes', 'fn_cedula_monto', 'fn_cedula_capas',
-                                           'fn_cedula_toca', 'fn_cedula_cuentas', 'fn_cedula_partidas', 'fn_cedula', 'fn_cedula_resumen',
+                                           'fn_cedula_nomina', 'fn_cedula_toca', 'fn_cedula_cuentas', 'fn_cedula_partidas', 'fn_cedula', 'fn_cedula_resumen',
                                            'fn_cedula_qb', 'fn_cedula_qb_periodos', 'fn_cedula_config', 'fn_cedula_renglon',
                                            'fn_cedula_renglon_anular', 'fn_cedula_explicar', 'fn_cedula_explicacion_retirar',
                                            'fn_cedula_control', 'fn_cedula_cierre', 'fn_cedula_pegado')),
@@ -2933,7 +3390,7 @@ begin
 end $$;
 revoke execute on function public.fn_cedula_control(text) from public, anon, service_role;
 grant  execute on function public.fn_cedula_control(text) to authenticated;
-comment on function public.fn_cedula_control(text) is 'c13: el control de la cédula al último día de un período (sin período, el que toca): 10 (cuadre) la cédula trae todas las cuentas de balance y su saldo es el del libro; 20 (aviso) cada saldo con su auxiliar cuadrado o explicado; 30 (aviso) ninguna cuenta con saldo sin auxiliar ni explicación; 40 (aviso) ninguna explicación se quedó vieja; 50 (aviso) cada renglón escrito a mano dice su documento; 90 (cuadre) las protecciones de la capa. Los avisos no se ponen en rojo mientras el período no termine ni antes del mes desde el que se avisa (cedula_config.avisar_desde): dicen cuánto falta. Solo lectura; a quien no es el dueño, nada.';
+comment on function public.fn_cedula_control(text) is 'c13: el control de la cédula al último día de un período (sin período, el que toca): 10 (cuadre) la cédula trae todas las cuentas de balance y su saldo es el del libro; 20 (aviso) cada saldo con su auxiliar cuadrado o explicado; 30 (aviso) ninguna cuenta con saldo sin auxiliar ni explicación; 40 (aviso) ninguna explicación se quedó vieja; 50 (aviso) cada renglón escrito a mano dice su documento; 90 (cuadre) las protecciones de la capa. Los avisos no se ponen en rojo mientras el período no termine ni antes del mes desde el que se avisa (cedula_config.avisar_desde): dicen cuánto falta. Las cuentas de la nómina que solo falta mirar con el código del teléfono no ponen nada en rojo: el 20 dice cuántas son. Solo lectura; a quien no es el dueño, nada.';
 
 -- LA FILA DEL CIERRE (c9: fn_cierre_revisar la pide si esta capa está): la
 -- 178, un AVISO que resume el control de la cédula. No detiene nada. Su
@@ -2949,26 +3406,33 @@ set search_path = public, pg_temp
 as $$
 #variable_conflict use_column
 declare
-  v_c jsonb;
-  v_r bigint;
-  v_t text;
+  v_c   jsonb;
+  v_r   bigint;
+  v_t   text;
+  v_cod text;     -- lo que solo falta mirar con el código del teléfono (lo dice el control 20, al final de su detalle)
+  v_tope int;
 begin
   if not fn_cedula_ve() then
     return;
   end if;
   select coalesce(jsonb_agg(to_jsonb(c) order by c.orden), '[]'::jsonb) into v_c from fn_cedula_control(p_periodo) c;
   select count(*) filter (where not x.ok) into v_r from jsonb_to_recordset(v_c) as x(ok boolean);
-  select string_agg(case when length(x.detalle) > greatest(160, 1380 / greatest(v_r, 1)::int)
-                         then left(x.detalle, greatest(160, 1380 / greatest(v_r, 1)::int) - 1) || '…' else x.detalle end,
-                    ' · ' order by x.orden)
+  -- (lo que solo falta mirar con el código no pone la fila en rojo; se dice SIEMPRE, una vez y entero, al final: esté el 20
+  -- en verde, en rojo y recortado, o sea otro el aviso en rojo)
+  select coalesce(substring(x.detalle from ' Con el código del teléfono se ven [0-9]+ cuenta.*$'), '') into v_cod
+    from jsonb_to_recordset(v_c) as x(orden int, detalle text) where x.orden = 20;
+  v_cod  := coalesce(v_cod, '');
+  v_tope := greatest(160, (1380 - length(v_cod)) / greatest(v_r, 1)::int);
+  select string_agg(case when length(y.d) > v_tope then left(y.d, v_tope - 1) || '…' else y.d end, ' · ' order by y.orden)
     into v_t
-    from jsonb_to_recordset(v_c) as x(orden int, ok boolean, detalle text)
-   where not x.ok;
+    from (select x.orden, case when v_cod <> '' and x.orden = 20 then replace(x.detalle, v_cod, '') else x.detalle end as d
+            from jsonb_to_recordset(v_c) as x(orden int, ok boolean, detalle text)
+           where not x.ok) y;
   orden := 178; control := 'cédula: cada saldo del balance con su auxiliar cuadrado o explicado (c13)'; nivel := 'aviso';
   ok := v_r = 0;
   detalle := case when v_r = 0
                   then coalesce((select x.detalle from jsonb_to_recordset(v_c) as x(orden int, detalle text) where x.orden = 20), 'En verde.')
-                  else coalesce(v_t, 'en rojo, sin detalle') end;
+                  else coalesce(v_t, 'en rojo, sin detalle') || v_cod end;
   que_hacer := case when v_r = 0 then null
                     else 'No detiene el cierre. En Contabilidad → Cédula: lo que no cuadra se arregla donde dice cada cuenta o se explica '
                          'con sus palabras; a lo que no tiene nada debajo se le escriben sus renglones.' end;
@@ -2977,7 +3441,7 @@ begin
 end $$;
 revoke execute on function public.fn_cedula_cierre(text) from public, anon, service_role;
 grant  execute on function public.fn_cedula_cierre(text) to authenticated;
-comment on function public.fn_cedula_cierre(text) is 'c13: la fila de la cédula para la revisión del cierre (c9) de un período: la 178, un aviso (no detiene) que resume su control al último día de ese período, con ok, el detalle en llano, qué hacer e ir_a = cedula. Su nombre es fijo (la ronda avisa de un rojo nuevo por el nombre de la fila). No se pone en rojo mientras el período no termine ni antes del mes desde el que se avisa. Solo lectura; a quien no es el dueño, nada.';
+comment on function public.fn_cedula_cierre(text) is 'c13: la fila de la cédula para la revisión del cierre (c9) de un período: la 178, un aviso (no detiene) que resume su control al último día de ese período, con ok, el detalle en llano, qué hacer e ir_a = cedula. Su nombre es fijo (la ronda avisa de un rojo nuevo por el nombre de la fila). No se pone en rojo mientras el período no termine ni antes del mes desde el que se avisa, ni por las cuentas de la nómina que solo falta mirar con el código del teléfono (lo dice en su detalle). Solo lectura; a quien no es el dueño, nada.';
 
 
 -- ---------------------------------------------------------------------
@@ -3083,11 +3547,11 @@ begin
   return query select 'vistas'::text, 'v_cedula, v_cedula_control, v_cedula_manual, v_cedula_explicaciones, v_cedula_qb'::text;
   v_capas := fn_cedula_capas();
   return query select 'capas que lee'::text,
-                      (select string_agg(format('%s: %s', x.que, case when (v_capas->>x.k)::boolean then 'está' else 'NO está (sus cuentas salen sin auxiliar)' end),
+                      (select string_agg(format('%s: %s', x.que, case when coalesce((v_capas->>x.k)::boolean, false) then 'está' else 'NO está (sus cuentas salen sin auxiliar)' end),
                                          ' · ' order by x.n)
                          from (values (1, 'c4', 'la comparación con QuickBooks (c4)'), (2, 'c6', 'el banco, los préstamos y las pólizas (c6)'),
                                       (3, 'c9', 'los activos fijos (c9)'), (4, 'c12', 'el WIP (c12)'),
-                                      (5, 'p1', 'los cobros en línea (p1)')) x(n, k, que));
+                                      (5, 'p1', 'los cobros en línea (p1)'), (6, 'c15', 'la nómina (c15)')) x(n, k, que));
   v_per := fn_cedula_toca();
   begin
     v_j := fn_cedula_resumen(null);

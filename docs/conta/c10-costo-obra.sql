@@ -4,11 +4,14 @@
 -- por un nombre viejo: c9 ya es el cierre).
 -- 9-nov-2026; v2 del 10-nov-2026 (los arreglos de las dos revisiones, antes
 -- de pegarlo en producción: al final de esta cabecera, «LO QUE CAMBIÓ EN LA
--- v2»). Se pega en el SQL Editor DESPUÉS de c1, c2, c3, c4 y c6
--- (c7, s1, p1, c8 y c9 pueden faltar: lo que no está no se mira, y se
--- dice). Idempotente: se puede volver a pegar entero (no pisa la
--- configuración, ni una persona dada de alta, ni un reparto). Después se
--- pega c10-pruebas.sql.
+-- v2»); v3 del 13-nov-2026 (la Fase 11b: las horas que ya pagó una nómina
+-- tienen pago real y no van, además, a estándar: «LO QUE CAMBIÓ EN LA v3»,
+-- al final de esta cabecera). Se pega en el SQL Editor DESPUÉS de c1, c2,
+-- c3, c4 y c6 (c7, s1, p1, c8 y c9 pueden faltar: lo que no está no se
+-- mira, y se dice; la nómina, c15, se pega DESPUÉS de este archivo y es
+-- opcional: si está, se le pregunta al vuelo qué horas pagó). Idempotente:
+-- se puede volver a pegar entero (no pisa la configuración, ni una persona
+-- dada de alta, ni un reparto). Después se pega c10-pruebas.sql.
 --
 -- Qué hace. DOS PIEZAS:
 --   (A) EL JORNAL. En 2026 no hay nómina: los ayudantes cobran por Zelle
@@ -170,9 +173,10 @@
 --           por obra en la app.
 --         · LA MANO DE OBRA DICE SI ES REAL O ESTÁNDAR. Real = lo pagado y
 --           repartido: las líneas de los jornales (por su asiento, vayan a
---           la cuenta que vayan) y, cuando exista, la nómina (50xx con
---           obra: 5000, 5001, 5010). Estándar = las horas de esa obra que
---           NO tienen pago real repartido × costos_equipo.costo_hora ×
+--           la cuenta que vayan) y la nómina (50xx con obra: 5000, 5001,
+--           5010; c15, desde enero de 2027). Estándar = las horas de esa
+--           obra que NO tienen pago real (ni un pago repartido por horas ni
+--           una nómina que las pagara: v3) × costos_equipo.costo_hora ×
 --           (1 + burden_estandar_pct), por reporte y al centavo, con la
 --           etiqueta «estándar, no real»: NUNCA se postea desde aquí.
 --           Si falta el burden (UNA sola tasa, la fija Edgar; 0 si no
@@ -328,8 +332,9 @@
 --   · UNA HORA, UN PAGO, salvo que Edgar diga otra cosa (arriba). Y un
 --     movimiento, un reparto vivo (índice único).
 --   · QUÉ ES «CON PAGO REAL»: la hora que está en el detalle de un reparto
---     aplicado. f11 añadirá ahí las de su journal (fn_margen_horas tiene
---     el sitio señalado).
+--     aplicado o, desde la v3, la que pagó una nómina posteada y viva (c15
+--     lo dice con su marca sin dinero: qué reporte de horas pagó qué
+--     corrida, y nada más; se lee al vuelo, y sin c15 no hay ninguna).
 --   · EL DEVENGO ESTÁNDAR DE c3 (fn_horas_devengar, opcional: Dr 5000 / Cr
 --     2210 a fin de mes, por las horas aprobadas × su tarifa; se deshace
 --     solo el día 1 del mes siguiente) es para lo trabajado y TODAVÍA NO
@@ -528,6 +533,78 @@
 --   · fn_jornal_persona devuelve avisos; fn_jornal_config no admite para lo
 --     sin obra una cuenta con etiqueta fiscal propia ni las que alimenta
 --     otra parte del libro; fn_jornal_repartir tiene p_solo_aprobadas.
+--
+-- LO QUE CAMBIÓ EN LA v3 (13-nov-2026, la Fase 11b: la nómina de c15; nada
+-- renombrado, ninguna tabla ni columna nueva, ningún dato se toca al volver
+-- a pegar: la configuración, las personas y los repartos quedan como están):
+--   · LAS HORAS QUE PAGÓ UNA NÓMINA TIENEN PAGO REAL. Desde enero de 2027 la
+--     gente de obra cobra por nómina (c15): su costo entra al libro con el
+--     journal, por sus horas (5000, 5001 y 5010 con su obra). El margen leía
+--     bien ese dinero (mano_obra_nomina), pero seguía contando sus HORAS
+--     como «a estándar»: solo reconocía como pago real el reparto de un
+--     Zelle. Con el burden estándar fijado, esa mano de obra salía dos veces
+--     en costo_con_estandar (medido en el banco: una obra con 2,336.25 de
+--     nómina en el libro y 18 h suyas a estándar daba 2,826.25 con el burden
+--     en 0). Desde aquí, la hora que pagó una nómina posteada y viva es
+--     «pago real»: fn_margen_horas_nomina() la pregunta al vuelo a la marca
+--     sin dinero de c15 (qué reporte de horas pagó qué corrida y su día de
+--     pago; ni un importe ni un nombre). c15 se pega después y es opcional:
+--     sin ella no hay ninguna, y todo queda como en la v2.
+--   · LO MISMO EN TODO LO QUE DICE «SIN PAGO» O «A ESTÁNDAR»: las horas
+--     tardías (fn_jornal_tardias, el control 35), los pagos resueltos por
+--     fuera (fn_jornal_fuera, el control 70), los pagos sin repartir de una
+--     obra (pagos_sin_repartir), las horas sin pago de cada persona
+--     (v_jornal_personas) y las «sin pago» de cada semana en la propuesta.
+--     Una hora que pagó una nómina no sale en ninguno. Y el texto de la obra
+--     dice «N h van a estándar (sin pago real: ni un pago repartido por
+--     horas ni una nómina)».
+--   · A QUIEN YA COBRA POR NÓMINA NO SE LE PIDE DARSE DE ALTA EN EL JORNAL.
+--     v_jornal_personas trae una columna más, al final: horas_nomina_90_dias
+--     (las de los últimos 90 días que pagó una nómina). El «qué falta» del
+--     pegado («dar de alta a quien cobra por sus horas…») deja de nombrar a
+--     quien las tiene: no cobra por Zelle. La pantalla, con esa columna,
+--     puede decir «cobra por nómina» en vez de «sin dar de alta».
+--   · EL DETALLE DE UNA OBRA (fn_margen_obra), sin inventar: lo que le tocó a
+--     cada hora de una nómina es el sueldo de una persona y vive en la
+--     nómina, con el código del teléfono; aquí no se lee. Su dinero sale
+--     donde el libro lo tiene (por concepto, por cuenta y por CO). Por fase y
+--     por persona se dice cuántas horas son de nómina (horas_nomina) y lo
+--     repartido de los pagos por horas (mano_obra_jornales, pagado_jornales);
+--     mano_obra_real (por fase) y pagado (por persona) salen VACÍOS, con su
+--     nota, cuando hay horas de nómina: ya no son el total. Y trae «nominas»:
+--     las que pagaron horas de la obra (día de pago, reportes y horas).
+--   · UN AVISO NUEVO EN LA PROPUESTA DE UN PAGO, pagadas_por_nomina: el Zelle
+--     a alguien que ya cobra por nómina se reconoce igual por su patrón, y
+--     repartido por sus horas las contaría otra vez. Se dice antes de
+--     aceptar; no frena, y NO cambia qué horas entran en un reparto (eso
+--     sigue como en la v2: una hora ya cubierta por otro REPARTO no entra;
+--     una que pagó una nómina, entra y se avisa).
+--   · UN CUADRE MÁS EN EL CONTROL DEL MARGEN, el 70: «las horas que pagó una
+--     nómina cuentan como pago real». Verde sin la nómina en la base, y con
+--     ella cuando su marca se deja leer (dice cuántas horas). Si la nómina
+--     de la base es la de antes del 13-nov (no trae la marca) o no se deja
+--     leer: verde con qué pegar mientras no haya ninguna nómina en el libro;
+--     EN ROJO desde que la hay (sus horas saldrían a estándar). El final del
+--     pegado lo dice también en «qué falta».
+--   · AGUANTA AÑOS DE HORAS. La lista de las horas que pagó una nómina se
+--     lee una vez por consulta y cada reporte se busca en ella en una tabla
+--     hash (como expresión, «h.id in (select …)», nunca como cruce: con las
+--     policies de horas la base cree que sale un solo reporte y, cruzando,
+--     recorría la lista entera por cada uno). Medido en el banco como el
+--     dueño por la API, con 40,000 reportes y 30,000 pagados por nómina: el
+--     costo por obra 1.7 s (1.6 s en la v2) y el control del margen 3.1 s
+--     (3.0 s); con el cruce, 63 s (el tope de la API son 8). El renglón 70
+--     no da otra pasada por las horas: cuenta en la misma del 50. Lo vigila
+--     pruebas/conta/c10-volumen.sh.
+--   · LA SEGURIDAD NO CAMBIA: ninguna función de aquí es SECURITY DEFINER
+--     (tampoco la nueva); c10 no lee ni un importe de la nómina.
+--   · LA DE ANTES (lo que NO se arregla aquí): el reparto de un Zelle sigue
+--     sin apartar las horas que pagó una nómina (solo avisa); y quien ya
+--     estaba dado de alta en el jornal y pasa a nómina sigue dado de alta
+--     (su Zelle se reconocería por su patrón): conviene darlo de baja
+--     (fn_jornal_persona, activa = false). Una hora en un reparto aplicado
+--     que además pagó una nómina no la nombra ningún control: se avisa
+--     antes de aceptar el reparto, no después.
 -- =====================================================================
 -- (Lo primero, como en c4 y c6: el pegado espera un candado como mucho
 -- medio segundo. Con la app leyendo o repartiendo, para con 55P03 («lock
@@ -562,8 +639,8 @@ declare
                                     'fn_jornal_tardias', 'fn_jornal_fuera', 'fn_jornal_ia',
                                     'fn_jornal_opciones', 'fn_jornal_calcular', 'fn_jornal_propuesta', 'fn_jornal_aplicar',
                                     'fn_jornal_deshacer', 'fn_jornal_config', 'fn_jornal_persona', 'fn_jornal_pegado',
-                                    'fn_margen_libro_desde', 'fn_margen_lineas', 'fn_margen_horas', 'fn_margen_estimado',
-                                    'fn_margen_obras', 'fn_margen_bajar', 'fn_margen_obra', 'fn_margen_control'];
+                                    'fn_margen_libro_desde', 'fn_margen_horas_nomina', 'fn_margen_lineas', 'fn_margen_horas',
+                                    'fn_margen_estimado', 'fn_margen_obras', 'fn_margen_bajar', 'fn_margen_obra', 'fn_margen_control'];
 begin
   foreach v_x in array array['es_dueno()', 'fn_desde_editor()', 'fn_fecha_miami(timestamptz)', 'fn_verificar_cadena()',
                              'fn_libro_version()', 'fn_horas_aprobar(uuid,date,date,jsonb)',
@@ -1276,6 +1353,59 @@ revoke execute on function public.fn_margen_libro_desde() from public, anon, ser
 grant  execute on function public.fn_margen_libro_desde() to authenticated;
 comment on function public.fn_margen_libro_desde() is 'c10: el primer día del libro (el día después de la apertura; sin ella, el primer mes): lo de antes está en QuickBooks. La misma regla que v_costo_por_obra de c4.';
 
+-- LAS HORAS QUE YA PAGÓ UNA NÓMINA (v3, 13-nov-2026, la Fase 11b). Desde
+-- enero de 2027 la gente de obra cobra por nómina (c15: el journal de Gusto
+-- entra al libro repartido por sus horas aprobadas). Esas horas TIENEN pago
+-- real —su costo está en el libro, en 5000, 5001 y 5010 con su obra— y aquí
+-- salían «a estándar»: solo se reconocía como pago real el reparto de un
+-- Zelle. Con el burden estándar fijado, su mano de obra contaba dos veces en
+-- «costo con estándar» (la real del libro y, encima, la estándar).
+--   · c15 SE PEGA DESPUÉS de este archivo y es opcional: aquí no se nombra
+--     nada suyo que rompa el pegado. Se mira si está su marca sin dinero
+--     (qué reporte de horas pagó qué corrida posteada y viva, y su día de
+--     pago: ni un importe, ni un nombre) y se lee al vuelo. Sin c15, ninguna
+--     fila: todo sigue como en la v2.
+--   · LA SEGURIDAD NO CAMBIA: esta función corre con los permisos de quien
+--     llama (no es SECURITY DEFINER). Lo que cobra cada persona sigue
+--     pidiendo el código del teléfono en c15, y aquí no se lee; la marca
+--     contesta al dueño sin el código porque no lleva dinero («Costo por
+--     obra» se lee sin él), y al equipo no le da nada.
+--   · SI LA MARCA NO SE PUEDE LEER (un c15 de antes del 13-nov, que no la
+--     trae; o una que cambió de forma) no se rompe el costo por obra: ninguna
+--     fila —como antes de la v3—, y el control del margen (el 70) lo dice, en
+--     rojo si ya hay una nómina en el libro, con qué volver a pegar.
+-- La leen el margen (fn_margen_horas: la clase de cada hora), lo que se
+-- queda fuera de los repartos (las horas tardías, los pagos resueltos por
+-- fuera), las personas del jornal y la propuesta de un pago (un aviso).
+create or replace function public.fn_margen_horas_nomina()
+returns table (horas_id bigint, corrida_id uuid, dia_pago date)
+language plpgsql stable
+set search_path = public, pg_temp
+as $$
+declare
+  v_h bigint[];
+  v_c uuid[];
+  v_d date[];
+begin
+  if not fn_jornal_ve() or to_regprocedure('public.fn_nomina_horas_con_pago()') is null then
+    return;
+  end if;
+  -- (leída entera a tres listas antes de devolver nada: si la lectura falla,
+  -- no queda media respuesta)
+  begin
+    execute 'select coalesce(array_agg(n.horas_id::bigint), ''{}''), coalesce(array_agg(n.corrida_id::uuid), ''{}''), '
+         || 'coalesce(array_agg(n.dia_pago::date), ''{}'') '
+         || 'from public.fn_nomina_horas_con_pago() n where n.horas_id is not null'
+       into v_h, v_c, v_d;
+  exception when others then
+    return;
+  end;
+  return query select u.h, u.c, u.d from unnest(v_h, v_c, v_d) as u(h, c, d);
+end $$;
+revoke execute on function public.fn_margen_horas_nomina() from public, anon, service_role;
+grant  execute on function public.fn_margen_horas_nomina() to authenticated;
+comment on function public.fn_margen_horas_nomina() is 'c10: las horas que ya pagó una nómina posteada y viva, si la nómina (c15) está en esta base: el reporte de horas, su corrida y su día de pago, de la marca sin dinero de c15, leída al vuelo (c15 se pega después y es opcional; sin ella, o si su marca no se puede leer, ninguna fila: lo dice el control 70 del margen). Ni un importe ni un nombre: lo que cobra cada persona sigue en la nómina, con el código del teléfono. La usan el margen (esas horas tienen pago real: no van a estándar), las horas tardías, los pagos resueltos por fuera, las personas del jornal y la propuesta de un pago. Solo lectura; a quien no es el dueño, nada.';
+
 
 -- ---------------------------------------------------------------------
 -- 5. EL NÚCLEO DEL REPARTO. No sabe nada del banco ni del Zelle y no
@@ -1414,6 +1544,8 @@ comment on function public.fn_jornal_repartir(uuid, date, date, numeric, boolean
 -- aquel reparto y repitiéndolo con las horas de hoy, o metiéndolas en el
 -- pago que las cubra (con sus fechas). Una fila por reporte, con el reparto
 -- en cuyas fechas cae (el más antiguo, si caen en varios).
+-- (v3) Las que después pagó una NÓMINA ya no son tardías: tienen su pago, y
+-- en su obra salen con pago real, no a estándar.
 create or replace function public.fn_jornal_tardias(p_usuario uuid default null)
 returns table (horas_id bigint, usuario_id uuid, persona text, fecha date, proyecto_id text, obra text, horas numeric,
                reparto_id uuid, fecha_pago date, desde date, hasta date)
@@ -1432,12 +1564,13 @@ as $$
      and not exists (select 1 from public.asientos x where x.reversa_a = r.asiento_id and x.camino = 'reverso')
      and not exists (select 1 from public.jornal_reparto_horas rh join public.jornal_repartos r2 on r2.id = rh.reparto_id
                       where rh.horas_id = h.id and r2.estado = 'aplicado')
+     and h.id not in (select n.horas_id from public.fn_margen_horas_nomina() n)
      and (select public.fn_jornal_ve())
    order by h.id, r.creado_el, r.id
 $$;
 revoke execute on function public.fn_jornal_tardias(uuid) from public, anon, service_role;
 grant  execute on function public.fn_jornal_tardias(uuid) to authenticated;
-comment on function public.fn_jornal_tardias(uuid) is 'c10: las horas tardías (de todos, o de una persona): reportes con fecha dentro de un reparto suyo aplicado y vivo que no están en ningún reparto aplicado (se reportaron o se movieron después de repartir esa semana, o se deshizo el reparto que las cubría), cada uno con el reparto en cuyas fechas cae. Las leen la propuesta (aviso horas_tardias), el control del jornal (35) y el margen. Solo lectura; a quien no es el dueño, nada.';
+comment on function public.fn_jornal_tardias(uuid) is 'c10: las horas tardías (de todos, o de una persona): reportes con fecha dentro de un reparto suyo aplicado y vivo que no están en ningún reparto aplicado ni los pagó una nómina (se reportaron o se movieron después de repartir esa semana, o se deshizo el reparto que las cubría), cada uno con el reparto en cuyas fechas cae. Las leen la propuesta (aviso horas_tardias), el control del jornal (35) y el margen. Solo lectura; a quien no es el dueño, nada.';
 
 -- LOS PAGOS RESUELTOS POR FUERA: movimientos del banco ya casados por otro
 -- camino (clasificados a mano, aprobada la propuesta de la IA, casados con
@@ -1451,6 +1584,9 @@ comment on function public.fn_jornal_tardias(uuid) is 'c10: las horas tardías (
 -- repartir (es lo que la propia propuesta manda hacer con un pago sin
 -- horas: clasificarlo en la Bandeja). Una fila por pago y obra con horas
 -- sin pago (proyecto_id vacío: las horas sin obra).
+-- (v3) Las horas que pagó una NÓMINA tienen su pago: no cuentan aquí (el
+-- Zelle a alguien que ya cobra por nómina —un bono, un reembolso— que se
+-- clasificó en la Bandeja no deja ninguna hora suya sin pagar).
 create or replace function public.fn_jornal_fuera()
 returns table (movimiento_id uuid, fecha date, monto numeric(14,2), descripcion text, resuelto_como text, asiento text,
                usuario_id uuid, persona text, desde date, hasta date, proyecto_id text, obra text, horas numeric)
@@ -1483,12 +1619,13 @@ as $$
     left join public.asientos a on a.id = mv.asiento_id
    where not exists (select 1 from public.jornal_reparto_horas rh join public.jornal_repartos r on r.id = rh.reparto_id
                       where rh.horas_id = h.id and r.estado = 'aplicado')
+     and h.id not in (select n.horas_id from public.fn_margen_horas_nomina() n)
      and (select public.fn_jornal_ve())
    group by mv.id, mv.fecha, mv.monto, mv.descripcion, mv.como, a.numero, mv.usuario_id, pf.nombre, mv.lunes, h.proyecto_id, pr.nombre
 $$;
 revoke execute on function public.fn_jornal_fuera() from public, anon, service_role;
 grant  execute on function public.fn_jornal_fuera() to authenticated;
-comment on function public.fn_jornal_fuera() is 'c10: los pagos resueltos por fuera del jornal: movimientos ya casados por otro camino, desde que empieza el libro, que el banco describe como el pago de una persona activa del jornal, sin reparto aplicado, y con horas de esa persona sin pago real en la semana del pago o en la anterior; una fila por pago y obra con esas horas. Los leen el control del jornal (70, un aviso) y el margen. Solo lectura; a quien no es el dueño, nada.';
+comment on function public.fn_jornal_fuera() is 'c10: los pagos resueltos por fuera del jornal: movimientos ya casados por otro camino, desde que empieza el libro, que el banco describe como el pago de una persona activa del jornal, sin reparto aplicado, y con horas de esa persona sin pago real (ni un reparto aplicado ni una nómina que las pagara) en la semana del pago o en la anterior; una fila por pago y obra con esas horas. Los leen el control del jornal (70, un aviso) y el margen. Solo lectura; a quien no es el dueño, nada.';
 
 -- LAS PROPUESTAS DE LA IA (c8) QUE UN JORNAL DEJARÍA ABIERTAS. c8 no sabe de
 -- c10 (está sellado) y su rutina propone para todo lo pendiente, también
@@ -1655,6 +1792,7 @@ declare
   v_d3       date;
   v_h3       numeric;
   v_m3       numeric;
+  v_nom      bigint[];
 begin
   select * into m from movimientos_banco where id = p_movimiento;
   if not found then
@@ -1715,6 +1853,17 @@ begin
   v_cuenta := coalesce(jp.cuenta, cfg.cuenta_defecto);
   v_monto  := abs(m.monto);
 
+  -- (v3) Los reportes de horas de esta persona que ya pagó una nómina (c15, si
+  -- está): leídos una vez. No cambian QUÉ horas entran en un reparto —eso
+  -- sigue como en la v2—; solo qué se dice de ellas (las «sin pago» de cada
+  -- semana y el aviso pagadas_por_nomina, abajo).
+  -- (La lista de la nómina, como expresión con su tabla hash y no como cruce:
+  -- ver fn_margen_horas.)
+  select coalesce(array_agg(h.id), '{}') into v_nom
+    from horas h
+   where h.usuario_id = jp.usuario_id
+     and (h.id in (select n.horas_id from fn_margen_horas_nomina() n)) is true;
+
   -- El período: el que se pide, o el de la regla (según el día del pago).
   select * into v_def from fn_jornal_periodo(m.fecha);
   v_desde := coalesce(p_desde, v_def.desde);
@@ -1727,7 +1876,7 @@ begin
                       where h.usuario_id = jp.usuario_id and h.fecha between o.desde and o.hasta and h.horas > 0 and h.horas < 100000),
            'horas_sin_pago', (select coalesce(sum(h.horas), 0) from horas h
                                where h.usuario_id = jp.usuario_id and h.fecha between o.desde and o.hasta and h.horas > 0
-                                 and h.horas < 100000
+                                 and h.horas < 100000 and not (h.id = any (v_nom))
                                  and not exists (select 1 from jornal_reparto_horas rh join jornal_repartos r on r.id = rh.reparto_id
                                                   where rh.horas_id = h.id and r.estado = 'aplicado'))) order by o.desde), '[]'::jsonb)
     into v_ops
@@ -2025,6 +2174,26 @@ begin
              'mano de obra saldría dos veces ahí (el devengo en 5000 y el pago real). El devengo estándar es solo para lo trabajado '
              'y todavía no pagado: hay que retirarlo de ese mes antes de cerrarlo (avisa).', fn_jornal_h(v_h2), v_x,
              fn_jornal_dia(v_fa, true)));
+  end if;
+  -- (v3, la Fase 11b) HORAS DE ESTE REPARTO QUE YA PAGÓ UNA NÓMINA. Desde
+  -- enero de 2027 la gente de obra cobra por nómina (c15) y su costo entra
+  -- al libro con el journal, por esas mismas horas. Un Zelle a alguien que
+  -- ya cobra así (un bono, un reembolso, un adelanto) se reconoce igual por
+  -- su patrón, y repartido por sus horas las contaría otra vez en su obra.
+  -- Se DICE antes de aceptar; no frena ni cambia qué horas entran (puede ser
+  -- de verdad otro pago de esas horas, y lo decide Edgar).
+  select count(*), coalesce(sum(h.horas), 0) into v_n, v_h2
+    from horas h where h.id = any (v_ids) and h.id = any (v_nom);
+  if v_n > 0 then
+    select string_agg(q.d, ', ' order by q.f) into v_x
+      from (select distinct n.dia_pago as f, fn_jornal_dia(n.dia_pago, true) as d
+              from fn_margen_horas_nomina() n where n.horas_id = any (v_ids) and n.dia_pago is not null) q;
+    v_avisos := v_avisos || jsonb_build_object('codigo', 'pagadas_por_nomina', 'corto', 'Horas que ya pagó una nómina',
+      'horas', v_h2, 'reportes', v_n, 'texto',
+      format('%s h de este reparto ya las pagó una nómina%s: su costo ya está en su obra por la nómina, y con este pago entraría otra '
+             'vez. Si este pago es de otras horas, elige sus fechas; si es otra cosa (un bono, un reembolso), no lo repartas por '
+             'horas: clasifícalo en la Bandeja como siempre. Es solo un aviso.', fn_jornal_h(v_h2),
+             coalesce(' (día de pago ' || v_x || ')', '')));
   end if;
   if v_desde > m.fecha then
     v_avisos := v_avisos || jsonb_build_object('codigo', 'periodo_futuro', 'corto', 'Las fechas son posteriores al pago', 'texto',
@@ -2809,12 +2978,20 @@ comment on function public.fn_margen_lineas(text) is 'c10: las líneas del libro
 
 -- LAS HORAS con obra, cada reporte con su CLASE:
 --   pago_real        está en el detalle de un reparto aplicado (monto_real:
---                    lo que le tocó). f11 añadirá las del journal de nómina
+--                    lo que le tocó; repartos: en cuántos está) o, desde la
+--                    v3, la pagó una nómina posteada y viva (c15). De las
+--                    de la nómina aquí NO va importe (monto_real 0 y
+--                    repartos 0): lo que le tocó a cada hora es el sueldo
+--                    de una persona y se ve en la nómina, con el código del
+--                    teléfono; su costo está en el libro, por obra y CO
+--                    (5000, 5001 y 5010: mano_obra_nomina)
 --   antes_del_libro  es de antes del libro: su costo está en QuickBooks
---   dueno            es del dueño, sin pago repartido: no cobra por hora
---   estandar         lo demás: sin pago real repartido. monto_estandar =
---                    horas × costos_equipo.costo_hora × (1 + burden), al
---                    centavo; vacío si falta la tarifa o el burden
+--   dueno            es del dueño, sin pago: no cobra por hora (las que le
+--                    pagó la nómina como oficial, 5001, tienen pago real)
+--   estandar         lo demás: sin pago real (ni un pago repartido ni una
+--                    nómina). monto_estandar = horas ×
+--                    costos_equipo.costo_hora × (1 + burden), al centavo;
+--                    vacío si falta la tarifa o el burden
 -- (monto_estandar va también en las del dueño, con su tarifa, para
 -- enseñarlo aparte: no suma en el costo.)
 create or replace function public.fn_margen_horas(p_proyecto text default null)
@@ -2842,13 +3019,21 @@ as $$
     left join pf on pf.id = h.usuario_id
     left join ce on ce.usuario_id = h.usuario_id
     -- LO PAGADO DE VERDAD, por reporte: el detalle de los repartos vivos (por
-    -- el índice de cada reporte). (f11: aquí se suma el detalle por reporte de
-    -- su journal de nómina; lo demás de esta capa no cambia.)
+    -- el índice de cada reporte) y, desde la v3, lo que pagó una nómina (qué
+    -- reportes, sin su importe; lo demás de esta capa no cambia).
     cross join lateral (select sum(rh.monto) as monto, count(*)::int as n
                           from public.jornal_reparto_horas rh
                           join public.jornal_repartos r on r.id = rh.reparto_id
                          where rh.horas_id = h.id and r.estado = 'aplicado') pg
-    cross join lateral (select case when pg.n > 0 then 'pago_real'
+    -- (v3) LAS QUE PAGÓ UNA NÓMINA (c15, si está): la lista se lee UNA vez y
+    -- se consulta por reporte como EXPRESIÓN («h.id in (select …)»: una tabla
+    -- hash), no como cruce. Con las policies de horas el planificador cree
+    -- que sale un solo reporte y, como cruce, recorría la lista entera por
+    -- cada uno: medido en el banco con 40,000 reportes y 30,000 pagados por
+    -- nómina, 63 s desde la app (el tope de la API son 8); así, 1.5 s, como
+    -- antes de la v3. Lo vigila pruebas/conta/c10-volumen.sh.
+    cross join lateral (select case when pg.n > 0
+                                      or h.id in (select n.horas_id from public.fn_margen_horas_nomina() n) then 'pago_real'
                                     when h.fecha < lb.d then 'antes_del_libro'
                                     when pf.rol = 'dueno' then 'dueno'
                                     else 'estandar' end as clase) k
@@ -2858,7 +3043,7 @@ as $$
 $$;
 revoke execute on function public.fn_margen_horas(text) from public, anon, service_role;
 grant  execute on function public.fn_margen_horas(text) to authenticated;
-comment on function public.fn_margen_horas(text) is 'c10: las horas con obra, reporte por reporte, con su clase: pago_real (está en un reparto aplicado, con lo que le tocó), antes_del_libro (su costo está en QuickBooks), dueno (no cobra por hora) o estandar (sin pago real: horas × costos_equipo.costo_hora × (1 + burden estándar), al centavo; vacío si falta la tarifa o el burden). Todas las obras, o una. Solo lectura.';
+comment on function public.fn_margen_horas(text) is 'c10: las horas con obra, reporte por reporte, con su clase: pago_real (está en un reparto aplicado, con lo que le tocó; o la pagó una nómina posteada y viva —c15—: de esas no va importe aquí, monto_real 0 y repartos 0, porque es el sueldo de una persona; su costo está en el libro por obra), antes_del_libro (su costo está en QuickBooks), dueno (no cobra por hora) o estandar (sin pago real, ni un pago repartido ni una nómina: horas × costos_equipo.costo_hora × (1 + burden estándar), al centavo; vacío si falta la tarifa o el burden). Todas las obras, o una. Solo lectura.';
 
 -- EL ESTIMADO de cada obra, de las MISMAS fuentes que la app ya enseña:
 -- horas_estimadas (proyectos), material_presupuesto y contrato
@@ -2914,9 +3099,10 @@ comment on function public.fn_margen_estimado(text) is 'c10: el estimado de cada
 --     otros_costos_real, costo_real (la suma)
 --   LAS HORAS: horas_reales (todas las reportadas con esa obra), horas_co
 --     (las que llevan CO), horas_base (las de antes de la app, de la ficha),
---     horas_antes_libro, horas_con_pago_real, horas_estandar (sin pago real;
---     sin las del dueño ni las de antes del libro), horas_dueno,
---     horas_sin_aprobar
+--     horas_antes_libro, horas_con_pago_real (las de un reparto aplicado
+--     y, desde la v3, las que pagó una nómina), horas_estandar (sin pago
+--     real: ni lo uno ni lo otro; sin las del dueño ni las de antes del
+--     libro), horas_dueno, horas_sin_aprobar
 --   EL ESTÁNDAR: mano_obra_estandar (vacía, con mano_obra_estandar_falta,
 --     si falta el burden o la tarifa de alguien; 0 si no hay horas a
 --     estándar), mano_obra_dueno (aparte: no suma), burden_estandar_pct,
@@ -3039,6 +3225,8 @@ as $$
           where (p_proyecto is null or h.proyecto_id = p_proyecto)
             and not exists (select 1 from public.jornal_reparto_horas rh join public.jornal_repartos r on r.id = rh.reparto_id
                              where rh.horas_id = h.id and r.estado = 'aplicado')
+            -- (v3: ni las que ya pagó una nómina: su costo sí está en la obra)
+            and h.id not in (select n.horas_id from public.fn_margen_horas_nomina() n)
           group by h.proyecto_id),
        tar as materialized (
          -- LAS HORAS TARDÍAS de cada obra (fn_jornal_tardias): de una semana que
@@ -3088,8 +3276,11 @@ as $$
            case when coalesce(pend.n, 0) > 0
                 then format('%s pago(s) de mano de obra de esas semanas siguen sin repartir en la Bandeja: su costo todavía no está en '
                             'esta obra.', pend.n) end,
+           -- (v3: «sin pago real» es sin ninguno de los dos: ni un pago repartido por
+           -- horas ni una nómina. Las que pagó una nómina ya no salen aquí.)
            case when coalesce(hrs.estandar, 0) > 0
-                then format('%s h van a estándar (sin pago real repartido)%s.', public.fn_jornal_h(hrs.estandar),
+                then format('%s h van a estándar (sin pago real: ni un pago repartido por horas ni una nómina)%s.',
+                            public.fn_jornal_h(hrs.estandar),
                             case when s.mo_estandar is not null then ': ' || public.fn_jornal_usd(s.mo_estandar) || ', estándar, no real'
                                  else '' end) end,
            case when s.falta is not null then s.falta end,
@@ -3244,6 +3435,18 @@ comment on function public.fn_margen_bajar(text, text, text) is 'c10: la llave �
 -- (horas y dólares de mano de obra), por_cost_code (o «todavía no hay nada
 -- capturado con código»), cobertura (por persona: cuántas horas con pago
 -- real y cuántas a estándar), repartos (los que la tocan) y avisos}.
+-- (v3) CON HORAS QUE PAGÓ UNA NÓMINA. Su dinero está en el libro por obra y
+-- CO (5000, 5001, 5010: el concepto «mano de obra real», por cuenta y por
+-- CO lo traen como siempre), pero NO por fase ni por persona: lo que le
+-- tocó a cada hora es el sueldo de alguien y vive en la nómina, con el
+-- código del teléfono. Aquí se dice cuántas son y no se inventa su importe:
+--   · por_fase y cobertura traen horas_nomina (las que pagó una nómina) y
+--     mano_obra_jornales / pagado_jornales (lo que sí se sabe: lo repartido
+--     de los pagos por horas). mano_obra_real (por fase) y pagado (por
+--     persona) salen VACÍOS —no en cero— cuando hay horas de nómina, con su
+--     nota: ya no son el total;
+--   · nominas: las nóminas que pagaron horas de esta obra (su día de pago,
+--     cuántos reportes y cuántas horas), sin importes.
 create or replace function public.fn_margen_obra(p_proyecto text) returns jsonb
 language plpgsql stable
 set search_path = public, pg_temp
@@ -3260,6 +3463,11 @@ declare
   v_alc      jsonb := '[]'::jsonb;
   v_lin      jsonb;
   v_hor      jsonb;
+  v_nom      bigint[];
+  v_nominas  jsonb;
+  v_mapa     jsonb;
+  c_nota_nom constant text := 'Parte de estas horas las pagó una nómina: su costo está en el libro por obra (la mano de obra de nómina), '
+                              'y lo que le tocó a cada persona se ve en Nómina, con el código del teléfono.';
 begin
   perform fn_jornal_exigir_dueno();
   if coalesce(btrim(p_proyecto), '') = '' then
@@ -3273,6 +3481,24 @@ begin
   -- todos los cortes de abajo.
   select coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) into v_lin from fn_margen_lineas(p_proyecto) x;
   select coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) into v_hor from fn_margen_horas(p_proyecto) x;
+  -- (v3) Los reportes de esta obra que pagó una nómina, y qué nóminas: sin
+  -- importes (lo que le tocó a cada hora no se lee aquí). La marca se lee
+  -- UNA vez y cada reporte suyo se busca entre los de la obra (v_hor) por su
+  -- número, en un diccionario: sin un cruce que dependa de cómo lo planee la
+  -- base (ver fn_margen_horas).
+  select coalesce(jsonb_object_agg(x.horas_id::text, x.horas), '{}'::jsonb) into v_mapa
+    from jsonb_to_recordset(v_hor) as x(horas_id bigint, horas numeric);
+  with nm as materialized (
+         select n.horas_id, n.corrida_id, n.dia_pago, (v_mapa->>(n.horas_id::text))::numeric as horas
+           from fn_margen_horas_nomina() n
+          where v_mapa ? (n.horas_id::text))
+  select coalesce((select array_agg(nm.horas_id) from nm), '{}'),
+         coalesce((select jsonb_agg(jsonb_build_object('corrida_id', z.corrida_id, 'dia_pago', z.dia_pago, 'reportes', z.n, 'horas', z.h)
+                                    order by z.dia_pago, z.corrida_id)
+                     from (select nm.corrida_id, nm.dia_pago, count(*) as n, sum(nm.horas) as h
+                             from nm
+                            group by nm.corrida_id, nm.dia_pago) z), '[]'::jsonb)
+    into v_nom, v_nominas;
 
   -- Estimado contra real, por concepto.
   v_concep := jsonb_build_array(
@@ -3288,6 +3514,9 @@ begin
     jsonb_build_object('concepto', 'mano_obra_real', 'nivel', 'detalle', 'etiqueta', 'Mano de obra real (pagada y repartida)',
                        'estimado', null, 'real', o.mano_obra_real, 'estandar', null, 'total', o.mano_obra_real, 'diferencia', null,
                        'horas', o.horas_con_pago_real, 'jornales', o.mano_obra_jornales, 'nomina', o.mano_obra_nomina,
+                       'horas_nomina', (select coalesce(sum(h.horas), 0)
+                                          from jsonb_to_recordset(v_hor) as h(horas_id bigint, horas numeric, clase text)
+                                         where h.clase = 'pago_real' and h.horas_id = any (v_nom)),
                        'bajar', fn_margen_bajar(p_proyecto, 'mano_obra')),
     jsonb_build_object('concepto', 'mano_obra_estandar', 'nivel', 'detalle', 'etiqueta', 'Mano de obra estándar, no real',
                        'estimado', null, 'real', null, 'estandar', o.mano_obra_estandar, 'total', o.mano_obra_estandar,
@@ -3297,8 +3526,9 @@ begin
                        -- todas sus horas sin pago, también las de obras ya terminadas. Es
                        -- una estimación para comparar, nunca un asiento: se dice.)
                        'nota', coalesce(o.mano_obra_estandar_falta,
-                                        'Horas sin pago real repartido × la tarifa de Costos del equipo × (1 + burden estándar), con la '
-                                        'tarifa y el burden de hoy (si cambian, este número cambia). No está en el libro.')),
+                                        'Horas sin pago real (ni un pago repartido por horas ni una nómina) × la tarifa de Costos del '
+                                        'equipo × (1 + burden estándar), con la tarifa y el burden de hoy (si cambian, este número '
+                                        'cambia). No está en el libro.')),
     jsonb_build_object('concepto', 'subcontratos', 'nivel', 'concepto', 'etiqueta', 'Subcontratos',
                        'estimado', null, 'real', o.subcontratos_real, 'estandar', null, 'total', o.subcontratos_real, 'diferencia', null,
                        'bajar', fn_margen_bajar(p_proyecto, 'subcontratos')),
@@ -3378,17 +3608,25 @@ begin
   -- Por fase: horas y dólares de mano de obra (lo real, del detalle de los
   -- repartos; lo estándar, de las horas sin pago), y lo demás del libro que
   -- lleve esa fase.
-  select coalesce(jsonb_agg(jsonb_build_object(
+  -- (v3: con horas de nómina en la fase, su mano de obra real ya no es solo
+  -- lo repartido de los jornales, y lo de la nómina no se lleva por fase:
+  -- mano_obra_real sale vacía, con su nota; mano_obra_jornales, lo que se sabe)
+  select coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
+             'nota', case when coalesce(z.h_nomina, 0) > 0 then c_nota_nom end))
+           || jsonb_build_object(
            'fase', z.fase, 'etiqueta', coalesce(z.fase, 'Sin fase'),
-           'horas', coalesce(z.horas, 0), 'horas_con_pago_real', coalesce(z.pagadas, 0), 'mano_obra_real', coalesce(z.pagado, 0),
+           'horas', coalesce(z.horas, 0), 'horas_con_pago_real', coalesce(z.pagadas, 0),
+           'mano_obra_real', case when coalesce(z.h_nomina, 0) > 0 then null else coalesce(z.pagado, 0) end,
+           'mano_obra_jornales', coalesce(z.pagado, 0), 'horas_nomina', coalesce(z.h_nomina, 0),
            'horas_estandar', coalesce(z.estandar, 0), 'mano_obra_estandar', z.mo_estandar,
            'horas_dueno', coalesce(z.dueno, 0), 'horas_antes_libro', coalesce(z.antes, 0),
            'otros_costos_libro', coalesce(z.libro, 0)) order by (z.fase is null), z.fase), '[]'::jsonb)
     into v_fase
-    from (select coalesce(b.fase, a.fase) as fase, b.horas, b.pagadas, b.pagado, b.estandar, b.mo_estandar, b.dueno, b.antes, a.libro
+    from (select coalesce(b.fase, a.fase) as fase, b.horas, b.pagadas, b.pagado, b.h_nomina, b.estandar, b.mo_estandar, b.dueno, b.antes, a.libro
             from (select h.fase, sum(h.horas) as horas,
                          sum(h.horas) filter (where h.clase = 'pago_real') as pagadas,
                          sum(h.monto_real) as pagado,
+                         sum(h.horas) filter (where h.clase = 'pago_real' and h.horas_id = any (v_nom)) as h_nomina,
                          sum(h.horas) filter (where h.clase = 'estandar') as estandar,
                          case when count(*) filter (where h.clase = 'estandar' and h.monto_estandar is null) = 0
                               then coalesce(sum(h.monto_estandar) filter (where h.clase = 'estandar'), 0) end as mo_estandar,
@@ -3422,15 +3660,23 @@ begin
     left join codigos_partida cp on cp.codigo = x.cost_code;
 
   -- La cobertura de la mano de obra, por persona.
-  select coalesce(jsonb_agg(jsonb_build_object(
+  -- (v3: a quien le pagó horas una nómina, «pagado» ya no es lo que cobró por
+  -- esta obra —eso es su sueldo, y está en la nómina, con el código—: sale
+  -- vacío, con su nota; pagado_jornales es lo repartido de sus pagos por horas)
+  select coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
+             'nota', case when z.h_nomina > 0 then c_nota_nom end))
+           || jsonb_build_object(
            'usuario_id', z.usuario_id, 'persona', z.persona, 'es_dueno', z.es_dueno, 'tarifa', z.tarifa,
-           'horas', z.horas, 'horas_con_pago_real', z.pagadas, 'pagado', z.pagado,
+           'horas', z.horas, 'horas_con_pago_real', z.pagadas,
+           'pagado', case when z.h_nomina > 0 then null else z.pagado end,
+           'pagado_jornales', z.pagado, 'horas_nomina', z.h_nomina,
            'horas_estandar', z.estandar, 'estandar', z.mo_estandar, 'horas_dueno', z.dueno, 'horas_antes_libro', z.antes,
            'horas_sin_aprobar', z.sin_aprobar) order by z.es_dueno, z.persona, z.usuario_id), '[]'::jsonb)
     into v_cob
     from (select h.usuario_id, max(h.persona) as persona, bool_or(h.es_dueno) as es_dueno, max(h.tarifa) as tarifa,
                  sum(h.horas) as horas,
                  coalesce(sum(h.horas) filter (where h.clase = 'pago_real'), 0) as pagadas, sum(h.monto_real) as pagado,
+                 coalesce(sum(h.horas) filter (where h.clase = 'pago_real' and h.horas_id = any (v_nom)), 0) as h_nomina,
                  coalesce(sum(h.horas) filter (where h.clase = 'estandar'), 0) as estandar,
                  sum(h.monto_estandar) filter (where h.clase in ('estandar', 'dueno')) as mo_estandar,
                  coalesce(sum(h.horas) filter (where h.clase = 'dueno'), 0) as dueno,
@@ -3455,11 +3701,11 @@ begin
 
   return jsonb_build_object(
     'obra', to_jsonb(o), 'conceptos', v_concep, 'por_cuenta', v_cuentas, 'por_co', v_co, 'por_fase', v_fase,
-    'por_cost_code', v_cc, 'cobertura', v_cob, 'repartos', v_rep, 'avisos', to_jsonb(o.avisos));
+    'por_cost_code', v_cc, 'cobertura', v_cob, 'repartos', v_rep, 'nominas', v_nominas, 'avisos', to_jsonb(o.avisos));
 end $$;
 revoke execute on function public.fn_margen_obra(text) from public, anon, service_role;
 grant  execute on function public.fn_margen_obra(text) to authenticated;
-comment on function public.fn_margen_obra(text) is 'c10: el detalle de una obra: su fila de v_margen_obra, estimado contra real por concepto (material, mano de obra con su real y su estándar, subcontratos, equipo, otros, el total y lo facturado; cada número del real con su «bajar» a v_libro), por cuenta, por CO (la base aparte), por fase (horas y dólares de mano de obra), por cost code (o que todavía no hay nada con código), la cobertura de la mano de obra por persona y los repartos que la tocan. Solo lectura. Solo el dueño.';
+comment on function public.fn_margen_obra(text) is 'c10: el detalle de una obra: su fila de v_margen_obra, estimado contra real por concepto (material, mano de obra con su real y su estándar, subcontratos, equipo, otros, el total y lo facturado; cada número del real con su «bajar» a v_libro), por cuenta, por CO (la base aparte), por fase (horas y dólares de mano de obra), por cost code (o que todavía no hay nada con código), la cobertura de la mano de obra por persona, los repartos que la tocan y las nóminas que pagaron horas suyas (su día de pago y cuántas horas; sin importes: por fase y por persona, lo de la nómina no se lleva aquí y se dice: horas_nomina, y mano_obra_real / pagado vacíos con su nota). Solo lectura. Solo el dueño.';
 
 
 -- ---------------------------------------------------------------------
@@ -3596,7 +3842,10 @@ select p.id                                         as usuario_id,
        coalesce(rp.monto, 0)::numeric(14,2)         as repartido,
        rp.ultimo                                    as ultimo_reparto,
        coalesce(hh.horas_90, 0)                     as horas_90_dias,
-       coalesce(hh.sin_pago, 0)                     as horas_sin_pago
+       coalesce(hh.sin_pago, 0)                     as horas_sin_pago,
+       -- (v3, al final: una columna más) las de los últimos 90 días que pagó una
+       -- nómina: quien las tiene ya cobra por nómina, no por Zelle
+       coalesce(hh.nomina_90, 0)                    as horas_nomina_90_dias
   from public.perfiles p
   left join public.jornal_personas jp on jp.usuario_id = p.id
   left join public.costos_equipo ce on ce.usuario_id = p.id
@@ -3608,10 +3857,14 @@ select p.id                                         as usuario_id,
                        from public.jornal_repartos r
                       where r.usuario_id = p.id and r.estado = 'aplicado') rp on true
   left join lateral (select sum(h.horas) filter (where h.fecha >= (select public.fn_fecha_miami(now()) - 90)) as horas_90,
+                            -- (v3: sin pago es sin ninguno: ni un reparto aplicado ni una nómina que las pagara)
                             sum(h.horas) filter (where h.fecha >= (select public.fn_margen_libro_desde())
                                                    and not exists (select 1 from public.jornal_reparto_horas rh
                                                                      join public.jornal_repartos r on r.id = rh.reparto_id
-                                                                    where rh.horas_id = h.id and r.estado = 'aplicado')) as sin_pago
+                                                                    where rh.horas_id = h.id and r.estado = 'aplicado')
+                                                   and h.id not in (select n.horas_id from public.fn_margen_horas_nomina() n)) as sin_pago,
+                            sum(h.horas) filter (where h.fecha >= (select public.fn_fecha_miami(now()) - 90)
+                                                   and h.id in (select n.horas_id from public.fn_margen_horas_nomina() n)) as nomina_90
                        from public.horas h
                       where h.usuario_id = p.id and h.horas > 0) hh on true
  where p.rol <> 'dueno'
@@ -3619,7 +3872,7 @@ select p.id                                         as usuario_id,
    and (select public.fn_jornal_ve());
 revoke all on public.v_jornal_personas from public, anon, authenticated, service_role;
 grant select on public.v_jornal_personas to authenticated;
-comment on view public.v_jornal_personas is 'c10: las personas del jornal: las dadas de alta (registrada: su patrón, su cuenta, si está activa, su tarifa de costos_equipo, cuántos pagos suyos esperan en la Bandeja y por cuánto, cuántos repartos y cuánto repartido, el último) y, con registrada = false, los perfiles activos que no son el dueño con horas en los últimos 90 días (a quién falta dar de alta); horas_sin_pago: sus horas desde que empieza el libro sin pago real repartido.';
+comment on view public.v_jornal_personas is 'c10: las personas del jornal: las dadas de alta (registrada: su patrón, su cuenta, si está activa, su tarifa de costos_equipo, cuántos pagos suyos esperan en la Bandeja y por cuánto, cuántos repartos y cuánto repartido, el último) y, con registrada = false, los perfiles activos que no son el dueño con horas en los últimos 90 días (a quién falta dar de alta); horas_sin_pago: sus horas desde que empieza el libro sin pago real (ni un pago repartido por horas ni una nómina que las pagara); horas_nomina_90_dias: las de los últimos 90 días que pagó una nómina (quien las tiene ya cobra por nómina: no hace falta darlo de alta aquí).';
 
 -- EL CONTROL DEL JORNAL (orden, cuadre, nivel, ok, detalle, en llano). Un
 -- «cuadre» en rojo es algo roto que hay que arreglar; un «aviso», algo que
@@ -3644,8 +3897,8 @@ with rep as (
                             'fn_jornal_periodo', 'fn_jornal_regla', 'fn_jornal_repartir_ids', 'fn_jornal_repartir', 'fn_jornal_tardias',
                             'fn_jornal_fuera', 'fn_jornal_ia', 'fn_jornal_opciones', 'fn_jornal_calcular',
                             'fn_jornal_propuesta', 'fn_jornal_aplicar', 'fn_jornal_deshacer', 'fn_jornal_config', 'fn_jornal_persona',
-                            'fn_jornal_pegado', 'fn_margen_libro_desde', 'fn_margen_lineas', 'fn_margen_horas', 'fn_margen_estimado',
-                            'fn_margen_obras', 'fn_margen_bajar', 'fn_margen_obra', 'fn_margen_control'))
+                            'fn_jornal_pegado', 'fn_margen_libro_desde', 'fn_margen_horas_nomina', 'fn_margen_lineas', 'fn_margen_horas',
+                            'fn_margen_estimado', 'fn_margen_obras', 'fn_margen_bajar', 'fn_margen_obra', 'fn_margen_control'))
 select z.orden, z.cuadre, z.nivel, z.ok, z.detalle
   from (
     -- 10: cada reparto aplicado (con su asiento vivo) ES las líneas de su asiento
@@ -3958,6 +4211,10 @@ declare
   v_n   bigint;
   v_d   text;
   v_o   jsonb;
+  v_k   bigint;
+  v_h   numeric;
+  v_hh  numeric;
+  v_m   bigint;
 begin
   if not fn_jornal_ve() then
     return;
@@ -3971,6 +4228,16 @@ begin
            'horas_con_pago_real', x.horas_con_pago_real, 'horas_estandar', x.horas_estandar, 'horas_dueno', x.horas_dueno)), '[]'::jsonb)
     into v_o
     from fn_margen_obras(null) x;
+  -- (v3) Las horas con obra de la app (el renglón 50) y, de ellas, las que
+  -- pagó una nómina (el renglón 70), en UNA pasada por las horas: desde la
+  -- app cada lectura de horas paga su policy fila a fila, y otra pasada solo
+  -- para el 70 era un tercio más de espera. (La lista de la nómina, como
+  -- expresión con su tabla hash: ver fn_margen_horas.)
+  select coalesce(sum(q.horas), 0), count(*) filter (where q.nomina), coalesce(sum(q.horas) filter (where q.nomina), 0)
+    into v_hh, v_k, v_h
+    from (select h.horas, h.id in (select n.horas_id from fn_margen_horas_nomina() n) as nomina
+            from horas h
+           where h.proyecto_id is not null and h.horas > 0 and h.horas < 100000) q;
   return query
   with o as materialized (
          select * from jsonb_to_recordset(v_o)
@@ -3991,7 +4258,7 @@ begin
                 join jornal_reparto_lineas l on l.reparto_id = r.id
                where r.estado = 'aplicado' and l.proyecto_id is not null and l.orden is not null
                  and not exists (select 1 from asientos x where x.reversa_a = r.asiento_id and x.camino = 'reverso')),
-       hh as (select coalesce(sum(h.horas), 0) as h from horas h where h.proyecto_id is not null and h.horas > 0 and h.horas < 100000)
+       hh as (select v_hh as h)
   select 10, 'margen: el costo real por obra sumado = el 5xxx con obra del mayor'::text, 'cuadre'::text, my.c = gl.c,
          case when my.c = gl.c then format('%s obras: su costo real suma %s, lo mismo que las cuentas de costo con obra del mayor.', my.n, fn_jornal_usd(my.c))
               else format('Las obras suman %s de costo y el mayor (cuentas de costo con obra) %s: diferencia %s. Avisa: no toques el libro.',
@@ -4034,9 +4301,7 @@ begin
   orden := 60; cuadre := 'margen: el costo de cada obra = el de Estados (c4)'; nivel := 'cuadre';
   if to_regclass('public.v_costo_por_obra') is null then
     ok := true; detalle := 'Los estados (c4) no están en esta base: no hay con qué comparar.';
-    return next;
-    return;
-  end if;
+  else
   begin
     select p.periodo into v_per from periodos p order by p.hasta desc, (p.tipo = 'anio') desc limit 1;
     execute $q$
@@ -4064,17 +4329,70 @@ begin
     ok := false;
     detalle := format('No se pudo comparar con «Estados» (su costo por obra): %s %s. Avisa.', sqlstate, sqlerrm);
   end;
+  end if;
+  return next;
+
+  -- 70 (v3, la Fase 11b): LAS HORAS QUE PAGÓ UNA NÓMINA CUENTAN COMO PAGO
+  -- REAL. La nómina (c15) se pega después de este archivo y es opcional; si
+  -- está, dice con su marca sin dinero qué reportes de horas pagó cada
+  -- corrida posteada, y el margen no los lleva, además, a estándar. Este
+  -- renglón mira que esa lectura funcione. Si la nómina de esta base no trae
+  -- la marca (es la de antes del 13-nov) o no se deja leer, las horas que
+  -- pague una nómina saldrían a estándar y, con el burden estándar fijado,
+  -- su mano de obra contaría dos veces. En rojo solo si YA hay una nómina en
+  -- el libro (su journal vivo: lo ve quien lee el libro, sin el código); si
+  -- todavía no hay ninguna, verde, y dice qué pegar antes de la primera.
+  orden := 70; cuadre := 'margen: las horas que pagó una nómina cuentan como pago real'; nivel := 'cuadre';
+  if to_regclass('public.nomina_corridas') is null and to_regprocedure('public.fn_nomina_horas_con_pago()') is null then
+    ok := true;
+    detalle := 'La nómina no está en esta base: el pago real de unas horas es el reparto de su pago por horas.';
+  else
+    select count(*) into v_n
+      from asientos a
+     where a.origen_tabla = 'nomina_corridas' and a.camino not in ('reverso', 'reverso_automatico')
+       and not exists (select 1 from asientos x where x.reversa_a = a.id and x.camino = 'reverso');
+    v_d := null;
+    if to_regprocedure('public.fn_nomina_horas_con_pago()') is null then
+      v_d := 'la nómina de esta base es la de antes del 13-nov-2026 y todavía no dice qué horas pagó cada una';
+    else
+      begin
+        -- (¿la marca se deja leer, y con la forma que se espera? Lo mismo que
+        -- lee fn_margen_horas_nomina, que si falla calla. Las horas con obra
+        -- que pagó ya se contaron arriba —v_k, v_h—, en la pasada del 50.)
+        execute 'select count(n.horas_id::bigint) + count(n.corrida_id::uuid) + count(n.dia_pago::date) '
+             || 'from public.fn_nomina_horas_con_pago() n'
+           into v_m;
+      exception when others then
+        v_d := format('no se pudo leer qué horas pagó cada nómina (la base contestó %s)', sqlstate);
+      end;
+    end if;
+    if v_d is null then
+      ok := true;
+      detalle := case when v_k = 0 then 'Ninguna nómina posteada ha pagado todavía horas con obra.'
+                      else format('%s h con obra, en %s reporte(s), las pagó una nómina posteada: cuentan como pago real y no van, '
+                                  'además, a estándar.', fn_jornal_h(v_h), v_k) end;
+    elsif v_n = 0 then
+      ok := true;
+      detalle := format('Todavía no hay ninguna nómina en el libro, pero %s. Antes de postear la primera, vuelve a pegar '
+                        'c15-nomina.sql (el archivo de la nómina): si no, las horas que pague saldrían a estándar.', v_d);
+    else
+      ok := false;
+      detalle := format('Hay %s nómina(s) en el libro y %s: las horas que pagaron salen a estándar en vez de con pago real y, con el '
+                        'burden estándar fijado, su mano de obra cuenta dos veces en el costo con estándar. Vuelve a pegar '
+                        'c15-nomina.sql (el archivo de la nómina); si sigue en rojo, avisa.', v_n, v_d);
+    end if;
+  end if;
   return next;
 end $$;
 revoke execute on function public.fn_margen_control() from public, anon, service_role;
 grant  execute on function public.fn_margen_control() to authenticated;
-comment on function public.fn_margen_control() is 'c10: el control del margen (lo que enseña v_margen_control): el costo y el ingreso por obra sumados = el mayor (cuentas de costo e ingreso con obra), los conceptos suman, los jornales del libro = los repartos aplicados, las horas = las de la app, y el costo de cada obra = el de v_costo_por_obra de c4 (leída al vuelo). Solo lectura; a quien no es el dueño, nada.';
+comment on function public.fn_margen_control() is 'c10: el control del margen (lo que enseña v_margen_control): el costo y el ingreso por obra sumados = el mayor (cuentas de costo e ingreso con obra), los conceptos suman, los jornales del libro = los repartos aplicados, las horas = las de la app, el costo de cada obra = el de v_costo_por_obra de c4 (leída al vuelo), y las horas que pagó una nómina cuentan como pago real (la marca sin dinero de c15, si está, se deja leer). Solo lectura; a quien no es el dueño, nada.';
 
 create view public.v_margen_control with (security_invoker = true) as
 select c.orden, c.cuadre, c.nivel, c.ok, c.detalle from public.fn_margen_control() c;
 revoke all on public.v_margen_control from public, anon, authenticated, service_role;
 grant select on public.v_margen_control to authenticated;
-comment on view public.v_margen_control is 'c10: el control del margen (orden, cuadre, nivel, ok, detalle): 10 el costo real de v_margen_obra sumado = el 5xxx con obra del mayor, al centavo; 20 lo mismo con el ingreso (40xx); 30 los conceptos de cada obra suman su costo; 40 los jornales del libro = los repartos aplicados; 50 las horas = las de la app; 60 el costo de cada obra = el de «Estados» (v_costo_por_obra, c4).';
+comment on view public.v_margen_control is 'c10: el control del margen (orden, cuadre, nivel, ok, detalle): 10 el costo real de v_margen_obra sumado = el 5xxx con obra del mayor, al centavo; 20 lo mismo con el ingreso (40xx); 30 los conceptos de cada obra suman su costo; 40 los jornales del libro = los repartos aplicados; 50 las horas = las de la app; 60 el costo de cada obra = el de «Estados» (v_costo_por_obra, c4); 70 las horas que pagó una nómina cuentan como pago real (si la nómina, c15, está en la base: su marca se deja leer; en rojo si hay una nómina en el libro y no).';
 
 
 -- ---------------------------------------------------------------------
@@ -4119,7 +4437,10 @@ begin
   return query select 'pagos reconocidos hoy'::text,
                       case when v_n = 0 then 'ninguno en la Bandeja'
                            else format('%s pago(s) en la Bandeja por %s; %s se pueden repartir ya', v_n, fn_jornal_usd(v_m), v_p) end;
-  select string_agg(v.nombre, ', ' order by v.nombre) into v_txt from v_jornal_personas v where not v.registrada;
+  -- (v3) A quien una nómina le pagó horas en los últimos 90 días no se le pide
+  -- darse de alta: ya cobra por nómina, no por Zelle.
+  select string_agg(v.nombre, ', ' order by v.nombre) into v_txt
+    from v_jornal_personas v where not v.registrada and v.horas_nomina_90_dias = 0;
   if v_txt is not null then
     v_falta := v_falta || format('dar de alta a quien cobra por sus horas (con horas en los últimos 90 días y sin dar de alta: %s)', v_txt);
   end if;
@@ -4132,6 +4453,13 @@ begin
   end if;
   if c.burden_estandar_pct is null then
     v_falta := v_falta || 'el burden estándar, UNA tasa (0 si no aplica): select fn_jornal_config(''{"burden_estandar_pct": 0}'');'::text;
+  end if;
+  -- (v3) ¿La nómina de esta base (c15) dice ya qué horas pagó? La de antes del
+  -- 13-nov no trae esa marca: con ella, las horas que pague una nómina
+  -- saldrían a estándar (lo vigila el control 70 del margen).
+  if to_regclass('public.nomina_corridas') is not null and to_regprocedure('public.fn_nomina_horas_con_pago()') is null then
+    v_falta := v_falta || ('volver a pegar c15-nomina.sql (el archivo de la nómina): el de esta base es el de antes del 13-nov y '
+                           || 'todavía no dice qué horas pagó cada nómina; sin eso, las horas que pague saldrían a estándar')::text;
   end if;
   return query select 'qué falta'::text,
                       case when cardinality(v_falta) = 0 then 'nada: todo listo' else array_to_string(v_falta, ' · ') end;
@@ -4170,6 +4498,6 @@ begin
                       '«Así es» los mete al libro (y aprueba esas horas). El costo por obra, en cada obra (estimado contra real).'::text;
 end $$;
 revoke execute on function public.fn_jornal_pegado() from public, anon, authenticated, service_role;
-comment on function public.fn_jornal_pegado() is 'c10: lo que enseña el final del pegado: la configuración, las tablas y las vistas, las personas dadas de alta, cuántos pagos reconoce hoy, qué falta (personas con horas sin dar de alta, la cuenta de lo sin obra, el burden estándar), el costo por obra en una línea, el control y el paso siguiente.';
+comment on function public.fn_jornal_pegado() is 'c10: lo que enseña el final del pegado: la configuración, las tablas y las vistas, las personas dadas de alta, cuántos pagos reconoce hoy, qué falta (personas con horas sin dar de alta —no las que ya cobran por nómina—, la cuenta de lo sin obra, el burden estándar; y volver a pegar la nómina, si la de la base es la de antes del 13-nov), el costo por obra en una línea, el control y el paso siguiente.';
 
 select * from public.fn_jornal_pegado();

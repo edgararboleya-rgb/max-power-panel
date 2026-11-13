@@ -62,6 +62,33 @@
 -- el de después, pasado el tope, y las seis salían en rojo (MX002): ahora
 -- salen «omitida» con el tope (la 120 lo vigila; ronda 3 de c6).
 --
+-- CON LA NÓMINA DE GUSTO (c15, la Fase 11b, 13-nov-2026): c3 ya devenga un
+-- mes con nómina (solo lo que ninguna nómina pagó). El mes del devengo de
+-- las pruebas (mx3.mes_dev) es ahora el primer mes abierto QUE c3 DEJA
+-- DEVENGAR: el que no tiene un journal de nómina que no diga qué horas pagó
+-- (lo decide el plan del propio c3; con un c3 de antes, cualquier journal).
+-- Con la nómina de verdad en el libro —todos los meses, desde enero de
+-- 2027— las del devengo se siguen corriendo en el mes en curso en vez de
+-- salir «omitida». Y miden lo suyo aunque ese mes traiga su devengo de
+-- verdad: donde ya había uno, la 28, la 74 y de la 121 a la 125 esperan
+-- «sustituido» (dentro de la prueba se rehace con su hora, y se deshace
+-- con ella); y la 74 cuenta solo sus líneas (su CO), no las de la nómina de
+-- verdad del mes siguiente (antes: «siguiente=992.31» en vez de 0.00).
+-- De la 121 a la 125 prueban EL CORTE DE LA NÓMINA con una nómina DE
+-- PRUEBA: su journal entra por la puerta de los puentes con el origen de
+-- una corrida (como lo deja c15), y qué horas pagó lo dice la marca sin
+-- dinero de c15, fn_nomina_horas_con_pago(), que la prueba pone DENTRO de
+-- su subtransacción: una función con ese nombre que devuelve lo de la de
+-- verdad (si c15 está) más los reportes de la prueba. Valen con c15 pegada
+-- y sin ella, y la de verdad queda como estaba al deshacerse la prueba
+-- (como el reloj fingido; la foto de la 118 lleva su huella). Poner y
+-- quitar esa función pide un candado sobre ella: cada una de esas pruebas
+-- se da MEDIO SEGUNDO (lock_timeout) para cualquier espera; si alguien la
+-- tiene ocupada, sale «omitida» y lo dice. Lo que solo se ve con una
+-- nómina de verdad (importada, posteada y casada por la puerta del dueño,
+-- con el código del teléfono y sin él) lo corre el banco:
+-- pruebas/conta/c3-nomina.sh.
+--
 -- LOS PUENTES SON DIFERIDOS: corren al confirmar la transacción. Una
 -- prueba que nunca confirma los pone en «immediate» (set constraints
 -- trg_puente_…_despues immediate) para verlos correr al terminar cada
@@ -140,6 +167,7 @@ declare
   v_huellas text := '-';
   v_seq     text;
   v_rev     text := '-';
+  v_marca   text := '-';
 begin
   -- (puente_revisados, con SQL dinámico: así la foto también se saca con un
   -- c3-puentes.sql anterior, que no la tenía.)
@@ -153,6 +181,11 @@ begin
   select left(md5(string_agg(h.tipo || ' ' || h.objeto || ' ' || h.md5, ',' order by h.tipo, h.objeto)), 12)
     into v_huellas
     from public.fn_libro_huellas_calcular() h;
+  -- (La marca sin dinero de la nómina, si c15 está: de la 121 a la 125 la
+  -- sustituyen dentro de su subtransacción, y tiene que quedar como estaba.)
+  select coalesce((select left(md5(pg_get_functiondef(p.oid) || coalesce(p.proacl::text, '')), 12)
+                     from pg_proc p where p.oid = to_regprocedure('public.fn_nomina_horas_con_pago()')), '-')
+    into v_marca;
   select string_agg(format('%s=%s', t, coalesce((select s.last_value from pg_sequences s
                                                    where s.schemaname || '.' || s.sequencename = pg_get_serial_sequence('public.' || t, 'id')),
                                                   0)), ' ' order by t)
@@ -160,7 +193,7 @@ begin
     from unnest(array['recibos', 'facturas', 'horas', 'trabajos_externos', 'materiales', 'externos_equipo']) t;
   return format('asientos=%s lineas=%s contadores=%s cerrados=%s puente=%s cobros=%s aplic=%s notas=%s reglas=%s/%s/%s/%s/%s '
                 'prov=%s alias=%s hist=%s horas_apr=%s aprobadas=%s recibos=%s facturas=%s externos=%s horas=%s cuentas=%s '
-                'cont_en=%s revisados=%s sec=[%s] huellas=%s',
+                'cont_en=%s revisados=%s sec=[%s] huellas=%s marca_nomina=%s',
                 (select count(*) from asientos), (select count(*) from asiento_lineas),
                 (select coalesce(sum(ultimo), 0) from contadores),
                 (select count(*) from periodos where estado = 'cerrado'),
@@ -176,7 +209,7 @@ begin
                 (select count(*) from recibos where contabilizado_en is not null)
                   + (select count(*) from facturas where contabilizado_en is not null)
                   + (select count(*) from trabajos_externos where contabilizado_en is not null),
-                v_rev, coalesce(v_seq, '-'), v_huellas);
+                v_rev, coalesce(v_seq, '-'), v_huellas, v_marca);
 end $$;
 revoke execute on function pg_temp.c3_foto() from public, anon, authenticated, service_role;
 
@@ -476,10 +509,11 @@ begin
 end $$;
 revoke execute on function pg_temp.c3_apertura(text, text, text, numeric, text, text, text) from public, anon, authenticated, service_role;
 
--- El motivo de «omitida» de una prueba del DEVENGO (28, 57, 67, 74, 77 y
--- 99) sin su mes: todos los meses abiertos desde el corte ya tienen journal
--- de nómina (y con journal el devengo estándar se niega, MX008: es la regla
--- de c3, no un fallo), o falta lo que dice p_falta.
+-- El motivo de «omitida» de una prueba del DEVENGO (28, 57, 67, 74, 77, 99
+-- y de la 121 a la 125) sin su mes: todos los meses abiertos desde el corte
+-- tienen un journal de nómina que no dice qué horas pagó (y con uno así el
+-- devengo estándar se niega, MX008: es la regla de c3, no un fallo), o falta
+-- lo que dice p_falta.
 create or replace function pg_temp.c3_sin_mes_devengo(p_falta text) returns text
 language sql stable
 set search_path = public, pg_temp
@@ -487,16 +521,166 @@ as $$
   select case when nullif(current_setting('mx3.mes', true), '') is not null
                    and nullif(current_setting('mx3.mes_dev', true), '') is null
                    and nullif(current_setting('mx3.mes_dev_tope', true), '') is not null
-              then format('omitida: el primer mes abierto sin journal de nómina (%s) pasa del tope de fecha de c2 (%s: no se '
-                          'postea todavía; con journal, el devengo estándar se niega, MX008)',
+              then format('omitida: el primer mes abierto que c3 deja devengar (%s) pasa del tope de fecha de c2 (%s: no se '
+                          'postea todavía; con un journal de nómina que no dice qué horas pagó, el devengo estándar se niega, '
+                          'MX008)',
                           current_setting('mx3.mes_dev_tope', true), current_setting('mx3.tope', true))
               when nullif(current_setting('mx3.mes', true), '') is not null
                    and nullif(current_setting('mx3.mes_dev', true), '') is null
-              then 'omitida: todos los meses abiertos desde el corte ya tienen journal de nómina (con journal, '
-                   || 'el devengo estándar se niega, MX008)'
+              then 'omitida: todos los meses abiertos desde el corte tienen un journal de nómina que no dice qué horas pagó '
+                   || '(con uno así, el devengo estándar se niega, MX008)'
               else 'omitida: ' || p_falta end
 $$;
 revoke execute on function pg_temp.c3_sin_mes_devengo(text) from public, anon, authenticated, service_role;
+
+-- ---------------------------------------------------------------------
+-- LA NÓMINA DE PRUEBA (13-nov-2026, la Fase 11b: las pruebas 121 a 125).
+-- c3 devenga solo las horas que ninguna nómina pagó, y qué horas pagó cada
+-- corrida lo dice la nómina (c15) con su marca sin dinero,
+-- fn_nomina_horas_con_pago(): el reporte de horas, su corrida y su día de
+-- pago. c15 se pega DESPUÉS de c3 y es opcional; estas pruebas valen con
+-- ella y sin ella:
+--   · c3_marca(filas, modo): pone la marca DE PRUEBA dentro de la
+--     subtransacción de la prueba. 'ok': una función con ese nombre que
+--     devuelve lo que dice la de verdad (si c15 está: así los meses con
+--     nómina de verdad siguen viendo sus horas pagadas) MÁS las filas de la
+--     prueba ([{horas_id, corrida_id, dia_pago}]); 'quitar': no está (como
+--     con un c15 de antes del 13-nov, que no la trae); 'falla': está y no
+--     contesta. La de verdad queda como estaba al deshacerse la prueba
+--     (como el reloj fingido); nadie más la ve cambiada. Como el SQL Editor.
+--   · c3_nomina(corrida, fecha, obra, co, monto): el journal de una nómina
+--     de prueba, por la puerta de los puentes y con el origen de una corrida
+--     (nomina_corridas, su id), como lo deja c15: Dr 5000 por obra y CO /
+--     Cr 2210. Devuelve su número.
+--   · c3_hora(id, fecha, horas, co): un reporte de horas de prueba del
+--     equipo en la obra de las pruebas, aprobado (como el SQL Editor).
+--   · c3_mo(mes, obra, co): el 5000 de esa obra y ese CO en ese mes (las
+--     pruebas miden SUS líneas: su CO).
+--   · c3_ctl_devengo(mes): el control devengo mirando solo ESE mes: 't' si
+--     no nombra su devengo; si lo nombra, 'f' y por qué (/convive,
+--     /pagadas:Nh, /en_el_cerrado:Nh, /desfasado).
+--   · c3_sin_candado(): el motivo de «omitida» cuando no se consiguió un
+--     candado en medio segundo.
+-- ---------------------------------------------------------------------
+create or replace function pg_temp.c3_marca(p_filas jsonb, p_modo text default 'ok') returns void
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_real jsonb := '[]'::jsonb;
+begin
+  if to_regprocedure('public.fn_nomina_horas_con_pago()') is not null then
+    if p_modo = 'ok' then
+      begin
+        execute 'select coalesce(jsonb_agg(jsonb_build_object(''horas_id'', n.horas_id, ''corrida_id'', n.corrida_id, '
+             || '''dia_pago'', n.dia_pago)), ''[]''::jsonb) from public.fn_nomina_horas_con_pago() n'
+          into v_real;
+      exception when others then
+        v_real := '[]'::jsonb;
+      end;
+    end if;
+    -- («create or replace» no deja cambiar lo que devuelve, y una nómina de
+    -- otra versión podría devolver otra cosa: se quita y se pone la de
+    -- prueba; todo se deshace con la prueba)
+    execute 'drop function public.fn_nomina_horas_con_pago()';
+  end if;
+  if p_modo = 'quitar' then
+    return;
+  end if;
+  if p_modo = 'falla' then
+    execute $f$
+      create function public.fn_nomina_horas_con_pago()
+      returns table (horas_id bigint, corrida_id uuid, dia_pago date)
+      language plpgsql stable
+      set search_path = public, pg_temp
+      as $b$ begin raise exception 'c3-pruebas: la marca de prueba no contesta'; end $b$
+    $f$;
+  else
+    execute format($f$
+      create function public.fn_nomina_horas_con_pago()
+      returns table (horas_id bigint, corrida_id uuid, dia_pago date)
+      language sql stable
+      set search_path = public, pg_temp
+      as $b$ select (x->>'horas_id')::bigint, (x->>'corrida_id')::uuid, (x->>'dia_pago')::date
+               from jsonb_array_elements(%L::jsonb) x $b$
+    $f$, v_real || coalesce(p_filas, '[]'::jsonb));
+  end if;
+  execute 'revoke execute on function public.fn_nomina_horas_con_pago() from public, anon, service_role';
+  execute 'grant execute on function public.fn_nomina_horas_con_pago() to authenticated';
+end $$;
+revoke execute on function pg_temp.c3_marca(jsonb, text) from public, anon, authenticated, service_role;
+
+create or replace function pg_temp.c3_nomina(p_corrida uuid, p_fecha date, p_obra text, p_co text, p_monto numeric) returns text
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  return fn_postear_interno(jsonb_build_object(
+    'camino', 'puente', 'fecha', to_char(p_fecha, 'YYYY-MM-DD'), 'origen_tabla', 'nomina_corridas', 'origen_id', p_corrida::text,
+    'descripcion', 'c3-pruebas: el journal de una nómina de prueba (se deshace)',
+    'lineas', jsonb_build_array(
+      jsonb_build_object('cuenta', fn_puente_cuenta_de('mano_obra'), 'monto', p_monto::text, 'proyecto_id', p_obra, 'co', p_co),
+      jsonb_build_object('cuenta', fn_puente_cuenta_de('sueldos_devengados'), 'monto', (-p_monto)::text)),
+    'procedencia', jsonb_build_object('funcion', 'c3-pruebas')))->>'numero';
+end $$;
+revoke execute on function pg_temp.c3_nomina(uuid, date, text, text, numeric) from public, anon, authenticated, service_role;
+
+create or replace function pg_temp.c3_hora(p_id bigint, p_fecha date, p_horas numeric, p_co text) returns void
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_equipo uuid := nullif(current_setting('mx3.equipo', true), '')::uuid;
+begin
+  insert into horas (id, fecha, usuario_id, proyecto_id, horas, notas, co) overriding system value
+  values (p_id, p_fecha, v_equipo, current_setting('mx3.obra'), p_horas, 'c3-pruebas', p_co);
+  perform fn_horas_aprobar(v_equipo, p_fecha, p_fecha,
+                           (select jsonb_build_object('ids', coalesce(jsonb_agg(h.id order by h.id), '[]'::jsonb))
+                              from horas h
+                             where h.usuario_id = v_equipo and h.fecha = p_fecha and h.aprobado_el is null));
+end $$;
+revoke execute on function pg_temp.c3_hora(bigint, date, numeric, text) from public, anon, authenticated, service_role;
+
+create or replace function pg_temp.c3_mo(p_mes text, p_obra text, p_co text) returns numeric
+language sql
+stable
+set search_path = public, pg_temp
+as $$
+  select coalesce(sum(l.monto), 0)
+    from asiento_lineas l join asientos a on a.id = l.asiento_id
+   where a.periodo = p_mes and l.cuenta = (select pc.cuenta from puente_cuentas pc where pc.rol = 'mano_obra')
+     and l.proyecto_id = p_obra and l.co = p_co
+$$;
+revoke execute on function pg_temp.c3_mo(text, text, text) from public, anon, authenticated, service_role;
+
+create or replace function pg_temp.c3_ctl_devengo(p_mes text) returns text
+language sql
+stable
+set search_path = public, pg_temp
+as $$
+  select coalesce(
+    (select 'f' || case when f.v like '%se quedó en el mes cerrado%'
+                        then '/en_el_cerrado' || coalesce(':' || substring(f.v from 'había pagado ([0-9.]+) h') || 'h', '')
+                        when f.v like '%convive con el journal de nómina%' then '/convive'
+                        when f.v like '%que la nómina ya pagó dentro del mes%'
+                        then '/pagadas:' || coalesce(substring(f.v from 'cuenta ([0-9.]+) h que la nómina'), '?') || 'h'
+                        when f.v like '%ya no es el de las horas aprobadas de hoy%' then '/desfasado'
+                        else '/otro' end
+       from fn_puentes_verificar() c
+       cross join lateral jsonb_array_elements_text(coalesce(c.detalle->'fallan', '[]'::jsonb)) f(v)
+      where c.control = 'devengo' and f.v like 'el devengo de ' || p_mes || ' (%'
+      limit 1), 't')
+$$;
+revoke execute on function pg_temp.c3_ctl_devengo(text) from public, anon, authenticated, service_role;
+
+create or replace function pg_temp.c3_sin_candado() returns text
+language sql
+immutable
+as $$
+  select 'omitida: no se consiguió un candado en medio segundo (alguien está usando la app o pegando un archivo en este '
+         || 'momento); nada quedó a medias: vuelve a pegar este archivo en un rato'::text
+$$;
+revoke execute on function pg_temp.c3_sin_candado() from public, anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------
 -- Preparación: solo lee. Lo que usan todas las pruebas, en ajustes de la
@@ -519,6 +703,9 @@ declare
   v_mat     text;
   v_veh     text;
   v_capital text;
+  v_r       record;
+  v_cod     text;
+  v_con_plan boolean := to_regprocedure('public.fn_puente_devengo_plan(text)') is not null;
 begin
   select id into v_dueno from perfiles where rol = 'dueno' and coalesce(activo, true) order by creado limit 1;
   select id into v_equipo from perfiles where rol <> 'dueno' and coalesce(activo, true) order by creado limit 1;
@@ -532,10 +719,11 @@ begin
    where tipo = 'mes' and estado = 'abierto' and desde >= fn_puente_corte() order by desde limit 1;
   select periodo into v_sig from periodos
    where tipo = 'mes' and estado = 'abierto' and desde = (v_desde + interval '1 month')::date;
-  -- El mes del DEVENGO (las pruebas 28, 57, 67, 74, 77 y 99): el primer mes
-  -- abierto desde el corte SIN journal de nómina vivo, con la misma regla de
-  -- c3 (asientos vivos de origen «nomina…» fechados en el mes). En un mes
-  -- con journal el devengo estándar se niega (MX008) y esas seis salían en
+  -- El mes del DEVENGO (las pruebas 28, 57, 67, 74, 77, 99 y de la 121 a la
+  -- 125): el primer mes abierto desde el corte SIN un journal de nómina vivo
+  -- que no diga qué horas pagó, con la misma regla de c3 (abajo; hasta el
+  -- 13-nov, cualquier asiento vivo de origen «nomina…» fechado en el mes). En
+  -- un mes así el devengo estándar se niega (MX008) y esas seis salían en
   -- rojo en producción desde la primera nómina (la del proveedor anterior,
   -- de octubre a diciembre, con fn_banco_nomina; y la de Gusto cada mes).
   -- Sin ninguno, salen «omitida» y lo dicen (c3_sin_mes_devengo).
@@ -552,15 +740,30 @@ begin
                      coalesce((select (date_trunc('month', min(p.desde)::timestamp) + interval '2 month')::date - 1
                                  from periodos p where p.tipo = 'mes' and p.estado = 'abierto'),
                               fn_fecha_miami(now()) + 45));
-  select p.periodo, p.desde, p.hasta <= v_tope into v_mdev, v_ddev, v_dentro
-    from periodos p
-   where p.tipo = 'mes' and p.estado = 'abierto' and p.desde >= fn_puente_corte()
-     and not exists (select 1 from asientos a
-                      where coalesce(a.origen_tabla, '') like 'nomina%'
-                        and a.fecha_contable between p.desde and p.hasta
-                        and a.camino not in ('reverso', 'reverso_automatico')
-                        and not exists (select 1 from asientos r where r.reversa_a = a.id and r.camino = 'reverso'))
-   order by p.desde limit 1;
+  -- (13-nov-2026, la Fase 11b) c3 ya devenga un mes con la nómina de c15:
+  -- el mes del devengo es el primero que c3 DEJA DEVENGAR, y lo dice su
+  -- propio plan (no «nomina_en_el_mes»: sin un journal de nómina que no diga
+  -- qué horas pagó). Con un c3 de antes el plan dice eso de cualquier
+  -- journal: la regla de siempre. Sin el plan (en rojo, solo el bloque A),
+  -- la regla de siempre, escrita aquí.
+  for v_r in select p.periodo, p.desde, p.hasta from periodos p
+              where p.tipo = 'mes' and p.estado = 'abierto' and p.desde >= fn_puente_corte()
+              order by p.desde loop
+    if v_con_plan then
+      execute 'select public.fn_puente_devengo_plan($1)->>' || quote_literal('codigo') into v_cod using v_r.periodo;
+      continue when v_cod is not distinct from 'nomina_en_el_mes';
+    else
+      continue when exists (select 1 from asientos a
+                             where coalesce(a.origen_tabla, '') like 'nomina%'
+                               and a.fecha_contable between v_r.desde and v_r.hasta
+                               and a.camino not in ('reverso', 'reverso_automatico')
+                               and not exists (select 1 from asientos r where r.reversa_a = a.id and r.camino = 'reverso'));
+    end if;
+    v_mdev := v_r.periodo;
+    v_ddev := v_r.desde;
+    v_dentro := v_r.hasta <= v_tope;
+    exit;
+  end loop;
   if not coalesce(v_dentro, true) then
     v_mtope := v_mdev;
     v_mdev := null;
@@ -2072,7 +2275,9 @@ end $$;
 --     siguiente, entra con él). Volver a pedirlo con las mismas horas no
 --     hace nada, y el control de mano de obra no lo nombra (sigue en verde;
 --     en un libro que ya lo tenía en rojo por otros asientos, el devengo
---     de la prueba no está entre ellos: la prueba mide lo suyo).
+--     de la prueba no está entre ellos: la prueba mide lo suyo). (13-nov:
+--     en un mes que ya trae su devengo de verdad —con la nómina de c15, el
+--     mes en curso—, la acción es «sustituido».)
 do $$
 declare
   v_dueno  uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
@@ -2092,7 +2297,10 @@ declare
   v_esp    text;
 begin
   select p.desde into v_sigd from periodos p where p.periodo = v_sig;
-  v_esp := format('accion=posteado linea=%s:240.00:%s:C3-DEV reversible=t auto_reverso=%s estandar=t repetir=sin_cambios control=t',
+  -- (Si el mes ya trae su devengo de verdad, dentro de la prueba se rehace
+  -- con la hora de la prueba: «sustituido»; se deshace con ella.)
+  v_esp := format('accion=%s linea=%s:240.00:%s:C3-DEV reversible=t auto_reverso=%s estandar=t repetir=sin_cambios control=t',
+                  case when v_mes is not null and pg_temp.c3_vivo('horas_devengo', v_mes) is not null then 'sustituido' else 'posteado' end,
                   v_mo, v_obra, v_sigd);
   if v_dueno is null or v_equipo is null or v_obra is null or v_desde is null or v_sig is null then
     insert into _pruebas values (28, 'devengo estándar: reversible, etiquetado, y no se duplica', v_esp,
@@ -4686,11 +4894,21 @@ begin
 end $$;
 
 -- 74. El devengo ESTÁNDAR no cuenta dos veces lo que la nómina ya pagó. Un
---     devengo hecho antes de que llegue el journal del mes sale en rojo en
---     cuanto el journal llega (control devengo), y volver a devengar lo
---     deshace; con journal en el mes, devengar se niega (MX008). El 5000 del
---     mes queda en lo que pagó el journal, no el doble. Antes: 5000 doble y
---     2210 con sueldos ya pagados, con los controles en verde.
+--     devengo hecho antes de que llegue un journal de nómina QUE NO DICE QUÉ
+--     HORAS PAGÓ (el del proveedor anterior, registrado a mano: origen
+--     nomina_proveedor) sale en rojo en cuanto el journal llega (control
+--     devengo), y volver a devengar lo deshace; con ese journal en el mes,
+--     devengar se niega (MX008). El 5000 del mes queda en lo que pagó el
+--     journal, no el doble. Antes: 5000 doble y 2210 con sueldos ya pagados,
+--     con los controles en verde. (Con la nómina de c15, que sí dice qué
+--     horas pagó, el mes se devenga por lo que queda sin pagar: de la 121 a
+--     la 125.)
+--     (13-nov-2026) VALE CON UNA NÓMINA DE VERDAD EN EL LIBRO: mide SUS
+--     líneas (el 5000 de su obra con su CO, C3-NOM: el journal de la prueba
+--     lo lleva también), no todo el 5000 de la obra. Antes, con una nómina
+--     de verdad en el mes siguiente que cargaba esa obra, esperaba
+--     «siguiente=0.00» y salía «siguiente=992.31». Y donde el mes ya trae su
+--     devengo de verdad, el primero es «sustituido».
 do $$
 declare
   v_dueno  uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
@@ -4706,8 +4924,10 @@ declare
   v_c2     text;
   v_r3     text;
   v_obt    text;
-  v_esp    text := 'primero=posteado control=f/convive deshacer=reversado control=t otra_vez=MX008/nomina mes=240.00 siguiente=0.00';
+  v_esp    text;
 begin
+  v_esp := format('primero=%s control=f/convive deshacer=reversado control=t otra_vez=MX008/nomina mes=240.00 siguiente=0.00',
+                  case when v_mes is not null and pg_temp.c3_vivo('horas_devengo', v_mes) is not null then 'sustituido' else 'posteado' end);
   if v_dueno is null or v_equipo is null or v_obra is null or v_desde is null or v_sig is null then
     insert into _pruebas values (74, 'el devengo estándar no cuenta dos veces lo que la nómina ya pagó', v_esp,
                                  pg_temp.c3_sin_mes_devengo('falta dueño, alguien del equipo, obra, o el mes abierto y el siguiente'), null);
@@ -4726,11 +4946,12 @@ begin
                                where h.usuario_id = v_equipo and h.fecha between v_desde + 11 and v_desde + 11 and h.aprobado_el is null));
     v_r1 := fn_horas_devengar(v_mes);
     execute 'reset role';
-    -- El journal del proveedor de nómina de esas horas (como lo postea f11).
+    -- El journal de nómina de esas horas que no dice cuáles pagó: el del
+    -- proveedor anterior, registrado a mano (como lo deja fn_banco_nomina).
     perform fn_postear_interno(jsonb_build_object(
-      'camino', 'puente', 'fecha', to_char(v_desde + 14, 'YYYY-MM-DD'), 'origen_tabla', 'nomina_corridas',
+      'camino', 'puente', 'fecha', to_char(v_desde + 14, 'YYYY-MM-DD'), 'origen_tabla', 'nomina_proveedor',
       'origen_id', 'c3-pruebas-74', 'descripcion', 'c3-pruebas: nómina de la semana (journal del proveedor, se deshace)',
-      'lineas', jsonb_build_array(jsonb_build_object('cuenta', v_mo, 'monto', '240.00', 'proyecto_id', v_obra),
+      'lineas', jsonb_build_array(jsonb_build_object('cuenta', v_mo, 'monto', '240.00', 'proyecto_id', v_obra, 'co', 'C3-NOM'),
                                   jsonb_build_object('cuenta', current_setting('mx3.banco'), 'monto', '-240.00'))));
     select case when c.ok then 't' else 'f' end
            || case when c.detalle::text like '%convive con el journal de nómina%' then '/convive' else '' end
@@ -4748,12 +4969,13 @@ begin
       v_r3 := sqlstate || case when sqlerrm like '%journal de nómina%' then '/nomina' else '' end;
     end;
     execute 'reset role';
+    -- (Sus líneas: el 5000 de su obra con su CO, en el mes y en el siguiente.)
     v_obt := format('primero=%s control=%s deshacer=%s control=%s otra_vez=%s mes=%s siguiente=%s',
                     v_r1->>'accion', v_c1, v_r2->>'accion', v_c2, v_r3,
                     (select coalesce(sum(l.monto), 0) from asiento_lineas l join asientos a on a.id = l.asiento_id
-                      where a.periodo = v_mes and l.cuenta = v_mo and l.proyecto_id = v_obra),
+                      where a.periodo = v_mes and l.cuenta = v_mo and l.proyecto_id = v_obra and l.co = 'C3-NOM'),
                     (select coalesce(sum(l.monto), 0) from asiento_lineas l join asientos a on a.id = l.asiento_id
-                      where a.periodo = v_sig and l.cuenta = v_mo and l.proyecto_id = v_obra));
+                      where a.periodo = v_sig and l.cuenta = v_mo and l.proyecto_id = v_obra and l.co = 'C3-NOM'));
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
@@ -6428,7 +6650,10 @@ end $$;
 --     cierra. Y un mes que ya quedó cerrado así (antes de esta guarda: se
 --     simula apagándola un instante) no se pone en verde al cerrarse: el
 --     control devengo lo sigue diciendo, hasta que un asiento lo corrige y
---     lo nombra en su motivo.
+--     lo nombra en su motivo. (13-nov-2026: su journal lleva el origen de la
+--     nómina pero NO el id de una corrida de c15 —«c3-pruebas-99a»—: no dice
+--     qué horas pagó, con c15 pegada o sin ella. Con el journal de una
+--     corrida de verdad el mes se cierra con su devengo al día: la 124.)
 do $$
 declare
   v_dueno  uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
@@ -7791,7 +8016,8 @@ begin
 end $$;
 
 -- 120. EL MES DEL DEVENGO SE PUEDE POSTEAR (la ronda 3 de c6): el que eligió
---      la preparación para la 28, 57, 67, 74, 77 y 99 no pasa del tope de
+--      la preparación para la 28, 57, 67, 74, 77, 99 y de la 121 a la 125
+--      no pasa del tope de
 --      fecha de c2 (su último día, el del devengo), o no hay ninguno y lo
 --      dicen. Antes, con la nómina semanal (el mes en curso
 --      con su primer journal y el anterior abierto), elegía el mes de
@@ -7819,9 +8045,510 @@ begin
                                coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
 end $$;
 
+-- =====================================================================
+-- LA FASE 11b (13-nov-2026): EL DEVENGO DE UN MES CON NÓMINA
+-- De la 121 a la 126. La nómina es DE PRUEBA (ver «LA NÓMINA DE PRUEBA»,
+-- arriba): su journal entra por la puerta de los puentes con el origen de
+-- una corrida, y la marca sin dinero de c15 la pone la prueba dentro de su
+-- subtransacción. Valen con c15 pegada y sin ella. (Van antes de la 118,
+-- que tiene que ser la última.)
+-- =====================================================================
+
+-- 121. EL CORTE DE LA NÓMINA, HORA POR HORA. Un mes con el journal de una
+--      nómina que pagó UNA de dos horas aprobadas: el devengo lleva solo la
+--      que nadie pagó (antes: MX008, el mes entero sin devengo). Lo corre el
+--      dueño desde la app SIN el código del teléfono. Dice lo que dejó
+--      fuera (en lo que devuelve, en «fuera», en el documento y en la
+--      procedencia del asiento, con el journal que la pagó); volver a
+--      devengar no hace nada; el control devengo no lo nombra y el de mano
+--      de obra tampoco (ni al devengo ni al journal). En el libro, el 5000
+--      de su obra y CO: el journal (250.00) y el devengo de la otra hora
+--      (4 h × 30 = 120.00) en el mes, y su reverso del día 1 en el
+--      siguiente.
+do $$
+declare
+  v_dueno  uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_equipo uuid := nullif(current_setting('mx3.equipo', true), '')::uuid;
+  v_obra   text := nullif(current_setting('mx3.obra', true), '');
+  v_desde  date := nullif(current_setting('mx3.desde_dev', true), '')::date;
+  v_mes    text := nullif(current_setting('mx3.mes_dev', true), '');
+  v_sig    text := nullif(current_setting('mx3.sig_dev', true), '');
+  v_mo     text := fn_puente_cuenta_de('mano_obra');
+  v_k      uuid := '00000000-0000-4000-a000-00000c300121';
+  v_j      text;
+  v_r1     jsonb;
+  v_r2     jsonb;
+  v_as     uuid;
+  v_p0     jsonb;
+  v_p1     jsonb;
+  v_obt    text;
+  v_esp    text;
+  v_nom    text := 'el corte de la nómina, hora por hora: el devengo de un mes con nómina lleva solo lo que ninguna nómina pagó';
+begin
+  v_esp := format('devengo=%s linea=120.00 pagadas=+1/+8/su_journal la_pagada=fuera la_otra=dentro fuera=t documento=t corte=dicho '
+                  'repetir=sin_cambios control=t mano_obra=t mes=370.00 siguiente=-120.00',
+                  case when v_mes is not null and pg_temp.c3_vivo('horas_devengo', v_mes) is not null then 'sustituido' else 'posteado' end);
+  if v_dueno is null or v_equipo is null or v_obra is null or v_desde is null or v_sig is null then
+    insert into _pruebas values (121, v_nom, v_esp,
+                                 pg_temp.c3_sin_mes_devengo('falta dueño, alguien del equipo, obra, o el mes abierto y el siguiente'), null);
+    return;
+  end if;
+  begin
+    set local lock_timeout = '500ms';
+    insert into costos_equipo (usuario_id, costo_hora) values (v_equipo, 30.00)
+    on conflict (usuario_id) do update set costo_hora = 30.00;
+    v_p0 := coalesce(fn_puente_devengo_plan(v_mes)->'corte', '{}'::jsonb);
+    perform pg_temp.c3_hora(-3511211, v_desde + 11, 8.0, 'C3-N21');
+    perform pg_temp.c3_hora(-3511212, v_desde + 19, 4.0, 'C3-N21');
+    -- La nómina de prueba: su journal, dentro del mes, y la marca: pagó la primera hora.
+    v_j := pg_temp.c3_nomina(v_k, v_desde + 13, v_obra, 'C3-N21', 250.00);
+    perform pg_temp.c3_marca(jsonb_build_array(jsonb_build_object('horas_id', -3511211, 'corrida_id', v_k, 'dia_pago', v_desde + 13)));
+    -- El dueño, desde la app, SIN el código del teléfono.
+    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated', 'aal', 'aal1')::text, true);
+    execute 'set local role authenticated';
+    v_r1 := fn_horas_devengar(v_mes);
+    v_r2 := fn_horas_devengar(v_mes);
+    execute 'reset role';
+    v_as := pg_temp.c3_vivo('horas_devengo', v_mes);
+    v_p1 := coalesce(fn_puente_devengo_plan(v_mes)->'corte', '{}'::jsonb);
+    select format('devengo=%s linea=%s pagadas=%s la_pagada=%s la_otra=%s fuera=%s documento=%s corte=%s repetir=%s control=%s mano_obra=%s '
+                  'mes=%s siguiente=%s',
+                  v_r1->>'accion',
+                  coalesce((select l.monto::text from asiento_lineas l
+                             where l.asiento_id = v_as and l.cuenta = v_mo and l.proyecto_id = v_obra and l.co = 'C3-N21'), '-'),
+                  format('+%s/+%s/%s',
+                         coalesce((v_p1->>'reportes')::int, 0) - coalesce((v_p0->>'reportes')::int, 0),
+                         trim_scale(coalesce((v_p1->>'horas')::numeric, 0) - coalesce((v_p0->>'horas')::numeric, 0)),
+                         case when coalesce(v_r1->'pagadas'->'journals', '[]'::jsonb) ? v_j then 'su_journal' else 'sin_su_journal' end),
+                  case when coalesce(v_p1->'ids', '[]'::jsonb) @> '[-3511211]'::jsonb then 'fuera' else 'DENTRO' end,
+                  case when coalesce(v_p1->'ids', '[]'::jsonb) @> '[-3511212]'::jsonb then 'FUERA' else 'dentro' end,
+                  case when coalesce((v_r1->'fuera'->>'pagadas')::int, 0) >= 1
+                            and (v_r1->'pagadas'->>'reportes') is not distinct from (v_r1->'fuera'->>'pagadas') then 't' else 'f' end,
+                  case when a.procedencia->'documento'->'pagadas' is not distinct from v_r1->'pagadas'
+                            and not (a.procedencia->'documento'->'horas') @> '[{"horas_id": -3511211}]'::jsonb
+                            and (a.procedencia->'documento'->'horas') @> '[{"horas_id": -3511212}]'::jsonb then 't' else 'f' end,
+                  case when a.procedencia->>'corte_nomina' like '%que la nómina ya había pagado%' || v_j || '%'
+                            and a.descripcion like '%que la nómina ya había pagado (%' || v_j || '%' then 'dicho' else 'no_dicho' end,
+                  v_r2->>'accion',
+                  pg_temp.c3_ctl_devengo(v_mes),
+                  (select case when c.ok or not (coalesce(c.detalle->'asientos', '[]'::jsonb) ?| array[a.numero, v_j]) then 't' else 'f' end
+                     from fn_puentes_verificar() c where c.control = 'mano_de_obra'),
+                  pg_temp.c3_mo(v_mes, v_obra, 'C3-N21'), pg_temp.c3_mo(v_sig, v_obra, 'C3-N21'))
+      into v_obt
+      from asientos a
+     where a.id = v_as;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when sqlstate '55P03' then v_obt := pg_temp.c3_sin_candado();
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (121, v_nom, v_esp, coalesce(v_obt, 'no devengó'),
+                               case when v_obt like 'omitida:%' then null else coalesce(v_obt = v_esp, false) end);
+end $$;
+
+-- 122. TRABAJADA EN EL MES Y PAGADA EN EL SIGUIENTE: se devenga en su mes, se
+--      deshace sola el día 1 y la nómina del mes siguiente la paga UNA vez.
+--      La hora se devenga (8 h × 30 = 240.00) antes de que llegue la nómina;
+--      cuando llega —su journal fechado en el mes siguiente, 250.00—, el
+--      devengo del mes NO cambia (el control no lo nombra y volver a
+--      devengar no hace nada: lo que cuenta es la fecha del journal, no que
+--      la hora «ya esté pagada» hoy). En el libro, su obra y CO: 240.00 en
+--      el mes; en el siguiente, −240.00 del reverso y 250.00 del journal;
+--      entre los dos meses, los 250.00 de la nómina, una vez. (Es el cierre
+--      de año: diciembre devengado no se mueve con la nómina de enero.)
+do $$
+declare
+  v_dueno  uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_equipo uuid := nullif(current_setting('mx3.equipo', true), '')::uuid;
+  v_obra   text := nullif(current_setting('mx3.obra', true), '');
+  v_desde  date := nullif(current_setting('mx3.desde_dev', true), '')::date;
+  v_mes    text := nullif(current_setting('mx3.mes_dev', true), '');
+  v_sig    text := nullif(current_setting('mx3.sig_dev', true), '');
+  v_tope   date := nullif(current_setting('mx3.tope', true), '')::date;
+  v_mo     text := fn_puente_cuenta_de('mano_obra');
+  v_k      uuid := '00000000-0000-4000-a000-00000c300122';
+  v_sigd   date;
+  v_j      text;
+  v_r1     jsonb;
+  v_r2     jsonb;
+  v_as     uuid;
+  v_c      text;
+  v_obt    text;
+  v_esp    text;
+  v_nom    text := 'trabajada en el mes y pagada en el siguiente: se devenga en su mes, se deshace el día 1 y la nómina la paga una vez';
+begin
+  v_esp := format('devengo=%s linea=240.00 llega_la_nomina: control=t devengar=sin_cambios el_mismo_asiento=t mes=240.00 siguiente=10.00 '
+                  'los_dos=250.00',
+                  case when v_mes is not null and pg_temp.c3_vivo('horas_devengo', v_mes) is not null then 'sustituido' else 'posteado' end);
+  if v_dueno is null or v_equipo is null or v_obra is null or v_desde is null or v_sig is null then
+    insert into _pruebas values (122, v_nom, v_esp,
+                                 pg_temp.c3_sin_mes_devengo('falta dueño, alguien del equipo, obra, o el mes abierto y el siguiente'), null);
+    return;
+  end if;
+  begin
+    set local lock_timeout = '500ms';
+    select p.desde into v_sigd from periodos p where p.periodo = v_sig;
+    insert into costos_equipo (usuario_id, costo_hora) values (v_equipo, 30.00)
+    on conflict (usuario_id) do update set costo_hora = 30.00;
+    perform pg_temp.c3_hora(-3511221, v_desde + 11, 8.0, 'C3-N22');
+    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated', 'aal', 'aal1')::text, true);
+    execute 'set local role authenticated';
+    v_r1 := fn_horas_devengar(v_mes);
+    execute 'reset role';
+    v_as := pg_temp.c3_vivo('horas_devengo', v_mes);
+    -- Llega la nómina del mes siguiente, en su día (si ese día pasa del tope
+    -- de fecha de c2, con el reloj fingido: como si ya fuera ese día).
+    if v_sigd > v_tope then
+      perform pg_temp.c3_fingir_hoy(v_sigd);
+    end if;
+    v_j := pg_temp.c3_nomina(v_k, v_sigd, v_obra, 'C3-N22', 250.00);
+    perform pg_temp.c3_marca(jsonb_build_array(jsonb_build_object('horas_id', -3511221, 'corrida_id', v_k, 'dia_pago', v_sigd)));
+    v_c := pg_temp.c3_ctl_devengo(v_mes);
+    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated', 'aal', 'aal1')::text, true);
+    execute 'set local role authenticated';
+    v_r2 := fn_horas_devengar(v_mes);
+    execute 'reset role';
+    v_obt := format('devengo=%s linea=%s llega_la_nomina: control=%s devengar=%s el_mismo_asiento=%s mes=%s siguiente=%s los_dos=%s',
+                    v_r1->>'accion',
+                    coalesce((select l.monto::text from asiento_lineas l
+                               where l.asiento_id = v_as and l.cuenta = v_mo and l.proyecto_id = v_obra and l.co = 'C3-N22'), '-'),
+                    v_c, v_r2->>'accion',
+                    case when pg_temp.c3_vivo('horas_devengo', v_mes) = v_as then 't' else 'f' end,
+                    pg_temp.c3_mo(v_mes, v_obra, 'C3-N22'), pg_temp.c3_mo(v_sig, v_obra, 'C3-N22'),
+                    pg_temp.c3_mo(v_mes, v_obra, 'C3-N22') + pg_temp.c3_mo(v_sig, v_obra, 'C3-N22'));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when sqlstate '55P03' then v_obt := pg_temp.c3_sin_candado();
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (122, v_nom, v_esp, coalesce(v_obt, 'no devengó'),
+                               case when v_obt like 'omitida:%' then null else coalesce(v_obt = v_esp, false) end);
+end $$;
+
+-- 123. LA NÓMINA LLEGA DESPUÉS DEL DEVENGO, EN EL MISMO MES. El devengo llevaba
+--      dos horas (360.00); la nómina del mes paga una: el control devengo lo
+--      dice (cuenta 8 h que la nómina ya pagó: están dos veces) y
+--      fn_horas_devengar lo PONE AL DÍA (reverso y devengo nuevo, solo con
+--      la otra: 120.00), no lo deshace entero. Si después la nómina paga
+--      también la otra, el control lo vuelve a decir y devengar la saca: sin
+--      más horas en el mes, el devengo se deshace, y devengar otra vez dice
+--      que no queda nada sin pagar (MX008); con más horas de verdad en el
+--      mes, sigue con ellas. En el libro, su obra y CO: solo el journal
+--      (250.00); en el mes siguiente, nada.
+do $$
+declare
+  v_dueno  uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_equipo uuid := nullif(current_setting('mx3.equipo', true), '')::uuid;
+  v_obra   text := nullif(current_setting('mx3.obra', true), '');
+  v_desde  date := nullif(current_setting('mx3.desde_dev', true), '')::date;
+  v_mes    text := nullif(current_setting('mx3.mes_dev', true), '');
+  v_sig    text := nullif(current_setting('mx3.sig_dev', true), '');
+  v_mo     text := fn_puente_cuenta_de('mano_obra');
+  v_k      uuid := '00000000-0000-4000-a000-00000c300123';
+  v_otras  boolean;
+  v_j      text;
+  v_r1     jsonb;
+  v_l1     text;
+  v_c1     text;
+  v_r2     jsonb;
+  v_l2     text;
+  v_c2     text;
+  v_c3     text;
+  v_r3     jsonb;
+  v_l3     text;
+  v_r4     text;
+  v_obt    text;
+  v_esp    text;
+  v_nom    text := 'la nómina llega después del devengo, en el mismo mes: el control lo dice y devengar lo pone al día (solo lo que sigue sin pagar)';
+begin
+  if v_dueno is null or v_equipo is null or v_obra is null or v_desde is null or v_sig is null then
+    insert into _pruebas values (123, v_nom, '-',
+                                 pg_temp.c3_sin_mes_devengo('falta dueño, alguien del equipo, obra, o el mes abierto y el siguiente'), null);
+    return;
+  end if;
+  -- (¿el mes trae, de verdad, otras horas que devengar? Entonces el devengo
+  -- no se deshace al final: sigue con ellas.)
+  v_otras := coalesce(fn_puente_devengo_plan(v_mes)->>'accion' = 'postear', false);
+  v_esp := format('devengo=%s/360.00 llega_la_nomina=f/pagadas:8h al_dia=sustituido/120.00 control=t paga_la_otra=f/pagadas:4h '
+                  'al_dia=%s/- otra_vez=%s mes=250.00 siguiente=0.00',
+                  case when pg_temp.c3_vivo('horas_devengo', v_mes) is not null then 'sustituido' else 'posteado' end,
+                  case when v_otras then 'sustituido' else 'reversado' end,
+                  case when v_otras then 'sin_cambios' else 'MX008/nada_sin_pagar' end);
+  begin
+    set local lock_timeout = '500ms';
+    insert into costos_equipo (usuario_id, costo_hora) values (v_equipo, 30.00)
+    on conflict (usuario_id) do update set costo_hora = 30.00;
+    perform pg_temp.c3_hora(-3511231, v_desde + 11, 8.0, 'C3-N23');
+    perform pg_temp.c3_hora(-3511232, v_desde + 19, 4.0, 'C3-N23');
+    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated', 'aal', 'aal1')::text, true);
+    execute 'set local role authenticated';
+    v_r1 := fn_horas_devengar(v_mes);
+    execute 'reset role';
+    select l.monto::text into v_l1 from asiento_lineas l
+     where l.asiento_id = pg_temp.c3_vivo('horas_devengo', v_mes) and l.cuenta = v_mo and l.proyecto_id = v_obra and l.co = 'C3-N23';
+    -- Llega la nómina del mes: paga la primera hora.
+    v_j := pg_temp.c3_nomina(v_k, v_desde + 13, v_obra, 'C3-N23', 250.00);
+    perform pg_temp.c3_marca(jsonb_build_array(jsonb_build_object('horas_id', -3511231, 'corrida_id', v_k, 'dia_pago', v_desde + 13)));
+    v_c1 := pg_temp.c3_ctl_devengo(v_mes);
+    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated', 'aal', 'aal1')::text, true);
+    execute 'set local role authenticated';
+    v_r2 := fn_horas_devengar(v_mes);
+    execute 'reset role';
+    select l.monto::text into v_l2 from asiento_lineas l
+     where l.asiento_id = pg_temp.c3_vivo('horas_devengo', v_mes) and l.cuenta = v_mo and l.proyecto_id = v_obra and l.co = 'C3-N23';
+    v_c2 := pg_temp.c3_ctl_devengo(v_mes);
+    -- Y después paga también la otra.
+    perform pg_temp.c3_marca(jsonb_build_array(jsonb_build_object('horas_id', -3511232, 'corrida_id', v_k, 'dia_pago', v_desde + 13)));
+    v_c3 := pg_temp.c3_ctl_devengo(v_mes);
+    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated', 'aal', 'aal1')::text, true);
+    execute 'set local role authenticated';
+    v_r3 := fn_horas_devengar(v_mes);
+    begin
+      v_r4 := fn_horas_devengar(v_mes)->>'accion';
+    exception when others then
+      v_r4 := sqlstate || case when sqlerrm like '%no queda nada trabajado y sin pagar%' then '/nada_sin_pagar' else '' end;
+    end;
+    execute 'reset role';
+    select l.monto::text into v_l3 from asiento_lineas l
+     where l.asiento_id = pg_temp.c3_vivo('horas_devengo', v_mes) and l.cuenta = v_mo and l.proyecto_id = v_obra and l.co = 'C3-N23';
+    v_obt := format('devengo=%s/%s llega_la_nomina=%s al_dia=%s/%s control=%s paga_la_otra=%s al_dia=%s/%s otra_vez=%s mes=%s siguiente=%s',
+                    v_r1->>'accion', coalesce(v_l1, '-'), v_c1, v_r2->>'accion', coalesce(v_l2, '-'), v_c2, v_c3,
+                    v_r3->>'accion', coalesce(v_l3, '-'), v_r4,
+                    pg_temp.c3_mo(v_mes, v_obra, 'C3-N23'), pg_temp.c3_mo(v_sig, v_obra, 'C3-N23'));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when sqlstate '55P03' then v_obt := pg_temp.c3_sin_candado();
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (123, v_nom, v_esp, coalesce(v_obt, 'no devengó'),
+                               case when v_obt like 'omitida:%' then null else coalesce(v_obt = v_esp, false) end);
+end $$;
+
+-- 124. EL CIERRE CON NÓMINA Y DEVENGO EN EL MISMO MES. Con el devengo
+--      desfasado (la nómina pagó una de sus horas después de devengarlo) el
+--      mes NO se cierra (MX008, y dice cómo ponerlo al día); puesto al día
+--      (solo lo que sigue sin pagar), el mes SE CIERRA con los dos dentro:
+--      su nómina y su devengo. Y un mes que quedó cerrado con el doble
+--      dentro (antes de esta guarda: se simula apagándola un instante) sale
+--      en rojo en el control devengo, con las horas que la nómina ya había
+--      pagado, hasta que un asiento lo corrige y lo nombra en su motivo.
+do $$
+declare
+  v_dueno  uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_equipo uuid := nullif(current_setting('mx3.equipo', true), '')::uuid;
+  v_obra   text := nullif(current_setting('mx3.obra', true), '');
+  v_desde  date := nullif(current_setting('mx3.desde_dev', true), '')::date;
+  v_mes    text := nullif(current_setting('mx3.mes_dev', true), '');
+  v_sig    text := nullif(current_setting('mx3.sig_dev', true), '');
+  v_k      uuid := '00000000-0000-4000-a000-00000c300124';
+  v_dev    jsonb;
+  v_a      text;
+  v_b      text;
+  v_c      text;
+  v_d      text;
+  v_e      text;
+  v_obt    text;
+  v_esp    text := 'cerrar_desfasado=MX008/dice_como al_dia=sustituido cerrar=cerrado cerrado_con_el_doble=f/en_el_cerrado:8h corregido=t';
+  v_nom    text := 'un mes con nómina se cierra con su devengo al día (solo lo que nadie pagó); desfasado, no; y el cerrado con el doble dentro sigue en rojo';
+begin
+  if v_dueno is null or v_equipo is null or v_obra is null or v_desde is null or v_sig is null then
+    insert into _pruebas values (124, v_nom, v_esp,
+                                 pg_temp.c3_sin_mes_devengo('falta dueño, alguien del equipo, obra, o el mes abierto y el siguiente'), null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c3_candados_recibos();
+    lock table public.periodos in exclusive mode;   -- antes que el de la cadena (ver la cabecera)
+    set local lock_timeout = '500ms';
+    insert into costos_equipo (usuario_id, costo_hora) values (v_equipo, 30.00)
+    on conflict (usuario_id) do update set costo_hora = 30.00;
+    perform pg_temp.c3_hora(-3511241, v_desde + 11, 8.0, 'C3-N24');
+    perform pg_temp.c3_hora(-3511242, v_desde + 19, 4.0, 'C3-N24');
+    -- a) Desfasado no se cierra; al día, sí (con su nómina dentro).
+    begin
+      v_dev := fn_horas_devengar(v_mes);
+      perform pg_temp.c3_nomina(v_k, v_desde + 13, v_obra, 'C3-N24', 250.00);
+      perform pg_temp.c3_marca(jsonb_build_array(jsonb_build_object('horas_id', -3511241, 'corrida_id', v_k, 'dia_pago', v_desde + 13)));
+      begin
+        perform pg_temp.c3_cerrar_hasta(v_mes);
+        v_a := 'cerrado';
+        raise exception using errcode = 'MXT01';
+      exception
+        when sqlstate 'MXT01' then null;
+        when sqlstate '55P03' then raise;
+        when others then v_a := sqlstate || case when sqlerrm like '%desfasado%' and sqlerrm like '%fn_horas_devengar(%' then '/dice_como' else '' end;
+      end;
+      v_b := fn_horas_devengar(v_mes)->>'accion';
+      perform pg_temp.c3_cerrar_hasta(v_mes);
+      select p.estado into v_c from periodos p where p.periodo = v_mes;
+      raise exception using errcode = 'MXT01';
+    exception
+      when sqlstate 'MXT01' then null;
+    end;
+    -- b) Un mes que ya quedó cerrado con el doble dentro (la guarda, apagada).
+    v_dev := fn_horas_devengar(v_mes);
+    perform pg_temp.c3_nomina(v_k, v_desde + 13, v_obra, 'C3-N24', 250.00);
+    perform pg_temp.c3_marca(jsonb_build_array(jsonb_build_object('horas_id', -3511241, 'corrida_id', v_k, 'dia_pago', v_desde + 13)));
+    set local lock_timeout = '2s';
+    alter table public.periodos disable trigger trg_puente_periodos_devengo;
+    perform pg_temp.c3_cerrar_hasta(v_mes);
+    alter table public.periodos enable trigger trg_puente_periodos_devengo;
+    v_d := pg_temp.c3_ctl_devengo(v_mes);
+    -- El ajuste, en el mes abierto, que lo nombra.
+    perform fn_postear(jsonb_build_object(
+      'fecha', to_char((select p.desde from periodos p where p.periodo = v_sig), 'YYYY-MM-DD'),
+      'descripcion', 'c3-pruebas: lo deja dicho (se deshace)',
+      'motivo', 'c3: corrige el devengo ' || (v_dev->>'asiento') || ', que contó horas que la nómina ya había pagado',
+      'lineas', jsonb_build_array(jsonb_build_object('cuenta', current_setting('mx3.vehiculo'), 'monto', '1.00'),
+                                  jsonb_build_object('cuenta', current_setting('mx3.banco'), 'monto', '-1.00'))));
+    v_e := pg_temp.c3_ctl_devengo(v_mes);
+    v_obt := format('cerrar_desfasado=%s al_dia=%s cerrar=%s cerrado_con_el_doble=%s corregido=%s', v_a, v_b, v_c, v_d, v_e);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when sqlstate '55P03' then v_obt := 'omitida: periodos o la marca de la nómina en uso (lock_timeout)';
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (124, v_nom, v_esp, coalesce(v_obt, '-'),
+                               case when v_obt like 'omitida:%' then null else coalesce(v_obt = v_esp, false) end);
+end $$;
+
+-- 125. SI LA NÓMINA NO DICE QUÉ HORAS PAGÓ, NO SE SUPONE NADA. El journal de
+--      una corrida en el mes y la marca de c15 que NO ESTÁ (un c15 de antes
+--      del 13-nov) o que NO CONTESTA: el mes queda como antes de la Fase
+--      11b. El devengo que ya estaba convive con el journal (control en
+--      rojo) y devengar lo deshace; devengar otra vez se niega (MX008) y
+--      dice qué hacer: volver a pegar c15-nomina.sql. Antes de esta guarda
+--      habría devengado todas las horas, también las que ese journal pagó.
+--      Y con la marca puesta, la hora que pagó queda fuera.
+do $$
+declare
+  v_dueno  uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_equipo uuid := nullif(current_setting('mx3.equipo', true), '')::uuid;
+  v_obra   text := nullif(current_setting('mx3.obra', true), '');
+  v_desde  date := nullif(current_setting('mx3.desde_dev', true), '')::date;
+  v_mes    text := nullif(current_setting('mx3.mes_dev', true), '');
+  v_sig    text := nullif(current_setting('mx3.sig_dev', true), '');
+  v_k      uuid := '00000000-0000-4000-a000-00000c300125';
+  v_r0     jsonb;
+  v_c1     text;
+  v_r1     jsonb;
+  v_x1     text;
+  v_x2     text;
+  v_p      jsonb;
+  v_obt    text;
+  v_esp    text;
+  v_nom    text := 'si la nómina no dice qué horas pagó (su marca no está o no contesta), el mes queda como antes: sin devengo, y dice qué hacer';
+begin
+  v_esp := format('antes=%s sin_la_marca=f/convive deshacer=reversado otra_vez=MX008/pegar_c15 marca_que_no_contesta=MX008/no_contesto '
+                  'con_la_marca=fuera',
+                  case when v_mes is not null and pg_temp.c3_vivo('horas_devengo', v_mes) is not null then 'sustituido' else 'posteado' end);
+  if v_dueno is null or v_equipo is null or v_obra is null or v_desde is null or v_sig is null then
+    insert into _pruebas values (125, v_nom, v_esp,
+                                 pg_temp.c3_sin_mes_devengo('falta dueño, alguien del equipo, obra, o el mes abierto y el siguiente'), null);
+    return;
+  end if;
+  begin
+    set local lock_timeout = '500ms';
+    insert into costos_equipo (usuario_id, costo_hora) values (v_equipo, 30.00)
+    on conflict (usuario_id) do update set costo_hora = 30.00;
+    perform pg_temp.c3_hora(-3511251, v_desde + 11, 8.0, 'C3-N25');
+    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated', 'aal', 'aal1')::text, true);
+    execute 'set local role authenticated';
+    v_r0 := fn_horas_devengar(v_mes);
+    execute 'reset role';
+    -- El journal de una corrida, en el mes; y la marca, que no está.
+    perform pg_temp.c3_nomina(v_k, v_desde + 13, v_obra, 'C3-N25', 250.00);
+    perform pg_temp.c3_marca(null, 'quitar');
+    v_c1 := pg_temp.c3_ctl_devengo(v_mes);
+    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated', 'aal', 'aal1')::text, true);
+    execute 'set local role authenticated';
+    v_r1 := fn_horas_devengar(v_mes);
+    begin
+      perform fn_horas_devengar(v_mes);
+      v_x1 := 'entró';
+    exception when others then
+      v_x1 := sqlstate || case when sqlerrm like '%journal de nómina%' and sqlerrm like '%todavía no lo dice%'
+                                    and sqlerrm like '%Vuelve a pegar c15-nomina.sql%' then '/pegar_c15' else '' end;
+    end;
+    execute 'reset role';
+    -- La marca está, y no contesta.
+    perform pg_temp.c3_marca(null, 'falla');
+    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated', 'aal', 'aal1')::text, true);
+    execute 'set local role authenticated';
+    begin
+      perform fn_horas_devengar(v_mes);
+      v_x2 := 'entró';
+    exception when others then
+      v_x2 := sqlstate || case when sqlerrm like '%journal de nómina%' and sqlerrm like '%no pudo contestarlo%' then '/no_contesto' else '' end;
+    end;
+    execute 'reset role';
+    -- Y con la marca puesta: la hora que pagó queda fuera del devengo.
+    perform pg_temp.c3_marca(jsonb_build_array(jsonb_build_object('horas_id', -3511251, 'corrida_id', v_k, 'dia_pago', v_desde + 13)));
+    v_p := fn_puente_devengo_plan(v_mes);
+    v_obt := format('antes=%s sin_la_marca=%s deshacer=%s otra_vez=%s marca_que_no_contesta=%s con_la_marca=%s',
+                    v_r0->>'accion', v_c1, v_r1->>'accion', v_x1, v_x2,
+                    case when coalesce(v_p->'corte'->'ids', '[]'::jsonb) @> '[-3511251]'::jsonb
+                              and v_p->>'codigo' is distinct from 'nomina_en_el_mes'
+                              and not coalesce(v_p->'documento'->'horas', '[]'::jsonb) @> '[{"horas_id": -3511251}]'::jsonb
+                         then 'fuera' else 'DENTRO (' || coalesce(v_p->>'codigo', v_p->>'accion') || ')' end);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when sqlstate '55P03' then v_obt := pg_temp.c3_sin_candado();
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (125, v_nom, v_esp, coalesce(v_obt, '-'),
+                               case when v_obt like 'omitida:%' then null else coalesce(v_obt = v_esp, false) end);
+end $$;
+
+-- 126. LAS PROTECCIONES DEL CORTE. La marca de versión de c3 es la de la Fase
+--      11b (2026111301 o más); el corte (fn_puente_devengo_corte) y el plan
+--      del devengo son internos (nadie de la API los ejecuta) y el corte no
+--      corre con permisos de más; lee la marca sin dinero de la nómina solo
+--      si está (to_regprocedure: c15 se pega después y es opcional); y NI EL
+--      CORTE NI EL PLAN LEEN LO QUE LA NÓMINA GUARDA CON EL CÓDIGO DEL
+--      TELÉFONO (fn_nomina_cola, fn_nomina_horas_pagadas,
+--      fn_nomina_pagado_hasta: sin el código contestan «nada», y el devengo
+--      daría por sin pagar lo ya pagado). Solo lee el catálogo.
+do $$
+declare
+  v_obt text;
+  v_esp text := 'marca=t corte=interno plan=interno sin_permisos_de_mas=t lee_la_marca_si_esta=t no_lee_lo_del_codigo=t';
+begin
+  select format('marca=%s corte=%s plan=%s sin_permisos_de_mas=%s lee_la_marca_si_esta=%s no_lee_lo_del_codigo=%s',
+                coalesce((select case when substring(p.prosrc from '([0-9]{10})')::bigint >= 2026111301 then 't' else 'f' end
+                            from pg_proc p where p.oid = to_regprocedure('public.fn_puente_version()')), 'f'),
+                coalesce((select case when not has_function_privilege('anon', p.oid, 'execute')
+                                           and not has_function_privilege('authenticated', p.oid, 'execute')
+                                           and not has_function_privilege('service_role', p.oid, 'execute') then 'interno' else 'ABIERTO' end
+                            from pg_proc p where p.oid = to_regprocedure('public.fn_puente_devengo_corte(bigint[],date)')), 'no_esta'),
+                coalesce((select case when not has_function_privilege('anon', p.oid, 'execute')
+                                           and not has_function_privilege('authenticated', p.oid, 'execute')
+                                           and not has_function_privilege('service_role', p.oid, 'execute') then 'interno' else 'ABIERTO' end
+                            from pg_proc p where p.oid = to_regprocedure('public.fn_puente_devengo_plan(text)')), 'no_esta'),
+                coalesce((select case when not p.prosecdef then 't' else 'f' end
+                            from pg_proc p where p.oid = to_regprocedure('public.fn_puente_devengo_corte(bigint[],date)')), '-'),
+                coalesce((select case when p.prosrc like '%to_regprocedure(''public.fn_nomina_horas_con_pago()'')%' then 't' else 'f' end
+                            from pg_proc p where p.oid = to_regprocedure('public.fn_puente_devengo_corte(bigint[],date)')), '-'),
+                coalesce((select case when bool_and(p.prosrc !~ 'fn_nomina_(cola|horas_pagadas|pagado_hasta)') then 't' else 'f' end
+                            from pg_proc p
+                           where p.oid in (to_regprocedure('public.fn_puente_devengo_corte(bigint[],date)'),
+                                           to_regprocedure('public.fn_puente_devengo_plan(text)'),
+                                           to_regprocedure('public.fn_horas_devengar(text)'))
+                          having count(*) = 3), '-'))
+    into v_obt;
+  insert into _pruebas values (126, 'las protecciones del corte de la nómina: la marca de versión de c3, el corte y el plan internos, y nada de lo que la nómina guarda con el código del teléfono',
+                               v_esp, coalesce(v_obt, '-'), coalesce(v_obt = v_esp, false));
+end $$;
+
 -- 118. NO DEJA RASTRO: todo lo de arriba se deshizo. El libro, los papeles,
 --      las reglas, los historiales, los contadores, las secuencias de la
---      app y las huellas están como al empezar. Va la última.
+--      app, las huellas y la marca sin dinero de la nómina (si c15 está)
+--      están como al empezar. Va la última.
 do $$
 declare
   v_antes text := current_setting('mx3.foto', true);

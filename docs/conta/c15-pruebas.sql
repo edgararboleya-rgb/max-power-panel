@@ -5,7 +5,7 @@
 -- CÓMO SE CORRE. En el SQL Editor de Supabase: DESPUÉS de c15-nomina.sql (y,
 -- si el c9-cierre.sql que tienes nombra las filas 180 a 183 en su cabecera,
 -- después de volver a pegarlo), pegar este archivo entero → Run. Sale la
--- tabla _pruebas: 52 filas, todas con ok = true (las que salen «omitida»
+-- tabla _pruebas: 66 filas, todas con ok = true (las que salen «omitida»
 -- dicen por qué y no son un fallo; una fila 99 solo sale si algo de este
 -- archivo falló). Si el editor se cansa antes del final, la corrida sigue en
 -- el servidor y se lee después en pruebas.c15_resultado (ver el final).
@@ -18,7 +18,9 @@
 -- nada queda (ni una corrida, ni una persona, ni un archivo, ni sus
 -- asientos, ni las obras, las personas y las horas de prueba, ni un
 -- movimiento del banco, ni la revisión del cierre que c9 guarda, ni el
--- reloj); la 51 lo comprueba, y la 52 otra vez al final de todo.
+-- reloj); la 51 lo comprueba, y la 52 otra vez al final de todo. (La 53 a
+-- la 66, las de la revisión de la Fase 11b, van ANTES de la 50: el número
+-- dice cuándo se escribió, no dónde corre.)
 --
 -- VALEN CON DATOS REALES, SIN SUPONER NADA DE PRODUCCIÓN. Lo que siembran es
 -- suyo y se deshace:
@@ -69,7 +71,7 @@
 --     suya por la misma nómina (mismas personas, mismas cifras).
 --
 -- Lo que mira, una prueba cada una:
---  1 el pegado (precondiciones, 15 tablas, 7 vistas, las 63 funciones por su
+--  1 el pegado (precondiciones, 15 tablas, 7 vistas, las 66 funciones por su
 --    nombre exacto, la configuración, el mapeo de fábrica, cada objeto con
 --    su comentario «c15: …»);
 --  2 las precondiciones en rojo;
@@ -77,7 +79,8 @@
 --    dueño sin su código lee lo general (lo que no lleva dinero de una
 --    nómina) y no escribe; con su código, entra;
 --  4 el catálogo: SECURITY DEFINER solo el trigger del puente (sin EXECUTE
---    para nadie), RLS y policies justas, lo que lleva dinero de una nómina
+--    para nadie) y la marca sin dinero de las horas pagadas (la Fase 11b:
+--    con su forma fijada), RLS y policies justas, lo que lleva dinero de una nómina
 --    (la corrida, lo de cada persona y los cargos casados) con el código,
 --    vistas security_invoker, y «permisos» (c2) en verde con c15 pegado;
 --  5 la guarda de las tablas (a mano, MX003: también el dueño por la API; lo
@@ -107,7 +110,9 @@
 --    real (origen nomina_burden); lo visto es lo que entra (MX011);
 -- 17 con la nómina en el libro las otras capas siguen como estaban: c3
 --    «mano de obra» en verde;
--- 18 el costo por obra (c10) y el WIP (c12) leen el burden real por obra;
+-- 18 el costo por obra (c10) y el WIP (c12) leen el burden real por obra; y
+--    (la Fase 11b) la marca sin dinero dice qué horas pagó la nómina sin el
+--    código del teléfono, y el costo por obra las da por pagadas;
 -- 19 el devengo estándar de c3 del mes, con y sin la corrida: nada dos
 --    veces; y la cola se dice;
 -- 20 anular y volver a subir;
@@ -183,14 +188,49 @@
 --    bueno);
 -- 49 lo que el cierre guarda y manda al teléfono no nombra a nadie ni trae
 --    lo que cobra;
+-- LO QUE ENCONTRÓ LA REVISIÓN DE LA FASE 11b (13-nov; cada arreglo, con su
+-- prueba: falla con el c15 de antes y pasa con el de hoy):
+-- 53 la misma nómina, POR PARTES (el journal de un solo empleado con la
+--    completa ya dentro, y al revés): no entra dos veces; un bono de verdad
+--    el mismo día y la nómina siguiente con las mismas cifras sí entran;
+-- 54 la bolsa del burden, repartida fuera de orden (nunca más de lo que hoy
+--    queda), la bolsa al revés, y la nómina anulada después de repartir;
+-- 55 «Total employer contributions» y el costo total del patrón; el freno
+--    de un total sin cuenta, y el ensayo que ya no dice «se puede postear»;
+-- 56 el resumen de un rango no es una nómina (el freno «resumen», y el
+--    período que hay que decir si el archivo no trae fechas);
+-- 57 un journal sin lo que paga el patrón no cuadra; sin la columna de los
+--    reembolsos, se avisa;
+-- 58 lo que una corrección dejó a favor en otra cuenta (el traspaso), y dos
+--    cargos de Gusto que no se proponían (los embargos; el neto por
+--    depósito con sus reembolsos);
+-- 59 «es la cuota mensual» no vale para cualquier cargo;
+-- 60 sin el código del teléfono, ninguna frase falsa (el amarre y la
+--    propuesta de un cargo);
+-- 61 errores técnicos, en llano (la misma llave de Gusto en dos nóminas del
+--    archivo; un nombre de más de 200 letras);
+-- 62 lo delicado sin guiones tampoco se guarda;
+-- 63 lo que el cierre guarda y manda al teléfono, sin importes (la 180 y el
+--    texto corto de los controles 25, 35 y 62);
+-- 64 el reparto y la lectura, cosas sueltas (la corrección en negativo del
+--    oficial, la fila de totales con otro rótulo, quien no viene en el
+--    journal, quien es de oficina con horas en obra, el freno «sin horas»);
+-- 65 el devengo de c3 y lo trabajado sin pagar, al terminar el mes (anular
+--    pone al día el devengo; la cola y el aviso 80 cortan al fin de mes; y
+--    tres textos). «Omitida» si el c3 de la base es anterior a la Fase 11b;
+-- (y la 28 ya no cuenta las semanas de la cuadrilla de verdad: solo las de
+-- su gente de prueba; la 11, la 29, la 34 y la 40 siguen a la capa: una
+-- columna que el mapeo no conoce ahora además descuadra el costo total del
+-- patrón, sus archivos de prueba traen lo patronal, y la 180 no trae
+-- importes).
 -- Y el cierre de la suite:
 -- 50 con una nómina posteada, sus cargos casados, la cuota, un bono anulado,
 --    una declaración y un lote, NINGÚN control de c2, c3, c4, c6, c8, c9,
 --    c10, c11, c12, c13 ni c14 pasa a rojo;
 -- 51 nada queda al deshacer;
 -- 52 el cierre de la suite: las demás capas como estaban, nada de c15 para
---    anon o service_role, con permisos de dueño solo el trigger del puente;
---    fn_nomina_pegado responde; y nada queda.
+--    anon o service_role, con permisos de dueño solo el trigger del puente y
+--    la marca sin dinero; fn_nomina_pegado responde; y nada queda.
 -- Última sentencia: select * from _pruebas order by n;
 --
 -- NO FRENA A LA APP (como c11-pruebas.sql y c14-pruebas.sql): lo primero que
@@ -265,14 +305,16 @@ create or replace function pg_temp.c15_fn() returns text[] language sql immutabl
   select array['fn_nomina_precondiciones', 'fn_nomina_por_api', 'fn_nomina_exigir_dueno', 'fn_nomina_ve', 'fn_nomina_aal2',
                'fn_nomina_exigir_codigo', 'fn_nomina_ve_personas', 'fn_nomina_guarda', 'fn_nomina_al_libro', 'fn_nomina_usd', 'fn_nomina_h',
                'fn_nomina_dia', 'fn_nomina_hoy', 'fn_nomina_lista', 'fn_nomina_norm', 'fn_nomina_clave', 'fn_nomina_monto', 'fn_nomina_fecha',
-               'fn_nomina_delicado', 'fn_nomina_etiqueta', 'fn_nomina_cuenta_mal', 'fn_nomina_cuenta_sin_obra', 'fn_nomina_cuentas',
+               'fn_nomina_delicado', 'fn_nomina_delicado_texto', 'fn_nomina_dentro', 'fn_nomina_etiqueta', 'fn_nomina_cuenta_mal',
+               'fn_nomina_cuenta_sin_obra', 'fn_nomina_cuentas',
                'fn_nomina_fecha_asiento', 'fn_nomina_apunta', 'fn_nomina_config', 'fn_nomina_columna', 'fn_nomina_journal', 'fn_nomina_leer',
                'fn_nomina_propone', 'fn_nomina_ya', 'fn_nomina_ensayo',
                'fn_nomina_importar', 'fn_nomina_corrida', 'fn_nomina_descartar', 'fn_nomina_persona', 'fn_nomina_decidir', 'fn_nomina_plan',
                'fn_nomina_propuesta', 'fn_nomina_postear', 'fn_nomina_anular', 'fn_nomina_pendiente', 'fn_nomina_cargos',
                'fn_nomina_cargo_propuesta', 'fn_nomina_cargo_casar', 'fn_nomina_cargo_cuota', 'fn_nomina_cargo_deshacer', 'fn_nomina_cargos_fuera',
                'fn_nomina_declaracion', 'fn_nomina_amarre', 'fn_nomina_por_horas', 'fn_nomina_horas_gusto', 'fn_nomina_lote',
-               'fn_nomina_lote_csv', 'fn_nomina_horas_pagadas', 'fn_nomina_cola', 'fn_nomina_pagado_hasta', 'fn_nomina_auxiliar', 'fn_nomina_bolsa', 'fn_nomina_bolsa_repartir',
+               'fn_nomina_lote_csv', 'fn_nomina_horas_pagadas', 'fn_nomina_horas_con_pago', 'fn_nomina_cola', 'fn_nomina_pagado_hasta', 'fn_nomina_auxiliar',
+               'fn_nomina_bolsa', 'fn_nomina_bolsa_repartir',
                'fn_nomina_control',
                'fn_nomina_cierre', 'fn_nomina_pegado']
 $$;
@@ -598,12 +640,17 @@ begin
        select 1 from nomina_corridas k
         where k.estado in ('importada', 'posteada')
           and (exists (select 1 from nomina_corrida_personas cp where cp.corrida_id = k.id and cp.nombre like 'ZZ %')
-               or (k.personas = 3 and (select count(*) from nomina_corrida_personas cp
-                                        where cp.corrida_id = k.id
-                                          and (cp.bruto, cp.neto) in ((1958.00, 1666.21), (1450.00, 1193.07), (2400.00, 1951.40))) = 3))) then
-    v := 'en esta base hay una nómina de PRUEBA sin descartar ni anular (la de los archivos de muestra, con personas «ZZ…», o una con las '
-         || 'mismas cifras que el journal de estas pruebas): las pruebas siembran la suya con esas personas y esas cifras, y la capa las '
-         || 'tomaría por la misma nómina. Descártala (o anúlala, si se posteó) en Contabilidad → Nómina y vuelve a pegar este archivo';
+               -- (13-nov: basta UNA persona con el mismo bruto y el mismo neto que alguien de estas pruebas, en una nómina de
+               -- estos meses: desde la revisión de la Fase 11b la capa reconoce «la misma nómina, por partes» por eso mismo)
+               or (k.dia_pago between pg_temp.c15('mes_desde')::date - 45 and pg_temp.c15('mes_hasta')::date + 75
+                   and exists (select 1 from nomina_corrida_personas cp
+                                where cp.corrida_id = k.id
+                                  and (cp.bruto, cp.neto) in ((1958.00, 1666.21), (1450.00, 1193.07), (2400.00, 1951.40),
+                                                              (500.00, 411.75), (-100.00, -82.35)))))) then
+    v := 'en esta base hay una nómina de PRUEBA sin descartar ni anular (la de los archivos de muestra, con personas «ZZ…», o una de '
+         || 'estos meses en la que alguien cobra justo las cifras de una persona de estas pruebas —su mismo bruto y su mismo neto—): las '
+         || 'pruebas siembran la suya con esas personas y esas cifras, y la capa las tomaría por la misma nómina. Descártala (o anúlala, '
+         || 'si se posteó) en Contabilidad → Nómina y vuelve a pegar este archivo';
   end if;
   if v is null then
     return false;
@@ -964,24 +1011,35 @@ begin
   for v_q in select p.periodo from periodos p
               where p.tipo in ('mes', 'apertura') and p.estado = 'abierto' and p.desde <= v_p.desde
               order by p.desde loop
+    -- (13-nov: un mes con su devengo estándar vivo no se cierra si ese devengo ya no es el de las horas aprobadas de hoy —las
+    -- de la prueba se aprobaron después—: se pone al día antes de cerrarlo, como pide c3. Con el c3 de la Fase 11b un mes con
+    -- nómina conserva su devengo, y sin esto la 21 salía «omitida» en cuanto el mes de las pruebas estuviera devengado.)
+    if exists (select 1 from asientos a
+                where a.origen_tabla = 'horas_devengo' and a.origen_id = v_q and a.camino not in ('reverso', 'reverso_automatico')
+                  and not exists (select 1 from asientos r where r.reversa_a = a.id and r.camino = 'reverso')) then
+      begin
+        perform fn_horas_devengar(v_q);
+      exception when others then null;   -- (si c3 no deja, el cierre lo dirá)
+      end;
+    end if;
     update periodos set estado = 'cerrado', cerrado_el = now() where periodo = v_q;
   end loop;
 end $$;
 
 -- =====================================================================
 -- 1. EL PEGADO: las precondiciones en verde, las 15 tablas, las 7 vistas y
---    las 63 funciones por su nombre exacto, cada objeto con su comentario
+--    las 66 funciones por su nombre exacto, cada objeto con su comentario
 --    «c15: …», la configuración (una fila) y el mapeo de fábrica.
 -- =====================================================================
 do $$
 declare
   v_obt text;
-  v_esp text := 'precondiciones: nada | tablas 15 de 15 | vistas 7 de 7 | funciones 63 de 63 | sin su comentario «c15: »: ninguno | la '
+  v_esp text := 'precondiciones: nada | tablas 15 de 15 | vistas 7 de 7 | funciones 66 de 66 | sin su comentario «c15: »: ninguno | la '
                 'configuración: 1 fila (id 1) | el mapeo de fábrica: 130 columnas | el puente: puesto';
 begin
   begin
     perform pg_temp.c15_ser('editor');
-    select format('precondiciones: %s | tablas %s de 15 | vistas %s de 7 | funciones %s de 63 | sin su comentario «c15: »: %s | la '
+    select format('precondiciones: %s | tablas %s de 15 | vistas %s de 7 | funciones %s de 66 | sin su comentario «c15: »: %s | la '
                   'configuración: %s fila (id %s) | el mapeo de fábrica: %s columnas | el puente: %s',
                   coalesce(fn_nomina_precondiciones(), 'nada'),
                   (select count(*) from unnest(pg_temp.c15_tablas()) t where to_regclass('public.' || t) is not null),
@@ -1003,7 +1061,7 @@ begin
       into v_obt;
   exception when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (1, 'el pegado: las precondiciones no piden nada, están las 15 tablas, las 7 vistas y las 63 funciones (por su nombre exacto), cada objeto con su comentario «c15: …», la configuración es una fila, el mapeo de fábrica trae sus 130 nombres de columna y el puente al libro está puesto',
+  insert into _pruebas values (1, 'el pegado: las precondiciones no piden nada, están las 15 tablas, las 7 vistas y las 66 funciones (por su nombre exacto), cada objeto con su comentario «c15: …», la configuración es una fila, el mapeo de fábrica trae sus 130 nombres de columna y el puente al libro está puesto',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
@@ -1087,29 +1145,49 @@ begin
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
--- 4. EL CATÁLOGO: la única función SECURITY DEFINER es el trigger del
---    puente (sin EXECUTE para la API); RLS en todas las tablas, con policies
+-- 4. EL CATÁLOGO: la única función SECURITY DEFINER que escribe es el trigger
+--    del puente (sin EXECUTE para la API); la otra (13-nov, la Fase 11b) es la
+--    marca sin dinero de las horas pagadas, que solo lee y tiene su forma
+--    fijada (sin argumentos, en SQL, y devuelve solo el reporte de horas, su
+--    corrida y su día de pago); RLS en todas las tablas, con policies
 --    que piden al dueño, y lo que lleva dinero de una nómina (la corrida,
 --    lo de cada persona y los cargos casados) con el código; las vistas,
 --    security_invoker; y «permisos» de c2 en verde con c15 pegado.
 do $$
 declare
   v_obt text;
-  v_esp text := 'SECURITY DEFINER: fn_nomina_al_libro (de trigger: sí; la API la ejecuta: no) | sin API: fn_nomina_al_libro, fn_nomina_guarda, '
+  v_esp text := 'SECURITY DEFINER: fn_nomina_al_libro, fn_nomina_horas_con_pago (el puente, de trigger: sí; la API lo ejecuta: no; la marca sin dinero, '
+                'sin argumentos, en SQL y solo con el reporte de horas, su corrida y su día de pago: sí; la ejecuta solo authenticated: sí) | '
+                'sin API: fn_nomina_al_libro, fn_nomina_guarda, '
                 'fn_nomina_pegado, fn_nomina_precondiciones | RLS en 15 de 15 | policies que no piden al dueño: 0 | lo que lleva dinero de una nómina '
                 '(la corrida, lo de cada persona y los cargos casados) pide el código: 7 de 7 | vistas security_invoker: 7 de 7 | permisos (c2): verde';
 begin
   begin
     perform pg_temp.c15_ser('editor');
-    select format('SECURITY DEFINER: %s (de trigger: %s; la API la ejecuta: %s) | sin API: %s | RLS en %s de 15 | policies que no piden al '
+    select format('SECURITY DEFINER: %s (el puente, de trigger: %s; la API lo ejecuta: %s; la marca sin dinero, sin argumentos, en SQL y solo con el '
+                  'reporte de horas, su corrida y su día de pago: %s; la ejecuta solo authenticated: %s) | sin API: %s | RLS en %s de 15 | policies que no piden al '
                   'dueño: %s | lo que lleva dinero de una nómina (la corrida, lo de cada persona y los cargos casados) pide el código: %s de 7 | vistas security_invoker: %s de 7 | permisos (c2): %s',
              (select coalesce(string_agg(p.proname, ', ' order by p.proname), 'ninguna') from pg_proc p
                where p.pronamespace = 'public'::regnamespace and p.proname = any (pg_temp.c15_fn()) and p.prosecdef),
              (select case when bool_and(p.prorettype = 'trigger'::regtype) then 'sí' else 'no' end from pg_proc p
-               where p.pronamespace = 'public'::regnamespace and p.proname = any (pg_temp.c15_fn()) and p.prosecdef),
+               where p.pronamespace = 'public'::regnamespace and p.proname = any (pg_temp.c15_fn()) and p.prosecdef
+                 and p.proname <> 'fn_nomina_horas_con_pago'),
              (select case when bool_or(has_function_privilege('authenticated', p.oid, 'execute') or has_function_privilege('anon', p.oid, 'execute')
                                        or has_function_privilege('service_role', p.oid, 'execute')) then 'sí' else 'no' end from pg_proc p
-               where p.pronamespace = 'public'::regnamespace and p.proname = any (pg_temp.c15_fn()) and p.prosecdef),
+               where p.pronamespace = 'public'::regnamespace and p.proname = any (pg_temp.c15_fn()) and p.prosecdef
+                 and p.proname <> 'fn_nomina_horas_con_pago'),
+             -- (la marca sin dinero: su forma, la que se revisó; y quién la ejecuta)
+             (select case when count(*) = 1 and bool_and(p.prosecdef and p.pronargs = 0 and p.proretset and p.provolatile = 's'
+                                                       and p.prolang = (select l.oid from pg_language l where l.lanname = 'sql')
+                                                       and p.proargnames = array['horas_id', 'corrida_id', 'dia_pago']::text[]
+                                                       and p.proallargtypes = array['bigint'::regtype, 'uuid'::regtype, 'date'::regtype]::oid[]
+                                                       and coalesce(p.proconfig @> array['search_path=public, pg_temp'], false))
+                          then 'sí' else 'no' end from pg_proc p
+               where p.pronamespace = 'public'::regnamespace and p.proname = 'fn_nomina_horas_con_pago'),
+             (select case when bool_and(has_function_privilege('authenticated', p.oid, 'execute') and not has_function_privilege('anon', p.oid, 'execute')
+                                        and not has_function_privilege('service_role', p.oid, 'execute')
+                                        and not has_function_privilege('public', p.oid, 'execute')) then 'sí' else 'no' end from pg_proc p
+               where p.pronamespace = 'public'::regnamespace and p.proname = 'fn_nomina_horas_con_pago'),
              (select string_agg(p.proname, ', ' order by p.proname) from pg_proc p
                where p.pronamespace = 'public'::regnamespace and p.proname = any (pg_temp.c15_fn())
                  and not has_function_privilege('authenticated', p.oid, 'execute')),
@@ -1129,7 +1207,7 @@ begin
       into v_obt;
   exception when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (4, 'el catálogo: la única función SECURITY DEFINER de la capa es el trigger del puente al libro, y la API no la puede ejecutar; RLS en las 15 tablas con policies que piden al dueño; lo que lleva dinero de una nómina (la corrida, lo de cada persona y los cargos casados) se lee solo con el código; las 7 vistas leen con los permisos de quien mira; y «permisos» de c2 sigue en verde',
+  insert into _pruebas values (4, 'el catálogo: las únicas funciones SECURITY DEFINER de la capa son el trigger del puente al libro, que la API no puede ejecutar, y la marca sin dinero de las horas pagadas (sin argumentos, en SQL, y devuelve solo el reporte de horas, su corrida y su día de pago; la ejecuta solo authenticated); RLS en las 15 tablas con policies que piden al dueño; lo que lleva dinero de una nómina (la corrida, lo de cada persona y los cargos casados) se lee solo con el código; las 7 vistas leen con los permisos de quien mira; y «permisos» de c2 sigue en verde',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
@@ -1484,15 +1562,20 @@ do $$
 declare
   v_obt text; r jsonb; v_csv text; v_c uuid; v_c2 uuid; p jsonb;
   v_nom text := 'una columna desconocida frena la corrida';
+  -- (la frenan las dos cosas: la columna que no se conoce y, desde la revisión de la Fase 11b, que su costo total del patrón —que
+  -- trae lo de esa columna— ya no es bruto más lo patronal leído)
   v_esp text := 'el ensayo: se puede postear no, por «ZZ Employer 401k match» (3 celdas con cifras) | entra, y la frena: '
-                'columna_sin_clasificar | postearla: MX008 | sus cifras no se guardaron: sí | dicho qué es (un beneficio del patrón, a 2240) '
+                'columna_sin_clasificar,no_cuadra | postearla: MX008 | sus cifras no se guardaron: sí | dicho qué es (un beneficio del patrón, a 2240) '
                 'y vuelta a subir tal cual: otra_distinta, y se puede reemplazar: true | subida en lugar de la que estaba: reemplazada, la de '
                 'antes queda descartada, sin frenos, beneficios del patrón 30.00, y lo que queda por pagar en 2240 es 80.00';
 begin
   if pg_temp.c15_omitir(11, v_nom, v_esp) then return; end if;
   begin
     perform pg_temp.c15_sembrar();
-    v_csv := pg_temp.c15_journal(array[',ZZ Employer 401k match', ',10.00', ',0.00', ',20.00', ',30.00']);
+    -- (el beneficio del patrón va también dentro de su costo total —la última columna del journal de prueba—, como lo traería
+    -- Gusto: desde la revisión de la Fase 11b, bruto + lo patronal tiene que ser esa columna)
+    v_csv := replace(replace(replace(pg_temp.c15_journal(array[',ZZ Employer 401k match', ',10.00', ',0.00', ',20.00', ',30.00']),
+                                     ',2172.41,', ',2182.41,'), ',2662.80,', ',2682.80,'), ',6443.99,', ',6473.99,');
     perform pg_temp.c15_ser('dueno');
     r := fn_nomina_ensayo(pg_temp.c15_arch(v_csv));
     perform pg_temp.c15_ser('editor');
@@ -1669,8 +1752,11 @@ begin
     v_c := pg_temp.c15_lista();
     p := pg_temp.c15_propuesta(v_c);
     select string_agg(q->>'texto', ' · ') into v_av from jsonb_array_elements(p->'avisos') q;
+    -- (con la cuadrilla de verdad ya en la nómina, quien tenga horas aprobadas en el período de la prueba y no venga en SU journal
+    -- sale en el aviso «fuera_del_journal»: no es de la prueba —no nombra a nadie «ZZ…»— y no se cuenta)
     v_obt := format('se puede postear: %s | avisa: %s', case when (p->>'puede_postear')::boolean then 'sí' else 'no: ' || pg_temp.c15_codigos(p->'frenos') end,
-                    pg_temp.c15_codigos(p->'avisos'));
+                    pg_temp.c15_codigos((select coalesce(jsonb_agg(q), '[]'::jsonb) from jsonb_array_elements(p->'avisos') q
+                                          where not (q->>'codigo' = 'fuera_del_journal' and q->>'texto' not like '%ZZ %'))));
     select v_obt || ' | ' || string_agg(format('%s: %s (suman %s y %s)', x->>'nombre',
              (select string_agg(concat_ws(' ', q->>'clase', q->>'destino', q->>'cuenta', replace(q->>'proyecto_id', 'c15-prueba-', ''), q->>'co',
                                           q->>'horas', q->>'monto'), ' · ' order by o)
@@ -1820,14 +1906,21 @@ end $$;
 
 -- 17. CON LA NÓMINA EN EL LIBRO, LAS OTRAS CAPAS SIGUEN COMO ESTABAN: c3
 --     «mano de obra» en verde (5000 y 5001 vienen de un journal de nómina; el
---     5010, de su reparto), y c3 ve el journal del mes.
+--     5010, de su reparto), y c3 ve el journal del mes. (13-nov, la Fase
+--     11b) Con el c3 de esa fase (su marca, 2026111301 o más), además SABE
+--     QUÉ HORAS PAGÓ: las lee de la marca sin dinero y las deja fuera de su
+--     devengo estándar; con un c3 de antes, el mes entero no se devenga.
 do $$
 declare
   v_obt text; v_c uuid; r jsonb; s0 text[]; s1 text[]; v_plan jsonb; c nomina_corridas; v_mo boolean;
+  v_c3 boolean := coalesce((select substring(p.prosrc from '([0-9]{10})')::bigint >= 2026111301
+                              from pg_proc p where p.oid = to_regprocedure('public.fn_puente_version()')), false);
   v_nom text := 'las otras capas con la nómina en el libro';
-  v_esp text := 'con la nómina en el libro, en rojo nuevo: ninguno | c3 «mano de obra»: verde | el devengo estándar de c3 ve el journal del '
-                'mes: nomina_en_el_mes, y nombra sus 2 asientos | el papel de sus asientos: 2 (el journal y el reparto de su burden)';
+  v_esp text;
 begin
+  v_esp := 'con la nómina en el libro, en rojo nuevo: ninguno | c3 «mano de obra»: verde | el devengo estándar de c3 ve el journal del mes: '
+           || case when v_c3 then 'sabe qué horas pagó (las 4 con obra y con tarifa quedan fuera del devengo)' else 'nomina_en_el_mes' end
+           || ', y nombra sus 2 asientos | el papel de sus asientos: 2 (el journal y el reparto de su burden)';
   if pg_temp.c15_omitir(17, v_nom, v_esp) then return; end if;
   begin
     v_c := pg_temp.c15_lista();
@@ -1839,7 +1932,13 @@ begin
     select k.ok into v_mo from fn_puentes_verificar() k where k.control = 'mano_de_obra';
     v_obt := format('con la nómina en el libro, en rojo nuevo: %s | c3 «mano de obra»: %s | el devengo estándar de c3 ve el journal del mes: %s, y '
                     'nombra sus %s asientos | el papel de sus asientos: %s (el journal y el reparto de su burden)',
-      pg_temp.c15_nuevos(s0, s1), case when v_mo or 'c3: mano_de_obra' = any (s0) then 'verde' else 'rojo' end, v_plan->>'codigo',
+      pg_temp.c15_nuevos(s0, s1), case when v_mo or 'c3: mano_de_obra' = any (s0) then 'verde' else 'rojo' end,
+      -- (las horas de la prueba —sus ids— que el corte de c3 da por pagadas)
+      case when v_c3 and v_plan->>'codigo' is distinct from 'nomina_en_el_mes'
+           then format('sabe qué horas pagó (las %s con obra y con tarifa quedan fuera del devengo)',
+                       (select count(*) from jsonb_array_elements_text(coalesce(v_plan->'corte'->'ids', '[]'::jsonb)) x(v)
+                         where x.v::bigint between -1510000099 and -1510000001))
+           else v_plan->>'codigo' end,
       (select count(*) from jsonb_array_elements_text(v_plan->'nomina') n(v)
         where n.v in (c.asiento_numero, (select a.numero from asientos a where a.id = c.burden_asiento_id))),
       (select count(*) from v_nomina_papel p where p.origen_id = v_c::text and p.origen_tabla in ('nomina_corridas', 'nomina_burden')
@@ -1849,21 +1948,39 @@ begin
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (17, 'con la nómina en el libro ningún control de las otras capas pasa a rojo (la cadena y «permisos» de c2, los puentes de c3, el banco de c6, los estados de c4, y los demás): c3 «mano de obra» en verde, porque el 5000 y el 5001 vienen de un journal de nómina y el 5010 de su reparto; c3 ve el journal del mes; y sus asientos tienen su papel',
+  insert into _pruebas values (17, 'con la nómina en el libro ningún control de las otras capas pasa a rojo (la cadena y «permisos» de c2, los puentes de c3, el banco de c6, los estados de c4, y los demás): c3 «mano de obra» en verde, porque el 5000 y el 5001 vienen de un journal de nómina y el 5010 de su reparto; c3 ve el journal del mes y, desde la Fase 11b, sabe qué horas pagó; y sus asientos tienen su papel',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
 -- 18. EL COSTO POR OBRA (c10) Y EL WIP (c12) LEEN EL BURDEN REAL POR OBRA: la
 --     mano de obra de cada obra es su 5000, su 5001 y su 5010, al centavo; y
 --     la capa dice qué horas pagó cada corrida.
+--     (13-nov, la Fase 11b) Y LO DICE TAMBIÉN SIN DINERO Y SIN EL CÓDIGO DEL
+--     TELÉFONO: la marca (fn_nomina_horas_con_pago) da los mismos reportes,
+--     con su corrida y su día de pago y nada más; al equipo, nada. Con ella el
+--     costo por obra (c10, que se lee sin el código) da esas horas «con pago
+--     real» y ya no las lleva, además, a estándar: en la obra A, las 36 h; en
+--     la B, las 18 (sus otras 7 h están sin aprobar y esta nómina no las pagó:
+--     esas sí van a estándar). (Si el c10 de la base es el de antes del
+--     13-nov, que no lee la marca, la prueba lo dice y qué pegar: no falla
+--     por el orden en que se peguen los dos archivos.)
 do $$
 declare
-  v_obt text; v_c uuid; r jsonb; v_m text := 'no está'; v_w text := 'no está'; v_hp text;
+  v_obt text; v_c uuid; r jsonb; v_m text := 'no está'; v_w text := 'no está'; v_hp text; v_ids bigint[]; v_mk text;
+  v_cm text := 'el costo por obra (c10) no está';
+  -- (¿el costo por obra de esta base es ya el del 13-nov, la v3 de c10, que lee la marca? Si es el de antes, se dice y qué pegar)
+  v_c10 boolean := to_regprocedure('public.fn_margen_horas_nomina()') is not null;
+  c_c10_viejo constant text := 'el costo por obra de esta base es el de antes del 13-nov y todavía no lee la marca (lleva esas horas a estándar): '
+                               'vuelve a pegar c10-costo-obra.sql';
   v_nom text := 'el costo por obra y el WIP con el burden real';
   v_esp text := 'en el libro, por obra: a sueldo 1644.27 y burden real 180.05; b sueldo 2102.67 y burden real 230.25 | el costo por obra '
                 '(c10), la mano de obra por nómina: a 1824.32, b 2332.92 | el WIP (c12), el costo de cada obra a fin de mes: a 1824.32, b '
-                '2332.92 | las horas que pagó esta nómina: 7 reportes, 4008.00 de sueldo';
+                '2332.92 | las horas que pagó esta nómina: 7 reportes, 4008.00 de sueldo | la marca sin dinero, sin el código del teléfono: 7 '
+                'reportes, los mismos, con su día de pago; al equipo, 0 | ';
 begin
+  v_esp := v_esp || case when v_c10 then 'el costo por obra las da por pagadas, sin el código: a 36 h con pago real y 0 a estándar; b 18 h con pago '
+                                         'real y 7 a estándar'
+                         else c_c10_viejo end;
   if pg_temp.c15_omitir(18, v_nom, v_esp) then return; end if;
   begin
     v_c := pg_temp.c15_lista();
@@ -1882,49 +1999,76 @@ begin
          into v_w using pg_temp.c15('mes_hasta')::date;
     end if;
     perform pg_temp.c15_ser('dueno');
-    select format('%s reportes, %s de sueldo', count(*), sum(h.bruto)) into v_hp from fn_nomina_horas_pagadas() h where h.corrida_id = v_c;
+    select format('%s reportes, %s de sueldo', count(*), sum(h.bruto)), array_agg(h.horas_id order by h.horas_id) into v_hp, v_ids
+      from fn_nomina_horas_pagadas() h where h.corrida_id = v_c;
+    -- (la Fase 11b) la marca sin dinero, como el dueño SIN el código del teléfono; y el equipo
+    perform pg_temp.c15_ser('dueno_aal1');
+    select format('%s reportes, %s, %s', count(*),
+                  case when array_agg(k.horas_id order by k.horas_id) = v_ids then 'los mismos' else 'OTROS' end,
+                  case when bool_and(k.dia_pago = pg_temp.c15_pago()) then 'con su día de pago' else 'con otro día de pago' end)
+      into v_mk from fn_nomina_horas_con_pago() k where k.corrida_id = v_c;
     perform pg_temp.c15_ser('editor');
+    v_mk := coalesce(v_mk, 'nada') || '; al equipo, ' || pg_temp.c15_da('select count(*) from public.fn_nomina_horas_con_pago()', 'equipo');
+    -- y lo que el costo por obra (c10) dice de esas horas, sin el código
+    if not v_c10 then
+      v_cm := c_c10_viejo;
+    elsif to_regclass('public.v_margen_obra') is not null then
+      v_cm := 'el costo por obra las da por pagadas, sin el código: '
+              || pg_temp.c15_da($q$ select string_agg(format('%s %s h con pago real y %s a estándar', replace(m.proyecto_id, 'c15-prueba-', ''),
+                                                               trim_scale(m.horas_con_pago_real), trim_scale(m.horas_estandar)), '; ' order by m.proyecto_id)
+                                       from public.v_margen_obra m where m.proyecto_id in ('c15-prueba-a', 'c15-prueba-b') $q$, 'dueno_aal1');
+    end if;
     v_obt := format('en el libro, por obra: %s | el costo por obra (c10), la mano de obra por nómina: %s | el WIP (c12), el costo de cada obra a fin de mes: %s | '
-                    'las horas que pagó esta nómina: %s', v_obt, v_m, v_w, v_hp);
+                    'las horas que pagó esta nómina: %s | la marca sin dinero, sin el código del teléfono: %s | %s', v_obt, v_m, v_w, v_hp, v_mk, v_cm);
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (18, 'el costo por obra (c10) y el WIP (c12) leen del libro el sueldo y el BURDEN REAL de cada obra, al centavo: lo que el patrón pagó por las horas de esa obra, repartido de la bolsa 5015 al 5010 de cada una; y la capa dice qué reportes de horas pagó cada corrida, con lo que le tocó a cada uno',
+  insert into _pruebas values (18, 'el costo por obra (c10) y el WIP (c12) leen del libro el sueldo y el BURDEN REAL de cada obra, al centavo: lo que el patrón pagó por las horas de esa obra, repartido de la bolsa 5015 al 5010 de cada una; y la capa dice qué reportes de horas pagó cada corrida, con lo que le tocó a cada uno (con el código) y, sin dinero, cuáles son (sin el código: la marca que lee el costo por obra, que así las da con pago real y no, además, a estándar)',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
--- 19. EL DEVENGO ESTÁNDAR DE c3 DEL MES, CON Y SIN LA CORRIDA. c3 está
---     sellado y no puede saber qué horas pagó cada journal: un mes con
---     journal de nómina no se devenga. Aquí se ve lo que pasa: sin la nómina,
---     el devengo lleva las horas a estándar; al postear la nómina se deshace
---     solo (nada dos veces); y lo trabajado después del período de pago y sin
---     pagar al terminar el mes (LA COLA) no se devenga: se dice.
---     Si el mes de las pruebas YA TIENE una nómina de verdad en el libro
---     (producción, desde su primera nómina del mes), c3 no lo devenga de
---     ninguna manera: lo primero no se puede ver y se dice; lo demás (la mano
---     de obra una sola vez, el MX008, la cola, y que c3 deja de ver el journal
---     de una nómina anulada) se mira igual.
+-- 19. EL DEVENGO ESTÁNDAR DE c3 DEL MES, CON Y SIN LA CORRIDA.
+--     (13-nov, la Fase 11b) CON EL c3 DE ESA FASE (su marca, 2026111301 o
+--     más) un mes con nómina SE DEVENGA por lo que ninguna nómina pagó: sin
+--     la nómina, el devengo lleva las horas a estándar; al postear la nómina
+--     SE PONE AL DÍA solo (no se deshace entero): queda LA COLA —lo
+--     trabajado después del período de pago y sin pagar al terminar el mes—,
+--     que es justo lo que dice fn_nomina_cola; nada dos veces (la mano de
+--     obra directa del mes en cada obra es la del journal más la cola a
+--     estándar); devengar otra vez no cambia nada; y anulada la nómina, c3
+--     deja de ver su journal.
+--     CON UN c3 DE ANTES (sellado: no sabe qué horas pagó cada journal) un
+--     mes con journal de nómina no se devenga: al postear la nómina el
+--     devengo se deshace entero, devengar se niega (MX008) y la cola no se
+--     devenga: se dice. Y si el mes de las pruebas YA TIENE una nómina de
+--     verdad en el libro, ese c3 no lo devenga de ninguna manera: lo primero
+--     no se puede ver y se dice; lo demás se mira igual.
 do $$
 declare
   v_obt text; v_c uuid; r jsonb; v_dev uuid; v_cola text; v_plan jsonb; c nomina_corridas; v_m text := pg_temp.c15('mes'); v_x text; v_real boolean;
+  v_c3 boolean := coalesce((select substring(p.prosrc from '([0-9]{10})')::bigint >= 2026111301
+                              from pg_proc p where p.oid = to_regprocedure('public.fn_puente_version()')), false);
   v_nom text := 'el devengo estándar de c3 con y sin la nómina';
   v_esp text;
 begin
-  -- (¿el mes ya tiene un journal de nómina de verdad? Lo dice c3, con su propio plan)
+  -- (con un c3 de antes: ¿el mes ya tiene un journal de nómina de verdad? Lo dice c3, con su propio plan)
   begin
-    v_real := jsonb_array_length(coalesce(fn_puente_devengo_plan(v_m)->'nomina', '[]'::jsonb)) > 0;
+    v_real := not v_c3 and jsonb_array_length(coalesce(fn_puente_devengo_plan(v_m)->'nomina', '[]'::jsonb)) > 0;
   exception when others then v_real := false;
   end;
   v_esp := case when not coalesce(v_real, false)
     then 'sin la nómina, el devengo estándar del mes lleva sus horas a su tarifa: a 400.00 · b 390.00 · b CO #1 250.00 | al postear la '
-         || 'nómina se deshace solo: lo dice sí, y devengo vivo del mes: no'
+         || case when v_c3 then 'nómina se pone al día solo: lo dice sí, y queda devengada solo la cola: b 150.00'
+                 else 'nómina se deshace solo: lo dice sí, y devengo vivo del mes: no' end
     else '(el mes ya tiene una nómina de verdad en el libro: c3 no lo devenga, y el devengo sin nómina no se puede ver aquí) devengarlo: MX008'
     end
-    || ' | la mano de obra directa del mes en sus obras, una sola vez: a 1044.27 · b 1450.00 · b CO #1 652.67 | devengar el mes con la nómina '
-    || 'dentro: MX008 | la cola (lo trabajado después del período y sin pagar al terminar el mes): ZZ Ayudante Uno, 6 h, 150.00 a su tarifa; se '
-    || 'dice, no se devenga | anulada la nómina, c3 ya no ve su journal: sí';
+    || ' | la mano de obra directa del mes en sus obras, una sola vez: a 1044.27 · b ' || case when v_c3 then '1600.00' else '1450.00' end
+    || ' · b CO #1 652.67 | devengar el mes con la nómina dentro: ' || case when v_c3 then 'no cambia nada' else 'MX008' end
+    || ' | la cola (lo trabajado después del período y sin pagar al terminar el mes): ZZ Ayudante Uno, 6 h, 150.00 a su tarifa; '
+    || case when v_c3 then 'es lo que lleva el devengo' else 'se dice, no se devenga' end
+    || ' | anulada la nómina, c3 ya no ve su journal: sí';
   if pg_temp.c15_omitir(19, v_nom, v_esp) then return; end if;
   begin
     v_c := pg_temp.c15_lista();
@@ -1941,11 +2085,18 @@ begin
                || coalesce((select string_agg(concat_ws(' ', replace(l.proyecto_id, 'c15-prueba-', ''), l.co, l.monto::text), ' · ' order by l.proyecto_id, l.co nulls first)
                               from asiento_lineas l where l.asiento_id = v_dev and l.proyecto_id in ('c15-prueba-a', 'c15-prueba-b')), 'no devengó');
       r := pg_temp.c15_postear(v_c);
-      v_obt := v_obt || format(' | al postear la nómina se deshace solo: lo dice %s, y devengo vivo del mes: %s',
-        case when r->>'devengo' like '%se deshizo aquí mismo%' then 'sí' else 'no' end,
-        case when exists (select 1 from asientos a
-                           where a.origen_tabla = 'horas_devengo' and a.origen_id = v_m and a.camino not in ('reverso', 'reverso_automatico')
-                             and not exists (select 1 from asientos x where x.reversa_a = a.id and x.camino = 'reverso')) then 'SÍ' else 'no' end);
+      select a.id into v_dev from asientos a
+       where a.origen_tabla = 'horas_devengo' and a.origen_id = v_m and a.camino not in ('reverso', 'reverso_automatico')
+         and not exists (select 1 from asientos x where x.reversa_a = a.id and x.camino = 'reverso');
+      if v_c3 then
+        v_obt := v_obt || format(' | al postear la nómina se pone al día solo: lo dice %s, y queda devengada solo la cola: %s',
+          case when r->>'devengo' like '%se puso al día aquí mismo%' then 'sí' else 'no' end,
+          coalesce((select string_agg(concat_ws(' ', replace(l.proyecto_id, 'c15-prueba-', ''), l.co, l.monto::text), ' · ' order by l.proyecto_id, l.co nulls first)
+                      from asiento_lineas l where l.asiento_id = v_dev and l.proyecto_id in ('c15-prueba-a', 'c15-prueba-b')), 'NADA'));
+      else
+        v_obt := v_obt || format(' | al postear la nómina se deshace solo: lo dice %s, y devengo vivo del mes: %s',
+          case when r->>'devengo' like '%se deshizo aquí mismo%' then 'sí' else 'no' end, case when v_dev is not null then 'SÍ' else 'no' end);
+      end if;
     else
       v_obt := '(el mes ya tiene una nómina de verdad en el libro: c3 no lo devenga, y el devengo sin nómina no se puede ver aquí) devengarlo: '
                || pg_temp.c15_estado(format('select public.fn_horas_devengar(%L)', v_m));
@@ -1958,22 +2109,30 @@ begin
                            from asiento_lineas l join asientos a on a.id = l.asiento_id
                           where l.cuenta = '5000' and l.proyecto_id in ('c15-prueba-a', 'c15-prueba-b') and a.periodo = v_m
                           group by l.proyecto_id, l.co having sum(l.monto) <> 0) q);
-    v_obt := v_obt || format(' | devengar el mes con la nómina dentro: %s', pg_temp.c15_estado(format('select public.fn_horas_devengar(%L)', v_m)));
+    -- (devengar con la nómina dentro: con el c3 de la Fase 11b no cambia nada —ya está al día—; con uno de antes, MX008)
+    v_x := pg_temp.c15_estado(format('select public.fn_horas_devengar(%L)', v_m));
+    v_obt := v_obt || format(' | devengar el mes con la nómina dentro: %s',
+      case when v_c3 and v_x = 'ok'
+                and v_dev is not distinct from (select a.id from asientos a
+                                                  where a.origen_tabla = 'horas_devengo' and a.origen_id = v_m and a.camino not in ('reverso', 'reverso_automatico')
+                                                    and not exists (select 1 from asientos x where x.reversa_a = a.id and x.camino = 'reverso'))
+           then 'no cambia nada' else v_x end);
     perform pg_temp.c15_ser('dueno');
     select string_agg(format('%s, %s h, %s a su tarifa', q.persona, trim_scale(q.horas), q.estandar), '; ') into v_cola
       from fn_nomina_cola(v_m) q where q.usuario_id::text in (pg_temp.c15('p1'), pg_temp.c15('p2'), pg_temp.c15('p3'));
     perform fn_nomina_anular(v_c, 'C15 PRUEBA: se anula para ver el devengo');
     perform pg_temp.c15_ser('editor');
     v_plan := fn_puente_devengo_plan(v_m);
-    v_obt := v_obt || format(' | la cola (lo trabajado después del período y sin pagar al terminar el mes): %s; se dice, no se devenga | anulada la nómina, c3 ya '
+    v_obt := v_obt || format(' | la cola (lo trabajado después del período y sin pagar al terminar el mes): %s; %s | anulada la nómina, c3 ya '
                              'no ve su journal: %s', coalesce(v_cola, 'nada'),
+      case when v_c3 then 'es lo que lleva el devengo' else 'se dice, no se devenga' end,
       case when not exists (select 1 from jsonb_array_elements_text(coalesce(v_plan->'nomina', '[]'::jsonb)) n(v) where n.v = c.asiento_numero) then 'sí' else 'no' end);
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
     when others then v_obt := coalesce(v_obt || ' | ', '') || 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (19, 'el devengo estándar de c3 del mes, con y sin la nómina: sin ella, lleva las horas aprobadas a su tarifa; al postear la nómina del mes, el devengo vivo se deshace solo (nada queda dos veces: la mano de obra directa del mes en cada obra es la del journal) y c3 ya no devenga ese mes (MX008); lo trabajado después del período de pago y sin pagar al terminar el mes —la cola— NO se devenga: la capa dice cuánto es; y anulada la nómina, c3 deja de ver su journal',
+  insert into _pruebas values (19, 'el devengo estándar de c3 del mes, con y sin la nómina. Con el c3 de la Fase 11b: sin ella, lleva las horas aprobadas a su tarifa; al postear la nómina del mes, el devengo vivo se pone al día solo y queda la cola —lo trabajado después del período de pago y sin pagar al terminar el mes—, nada queda dos veces, y devengar otra vez no cambia nada. Con un c3 de antes: al postear la nómina el devengo se deshace, c3 ya no devenga ese mes (MX008) y la cola se dice. Y anulada la nómina, c3 deja de ver su journal',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
@@ -2466,7 +2625,9 @@ begin
                 and v_csv not like '%ZZ Oficial Tres%' and v_csv = fn_nomina_lote_csv(v_lote) then 'sí' else 'no' end,
       case when pg_temp.c15_codigos(r->'avisos') like '%sin_aprobar%' and pg_temp.c15_codigos(r->'avisos') like '%sueldo_fijo%' then 'sí' else 'no' end,
       (select count(*) from nomina_lote_horas lh where lh.lote_id = v_lote and lh.horas_id between -1510000099 and -1510000001),
-      (select jsonb_array_length(l.semanas) from nomina_lotes l where l.id = v_lote));
+      -- (solo las semanas de la gente de la prueba: con la cuadrilla de verdad ya enlazada a la nómina, el lote lleva también las suyas)
+      (select count(*) from nomina_lotes l cross join lateral jsonb_array_elements(l.semanas) s
+        where l.id = v_lote and s->>'usuario_id' in (pg_temp.c15('p1'), pg_temp.c15('p2'), pg_temp.c15('p3'))));
     -- (un período que empieza el miércoles con la semana empezando el lunes: las 18 h del lunes y el martes ya gastaron su parte de las 40)
     select v_obt || ' | un período que empieza a media semana (miércoles): '
            || string_agg(format('%s h = %s regulares + %s extra%s', trim_scale(g.horas), trim_scale(g.regulares), trim_scale(g.extra),
@@ -2555,8 +2716,8 @@ begin
       case when exists (select 1 from jsonb_array_elements(c->'personas') p where p->>'clave' = fn_nomina_clave('ZZ Ayudante Uno')) then 'sí' else 'no' end,
       c->'declara'->>'sin_renglon');
     -- B. el resumen (sin fechas) y el detalle (con ellas) de la misma nómina
-    v := 'Payroll Journal Summary by Employee' || E'\n\n' || 'Employee,Gross earnings,Employee taxes,Net pay' || E'\n'
-         || '"ZZ Ayudante Uno",1000.00,100.00,900.00' || E'\n' || 'Total,1000.00,100.00,900.00' || E'\n\n' || 'Employee Earnings' || E'\n'
+    v := 'Payroll Journal Summary by Employee' || E'\n\n' || 'Employee,Gross earnings,Employee taxes,Net pay,Employer taxes' || E'\n'
+         || '"ZZ Ayudante Uno",1000.00,100.00,900.00,76.50' || E'\n' || 'Total,1000.00,100.00,900.00,76.50' || E'\n\n' || 'Employee Earnings' || E'\n'
          || 'Employee first name,Employee last name,Pay period start,Pay period end,Check date,Payroll type,Regular earnings,Gross earnings,'
          || 'Employee federal income tax,Employee taxes,Net pay' || E'\n'
          || format('ZZ Ayudante,Uno,%s,%s,%s,Regular,1000.00,1000.00,100.00,100.00,900.00', d0, d13, dp) || E'\n';
@@ -2578,9 +2739,9 @@ begin
              || pg_temp.c15_estado(format('select public.fn_nomina_ensayo(%L::jsonb)', pg_temp.c15_arch(v, 'zz-c15-prueba-dos-nominas.csv')));
     -- E. el neto que ya trae el reembolso (el de la primera persona)
     perform pg_temp.c15_ser('dueno');
-    v := 'Employee first name,Employee last name,Check date,Gross earnings,Employee taxes,Net pay,Reimbursements,Check amount' || E'\n'
-         || format('ZZ Ayudante,Uno,%1$s,1000.00,100.00,925.00,25.00,925.00', dp) || E'\n'
-         || format('ZZ Ayudante,Dos,%1$s,1000.00,100.00,900.00,25.00,925.00', dp) || E'\n';
+    v := 'Employee first name,Employee last name,Check date,Gross earnings,Employee taxes,Net pay,Reimbursements,Check amount,Employer taxes' || E'\n'
+         || format('ZZ Ayudante,Uno,%1$s,1000.00,100.00,925.00,25.00,925.00,76.50', dp) || E'\n'
+         || format('ZZ Ayudante,Dos,%1$s,1000.00,100.00,900.00,25.00,925.00,76.50', dp) || E'\n';
     r := fn_nomina_ensayo(pg_temp.c15_arch(v, 'zz-c15-prueba-neto.csv'));
     c := r->'corridas'->0;
     v_obt := v_obt || format(' | el neto que ya trae el reembolso: cuadra: %s, lo avisa: %s, reembolsos %s de los que %s van en el neto',
@@ -2908,7 +3069,7 @@ declare
   v_esp text := format('las horas aprobadas del mes de ZZ Ayudante Uno y Dos: 44 h = 38 h que pagó la nómina + 6 h en la cola (150.00 a su tarifa); en '
                 'los dos sitios a la vez: 0 | pagado hasta: %s los dos | Gusto pagó otras horas que las aprobadas: el 45 rojo, y lo dice | una '
                 'hora del período aprobada después de postear: el 50 rojo, y lo dice, y entra en la cola: 13 h; quitada su aprobación: verde | una '
-                'hora del lote cambiada después: el 55 rojo, y lo dice; como estaba: verde | terminado el mes: el 80 rojo, y habla de %s; sin la '
+                'hora del lote cambiada después: el 55 rojo, y lo dice; como estaba: verde | terminado el mes: el 80 lo dice, y habla de %s; sin la '
                 'hora de la cola: ZZ Ayudante Uno ya no está en ella: sí | anulada la nómina: el 45 verde, y todas sus horas vuelven a la cola: '
                 '44 h', pg_temp.c15_d(13), v_m);
 begin
@@ -2955,7 +3116,10 @@ begin
     v_obt := v_obt || format(' | una hora del lote cambiada después: el 55 %s; como estaba: %s', x, pg_temp.c15_vuelve(55, '%el reporte -1510000001 de%'));
     -- el 80: terminado el mes (hoy pasa a ser el día 1 del siguiente), su cola
     perform pg_temp.c15_fingir_hoy(pg_temp.c15('mes_hasta')::date + 1);
-    x := case when pg_temp.c15_ctl(80) = 'rojo' and pg_temp.c15_ctl_det(80) like 'En ' || v_m || ' quedaron %' then 'rojo, y habla de ' || v_m
+    -- (en rojo si el mes no está devengado; con su devengo estándar vivo —lo normal con el c3 de la Fase 11b—, en verde y diciéndolo)
+    x := case when pg_temp.c15_ctl_det(80) like 'En ' || v_m || ' quedaron %'
+                   and (pg_temp.c15_ctl(80) = 'rojo' or pg_temp.c15_ctl_det(80) like '%y el mes está devengado (asiento %')
+              then 'lo dice, y habla de ' || v_m
               else pg_temp.c15_ctl(80) || ': ' || left(pg_temp.c15_ctl_det(80), 120) end;
     update horas set aprobado_por = null, aprobado_el = null where id = -1510000009;
     perform pg_temp.c15_ser('dueno');
@@ -2985,10 +3149,11 @@ end $$;
 do $$
 declare
   v_obt text; v_c uuid; r jsonb; m1 uuid; x text; v_m text := pg_temp.c15('mes'); v_dp text := fn_nomina_dia(pg_temp.c15_pago()); v_ap text;
+  v_180 text;
   v_nom text := 'las cuatro filas del cierre';
   v_esp text := 'las cuatro filas (180, 181 y 182 detienen; 183 avisa), todas a la página de la nómina: sí | importada sin postear: la 181 en '
                 'rojo, la nombra por su día (sin lo que cobra nadie) y dice qué hacer: sí | posteada: la 181 verde | un cargo de Gusto del mes en el banco: la 180 en rojo, lo '
-                'nombra y dice qué hacer: sí | casado: la 180 verde | un cuadre en rojo: la 182 lo dice en su nombre («— 1 en rojo: 90») y en su '
+                'nombra por su día (sin su importe) y dice qué hacer: sí | casado: la 180 verde | un cuadre en rojo: la 182 lo dice en su nombre («— 1 en rojo: 90») y en su '
                 'detalle: sí; de vuelta: verde | la 183 lleva el aviso 45 en corto, sin nombrar a nadie: sí | en la apertura, la 180 y la 181: '
                 'no aplican';
 begin
@@ -3007,12 +3172,15 @@ begin
     r := pg_temp.c15_postear(v_c);
     select case when k.ok or k.detalle not like '%la del ' || v_dp || '%' then 'verde' else 'rojo' end into x from fn_nomina_cierre(v_m) k where k.orden = 181;
     v_obt := v_obt || ' | posteada: la 181 ' || x;
+    select k.detalle into v_180 from fn_nomina_cierre(v_m) k where k.orden = 180;   -- (cómo estaba la 180 antes del cargo de la prueba)
     m1 := pg_temp.c15_cargo('c15-t34-net', pg_temp.c15_d(15), 4874.93, 'GUSTO NET 7c15t34 C15 PRUEBA');
-    select case when not k.ok and pg_temp.c15_nombra(k.detalle, '%$4,874.93 del ' || fn_nomina_dia(pg_temp.c15_d(15)) || '%') and k.que_hacer like '%Cargos de Gusto%' then 'sí' else 'no' end
+    -- (por su día y SIN su importe: la revisión de la Fase 11b. Esta fila la guarda el cierre y sale al teléfono)
+    select case when not k.ok and pg_temp.c15_nombra(k.detalle, '%el del ' || fn_nomina_dia(pg_temp.c15_d(15)) || '%') and k.detalle not like '%4,874.93%'
+                     and k.detalle !~ '\$[0-9]' and k.que_hacer like '%Cargos de Gusto%' then 'sí' else 'no' end
       into x from fn_nomina_cierre(v_m) k where k.orden = 180;
-    v_obt := v_obt || ' | un cargo de Gusto del mes en el banco: la 180 en rojo, lo nombra y dice qué hacer: ' || x;
+    v_obt := v_obt || ' | un cargo de Gusto del mes en el banco: la 180 en rojo, lo nombra por su día (sin su importe) y dice qué hacer: ' || x;
     perform pg_temp.c15_casar(m1);
-    select case when k.ok or k.detalle not like '%$4,874.93 del ' || fn_nomina_dia(pg_temp.c15_d(15)) || '%' then 'verde' else 'rojo' end into x from fn_nomina_cierre(v_m) k where k.orden = 180;
+    select case when k.ok or k.detalle is not distinct from v_180 then 'verde' else 'rojo' end into x from fn_nomina_cierre(v_m) k where k.orden = 180;
     v_obt := v_obt || ' | casado: la 180 ' || x;
     grant select on nomina_corridas to anon;
     select case when not k.ok and k.control ~ ' — [0-9]+ en rojo: .*90' and k.detalle like '%90: %nomina_corridas la puede leer o escribir quien no debe%' then 'sí' else 'no' end
@@ -3573,8 +3741,8 @@ begin
              || (select count(*) from nomina_corridas k where k.estado in ('importada', 'posteada') and k.bruto = 500.00 and k.personas = 1
                     and exists (select 1 from nomina_corrida_personas cp where cp.corrida_id = k.id and cp.nombre = 'ZZ Ayudante Uno'));
     -- EL RESUMEN SIN FECHAS: ni período ni día de pago (el día se dice a mano: la opción dia_pago)
-    v_sf := 'Employee first name,Employee last name,Gross earnings,Employee taxes,Net pay' || E'\n'
-            || 'ZZ Ayudante,Uno,311.00,31.00,280.00' || E'\n' || 'ZZ Ayudante,Dos,422.00,42.00,380.00' || E'\n';
+    v_sf := 'Employee first name,Employee last name,Gross earnings,Employee taxes,Net pay,Employer social security tax,Employer medicare tax' || E'\n'
+            || 'ZZ Ayudante,Uno,311.00,31.00,280.00,19.28,4.51' || E'\n' || 'ZZ Ayudante,Dos,422.00,42.00,380.00,26.16,6.12' || E'\n';
     x := pg_temp.c15_sube(v_sf, 'zz-c15-sin-fechas.csv', jsonb_build_object('dia_pago', pg_temp.c15_d(3)));
     v_s := x.corrida;
     v_obt := v_obt || ' | un resumen sin fechas, con su día de pago dicho a mano: ' || x.resultado;
@@ -4161,6 +4329,924 @@ begin
 end $$;
 
 -- =====================================================================
+-- LO QUE ENCONTRÓ LA REVISIÓN DE LA FASE 11b (13-nov): cada arreglo, con su
+-- prueba (53 a 66; la 66, de la revisión final). Van aquí, antes del cierre de la suite: la 51 y la 52
+-- comprueban que tampoco estas dejan nada.
+-- =====================================================================
+-- (enlazar y confirmar a las personas de prueba QUE HAYA —las que traiga el archivo—: dos de campo y un oficial; como el dueño)
+create or replace function pg_temp.c15_enlazar_hay() returns void language plpgsql as $$
+declare
+  r record;
+begin
+  perform pg_temp.c15_ser('dueno');
+  for r in select * from (values ('ZZ Ayudante Uno', 'p1', 'campo'), ('ZZ Ayudante Dos', 'p2', 'campo'), ('ZZ Oficial Tres', 'p3', 'oficial')) x(n, k, c)
+            where exists (select 1 from nomina_personas pe where pe.clave = fn_nomina_clave(x.n) and pe.confirmado_el is null) loop
+    perform fn_nomina_persona(jsonb_build_object('id', pg_temp.c15_persona(r.n), 'usuario_id', pg_temp.c15(r.k), 'clase', r.c, 'confirmar', true));
+  end loop;
+  perform pg_temp.c15_ser('editor');
+end $$;
+-- (las líneas que se digan de un CSV: del journal de prueba, 1 es la cabecera, 2 a 4 sus tres personas y 5 los totales)
+create or replace function pg_temp.c15_lineas(p_csv text, p_n int[]) returns text language sql as $$
+  select string_agg(t.l, E'\n' order by t.n) || E'\n'
+    from regexp_split_to_table(rtrim(p_csv, E'\n'), E'\n') with ordinality t(l, n) where t.n = any (p_n)
+$$;
+-- (un journal chico, de sueldo fijo o de lo que se diga: su cabecera y sus filas. Cada fila: «nombre,apellido,desde,hasta,día de
+-- pago,tipo,método,bruto,retención federal,neto,Social Security del patrón,Medicare del patrón»)
+create or replace function pg_temp.c15_chico(p_filas text[]) returns text language sql as $$
+  select 'Employee first name,Employee last name,Pay period start,Pay period end,Check date,Payroll type,Payment method,Gross earnings,'
+         || 'Employee federal income tax,Net pay,Employer social security tax,Employer medicare tax' || E'\n'
+         || array_to_string(p_filas, E'\n') || E'\n'
+$$;
+-- (los códigos de los frenos de la propuesta de una corrida, o «ninguno»)
+create or replace function pg_temp.c15_frenos(p_corrida uuid) returns text language sql as $$
+  select pg_temp.c15_codigos(pg_temp.c15_propuesta(p_corrida)->'frenos')
+$$;
+-- (¿el c3 de esta base es el de la Fase 11b? Su marca, 2026111301 o más: devenga un mes con nómina por lo que ninguna pagó)
+create or replace function pg_temp.c15_c3_11b() returns boolean language sql as $$
+  select coalesce((select substring(p.prosrc from '([0-9]{10})')::bigint >= 2026111301
+                     from pg_proc p where p.oid = to_regprocedure('public.fn_puente_version()')), false)
+$$;
+
+-- 53. LA MISMA NÓMINA, POR PARTES. El journal de Gusto se baja «resumen o
+--     empleado por empleado». Con la nómina completa (tres personas) ya
+--     posteada, el journal del mismo día con UNA sola de ellas —su mismo
+--     bruto y su mismo neto— es la misma nómina bajada por partes: no entra
+--     como «otra nómina» sin su porqué (su sueldo entraría dos veces al
+--     libro); con el porqué entra, y sin él (una de antes) no se postea y el
+--     32 la nombra. Un bono de verdad el mismo día (otras cifras) y la
+--     nómina siguiente de esa persona con sus mismas cifras (otro período)
+--     sí entran. Y al revés (primero el de un empleado, después el de
+--     todos), lo mismo, y dice qué hacer.
+do $$
+declare
+  v_obt text; v_c uuid; v_k uuid; x record; r jsonb; v_solo text; v_sig text; v_dp text := fn_nomina_dia(pg_temp.c15_pago());
+  v_nom text := 'la misma nómina, por partes (el journal de un solo empleado)';
+  v_esp text := 'el journal de un solo empleado, con el de todos ya posteado: otra_distinta, es la misma: true, por partes: true, se puede '
+                'subir como otra: false, y lo dice: sí | diciendo que es otra nómina, sin porqué: otra_distinta, y entraron 0 | con su '
+                'porqué: nueva; quitado el porqué (como una de antes): frena por repetida: sí; el 32 rojo, y lo dice | un bono de verdad el '
+                'mismo día (otras cifras): nueva | la nómina siguiente de esa persona, con sus mismas cifras y otro período: nueva | al '
+                'revés (primero el de un empleado, posteado; después el de todos): otra_distinta, es la misma: true, dice que se anule '
+                'aquella y se suba la completa: sí; como otra nómina sin porqué: otra_distinta';
+begin
+  if pg_temp.c15_omitir(53, v_nom, v_esp) then return; end if;
+  -- (el journal «por empleado» del oficial: la cabecera del journal de prueba y su línea, sin la fila de totales)
+  v_solo := pg_temp.c15_lineas(pg_temp.c15_journal(), array[1, 4]);
+  begin
+    v_c := pg_temp.c15_lista();
+    r := pg_temp.c15_postear(v_c);
+    x := pg_temp.c15_sube(v_solo, 'zz-c15-solo-oficial.csv');
+    v_obt := format('el journal de un solo empleado, con el de todos ya posteado: %s, es la misma: %s, por partes: %s, se puede subir como otra: %s, y lo dice: %s',
+                    x.resultado, coalesce(x.r->'corridas'->0->>'misma', '—'), coalesce(x.r->'corridas'->0->>'por_partes', '—'),
+                    coalesce(x.r->'corridas'->0->>'se_puede_otra', '—'),
+                    case when x.r->'corridas'->0->>'texto' like '%por partes%entrarían dos veces%' then 'sí' else 'no' end);
+    x := pg_temp.c15_sube(v_solo, 'zz-c15-solo-oficial.csv', '{"otra_nomina": true}');
+    v_obt := v_obt || format(' | diciendo que es otra nómina, sin porqué: %s, y entraron %s', x.resultado, coalesce(x.r->>'nuevas', '—'));
+    if x.resultado = 'nueva' then   -- (la capa de antes la dejaba entrar: se quita para seguir)
+      perform pg_temp.c15_ser('dueno'); perform fn_nomina_descartar(x.corrida, 'C15 PRUEBA: sobra'); perform pg_temp.c15_ser('editor');
+    end if;
+    x := pg_temp.c15_sube(v_solo, 'zz-c15-solo-oficial.csv', '{"otra_nomina": true, "otra_porque": "C15 PRUEBA: de verdad es otra"}');
+    v_k := x.corrida;
+    v_obt := v_obt || ' | con su porqué: ' || x.resultado;
+    perform set_config('mx_nomina.escribe', 'nomina_corridas', true);
+    update nomina_corridas set otra_porque = null where id = v_k;
+    perform set_config('mx_nomina.escribe', '', true);
+    v_obt := v_obt || format('; quitado el porqué (como una de antes): frena por repetida: %s; el 32 %s',
+                             case when pg_temp.c15_frenos(v_k) like '%repetida%' then 'sí' else 'no' end,
+                             pg_temp.c15_rojo(32, '%la del ' || v_dp || '%y la del ' || v_dp || '%por partes%'));
+    perform pg_temp.c15_ser('dueno'); perform fn_nomina_descartar(v_k, 'C15 PRUEBA: sobra'); perform pg_temp.c15_ser('editor');
+    x := pg_temp.c15_sube(pg_temp.c15_bono(), 'zz-c15-bono.csv');
+    v_obt := v_obt || ' | un bono de verdad el mismo día (otras cifras): ' || x.resultado;
+    -- (la nómina siguiente del oficial: su mismo bruto y su mismo neto, dos semanas después y con el período siguiente)
+    v_sig := replace(replace(replace(v_solo, pg_temp.c15_us(pg_temp.c15_pago()), pg_temp.c15_us(pg_temp.c15_pago() + 14)),
+                             pg_temp.c15_us(pg_temp.c15_d(0)), pg_temp.c15_us(pg_temp.c15_d(14))),
+                     pg_temp.c15_us(pg_temp.c15_d(13)), pg_temp.c15_us(pg_temp.c15_d(27)));
+    x := pg_temp.c15_sube(v_sig, 'zz-c15-solo-oficial-siguiente.csv');
+    v_obt := v_obt || ' | la nómina siguiente de esa persona, con sus mismas cifras y otro período: ' || x.resultado;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := coalesce(v_obt || ' | ', '') || 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  begin
+    -- AL REVÉS: primero el de un empleado (posteado), después el de todos
+    perform pg_temp.c15_sembrar();
+    v_c := pg_temp.c15_importar(v_solo, 'zz-c15-solo-oficial.csv');
+    perform pg_temp.c15_enlazar_hay();
+    r := pg_temp.c15_postear(v_c);
+    x := pg_temp.c15_sube(pg_temp.c15_journal(), 'zz-c15-prueba.csv');
+    v_obt := v_obt || format(' | al revés (primero el de un empleado, posteado; después el de todos): %s, es la misma: %s, dice que se anule aquella y '
+                             'se suba la completa: %s', x.resultado, coalesce(x.r->'corridas'->0->>'misma', '—'),
+                             case when x.r->'corridas'->0->>'texto' like '%anúlala%sube esta, la completa%' then 'sí' else 'no' end);
+    x := pg_temp.c15_sube(pg_temp.c15_journal(), 'zz-c15-prueba.csv', '{"otra_nomina": true}');
+    v_obt := v_obt || '; como otra nómina sin porqué: ' || x.resultado;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := coalesce(v_obt || ' | ', '') || 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (53, 'la misma nómina, por partes: con la nómina completa ya posteada, el journal del mismo día con una sola de sus personas (su mismo bruto y su mismo neto) es la misma nómina bajada «empleado por empleado»: no entra como «otra nómina» sin su porqué escrito (su sueldo entraría dos veces al libro), sin él no se postea (el freno «repetida») y el aviso 32 la nombra; un bono de verdad el mismo día y la nómina siguiente de esa persona con sus mismas cifras sí entran; y al revés (primero el de un empleado, después el de todos) tampoco entra, y dice qué hacer',
+    v_esp, v_obt, v_obt is not distinct from v_esp);
+end $$;
+
+-- 54. LA BOLSA DEL BURDEN, REPARTIDA FUERA DE ORDEN. La prima de WC mete
+--     300.00 en la bolsa al terminar el mes de las pruebas y otros 300.00 al
+--     terminar el siguiente; se reparte PRIMERO el mes siguiente (que se
+--     lleva lo de los dos: 600.00). El mes de las pruebas ya no tiene nada
+--     que repartir (antes seguía diciendo «quedan 300.00» y se repartían
+--     otra vez: la prima dos veces en el costo de las obras y la bolsa al
+--     revés). Y con la bolsa AL REVÉS (un ajuste a favor), lo dice.
+do $$
+declare
+  v_obt text; v_c uuid; v_c2 uuid; r jsonb; b jsonb; x record; v_m text := pg_temp.c15('mes'); v_m2 text := pg_temp.c15('mes2');
+  v_h1 date := pg_temp.c15('mes_hasta')::date; v_d2 date; v_h2 date; v_s0 numeric; v_j2 text;
+  v_nom text := 'la bolsa del burden, repartida fuera de orden';
+  v_esp text := 'repartido primero el mes siguiente: se lleva lo de los dos meses (600.00 más de lo que había): sí | después, el mes de las '
+                'pruebas: puede repartir: no, y dice que ya salió con un mes posterior: sí | la bolsa queda como estaba: sí | con la bolsa al '
+                'revés (un ajuste a favor de 100.00): la bolsa lo dice: sí, y el 75: sí | anulada después la nómina por cuyas horas se '
+                'repartió: al anular lo dice: sí, y el 75 nombra ese reparto: sí';
+begin
+  if pg_temp.c15_omitir(54, v_nom, v_esp) then return; end if;
+  if v_m2 is null then
+    insert into _pruebas values (54, v_nom, v_esp, 'omitida: el mes siguiente al de las pruebas no existe o no está abierto: no hay dos meses '
+                                                   || 'que repartir fuera de orden', null);
+    return;
+  end if;
+  select q.desde, q.hasta into v_d2, v_h2 from periodos q where q.periodo = v_m2;
+  begin
+    v_c := pg_temp.c15_lista();
+    r := pg_temp.c15_postear(v_c);
+    -- (lo que había en la bolsa antes de la prima de la prueba, con la nómina del mes ya posteada)
+    select coalesce(sum(l.monto), 0) into v_s0 from asiento_lineas l where l.cuenta = '5015';
+    -- la nómina del mes siguiente (las mismas personas, su período del 1 al 14 y su día de pago el 20), con sus horas en obra
+    perform pg_temp.c15_fingir_hoy(v_h2 + 1);
+    perform pg_temp.c15_hora(31, 'p1', v_d2 + 1, 'c15-prueba-a', 8), pg_temp.c15_hora(32, 'p1', v_d2 + 2, 'c15-prueba-b', 8),
+            pg_temp.c15_hora(33, 'p2', v_d2 + 1, 'c15-prueba-b', 8);
+    v_j2 := replace(replace(replace(pg_temp.c15_journal(), pg_temp.c15_us(pg_temp.c15_pago()), pg_temp.c15_us(v_d2 + 19)),
+                            pg_temp.c15_us(pg_temp.c15_d(0)), pg_temp.c15_us(v_d2)),
+                    pg_temp.c15_us(pg_temp.c15_d(13)), pg_temp.c15_us(v_d2 + 13));
+    x := pg_temp.c15_sube(v_j2, 'zz-c15-prueba-mes-siguiente.csv');
+    v_c2 := x.corrida;
+    r := pg_temp.c15_postear(v_c2);
+    -- la prima de WC de cada mes, a la bolsa
+    perform pg_temp.c15_ser('dueno');
+    r := fn_postear(jsonb_build_object('tipo', 'normal', 'fecha', v_h1::text, 'descripcion', 'C15 PRUEBA: la prima de WC del mes',
+           'lineas', jsonb_build_array(jsonb_build_object('cuenta', '5015', 'monto', '300.00'), jsonb_build_object('cuenta', '1410', 'monto', '-300.00'))));
+    r := fn_postear(jsonb_build_object('tipo', 'normal', 'fecha', v_h2::text, 'descripcion', 'C15 PRUEBA: la prima de WC del mes siguiente',
+           'lineas', jsonb_build_array(jsonb_build_object('cuenta', '5015', 'monto', '300.00'), jsonb_build_object('cuenta', '1410', 'monto', '-300.00'))));
+    -- PRIMERO el mes siguiente
+    execute 'select public.fn_nomina_bolsa($1)' into b using v_m2;
+    execute 'select public.fn_nomina_bolsa_repartir($1, $2)' into r using v_m2, b->>'visto';
+    v_obt := 'repartido primero el mes siguiente: se lleva lo de los dos meses (600.00 más de lo que había): '
+             || case when (b->>'saldo')::numeric = v_s0 + 600 and (r->>'monto')::numeric = v_s0 + 600 then 'sí'
+                     else format('no (había %s, dijo %s y repartió %s)', v_s0, b->>'saldo', r->>'monto') end;
+    -- DESPUÉS el mes de las pruebas
+    execute 'select public.fn_nomina_bolsa($1)' into b using v_m;
+    v_obt := v_obt || format(' | después, el mes de las pruebas: puede repartir: %s, y dice que ya salió con un mes posterior: %s',
+                             case when (b->>'puede')::boolean then 'SÍ (' || (b->>'saldo') || ')' else 'no' end,
+                             case when b->>'texto' like '%ya salió a las obras con el reparto de un mes posterior%' then 'sí' else 'no' end);
+    if (b->>'puede')::boolean then   -- (la capa de antes lo repartía otra vez: se reparte, para verlo en lo que queda)
+      execute 'select public.fn_nomina_bolsa_repartir($1, $2)' into r using v_m, b->>'visto';
+    end if;
+    v_obt := v_obt || ' | la bolsa queda como estaba: '
+             || (select case when coalesce(sum(l.monto), 0) = 0 then 'sí' else 'no (' || coalesce(sum(l.monto), 0) || ')' end
+                   from asiento_lineas l where l.cuenta = '5015');
+    -- AL REVÉS: un ajuste a favor (la auditoría de WC devuelve 100.00) deja la bolsa en negativo
+    r := fn_postear(jsonb_build_object('tipo', 'normal', 'fecha', v_h2::text, 'descripcion', 'C15 PRUEBA: la auditoría de WC devuelve prima',
+           'lineas', jsonb_build_array(jsonb_build_object('cuenta', '1410', 'monto', '100.00'), jsonb_build_object('cuenta', '5015', 'monto', '-100.00'))));
+    execute 'select public.fn_nomina_bolsa($1)' into b using v_m2;
+    perform pg_temp.c15_ser('editor');
+    v_obt := v_obt || format(' | con la bolsa al revés (un ajuste a favor de 100.00): la bolsa lo dice: %s, y el 75: %s',
+                             case when b->>'texto' like '%AL REVÉS%' then 'sí' else 'no' end,
+                             -- (y no dice «Además, … llevó parte a una obra…»: todavía no hay ningún reparto que se haya quedado viejo)
+                             case when pg_temp.c15_ctl_det(75) like '%AL REVÉS%' and pg_temp.c15_ctl_det(75) not like '%Además,%' then 'sí' else 'no' end);
+    -- ANULADA DESPUÉS la nómina del mes siguiente, por cuyas horas se repartió su bolsa: la prima sigue repartida por las horas de
+    -- una nómina que ya no está. Se dice al anular, y el 75 nombra ese reparto.
+    perform pg_temp.c15_ser('dueno');
+    r := fn_nomina_anular(v_c2, 'C15 PRUEBA: se anula después de repartir la bolsa');
+    perform pg_temp.c15_ser('editor');
+    v_obt := v_obt || format(' | anulada después la nómina por cuyas horas se repartió: al anular lo dice: %s, y el 75 nombra ese reparto: %s',
+                             case when r->>'bolsa' like '%ya se repartió a las obras por las horas que pagaron sus nóminas%reversa ese reparto%' then 'sí' else 'no' end,
+                             case when pg_temp.c15_ctl_det(75) like '%el de ' || v_m2 || ' (asiento %llevó parte a una obra en la que hoy ninguna nómina posteada de ese mes pagó horas%'
+                                  then 'sí' else 'no' end);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := coalesce(v_obt || ' | ', '') || 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (54, 'la bolsa del burden real, repartida fuera de orden: con la prima de WC de dos meses en la bolsa, repartido primero el mes siguiente (que se lleva lo de los dos), el mes anterior ya no tiene nada que repartir —se reparte como mucho lo que HOY queda en la bolsa: antes se repartía otra vez y la prima quedaba dos veces en el costo de las obras—; y con la bolsa al revés (un ajuste a favor, o un reparto de más) lo dicen la bolsa y el aviso 75',
+    v_esp, v_obt, v_obt is not distinct from v_esp);
+end $$;
+
+-- 55. «TOTAL EMPLOYER CONTRIBUTIONS» Y EL COSTO TOTAL DEL PATRÓN. Esa
+--     columna, con el total de TODO lo patronal, ya no se lee como si fuera
+--     un beneficio aparte (lo del patrón entraba dos veces). Si Edgar dice a
+--     mano que es un beneficio con su cuenta, la corrida NO CUADRA: bruto +
+--     lo patronal ya no es la columna del costo total del patrón. Y un total
+--     sin su detalle y sin cuenta: el ensayo ya no dice «se puede postear», y
+--     el freno dice que es un total (no se le pone cuenta).
+do $$
+declare
+  v_obt text; r jsonb; c jsonb; v text; v_c uuid;
+  d0 text := pg_temp.c15_us(pg_temp.c15_d(0)); d13 text := pg_temp.c15_us(pg_temp.c15_d(13)); dp text := pg_temp.c15_us(pg_temp.c15_pago());
+  v_nom text := '«Total employer contributions» y el costo total del patrón';
+  v_esp text := '«Total employer contributions» con el total de lo patronal: no se lee (beneficios del patrón 0.00), cuadra: sí, se puede '
+                'postear: sí | dicho a mano que es un beneficio del patrón con su cuenta: cuadra: no, y dice que el costo total del patrón no '
+                'da: sí | un total sin su detalle y sin cuenta («Employer taxes»): el ensayo dice se puede postear: no (por «Employer taxes»); '
+                'entra, y la frena: falta_cuenta, y dice que es un total: sí | un beneficio sin cuenta (no es un total): la frena por falta '
+                'de cuenta sin decir que es un total: sí';
+begin
+  if pg_temp.c15_omitir(55, v_nom, v_esp) then return; end if;
+  begin
+    perform pg_temp.c15_sembrar(false);
+    perform pg_temp.c15_ser('dueno');
+    v := pg_temp.c15_journal(array[',Total employer contributions', ',214.41', ',158.78', ',262.80', ',635.99']);
+    r := fn_nomina_ensayo(pg_temp.c15_arch(v, 'zz-c15-total-contrib.csv'));
+    c := r->'corridas'->0;
+    v_obt := format('«Total employer contributions» con el total de lo patronal: %s (beneficios del patrón %s), cuadra: %s, se puede postear: %s',
+                    case when (c->'totales'->>'ben_patron')::numeric = 0 then 'no se lee' else 'SE LEE' end,
+                    (c->'totales'->>'ben_patron')::numeric(14,2),
+                    case when (c->>'cuadra')::boolean then 'sí' else 'no' end, case when (c->>'se_puede_postear')::boolean then 'sí' else 'no' end);
+    perform fn_nomina_columna('{"columna": "Total employer contributions", "clase": "ben_patron", "cuenta": "2240"}');
+    r := fn_nomina_ensayo(pg_temp.c15_arch(v, 'zz-c15-total-contrib.csv'));
+    c := r->'corridas'->0;
+    v_obt := v_obt || format(' | dicho a mano que es un beneficio del patrón con su cuenta: cuadra: %s, y dice que el costo total del patrón no da: %s',
+                             case when (c->>'cuadra')::boolean then 'sí' else 'no' end,
+                             case when (c->'descuadres')::text like '%la columna del costo total del patrón dice%' then 'sí' else 'no' end);
+    v := 'Employee first name,Employee last name,Pay period start,Pay period end,Check date,Gross earnings,Employee taxes,Net pay,Employer taxes' || E'\n'
+         || format('ZZ Oficial,Tres,%s,%s,%s,1000.00,100.00,900.00,76.50', d0, d13, dp) || E'\n';
+    r := fn_nomina_ensayo(pg_temp.c15_arch(v, 'zz-c15-solo-totales.csv'));
+    c := r->'corridas'->0;
+    v_obt := v_obt || format(' | un total sin su detalle y sin cuenta («Employer taxes»): el ensayo dice se puede postear: %s (por %s)',
+                             case when (c->>'se_puede_postear')::boolean then 'sí' else 'no' end,
+                             coalesce((select string_agg('«' || q || '»', ', ') from jsonb_array_elements_text(c->'sin_cuenta') q), '—'));
+    perform pg_temp.c15_ser('editor');
+    v_c := pg_temp.c15_importar(v, 'zz-c15-solo-totales.csv');
+    perform pg_temp.c15_enlazar_hay();
+    v_obt := v_obt || format('; entra, y la frena: %s, y dice que es un total: %s', pg_temp.c15_frenos(v_c),
+                             case when (pg_temp.c15_propuesta(v_c)->'frenos')::text like '%«Employer taxes» es un TOTAL%NO le pongas cuenta%' then 'sí' else 'no' end);
+    -- (y una columna con dinero que NO es un total —un beneficio del patrón dicho sin su cuenta—: el mismo freno, sin el «OJO»)
+    perform pg_temp.c15_ser('dueno');
+    perform fn_nomina_descartar(v_c, 'C15 PRUEBA: ya se miró');
+    perform fn_nomina_columna('{"columna": "ZZ Employer wellness", "clase": "ben_patron"}');
+    perform pg_temp.c15_ser('editor');
+    v_c := pg_temp.c15_importar(replace(replace(replace(pg_temp.c15_journal(array[',ZZ Employer wellness', ',10.00', ',0.00', ',20.00', ',30.00']),
+                                                        ',2172.41,', ',2182.41,'), ',2662.80,', ',2682.80,'), ',6443.99,', ',6473.99,'), 'zz-c15-wellness.csv');
+    v_obt := v_obt || ' | un beneficio sin cuenta (no es un total): la frena por falta de cuenta sin decir que es un total: '
+             || case when (pg_temp.c15_propuesta(v_c)->'frenos')::text like '%«ZZ Employer wellness» trae(n) dinero y el mapeo no dice a qué cuenta va%'
+                      and (pg_temp.c15_propuesta(v_c)->'frenos')::text not like '%es un TOTAL%' then 'sí' else 'no' end;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := coalesce(v_obt || ' | ', '') || 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (55, '«Total employer contributions» y el costo total del patrón: esa columna, con el total de todo lo patronal, no se lee como un beneficio aparte (lo del patrón entraba dos veces); si se dice a mano que es un beneficio con su cuenta, la corrida no cuadra (bruto + lo patronal ya no es la columna del costo total del patrón, la única ecuación del lado del patrón); y un total sin su detalle y sin cuenta deja el ensayo en «no se puede postear», y su freno dice que es un total y que no se le ponga cuenta',
+    v_esp, v_obt, v_obt is not distinct from v_esp);
+end $$;
+
+-- 56. EL RESUMEN DE UN RANGO NO ES UNA NÓMINA. Con dos nóminas de sueldo fijo
+--     ya posteadas, el resumen de las dos (la suma por empleado, sin día de
+--     pago ni período, con el día dicho a mano) entraba como una nómina más y
+--     se posteaba: todo dos veces. Ahora no se postea: le falta su período
+--     (ni día ni período traía) y, dicho el período, se reconoce como el
+--     RESUMEN de las otras (cada persona trae justo lo que suman su bruto y
+--     su neto en dos o más nóminas suyas seguidas); solo con su porqué
+--     escrito sigue. La nómina siguiente de sueldo fijo, con las mismas
+--     cifras que las anteriores, no parece un resumen.
+do $$
+declare
+  v_obt text; x record; r jsonb; v_a uuid; v_b uuid; v_s uuid; v_n uuid;
+  v_nom text := 'el resumen de un rango no es una nómina';
+  v_esp text := 'el resumen de dos nóminas ya posteadas (la suma por empleado, sin fechas), con su día dicho a mano: nueva | la frena: '
+                'resumen,sin_periodo | dicho su período: resumen | dicho por qué es una nómina aparte: ninguno | la nómina siguiente de sueldo '
+                'fijo, con las mismas cifras que las otras: ninguno';
+begin
+  if pg_temp.c15_omitir(56, v_nom, v_esp) then return; end if;
+  begin
+    perform pg_temp.c15_sembrar(false);
+    x := pg_temp.c15_sube(pg_temp.c15_chico(array[format('ZZ Oficial,Tres,%s,%s,%s,Regular,Direct Deposit,1000.00,100.00,900.00,62.00,14.50',
+                            pg_temp.c15_us(pg_temp.c15_d(0)), pg_temp.c15_us(pg_temp.c15_d(6)), pg_temp.c15_us(pg_temp.c15_d(8)))]), 'zz-c15-fijo-1.csv');
+    v_a := x.corrida;
+    x := pg_temp.c15_sube(pg_temp.c15_chico(array[format('ZZ Oficial,Tres,%s,%s,%s,Regular,Direct Deposit,1000.00,100.00,900.00,62.00,14.50',
+                            pg_temp.c15_us(pg_temp.c15_d(7)), pg_temp.c15_us(pg_temp.c15_d(13)), pg_temp.c15_us(pg_temp.c15_d(15)))]), 'zz-c15-fijo-2.csv');
+    v_b := x.corrida;
+    perform pg_temp.c15_enlazar_hay();
+    r := pg_temp.c15_postear(v_a);
+    r := pg_temp.c15_postear(v_b);
+    -- el resumen de las dos: sin día de pago ni período; el día, a mano
+    x := pg_temp.c15_sube('Employee first name,Employee last name,Gross earnings,Employee federal income tax,Net pay,Employer social security tax,'
+                          || 'Employer medicare tax' || E'\n' || 'ZZ Oficial,Tres,2000.00,200.00,1800.00,124.00,29.00' || E'\n',
+                          'zz-c15-resumen-rango.csv', jsonb_build_object('dia_pago', pg_temp.c15_d(20)));
+    v_s := x.corrida;
+    v_obt := 'el resumen de dos nóminas ya posteadas (la suma por empleado, sin fechas), con su día dicho a mano: ' || x.resultado
+             || ' | la frena: ' || pg_temp.c15_frenos(v_s);
+    perform pg_temp.c15_ser('dueno');
+    perform fn_nomina_corrida(v_s, jsonb_build_object('periodo_desde', pg_temp.c15_d(0), 'periodo_hasta', pg_temp.c15_d(13)));
+    perform pg_temp.c15_ser('editor');
+    v_obt := v_obt || ' | dicho su período: ' || pg_temp.c15_frenos(v_s);
+    perform pg_temp.c15_ser('dueno');
+    perform fn_nomina_corrida(v_s, '{"otra_porque": "C15 PRUEBA: de verdad es una nómina aparte"}');
+    perform pg_temp.c15_ser('editor');
+    v_obt := v_obt || ' | dicho por qué es una nómina aparte: ' || pg_temp.c15_frenos(v_s);
+    x := pg_temp.c15_sube(pg_temp.c15_chico(array[format('ZZ Oficial,Tres,%s,%s,%s,Regular,Direct Deposit,1000.00,100.00,900.00,62.00,14.50',
+                            pg_temp.c15_us(pg_temp.c15_d(14)), pg_temp.c15_us(pg_temp.c15_d(20)), pg_temp.c15_us(pg_temp.c15_d(22)))]), 'zz-c15-fijo-3.csv');
+    v_n := x.corrida;
+    v_obt := v_obt || ' | la nómina siguiente de sueldo fijo, con las mismas cifras que las otras: ' || coalesce(pg_temp.c15_frenos(v_n), x.resultado);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := coalesce(v_obt || ' | ', '') || 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (56, 'el resumen de un rango no es una nómina: con dos nóminas ya posteadas, el resumen de las dos (la suma por empleado, sin día de pago ni período; el día, dicho a mano) entra a la vista pero NO se postea: le falta su período y, dicho, se reconoce como el resumen de las otras (cada persona trae justo lo que suman su bruto y su neto en dos o más nóminas suyas seguidas); solo con su porqué escrito sigue; la nómina siguiente con las mismas cifras no parece un resumen',
+    v_esp, v_obt, v_obt is not distinct from v_esp);
+end $$;
+
+-- 57. UN JOURNAL SIN LO QUE PAGA EL PATRÓN NO CUADRA. Bajado de Gusto sin las
+--     columnas de los impuestos del patrón, cuadraba y se posteaba sin un
+--     aviso: sus impuestos quedaban fuera del libro y el cargo de impuestos
+--     de Gusto ya no casaba. Con sueldo, lo del patrón nunca es cero: sin
+--     esas columnas la corrida no cuadra, y lo dice. Y sin la columna de los
+--     reembolsos ni la del cheque, se avisa.
+do $$
+declare
+  v_obt text; r jsonb; c jsonb; v text;
+  d0 text := pg_temp.c15_us(pg_temp.c15_d(0)); d13 text := pg_temp.c15_us(pg_temp.c15_d(13)); dp text := pg_temp.c15_us(pg_temp.c15_pago());
+  v_nom text := 'un journal sin lo que paga el patrón no cuadra';
+  v_esp text := 'un journal sin las columnas de lo que paga el patrón: cuadra: no, y lo dice: sí; se puede postear: no | sin la columna de los '
+                'reembolsos ni la del cheque: lo avisa: sí | con sus columnas: cuadra: sí, se puede postear: sí';
+begin
+  if pg_temp.c15_omitir(57, v_nom, v_esp) then return; end if;
+  begin
+    perform pg_temp.c15_sembrar(false);
+    perform pg_temp.c15_ser('dueno');
+    v := 'Employee first name,Employee last name,Pay period start,Pay period end,Check date,Gross earnings,Employee federal income tax,Net pay' || E'\n'
+         || format('ZZ Oficial,Tres,%s,%s,%s,1000.00,100.00,900.00', d0, d13, dp) || E'\n';
+    r := fn_nomina_ensayo(pg_temp.c15_arch(v, 'zz-c15-sin-patron.csv'));
+    c := r->'corridas'->0;
+    v_obt := format('un journal sin las columnas de lo que paga el patrón: cuadra: %s, y lo dice: %s; se puede postear: %s | sin la columna de los '
+                    'reembolsos ni la del cheque: lo avisa: %s',
+                    case when (c->>'cuadra')::boolean then 'sí' else 'no' end,
+                    case when (c->'descuadres')::text like '%no trae lo que paga el patrón%' then 'sí' else 'no' end,
+                    case when (c->>'se_puede_postear')::boolean then 'sí' else 'no' end,
+                    case when pg_temp.c15_codigos(c->'avisos') like '%sin_reembolsos%' then 'sí' else 'no' end);
+    r := fn_nomina_ensayo(pg_temp.c15_arch(pg_temp.c15_chico(array[format('ZZ Oficial,Tres,%s,%s,%s,Regular,Direct Deposit,1000.00,100.00,900.00,62.00,14.50',
+                                                                         d0, d13, dp)]), 'zz-c15-con-patron.csv'));
+    c := r->'corridas'->0;
+    v_obt := v_obt || format(' | con sus columnas: cuadra: %s, se puede postear: %s', case when (c->>'cuadra')::boolean then 'sí' else 'no' end,
+                             case when (c->>'se_puede_postear')::boolean then 'sí' else 'no' end);
+    perform pg_temp.c15_ser('editor');
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := coalesce(v_obt || ' | ', '') || 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (57, 'un journal sin lo que paga el patrón no cuadra: bajado de Gusto sin las columnas de los impuestos del patrón ya no cuadra ni se puede postear (con sueldo nunca son cero: quedaban fuera del libro y el cargo de impuestos de Gusto no casaba), y lo dice; sin la columna de los reembolsos ni la del cheque, se avisa; con sus columnas, cuadra',
+    v_esp, v_obt, v_obt is not distinct from v_esp);
+end $$;
+
+-- 58. LO QUE QUEDÓ A FAVOR EN OTRA CUENTA, Y DOS CARGOS QUE NO SE PROPONÍAN.
+--     (a) Una corrección deja a favor 25.30 en el 941 (2220), 0.60 en el
+--     FUTA (2225) y 2.70 en el reempleo (2230); la nómina siguiente no trae
+--     FUTA ni reempleo (pasado el tope) y deja 126.50 en 2220. Gusto cobra
+--     97.90 (126.50 menos los 28.60 a favor). El banco pone todo el cargo de
+--     un lado: antes la propuesta lo ofrecía y casarlo contestaba MX008. Ahora
+--     se casa: el cargo, entero contra 2220, y un TRASPASO de la nómina pasa
+--     lo que estaba a favor en 2225 y 2230 a 2220; las tres cuentas de las
+--     dos nóminas quedan en cero, y deshacer el cargo reversa su traspaso.
+--     (b) La manutención (los embargos) cuando en su cuenta hay además otra
+--     deducción, y el neto de quienes cobran por depósito CON sus reembolsos
+--     en un solo cargo cuando alguien cobró con cheque de papel: ya se
+--     proponen.
+do $$
+declare
+  v_obt text; v_k uuid; v_b uuid; x record; r jsonb; m uuid; m2 uuid; v_b0 text; v_pago uuid; v_tr uuid; v_trn text; v text; v_c uuid;
+  d0 text := pg_temp.c15_us(pg_temp.c15_d(0)); d13 text := pg_temp.c15_us(pg_temp.c15_d(13)); dp text := pg_temp.c15_us(pg_temp.c15_pago());
+  v_nom text := 'lo que quedó a favor en otra cuenta, y dos cargos que no se proponían';
+  v_esp text := 'una corrección dejó a favor 25.30 en 2220, 0.60 en 2225 y 2.70 en 2230, y la nómina siguiente no trae FUTA ni reempleo: el '
+                'cargo de impuestos ya descontado (97.90): 1 opción | casado: 1010 -97.90 · 2220 97.90; su traspaso: 2220 3.30 · 2225 -0.60 · '
+                '2230 -2.70 | las tres cuentas de las dos nóminas, sin nada pendiente: sí, y en el libro: 0.00; el 25 verde y el 62 no lo toma '
+                'por ajeno: sí | deshecho: su traspaso reversado: sí, y vuelve a haber 0.60 a favor en 2225: sí | la manutención (30.00) con '
+                'otra deducción en su cuenta: 1 opción (embargos) | el neto por depósito con sus reembolsos (845.00), con alguien de cheque '
+                'de papel: 1 opción (neto_deposito_y_reembolsos)';
+begin
+  if pg_temp.c15_omitir(58, v_nom, v_esp, true) then return; end if;
+  begin
+    perform pg_temp.c15_sembrar();
+    -- (a) la corrección que devuelve, y un bono SIN FUTA ni reempleo (los dos, fuera de ciclo y del mismo día: el segundo, dicho «otra nómina»)
+    v_k := pg_temp.c15_importar(pg_temp.c15_correccion(), 'zz-c15-prueba-correccion.csv');
+    perform pg_temp.c15_enlazar_hay();
+    r := pg_temp.c15_postear(v_k);
+    v_b0 := replace(replace(pg_temp.c15_bono(), ',Employer FUTA tax,Employer SUTA tax,Employer taxes', ',Employer taxes'), ',3.00,13.50,54.75', ',38.25');
+    x := pg_temp.c15_sube(v_b0, 'zz-c15-bono-sin-futa.csv', '{"otra_nomina": true}');
+    v_b := x.corrida;
+    r := pg_temp.c15_postear(v_b);
+    m := pg_temp.c15_cargo('c15-t58-tax', pg_temp.c15_d(15), 97.90, 'GUSTO TAX 7c15t58 C15 PRUEBA');
+    perform pg_temp.c15_ser('dueno');
+    v_obt := format('una corrección dejó a favor 25.30 en 2220, 0.60 en 2225 y 2.70 en 2230, y la nómina siguiente no trae FUTA ni reempleo: el cargo de '
+                    'impuestos ya descontado (97.90): %s opción', jsonb_array_length(pg_temp.c15_opciones(fn_nomina_cargo_propuesta(m))));
+    perform pg_temp.c15_ser('editor');
+    v_obt := v_obt || ' | casado: ' || pg_temp.c15_casa_dice(m);
+    select g.id, g.traspaso_id into v_pago, v_tr from nomina_pagos g where g.movimiento_id = m and g.estado = 'aplicado';
+    select a.numero into v_trn from asientos a where a.id = v_tr;
+    v_obt := v_obt || '; su traspaso: ' || coalesce(pg_temp.c15_asiento(v_tr), 'no hay');
+    v_obt := v_obt || format(' | las tres cuentas de las dos nóminas, sin nada pendiente: %s, y en el libro: %s; el 25 %s y el 62 no lo toma por ajeno: %s',
+      case when not exists (select 1 from fn_nomina_pendiente() p where p.corrida_id in (v_k, v_b) and p.cuenta in ('2220', '2225', '2230') and p.pendiente <> 0)
+           then 'sí' else 'no' end,
+      (select coalesce(sum(l.monto), 0) from asiento_lineas l
+        where l.cuenta in ('2220', '2225', '2230')
+          and l.asiento_id in (select k.asiento_id from nomina_corridas k where k.id in (v_k, v_b)
+                               union select g.asiento_id from nomina_pagos g where g.id = v_pago union select v_tr)),
+      case when pg_temp.c15_ctl(25) = 'verde' or pg_temp.c15_ctl_det(25) not like '%' || fn_nomina_dia(pg_temp.c15_d(15)) || ' por $97.90%' then 'verde' else 'rojo' end,
+      case when v_trn is not null and pg_temp.c15_ctl_det(62) not like '%' || v_trn || '%' then 'sí' else 'no' end);
+    perform pg_temp.c15_ser('dueno');
+    perform fn_nomina_cargo_deshacer(v_pago, 'C15 PRUEBA: se deshace');
+    perform pg_temp.c15_ser('editor');
+    v_obt := v_obt || format(' | deshecho: su traspaso reversado: %s, y vuelve a haber 0.60 a favor en 2225: %s',
+      case when exists (select 1 from asientos q where q.reversa_a = v_tr) then 'sí' else 'no' end,
+      case when exists (select 1 from fn_nomina_pendiente(v_k) p where p.cuenta = '2225' and p.pendiente = -0.60) then 'sí' else 'no' end);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := coalesce(v_obt || ' | ', '') || 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  begin
+    -- (b) un bono a dos personas: a una se le paga con cheque de papel; la otra, por depósito, con una deducción (50.00), un
+    --     embargo (30.00) y un reembolso (25.00)
+    perform pg_temp.c15_sembrar();
+    v := 'Employee first name,Employee last name,Pay period start,Pay period end,Check date,Payroll type,Payment method,Gross earnings,'
+         || 'Employee federal income tax,Employee deductions,Garnishments,Net pay,Reimbursements,Employer social security tax,Employer medicare tax' || E'\n'
+         || format('ZZ Ayudante,Uno,%1$s,%2$s,%3$s,Bonus,Check,600.00,60.00,0.00,0.00,540.00,0.00,37.20,8.70', d0, d13, dp) || E'\n'
+         || format('ZZ Ayudante,Dos,%1$s,%2$s,%3$s,Bonus,Direct Deposit,1000.00,100.00,50.00,30.00,820.00,25.00,62.00,14.50', d0, d13, dp) || E'\n';
+    v_c := pg_temp.c15_importar(v, 'zz-c15-bono-dos.csv');
+    perform pg_temp.c15_enlazar_hay();
+    r := pg_temp.c15_postear(v_c);
+    m := pg_temp.c15_cargo('c15-t58-csd', pg_temp.c15_d(15), 30.00, 'GUSTO CSD 7c15t58 C15 PRUEBA');
+    m2 := pg_temp.c15_cargo('c15-t58-net', pg_temp.c15_d(15), 845.00, 'GUSTO NET 7c15t58 C15 PRUEBA');
+    perform pg_temp.c15_ser('dueno');
+    v_obt := v_obt || format(' | la manutención (30.00) con otra deducción en su cuenta: %s opción (%s) | el neto por depósito con sus reembolsos '
+                             '(845.00), con alguien de cheque de papel: %s opción (%s)',
+      jsonb_array_length(pg_temp.c15_opciones(fn_nomina_cargo_propuesta(m))),
+      coalesce(pg_temp.c15_opciones(fn_nomina_cargo_propuesta(m))->0->>'clase', 'ninguna'),
+      jsonb_array_length(pg_temp.c15_opciones(fn_nomina_cargo_propuesta(m2))),
+      coalesce(pg_temp.c15_opciones(fn_nomina_cargo_propuesta(m2))->0->>'clase', 'ninguna'));
+    perform pg_temp.c15_ser('editor');
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := coalesce(v_obt || ' | ', '') || 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (58, 'lo que una corrección dejó a favor en OTRA cuenta que el cargo no paga (el FUTA y el reempleo a favor, descontados del cargo del 941 de una nómina que ya no trae FUTA ni reempleo): el cargo se casa entero contra la cuenta que paga y un traspaso de la nómina —un asiento suyo, apuntado en el pago— pasa lo que estaba a favor de una cuenta a la otra: las cuentas de las dos nóminas quedan en cero, ningún control lo toma por ajeno y deshacer el cargo reversa su traspaso; y dos cargos de Gusto que no se proponían: la manutención cuando en su cuenta hay otra deducción, y el neto por depósito con sus reembolsos cuando alguien cobró con cheque de papel',
+    v_esp, v_obt, v_obt is not distinct from v_esp);
+end $$;
+
+-- 59. «ES LA CUOTA MENSUAL» NO VALE PARA CUALQUIER CARGO. Decir que el cargo
+--     del NETO de una nómina es la cuota lo mandaba al gasto de software (y
+--     el neto seguía por pagar); también un cargo que no es de Gusto. Ahora,
+--     MX008 con su porqué; la cuota de verdad entra; y si Edgar insiste, con
+--     su nota escrita.
+do $$
+declare
+  v_obt text; v_c uuid; r jsonb; m1 uuid; m2 uuid; m3 uuid; v_x text;
+  v_nom text := '«es la cuota mensual» no vale para cualquier cargo';
+  v_esp text := 'decir que el cargo del NETO de una nómina es la cuota: MX008, y dice por qué: sí | un cargo que no es de Gusto: MX008, y su '
+                'propuesta ya no ofrece la cuota: sí | la cuota de verdad (FEE): ok, a 6500 | el del neto, con su nota escrita: ok';
+begin
+  if pg_temp.c15_omitir(59, v_nom, v_esp, true) then return; end if;
+  begin
+    v_c := pg_temp.c15_lista();
+    r := pg_temp.c15_postear(v_c);
+    m1 := pg_temp.c15_cargo('c15-t59-net', pg_temp.c15_d(15), 4874.93, 'GUSTO NET 7c15t59 C15 PRUEBA');
+    m2 := pg_temp.c15_cargo('c15-t59-otro', pg_temp.c15_d(15), 41.00, 'ZZ FERRETERIA C15 PRUEBA 0041');
+    m3 := pg_temp.c15_cargo('c15-t59-fee', pg_temp.c15_d(15), 49.00, 'GUSTO FEE 7c15t59 C15 PRUEBA');
+    v_obt := format('decir que el cargo del NETO de una nómina es la cuota: %s, y dice por qué: %s',
+                    pg_temp.c15_estado(format('select public.fn_nomina_cargo_cuota(%L)', m1)),
+                    case when pg_temp.c15_dice(format('select public.fn_nomina_cargo_cuota(%L)', m1)) like '%no parece la cuota mensual de Gusto%neto de una nómina%'
+                         then 'sí' else 'no' end);
+    if exists (select 1 from nomina_pagos g where g.movimiento_id = m1 and g.estado = 'aplicado') then   -- (la capa de antes lo aceptaba: se deshace para seguir)
+      perform pg_temp.c15_ser('dueno');
+      perform fn_nomina_cargo_deshacer((select g.id from nomina_pagos g where g.movimiento_id = m1 and g.estado = 'aplicado'), 'C15 PRUEBA: no era la cuota');
+      perform pg_temp.c15_ser('editor');
+    end if;
+    perform pg_temp.c15_ser('dueno');
+    r := fn_nomina_cargo_propuesta(m2);
+    perform pg_temp.c15_ser('editor');
+    v_obt := v_obt || format(' | un cargo que no es de Gusto: %s, y su propuesta ya no ofrece la cuota: %s',
+                             pg_temp.c15_estado(format('select public.fn_nomina_cargo_cuota(%L)', m2)),
+                             case when (r->>'cuota')::boolean then 'no' else 'sí' end);
+    v_x := pg_temp.c15_estado(format('select public.fn_nomina_cargo_cuota(%L)', m3));
+    v_obt := v_obt || format(' | la cuota de verdad (FEE): %s, a %s', v_x,
+                             coalesce((select l.cuenta from nomina_pagos g join asiento_lineas l on l.asiento_id = g.asiento_id and l.monto > 0
+                                        where g.movimiento_id = m3 and g.estado = 'aplicado'), '—'));
+    v_obt := v_obt || ' | el del neto, con su nota escrita: '
+             || pg_temp.c15_estado(format('select public.fn_nomina_cargo_cuota(%L, %L)', m1, 'C15 PRUEBA: de verdad es la cuota'));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := coalesce(v_obt || ' | ', '') || 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (59, '«es la cuota mensual de Gusto» no vale para cualquier cargo: el cargo del neto de una nómina (su descripción lo dice y casa al centavo con lo que la nómina dejó por pagar) y un cargo que el banco no nombra como de Gusto contestan MX008 con su porqué, y la propuesta de un cargo ajeno ya no ofrece la cuota; la cuota de verdad entra a su gasto; y, si Edgar insiste, con su nota escrita',
+    v_esp, v_obt, v_obt is not distinct from v_esp);
+end $$;
+
+-- 60. SIN EL CÓDIGO DEL TELÉFONO, NINGUNA FRASE FALSA. Sin el código las
+--     corridas no se leen: el amarre de una declaración ya tecleada decía «NO
+--     amarra… el libro tiene $0.00 en 0 nómina(s)», y la propuesta de un
+--     cargo de Gusto, «no hay ninguna nómina posteada cerca… sube y postea
+--     antes su archivo», con su nómina posteada. Ahora las dos dicen lo que
+--     es: hace falta el código.
+do $$
+declare
+  v_obt text; v_c uuid; r jsonb; m uuid; v_a int := extract(year from pg_temp.c15_pago())::int; v_t int := extract(quarter from pg_temp.c15_pago())::int;
+  v_det text; v_ok text; v_txt text;
+  v_nom text := 'sin el código del teléfono, ninguna frase falsa';
+  v_esp text := 'sin el código, el amarre de una declaración tecleada: no dice «NO amarra» y manda a entrar con el código: sí (ok vacío: sí) | '
+                'la propuesta de un cargo de Gusto: no dice que no hay ninguna nómina y manda a entrar con el código: sí | con el código, el '
+                'amarre compara con el libro: sí';
+begin
+  if pg_temp.c15_omitir(60, v_nom, v_esp, true) then return; end if;
+  begin
+    v_c := pg_temp.c15_lista();
+    r := pg_temp.c15_postear(v_c);
+    perform pg_temp.c15_ser('dueno');
+    perform fn_nomina_declaracion(jsonb_build_object('forma', '941', 'anio', v_a, 'trimestre', v_t, 'salarios', '5808.00'));
+    perform pg_temp.c15_ser('editor');
+    m := pg_temp.c15_cargo('c15-t60-tax', pg_temp.c15_d(15), 1583.31, 'GUSTO TAX 7c15t60 C15 PRUEBA');
+    perform pg_temp.c15_ser('dueno_aal1');
+    select a.detalle, coalesce(a.ok::text, 'vacío') into v_det, v_ok from fn_nomina_amarre(v_a) a
+     where a.forma = '941' and a.trimestre = v_t and a.campo = 'salarios';
+    v_txt := fn_nomina_cargo_propuesta(m)->>'texto';
+    perform pg_temp.c15_ser('editor');
+    v_obt := format('sin el código, el amarre de una declaración tecleada: no dice «NO amarra» y manda a entrar con el código: %s (ok vacío: %s) | la '
+                    'propuesta de un cargo de Gusto: no dice que no hay ninguna nómina y manda a entrar con el código: %s',
+                    case when v_det not like '%NO amarra%' and v_det like '%hace falta el código del teléfono%' then 'sí' else 'no' end,
+                    case when v_ok = 'vacío' then 'sí' else 'no' end,
+                    case when v_txt not like '%No hay ninguna nómina%' and v_txt like '%hace falta el código del teléfono%' then 'sí' else 'no' end);
+    perform pg_temp.c15_ser('dueno');
+    select a.detalle into v_det from fn_nomina_amarre(v_a) a where a.forma = '941' and a.trimestre = v_t and a.campo = 'salarios';
+    perform pg_temp.c15_ser('editor');
+    v_obt := v_obt || ' | con el código, el amarre compara con el libro: '
+             || case when v_det like '%amarra: la declaración dice%' or v_det like '%NO amarra: la declaración dice $5,808.00 y el libro tiene%' then 'sí' else 'no' end;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := coalesce(v_obt || ' | ', '') || 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (60, 'sin el código del teléfono, ninguna frase falsa: por la API sin el código las corridas no se leen, y el amarre de una declaración tecleada ya no dice «NO amarra… cero nóminas» ni la propuesta de un cargo de Gusto «no hay ninguna nómina posteada… sube antes su archivo»: las dos dicen que hace falta el código; con él, el amarre compara con el libro',
+    v_esp, v_obt, v_obt is not distinct from v_esp);
+end $$;
+
+-- 61. ERRORES TÉCNICOS, EN LLANO. Un archivo con la misma llave de Gusto
+--     («Payroll ID») en dos nóminas: el ensayo decía «entrarían 2» y la
+--     importación daba un error crudo de la base (la llave repetida); ahora
+--     los dos dicen MX009. Y un nombre de más de 200 letras, MX005 en vez del
+--     error de una restricción. Nada se guarda. (El tercero —reemplazar una
+--     corrida que en otra pestaña se acaba de postear— pide dos sesiones:
+--     pruebas/conta/c15-concurrencia.sh.)
+do $$
+declare
+  v_obt text; v text; v_antes text;
+  v_nom text := 'errores técnicos, en llano';
+  v_esp text := 'la misma llave de Gusto en dos nóminas del archivo: el ensayo MX009 y la importación MX009 | un nombre de más de 200 letras: '
+                'MX005 | no quedó nada: sí';
+begin
+  if pg_temp.c15_omitir(61, v_nom, v_esp) then return; end if;
+  begin
+    perform pg_temp.c15_sembrar(false);
+    v_antes := (select count(*) from nomina_corridas) || '/' || (select count(*) from nomina_personas) || '/' || (select count(*) from nomina_archivos);
+    v := 'Payroll ID,Employee first name,Employee last name,Pay period start,Pay period end,Check date,Gross earnings,Employee federal income tax,'
+         || 'Net pay,Employer social security tax,Employer medicare tax' || E'\n'
+         || format('zz-c15-pid-1,ZZ Oficial,Tres,%s,%s,%s,1000.00,100.00,900.00,62.00,14.50', pg_temp.c15_us(pg_temp.c15_d(0)),
+                   pg_temp.c15_us(pg_temp.c15_d(6)), pg_temp.c15_us(pg_temp.c15_d(8))) || E'\n'
+         || format('zz-c15-pid-1,ZZ Oficial,Tres,%s,%s,%s,1000.00,100.00,900.00,62.00,14.50', pg_temp.c15_us(pg_temp.c15_d(7)),
+                   pg_temp.c15_us(pg_temp.c15_d(13)), pg_temp.c15_us(pg_temp.c15_d(15))) || E'\n';
+    v_obt := format('la misma llave de Gusto en dos nóminas del archivo: el ensayo %s y la importación %s',
+                    pg_temp.c15_estado(format('select public.fn_nomina_ensayo(%L::jsonb)', pg_temp.c15_arch(v, 'zz-c15-misma-llave.csv'))),
+                    pg_temp.c15_estado(format('select public.fn_nomina_importar(%L::jsonb)', pg_temp.c15_arch(v, 'zz-c15-misma-llave.csv'))));
+    v := pg_temp.c15_chico(array[format('ZZ %s,%s,%s,%s,%s,Regular,Direct Deposit,1000.00,100.00,900.00,62.00,14.50', repeat('A', 150), repeat('B', 150),
+                                        pg_temp.c15_us(pg_temp.c15_d(0)), pg_temp.c15_us(pg_temp.c15_d(13)), pg_temp.c15_us(pg_temp.c15_pago()))]);
+    v_obt := v_obt || ' | un nombre de más de 200 letras: '
+             || pg_temp.c15_estado(format('select public.fn_nomina_importar(%L::jsonb)', pg_temp.c15_arch(v, 'zz-c15-nombre-largo.csv')));
+    v_obt := v_obt || ' | no quedó nada: '
+             || case when v_antes = (select count(*) from nomina_corridas) || '/' || (select count(*) from nomina_personas) || '/'
+                                    || (select count(*) from nomina_archivos) then 'sí' else 'no' end;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := coalesce(v_obt || ' | ', '') || 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (61, 'errores técnicos, en llano: un archivo con la misma llave de Gusto en dos nóminas (el ensayo decía «entrarían 2» y la importación daba el error de la llave repetida) contesta MX009 en los dos, con sus filas; un nombre de más de 200 letras, MX005 en vez del error de una restricción; y nada se guarda',
+    v_esp, v_obt, v_obt is not distinct from v_esp);
+end $$;
+
+-- 62. LO DELICADO SIN GUIONES TAMPOCO SE GUARDA. Una cuenta de banco metida
+--     en el método de pago, un apellido con nueve cifras, un identificador de
+--     empleado que es un Seguro Social sin guiones: el archivo no entra (y el
+--     mensaje no repite el valor). El nombre del archivo con forma de Seguro
+--     Social lo dice (antes: «falta el nombre del archivo»). Y lo que Edgar
+--     teclea —el motivo de descartar una corrida— pasa la misma criba.
+do $$
+declare
+  v_obt text; v_c uuid; v_d text; v_antes text;
+  v_nom text := 'lo delicado sin guiones tampoco se guarda';
+  v_esp text := 'una cuenta de banco dentro del método de pago: 22023 | un apellido con nueve cifras: 22023 | un identificador de empleado que '
+                'es justo nueve cifras: 22023 | ningún mensaje repite el valor: sí | el nombre del archivo con forma de Seguro Social: lo '
+                'dice (dato delicado): sí | el motivo de descartar con un Seguro Social: 22023 | nada de eso quedó guardado: sí';
+begin
+  if pg_temp.c15_omitir(62, v_nom, v_esp) then return; end if;
+  begin
+    perform pg_temp.c15_sembrar(false);
+    v_antes := (select count(*) from nomina_personas) || '/' || (select count(*) from nomina_archivos);
+    v_obt := 'una cuenta de banco dentro del método de pago: '
+             || pg_temp.c15_estado(format('select public.fn_nomina_importar(%L::jsonb)',
+                  pg_temp.c15_arch(replace(pg_temp.c15_journal(), 'Regular,Direct Deposit,80.00,1760.00', 'Regular,Direct Deposit acct 000111222333,80.00,1760.00'),
+                                   'zz-c15-metodo.csv')))
+             || ' | un apellido con nueve cifras: '
+             || pg_temp.c15_estado(format('select public.fn_nomina_importar(%L::jsonb)',
+                  pg_temp.c15_arch(replace(pg_temp.c15_journal(), 'ZZ Ayudante,Uno,', 'ZZ Ayudante,Uno 000001234,'), 'zz-c15-apellido.csv')))
+             || ' | un identificador de empleado que es justo nueve cifras: '
+             || pg_temp.c15_estado(format('select public.fn_nomina_importar(%L::jsonb)',
+                  pg_temp.c15_arch(pg_temp.c15_journal(array[',Employee ID', ',000001234', ',zz-e-2', ',zz-e-3', ',']), 'zz-c15-id.csv')));
+    v_d := pg_temp.c15_dice(format('select public.fn_nomina_importar(%L::jsonb)',
+             pg_temp.c15_arch(replace(pg_temp.c15_journal(), 'Regular,Direct Deposit,80.00,1760.00', 'Regular,Direct Deposit acct 000111222333,80.00,1760.00'),
+                              'zz-c15-metodo.csv')))
+           || pg_temp.c15_dice(format('select public.fn_nomina_importar(%L::jsonb)',
+             pg_temp.c15_arch(pg_temp.c15_journal(array[',Employee ID', ',000001234', ',zz-e-2', ',zz-e-3', ',']), 'zz-c15-id.csv')));
+    v_obt := v_obt || ' | ningún mensaje repite el valor: ' || case when v_d not like '%000111222333%' and v_d not like '%000001234%' then 'sí' else 'no' end;
+    v_obt := v_obt || ' | el nombre del archivo con forma de Seguro Social: lo dice (dato delicado): '
+             || case when pg_temp.c15_dice(format('select public.fn_nomina_importar(%L::jsonb)', pg_temp.c15_arch(pg_temp.c15_journal(), 'zz-000-00-1234.csv')))
+                          like '22023 %dato delicado%' then 'sí' else 'no' end;
+    v_c := pg_temp.c15_importar(pg_temp.c15_journal());
+    v_obt := v_obt || ' | el motivo de descartar con un Seguro Social: '
+             || pg_temp.c15_estado(format('select public.fn_nomina_descartar(%L, %L)', v_c, 'C15 PRUEBA 000-00-1234'));
+    v_obt := v_obt || ' | nada de eso quedó guardado: '
+             || case when not exists (select 1 from nomina_personas pe where pe.nombre ~ '[0-9]{7}' or pe.gusto_id ~ '^[0-9]{9}$')
+                          and not exists (select 1 from nomina_corrida_personas cp where cp.metodo_pago ~ '[0-9]{7}')
+                          and not exists (select 1 from nomina_corridas k where k.descartada_motivo ~ '[0-9]{3}-[0-9]{2}-[0-9]{4}')
+                          and not exists (select 1 from nomina_archivos a where a.nombre ~ '[0-9]{3}-[0-9]{2}-[0-9]{4}') then 'sí' else 'no' end;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := coalesce(v_obt || ' | ', '') || 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (62, 'lo delicado sin guiones tampoco se guarda: una cuenta de banco dentro del método de pago, un apellido con nueve cifras y un identificador de empleado que es justo nueve cifras (un Seguro Social sin guiones) paran el archivo sin que el mensaje repita el valor; el nombre del archivo con forma de Seguro Social lo dice; el motivo de descartar una corrida pasa la misma criba; y nada de eso queda guardado',
+    v_esp, v_obt, v_obt is not distinct from v_esp);
+end $$;
+
+-- 63. LO QUE EL CIERRE GUARDA Y MANDA AL TELÉFONO, SIN IMPORTES. Con el bono
+--     de UNA persona posteado y su cargo del neto sin casar, la fila 180
+--     decía «…$411.75 del día…», y los controles 35, 25 y 62 —sin texto
+--     corto— llevaban sus importes a las filas 182 y 183: el neto de una
+--     nómina de una sola persona es lo que cobró. Ahora la 180 dice cuántos
+--     cargos y de qué días, y esos controles tienen su texto corto.
+do $$
+declare
+  v_obt text; v_b uuid; r jsonb; m uuid; v_m text := pg_temp.c15('mes'); t180 text; t182 text; t183 text; ok180 boolean;
+  v_nom text := 'lo que el cierre guarda y manda al teléfono, sin importes';
+  v_esp text := 'con el cargo del neto de un bono de una persona sin casar: la 180 en rojo, lo nombra por su día y sin importes: sí; la 183 (el '
+                '35) no trae su importe: sí | casado y des-casado después en la Bandeja: la 182 (el 25, en rojo) no trae su importe: sí | con '
+                'un asiento a mano en una cuenta por pagar de la nómina: la 183 (el 62) no trae su importe: sí';
+begin
+  if pg_temp.c15_omitir(63, v_nom, v_esp, true) then return; end if;
+  begin
+    perform pg_temp.c15_sembrar();
+    v_b := pg_temp.c15_importar(pg_temp.c15_bono(), 'zz-c15-prueba-bono.csv');
+    perform pg_temp.c15_enlazar_hay();
+    r := pg_temp.c15_postear(v_b);
+    m := pg_temp.c15_cargo('c15-t63-net', pg_temp.c15_d(15), 411.75, 'GUSTO NET 7c15t63 C15 PRUEBA');
+    select k.detalle, k.ok into t180, ok180 from fn_nomina_cierre(v_m) k where k.orden = 180;
+    select k.detalle into t183 from fn_nomina_cierre(v_m) k where k.orden = 183;
+    v_obt := format('con el cargo del neto de un bono de una persona sin casar: la 180 en rojo, lo nombra por su día y sin importes: %s; la 183 (el 35) '
+                    'no trae su importe: %s',
+                    case when not ok180 and pg_temp.c15_nombra(t180, '%el del ' || fn_nomina_dia(pg_temp.c15_d(15)) || '%') and t180 !~ '\$[0-9]' then 'sí' else 'no' end,
+                    case when t183 like '%35: %' and t183 not like '%411.75%' then 'sí' else 'no' end);
+    perform pg_temp.c15_casar(m);
+    perform pg_temp.c15_ser('dueno');
+    perform fn_banco_descasar(m, 'C15 PRUEBA: se des-casa en la Bandeja');
+    perform pg_temp.c15_ser('editor');
+    select k.detalle into t182 from fn_nomina_cierre(v_m) k where k.orden = 182;
+    v_obt := v_obt || ' | casado y des-casado después en la Bandeja: la 182 (el 25, en rojo) no trae su importe: '
+             || case when t182 like '%25: %' and t182 not like '%411.75%' then 'sí' else 'no' end;
+    perform pg_temp.c15_ser('dueno');
+    r := fn_postear(jsonb_build_object('tipo', 'normal', 'fecha', pg_temp.c15_d(22)::text, 'descripcion', 'C15 PRUEBA: un asiento a mano en el 941',
+           'lineas', jsonb_build_array(jsonb_build_object('cuenta', '6500', 'monto', '12.34'), jsonb_build_object('cuenta', '2220', 'monto', '-12.34'))));
+    perform pg_temp.c15_ser('editor');
+    select k.detalle into t183 from fn_nomina_cierre(v_m) k where k.orden = 183;
+    v_obt := v_obt || ' | con un asiento a mano en una cuenta por pagar de la nómina: la 183 (el 62) no trae su importe: '
+             || case when t183 like '%62: %' and t183 not like '%12.34%' then 'sí' else 'no' end;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := coalesce(v_obt || ' | ', '') || 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (63, 'lo que el cierre guarda y manda al teléfono, sin importes de una nómina: con el bono de una sola persona posteado y su cargo del neto sin casar, la fila 180 dice cuántos cargos y de qué días (no cuánto), y los controles 35, 25 y 62 llevan a las filas 182 y 183 su texto corto, sin el importe (el neto de una nómina de una persona es lo que cobró)',
+    v_esp, v_obt, v_obt is not distinct from v_esp);
+end $$;
+
+-- 64. EL REPARTO Y LA LECTURA, COSAS SUELTAS. (1) La corrección EN NEGATIVO
+--     del oficial vuelve por sus obras, como la de la gente de campo (antes
+--     salía entera de la compensación de oficiales). (2) Una fila de totales
+--     con un rótulo que nadie espera («All employees») no entra como una
+--     persona más: trae justo la suma de las de arriba. (3) Alguien de campo
+--     de la nómina con horas aprobadas del período que no viene en el
+--     journal: la propuesta lo dice. (4) Alguien de oficina con horas
+--     aprobadas en obra: también.
+do $$
+declare
+  v_obt text; v_c uuid; v_k uuid; x record; r jsonb; p jsonb; c jsonb;
+  d0 text := pg_temp.c15_us(pg_temp.c15_d(0)); d13 text := pg_temp.c15_us(pg_temp.c15_d(13)); dp text := pg_temp.c15_us(pg_temp.c15_pago());
+  v_nom text := 'el reparto y la lectura, cosas sueltas';
+  v_esp text := 'la corrección en negativo del oficial (-500.00, con 20 h en obra de las 80 que cubre su sueldo) vuelve por sus obras: 5001 a '
+                '-125.00 · 6005 -375.00 | una fila de totales con otro rótulo («All employees»): 3 personas, bruto 5808.00, y lo avisa: sí | '
+                'alguien de campo con horas aprobadas del período que no viene en el journal: lo avisa, con su nombre: sí | alguien de '
+                'oficina con horas aprobadas en obra: lo avisa: sí | el freno de quien no tiene horas porque ya se las pagó otra nómina: '
+                'dice que parece la misma nómina y que no se mande sin obra: sí';
+begin
+  if pg_temp.c15_omitir(64, v_nom, v_esp) then return; end if;
+  begin
+    perform pg_temp.c15_sembrar();
+    -- (1) una corrección que devuelve, del oficial
+    v_k := pg_temp.c15_importar(pg_temp.c15_chico(array[format('ZZ Oficial,Tres,%s,%s,%s,Correction,Direct Deposit,-500.00,-50.00,-450.00,-31.00,-7.25', d0, d13, dp)]),
+                                'zz-c15-correccion-oficial.csv');
+    perform pg_temp.c15_enlazar_hay();
+    p := pg_temp.c15_propuesta(v_k);
+    v_obt := 'la corrección en negativo del oficial (-500.00, con 20 h en obra de las 80 que cubre su sueldo) vuelve por sus obras: '
+             || coalesce((select string_agg(concat_ws(' ', q->>'cuenta', replace(q->>'proyecto_id', 'c15-prueba-', ''), q->>'monto'), ' · '
+                                            order by q->>'cuenta', q->>'proyecto_id')
+                            from jsonb_array_elements(p->'asiento'->'lineas') q where q->>'cuenta' in ('5001', '6005')), 'nada');
+    perform pg_temp.c15_ser('dueno'); perform fn_nomina_descartar(v_k, 'C15 PRUEBA: ya se miró'); perform pg_temp.c15_ser('editor');
+    -- (2) la fila de totales con un rótulo que nadie espera
+    perform pg_temp.c15_ser('dueno');
+    r := fn_nomina_ensayo(pg_temp.c15_arch(replace(pg_temp.c15_journal(), E'\nTotals,,', E'\nAll employees,,'), 'zz-c15-all-employees.csv'));
+    perform pg_temp.c15_ser('editor');
+    c := r->'corridas'->0;
+    v_obt := v_obt || format(' | una fila de totales con otro rótulo («All employees»): %s personas, bruto %s, y lo avisa: %s',
+                             jsonb_array_length(c->'personas'), c->'totales'->>'bruto',
+                             case when pg_temp.c15_codigos(c->'avisos') like '%total_sin_rotulo%' then 'sí' else 'no' end);
+    -- (3) alguien de campo de la nómina (ZZ Ayudante Dos, con 8 h aprobadas) que no viene en el journal de este período
+    v_c := pg_temp.c15_importar(pg_temp.c15_journal());
+    perform pg_temp.c15_enlazar();
+    perform pg_temp.c15_ser('dueno'); perform fn_nomina_descartar(v_c, 'C15 PRUEBA: para subirla sin una persona'); perform pg_temp.c15_ser('editor');
+    x := pg_temp.c15_sube(pg_temp.c15_lineas(pg_temp.c15_journal(), array[1, 2, 4]), 'zz-c15-sin-dos.csv');
+    v_c := x.corrida;
+    p := pg_temp.c15_propuesta(v_c);
+    v_obt := v_obt || ' | alguien de campo con horas aprobadas del período que no viene en el journal: lo avisa, con su nombre: '
+             || case when exists (select 1 from jsonb_array_elements(p->'avisos') a
+                                   where a->>'codigo' = 'fuera_del_journal' and a->>'texto' like '%ZZ Ayudante Dos (8 h)%') then 'sí' else 'no' end;
+    -- (4) el oficial pasa a ser de oficina: sus 20 h aprobadas en obra ya no llevan sueldo a la obra, y se dice
+    perform pg_temp.c15_ser('dueno');
+    perform fn_nomina_persona(jsonb_build_object('id', pg_temp.c15_persona('ZZ Oficial Tres'), 'clase', 'oficina', 'confirmar', true));
+    perform pg_temp.c15_ser('editor');
+    p := pg_temp.c15_propuesta(v_c);
+    v_obt := v_obt || ' | alguien de oficina con horas aprobadas en obra: lo avisa: '
+             || case when exists (select 1 from jsonb_array_elements(p->'avisos') a
+                                   where a->>'codigo' = 'oficina_en_obra' and a->>'texto' like '%ZZ Oficial Tres (20 h)%') then 'sí' else 'no' end;
+    -- (5) posteada esa nómina, el journal de UNA de sus personas dicho «otra nómina» con su porqué: sus horas ya las pagó aquella, y
+    --     el freno ofrecía «decide mandarlo sin obra» sin decir que parece la misma nómina
+    r := pg_temp.c15_postear(v_c);
+    x := pg_temp.c15_sube(pg_temp.c15_lineas(pg_temp.c15_journal(), array[1, 2]), 'zz-c15-solo-uno.csv',
+                          '{"otra_nomina": true, "otra_porque": "C15 PRUEBA: a ver qué dice"}');
+    p := pg_temp.c15_propuesta(x.corrida);
+    v_obt := v_obt || ' | el freno de quien no tiene horas porque ya se las pagó otra nómina: dice que parece la misma nómina y que no se mande sin obra: '
+             || case when exists (select 1 from jsonb_array_elements(p->'frenos') a
+                                   where a->>'codigo' = 'sin_horas'
+                                     and a->>'texto' like '%ya las pagó%si esta es esa misma nómina, bajada otra vez, descártala y no lo mandes sin obra%')
+                     then 'sí' else 'no' end;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := coalesce(v_obt || ' | ', '') || 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (64, 'el reparto y la lectura, cosas sueltas: la corrección en negativo del oficial vuelve por sus obras en la misma proporción que su sueldo (antes salía entera de la compensación de oficiales); una fila de totales con un rótulo que nadie espera («All employees») se reconoce porque trae justo la suma de las filas de arriba y no entra como una persona más; y la propuesta avisa de quien es de campo, tiene horas aprobadas del período y no viene en el journal, y de quien es de oficina y tiene horas aprobadas en obra',
+    v_esp, v_obt, v_obt is not distinct from v_esp);
+end $$;
+
+-- 65. EL DEVENGO DE c3 Y LO TRABAJADO SIN PAGAR, AL TERMINAR EL MES. Con el
+--     c3 de la Fase 11b (si el de la base es de antes, esta prueba no se
+--     puede ver y lo dice): (1) ANULAR una nómina con el devengo vivo de su
+--     mes lo pone al día aquí mismo (antes quedaba desfasado: el control
+--     «devengo» de c3 en rojo, y con él el cierre). (2) «Lo trabajado y
+--     todavía no pagado» de un mes es lo que ninguna nómina había pagado AL
+--     TERMINARLO: las horas que paga la nómina del mes siguiente siguen
+--     contando, y el aviso 80 dice que el mes está devengado (ya no «un mes
+--     con nómina no lleva devengo de horas»). Y dos textos: el aviso del
+--     oficial que reportó más horas de las que cubre su sueldo, y el día de
+--     pago dicho a mano cuando el archivo trae el suyo.
+do $$
+declare
+  v_obt text; v_c uuid; v_c2 uuid; x record; r jsonb; p jsonb; v_m text := pg_temp.c15('mes'); v_m2 text := pg_temp.c15('mes2');
+  v_d2 date; v_dev0 boolean; v_dev1 boolean; v_cola text; v_80 text; v_80ok boolean;
+  v_nom text := 'el devengo de c3 y lo trabajado sin pagar, al terminar el mes';
+  v_esp text := 'anular una nómina con el devengo vivo de su mes: lo pone al día y lo dice: sí; «devengo» (c3) como estaba: sí | lo '
+                'trabajado en el mes y sin pagar al terminarlo, con la nómina del mes siguiente ya pagándolo: ZZ Ayudante Uno, 6 h, 150.00 a '
+                'su tarifa | el aviso 80: verde, y dice que el mes está devengado: sí | el oficial que reportó 90 h (más que las 80 que '
+                'cubre su sueldo): lo dice así: sí | el día de pago dicho a mano con un archivo que trae el suyo: lo avisa: sí | el aviso 80 '
+                'de quien no tiene tarifa estándar: sin «unos —», y dice que esas no se pueden devengar: sí';
+begin
+  if pg_temp.c15_omitir(65, v_nom, v_esp) then return; end if;
+  if not pg_temp.c15_c3_11b() or v_m2 is null then
+    insert into _pruebas values (65, v_nom, v_esp, 'omitida: ' || case when v_m2 is null then 'el mes siguiente al de las pruebas no existe o no está abierto'
+        else 'el c3-puentes.sql de esta base es anterior a la Fase 11b (no devenga un mes con nómina): vuelve a pegar c3-puentes.sql' end, null);
+    return;
+  end if;
+  select q.desde into v_d2 from periodos q where q.periodo = v_m2;
+  begin
+    v_c := pg_temp.c15_lista();
+    -- (el día 21: 6 h de ZZ Ayudante Uno después del período de pago; y 70 h más del oficial, sin obra, en siete días: reportó 90)
+    perform pg_temp.c15_hora(41, 'p1', pg_temp.c15_d(20), 'c15-prueba-b', 6);
+    perform pg_temp.c15_hora(41 + g, 'p3', pg_temp.c15_d(6 + g), null, 10) from generate_series(1, 7) g;
+    perform fn_horas_devengar(v_m);
+    -- (cómo está el control «devengo» de c3 con el mes recién devengado: así debe seguir después de anular)
+    select k.ok into v_dev0 from fn_puentes_verificar() k where k.control = 'devengo';
+    r := pg_temp.c15_postear(v_c);
+    perform pg_temp.c15_ser('dueno');
+    r := fn_nomina_anular(v_c, 'C15 PRUEBA: se anula con su mes devengado');
+    perform pg_temp.c15_ser('editor');
+    select k.ok into v_dev1 from fn_puentes_verificar() k where k.control = 'devengo';
+    v_obt := format('anular una nómina con el devengo vivo de su mes: lo pone al día y lo dice: %s; «devengo» (c3) como estaba: %s',
+                    case when r->>'devengo' like '%se puso al día aquí mismo%' then 'sí' else 'no' end,
+                    case when v_dev1 is not distinct from v_dev0 then 'sí' else 'no' end);
+    -- otra vez dentro (el mismo archivo: la de antes está anulada), y la nómina del mes siguiente, que paga las 6 h del día 21
+    x := pg_temp.c15_sube(pg_temp.c15_journal(), 'zz-c15-prueba.csv');
+    v_c := x.corrida;
+    p := pg_temp.c15_propuesta(v_c);
+    r := pg_temp.c15_postear(v_c);
+    perform pg_temp.c15_fingir_hoy(v_d2 + 6);
+    x := pg_temp.c15_sube(pg_temp.c15_chico(array[format('ZZ Ayudante,Uno,%s,%s,%s,Regular,Direct Deposit,150.00,15.00,135.00,9.30,2.18',
+                            pg_temp.c15_us(pg_temp.c15_d(14)), pg_temp.c15_us(pg_temp.c15_d(27)), pg_temp.c15_us(v_d2 + 4))]), 'zz-c15-siguiente.csv');
+    v_c2 := x.corrida;
+    r := pg_temp.c15_postear(v_c2);
+    perform pg_temp.c15_ser('dueno');
+    select string_agg(format('%s, %s h, %s a su tarifa', q.persona, trim_scale(q.horas), q.estandar), '; ') into v_cola
+      from fn_nomina_cola(v_m) q where q.usuario_id::text in (pg_temp.c15('p1'), pg_temp.c15('p2'), pg_temp.c15('p3'));
+    perform pg_temp.c15_ser('editor');
+    select k.detalle, k.ok into v_80, v_80ok from fn_nomina_control() k where k.orden = 80;
+    v_obt := v_obt || format(' | lo trabajado en el mes y sin pagar al terminarlo, con la nómina del mes siguiente ya pagándolo: %s | el aviso 80: %s, y '
+                             'dice que el mes está devengado: %s', coalesce(v_cola, 'nada'), case when v_80ok then 'verde' else 'rojo' end,
+                             case when v_80 like 'En ' || v_m || ' quedaron %el mes está devengado (asiento %' then 'sí' else 'no' end);
+    v_obt := v_obt || ' | el oficial que reportó 90 h (más que las 80 que cubre su sueldo): lo dice así: '
+             || case when exists (select 1 from jsonb_array_elements(p->'avisos') a
+                                   where a->>'codigo' = 'oficial_en_obra'
+                                     and a->>'texto' like '%20 h aprobadas en obra de las 90 que reportó en el período (más que las 80 que cubre su sueldo)%')
+                     then 'sí' else 'no' end;
+    perform pg_temp.c15_ser('dueno');
+    r := fn_nomina_ensayo(pg_temp.c15_arch(pg_temp.c15_journal(), 'zz-c15-prueba.csv'), jsonb_build_object('dia_pago', pg_temp.c15_d(25)));
+    perform pg_temp.c15_ser('editor');
+    v_obt := v_obt || ' | el día de pago dicho a mano con un archivo que trae el suyo: lo avisa: '
+             || case when pg_temp.c15_codigos(r->'corridas'->0->'avisos') like '%dia_ignorado%' then 'sí' else 'no' end;
+    -- (sin su tarifa estándar en Costos, esas horas no tienen importe: antes decía «unos — a su tarifa estándar»)
+    delete from costos_equipo where usuario_id = pg_temp.c15('p1')::uuid;
+    select k.detalle into v_80 from fn_nomina_control() k where k.orden = 80;
+    v_obt := v_obt || ' | el aviso 80 de quien no tiene tarifa estándar: sin «unos —», y dice que esas no se pueden devengar: '
+             || case when v_80 not like '%unos —%' and v_80 like '%de quien no tiene tarifa estándar en Costos: esas no se pueden devengar%' then 'sí' else 'no' end;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := coalesce(v_obt || ' | ', '') || 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (65, 'el devengo de c3 y lo trabajado sin pagar, al terminar el mes (con el c3 de la Fase 11b): anular una nómina con el devengo vivo de su mes lo pone al día aquí mismo y lo dice (antes quedaba desfasado y el control «devengo» de c3 detenía el cierre); lo trabajado y todavía no pagado de un mes es lo que ninguna nómina había pagado AL TERMINARLO —las horas que paga la nómina del mes siguiente siguen contando— y el aviso 80 dice que el mes está devengado; y dos textos: el aviso del oficial que reportó más horas de las que cubre su sueldo, y el día de pago dicho a mano cuando el archivo trae el suyo',
+    v_esp, v_obt, v_obt is not distinct from v_esp);
+end $$;
+
+-- 66. UNA DEVOLUCIÓN DE GUSTO ES LA QUE EL BANCO TOMA POR TAL (13-nov, la
+--     revisión final de la Fase 11b). El banco (c6) reconoce la devolución
+--     de Gusto —un depósito— por su descriptor como PALABRA ENTERA («GUSTO»,
+--     no «AUGUSTO»). La lista de los cargos de Gusto de la nómina tomaba por
+--     devolución cualquier depósito con el descriptor DENTRO de otra palabra:
+--     el Zelle de un cliente que se llame Augusto salía en Nómina → Cargos de
+--     Gusto, y el aviso 35 y la fila 180 del cierre (que detiene) lo contaban
+--     como un cargo de Gusto sin casar. El depósito de Gusto sale; el del
+--     cliente, no.
+do $$
+declare
+  v_obt text; m1 uuid; m2 uuid; v_m text := pg_temp.c15('mes'); v_antes int; v_despues int; v_35 text;
+  v_nom text := 'una devolución de Gusto es la que el banco toma por tal';
+  v_esp text := 'el depósito de Gusto (GUSTO REFUND), en los cargos de Gusto de la nómina: sí | el Zelle de un cliente que se llama Augusto: no '
+                '| el aviso 35 nombra el de Gusto: sí, y el de Augusto: no | la fila 180 del cierre cuenta 1 más (solo el de Gusto)';
+begin
+  if pg_temp.c15_omitir(66, v_nom, v_esp, true) then return; end if;
+  begin
+    select coalesce(substring(k.detalle from '^([0-9]+) cargo')::int, 0) into v_antes from fn_nomina_cierre(v_m) k where k.orden = 180;
+    -- (dos depósitos: en positivo lo que sale del banco, así que una devolución va en negativo)
+    m1 := pg_temp.c15_cargo('c15-t66-dev', pg_temp.c15_d(15), -27.31, 'GUSTO REFUND 7c15t66 C15 PRUEBA');
+    m2 := pg_temp.c15_cargo('c15-t66-aug', pg_temp.c15_d(15), -311.17, 'ZELLE PAYMENT FROM AUGUSTO ZZ C15 PRUEBA 0311');
+    v_obt := format('el depósito de Gusto (GUSTO REFUND), en los cargos de Gusto de la nómina: %s | el Zelle de un cliente que se llama Augusto: %s',
+                    case when exists (select 1 from fn_nomina_cargos() g where g.movimiento_id = m1 and g.estado = 'pendiente') then 'sí' else 'no' end,
+                    case when exists (select 1 from fn_nomina_cargos() g where g.movimiento_id = m2) then 'sí' else 'no' end);
+    v_35 := pg_temp.c15_ctl_det(35);
+    v_obt := v_obt || format(' | el aviso 35 nombra el de Gusto: %s, y el de Augusto: %s',
+                             case when pg_temp.c15_nombra(v_35, '%GUSTO REFUND 7c15t66%') then 'sí' else 'no' end,
+                             case when v_35 like '%AUGUSTO ZZ C15 PRUEBA%' then 'sí' else 'no' end);
+    select coalesce(substring(k.detalle from '^([0-9]+) cargo')::int, 0) into v_despues from fn_nomina_cierre(v_m) k where k.orden = 180;
+    v_obt := v_obt || format(' | la fila 180 del cierre cuenta %s más (solo el de Gusto)', v_despues - v_antes);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := coalesce(v_obt || ' | ', '') || 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (66, 'una devolución de Gusto es la que el banco toma por tal: el depósito que nombra a Gusto como palabra entera (GUSTO REFUND) sale en los cargos de Gusto de la nómina, y el Zelle de un cliente que se llama Augusto (el descriptor dentro de otra palabra) no; el aviso de los cargos sin casar y la fila 180 del cierre —que detiene— cuentan solo el de Gusto',
+    v_esp, v_obt, v_obt is not distinct from v_esp);
+end $$;
+
+-- =====================================================================
 -- EL CIERRE DE LA SUITE
 -- =====================================================================
 -- 50. Con una nómina posteada (su journal y el reparto de su burden), sus
@@ -4247,7 +5333,8 @@ end $$;
 --     c11, c12, c13 y c14) como estaban antes de las pruebas (lo que ya
 --     estaba en rojo se dice y no cuenta), los cuadres del propio control
 --     como estaban, nada de c15 para anon o service_role, y SECURITY DEFINER
---     solo el trigger del puente; fn_nomina_pegado responde con sus nueve
+--     solo el trigger del puente y la marca sin dinero de las horas pagadas
+--     (la Fase 11b); fn_nomina_pegado responde con sus nueve
 --     filas y la configuración sigue siendo UNA (pegar dos veces no la pisa:
 --     lo corre el banco, con dos pegados seguidos antes de esta suite). Y,
 --     mirado todo eso, la base sigue como al empezar (tampoco la revisión del
@@ -4256,7 +5343,8 @@ do $$
 declare
   v_obt text; v_api text; v_def text; v_n int; v_cfg int; v_rojos text;
   v_esp text := 'las otras capas, en rojo nuevo: ninguno | permisos (c2): verde | los cuadres de la nómina: nada nuevo en rojo | c15 para anon o '
-                'service_role: ninguna | con permisos de dueño: fn_nomina_al_libro (el trigger del puente) | el pegado: 9 filas, y la '
+                'service_role: ninguna | con permisos de dueño: fn_nomina_al_libro (el trigger del puente), fn_nomina_horas_con_pago (la marca sin '
+                'dinero: solo lee) | el pegado: 9 filas, y la '
                 'configuración 1 fila (id 1) | y nada queda: sí';
 begin
   begin
@@ -4267,7 +5355,9 @@ begin
       from pg_proc p
      where p.pronamespace = 'public'::regnamespace and p.proname = any (pg_temp.c15_fn())
        and (has_function_privilege('anon', p.oid, 'execute') or has_function_privilege('service_role', p.oid, 'execute'));
-    select coalesce(string_agg(p.proname || case when p.prorettype = 'trigger'::regtype then ' (el trigger del puente)' else ' (NO es un trigger)' end,
+    select coalesce(string_agg(p.proname || case when p.prorettype = 'trigger'::regtype then ' (el trigger del puente)'
+                                                 when p.proname = 'fn_nomina_horas_con_pago' and p.provolatile = 's' then ' (la marca sin dinero: solo lee)'
+                                                 else ' (NO es un trigger)' end,
                                ', ' order by p.proname), 'ninguna') into v_def
       from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname = any (pg_temp.c15_fn()) and p.prosecdef;
     select count(*) into v_n from fn_nomina_pegado();
@@ -4280,7 +5370,7 @@ begin
                      else 'QUEDÓ: ' || pg_temp.c15_conteos() || ' (antes: ' || pg_temp.c15('conteos') || ')' end;
   exception when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (52, 'el cierre de la suite: c2, c3, c4, c6, c8, c9, c10, c11, c12, c13 y c14 como estaban con c15 puesto (lo que ya estaba en rojo antes se dice y no cuenta), «permisos» de c2 en verde, los cuadres del propio control de la nómina como estaban, nada de c15 para anon o service_role, con permisos de dueño solo el trigger del puente al libro; fn_nomina_pegado responde con sus nueve filas, la configuración sigue siendo una (pegar dos veces no la pisa) y nada queda (ni la revisión del cierre que c9 guarda, ni el reloj)',
+  insert into _pruebas values (52, 'el cierre de la suite: c2, c3, c4, c6, c8, c9, c10, c11, c12, c13 y c14 como estaban con c15 puesto (lo que ya estaba en rojo antes se dice y no cuenta), «permisos» de c2 en verde, los cuadres del propio control de la nómina como estaban, nada de c15 para anon o service_role, con permisos de dueño solo el trigger del puente al libro y la marca sin dinero de las horas pagadas; fn_nomina_pegado responde con sus nueve filas, la configuración sigue siendo una (pegar dos veces no la pisa) y nada queda (ni la revisión del cierre que c9 guarda, ni el reloj)',
     v_esp,
     v_obt || case when pg_temp.c15('rojos_antes') <> '' then ' (ya en rojo antes de las pruebas: ' || left(pg_temp.c15('rojos_antes'), 600) || ')' else '' end
           || case when pg_temp.c15('rojos_nomina') <> '' then ' (cuadres de la nómina ya en rojo antes, con los datos de esta base: ' || pg_temp.c15('rojos_nomina') || ')' else '' end
