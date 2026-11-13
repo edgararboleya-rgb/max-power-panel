@@ -538,7 +538,7 @@
   // ============================================================
   // EL TABLERO (c16, fase 16): la portada «como la de QuickBooks», con
   // gráficas, datos, números y enlaces de interés. Todo sale de fn_tablero
-  // (docs/conta/c16-tablero.sql, marca 2026111302): una llamada con una clave
+  // (docs/conta/c16-tablero.sql, marca 2026111303): una llamada con una clave
   // por tarjeta, cada una con sus cifras YA CALCULADAS por la base (totales,
   // porcentajes, diferencias, las series de cada gráfica, los tramos de
   // antigüedad, lo que queda por revisar); lo que no alcanzó el tope por reloj
@@ -586,6 +586,20 @@
   //    filtro de una cuenta de antes); el de «por revisar» de los resultados
   //    y de los gastos lleva sus fechas (y si son depósitos o cargos), y la
   //    Bandeja las enseña arriba con «Ver todos».
+  // Y CON LA REVISIÓN FINAL (13-nov, marca 2026111303):
+  //  · La caja del mes en curso es «hasta hoy» (la base ya no manda el mes
+  //    entero de Estados): lo que tiene fecha de después de hoy lo dice su
+  //    línea (despues_de_hoy.texto), debajo de la tabla.
+  //  · «Según el banco», sumado, solo si la base lo manda (todas las cuentas
+  //    con el saldo del mismo día, y se dice cuál); si no, lo que dice la
+  //    base (banco_texto: de días distintos).
+  //  · Lo devuelto en estos días de un cobro de antes (devuelto_antes) va
+  //    aparte, con las palabras de la base: no está restado de lo cobrado.
+  //  · Privacidad tapa también un monto escrito sin el signo de dólar
+  //    («la diferencia es 1234.56», como escriben algunos controles que
+  //    salen en «Qué atender»).
+  //  · La tabla gemela apilada (tarjeta angosta) deja partir sus celdas: la
+  //    de «Variación» de los resultados se salía de la tarjeta en el teléfono.
   // LAS GRÁFICAS (la guía de gráficas al pie de la letra): SVG en línea,
   // dibujadas al ancho de su caja (y otra vez si el ancho cambia); la forma
   // según el trabajo del dato: barras horizontales en una sola base para
@@ -638,7 +652,11 @@
   }
   const tbVisibles = () => { const o = tbOcultas(); return TB_ORDEN.filter(k => !o.has(k)); };
   // un monto del tablero (con Privacidad, tapado) y un texto de la base (con Privacidad, sus montos tapados)
-  const tapar = s => String(s == null ? "" : s).replace(/[−-]?\$\s?\d[\d,]*(?:\.\d+)?/g, TAPADO);
+  // (un monto con su signo de dólar —$1,234.56, −$1,234.56, $37.8K— o escrito sin él con sus dos decimales —1234.56; 1,234.56—, como
+  // lo escriben algunos controles de otras capas que salen en «Qué atender»; un porcentaje —12.50 %— no es un monto)
+  // (sin «mirar atrás» en la expresión: los iPhone de antes de iOS 16.4 no la entienden y no cargarían este archivo entero)
+  const tapar = s => String(s == null ? "" : s).replace(/[−-]?\$\s?\d[\d,]*(?:\.\d+)?[KM]?/g, TAPADO)
+    .replace(/(^|[^\w.,])[−-]?\d[\d,]*\.\d{2}(?![\d.,]*\d)(?!\s?%)/g, (m, antes) => antes + TAPADO);
   const tm = v => num(v) == null ? "—" : tbPrivado() ? TAPADO : fmtNeg(v);
   const tx = s => esc(tbPrivado() ? tapar(s) : s);
   // un porcentaje de la base, con su signo cuando es una variación (lo escribe; no lo calcula)
@@ -933,10 +951,11 @@
         const cuerpo = `<span class="ct-tb-paso-t">${esc(p.etiqueta)}</span><span class="ct-tb-cifra">${tm(p.monto)}</span><span class="ct-tb-paso-n">${pill(p)}</span>${p.clave === "depositado" && p.detalle && (p.monto == null || (sd && nOk(sd.n))) ? `<small class="ct-tb-paso-d">${tx(p.detalle)}</small>` : ""}`;
         return `${i ? `<span class="ct-tb-flecha" aria-hidden="true">›</span>` : ""}${p.ir && TITULOS[p.ir.pagina] ? `<button type="button" class="ct-tb-paso" data-paso="${esc(p.clave)}"${irAttr(p.ir)} aria-label="${esc(p.etiqueta)}: ${esc(tm(p.monto))}. ${tx(p.detalle || "")}. Ver en ${esc(irTxt(p.ir))}">${cuerpo}</button>` : `<div class="ct-tb-paso" data-paso="${esc(p.clave)}">${cuerpo}</div>`}`;
       };
-      const dv = cb.devuelto;
+      const dv = cb.devuelto, da = cb.devuelto_antes;
       const aparte = [nOk(pc.retencion && pc.retencion.monto) ? `retención que se cobra al terminar ${tm(pc.retencion.monto)} (${esc(pc.retencion.n)})` : "",
         nOk(pc.a_favor && pc.a_favor.monto) ? `anticipos y saldos a favor ${tm(pc.a_favor.monto)} (${esc(pc.a_favor.n)})` : "",
-        dv && nOk(dv.monto) ? `${tx(dv.etiqueta || "devuelto en estos días (ya restado)")} ${tm(dv.monto)} (${esc(dv.n)})` : ""].filter(Boolean);
+        dv && nOk(dv.monto) ? `${tx(dv.etiqueta || "devuelto en estos días (ya restado)")} ${tm(dv.monto)} (${esc(dv.n)})` : "",
+        da && nOk(da.monto) ? `<span data-tb-dev-antes>${tx(da.etiqueta || "devuelto en estos días de cobros de antes (no se resta)")} ${tm(da.monto)} (${esc(da.n)})</span>` : ""].filter(Boolean);
       const v = pc.vencidas || {}, pv = pc.por_vencer || {}, sv = pc.sin_vencimiento || {};
       return [`<div class="ct-tb-embudo">${pasos.map(paso).join("")}</div>
         ${aparte.length ? `<p class="ct-tb-nota">Aparte (no entra en «por cobrar»): ${aparte.join(" · ")}.</p>` : ""}
@@ -950,7 +969,7 @@
           { celdas: ["Anticipos y saldos a favor (aparte)", tm(pc.a_favor && pc.a_favor.monto), esc(pc.a_favor ? pc.a_favor.n : "—")] },
           { clase: "ct-total", celdas: [`Cobrado en ${esc(d.dias)} días`, tm(cb.monto), esc(cb.n)] },
           { celdas: ["· a facturas", tm(cb.a_facturas), esc(cb.facturas)] }, { celdas: ["· anticipos", tm(cb.anticipos), "—"] },
-          ...devFilas(dv),
+          ...devFilas(dv), ...devFilas(da),
           ...(d.depositado ? [{ clase: "ct-total", celdas: ["Depositado", tm(d.depositado.monto), esc(d.depositado.n)] }] : []),
           ...(sd ? [{ celdas: ["Cobrado que no está en el banco", tm(sd.monto), esc(sd.n)] }, ...sinDepFilas(sd)] : []),
           ...(d.cuadre ? [{ celdas: [`${ICO_TB.ok}Cuadra: ${tx(d.cuadre.texto)}`, tm(d.cuadre.libro), ""] }] : [])], { mas: fuenteTb(d) })}`,
@@ -977,12 +996,16 @@
           ${c.alarma_texto ? `<p class="ct-tb-alarma">${ICO_TB.alerta}<span>${tx(c.alarma_texto)}</span></p>` : ""}
           ${c.conexion && c.conexion.estado !== "activa" && c.conexion.texto ? `<p class="ct-tb-alarma">${ICO_TB.alerta}<span>${tx(c.conexion.texto)}</span></p>` : c.conexion && c.conexion.texto && !/^al día/i.test(c.conexion.texto) ? `<p class="ct-tb-nota ct-tb-cta-x">${tx(c.conexion.texto)}</p>` : ""}
         </li>`;
-      const tot = (x, et) => x && x.n ? `<div><dt>${et}</dt><dd class="ct-num">${tm(x.libro)}</dd><small>en el libro, hoy${nOk(x.con_banco) ? ` · según el banco <span class="ct-num">${tm(x.banco)}</span>${x.con_banco < x.n ? ` (${esc(x.con_banco)} de ${esc(x.n)})` : ""}` : ""}</small></div>` : "";
+      // (lo que dice el banco, sumado, solo si la base lo manda: todas las cuentas con el saldo del MISMO día, y se dice cuál; si son
+      // de días distintos, la base no suma —sería una cifra que el banco nunca dijo— y lo dice con sus palabras)
+      const totBanco = x => !nOk(x.con_banco) ? "" : x.banco != null ? ` · según el banco${x.banco_al ? `, ${esc(alDia(x.banco_al))}` : ""} <span class="ct-num">${tm(x.banco)}</span>${x.con_banco < x.n ? ` (${esc(x.con_banco)} de ${esc(x.n)})` : ""}`
+        : x.banco_texto ? ` · según el banco: <span data-tb-banco-dias>${tx(x.banco_texto)}</span>` : "";
+      const tot = (x, et) => x && x.n ? `<div><dt>${et}</dt><dd class="ct-num">${tm(x.libro)}</dd><small>en el libro, hoy${totBanco(x)}</small></div>` : "";
       const bandeja = d.ir_bandeja || { pagina: "bandeja", cuenta: null };
       return [`<dl class="ct-tb-totales">${tot(t.bancos, "Bancos")}${tot(t.tarjetas, "Tarjetas (se debe)")}</dl>
         ${d.nota ? `<p class="ct-tb-nota">${tx(d.nota)}</p>` : ""}
         <ul class="ct-tb-ctas">${(d.cuentas || []).map(fila).join("")}</ul>
-        ${tablaTb(["Cuenta", "Según el banco", "En el libro, hoy", "Diferencia (el mismo día)", "Por revisar"], (d.cuentas || []).map(c => ({ celdas: [`${esc(c.nombre)} <small class="ct-tb-gris">${esc(c.cuenta)}${c.saldo_banco_texto ? ` · el saldo del banco, ${esc(c.saldo_banco_texto)}` : ""}${c.ultima_conciliacion ? ` · conciliada al ${esc(fechaLarga(c.ultima_conciliacion))}` : " · sin conciliar"}</small>`, tm(c.saldo_banco), tm(c.saldo_libro), c.diferencia == null ? "—" : `${tm(c.diferencia)}${c.diferencia_al ? ` <small class="ct-tb-gris">${esc(alDia(c.diferencia_al))}</small>` : ""}`, `${esc(c.por_revisar)}${nOk(c.por_revisar) ? ` · ${tm(c.por_revisar_monto)}` : ""}`] })), { mas: fuenteTb(d) })}`,
+        ${tablaTb(["Cuenta", "Según el banco", "En el libro, hoy", "Diferencia (el mismo día)", "Por revisar"], (d.cuentas || []).map(c => ({ celdas: [`${esc(c.nombre)} <small class="ct-tb-gris">${esc(c.cuenta)}${c.saldo_banco_texto ? ` · el saldo del banco, ${esc(c.saldo_banco_texto)}` : ""}${c.ultima_conciliacion ? ` · conciliada al ${esc(fechaLarga(c.ultima_conciliacion))}` : " · sin conciliar"}</small>`, tm(c.saldo_banco), tm(c.saldo_libro), c.diferencia == null ? "—" : `${tm(c.diferencia)}${c.diferencia_al ? ` <small class="ct-tb-gris">${esc(alDia(c.diferencia_al))}</small>` : ""}`, `${esc(c.por_revisar)}${nOk(c.por_revisar) ? ` · neto ${tm(c.por_revisar_monto)} <small class="ct-tb-gris">depósitos menos cargos</small>` : ""}`] })), { mas: fuenteTb(d) })}`,
         { cuando: d.actualizado_texto ? `<span${d.actualizado_el ? ` title="${esc(horaTb(d.actualizado_el))}"` : ""}>actualizado ${esc(d.actualizado_texto)}</span>` : "Al día de hoy",
           pie: `${irBtn(bandeja, `Bandeja${nOk(pr.n) ? ` (${esc(pr.n)})` : ""}`)}${irBtn(d.ir_conciliar || { pagina: "conciliar" }, "Conciliar")}${irBtn(d.ir)}` }];
     },
@@ -1008,7 +1031,7 @@
         ${nOk(d.ajustes_otro_ejercicio) ? `<p class="ct-tb-nota">Un ajuste del CPA que corrige otro año (${tm(d.ajustes_otro_ejercicio)}) no se cuenta en estos días.</p>` : ""}
         ${d.nota && !d.parcial ? `<p class="ct-tb-nota">${tx(d.nota)}</p>` : ""}
         ${tablaTb(["Concepto", "Este período", ...(ant ? ["Anterior", "Variación"] : [])], (d.renglones || []).map(r => ({ clase: r.es_total ? "ct-total" : "",
-          celdas: [esc(r.etiqueta), tm(r.monto), ...(ant ? [tm(r.anterior), r.variacion == null ? "—" : `${tm(r.variacion)}${r.variacion_pct != null ? ` (${pctTb(r.variacion_pct, true)})` : ""}`] : [])] }))
+          celdas: [esc(r.etiqueta), tm(r.monto), ...(ant ? [tm(r.anterior), r.variacion == null ? "—" : `${tm(r.variacion)}${r.variacion_pct != null ? ` <span class="ct-tb-nb">(${pctTb(r.variacion_pct, true)})</span>` : ""}`] : [])] }))
           .concat((d.barras || []).map(b => ({ celdas: [`${esc(b.etiqueta)} (la barra)${b.por_revisar && nOk(b.por_revisar.n) ? `<small class="ct-tb-gris">${plural(b.por_revisar.n, "espera", "esperan")} en la Bandeja ${tm(b.por_revisar.monto)}. ${esc(b.nota || "")}</small>` : ""}`, tm(b.monto), ...(ant ? [tm(b.anterior), ""] : [])] })))
           .concat(d.wip_aparte ? [{ celdas: ["Aparte: el reverso del ajuste del WIP", tm(d.wip_aparte.resultado), ...(ant ? ["", ""] : [])] }] : []), { mas: fuenteTb(d) })}
         <p class="ct-tb-nota chica">${esc(fechaLarga(d.desde))} a ${esc(fechaLarga(d.en_curso ? d.corte : d.hasta))}.</p>`];
@@ -1023,7 +1046,7 @@
         <div class="ct-tb-barras">${g.length ? g.map((x, i) => filaBarra(`${esc(x.nombre)}${x.clave === "otras" && nOk(x.categorias) > 1 ? ` <span class="ct-tb-gris">(${esc(x.categorias)} categorías)</span>` : ""}`, `<b class="ct-num">${tm(x.monto)}</b> <span class="ct-tb-gris">${pctTb(x.pct)}</span>`, "gas", `${x.nombre}: ${tm(x.monto)}, ${pctTb(x.pct)} de lo gastado`, i)).join("") : `<p class="ct-tb-nota">Nada gastado en estos días.</p>`}</div>
         ${nOk(d.abonos) ? `<p class="ct-tb-nota">Hubo abonos a favor por ${tm(d.abonos)}: no entran en la gráfica.</p>` : ""}
         ${d.nota ? `<p class="${nOk(pr.n) || nOk(db.n) ? "ct-tb-revisar" : "ct-tb-nota"}">${nOk(pr.n) || nOk(db.n) ? ICO_TB.alerta : ""}<span>${tx(d.nota)}${enlace ? ` ${enlace}` : ""}</span></p>` : enlace ? `<p class="ct-tb-revisar">${ICO_TB.alerta}<span>${enlace}</span></p>` : ""}
-        ${tablaTb(["Categoría", "Monto", "% del total", ...(ant ? ["Antes", "Variación"] : [])], (d.categorias || []).map(c => ({ celdas: [`${esc(c.nombre)} <small class="ct-tb-gris">${esc(c.cuenta)}</small>`, tm(c.monto), pctTb(c.pct), ...(ant ? [tm(c.anterior), c.variacion == null ? "—" : `${tm(c.variacion)}${c.variacion_pct != null ? ` (${pctTb(c.variacion_pct, true)})` : ""}`] : [])] })).concat([{ clase: "ct-total", celdas: ["Total", tm(d.total), "", ...(ant ? [tm(ant.total), d.variacion == null ? "—" : tm(d.variacion)] : [])] }]),
+        ${tablaTb(["Categoría", "Monto", "% del total", ...(ant ? ["Antes", "Variación"] : [])], (d.categorias || []).map(c => ({ celdas: [`${esc(c.nombre)} <small class="ct-tb-gris">${esc(c.cuenta)}</small>`, tm(c.monto), pctTb(c.pct), ...(ant ? [tm(c.anterior), c.variacion == null ? "—" : `${tm(c.variacion)}${c.variacion_pct != null ? ` <span class="ct-tb-nb">(${pctTb(c.variacion_pct, true)})</span>` : ""}`] : [])] })).concat([{ clase: "ct-total", celdas: ["Total", tm(d.total), "", ...(ant ? [tm(ant.total), d.variacion == null ? "—" : tm(d.variacion)] : [])] }]),
           { mas: `${nOk(d.wip_fuera) ? `<p class="ct-tb-nota chica">Fuera de la cuenta: ${plural(d.wip_fuera, "asiento", "asientos")} del ajuste del WIP de las obras (no son un gasto; están en Resultados).</p>` : ""}${fuenteTb(d)}` })}`,
         { cuando: `<span title="${esc(fechaLarga(d.desde))} a ${esc(fechaLarga(d.hasta))}">Últimos ${esc(d.dias)} días</span>` }];
     },
@@ -1060,7 +1083,7 @@
         ${tablaTb(["Mes", "Al empezar", "Entradas", "Salidas", "Al terminar"], [
           ...(d.apertura && d.apertura.en_el_libro && d.apertura.saldo != null ? [{ celdas: [`Apertura (${esc(fechaLarga(d.apertura.fecha))})`, "—", "—", "—", tm(d.apertura.saldo)] }] : []),
           ...meses.map(m => ({ celdas: [`${esc(m.etiqueta)}${m.en_curso ? " (hasta hoy)" : ""}`, sinAp ? "—" : conta(m, "inicial"), conta(m, "entradas"), conta(m, "salidas"), sinAp ? "—" : conta(m, "final")] }))
-        ], { id: "real", mas: `${sinAp ? `<p class="ct-tb-nota chica">Sin la apertura, «al empezar» y «al terminar» no serían lo que había en el banco: no se escriben.</p>` : ""}${pj ? `<p class="ct-tb-nota ct-tb-tabla-t">La proyección (solo lo que ya tiene fecha; no es la caja que habrá):</p><p class="ct-tb-nota chica">Entra: lo por cobrar; sale: lo por pagar; con fecha: lo que el libro ya tiene con fecha de después de hoy.</p>${tablaSola(["Mes", "Entra", "Sale", "Cuotas", "Use tax", "Con fecha", "Saldo"], (pj.meses || []).map(m => ({ celdas: [`${esc(m.etiqueta)}${nOk(m.cobrar_vencido) || nOk(m.pagar_vencido) || nOk(m.cuotas_atrasadas) ? ` <small class="ct-tb-gris">con lo ya vencido</small>` : ""}`, tm(m.cobrar), tm(m.pagar), tm(m.cuotas), tm(m.impuestos), tm(m.libro), tm(m.saldo)] })))}` : ""}${fuenteTb(d)}` })}`,
+        ], { id: "real", mas: `${sinAp ? `<p class="ct-tb-nota chica">Sin la apertura, «al empezar» y «al terminar» no serían lo que había en el banco: no se escriben.</p>` : ""}${meses.filter(m => m.en_curso && m.despues_de_hoy && m.despues_de_hoy.texto).map(m => `<p class="ct-tb-nota chica" data-tb-caja-despues>${tx(m.despues_de_hoy.texto)}</p>`).join("")}${pj ? `<p class="ct-tb-nota ct-tb-tabla-t">La proyección (solo lo que ya tiene fecha; no es la caja que habrá):</p><p class="ct-tb-nota chica">Entra: lo por cobrar; sale: lo por pagar; con fecha: lo que el libro ya tiene con fecha de después de hoy.</p>${tablaSola(["Mes", "Entra", "Sale", "Cuotas", "Use tax", "Con fecha", "Saldo"], (pj.meses || []).map(m => ({ celdas: [`${esc(m.etiqueta)}${nOk(m.cobrar_vencido) || nOk(m.pagar_vencido) || nOk(m.cuotas_atrasadas) ? ` <small class="ct-tb-gris">con lo ya vencido</small>` : ""}`, tm(m.cobrar), tm(m.pagar), tm(m.cuotas), tm(m.impuestos), tm(m.libro), tm(m.saldo)] })))}` : ""}${fuenteTb(d)}` })}`,
         { cuando: "Mes a mes", ctl }];
     },
     // FACTURAS: no pagadas (vencidas / por vencer) y cobradas en N días (depositadas / no); las partes y su porcentaje, de la base

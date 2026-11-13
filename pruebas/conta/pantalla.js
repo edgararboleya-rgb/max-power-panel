@@ -139,7 +139,7 @@
    Y el tablero de la portada (c16, fase 16, «que se vea como QuickBooks»): aquí tampoco hay
    mentira escrita a mano. fn_tablero contesta lo que contestó el banco (pruebas/conta/
    pantalla-f16.json, que arma pruebas/conta/f16-capturar.js sobre g12a con f16-semilla.sql y
-   c16-tablero.sql, la marca 2026111302 del contrato): se comprueba sin c16 (la portada de
+   c16-tablero.sql, la marca 2026111303 del contrato): se comprueba sin c16 (la portada de
    siempre y la línea de qué pegar), la base que no contesta y el equipo; las acciones rápidas,
    «Qué atender» y las 14 tarjetas en el orden de QuickBooks (tres columnas, el embudo y la caja
    anchos) con sus números iguales a los del banco y su enlace a su página; las gráficas (SVG,
@@ -2573,7 +2573,7 @@ function rpcTablero(a) {
   }
   const todas = estado.c16Escena === 'capas' ? F16.capas : estado.c16Escena === 'falla' ? F16.falla : estado.c16Escena === 'renta' ? F16.aparte.renta : e.todas;
   const r = xCopia(todas);
-  const aparte = { reembolso: F16.aparte.reembolso, primer_mes: F16.aparte.primer_mes }[estado.c16Escena];
+  const aparte = { reembolso: F16.aparte.reembolso, primer_mes: F16.aparte.primer_mes, devuelto_antes: F16.aparte.devuelto_antes }[estado.c16Escena];
   if (aparte) for (const k of aparte.tarjetas) r[k] = xCopia(aparte[k]);
   r.tarjetas = pedidas ? TODAS16.filter(k => pedidas.includes(k)) : TODAS16.slice(); r.sigue = [];
   for (const k of TODAS16) if (!r.tarjetas.includes(k)) delete r[k];
@@ -7156,13 +7156,16 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
   // base que no contesta; y el teléfono (390), el iPad (820) y la computadora (1280), en claro y con el teléfono en oscuro.
   // (13-nov, marca 2026111302) una comprobación por cada arreglo de las dos revisiones, y las escenas nuevas del banco: producción al
   // pegar c16 (sin semilla ni apertura), la renta pagada sin la apertura, el cobro de Stripe reembolsado después de depositado, el
-  // 20-ene-2027 (las ventas con un solo mes) y el 20-oct-2026 (la caja con un solo mes) ----
+  // 20-ene-2027 (las ventas con un solo mes) y el 20-oct-2026 (la caja con un solo mes)
+  // (13-nov, marca 2026111303: la revisión final) la caja del mes en curso hasta hoy, «según el banco» sumado solo del mismo día, lo
+  // devuelto de un cobro de antes aparte (la escena nueva del banco), Privacidad con los montos sin signo de dólar y el teléfono con
+  // todas las tablas abiertas ----
   {
     const T16 = F16.hoy.todas;
     const num = v => (v == null || v === '') ? null : Number(v);
     { const h16 = f => require('crypto').createHash('sha1').update(fs.readFileSync(path.join(ROOT, f))).digest('hex').slice(0, 12);
-      ok('Tablero · la base simulada (pantalla-f16.json) se sacó del banco con el c16-tablero.sql y la f16-semilla.sql de este árbol, y es la del contrato (marca 2026111302)', F16.capturado.c16 === h16('docs/conta/c16-tablero.sql') && F16.capturado.semilla === h16('pruebas/conta/f16-semilla.sql') && T16.version === 2026111302 &&
-        [F16.marzo.todas, F16.enero.todas, F16.produccion.todas, F16.aparte.renta, F16.aparte.reembolso, F16.aparte.primer_mes].every(x => x.version === 2026111302),
+      ok('Tablero · la base simulada (pantalla-f16.json) se sacó del banco con el c16-tablero.sql y la f16-semilla.sql de este árbol, y es la del contrato (marca 2026111303)', F16.capturado.c16 === h16('docs/conta/c16-tablero.sql') && F16.capturado.semilla === h16('pruebas/conta/f16-semilla.sql') && T16.version === 2026111303 &&
+        [F16.marzo.todas, F16.enero.todas, F16.produccion.todas, F16.aparte.renta, F16.aparte.reembolso, F16.aparte.primer_mes, F16.aparte.devuelto_antes].every(x => x.version === 2026111303),
         `capturado ${F16.capturado.c16}/${F16.capturado.semilla} (marca ${T16.version}), hoy ${h16('docs/conta/c16-tablero.sql')}/${h16('pruebas/conta/f16-semilla.sql')}: vuelve a correr node pruebas/conta/f16-capturar.js <bd nueva>`); }
     // ni un total, ni una resta, ni un porcentaje de dinero en la pantalla: el bloque del tablero de conta.js no suma nada (ni reduce ni suma)
     { const js = fs.readFileSync(path.join(ROOT, 'js', 'conta.js'), 'utf8'), a = js.indexOf('// EL TABLERO (c16, fase 16)'), z = js.indexOf('// BANCOS Y TARJETAS: primero las cuentas');
@@ -7724,6 +7727,64 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
           return ps.length === 3 && ps[1].top >= ps[0].bottom && ps[2].top >= ps[1].bottom && new Set(cs.map(c => Math.round(c.left))).size === 2;
         }));
       }
+      await cx.close();
+    }
+    // ---- LA REVISIÓN FINAL (13-nov, marca 2026111303): una comprobación por arreglo ----
+    estado.c16 = true; estado.c16Escena = 'hoy';
+    { ({ cx, q } = await abrir16(1280, { prefs: { 'mxp.tablero.privado': null, 'mxp.tablero.ocultas': null } }));
+      // (1) la caja: el mes en curso es «hasta hoy» (al terminar = la caja de hoy); lo de después de hoy, dicho debajo de la tabla
+      const cj = T16.caja, mc = cj.meses.find(m => m.en_curso);
+      await tarj(q, 'caja').locator('details[data-tabla="real"]').evaluate(d => { d.open = true; });
+      const tablaCaja = await visTxt(tarj(q, 'caja').locator('details[data-tabla="real"]'));
+      ok('Tablero · la caja (la revisión final): «' + mc.etiqueta + ' (hasta hoy)» termina en la caja de hoy (' + usd(cj.hoy.saldo) + ': la base ya no manda el mes entero de Estados), con sus entradas y salidas hasta hoy; lo que tiene fecha de después de hoy lo dice la línea de la base, debajo de la tabla',
+        num(mc.final) === num(cj.hoy.saldo) && !!mc.despues_de_hoy && tablaCaja.includes(`${mc.etiqueta} (hasta hoy)`) && tablaCaja.includes(usd(mc.entradas)) && tablaCaja.includes(usd(mc.salidas)) && tablaCaja.includes(usd(mc.final)) &&
+        (await tarj(q, 'caja').locator('[data-tb-caja-despues]').innerText({ timeout: 2000 }).catch(() => '')).trim() === mc.despues_de_hoy.texto, tablaCaja.slice(0, 300));
+      // (2) bancos: lo que dice el banco, sumado, solo del mismo día (con su día); de días distintos, sin suma y dicho
+      const tb = T16.bancos.totales, totTxt = await visTxt(tarj(q, 'bancos').locator('.ct-tb-totales'));
+      ok('Tablero · bancos (la revisión final): el total «según el banco» solo sale si la base lo suma (todas las cuentas con el saldo del mismo día: «según el banco, hoy ' + usd(tb.bancos.banco) + '»); las tarjetas, con el saldo de días distintos, no llevan suma: «' + tb.tarjetas.banco_texto + '»',
+        tb.bancos.banco != null && tb.tarjetas.banco == null && /días distintos/.test(tb.tarjetas.banco_texto || '') && totTxt.includes(`según el banco, hoy ${usd(tb.bancos.banco)}`) &&
+        (await tarj(q, 'bancos').locator('[data-tb-banco-dias]').innerText({ timeout: 2000 }).catch(() => '')).trim() === tb.tarjetas.banco_texto &&
+        !totTxt.includes(usd(T16.bancos.cuentas.filter(c => c.tipo === 'tarjeta').reduce((a, c) => a + Math.round(Number(c.saldo_banco || 0) * 100), 0) / 100)), totTxt);
+      await cx.close(); }
+    // (3) lo devuelto de un cobro de antes: aparte, con las palabras de la base (no está restado de lo cobrado)
+    estado.c16Escena = 'devuelto_antes';
+    { ({ cx, q } = await abrir16(1280, { prefs: { 'mxp.tablero.privado': null, 'mxp.tablero.ocultas': null } }));
+      const cb = F16.aparte.devuelto_antes.cobros.cobrado, da = cb.devuelto_antes;
+      const txt = await visTxt(tarj(q, 'cobros'));
+      await tarj(q, 'cobros').locator('details.ct-tb-tabla').first().evaluate(d => { d.open = true; });
+      const tabla = await visTxt(tarj(q, 'cobros').locator('details.ct-tb-tabla').first());
+      ok('Tablero · el embudo (la revisión final): un cheque de hace 40 días que rebota hace 5 no cambia lo cobrado en 30 días (' + usd(cb.monto) + ') ni lo devuelto «ya restado»; va aparte, con las palabras de la base («' + da.etiqueta + '» ' + usd(da.monto) + '), a la vista y en la tabla',
+        num(cb.monto) === num(T16.cobros.cobrado.monto) && num(cb.devuelto.monto) === num(T16.cobros.cobrado.devuelto.monto) && num(da.n) === 1 &&
+        (await tarj(q, 'cobros').locator('[data-tb-dev-antes]').innerText({ timeout: 2000 }).catch(() => '')).replace(/\s+/g, ' ').trim() === `${da.etiqueta} ${usd(da.monto)} (${da.n})` &&
+        txt.includes(`${cb.devuelto.etiqueta} ${usd(cb.devuelto.monto)} (${cb.devuelto.n})`) && tabla.includes(da.etiqueta) && tabla.includes(usd(da.monto)), txt.slice(0, 400));
+      await cx.close(); }
+    estado.c16Escena = 'hoy';
+    // (4) Privacidad tapa también un monto escrito sin el signo de dólar (el detalle de un control que sale en «Qué atender»)
+    estado.stripeCuadreMal = true;
+    { ({ cx, q } = await abrir16(1280, { prefs: { 'mxp.tablero.privado': '1', 'mxp.tablero.ocultas': null } }));
+      const atn = (await q.locator('#ct-atender').innerText()).replace(/\s+/g, ' ');
+      const sinSigno = /(^|[^\w.,$])\d[\d,]*\.\d{2}(?![\d.,]*\d)(?!\s?%)/;
+      const todo = await q.evaluate(() => { const r = document.getElementById('ct-tb'); return r.textContent + ' ' + [...r.querySelectorAll('[aria-label],[title]')].map(x => `${x.getAttribute('aria-label') || ''} ${x.getAttribute('title') || ''}`).join(' '); });
+      ok('Tablero · Privacidad (la revisión final): un monto escrito SIN el signo de dólar en un texto de otra capa («la 1020 dice 4,100.00 y lo que falta depositar suma 4,000.00», el detalle de un cuadre de Stripe en rojo que sale en «Qué atender») también va tapado; en todo el tablero no queda ninguno, ni con signo ni sin él',
+        /Los cobros en línea no cuadran/.test(atn) && /la 1020 dice \$••• y lo que falta depositar suma \$•••/.test(atn) && !/4,100\.00|4,000\.00/.test(atn) && !sinSigno.test(todo) && !/\$\s?\d/.test(todo), atn.slice(0, 500) + ' | ' + ((todo.match(/.{0,30}\d[\d,]*\.\d{2}.{0,10}/g) || []).slice(0, 3).join(' ‖ ')));
+      await q.locator('#ct-tb-privado').click(); await q.waitForTimeout(250);
+      ok('Tablero · …y sin Privacidad ese detalle se lee entero', /la 1020 dice 4,100\.00 y lo que falta depositar suma 4,000\.00/.test((await q.locator('#ct-atender').innerText()).replace(/\s+/g, ' ')));
+      await cx.close(); }
+    estado.stripeCuadreMal = false;
+    // (5) el teléfono con TODAS las tablas abiertas («Ver los números» y las demás): la página no se hace más ancha que la pantalla y
+    //     ninguna celda se sale de su tarjeta (la de «Variación» de los resultados, con su cifra y su porcentaje, se salía)
+    for (const w of [390, 820, 1280]) {
+      ({ cx, q } = await abrir16(w, { prefs: { 'mxp.tablero.privado': null, 'mxp.tablero.ocultas': null } }));
+      await q.evaluate(() => document.querySelectorAll('#ct-tb details').forEach(d => { d.open = true; })); await q.waitForTimeout(250);
+      const m = await q.evaluate(() => {
+        const r = document.getElementById('ct-tb'), vw = document.documentElement.clientWidth;
+        const celdas = [...r.querySelectorAll('.ct-tb td, .ct-tb th')].filter(e => { const b = e.getBoundingClientRect(), t = e.closest('.ct-tb').getBoundingClientRect(); return b.width && (e.scrollWidth > e.clientWidth + 1 || b.right > t.right + 1); })
+          .map(e => `${e.closest('.ct-tb').dataset.tb}: ${e.dataset.col || ''} «${e.textContent.slice(0, 24)}» ${e.scrollWidth}/${e.clientWidth}`).slice(0, 5);
+        return { sw: document.documentElement.scrollWidth, vw, abiertas: r.querySelectorAll('details[open]').length, celdas };
+      });
+      ok(`Tablero · ${w} px con todas las tablas abiertas (la revisión final): sin desplazamiento lateral y ninguna celda se sale de la suya ni de su tarjeta (apiladas, las celdas se parten)`,
+        m.abiertas >= 14 && m.sw <= m.vw + 1 && !m.celdas.length, JSON.stringify(m));
+      if (w === 390) await foto(q, 'f16-390-tablas');
       await cx.close();
     }
     estado.c16 = false; estado.c16Escena = 'hoy';

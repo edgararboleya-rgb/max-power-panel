@@ -1,10 +1,11 @@
 -- =====================================================================
 -- c16-pruebas.sql — el tablero de la portada se prueba a sí mismo
--- (c16-tablero.sql). 13-nov-2026 (la marca 2026111302: con los arreglos de
--- las dos revisiones, cada uno con su prueba, de la 36 a la 43).
+-- (c16-tablero.sql). 13-nov-2026 (la marca 2026111303: con los arreglos de
+-- las dos revisiones, cada uno con su prueba, de la 36 a la 43, y los de la
+-- revisión final, de la 46 a la 50).
 --
 -- CÓMO SE CORRE. En el SQL Editor de Supabase: DESPUÉS de c16-tablero.sql,
--- pegar este archivo entero → Run. Sale la tabla _pruebas: 45 filas, todas
+-- pegar este archivo entero → Run. Sale la tabla _pruebas: 50 filas, todas
 -- con ok = true (las que salen «omitida» dicen por qué y no son un fallo;
 -- una fila 99 solo sale si algo de este archivo falló). Si el editor se
 -- cansa antes del final, la corrida sigue en el servidor y se lee después
@@ -97,6 +98,15 @@
 -- 42 el reverso del WIP del día 1 va aparte en el mes que no tiene su
 --    ajuste; las ventas, sin el WIP;
 -- 43 los enlaces: la Bandeja entera (sin el filtro de antes) y el DR-15;
+-- LO QUE ENCONTRÓ LA REVISIÓN FINAL (corren antes del cierre; van con su
+-- número después del 45):
+-- 46 la caja: el mes en curso es hasta hoy (lo de después de hoy, aparte);
+-- 47 bancos: lo que dice el banco se suma solo si es del mismo día;
+-- 48 lo devuelto de un cobro de antes: no se resta de lo cobrado (aparte);
+-- 49 Stripe: lo que queda de un pago de antes reembolsado hoy no es cobrado
+--    de estos días;
+-- 50 la proyección, lo que no incluye: la deuda de la nómina con todo lo
+--    que el libro tiene (también lo fechado después de hoy);
 -- Y el cierre de la suite:
 -- 44 las demás capas como estaban sin c16 (lo que ya estaba en rojo se dice
 --    y no cuenta);
@@ -430,9 +440,24 @@ create or replace function pg_temp.c16_tramo(p_vence date) returns text language
               when fn_fecha_miami(now()) - p_vence <= 90 then 'd61_90'
               else 'd90_mas' end
 $$;
--- LOS COBROS de un rango, del libro de cobros (c3): cada uno con lo devuelto
--- de él hasta hoy y si ya está en el banco (casado con su movimiento; el de
--- Stripe, con su depósito ya casado).
+-- EL DÍA EN QUE SE COBRÓ un cobro: el suyo; el de un cobro que p1 volvió a
+-- registrar tras un reembolso en parte o una disputa (una versión nueva de su
+-- pago, con la fecha del cambio), el del primer cobro de su pago.
+create or replace function pg_temp.c16_origen(p_cobro uuid) returns date language plpgsql as $$
+declare
+  v date;
+begin
+  if to_regclass('public.stripe_pago_libro') is not null then
+    execute $q$select min(c2.fecha) from public.stripe_pago_libro pl
+                 join public.stripe_pago_libro pl2 on pl2.pago_id = pl.pago_id and pl2.accion = 'cobro'
+                 join public.cobros c2 on c2.id = pl2.cobro_id
+                where pl.cobro_id = $1 and pl.accion = 'cobro'$q$ into v using p_cobro;
+  end if;
+  return coalesce(v, (select c.fecha from cobros c where c.id = p_cobro));
+end $$;
+-- LOS COBROS de un rango (por el día en que se cobró), del libro de cobros
+-- (c3): cada uno con lo devuelto de él hasta hoy y si ya está en el banco
+-- (casado con su movimiento; el de Stripe, con su depósito ya casado).
 create or replace function pg_temp.c16_cobros(p_desde date, p_hasta date)
 returns table (id uuid, neto numeric, en_banco boolean, clase text, facturas bigint[], a_facturas numeric)
 language plpgsql as $$
@@ -464,7 +489,7 @@ begin
          array(select distinct ap.factura_id from aplicaciones_cobro ap where ap.cobro_id = c.id and ap.factura_id is not null order by 1),
          coalesce((select sum(ap.monto) from aplicaciones_cobro ap where ap.cobro_id = c.id and ap.factura_id is not null), 0)::numeric(14,2)
     from cobros c
-   where c.estado = 'vigente' and c.fecha between p_desde and p_hasta;
+   where c.estado = 'vigente' and pg_temp.c16_origen(c.id) between p_desde and p_hasta;
 end $$;
 
 -- LOS CONTROLES DE LAS OTRAS CAPAS que están en rojo: la cadena (c2), los
@@ -614,7 +639,7 @@ declare
   v_tot int := cardinality(fn_tablero_funciones());
 begin
   v_esp := format('precondiciones: nada falta | funciones: %1$s de %1$s (%1$s con su comentario «c16: …») | otras con nombre de c16: 0 | '
-                  'tablas o vistas de c16: 0 | el pegado: 6 filas | marca: 2026111302', v_tot);
+                  'tablas o vistas de c16: 0 | el pegado: 6 filas | marca: 2026111303', v_tot);
   begin
     v_pre := fn_tablero_precondiciones();
     select count(*) filter (where to_regprocedure('public.' || f) is not null),
@@ -1205,25 +1230,38 @@ end $$;
 
 -- 14. LA CAJA, LOS MESES Y HOY: cada mes del libro con lo de Estados → Flujo
 --     de caja (v_flujo_real_por_mes de c4: inicial, entradas, salidas, final,
---     al centavo), el saldo de hoy del libro (las cuentas de efectivo, en
---     negro) y la línea: empieza con la apertura y pasa por hoy.
+--     al centavo); el mes en curso, HASTA HOY (la revisión final: lo que entró
+--     y salió del 1 a hoy, con la regla de c4, y al terminar = la caja de hoy;
+--     lo de después de hoy va aparte, la 46); el saldo de hoy del libro (las
+--     cuentas de efectivo, en negro) y la línea: empieza con la apertura y
+--     pasa por hoy.
 do $$
 declare
   v_obt text; v_esp text; c jsonb := pg_temp.c16_tc('caja'); v_hoy date := pg_temp.c16_hoy(); v_m0 date; v_saldo numeric;
 begin
   begin
     v_m0 := greatest(date_trunc('month', pg_temp.c16('libro_desde')::date)::date, (date_trunc('month', v_hoy) - interval '11 months')::date);
-    -- (cada mes del libro hasta hoy; el que c4 no trae —sin efectivo ni movimientos de efectivo— es cero)
-    select coalesce(string_agg(format('%s: %s → %s (+%s −%s)', to_char(g.mes, 'YYYY-MM'), pg_temp.c16_m(coalesce(f.efectivo_inicial, 0)),
-                                      pg_temp.c16_m(coalesce(f.efectivo_final, 0)), pg_temp.c16_m(coalesce(f.entradas, 0)),
-                                      pg_temp.c16_m(coalesce(f.salidas, 0))), '; ' order by g.mes), 'ninguno')
-      into v_esp
-      from generate_series(v_m0::timestamp, date_trunc('month', v_hoy)::timestamp, interval '1 month') g(mes)
-      left join v_flujo_real_por_mes f on f.desde = g.mes::date;
     select coalesce(sum(greatest(s, 0)), 0) into v_saldo
       from (select m.cuenta, (select coalesce(sum(l.monto), 0) from asiento_lineas l join asientos a on a.id = l.asiento_id
                                where l.cuenta = m.cuenta and a.fecha_contable <= v_hoy) as s
               from v_estados_mapeo m where m.efectivo) x;
+    -- (cada mes del libro hasta hoy; el que c4 no trae —sin efectivo ni movimientos de efectivo— es cero. El mes en curso, HASTA
+    --  HOY: lo que entró y salió de v_efectivo_movimientos de c4 con fecha hasta hoy —sin un error y su reverso, los dos de este
+    --  mes y hasta hoy— y al terminar, la caja de hoy)
+    select coalesce(string_agg(format('%s: %s → %s (+%s −%s)', to_char(g.mes, 'YYYY-MM'), pg_temp.c16_m(coalesce(f.efectivo_inicial, 0)),
+                                      pg_temp.c16_m(case when g.mes::date = date_trunc('month', v_hoy)::date then v_saldo else coalesce(f.efectivo_final, 0) end),
+                                      pg_temp.c16_m(case when g.mes::date = date_trunc('month', v_hoy)::date then h.ent else coalesce(f.entradas, 0) end),
+                                      pg_temp.c16_m(case when g.mes::date = date_trunc('month', v_hoy)::date then h.sal else coalesce(f.salidas, 0) end)),
+                               '; ' order by g.mes), 'ninguno')
+      into v_esp
+      from generate_series(v_m0::timestamp, date_trunc('month', v_hoy)::timestamp, interval '1 month') g(mes)
+      left join v_flujo_real_por_mes f on f.desde = g.mes::date
+      cross join (select coalesce(sum(m.neto) filter (where m.neto > 0 and not m.par), 0) as ent, coalesce(-sum(m.neto) filter (where m.neto < 0 and not m.par), 0) as sal
+                    from (select m.neto, m.par_en_el_mes and (m.camino = 'reverso'
+                                                              or exists (select 1 from asientos r where r.reversa_a = m.asiento_id and r.camino = 'reverso'
+                                                                            and r.fecha_contable <= v_hoy)) as par
+                            from v_efectivo_movimientos m
+                           where m.fecha between date_trunc('month', v_hoy)::date and v_hoy) m) h;
     v_esp := v_esp || format(' | hoy %s | la línea empieza en %s y pasa por hoy | hoy, en llano: sí | alarma de sobregiro: %s', pg_temp.c16_m(v_saldo),
                              case when exists (select 1 from asientos a where a.tipo = 'apertura' and a.reversa_a is null
                                                   and not exists (select 1 from asientos r where r.reversa_a = a.id))
@@ -1250,7 +1288,7 @@ begin
     if (c ->> 'ok')::boolean is not true then v_obt := 'la tarjeta no contestó: ' || coalesce(c ->> 'motivo', pg_temp.c16('t_error')); end if;
   exception when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (14, 'LA CAJA, LOS MESES Y HOY: cada mes del libro con lo de Estados → Flujo de caja de c4 (inicial, final, entradas y salidas, al centavo), el saldo de hoy del libro (las cuentas de efectivo), dicho en llano (de qué cuentas sale), la alarma de sobregiro solo si es de verdad (una cuenta en rojo con la apertura en el libro) y la línea, que empieza con la apertura (su asiento vivo) y pasa por hoy',
+  insert into _pruebas values (14, 'LA CAJA, LOS MESES Y HOY: cada mes del libro con lo de Estados → Flujo de caja de c4 (inicial, final, entradas y salidas, al centavo; el mes en curso, hasta hoy), el saldo de hoy del libro (las cuentas de efectivo), dicho en llano (de qué cuentas sale), la alarma de sobregiro solo si es de verdad (una cuenta en rojo con la apertura en el libro) y la línea, que empieza con la apertura (su asiento vivo) y pasa por hoy',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
@@ -1325,8 +1363,9 @@ begin
         from asiento_lineas l join asientos a on a.id = l.asiento_id
        where l.cuenta in (select m.cuenta from v_estados_mapeo m where m.efectivo) and a.fecha_contable > v_hoy and a.fecha_contable <= v_fin
          and not exists (select 1 from asiento_lineas l2 where l2.asiento_id = a.id and l2.cuenta = any (v_mod));
-      -- (lo que se debe de la nómina, que no va: con su monto)
-      v_nom := -pg_temp.c16_libro(array(select m.cuenta from v_estados_mapeo m where m.estado = 'balance' and m.linea = 'nomina_por_pagar'), v_hoy);
+      -- (lo que se debe de la nómina, que no va: con su monto, con todo lo que el libro tiene en sus cuentas —también lo fechado
+      --  después de hoy: la 50—)
+      v_nom := -pg_temp.c16_libro(array(select m.cuenta from v_estados_mapeo m where m.estado = 'balance' and m.linea = 'nomina_por_pagar'), date 'infinity');
       if v_cob = 0 and v_pag = 0 and v_cuo = 0 and v_imp = 0 and v_lib = 0 and (p is null or p = 'null'::jsonb) then
         v_esp := 'sin nada con fecha: sin proyección (lo dice)';
         v_obt := case when c ->> 'sin_proyeccion' is not null and (p is null or p = 'null'::jsonb) then 'sin nada con fecha: sin proyección (lo dice)' else 'otra cosa: ' || coalesce(p::text, '') end;
@@ -2721,6 +2760,282 @@ begin
   end;
   insert into _pruebas values (43, 'LOS ENLACES: cada enlace a la Bandeja dice su cuenta o que es la Bandeja entera (la cuenta en nulo, para que no se quede el filtro de una cuenta de antes) y el del use tax lleva a la pestaña DR-15 del cierre',
     v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 46. LA CAJA, EL MES EN CURSO HASTA HOY (la revisión final, 13-nov): lo que
+--     tiene fecha de DESPUÉS de hoy en este mes (un cheque posfechado) no va
+--     en lo que entró y salió del mes «hasta hoy» ni en su «al terminar», que
+--     es la caja de hoy; la tarjeta lo dice aparte (despues_de_hoy). Antes,
+--     el mes en curso era el entero de c4: con el cheque posfechado de la
+--     semilla, «nov 2026 (hasta hoy)» terminaba en 640.00 menos que la caja
+--     de hoy. Un mes ya terminado sigue siendo el de Estados (la 14).
+do $$
+declare
+  v_obt text; v_esp text; v_hoy date := pg_temp.c16_hoy(); v_fin date := (date_trunc('month', pg_temp.c16_hoy()) + interval '1 month')::date - 1;
+  v_f date; v_cta text := (select pc.cuenta from puente_cuentas pc where pc.rol = 'banco'); c0 jsonb; c1 jsonb; m0 jsonb; m1 jsonb;
+begin
+  if pg_temp.c16_omitir(46, 'la caja, el mes en curso hasta hoy', 'lo de después de hoy no va en el mes «hasta hoy»; lo dice aparte', true) then return; end if;
+  v_f := least(v_hoy + 5, v_fin);
+  if v_f <= v_hoy then
+    insert into _pruebas values (46, 'LA CAJA, EL MES EN CURSO HASTA HOY', 'un día de este mes después de hoy',
+      'omitida: hoy es el último día del mes: no hay un día de este mes después de hoy donde fechar el cheque de prueba', null);
+    return;
+  end if;
+  v_esp := 'el mes en curso, hasta hoy: entradas igual, salidas igual, al terminar igual = la caja de hoy, entradas − salidas = su neto | '
+           || 'lo de después de hoy: 1 asiento más, sale 500.00 más, lo dice';
+  begin
+    c0 := pg_temp.c16_j('select public.fn_tablero_caja(12, 0)');
+    begin
+      perform pg_temp.c16_postear(v_f, 'un cheque posfechado de este mes', jsonb_build_array(jsonb_build_object('cuenta', '6100', 'monto', '500.00'),
+                                                                                          jsonb_build_object('cuenta', v_cta, 'monto', '-500.00')));
+    exception when others then
+      v_obt := 'omitida: esta base no deja fechar el cheque de prueba después de hoy en este mes (' || sqlstate || ': ' || left(sqlerrm, 200) || ')';
+      raise exception using errcode = 'MXT00';
+    end;
+    c1 := pg_temp.c16_j('select public.fn_tablero_caja(12, 0)');
+    select x into m0 from jsonb_array_elements(c0 -> 'meses') x where (x ->> 'en_curso')::boolean;
+    select x into m1 from jsonb_array_elements(c1 -> 'meses') x where (x ->> 'en_curso')::boolean;
+    v_obt := format('el mes en curso, hasta hoy: entradas %s, salidas %s, al terminar %s, entradas − salidas %s | lo de después de hoy: %s',
+      case when m1 -> 'entradas' = m0 -> 'entradas' then 'igual' else format('otra (%s → %s)', m0 ->> 'entradas', m1 ->> 'entradas') end,
+      case when m1 -> 'salidas' = m0 -> 'salidas' then 'igual' else format('otra (%s → %s)', m0 ->> 'salidas', m1 ->> 'salidas') end,
+      case when m1 -> 'final' = m0 -> 'final' and (m1 ->> 'final')::numeric = (c1 -> 'hoy' ->> 'saldo')::numeric then 'igual = la caja de hoy'
+           when m1 -> 'final' = m0 -> 'final' then format('igual, pero no es la caja de hoy (%s; hoy %s)', m1 ->> 'final', c1 -> 'hoy' ->> 'saldo')
+           else format('otro (%s → %s; la caja de hoy %s)', m0 ->> 'final', m1 ->> 'final', c1 -> 'hoy' ->> 'saldo') end,
+      case when (m1 ->> 'entradas')::numeric - (m1 ->> 'salidas')::numeric = (m1 ->> 'neto')::numeric then '= su neto' else 'no da su neto' end,
+      case when m1 -> 'despues_de_hoy' is null or m1 -> 'despues_de_hoy' = 'null'::jsonb then 'no lo dice'
+           else format('%s asiento%s más, sale %s más, %s',
+                       coalesce((m1 -> 'despues_de_hoy' ->> 'asientos')::int, 0) - coalesce((nullif(m0 -> 'despues_de_hoy', 'null'::jsonb) ->> 'asientos')::int, 0),
+                       case when coalesce((m1 -> 'despues_de_hoy' ->> 'asientos')::int, 0) - coalesce((nullif(m0 -> 'despues_de_hoy', 'null'::jsonb) ->> 'asientos')::int, 0) = 1
+                            then '' else 's' end,
+                       pg_temp.c16_m(coalesce((m1 -> 'despues_de_hoy' ->> 'salidas')::numeric, 0) - coalesce((nullif(m0 -> 'despues_de_hoy', 'null'::jsonb) ->> 'salidas')::numeric, 0)),
+                       case when m1 -> 'despues_de_hoy' ->> 'texto' like '%después de hoy%' then 'lo dice' else 'sin texto' end) end);
+    if (c1 ->> 'ok')::boolean is not true then v_obt := 'la tarjeta no contestó: ' || coalesce(c1 ->> 'motivo', '?'); end if;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.c16_ser('editor');
+  insert into _pruebas values (46, 'LA CAJA, EL MES EN CURSO HASTA HOY: un cheque fechado más adelante en este mes no cambia lo que entró y salió del mes «hasta hoy» ni su «al terminar», que es la caja de hoy (c4 lo pone en el mes entero); la tarjeta lo dice aparte',
+    v_esp, v_obt, case when v_obt like 'omitida:%' then null else v_obt = v_esp end);
+end $$;
+
+-- 47. LO QUE DICE EL BANCO, SUMADO, SOLO EL MISMO DÍA (la revisión final):
+--     dos cuentas del mismo tipo con el saldo del banco de días distintos (una
+--     de hoy y otra del 31-oct, como la Amex por archivo de la semilla) no se
+--     suman en «según el banco» —sería una cifra que el banco nunca dijo—: el
+--     total va nulo y dice por qué; del mismo día, sí, con su día. Con la
+--     tarjeta de bancos armada con dos cuentas de prueba (fn_tablero_bancos_de
+--     arma la tarjeta con lo que le dan): vale en cualquier base.
+do $$
+declare
+  v_obt text; v_esp text; v_hoy date := pg_temp.c16_hoy(); t jsonb; u jsonb;
+  f jsonb := jsonb_build_object('tipo', 'banco', 'activa', true, 'saldo_libro', 100, 'saldo_libro_despues', 0, 'por_revisar', 0, 'por_revisar_monto', 0);
+begin
+  v_esp := format('de días distintos: sin total del banco, lo dice; 2 de 2 con saldo | del mismo día: 300.00, del %s', v_hoy - 3);
+  begin
+    t := pg_temp.c16_j(format('select public.fn_tablero_bancos_de(%L::jsonb)', jsonb_build_array(
+           f || jsonb_build_object('cuenta', 'C16-PRUEBA-A', 'nombre', 'C16 PRUEBA A', 'saldo_banco', 100, 'saldo_banco_al', v_hoy, 'saldo_libro_al', 100),
+           f || jsonb_build_object('cuenta', 'C16-PRUEBA-B', 'nombre', 'C16 PRUEBA B', 'saldo_banco', 200, 'saldo_banco_al', v_hoy - 3, 'saldo_libro_al', 200))::text));
+    u := pg_temp.c16_j(format('select public.fn_tablero_bancos_de(%L::jsonb)', jsonb_build_array(
+           f || jsonb_build_object('cuenta', 'C16-PRUEBA-A', 'nombre', 'C16 PRUEBA A', 'saldo_banco', 100, 'saldo_banco_al', v_hoy - 3, 'saldo_libro_al', 100),
+           f || jsonb_build_object('cuenta', 'C16-PRUEBA-B', 'nombre', 'C16 PRUEBA B', 'saldo_banco', 200, 'saldo_banco_al', v_hoy - 3, 'saldo_libro_al', 200))::text));
+    v_obt := format('de días distintos: %s; %s de %s con saldo | del mismo día: %s',
+      case when t -> 'totales' -> 'bancos' -> 'banco' is null or t -> 'totales' -> 'bancos' -> 'banco' = 'null'::jsonb
+           then case when coalesce(t -> 'totales' -> 'bancos' ->> 'banco_texto', '') like '%días distintos%' then 'sin total del banco, lo dice'
+                     else 'sin total del banco, sin decir por qué' end
+           else 'suma ' || pg_temp.c16_mj(t -> 'totales' -> 'bancos' -> 'banco') end,
+      t -> 'totales' -> 'bancos' ->> 'con_banco', t -> 'totales' -> 'bancos' ->> 'n',
+      coalesce(pg_temp.c16_mj(u -> 'totales' -> 'bancos' -> 'banco'), '—') || ', del ' || coalesce(u -> 'totales' -> 'bancos' ->> 'banco_al', 'día sin decir'));
+  exception when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.c16_ser('editor');
+  insert into _pruebas values (47, 'LO QUE DICE EL BANCO, SUMADO, SOLO EL MISMO DÍA: dos cuentas con el saldo del banco de días distintos no se suman en el total de la tarjeta de bancos (sería una cifra que el banco nunca dijo): va nulo y dice por qué; del mismo día, sí, con su día',
+    v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 48. LO DEVUELTO DE UN COBRO DE ANTES (la revisión final): un cheque de
+--     hace 40 días (fuera de los 30 del embudo) que rebota hace 5 (dentro): lo
+--     cobrado en los 30 días no cambia (ese cobro no está en ellos) y lo
+--     devuelto «ya restado» tampoco (no se restó de nada); el rebote se dice
+--     aparte, como lo devuelto de un cobro de antes. Antes, se sumaba a lo
+--     devuelto «ya restado».
+do $$
+declare
+  v_obt text; v_esp text; v_hoy date := pg_temp.c16_hoy(); v_f date := pg_temp.c16_hoy() - 40; v_fac bigint; v_cob uuid; e0 jsonb; e1 jsonb;
+begin
+  if pg_temp.c16_omitir(48, 'lo devuelto de un cobro de antes', 'no se resta de lo cobrado; se dice aparte', true) then return; end if;
+  if v_f < pg_temp.c16('libro_desde')::date
+     or not exists (select 1 from periodos p where p.tipo = 'mes' and p.estado = 'abierto' and v_f between p.desde and p.hasta) then
+    insert into _pruebas values (48, 'LO DEVUELTO DE UN COBRO DE ANTES', 'un mes abierto hace 40 días, en el libro',
+      'omitida: hace 40 días es de antes del libro o su mes está cerrado: no hay dónde fechar el cheque de prueba', null);
+    return;
+  end if;
+  v_esp := 'lo cobrado en 30 días: igual | lo devuelto, ya restado: igual | lo devuelto de cobros de antes: 1234.56 más (1 más), lo dice aparte';
+  begin
+    e0 := pg_temp.c16_j('select public.fn_tablero_cobros(30)');
+    begin
+      perform pg_temp.c16_sembrar();
+      v_fac := pg_temp.c16_factura(48, 'c16-prueba-a', 1234.56, v_f);
+      v_cob := pg_temp.c16_cobro(v_f, 1234.56, v_fac);
+      perform pg_temp.c16_ser('editor');
+      perform fn_cobro_devolver(v_cob, v_hoy - 5, 'C16 PRUEBA: el cheque rebotó (se deshace)', null);
+    exception when others then
+      perform pg_temp.c16_ser('editor');
+      v_obt := 'omitida: esta base no deja sembrar la factura, su cobro de hace 40 días y su devolución (' || sqlstate || ': ' || left(sqlerrm, 200) || ')';
+      raise exception using errcode = 'MXT00';
+    end;
+    e1 := pg_temp.c16_j('select public.fn_tablero_cobros(30)');
+    v_obt := format('lo cobrado en 30 días: %s | lo devuelto, ya restado: %s | lo devuelto de cobros de antes: %s',
+      case when e1 -> 'cobrado' -> 'monto' = e0 -> 'cobrado' -> 'monto' and e1 -> 'cobrado' -> 'n' = e0 -> 'cobrado' -> 'n' then 'igual'
+           else format('otro (%s → %s)', e0 -> 'cobrado' ->> 'monto', e1 -> 'cobrado' ->> 'monto') end,
+      case when e1 -> 'cobrado' -> 'devuelto' -> 'monto' = e0 -> 'cobrado' -> 'devuelto' -> 'monto' then 'igual'
+           else format('otro (%s → %s)', e0 -> 'cobrado' -> 'devuelto' ->> 'monto', e1 -> 'cobrado' -> 'devuelto' ->> 'monto') end,
+      case when e1 -> 'cobrado' -> 'devuelto_antes' is null or e1 -> 'cobrado' -> 'devuelto_antes' = 'null'::jsonb then 'no lo dice'
+           else format('%s más (%s más), %s',
+                       pg_temp.c16_m((e1 -> 'cobrado' -> 'devuelto_antes' ->> 'monto')::numeric
+                                     - coalesce((nullif(e0 -> 'cobrado' -> 'devuelto_antes', 'null'::jsonb) ->> 'monto')::numeric, 0)),
+                       (e1 -> 'cobrado' -> 'devuelto_antes' ->> 'n')::int - coalesce((nullif(e0 -> 'cobrado' -> 'devuelto_antes', 'null'::jsonb) ->> 'n')::int, 0),
+                       case when e1 -> 'cobrado' -> 'devuelto_antes' ->> 'etiqueta' like '%de antes%' then 'lo dice aparte' else 'sin texto' end) end);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.c16_ser('editor');
+  insert into _pruebas values (48, 'LO DEVUELTO DE UN COBRO DE ANTES: un cheque de hace 40 días que rebota hace 5 no cambia lo cobrado en los 30 días ni lo devuelto «ya restado» (no se restó de nada); se dice aparte, como lo devuelto de un cobro de antes',
+    v_esp, v_obt, case when v_obt like 'omitida:%' then null else v_obt = v_esp end);
+end $$;
+
+-- 49. STRIPE, EL REEMBOLSO DE UN PAGO DE ANTES (la revisión final): un pago
+--     de Stripe ya depositado se reembolsa en parte HOY; p1 devuelve su cobro
+--     y registra uno nuevo, con la fecha de hoy, por lo que queda. En un
+--     embudo de pocos días que ya no alcanza el día del pago, ese cobro nuevo
+--     NO es dinero cobrado en esos días (se cobró aquel día): lo cobrado no
+--     cambia, y el reembolso va aparte, como lo devuelto de un cobro de antes.
+--     Antes, lo que quedaba del pago salía «cobrado» en esos días.
+do $$
+declare
+  v_obt text; v_esp text; v_hoy date := pg_temp.c16_hoy(); s0 record; v_re numeric; v_dias int; e0 jsonb; e1 jsonb;
+begin
+  if pg_temp.c16_omitir(49, 'Stripe, el reembolso de un pago de antes', 'lo que queda no es cobrado de estos días', false, array['p1', 'c6']) then return; end if;
+  select s.id, s.monto, s.foto, c.fecha into s0
+    from stripe_pagos s join v_stripe_pagos v on v.id = s.id join cobros c on c.id = s.cobro_id
+   where v.estado_pantalla = 'depositado' and s.foto is not null and s.en_libro > 0 and c.fecha < v_hoy
+   order by c.fecha desc, s.creado_el desc limit 1;
+  if s0.id is null then
+    insert into _pruebas values (49, 'STRIPE, EL REEMBOLSO DE UN PAGO DE ANTES', 'un pago de Stripe ya depositado, de antes de hoy',
+      'omitida: no hay ningún pago de Stripe ya depositado de antes de hoy: no hay qué reembolsar', null);
+    return;
+  end if;
+  v_dias := v_hoy - s0.fecha;    -- (el embudo de esos días va del día siguiente al pago a hoy: ya no lo alcanza)
+  v_re := round(s0.monto * 0.20, 2);
+  v_esp := format('el embudo de %s días: lo cobrado igual | lo devuelto, ya restado: igual | lo devuelto de cobros de antes: %s más, lo dice aparte',
+                  v_dias, pg_temp.c16_m(v_re));
+  begin
+    e0 := pg_temp.c16_j(format('select public.fn_tablero_cobros(%s)', v_dias));
+    perform pg_temp.c16_ser('editor');
+    begin
+      perform fn_stripe_pago_sincronizar(s0.foto || jsonb_build_object('visto_el', clock_timestamp(), 'reembolsos', jsonb_build_array(
+                jsonb_build_object('id', 're_C16PRUEBA49', 'monto', round(v_re * 100)::bigint, 'estado', 'succeeded',
+                                   'creado', extract(epoch from now())::bigint, 'bt', 'txn_re_C16PRUEBA49', 'bt_fallo', null, 'motivo_fallo', null))),
+                'evt_C16PRUEBA_REEMBOLSO_49');
+    exception when others then
+      v_obt := 'omitida: p1 no aceptó el reembolso de prueba (' || sqlstate || ': ' || left(sqlerrm, 200) || ')';
+      raise exception using errcode = 'MXT00';
+    end;
+    e1 := pg_temp.c16_j(format('select public.fn_tablero_cobros(%s)', v_dias));
+    v_obt := format('el embudo de %s días: lo cobrado %s | lo devuelto, ya restado: %s | lo devuelto de cobros de antes: %s', v_dias,
+      case when e1 -> 'cobrado' -> 'monto' = e0 -> 'cobrado' -> 'monto' and e1 -> 'cobrado' -> 'n' = e0 -> 'cobrado' -> 'n' then 'igual'
+           else format('otro (%s → %s)', e0 -> 'cobrado' ->> 'monto', e1 -> 'cobrado' ->> 'monto') end,
+      case when e1 -> 'cobrado' -> 'devuelto' -> 'monto' = e0 -> 'cobrado' -> 'devuelto' -> 'monto' then 'igual'
+           else format('otro (%s → %s)', e0 -> 'cobrado' -> 'devuelto' ->> 'monto', e1 -> 'cobrado' -> 'devuelto' ->> 'monto') end,
+      case when e1 -> 'cobrado' -> 'devuelto_antes' is null or e1 -> 'cobrado' -> 'devuelto_antes' = 'null'::jsonb then 'no lo dice'
+           else format('%s más, %s',
+                       pg_temp.c16_m((e1 -> 'cobrado' -> 'devuelto_antes' ->> 'monto')::numeric
+                                     - coalesce((nullif(e0 -> 'cobrado' -> 'devuelto_antes', 'null'::jsonb) ->> 'monto')::numeric, 0)),
+                       case when e1 -> 'cobrado' -> 'devuelto_antes' ->> 'etiqueta' like '%de antes%' then 'lo dice aparte' else 'sin texto' end) end);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.c16_ser('editor');
+  insert into _pruebas values (49, 'STRIPE, EL REEMBOLSO DE UN PAGO DE ANTES: p1 devuelve el cobro y registra uno nuevo con la fecha de hoy por lo que queda; en un embudo que ya no alcanza el día del pago, eso no es cobrado en esos días (lo cobrado no cambia) y el reembolso va aparte, como lo devuelto de un cobro de antes',
+    coalesce(v_esp, 'lo que queda del pago no es cobrado de estos días'), v_obt, case when v_obt like 'omitida:%' then null else v_obt = v_esp end);
+end $$;
+
+-- 50. LA PROYECCIÓN, LO QUE NO INCLUYE: LA DEUDA DE LA NÓMINA CON TODO LO QUE
+--     EL LIBRO TIENE (la revisión final, con la nómina de c15 en producción).
+--     El journal de una nómina lleva la fecha de su día de pago, y Gusto cobra
+--     del banco unos días antes. (a) Una nómina ya posteada con día de pago
+--     después de hoy: lo que deja por pagar se dice (la deuda sube y el texto
+--     lo cuenta), aunque hoy todavía no se deba. (b) Si su cargo ya salió del
+--     banco antes de ese día, la deuda vuelve a ser la de antes: no baja en
+--     negativo (contada solo hasta hoy, salía «se debe −500.00»). Con un
+--     asiento a mano en la primera cuenta de «nómina y retenciones por pagar»
+--     del balance de c4 (la 2210), que se deshace.
+do $$
+declare
+  v_obt text; v_esp text; v_hoy date := pg_temp.c16_hoy(); v_f date := pg_temp.c16_hoy() + 3;
+  v_banco text := (select pc.cuenta from puente_cuentas pc where pc.rol = 'banco');
+  v_nom text := (select m.cuenta from v_estados_mapeo m where m.estado = 'balance' and m.linea = 'nomina_por_pagar' order by m.cuenta limit 1);
+  c0 jsonb; c1 jsonb; c2 jsonb; d0 jsonb; d1 jsonb; d2 jsonb;
+begin
+  if pg_temp.c16_omitir(50, 'la proyección, lo que no incluye: la deuda de la nómina', 'con todo lo que el libro tiene, también lo fechado después de hoy', true) then return; end if;
+  if not exists (select 1 from asientos a where a.tipo = 'apertura' and a.reversa_a is null and not exists (select 1 from asientos r where r.reversa_a = a.id)) then
+    insert into _pruebas values (50, 'LA PROYECCIÓN, LO QUE NO INCLUYE: LA DEUDA DE LA NÓMINA', 'la apertura en el libro (sin ella no hay proyección)',
+      'omitida: la apertura todavía no está en el libro: no hay proyección de caja, ni lista de lo que no incluye (lo comprueban la 15 y la 41)', null);
+    return;
+  end if;
+  if v_nom is null or v_banco is null then
+    insert into _pruebas values (50, 'LA PROYECCIÓN, LO QUE NO INCLUYE: LA DEUDA DE LA NÓMINA', 'una cuenta de nómina por pagar en el balance de c4 y la del banco',
+      'omitida: el mapeo de c4 no tiene ninguna cuenta en «nómina y retenciones por pagar», o los puentes no dicen cuál es el banco', null);
+    return;
+  end if;
+  v_esp := 'una nómina posteada con día de pago después de hoy: la deuda sube 500.00, lo de hasta hoy igual, lo dice | '
+           || 'su cargo ya salió del banco: la deuda vuelve a la de antes, lo de hasta hoy baja 500.00';
+  begin
+    c0 := pg_temp.c16_j('select public.fn_tablero_caja(12, 3)');
+    if c0 -> 'proyeccion' is null or c0 -> 'proyeccion' = 'null'::jsonb then
+      v_obt := 'omitida: hoy no hay nada con fecha que proyectar en esta base: sin proyección no hay lista de lo que no incluye';
+      raise exception using errcode = 'MXT00';
+    end if;
+    begin
+      perform pg_temp.c16_postear(v_f, 'una nómina con día de pago después de hoy', jsonb_build_array(
+                jsonb_build_object('cuenta', '6100', 'monto', '500.00'), jsonb_build_object('cuenta', v_nom, 'monto', '-500.00')));
+    exception when others then
+      v_obt := 'omitida: esta base no deja fechar el asiento de prueba tres días después de hoy (' || sqlstate || ': ' || left(sqlerrm, 200) || ')';
+      raise exception using errcode = 'MXT00';
+    end;
+    c1 := pg_temp.c16_j('select public.fn_tablero_caja(12, 3)');
+    perform pg_temp.c16_postear(v_hoy, 'el cargo de esa nómina, que sale del banco antes de su día de pago', jsonb_build_array(
+              jsonb_build_object('cuenta', v_nom, 'monto', '500.00'), jsonb_build_object('cuenta', v_banco, 'monto', '-500.00')));
+    c2 := pg_temp.c16_j('select public.fn_tablero_caja(12, 3)');
+    select x into d0 from jsonb_array_elements(c0 -> 'proyeccion' -> 'no_incluye') x where x ->> 'clave' = 'deuda' and x ->> 'linea' = 'nomina_por_pagar';
+    select x into d1 from jsonb_array_elements(c1 -> 'proyeccion' -> 'no_incluye') x where x ->> 'clave' = 'deuda' and x ->> 'linea' = 'nomina_por_pagar';
+    select x into d2 from jsonb_array_elements(c2 -> 'proyeccion' -> 'no_incluye') x where x ->> 'clave' = 'deuda' and x ->> 'linea' = 'nomina_por_pagar';
+    v_obt := format('una nómina posteada con día de pago después de hoy: la deuda %s, lo de hasta hoy %s, %s | su cargo ya salió del banco: la deuda %s, lo de hasta hoy %s',
+      case when coalesce((d1 ->> 'monto')::numeric, 0) - coalesce((d0 ->> 'monto')::numeric, 0) = 500 then 'sube 500.00'
+           else format('no sube 500.00 (%s → %s)', coalesce(d0 ->> 'monto', '0.00'), coalesce(d1 ->> 'monto', '0.00')) end,
+      case when d1 is null then 'sin decir'
+           when coalesce((d1 ->> 'a_hoy')::numeric, 0) = coalesce((d0 ->> 'a_hoy')::numeric, (d0 ->> 'monto')::numeric, 0) then 'igual'
+           else format('otro (%s → %s)', coalesce(d0 ->> 'a_hoy', d0 ->> 'monto', '0.00'), coalesce(d1 ->> 'a_hoy', '?')) end,
+      case when d1 ->> 'texto' like '%después de hoy%' and (d1 ->> 'despues')::numeric - coalesce((d0 ->> 'despues')::numeric, 0) = 500 then 'lo dice' else 'no lo dice' end,
+      case when coalesce((d2 ->> 'monto')::numeric, 0) = coalesce((d0 ->> 'monto')::numeric, 0) then 'vuelve a la de antes'
+           else format('no es la de antes (%s → %s)', coalesce(d0 ->> 'monto', '0.00'), coalesce(d2 ->> 'monto', '0.00')) end,
+      case when d2 is null then case when coalesce((d0 ->> 'monto')::numeric, 0) = 0 then 'baja 500.00' else 'sin decir' end
+           when coalesce((d2 ->> 'a_hoy')::numeric, 0) - coalesce((d0 ->> 'a_hoy')::numeric, (d0 ->> 'monto')::numeric, 0) = -500 then 'baja 500.00'
+           else format('otro (%s → %s)', coalesce(d0 ->> 'a_hoy', d0 ->> 'monto', '0.00'), coalesce(d2 ->> 'a_hoy', '?')) end);
+    if (c2 ->> 'ok')::boolean is not true then v_obt := 'la tarjeta no contestó: ' || coalesce(c2 ->> 'motivo', '?'); end if;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.c16_ser('editor');
+  insert into _pruebas values (50, 'LA PROYECCIÓN, LO QUE NO INCLUYE: LA DEUDA DE LA NÓMINA con todo lo que el libro tiene en sus cuentas, también lo fechado después de hoy: una nómina ya posteada con día de pago después de hoy se dice (la deuda sube); y si su cargo ya salió del banco antes de ese día, la deuda no baja en negativo (vuelve a la de antes)',
+    v_esp, v_obt, case when v_obt like 'omitida:%' then null else v_obt = v_esp end);
 end $$;
 
 -- 44. LAS DEMÁS CAPAS, COMO SIN c16: los controles de c2, c3, c4, c6, c8,

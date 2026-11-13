@@ -1440,6 +1440,8 @@ body[data-vista="conta"] .fab { display: none; }
 #conta-raiz .ct-tb-tabla .ct-tabla th { white-space: nowrap; }
 #conta-raiz .ct-tb-tabla .ct-tabla td.r { white-space: nowrap; }
 #conta-raiz .ct-tb-tabla .ct-tabla td small { display: block; }
+/* un porcentaje entre paréntesis no se parte («(+1.1 %)» entero, aunque la celda apilada parta la cifra de su porcentaje) */
+#conta-raiz .ct-tb-nb { white-space: nowrap; }
 #conta-raiz .ct-tb-tabla-t { margin-top: .6rem; font-weight: 700; }
 /* de dónde sale cada cifra (la «fuente» de la base), al final de «Ver los números» */
 #conta-raiz .ct-tb-fuente { margin-top: .5rem; color: var(--mp-ink-3); }
@@ -1454,7 +1456,9 @@ body[data-vista="conta"] .fab { display: none; }
   #conta-raiz .ct-tb-tabla .ct-tabla thead { display: none; }
   #conta-raiz .ct-tb-tabla .ct-tabla tbody tr { display: grid; grid-template-columns: repeat(var(--tb-cols, 2), minmax(0, 1fr)); gap: .15rem .6rem; padding: .45rem 0; border-bottom: 1px solid var(--mp-line); }
   #conta-raiz .ct-tb-tabla .ct-tabla tbody tr.ct-total { border-top: 1px solid var(--mp-line-2); }
-  #conta-raiz .ct-tb-tabla .ct-tabla tbody td { display: block; border: 0; padding: 0; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+  /* (también td.r: la regla de arriba —una cifra no se parte en la tabla ancha— pesa más que «tbody td» y, apilada, la celda de
+     «Variación» de los resultados, con su cifra y su porcentaje, se salía de la tarjeta y hacía ancha la página en el teléfono) */
+  #conta-raiz .ct-tb-tabla .ct-tabla tbody td, #conta-raiz .ct-tb-tabla .ct-tabla tbody td.r { display: block; border: 0; padding: 0; text-align: left; white-space: normal; overflow-wrap: anywhere; }
   #conta-raiz .ct-tb-tabla .ct-tabla tbody td:first-child { grid-column: 1 / -1; font-weight: 700; }
   #conta-raiz .ct-tb-tabla .ct-tabla td[data-col]::before { content: attr(data-col); display: block; font-family: var(--font); font-size: .68rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--mp-ink-3); }
 }

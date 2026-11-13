@@ -2,9 +2,10 @@
 -- c16-tablero.sql — LOS NÚMEROS DEL TABLERO: la portada «Resumen» de
 -- Contabilidad, con gráficas, datos, números y enlaces, como el «Business
 -- at a glance» de QuickBooks · c16 (Fase 16).
--- 13-nov-2026 (marca 2026111302: con lo que encontraron las dos revisiones
+-- 13-nov-2026 (marca 2026111303: con lo que encontraron las dos revisiones
 -- del 13-nov, cada arreglo con su prueba en c16-pruebas.sql, de la 36 a la
--- 43; «LO QUE CAMBIÓ», al final de esta cabecera). Se pega en el SQL Editor
+-- 43, y la revisión final, de la 46 a la 50; «LO QUE CAMBIÓ», al final de
+-- esta cabecera). Se pega en el SQL Editor
 -- DESPUÉS de c1, c2, c3 y c4 (y de
 -- c6, c7, s1, p1, c8, c9, c10, c11, c12, c13 y c14 si se usan: la cadena de
 -- siempre). Idempotente: se puede volver a pegar entero las veces que haga
@@ -52,8 +53,13 @@
 --     «Lending» de Intuit (lo nuestro son los préstamos de c6) ni el umbral
 --     («Threshold») de la gráfica de caja (nadie lo ha fijado). El «Sales
 --     tax» es el use tax del DR-15 (c9): las ventas gravables todavía no
---     las separa nadie, y la tarjeta lo dice. «Customer Hub», «Payroll» y
---     «Team» no son de Contabilidad (la nómina llega con la fase 11).
+--     las separa nadie, y la tarjeta lo dice. «Customer Hub» y «Team» no
+--     son de Contabilidad. «Payroll» es la página Nómina (c15, la fase 11:
+--     el journal de Gusto): el tablero cuenta lo que ella deja en el libro
+--     —la mano de obra y su burden en Resultados, en Gastos y en el costo
+--     por obra; lo que queda por pagar, en lo que la proyección de caja no
+--     incluye— pero todavía no tiene su tarjeta ni su acción (▶ para
+--     decidir, abajo).
 --
 -- LAS TARJETAS (la clave de cada una en fn_tablero, su función y de dónde
 -- sale cada cosa). El jsonb exacto de cada una está en el comentario de su
@@ -100,7 +106,9 @@
 --       ser más) y lo que está dos veces en el libro (va de más).
 --   caja              fn_tablero_caja(p_meses, p_proyeccion)
 --       EL SALDO DE CAJA mes a mes (v_flujo_real_por_mes de c4: el efectivo
---       del balance, lo que entró y lo que salió de verdad), el saldo con
+--       del balance, lo que entró y lo que salió de verdad; el mes en curso,
+--       HASTA HOY, como la caja de hoy: lo que tiene fecha de después de hoy
+--       en él va aparte, con su texto), el saldo con
 --       que empezó el libro y el de hoy (en llano: de qué cuentas sale); y
 --       —solo con lo que de verdad se sabe— UNA PROYECCIÓN marcada como tal,
 --       con una línea a la vista («aviso»: no cuenta la nómina, la renta ni
@@ -290,8 +298,16 @@
 --     factura con un cheque devuelto no se cuenta (se dice cuánto es). El
 --     use tax, el 20 del mes que sigue (el DR-15). Lo que se debe de la
 --     nómina (2210–2250), lo devengado (2050) y la línea de crédito no
---     tienen fecha en el libro: van en «no_incluye» con su monto, hasta que
---     la nómina (fase 11) diga sus fechas. Si se quisiera restar también un
+--     tienen fecha de pago en el libro: van en «no_incluye» con su monto,
+--     con TODO lo que el libro tiene en esas cuentas (también lo fechado
+--     después de hoy: el journal de una nómina de c15 lleva la fecha de su
+--     día de pago, y Gusto cobra del banco unos días antes; contado solo
+--     hasta hoy, esos días la deuda salía en negativo). ▶ La nómina (c15) no
+--     dice cuándo cobra Gusto cada cosa: si se quisiera restar de la
+--     proyección una nómina ya posteada con día de pago después de hoy, o
+--     darle su tarjeta («Payroll» en QuickBooks: la última nómina, lo que
+--     queda por pagar, los cargos de Gusto que esperan en la Bandeja), es
+--     aquí y en la pantalla. Si se quisiera restar también un
 --     promedio de lo que sale cada mes (la nómina, la renta), sería un
 --     estimado y no el libro: hoy solo se dice, en la línea a la vista,
 --     cuánto salió en los meses terminados.
@@ -323,6 +339,29 @@
 --     AAAA-MM-DD, «(s)», «…», «ráfaga» ni «partidas»; lo que está en rojo
 --     en Stripe y en la IA, una frase por cada cosa (no el nombre del
 --     control entre comillas); lo de cada capa, en «tecnico» (35, 20).
+-- Y CON LA REVISIÓN FINAL (marca 2026111303), cada arreglo con su prueba:
+--   · caja: el mes en curso es HASTA HOY, como la caja de hoy: lo que tiene
+--     fecha de después de hoy en él (un cheque posfechado) va aparte, en
+--     despues_de_hoy, con su texto; antes, «nov 2026 (hasta hoy)» terminaba
+--     en lo de c4 para el mes entero, 640.00 menos que la caja de hoy en la
+--     semilla (14, 46). Los meses ya terminados, los de Estados como siempre.
+--   · bancos: lo que dice el banco, SUMADO, solo si todas las cuentas lo
+--     dicen del mismo día (banco_al); de días distintos, sin total
+--     (banco_texto): la suma del saldo de hoy de una tarjeta y del 31-oct de
+--     otra era una cifra que el banco nunca dijo (47).
+--   · lo cobrado y lo devuelto: un cobro cuenta en los días en que se cobró
+--     el dinero —el que p1 vuelve a registrar tras un reembolso en parte o
+--     una disputa, en los del primer cobro de su pago, no en los del
+--     cambio—; lo devuelto «ya restado» es solo lo de los cobros de esos
+--     días; lo devuelto en esos días de un cobro de antes (un cheque de hace
+--     40 días que rebota hoy) va aparte, en devuelto_antes, y no se resta de
+--     nada (48, 49).
+--   · caja, lo que la proyección NO incluye: lo que se debe de la nómina (y
+--     las demás deudas sin fecha de pago) va con todo lo que el libro tiene
+--     en sus cuentas, también lo fechado después de hoy (a_hoy y despues lo
+--     separan): con la nómina de c15, entre el cargo de Gusto y el día de
+--     pago salía una deuda en negativo, y una nómina ya posteada con día de
+--     pago después de hoy no se decía (50).
 -- =====================================================================
 -- (Lo primero, como en c4, c6, c10, c12 y c14: el pegado espera un candado
 -- como mucho medio segundo. Con la app leyendo, para con 55P03 («lock
@@ -502,7 +541,7 @@ end $$;
 create or replace function public.fn_tablero_version() returns bigint
 language sql immutable
 set search_path = public, pg_temp
-as $$ select 2026111302::bigint $$;
+as $$ select 2026111303::bigint $$;
 revoke execute on function public.fn_tablero_version() from public, anon, service_role;
 grant  execute on function public.fn_tablero_version() to authenticated;
 comment on function public.fn_tablero_version() is 'c16: la marca de esta versión del tablero (AAAAMMDDNN). La pantalla la mira para saber si la base ya trae la portada nueva.';
@@ -1057,6 +1096,8 @@ declare
   v_st     jsonb := '{}'::jsonb;    -- cobro → estado de su pago en Stripe (p1)
   v_cas    uuid[] := '{}';          -- los cobros del rango ya casados con el banco (c6)
   v_caja   text[];                  -- las cuentas de caja chica (c4)
+  v_origen jsonb := '{}'::jsonb;    -- cobro que p1 volvió a registrar → el día del primer cobro de su pago (la revisión final)
+  v_ids    uuid[];                  -- los cobros del rango, por el día en que se cobró el dinero
 begin
   perform fn_tablero_exigir_dueno();
   v_caja := array(select m.cuenta from fn_tablero_mapa() m where m.caja);
@@ -1065,7 +1106,22 @@ begin
   end if;
   if v_p1 then
     execute 'select c.cuenta_puente from public.stripe_config c where c.id = 1' into v_puente;
+    -- (EL DÍA EN QUE SE COBRÓ: cuando un pago de Stripe cambia —un reembolso en parte, una disputa—, p1 devuelve su cobro y
+    --  registra uno nuevo por lo que queda, con la fecha del cambio. Ese dinero se cobró el día del primer cobro de su pago, no
+    --  el del cambio: el cobro nuevo cuenta en los días de aquel. Sin esto, un pago de hace dos meses reembolsado en parte hoy
+    --  salía «cobrado en los últimos 30 días».)
+    execute $q$select coalesce(jsonb_object_agg(z.cobro_id::text, z.origen), '{}'::jsonb)
+                 from (select pl.cobro_id, min(c2.fecha) as origen, max(c.fecha) as propia
+                         from public.stripe_pago_libro pl
+                         join public.cobros c on c.id = pl.cobro_id
+                         join public.stripe_pago_libro pl2 on pl2.pago_id = pl.pago_id and pl2.accion = 'cobro'
+                         join public.cobros c2 on c2.id = pl2.cobro_id
+                        where pl.accion = 'cobro'
+                        group by pl.cobro_id) z
+                where z.origen < z.propia$q$ into v_origen;
   end if;
+  v_ids := array(select c.id from cobros c
+                  where c.estado = 'vigente' and coalesce((v_origen ->> c.id::text)::date, c.fecha) between p_desde and p_hasta);
   if v_p1 and v_c6 and v_puente is not null then
     -- (cada cobro de Stripe del rango → su pago; lo que liquidaron los depósitos asentados de ese pago y si todos llegaron al
     --  banco y están casados: la regla de v_stripe_pagos de p1, sin su ventana de 120 días)
@@ -1077,7 +1133,7 @@ begin
                         (select pl.pago_id from public.stripe_pago_libro pl where pl.cobro_id = c.id and pl.accion = 'cobro'
                           order by pl.id desc limit 1)) as pago_id
           from public.cobros c
-         where c.estado = 'vigente' and c.fecha between $1 and $2 and c.cuenta = $3
+         where c.id = any ($1) and c.cuenta = $2
       ), dep as (
         select l.pago_id, sum(l.monto) as liquidado,
                bool_and(exists (select 1 from public.asiento_lineas al
@@ -1099,18 +1155,18 @@ begin
         from k
         left join public.stripe_pagos s on s.id = k.pago_id
         left join dep on dep.pago_id = k.pago_id$q$
-      into v_st using p_desde, p_hasta, v_puente;
+      into v_st using v_ids, v_puente;
   end if;
   if v_c6 then
     execute $q$select coalesce(array_agg(c.id), '{}'::uuid[])
                  from public.cobros c
-                where c.estado = 'vigente' and c.fecha between $1 and $2
+                where c.id = any ($1)
                   and (c.movimiento_id is not null
                        or exists (select 1 from public.banco_casado_lineas bl
                                     join public.banco_casados bc on bc.id = bl.casado_id
                                    where bl.asiento_id = c.contabilizado_en and bl.cuenta = c.cuenta and bl.vigente
                                      and bc.deshecho_el is null))$q$
-      into v_cas using p_desde, p_hasta;
+      into v_cas using v_ids;
   end if;
   return query
   with k as (
@@ -1120,7 +1176,7 @@ begin
                 when c.cuenta = any (v_caja) then 'caja'
                 else 'banco' end as clase
       from cobros c
-     where c.estado = 'vigente' and c.fecha between p_desde and p_hasta
+     where c.id = any (v_ids)
   ), e as (
     select k.*, (k.monto - k.dev)::numeric(14,2) as neto,
            case k.clase
@@ -1140,7 +1196,7 @@ begin
 end $$;
 revoke execute on function public.fn_tablero_cobros_lista(date, date) from public, anon, service_role;
 grant  execute on function public.fn_tablero_cobros_lista(date, date) to authenticated;
-comment on function public.fn_tablero_cobros_lista(date, date) is 'c16: los cobros vigentes de un rango (c3), uno por uno: cobro_id, fecha, monto, devuelto (lo rebotado de él), neto, cuenta, medio, clase (banco | stripe | caja), estado (depositado | sin_casar | en_camino | en_stripe | en_caja | sin_banco), depositado (el neto si está en el banco), a_facturas (lo aplicado a facturas), facturas (sus ids), proyecto_id. Depositado = casado con su movimiento del banco (c6) o, si entró por Stripe, los depósitos de su pago ya asentados cubren lo que tiene en el libro (lo que falta depositar es cero o menos, como tras un reembolso) y todos están casados en el banco (las tablas de p1, sin la ventana de 120 días de v_stripe_pagos). Solo lee. Solo el dueño.';
+comment on function public.fn_tablero_cobros_lista(date, date) is 'c16: los cobros vigentes de un rango (c3), uno por uno: cobro_id, fecha, monto, devuelto (lo rebotado de él), neto, cuenta, medio, clase (banco | stripe | caja), estado (depositado | sin_casar | en_camino | en_stripe | en_caja | sin_banco), depositado (el neto si está en el banco), a_facturas (lo aplicado a facturas), facturas (sus ids), proyecto_id. Un cobro entra en el rango por el día en que se cobró el dinero: el que p1 volvió a registrar tras un reembolso en parte o una disputa, por el día del primer cobro de su pago (no por el del cambio). Depositado = casado con su movimiento del banco (c6) o, si entró por Stripe, los depósitos de su pago ya asentados cubren lo que tiene en el libro (lo que falta depositar es cero o menos, como tras un reembolso) y todos están casados en el banco (las tablas de p1, sin la ventana de 120 días de v_stripe_pagos). Solo lee. Solo el dueño.';
 
 -- LO DEVUELTO DE VERDAD en un rango: cada devolución de un cobro (c3,
 -- cobros_devoluciones) con fecha en esos días, MENOS la parte técnica de
@@ -1148,8 +1204,14 @@ comment on function public.fn_tablero_cobros_lista(date, date) is 'c16: los cobr
 -- cobro vivo ENTERO y registra uno nuevo por lo que queda (stripe_pago_libro:
 -- la «devolucion» y el «cobro» de ese mismo momento); lo devuelto de verdad
 -- es la diferencia (1,250.00 − 1,000.00 = el reembolso de 250.00). Un cheque
--- rebotado (sin Stripe) cuenta entero. {monto, n, cheques: {monto, n},
--- stripe: {monto, n}}.
+-- rebotado (sin Stripe) cuenta entero. Y DE QUÉ COBRO ES (la revisión final):
+-- lo de un cobro de ESTOS días ya está restado de lo cobrado en ellos (su
+-- neto); lo de un cobro de ANTES (un cheque de hace 40 días que rebota hoy,
+-- un pago de Stripe de hace dos meses reembolsado en parte hoy) no estaba en
+-- lo cobrado de estos días: va aparte, en «antes». El día de un cobro es el
+-- día en que se cobró el dinero (el de un cobro que p1 volvió a registrar,
+-- el del primer cobro de su pago). {monto, n, cheques: {monto, n}, stripe:
+-- {monto, n}, antes: {monto, n, cheques: {monto, n}, stripe: {monto, n}}}.
 create or replace function public.fn_tablero_devuelto(p_desde date, p_hasta date) returns jsonb
 language plpgsql stable
 set search_path = public, pg_temp
@@ -1165,36 +1227,60 @@ begin
                exists (select 1 from public.stripe_pago_libro pd where pd.devolucion_id = dv.id and pd.accion = 'devolucion') as de_stripe,
                coalesce((select sum(pc.monto) from public.stripe_pago_libro pd
                            join public.stripe_pago_libro pc on pc.pago_id = pd.pago_id and pc.accion = 'cobro' and pc.creado_el = pd.creado_el
-                          where pd.devolucion_id = dv.id and pd.accion = 'devolucion'), 0) as rehecho
+                          where pd.devolucion_id = dv.id and pd.accion = 'devolucion'), 0) as rehecho,
+               -- (el día en que se cobró: el del cobro; si p1 lo volvió a registrar, el del primer cobro de su pago)
+               coalesce((select min(c2.fecha) from public.stripe_pago_libro pl
+                           join public.stripe_pago_libro pl2 on pl2.pago_id = pl.pago_id and pl2.accion = 'cobro'
+                           join public.cobros c2 on c2.id = pl2.cobro_id
+                          where pl.cobro_id = dv.cobro_id and pl.accion = 'cobro'), c.fecha) as origen
           from public.cobros_devoluciones dv
+          join public.cobros c on c.id = dv.cobro_id
          where dv.fecha between $1 and $2
       ), x as (
-        select d.de_stripe, greatest(d.monto - d.rehecho, 0)::numeric(14,2) as real from d
+        select d.de_stripe, d.origen >= $1 as de_estos, greatest(d.monto - d.rehecho, 0)::numeric(14,2) as real from d
       )
       select jsonb_build_object(
-               'monto', coalesce(sum(x.real), 0)::numeric(14,2), 'n', count(*) filter (where x.real > 0),
-               'cheques', jsonb_build_object('monto', coalesce(sum(x.real) filter (where not x.de_stripe), 0)::numeric(14,2),
-                                             'n', count(*) filter (where not x.de_stripe and x.real > 0)),
-               'stripe', jsonb_build_object('monto', coalesce(sum(x.real) filter (where x.de_stripe), 0)::numeric(14,2),
-                                            'n', count(*) filter (where x.de_stripe and x.real > 0)))
+               'monto', coalesce(sum(x.real) filter (where x.de_estos), 0)::numeric(14,2), 'n', count(*) filter (where x.de_estos and x.real > 0),
+               'cheques', jsonb_build_object('monto', coalesce(sum(x.real) filter (where x.de_estos and not x.de_stripe), 0)::numeric(14,2),
+                                             'n', count(*) filter (where x.de_estos and not x.de_stripe and x.real > 0)),
+               'stripe', jsonb_build_object('monto', coalesce(sum(x.real) filter (where x.de_estos and x.de_stripe), 0)::numeric(14,2),
+                                            'n', count(*) filter (where x.de_estos and x.de_stripe and x.real > 0)),
+               'antes', jsonb_build_object(
+                  'monto', coalesce(sum(x.real) filter (where not x.de_estos), 0)::numeric(14,2), 'n', count(*) filter (where not x.de_estos and x.real > 0),
+                  'cheques', jsonb_build_object('monto', coalesce(sum(x.real) filter (where not x.de_estos and not x.de_stripe), 0)::numeric(14,2),
+                                                'n', count(*) filter (where not x.de_estos and not x.de_stripe and x.real > 0)),
+                  'stripe', jsonb_build_object('monto', coalesce(sum(x.real) filter (where not x.de_estos and x.de_stripe), 0)::numeric(14,2),
+                                               'n', count(*) filter (where not x.de_estos and x.de_stripe and x.real > 0))))
         from x$q$ into v using p_desde, p_hasta;
   else
-    select jsonb_build_object('monto', coalesce(sum(dv.monto), 0)::numeric(14,2), 'n', count(*) filter (where dv.monto > 0),
-                              'cheques', jsonb_build_object('monto', coalesce(sum(dv.monto), 0)::numeric(14,2), 'n', count(*) filter (where dv.monto > 0)),
-                              'stripe', jsonb_build_object('monto', 0::numeric(14,2), 'n', 0))
+    select jsonb_build_object('monto', coalesce(sum(dv.monto) filter (where c.fecha >= p_desde), 0)::numeric(14,2),
+                              'n', count(*) filter (where c.fecha >= p_desde and dv.monto > 0),
+                              'cheques', jsonb_build_object('monto', coalesce(sum(dv.monto) filter (where c.fecha >= p_desde), 0)::numeric(14,2),
+                                                            'n', count(*) filter (where c.fecha >= p_desde and dv.monto > 0)),
+                              'stripe', jsonb_build_object('monto', 0::numeric(14,2), 'n', 0),
+                              'antes', jsonb_build_object(
+                                 'monto', coalesce(sum(dv.monto) filter (where c.fecha < p_desde), 0)::numeric(14,2),
+                                 'n', count(*) filter (where c.fecha < p_desde and dv.monto > 0),
+                                 'cheques', jsonb_build_object('monto', coalesce(sum(dv.monto) filter (where c.fecha < p_desde), 0)::numeric(14,2),
+                                                               'n', count(*) filter (where c.fecha < p_desde and dv.monto > 0)),
+                                 'stripe', jsonb_build_object('monto', 0::numeric(14,2), 'n', 0)))
       into v
-      from cobros_devoluciones dv where dv.fecha between p_desde and p_hasta;
+      from cobros_devoluciones dv join cobros c on c.id = dv.cobro_id
+     where dv.fecha between p_desde and p_hasta;
   end if;
   return v;
 end $$;
 revoke execute on function public.fn_tablero_devuelto(date, date) from public, anon, service_role;
 grant  execute on function public.fn_tablero_devuelto(date, date) to authenticated;
-comment on function public.fn_tablero_devuelto(date, date) is 'c16: lo devuelto de verdad en un rango (c3, cobros_devoluciones), sin la devolución técnica con que p1 rehace un cobro de Stripe que cambió: {monto, n, cheques: {monto, n} (cheques rebotados y demás devoluciones sin Stripe), stripe: {monto, n} (reembolsos y disputas, solo lo que de verdad se devolvió)}. Solo lee. Solo el dueño.';
+comment on function public.fn_tablero_devuelto(date, date) is 'c16: lo devuelto de verdad en un rango (c3, cobros_devoluciones), sin la devolución técnica con que p1 rehace un cobro de Stripe que cambió: {monto, n, cheques: {monto, n} (cheques rebotados y demás devoluciones sin Stripe), stripe: {monto, n} (reembolsos y disputas, solo lo que de verdad se devolvió)} de los cobros de ESOS días (ya restado de lo cobrado en ellos), y antes: {monto, n, cheques, stripe} (lo devuelto en esos días de cobros de antes: no estaba en lo cobrado de esos días). El día de un cobro es el día en que se cobró (el de un cobro que p1 volvió a registrar, el del primer cobro de su pago). Solo lee. Solo el dueño.';
 
 -- LO COBRADO, sumado: el resumen de una lista de cobros (la de arriba, en
 -- jsonb) para el embudo y la tarjeta de facturas. Y lo devuelto en esos
--- días (de cualquier cobro: un cheque de antes que rebotó ahora; de Stripe,
--- solo lo que de verdad se devolvió: fn_tablero_devuelto).
+-- días (de Stripe, solo lo que de verdad se devolvió: fn_tablero_devuelto):
+-- lo de los cobros de esos días, «ya restado» de lo cobrado; lo de un cobro
+-- de antes (un cheque de hace 40 días que rebota hoy), aparte, en
+-- devuelto_antes: no estaba en lo cobrado y no se resta de nada (la
+-- revisión final: antes decía «ya restado» de todo).
 create or replace function public.fn_tablero_cobrado(p_lista jsonb, p_desde date, p_hasta date) returns jsonb
 language plpgsql stable
 set search_path = public, pg_temp
@@ -1202,8 +1288,10 @@ as $$
 declare
   v_c6 boolean := to_regclass('public.banco_casado_lineas') is not null;
   r    record;
+  v_dv jsonb;
 begin
   perform fn_tablero_exigir_dueno();
+  v_dv := fn_tablero_devuelto(p_desde, p_hasta);
   select coalesce(sum(x.neto) filter (where x.neto > 0), 0)::numeric(14,2) as monto,
          count(*) filter (where x.neto > 0) as n,
          (select count(distinct f.v) from jsonb_array_elements(coalesce(p_lista, '[]'::jsonb)) j,
@@ -1239,8 +1327,10 @@ begin
                                                                                   'etiqueta', 'en Stripe, sin depositar'),
                                                   'en_caja', jsonb_build_object('monto', r.en_caja, 'n', r.n_en_caja,
                                                                                 'etiqueta', 'en la caja chica (efectivo o cheque sin depositar)')) end,
-    'devuelto', fn_tablero_devuelto(p_desde, p_hasta)
-                || jsonb_build_object('etiqueta', 'devuelto en estos días (cheques rebotados y reembolsos; ya restado)'),
+    'devuelto', (v_dv - 'antes') || jsonb_build_object('etiqueta', 'devuelto de lo cobrado en estos días (cheques rebotados y reembolsos; ya restado)'),
+    -- (lo devuelto en estos días de un cobro de ANTES: no estaba en lo cobrado; se dice aparte y no se resta de nada)
+    'devuelto_antes', case when coalesce((v_dv -> 'antes' ->> 'n')::int, 0) > 0
+                           then (v_dv -> 'antes') || jsonb_build_object('etiqueta', 'devuelto en estos días de cobros de antes (no estaban en lo cobrado; no se resta)') end,
     'nota', case when not v_c6 then 'Sin el banco (c6) en esta base no se sabe qué cobros ya están depositados.' end,
     'fuente', 'los cobros vigentes de esos días (c3), menos lo devuelto; depositado = casado con su movimiento del banco (c6) o, si '
               || 'entró por Stripe, su depósito ya casado en el banco (p1)'
@@ -1248,7 +1338,7 @@ begin
 end $$;
 revoke execute on function public.fn_tablero_cobrado(jsonb, date, date) from public, anon, service_role;
 grant  execute on function public.fn_tablero_cobrado(jsonb, date, date) to authenticated;
-comment on function public.fn_tablero_cobrado(jsonb, date, date) is 'c16: lo cobrado en un rango, sumado desde la lista de fn_tablero_cobros_lista (en jsonb): {desde, hasta, dias, monto (los netos), n (cobros), facturas (cuántas facturas tocaron), a_facturas (lo aplicado a facturas), anticipos (lo que no), depositado: {monto, n}, sin_depositar: {monto, n, sin_casar, en_camino, en_stripe, en_caja} (cada uno {monto, n, etiqueta: en llano}), devuelto: {monto, n, cheques: {monto, n}, stripe: {monto, n}, etiqueta} (lo devuelto DE VERDAD con fecha en el rango: los cheques rebotados enteros y, de Stripe, solo el reembolso, no la devolución técnica con que p1 rehace el cobro: fn_tablero_devuelto), nota, fuente}. depositado y sin_depositar son nulos si no hay banco (c6). Solo el dueño.';
+comment on function public.fn_tablero_cobrado(jsonb, date, date) is 'c16: lo cobrado en un rango, sumado desde la lista de fn_tablero_cobros_lista (en jsonb): {desde, hasta, dias, monto (los netos), n (cobros), facturas (cuántas facturas tocaron), a_facturas (lo aplicado a facturas), anticipos (lo que no), depositado: {monto, n}, sin_depositar: {monto, n, sin_casar, en_camino, en_stripe, en_caja} (cada uno {monto, n, etiqueta: en llano}), devuelto: {monto, n, cheques: {monto, n}, stripe: {monto, n}, etiqueta} (lo devuelto DE VERDAD de los cobros de esos días, ya restado de lo cobrado: los cheques rebotados enteros y, de Stripe, solo el reembolso, no la devolución técnica con que p1 rehace el cobro: fn_tablero_devuelto), devuelto_antes: {monto, n, cheques, stripe, etiqueta} (lo devuelto en esos días de cobros de antes: no estaba en lo cobrado y no se resta; nulo si no hay), nota, fuente}. depositado y sin_depositar son nulos si no hay banco (c6). Solo el dueño.';
 
 -- LO QUE ESPERA EN LA BANDEJA (c6) con fecha en un rango (sin fechas,
 -- todo): las MISMAS filas que la página de la Bandeja (v_banco_bandeja):
@@ -1753,7 +1843,8 @@ begin
         'ir', jsonb_build_object('pagina', 'facturas', 'sub', 'facturas')),
     'cobrado', jsonb_build_object('monto', p_cobrado -> 'monto', 'n', p_cobrado -> 'n', 'facturas', p_cobrado -> 'facturas',
                                   'a_facturas', p_cobrado -> 'a_facturas', 'anticipos', p_cobrado -> 'anticipos',
-                                  'devuelto', p_cobrado -> 'devuelto', 'ir', jsonb_build_object('pagina', 'facturas', 'sub', 'facturas')),
+                                  'devuelto', p_cobrado -> 'devuelto', 'devuelto_antes', p_cobrado -> 'devuelto_antes',
+                                  'ir', jsonb_build_object('pagina', 'facturas', 'sub', 'facturas')),
     'depositado', case when v_dep is not null and v_dep <> 'null'::jsonb
                        then v_dep || jsonb_build_object('ir', jsonb_build_object('pagina', 'movimientos')) end,
     'sin_depositar', case when p_cobrado -> 'sin_depositar' is not null and p_cobrado -> 'sin_depositar' <> 'null'::jsonb
@@ -1809,7 +1900,7 @@ begin
 end $$;
 revoke execute on function public.fn_tablero_cobros(int) from public, anon, service_role;
 grant  execute on function public.fn_tablero_cobros(int) to authenticated;
-comment on function public.fn_tablero_cobros(int) is 'c16: el embudo de cobro de los últimos N días (de fábrica 30): {ok, tarjeta: «cobros», corte, dias, desde, hasta, por_cobrar: {monto, n (partidas), facturas, vencidas: {monto, n, facturas, dias_mas_vieja}, por_vencer: {monto, n}, sin_vencimiento: {monto, n}, retencion: {monto, n} (aparte: se cobra al terminar la obra), a_favor: {monto, n} (anticipos y saldos a favor, en negativo), ir}, cobrado: {monto, n (cobros), facturas, a_facturas, anticipos, devuelto: {monto, n}, ir}, depositado: {monto, n, ir} (nulo sin c6), sin_depositar: {monto, n, sin_casar, en_camino, en_stripe, en_caja (cada uno {monto, n}), ir} (nulo sin c6), pasos: [{clave (por_cobrar | cobrado | depositado), etiqueta, monto, n, detalle, alarma, ir}] (los tres del embudo), cuadre: {ok, libro, suma, texto} (por cobrar + retención + a favor = 1110 + 1120 en el libro), nota, fuente, ir}. 22023 con días fuera de 1–366. Solo lee. Solo el dueño.';
+comment on function public.fn_tablero_cobros(int) is 'c16: el embudo de cobro de los últimos N días (de fábrica 30): {ok, tarjeta: «cobros», corte, dias, desde, hasta, por_cobrar: {monto, n (partidas), facturas, vencidas: {monto, n, facturas, dias_mas_vieja}, por_vencer: {monto, n}, sin_vencimiento: {monto, n}, retencion: {monto, n} (aparte: se cobra al terminar la obra), a_favor: {monto, n} (anticipos y saldos a favor, en negativo), ir}, cobrado: {monto, n (cobros), facturas, a_facturas, anticipos, devuelto: {monto, n} (de los cobros de estos días: ya restado), devuelto_antes: {monto, n} (de cobros de antes: no se resta; nulo si no hay), ir}, depositado: {monto, n, ir} (nulo sin c6), sin_depositar: {monto, n, sin_casar, en_camino, en_stripe, en_caja (cada uno {monto, n}), ir} (nulo sin c6), pasos: [{clave (por_cobrar | cobrado | depositado), etiqueta, monto, n, detalle, alarma, ir}] (los tres del embudo), cuadre: {ok, libro, suma, texto} (por cobrar + retención + a favor = 1110 + 1120 en el libro), nota, fuente, ir}. 22023 con días fuera de 1–366. Solo lee. Solo el dueño.';
 
 -- 3.3 · BANCOS Y TARJETAS: cada cuenta con lo que dice el banco, lo que
 -- dice el libro, lo que espera en la Bandeja y cuándo se actualizó.
@@ -1916,10 +2007,14 @@ begin
          coalesce(sum(v.saldo_libro) filter (where v.tipo = 'banco'), 0)::numeric(14,2) as b_libro,
          count(*) filter (where v.tipo = 'banco' and v.saldo_banco is not null) as n_b_banco,
          coalesce(sum(v.saldo_banco) filter (where v.tipo = 'banco'), 0)::numeric(14,2) as b_banco,
+         count(distinct v.saldo_banco_al) filter (where v.tipo = 'banco' and v.saldo_banco is not null) as b_dias,
+         max(v.saldo_banco_al) filter (where v.tipo = 'banco' and v.saldo_banco is not null) as b_al,
          count(*) filter (where v.tipo = 'tarjeta') as n_t,
          coalesce(sum(v.saldo_libro) filter (where v.tipo = 'tarjeta'), 0)::numeric(14,2) as t_libro,
          count(*) filter (where v.tipo = 'tarjeta' and v.saldo_banco is not null) as n_t_banco,
          coalesce(sum(v.saldo_banco) filter (where v.tipo = 'tarjeta'), 0)::numeric(14,2) as t_banco,
+         count(distinct v.saldo_banco_al) filter (where v.tipo = 'tarjeta' and v.saldo_banco is not null) as t_dias,
+         max(v.saldo_banco_al) filter (where v.tipo = 'tarjeta' and v.saldo_banco is not null) as t_al,
          coalesce(sum(v.por_revisar), 0) as pend, coalesce(sum(v.por_revisar_monto), 0)::numeric(14,2) as pend_monto,
          coalesce(sum(v.dobles), 0) as dobles, coalesce(sum(v.quitadas), 0) as quitadas,
          coalesce(sum(v.despues) filter (where v.tipo = 'banco'), 0)::numeric(14,2) as b_despues,
@@ -1930,11 +2025,18 @@ begin
   return jsonb_build_object(
     'ok', true, 'tarjeta', 'bancos', 'corte', v_hoy, 'actualizado_el', r.actualizado, 'actualizado_texto', fn_tablero_hace(r.actualizado),
     'cuentas', r.lista,
+    -- (LO QUE DICE EL BANCO, SUMADO, solo si todas las cuentas que lo traen lo dicen DEL MISMO DÍA: sumar el saldo de hoy de una
+    --  tarjeta con el del 31-oct de otra da una cifra que el banco nunca dijo. Si son de días distintos, sin total —cada cuenta
+    --  dice el suyo y su día— y banco_texto lo dice. La revisión final.)
     'totales', jsonb_build_object(
         'bancos', jsonb_build_object('n', r.n_b, 'libro', r.b_libro, 'con_banco', r.n_b_banco,
-                                     'banco', case when r.n_b_banco > 0 then r.b_banco end),
+                                     'banco', case when r.n_b_banco > 0 and r.b_dias = 1 then r.b_banco end,
+                                     'banco_al', case when r.n_b_banco > 0 and r.b_dias = 1 then r.b_al end,
+                                     'banco_texto', case when r.b_dias > 1 then 'de días distintos (cada cuenta dice el suyo, abajo)' end),
         'tarjetas', jsonb_build_object('n', r.n_t, 'libro', r.t_libro, 'con_banco', r.n_t_banco,
-                                       'banco', case when r.n_t_banco > 0 then r.t_banco end),
+                                       'banco', case when r.n_t_banco > 0 and r.t_dias = 1 then r.t_banco end,
+                                       'banco_al', case when r.n_t_banco > 0 and r.t_dias = 1 then r.t_al end,
+                                       'banco_texto', case when r.t_dias > 1 then 'de días distintos (cada cuenta dice el suyo, abajo)' end),
         'por_revisar', jsonb_build_object('n', r.pend, 'monto', r.pend_monto, 'mas_viejo', r.viejo, 'dias', v_hoy - r.viejo,
                                           'dobles', r.dobles, 'quitadas', r.quitadas,
                                           'alarma', coalesce(v_hoy - r.viejo > 30, false)),
@@ -1966,7 +2068,7 @@ begin
 end $$;
 revoke execute on function public.fn_tablero_bancos() from public, anon, service_role;
 grant  execute on function public.fn_tablero_bancos() to authenticated;
-comment on function public.fn_tablero_bancos() is 'c16: bancos y tarjetas (v_banco_saldos de c6, sin las dos cuentas de Stripe; las inactivas solo si tienen saldo o algo por revisar): {ok, tarjeta: «bancos», corte, actualizado_el y actualizado_texto (lo más reciente), cuentas: [{cuenta, nombre, tipo (banco | tarjeta), activa, saldo_banco y saldo_banco_al (lo que dice el banco y de qué día; nulo sin archivo ni Plaid; en una tarjeta, lo que se debe en positivo), saldo_banco_dias (cuántos días tiene), saldo_banco_texto («hoy» o «al 31-oct-2026»: se pinta junto al saldo del banco), saldo_libro (el libro HASTA HOY), posfechado: {monto, texto} (lo de después de hoy; nulo si no hay), saldo_libro_al (el libro a la fecha del saldo del banco), diferencia (banco − libro, EL MISMO DÍA: saldo_banco − saldo_libro_al), diferencia_al, por_revisar (las filas de la Bandeja de esa cuenta), por_revisar_monto, mas_viejo, dias_mas_viejo, dobles (llegó su ticket), quitadas, en_transito, actualizado_el, horas, dias, actualizado_texto («hace 5 horas», «hace 3 días»), via (plaid | archivo), conexion: {institucion, estado, ultimo_sync, texto (en llano: qué pide), tecnico (lo que dijo Plaid, para soporte)} (Plaid, c7), ultima_conciliacion, dias_sin_conciliar, alarma, alarma_texto (en llano, con las fechas como se dicen), alarma_tecnico (el de c6, para soporte), ir (la Bandeja de esa cuenta), ir_conciliar, ir_movimientos}], totales: {bancos: {n, libro, con_banco, banco}, tarjetas: {n, libro, con_banco, banco}, por_revisar: {n, monto, mas_viejo, dias, dobles, quitadas, alarma}, alarmas}, nota, fuente, ir, ir_bandeja (la Bandeja entera: cuenta nula), ir_conciliar}. Sin c6: {ok: false, falta: «c6»}. Solo lee. Solo el dueño.';
+comment on function public.fn_tablero_bancos() is 'c16: bancos y tarjetas (v_banco_saldos de c6, sin las dos cuentas de Stripe; las inactivas solo si tienen saldo o algo por revisar): {ok, tarjeta: «bancos», corte, actualizado_el y actualizado_texto (lo más reciente), cuentas: [{cuenta, nombre, tipo (banco | tarjeta), activa, saldo_banco y saldo_banco_al (lo que dice el banco y de qué día; nulo sin archivo ni Plaid; en una tarjeta, lo que se debe en positivo), saldo_banco_dias (cuántos días tiene), saldo_banco_texto («hoy» o «al 31-oct-2026»: se pinta junto al saldo del banco), saldo_libro (el libro HASTA HOY), posfechado: {monto, texto} (lo de después de hoy; nulo si no hay), saldo_libro_al (el libro a la fecha del saldo del banco), diferencia (banco − libro, EL MISMO DÍA: saldo_banco − saldo_libro_al), diferencia_al, por_revisar (las filas de la Bandeja de esa cuenta), por_revisar_monto, mas_viejo, dias_mas_viejo, dobles (llegó su ticket), quitadas, en_transito, actualizado_el, horas, dias, actualizado_texto («hace 5 horas», «hace 3 días»), via (plaid | archivo), conexion: {institucion, estado, ultimo_sync, texto (en llano: qué pide), tecnico (lo que dijo Plaid, para soporte)} (Plaid, c7), ultima_conciliacion, dias_sin_conciliar, alarma, alarma_texto (en llano, con las fechas como se dicen), alarma_tecnico (el de c6, para soporte), ir (la Bandeja de esa cuenta), ir_conciliar, ir_movimientos}], totales: {bancos: {n, libro, con_banco, banco (lo que dicen los bancos, sumado: solo si todos lo dicen del mismo día; si no, nulo), banco_al (ese día), banco_texto (por qué no hay suma: de días distintos)}, tarjetas: {n, libro, con_banco, banco, banco_al, banco_texto}, por_revisar: {n, monto, mas_viejo, dias, dobles, quitadas, alarma}, alarmas}, nota, fuente, ir, ir_bandeja (la Bandeja entera: cuenta nula), ir_conciliar}. Sin c6: {ok: false, falta: «c6»}. Solo lee. Solo el dueño.';
 
 
 -- 3.4 · EL RESULTADO de un período, contra el anterior.
@@ -2809,6 +2911,11 @@ declare
   v_efe    text[];      -- las cuentas de efectivo
   v_dev    bigint[] := '{}';   -- las facturas con un cheque devuelto
   v_sal    jsonb;       -- lo que salió de la caja en los meses terminados
+  v_sob_m  numeric;     -- el mes de hoy, HASTA HOY: lo que cambió el sobregiro, como c4
+  v_caj_m  numeric;     -- (y la caja chica en rojo: no se pinta; c4 lo junta con el financiamiento)
+  v_neto_m numeric;     -- el mes de hoy, hasta hoy: el neto del efectivo
+  v_mov    record;      -- el mes de hoy: lo que entró y salió hasta hoy, y lo que tiene fecha de después de hoy
+  v_fmes   date := (date_trunc('month', fn_tablero_hoy()) + interval '1 month')::date - 1;   -- el último día del mes de hoy
   r        record;
   w        record;
 begin
@@ -2851,23 +2958,68 @@ begin
     left join f on f.desde = g.mes;
   -- HOY, del libro: cada cuenta de efectivo con lo fechado hasta hoy (y hasta el fin del mes pasado, para el cuadre)
   with ef as materialized (
-    select m.cuenta, m.nombre from fn_tablero_mapa() m where m.efectivo
+    select m.cuenta, m.nombre, m.caja from fn_tablero_mapa() m where m.efectivo
   ), s as (
-    select ef.cuenta, ef.nombre,
+    select ef.cuenta, ef.nombre, ef.caja,
            coalesce(sum(l.monto) filter (where a.fecha_contable <= v_hoy), 0) as hoy,
            coalesce(sum(l.monto) filter (where a.fecha_contable < v_mhoy), 0) as ini
       from ef
       left join asiento_lineas l on l.cuenta = ef.cuenta
       left join asientos a on a.id = l.asiento_id
-     group by ef.cuenta, ef.nombre
+     group by ef.cuenta, ef.nombre, ef.caja
   )
   select coalesce(sum(greatest(s.hoy, 0)), 0)::numeric(14,2), coalesce(-sum(least(s.hoy, 0)), 0)::numeric(14,2),
          coalesce(sum(greatest(s.ini, 0)), 0)::numeric(14,2),
          coalesce(jsonb_agg(jsonb_build_object('cuenta', s.cuenta, 'nombre', s.nombre, 'saldo', s.hoy::numeric(14,2)) order by s.cuenta)
-                    filter (where s.hoy <> 0), '[]'::jsonb)
-    into v_saldo, v_sobre, v_ini_l, v_ctas
+                    filter (where s.hoy <> 0), '[]'::jsonb),
+         coalesce(sum(least(s.ini, 0) - least(s.hoy, 0)) filter (where not s.caja), 0)::numeric(14,2),
+         coalesce(sum(least(s.ini, 0) - least(s.hoy, 0)) filter (where s.caja), 0)::numeric(14,2),
+         coalesce(sum(s.hoy - s.ini), 0)::numeric(14,2)
+    into v_saldo, v_sobre, v_ini_l, v_ctas, v_sob_m, v_caj_m, v_neto_m
     from s;
   v_neto := v_saldo - v_sobre;
+  -- EL MES DE HOY, HASTA HOY (la revisión final): lo que la tarjeta dice del mes en curso es «hasta hoy», como la caja de hoy; lo
+  -- que tiene fecha de DESPUÉS de hoy en este mes (un cheque posfechado) no va ahí —c4 lo pone en el mes entero, y su «al
+  -- terminar» ya no era la caja de hoy—: va aparte, con su texto. Con la regla de c4 (v_flujo_real_por_mes): por asiento, su neto
+  -- de efectivo (un traspaso entre cuentas de caja no entra ni sale); un error y su reverso, los dos de este mes y hasta hoy,
+  -- tampoco. Al terminar = el efectivo de hoy (las cuentas en negro), como el punto «hoy» de la línea.
+  with mv as materialized (
+    select a.id, a.fecha_contable as f, a.camino, a.reversa_a, sum(l.monto) as neto
+      from asiento_lineas l join asientos a on a.id = l.asiento_id
+     where l.cuenta = any (v_efe) and a.fecha_contable between v_mhoy and v_fmes
+     group by a.id, a.fecha_contable, a.camino, a.reversa_a
+  ), par as (
+    select mv.id from mv
+     where mv.f <= v_hoy
+       and ((mv.camino = 'reverso' and exists (select 1 from asientos ao where ao.id = mv.reversa_a and ao.fecha_contable between v_mhoy and v_fmes))
+            or exists (select 1 from asientos ar where ar.reversa_a = mv.id and ar.camino = 'reverso' and ar.fecha_contable between v_mhoy and v_hoy))
+  )
+  select coalesce(sum(mv.neto) filter (where mv.f <= v_hoy and mv.neto > 0 and mv.id not in (select par.id from par)), 0)::numeric(14,2) as entradas,
+         coalesce(-sum(mv.neto) filter (where mv.f <= v_hoy and mv.neto < 0 and mv.id not in (select par.id from par)), 0)::numeric(14,2) as salidas,
+         count(*) filter (where mv.f <= v_hoy) as asientos,
+         count(*) filter (where mv.f > v_hoy) as d_asientos,
+         coalesce(sum(mv.neto) filter (where mv.f > v_hoy and mv.neto > 0), 0)::numeric(14,2) as d_entradas,
+         coalesce(-sum(mv.neto) filter (where mv.f > v_hoy and mv.neto < 0), 0)::numeric(14,2) as d_salidas
+    into v_mov
+    from mv;
+  select jsonb_agg(case when (h ->> 'mes') = to_char(v_mhoy, 'YYYY-MM')
+                        then h || jsonb_build_object(
+                               'entradas', v_mov.entradas, 'salidas', v_mov.salidas, 'neto', v_neto_m,
+                               'sobregiro', v_sob_m, 'final', v_saldo, 'asientos', v_mov.asientos,
+                               'sin_movimientos', v_mov.asientos = 0, 'corte', v_hoy,
+                               'despues_de_hoy', case when v_mov.d_asientos > 0 then jsonb_build_object(
+                                   'asientos', v_mov.d_asientos, 'entradas', v_mov.d_entradas, 'salidas', v_mov.d_salidas,
+                                   'texto', format('Además, %s de %s %s fecha de después de hoy (%s): no %s en lo de hoy.',
+                                                   fn_tablero_plural(v_mov.d_asientos, 'asiento', 'asientos'), fn_tablero_mes_largo(v_mhoy),
+                                                   case when v_mov.d_asientos = 1 then 'tiene' else 'tienen' end,
+                                                   concat_ws(' y ', case when v_mov.d_entradas > 0 then 'entra ' || fn_tablero_usd(v_mov.d_entradas) end,
+                                                                     case when v_mov.d_salidas > 0 then 'sale ' || fn_tablero_usd(v_mov.d_salidas) end,
+                                                                     case when v_mov.d_entradas = 0 and v_mov.d_salidas = 0 then 'entre cuentas de la caja' end),
+                                                   case when v_mov.d_asientos = 1 then 'va' else 'van' end)) end)
+                        else h end order by o)
+    into v_hist
+    from jsonb_array_elements(v_hist) with ordinality t(h, o);
+  v_hist := coalesce(v_hist, '[]'::jsonb);
   -- (de qué cuentas sale la caja de hoy, en llano: «Banco operativo ($34,612.81) y Stripe — cobros en tránsito ($860.00)»)
   select case when count(*) = 0 then null
               when count(*) = 1 then min(t.x)
@@ -3027,17 +3179,26 @@ begin
       jsonb_build_object('clave', 'retencion', 'texto', 'La retención: la que se cobra y la que se paga a los subs al terminar cada obra.',
                          'cobrar', r.ret_c, 'pagar', w.ret_p))
       -- (las otras deudas de corto plazo del libro, por su renglón del balance: lo que se debe de la nómina, lo devengado, la línea de crédito…)
+      -- (CON TODO LO QUE EL LIBRO TIENE en esas cuentas, también lo fechado después de hoy —la revisión final—: el journal de una
+      --  nómina (c15) lleva la fecha de su día de pago y Gusto cobra del banco unos días antes: contada solo hasta hoy, esos días
+      --  la deuda salía en negativo; y una nómina ya posteada con día de pago después de hoy no se decía. a_hoy y despues lo separan.)
       || coalesce((select jsonb_agg(jsonb_build_object('clave', 'deuda', 'linea', d.linea, 'etiqueta', d.etiqueta, 'monto', d.monto,
+                                                       'a_hoy', d.a_hoy, 'despues', (d.monto - d.a_hoy)::numeric(14,2),
                                                        'cuentas', to_jsonb(d.cuentas),
                                                        'texto', case d.linea
                                                                   when 'nomina_por_pagar' then 'Lo que se debe de la nómina (los impuestos retenidos y lo demás): se paga con cada declaración y cada nómina.'
                                                                   when 'devengados' then 'Lo devengado que todavía no tiene su factura: sale cuando llegue.'
                                                                   when 'linea_credito' then 'La línea de crédito: el libro no tiene cuándo se paga.'
-                                                                  else d.etiqueta || ': el libro no tiene cuándo se paga.' end)
+                                                                  else d.etiqueta || ': el libro no tiene cuándo se paga.' end
+                                                                || case when d.monto <> d.a_hoy
+                                                                        then format(' Cuenta lo que el libro ya tiene en esas cuentas con fecha de después de hoy (%s).',
+                                                                                    fn_tablero_usd(d.monto - d.a_hoy))
+                                                                        else '' end)
                                     order by d.orden)
                      from (select m.linea, min(coalesce(el.etiqueta_es, m.linea)) as etiqueta, min(m.orden) as orden,
                                   array_agg(m.cuenta order by m.cuenta) as cuentas,
-                                  (-fn_tablero_saldo(array_agg(m.cuenta), v_hoy))::numeric(14,2) as monto
+                                  (-fn_tablero_saldo(array_agg(m.cuenta), null))::numeric(14,2) as monto,
+                                  (-fn_tablero_saldo(array_agg(m.cuenta), v_hoy))::numeric(14,2) as a_hoy
                              from fn_tablero_mapa() m
                              left join estados_lineas el on el.estado = 'balance' and el.linea = m.linea
                             where m.estado = 'balance' and m.seccion = 'pasivo_circulante'
@@ -3134,7 +3295,7 @@ begin
 end $$;
 revoke execute on function public.fn_tablero_caja(int, int) from public, anon, service_role;
 grant  execute on function public.fn_tablero_caja(int, int) to authenticated;
-comment on function public.fn_tablero_caja(int, int) is 'c16: el flujo de caja: {ok, tarjeta: «caja», corte, hoy: {saldo (el efectivo del libro hoy, las cuentas en negro), sobregiro, neto, cuentas: [{cuenta, nombre, saldo}], alarma (sobregiro de verdad: solo con la apertura en el libro), sin_apertura, texto (en llano: de qué cuentas sale, o que sin la apertura no es lo del banco), ir}, sin_apertura (la apertura todavía no está en el libro: la caja no es lo del banco, sin alarma ni proyección), apertura: {fecha, en_el_libro, saldo} (con lo que empezó el libro; saldo nulo si su asiento todavía no está), meses: [{mes, etiqueta, corto, desde, hasta, inicial, entradas, salidas, neto, sobregiro, final, asientos, en_curso, sin_movimientos}] (v_flujo_real_por_mes de c4: solo los meses del libro, hasta p_meses; el mes que c4 no trae —sin efectivo ni movimientos— va en cero), meses_pedidos, meses_con_libro, antes_del_libro: {texto} (si la serie pedida empieza antes del libro; con las palabras del libro, con o sin la apertura), serie: [{fecha, mes?, etiqueta, saldo, tipo (apertura | cierre | hoy | proyeccion)}] (la línea, en orden: la apertura si su asiento está, lo de verdad hasta hoy y lo proyectado después), proyeccion: {meses: [{mes, etiqueta, corto, hasta, cobrar, cobrar_vencido, pagar, pagar_vencido, cuotas, cuotas_atrasadas, impuestos (el use tax por la regla del DR-15), libro (lo posfechado del libro), neto, saldo}], desde, hasta, saldo_inicial, aviso (LA LÍNEA VISIBLE bajo la gráfica: lo que no cuenta y que la caja real será menor, con lo que salió de verdad en los meses terminados), supuestos: [texto], no_incluye: [{clave (sin_fecha | tarjetas | retencion | deuda | vencido_viejo | cheque_devuelto | sin_vencimiento | despues), texto, monto? | cobrar?, pagar?, n?, linea?, etiqueta?, cuentas?}]} (nulo sin apertura en el libro o sin nada con fecha), sin_proyeccion (por qué no hay), cuadre: {ok, libro, vista, texto}, fuente, ir}. p_meses de 1 a 36 (12); p_proyeccion de 0 a 12 (3), contando el mes de hoy. 22023 fuera de rango. Solo lee. Solo el dueño.';
+comment on function public.fn_tablero_caja(int, int) is 'c16: el flujo de caja: {ok, tarjeta: «caja», corte, hoy: {saldo (el efectivo del libro hoy, las cuentas en negro), sobregiro, neto, cuentas: [{cuenta, nombre, saldo}], alarma (sobregiro de verdad: solo con la apertura en el libro), sin_apertura, texto (en llano: de qué cuentas sale, o que sin la apertura no es lo del banco), ir}, sin_apertura (la apertura todavía no está en el libro: la caja no es lo del banco, sin alarma ni proyección), apertura: {fecha, en_el_libro, saldo} (con lo que empezó el libro; saldo nulo si su asiento todavía no está), meses: [{mes, etiqueta, corto, desde, hasta, inicial, entradas, salidas, neto, sobregiro, final, asientos, en_curso, sin_movimientos; el de hoy además corte y despues_de_hoy: {asientos, entradas, salidas, texto}}] (v_flujo_real_por_mes de c4: solo los meses del libro, hasta p_meses; el mes que c4 no trae —sin efectivo ni movimientos— va en cero; EL MES EN CURSO, HASTA HOY, con la regla de c4: lo que entró y salió del 1 a hoy y al terminar = el efectivo de hoy; lo que tiene fecha de después de hoy en él, aparte, en despues_de_hoy), meses_pedidos, meses_con_libro, antes_del_libro: {texto} (si la serie pedida empieza antes del libro; con las palabras del libro, con o sin la apertura), serie: [{fecha, mes?, etiqueta, saldo, tipo (apertura | cierre | hoy | proyeccion)}] (la línea, en orden: la apertura si su asiento está, lo de verdad hasta hoy y lo proyectado después), proyeccion: {meses: [{mes, etiqueta, corto, hasta, cobrar, cobrar_vencido, pagar, pagar_vencido, cuotas, cuotas_atrasadas, impuestos (el use tax por la regla del DR-15), libro (lo posfechado del libro), neto, saldo}], desde, hasta, saldo_inicial, aviso (LA LÍNEA VISIBLE bajo la gráfica: lo que no cuenta y que la caja real será menor, con lo que salió de verdad en los meses terminados), supuestos: [texto], no_incluye: [{clave (sin_fecha | tarjetas | retencion | deuda | vencido_viejo | cheque_devuelto | sin_vencimiento | despues), texto, monto? | cobrar?, pagar?, n?, linea?, etiqueta?, cuentas?, a_hoy? y despues? (deuda: su monto es todo lo que el libro tiene en esas cuentas; a_hoy, lo de hasta hoy; despues, lo fechado después)}]} (nulo sin apertura en el libro o sin nada con fecha), sin_proyeccion (por qué no hay), cuadre: {ok, libro, vista, texto}, fuente, ir}. p_meses de 1 a 36 (12); p_proyeccion de 0 a 12 (3), contando el mes de hoy. 22023 fuera de rango. Solo lee. Solo el dueño.';
 
 -- 3.11 · LAS CONEXIONES: lo que la app tiene conectado con el mundo. Cada
 -- banco por Plaid (c7), Stripe (p1) y la IA contable (c8). «Conectada»: al

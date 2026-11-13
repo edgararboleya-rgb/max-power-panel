@@ -34,7 +34,9 @@
         producción sin la apertura (la caja en rojo sin alarma falsa; en
         <bd>_p); y la caja y las ventas el 20-oct-2026, el primer mes del
         libro (el reloj de <bd> vuelto a ese día dentro de la transacción: un
-        solo mes, la cifra sola);
+        solo mes, la cifra sola); y un cheque de hace 40 días que rebota hace
+        5 (lo devuelto de un cobro de antes, que no está restado de lo
+        cobrado en los 30 días: va aparte; en <bd>);
      3. comprueba que pedir unas tarjetas sueltas da lo mismo que esas
         tarjetas en el tablero entero (salvo «ms»): así la pantalla.js puede
         contestar a «Personalizar» (pide solo las que se ven) con el tablero
@@ -236,6 +238,26 @@ sano(primer_mes, 'primer mes');
 if (primer_mes.hoy !== '2026-10-20' || primer_mes.caja.meses_con_libro !== 1 || primer_mes.ventas.meses_con_libro !== 1)
   throw new Error('el primer mes del libro: se esperaba un solo mes en la caja y en las ventas: ' + JSON.stringify([primer_mes.hoy, primer_mes.caja.meses_con_libro, primer_mes.ventas.meses_con_libro]));
 
+// (d) un cheque de hace 40 días (fuera de los 30 del embudo) aplicado a una factura de la semilla que rebota hace 5: lo cobrado en los
+//     30 días no cambia y el rebote no está «ya restado» de nada: la base lo manda aparte (cobrado.devuelto_antes)
+console.log('aparte: un cheque de hace 40 días que rebota hace 5…');
+const DEVUELTO_ANTES = `
+do $d$
+declare v_f bigint; r jsonb; v_c uuid; v_hoy date := fn_fecha_miami(now());
+begin
+  select f.id into v_f from facturas f where f.num = 'ZZ-QB-902';
+  r := fn_cobro_registrar(jsonb_build_object('fecha', (v_hoy - 40)::text, 'monto', '1000.00', 'cuenta', '1010', 'medio', 'cheque',
+         'referencia', 'ZZ PRUEBA: un cheque de hace 40 días', 'duplicado_confirmado', 'ZZ PRUEBA: se deshace',
+         'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', v_f, 'monto', '1000.00'))));
+  v_c := coalesce((r ->> 'cobro')::uuid, (r ->> 'id')::uuid);
+  perform fn_cobro_devolver(v_c, v_hoy - 5, 'ZZ PRUEBA: el cheque rebotó (se deshace)');
+end $d$;`;
+const [devuelto_antes] = pedir(BD, [tablero({ tarjetas: ['cobros', 'facturas'] })], DEVUELTO_ANTES);
+sano(devuelto_antes, 'devuelto de antes');
+if (!(devuelto_antes.cobros.cobrado.devuelto_antes && Number(devuelto_antes.cobros.cobrado.devuelto_antes.n) === 1 && Number(devuelto_antes.cobros.cobrado.devuelto_antes.monto) === 1000
+      && Number(devuelto_antes.cobros.cobrado.monto) === Number(hoy.todas.cobros.cobrado.monto) && Number(devuelto_antes.cobros.cobrado.devuelto.monto) === Number(hoy.todas.cobros.cobrado.devuelto.monto)))
+  throw new Error('el cheque de antes que rebota: se esperaba lo cobrado y lo devuelto «ya restado» como hoy, y los 1,000.00 aparte (devuelto_antes): ' + JSON.stringify(devuelto_antes.cobros.cobrado));
+
 // los errores que la pantalla enseña
 console.log('errores…');
 const [equipo, clave] = pedir(BD, [{ ...tablero({}), quien: 'equipo' }, tablero({ tarjetas: ['millas'] })]);
@@ -257,7 +279,7 @@ if (distintas.length) throw new Error('pedir unas sueltas NO da lo mismo que el 
 // y se quitan; en lo demás, ningún nombre de la semilla de siempre, ni en minúsculas.
 const SEMILLA02 = fs.readFileSync(path.join(__dirname, '02-semilla.sql'), 'utf8'), SEMILLA16 = fs.readFileSync(path.join(__dirname, 'f16-semilla.sql'), 'utf8');
 const ids = new Set(), noEsId = [];
-const todo = JSON.stringify({ hoy, marzo, enero, produccion, tope1, tope2, capas, falla, reembolso, renta, primer_mes }, (k, v) => {
+const todo = JSON.stringify({ hoy, marzo, enero, produccion, tope1, tope2, capas, falla, reembolso, renta, primer_mes, devuelto_antes }, (k, v) => {
   if ((k === 'sel' || k === 'proyecto_id') && typeof v === 'string') {
     if (SEMILLA02.includes(`'${v}'`) || (/^zz-/.test(v) && SEMILLA16.includes(`'${v}'`))) { ids.add(v); return '«id»'; }
     noEsId.push(v);
@@ -277,7 +299,7 @@ const salida = {
   hoy, marzo, enero, produccion,
   tope: { tope_ms: topeMs, primera: tope1, segunda: tope2 },
   capas, falla,
-  aparte: { reembolso, renta, primer_mes },
+  aparte: { reembolso, renta, primer_mes, devuelto_antes },
   errores: { equipo: comoPostgrest(equipo), tarjeta_mala: comoPostgrest(clave) }
 };
 fs.writeFileSync(SALIDA, JSON.stringify(salida) + '\n');
