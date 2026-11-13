@@ -141,14 +141,20 @@ arriba.
    trabajó en el mes (filas 160 y 179 del cierre: avisan, no detienen).
    **Nunca se teclea un TIN en el SQL Editor**: va en la ficha, con el código
    del teléfono.
-7. Cédula de corte (con c13): al último día del mes, lo que salga «no cuadra»
+7. Nómina (con c15, desde enero de 2027): cada nómina subida, posteada y
+   con sus cargos de Gusto casados (Nómina → Cargos de Gusto; la cuota
+   mensual, «a su gasto»). Al terminar el mes, Nómina → Ajustes → «Repartir a
+   las obras» la bolsa del burden. Cada trimestre, «941 · 940 · RT-6» con lo
+   que presentó Gusto. Filas 180 a 183 del cierre: las tres primeras detienen.
+   La nómina pide el código del teléfono.
+8. Cédula de corte (con c13): al último día del mes, lo que salga «no cuadra»
    o «sin auxiliar» se explica ahí mismo o se le escribe su renglón a mano
    (fila 178 del cierre: avisa desde noviembre de 2026).
-8. Cierre: la lista en verde → «CERRAR OCTUBRE 2026» → «Exportar» (el mayor y el
+9. Cierre: la lista en verde → «CERRAR OCTUBRE 2026» → «Exportar» (el mayor y el
    PDF al bucket `cierres`, y por correo). El bucket pide el código del
    teléfono.
-9. Si hay activos: «Postear depreciación» antes de cerrar (la lista lo pide).
-10. Comparar con QuickBooks mientras dure el paralelo (Estados → QuickBooks).
+10. Si hay activos: «Postear depreciación» antes de cerrar (la lista lo pide).
+11. Comparar con QuickBooks mientras dure el paralelo (Estados → QuickBooks).
 
 ## 7. Lo que apagar y encender, si hace falta
 

@@ -31,6 +31,21 @@
 #   7. PEGAR c15-nomina.sql CON LA PANTALLA LEYENDO: o para con 55P03 (medio
 #      segundo, sin aplicar nada) o entra; después, sin nadie leyendo, entra
 #      seguro y todo sigue en su sitio.
+#   8. UN CARGO CASADO AQUÍ Y DES-CASADO EN LA BANDEJA DEL BANCO (su pago de
+#      la nómina se queda apuntado, pero lo que pagaba vuelve a estar por
+#      pagar), CASADO OTRA VEZ desde dos pestañas a la vez: una lo casa y
+#      apunta deshecho el pago de antes; la otra recibe «ya estaba». Un pago
+#      vivo.
+#   9. LA MISMA NÓMINA BAJADA DE DOS FORMAS, subidas a la vez (una corrección
+#      de Gusto en negativo: con su columna del tipo y sin ella, las dos
+#      diciendo «es otra nómina»): entra una; la otra contesta «ya_estaba»
+#      (son las mismas personas con las mismas cifras). Una sola en la base.
+#  10. REPARTIR LO QUE QUEDA EN LA BOLSA DEL BURDEN REAL (la prima de WC)
+#      desde dos pestañas a la vez, cada una con lo que vio: una la reparte;
+#      la otra para en llano (MX008: ya no queda nada, o MX011). Un asiento,
+#      la bolsa en cero. (El reparto es de un mes TERMINADO: para esta escena
+#      el reloj de la base se pone en el día 1 del mes siguiente y al acabar
+#      se deja el de verdad.)
 # Y comprueba al final: ningún 23505 ni 40P01 en ninguna salida, la cadena
 # del libro en verde (los permisos también), c3 «mano de obra» en verde y los
 # cuadres del control de la nómina en verde.
@@ -116,8 +131,8 @@ D0="$(us 19)"; D13="$(us 6)"; DP="$(us 0)"
 
 # El archivo, como lo manda la pantalla: {nombre, sha256, bytes, filas: [[celda, …], …]} (el journal sintético no trae
 # comas dentro de una celda: se parte por comas).
-archivo() {  # archivo <nombre del CSV en nomina/>
-  local csv; csv="$(sed -e "s#01/03/2027#$D0#g" -e "s#01/16/2027#$D13#g" -e "s#01/22/2027#$DP#g" "$DIR/nomina/$1")"
+archivo() {  # archivo <nombre del CSV en nomina/> [otra ruta de donde leerlo]
+  local csv; csv="$(sed -e "s#01/03/2027#$D0#g" -e "s#01/16/2027#$D13#g" -e "s#01/22/2027#$DP#g" "${2:-$DIR/nomina/$1}")"
   ed -v csv="$csv" -v nombre="$1" <<'SQL'
 select jsonb_build_object('nombre', :'nombre', 'sha256', encode(sha256(convert_to(:'csv', 'UTF8')), 'hex'),
                           'bytes', octet_length(:'csv'),
@@ -127,7 +142,11 @@ SQL
 }
 ARCH="$(archivo zz-payroll-journal.csv)"
 BONO="$(archivo zz-payroll-journal-bono.csv)"
-[ -n "$ARCH" ] && [ -n "$BONO" ] || { echo "No se pudieron armar los archivos de prueba" >&2; exit 2; }
+# (una corrección de Gusto en negativo, en dos formas: como la baja Gusto con su columna del tipo, y sin esa columna)
+CORR="$(archivo zz-payroll-journal-correccion.csv)"
+sed -e '1s/Payroll type,//' -e 's/,Correction,/,/' "$DIR/nomina/zz-payroll-journal-correccion.csv" > "$TMP/zz-correccion-sin-tipo.csv"
+CORR2="$(archivo zz-correccion-sin-tipo.csv "$TMP/zz-correccion-sin-tipo.csv")"
+[ -n "$ARCH" ] && [ -n "$BONO" ] && [ -n "$CORR" ] && [ -n "$CORR2" ] || { echo "No se pudieron armar los archivos de prueba" >&2; exit 2; }
 
 # Como la app por PostgREST: con el rol authenticated, los ajustes de ese
 # rol y el tope de la API (8 s). app <quién>.
@@ -135,9 +154,10 @@ app() {
   echo "select set_config('request.jwt.claims', '{\"sub\":\"$1\",\"role\":\"authenticated\",\"aal\":\"aal2\"}', true); select count(set_config(k.k, k.v, true)) from (select split_part(c, '=', 1) as k, lower(substr(c, strpos(c, '=') + 1)) as v from pg_roles r, unnest(r.rolconfig) c where r.rolname = 'authenticated') k join pg_settings ps on ps.name = k.k and ps.context = 'user'; set local role authenticated; set local statement_timeout = '8s';"
 }
 # dueno <salida> <sql que devuelve un texto> [pausa con la transacción abierta]
-# (:'arch' = el journal; :'bono' = el bono fuera de ciclo; :'partes' = las partes de un cargo)
+# (:'arch' = el journal; :'bono' = el bono fuera de ciclo; :'corr' y :'corr2' = la corrección, en sus dos formas;
+# :'partes' = las partes de un cargo)
 dueno() {
-  ed -v ON_ERROR_STOP=1 -v arch="$ARCH" -v bono="$BONO" -v partes="${PARTES:-[]}" > "$1" 2>&1 <<SQL
+  ed -v ON_ERROR_STOP=1 -v arch="$ARCH" -v bono="$BONO" -v corr="$CORR" -v corr2="$CORR2" -v partes="${PARTES:-[]}" > "$1" 2>&1 <<SQL
 begin; $(app "$DUENO")
 select 'RESULTADO ' || ($2);
 select pg_sleep(${3:-0});
@@ -264,8 +284,56 @@ revisa "sin nadie leyendo, entra; y todo sigue en su sitio (9 filas del pegado, 
   "$?|$(ed -c "select count(*) from fn_nomina_pegado()")|$(ed -c "select count(*) from nomina_corridas where estado = 'posteada'")|$(ed -c "select cuenta_sin_obra from nomina_config")"
 
 echo
+echo "== 8. Un cargo casado aquí y des-casado en la Bandeja del banco, casado otra vez desde dos pestañas a la vez"
+KP="$(ed -c "select id from nomina_corridas where estado = 'posteada' limit 1")"
+NETO="$(ed -c "select pendiente from fn_nomina_pendiente('$KP') where cuenta = '2210'")"
+M8="$(cargo c15-conc-net-8 "$NETO" 'GUSTO NET 8conc ZZ C15 CONC')"
+PARTES="[{\"corrida\": \"$KP\", \"cuenta\": \"2210\", \"monto\": \"$NETO\"}]"
+dueno "$TMP/8c.out" "fn_nomina_cargo_casar('$M8', :'partes'::jsonb)->>'asiento'"
+dueno "$TMP/8d.out" "(select 'des-casado' from (select fn_banco_descasar('$M8', 'ZZ C15 CONC: des-casado en la Bandeja')) z)"
+revisa "des-casado en la Bandeja: su pago de la nómina sigue apuntado, pero el neto vuelve a estar por pagar entero" "des-casado|1|pendiente|$NETO" \
+  "$(res "$TMP/8d.out")|$(ed -c "select (select count(*) from nomina_pagos where movimiento_id = '$M8' and estado = 'aplicado') || '|' || (select estado from movimientos_banco where id = '$M8')
+                   || '|' || (select pendiente from fn_nomina_pendiente('$KP') where cuenta = '2210')")"
+C="case when (z.r->>'ya_estaba')::boolean then 'ya estaba ' else 'casado ' end || (z.r->>'asiento') from (select fn_nomina_cargo_casar('$M8', :'partes'::jsonb) as r) z"
+dos 8 "(select $C)" "(select $C)"
+revisa "una lo casa otra vez y la otra recibe el que ya estaba (el mismo asiento), sin error" "1|1|1|0" \
+  "$(con 8 'RESULTADO casado')|$(con 8 'RESULTADO ya estaba')|$(cat "$TMP"/8a.out "$TMP"/8b.out | grep 'RESULTADO' | awk '{print $NF}' | sort -u | wc -l | tr -d ' ')|$(con 8 'ERROR')"
+revisa "un pago vivo y el de antes apuntado deshecho solo; el movimiento casado y el neto pagado (queda 0.00)" "1|1|casado|0.00" \
+  "$(ed -c "select (select count(*) from nomina_pagos where movimiento_id = '$M8' and estado = 'aplicado') || '|' || (select count(*) from nomina_pagos where movimiento_id = '$M8' and estado = 'deshecho')
+                   || '|' || (select estado from movimientos_banco where id = '$M8') || '|' || (select pendiente from fn_nomina_pendiente('$KP') where cuenta = '2210')")"
+
+echo
+echo "== 9. La misma nómina bajada de dos formas, subidas a la vez (una corrección en negativo, con su columna del tipo y sin ella)"
+dos 9 "fn_nomina_importar(:'corr'::jsonb, '{\"otra_nomina\": true}')->'corridas'->0->>'resultado'" \
+      "fn_nomina_importar(:'corr2'::jsonb, '{\"otra_nomina\": true}')->'corridas'->0->>'resultado'"
+revisa "entran las dos, sin error: una «nueva» y la otra «ya_estaba» (las mismas personas con las mismas cifras)" "2|0|1|1" \
+  "$(entran 9)|$(con 9 'ERROR')|$(con 9 'RESULTADO nueva')|$(con 9 'RESULTADO ya_estaba')"
+revisa "una sola corrección viva en la base (bruto -100.00)" "1" \
+  "$(ed -c "select count(*) from nomina_corridas where estado in ('importada', 'posteada') and bruto = -100.00")"
+
+echo
+echo "== 10. Repartir lo que queda en la bolsa del burden real desde dos pestañas a la vez"
+# (la prima de WC del mes entra a la bolsa por la puerta del dueño; el reparto es de un mes TERMINADO: el reloj de esta base
+# se pone en el día 1 del mes siguiente, y al acabar se deja el de verdad)
+dueno "$TMP/10wc.out" "fn_postear(jsonb_build_object('tipo', 'normal', 'fecha', '$HOY', 'descripcion', 'ZZ C15 CONC: la prima de WC del mes', 'lineas', jsonb_build_array(jsonb_build_object('cuenta', '5015', 'monto', '300.00'), jsonb_build_object('cuenta', '1410', 'monto', '-300.00'))))->>'numero'"
+RELOJ="$(ed -c "select pg_get_functiondef('public.fn_fecha_miami(timestamptz)'::regprocedure)")"
+ed -c "create or replace function public.fn_fecha_miami(t timestamptz) returns date language sql stable set search_path = public, pg_temp as \$b\$ select (date_trunc('month', (t at time zone 'America/New_York')::date) + interval '1 month')::date \$b\$" > "$TMP/10reloj.out" 2>&1
+dueno "$TMP/10ve.out" "fn_nomina_bolsa('$MES')->>'visto'"
+VISTO="$(res "$TMP/10ve.out")"
+dueno "$TMP/10sa.out" "(select (v->>'saldo') || '|' || (v->>'horas') || '|' || (v->>'puede') from fn_nomina_bolsa('$MES') v)"
+revisa "terminado el mes, la bolsa tiene los 300.00, hay 54 h pagadas en obra y se puede repartir" "300.00|54|true" "$(res "$TMP/10sa.out")"
+dos 10 "fn_nomina_bolsa_repartir('$MES', '$VISTO')->>'asiento'" "fn_nomina_bolsa_repartir('$MES', '$VISTO')->>'asiento'"
+revisa "una la reparte; la otra para en llano (MX008 o MX011), sin 23505 ni bloqueo mortal" "1|1|0|0" \
+  "$(entran 10)|$(con 10 'MX008\|MX011')|$(con 10 '23505')|$(con 10 '40P01\|deadlock')"
+revisa "un solo asiento del reparto, y la bolsa en cero" "1|0.00" \
+  "$(ed -c "select (select count(*) from asientos a where a.descripcion like 'Reparto a las obras de lo que quedó en la bolsa%') || '|'
+                   || (select coalesce(sum(l.monto), 0)::numeric(14,2) from asiento_lineas l where l.cuenta = '5015')")"
+ed -c "$RELOJ" > "$TMP/10reloj2.out" 2>&1
+revisa "el reloj de la base, el de verdad otra vez" "$HOY" "$(ed -c "select fn_fecha_miami(now())")"
+
+echo
 echo "== Al final"
-revisa "ningún 23505 ni 40P01 en ninguna salida" "0" "$(cat "$TMP"/[1-6]*.out | grep -c '23505\|40P01\|deadlock')"
+revisa "ningún 23505 ni 40P01 en ninguna salida" "0" "$(cat "$TMP"/[1-9]*.out | grep -c '23505\|40P01\|deadlock')"
 revisa "la cadena del libro, sin rojos (los permisos también)" "0" "$(ed -c "select count(*) from fn_verificar_cadena() where not ok")"
 revisa "c3 «mano de obra», en verde (5000 y 5001 vienen de un journal de nómina; el 5010, de su reparto)" "0" "$(ed -c "select count(*) from fn_puentes_verificar() where control = 'mano_de_obra' and not ok")"
 revisa "los cuadres del control de la nómina, en verde" "0" "$(ed -c "select count(*) from fn_nomina_control() where nivel = 'cuadre' and not ok")"

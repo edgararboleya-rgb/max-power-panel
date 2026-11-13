@@ -1310,3 +1310,14 @@ body[data-vista="conta"] .fab { display: none; }
 @media (min-width: 700px) {
   #conta-raiz .ct-nom-fila.sin-cifras { grid-template-columns: minmax(0, 1fr) minmax(0, 13rem); }
 }
+/* (fase 11, arreglos del 13-nov) sin el código del teléfono, la tarjeta que lo pide (no el rojo); lo que una corrección dejó A FAVOR;
+   el porqué de «otra nómina»; los des-casados en la Bandeja; los posibles pagos por fuera de Gusto; y la bolsa del burden real */
+#conta-raiz .ct-nom-pide { border-left: 4px solid var(--cu-dark); }
+#conta-raiz .ct-nom-pide p, #conta-raiz .ct-nom-porque, #conta-raiz .ct-nom-ya, #conta-raiz .ct-nom-bolsa-t { overflow-wrap: anywhere; }
+#conta-raiz .ct-nom-l.favor > .ct-num { color: var(--cu-dark); }
+#conta-raiz .ct-nom-descasados ul, #conta-raiz .ct-nom-fuera ul { margin: .3rem 0; }
+#conta-raiz .ct-nom-descasados li, #conta-raiz .ct-nom-fuera li { overflow-wrap: anywhere; }
+#conta-raiz .ct-nom-bolsa h3 { margin: .6rem 0 .2rem; font-size: .95rem; }
+#conta-raiz .ct-nom-bolsa-mes { margin-top: .5rem; border-top: 1px dashed var(--mp-line); padding-top: .4rem; }
+#conta-raiz .ct-nom-bolsa-mes input[type="month"] { max-width: 12rem; }
+#conta-raiz .ct-nom-avisos details .ct-acciones { margin: 0 0 .3rem; }

@@ -1,5 +1,9 @@
 # Lo que hay que pegar (12-nov · v302)
 
+> **Ya no uses esta lista: usa `PEGAR-13NOV.md`**, que trae lo mismo y
+> además la nómina (c15). Lo que ya hayas pegado de aquí se puede pegar otra
+> vez sin daño.
+
 En Supabase → SQL Editor. Cada archivo se copia **entero**, se pega en una
 consulta nueva y se le da a **Run**. Al final cada uno enseña una tabla:
 mira que tenga las filas que dice aquí.

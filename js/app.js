@@ -574,6 +574,7 @@ function esFalloDeRed(err) {
     { k: "estados", nombre: "Estados financieros", svg: SVG_MENU('<path d="M5 3h9l5 5v13H5z"/><path d="M14 3v5h5"/><path d="M8.5 17v-3M12 17v-6M15.5 17v-4"/>') },
     { k: "obras", nombre: "Costo por obra", svg: SVG_MENU('<path d="M3 11l9-7 9 7"/><path d="M5 9.5V20h14V9.5"/><path d="M9.5 20v-5.5h5V20"/>') },
     { k: "wip", nombre: "WIP (obra en curso)", svg: SVG_MENU('<rect x="3" y="8.5" width="18" height="7" rx="3.5"/><path d="M6.5 12h6"/><path d="M15.5 4.5v2.5M15.5 17v2.5"/>') },
+    { k: "nomina", nombre: "Nómina", svg: SVG_MENU('<rect x="3" y="6" width="18" height="12" rx="2.5"/><path d="M6.5 10.5h5M6.5 14h6"/><path d="M17 8.5v7"/><path d="M18.6 10.2a1.7 1.4 0 0 0-1.6-.9c-.9 0-1.6.5-1.6 1.2s.7 1 1.6 1.2 1.6.5 1.6 1.2-.7 1.2-1.6 1.2a1.7 1.4 0 0 1-1.6-.9"/>') },
     { k: "cierre", nombre: "Cierre del mes", svg: SVG_MENU('<rect x="4" y="10.5" width="16" height="10.5" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><path d="M12 14.5v2.5"/>') },
     { k: "cedula", nombre: "Cédula de corte", svg: SVG_MENU('<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 9h18M9.5 9v11"/><path d="M13 15l2 2 3.5-3.5"/>') },
     { k: "facturas", nombre: "Facturas", svg: SVG_MENU('<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/>') },

@@ -93,13 +93,15 @@
 // fn_nomina_persona, fn_nomina_decidir, fn_nomina_postear, fn_nomina_anular, fn_nomina_descartar,
 // fn_nomina_corrida, fn_nomina_pendiente, fn_nomina_cargo_propuesta, fn_nomina_cargo_casar,
 // fn_nomina_cargo_cuota, fn_nomina_cargo_deshacer, fn_nomina_horas_gusto, fn_nomina_lote,
-// fn_nomina_lote_csv, fn_nomina_amarre, fn_nomina_declaracion, fn_nomina_config, fn_nomina_columna): la
+// fn_nomina_lote_csv, fn_nomina_amarre, fn_nomina_declaracion, fn_nomina_config, fn_nomina_columna,
+// fn_nomina_cargos_fuera, fn_nomina_bolsa, fn_nomina_bolsa_repartir): la
 // página «Nómina» lee en el teléfono el «Payroll journal» de Gusto (CSV), quita lo que no debe salir de
 // él (las columnas delicadas y lo que tenga forma de Seguro Social) y manda sus celdas como texto con su
 // sha256; enseña lo que dice la base (si cuadra, las columnas que no conoce, a quién enlazar, el reparto
 // por obra, los avisos), postea con el código del teléfono, casa los cargos de Gusto del banco (también
 // desde la Bandeja, «Casar con la nómina»), arma las horas para Gusto (el CSV del lote aprobado) y
-// amarra con el 941, el 940 y el RT-6. La cabecera de su sección lo cuenta.
+// amarra con el 941, el 940 y el RT-6; y reparte a las obras lo que queda en la bolsa del burden real. La
+// cabecera de su sección lo cuenta.
 //
 // Cómo está organizada (v290, «que se parezca a un programa de contabilidad»):
 // una portada («Resumen») con las cifras y lo que hay que atender, y una
@@ -178,10 +180,10 @@
     subs: { sub: "fichas", anio: null, ficha: null, nueva: null, clave: null, filtro: "todos", serie: 0, nota: null, ultimaHoja: null },
     // (fase 11) «Nómina»: qué apartado, qué nómina abierta, la serie, la nota de la última acción; el archivo elegido YA LIMPIO (sin las
     // columnas delicadas: lo que se manda), lo que se le quitó (solo los nombres de las columnas), el ensayo y lo que contestó importar;
-    // el mapeo (nombre de columna → clase, para limpiar), el período de las horas para Gusto, el último lote armado y el año del amarre;
-    // y «mismas»: las nóminas del archivo (su n) que según el ensayo traen el MISMO bruto y el mismo neto que la que ya está (otra
-    // lectura de la misma nómina: no se ofrece subirla como otra)
-    nom: { sub: "nominas", corrida: null, serie: 0, nota: null, archivo: null, quitadas: null, ensayo: null, ensayoErr: null, importe: null, mismas: null, mapa: null, desde: null, hasta: null, lote: null, anio: null, anios: null },
+    // el mapeo (nombre de columna → clase, para limpiar), el período de las horas para Gusto, el último lote armado, el año del amarre
+    // y el mes de la bolsa del burden real (nulo: el último que terminó, el que dice la base)
+    // (revisión final) y lo que Edgar dice de ESE archivo cuando la base no lo puede leer sola (opciones: su día de pago, la fila de su cabecera)
+    nom: { sub: "nominas", corrida: null, serie: 0, nota: null, archivo: null, quitadas: null, opciones: null, ensayo: null, ensayoErr: null, ensayoCod: null, importe: null, mapa: null, desde: null, hasta: null, lote: null, anio: null, anios: null, bolsaMes: null },
     // (fase 11) en la Bandeja, los cargos de Gusto pendientes que la nómina reconoce (movimiento → su fila de v_nomina_cargos); sin c15, nulo
     nomBj: null
   };
@@ -317,7 +319,7 @@
     if (pag === "nomina") {
       if (opciones.sub !== undefined) S.nom.sub = opciones.sub;
       S.nom.corrida = opciones.corrida !== undefined ? opciones.corrida : null;
-      for (const k of ["desde", "hasta", "anio"]) if (opciones[k] !== undefined) S.nom[k] = opciones[k];
+      for (const k of ["desde", "hasta", "anio", "bolsaMes"]) if (opciones[k] !== undefined) S.nom[k] = opciones[k];
       S.nom.nota = null;
     }
     marcarPestana();
@@ -3847,6 +3849,17 @@
       if (!Array.isArray(ls) || ls.length < 2) throw errorControl("El asiento no apareció entero", [{ vista: "v_libro", filas: Array.isArray(ls) ? ls.length : 0, esperadas: "2 o más", detalle: id }]);
       if (!Array.isArray(ps) || ps.length !== 1) throw errorControl("El papel del asiento no apareció", [{ vista: "v_asiento_papel", filas: Array.isArray(ps) ? ps.length : 0, esperadas: 1, detalle: id }]);
       lineas = ls; papel = ps[0];
+      // (fase 11) EL PAPEL DE UN ASIENTO DE LA NÓMINA ES SU NÓMINA. La vista de los papeles (c4 y c6, sellada) no conoce la nómina y
+      // contesta «el papel ya no está»: no es un rastro roto. Se lee de v_nomina_papel (c15; lleva el bruto y el neto: solo con el
+      // código del teléfono). Si no llega (sin el código, o una base sin esa vista), se dice dónde está su papel, sin alarma
+      if (papel.origen_tabla === "nomina_corridas" || papel.origen_tabla === "nomina_burden") {
+        papel = { ...papel, _nomina: true, _papelNom: null };
+        try {
+          const pn = await DB._leer(`v_nomina_papel?select=papel&origen_tabla=eq.${encodeURIComponent(papel.origen_tabla)}&origen_id=eq.${encodeURIComponent(papel.origen_id || "")}`);
+          if (Array.isArray(pn) && pn.length === 1 && pn[0].papel) papel._papelNom = String(pn[0].papel);
+        } catch (e) { if (esFalloDeRed(e)) throw e; }
+        if (!vivo(mia)) return;
+      }
       if (papel.papel_ruta && papel.origen_tabla === "recibos" && typeof DB.firmarFotos === "function") {
         try { url = (await DB.firmarFotos([papel.papel_ruta]))[papel.papel_ruta] || null; if (!url) errFoto = new Error("la base no firmó la ruta"); }
         catch (e) { errFoto = e; } // la foto es lo último: si Storage no contesta, el asiento y su papel se pintan igual, con el aviso
@@ -3873,16 +3886,19 @@
     </section>
     <section class="ct-card ct-noche" id="ct-est-papel">
       <p class="ct-noche-lbl">Papel</p>
-      <p class="ct-noche-txt">${esc(papel.papel || "")}</p>
+      <p class="ct-noche-txt">${esc(papel._nomina ? (papel._papelNom || "Es un asiento de la nómina: su papel es su nómina (el «Payroll journal» de Gusto que se subió), en Contabilidad → Nómina. Se ve con el código del teléfono.") : (papel.papel || ""))}</p>
       <p class="ct-noche-meta">Camino: ${esc(camino)} · <span class="ct-num">${fechaLarga(a.fecha)}</span>${papel.origen_tabla ? ` · ${esc(papel.origen_tabla)} <span class="ct-num">${esc(papel.origen_id || "")}</span>` : ""}</p>
-      ${papel.papel_existe === false ? `<p class="ct-aviso bad">El papel de este asiento ya no está: rastro roto.</p>` : ""}
+      ${papel.papel_existe === false && !papel._nomina ? `<p class="ct-aviso bad">El papel de este asiento ya no está: rastro roto.</p>` : ""}
+      ${papel._nomina ? `<button type="button" class="accion secundaria ct-noche-btn" id="ct-est-papel-nomina">Ver su nómina</button>` : ""}
       ${url ? `<a class="accion secundaria ct-noche-btn" id="ct-est-papel-foto" href="${esc(url)}" target="_blank" rel="noopener">Ver la foto del recibo</a>` : ""}
       ${errFoto ? `<p class="ct-aviso warn">La foto no se pudo abrir ahora (${esFalloDeRed(errFoto) ? "sin señal hacia Storage" : esc(errFoto.message)}). Ruta: <span class="ct-num">${esc(ruta)}</span></p>` : ""}
       ${ruta.startsWith("docs/") ? `<p class="ct-noche-meta">Documento: <span class="ct-num">${esc(ruta)}</span></p>` : ""}
-      ${!ruta && papel.origen_tabla ? `<p class="ct-noche-meta">Se ve en la app: ${esc(papel.origen_tabla)} ${esc(papel.origen_id || "")}</p>` : ""}
+      ${!ruta && papel.origen_tabla && !papel._nomina ? `<p class="ct-noche-meta">Se ve en la app: ${esc(papel.origen_tabla)} ${esc(papel.origen_id || "")}</p>` : ""}
     </section>
-    <p class="ct-nota">Fuente: v_libro · v_asiento_papel · fn_estados_control</p>`;
+    <p class="ct-nota">Fuente: v_libro · v_asiento_papel${papel._nomina ? " · v_nomina_papel" : ""} · fn_estados_control</p>`;
     engancharBotones();
+    // (fase 11) del asiento de una nómina, a su nómina (la página la pinta con el código del teléfono)
+    { const bn = $("ct-est-papel-nomina"); if (bn) bn.addEventListener("click", () => { if (!S.ocupado) ir("nomina", { sub: "nominas", corrida: papel.origen_id || null }); }); }
   }
 
   // ---------- Flujo de caja (los dos métodos vienen en la misma vista) ----------
@@ -8224,14 +8240,24 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     }
     pintarError(err, reintentar, err.codigo === "42501" ? "La nómina es solo del dueño" : undefined, c);
   }
-  // el control de la nómina: {avisos, rojos}. Los avisos se enseñan arriba. Un cuadre en rojo no deja pintar NINGUNA cifra, pero no
-  // cierra la puerta: cada apartado enseña lo que no lleva montos (la lista de las nóminas, para abrir la del rojo y anularla o
+  // el control de la nómina: {avisos, rojos, pide}. Los avisos se enseñan arriba. Un cuadre en rojo no deja pintar NINGUNA cifra, pero
+  // no cierra la puerta: cada apartado enseña lo que no lleva montos (la lista de las nóminas, para abrir la del rojo y anularla o
   // descartarla; las personas; los ajustes y el mapeo). Vacío (no es el dueño, o falta c15): rojo entero.
+  // (arreglo) SIN EL CÓDIGO DEL TELÉFONO y con nóminas en la base, la base no da por buenas las filas que miran dinero: llegan con
+  // ok = falso y su detalle dice que hace falta el código. Eso NO es «no cuadra»: va aparte («pide») y la página pide el código.
+  const PIDE_CODIGO_NOM = /hace falta el código del teléfono/;
   async function controlNom() {
     const ctl = await DB._leer("v_nomina_control?select=*&order=orden.asc");
-    if (!Array.isArray(ctl) || !ctl.length) throw errorControl("El control de la nómina no devolvió nada", [{ vista: "control de la nómina", filas: 0, esperadas: 18, detalle: "Vacío: la sesión no es la del dueño o a la base le falta la nómina." }]);
-    return { avisos: ctl.filter(f => f.nivel === "aviso" && f.ok !== true), rojos: ctl.filter(f => f.nivel === "cuadre" && f.ok !== true) };
+    if (!Array.isArray(ctl) || !ctl.length) throw errorControl("El control de la nómina no devolvió nada", [{ vista: "control de la nómina", filas: 0, esperadas: 19, detalle: "Vacío: la sesión no es la del dueño o a la base le falta la nómina." }]);
+    const pide = f => f.ok !== true && PIDE_CODIGO_NOM.test(String(f.detalle || ""));
+    return { avisos: ctl.filter(f => f.nivel === "aviso" && f.ok !== true && !pide(f)), rojos: ctl.filter(f => f.nivel === "cuadre" && f.ok !== true && !pide(f)), pide: ctl.filter(pide) };
   }
+  // (arreglo) lo que la base no deja ver sin el código: una tarjeta que lo pide, con adónde ir (nunca «la nómina no cuadra»)
+  const pideCodigoNomHTML = (ctl, que) => ctl.pide && ctl.pide.length ? `<section class="ct-card ct-nom-pide" id="ct-nom-pide" role="status"><h2>Falta el código del teléfono</h2>
+      <p>Hay nóminas en la base, y lo que lleva su dinero (cada nómina, lo que cobra cada persona, lo casado con el banco y ${ctl.pide.length === 1 ? "una comprobación" : `las ${ctl.pide.length} comprobaciones`} de que cuadra) solo se ve con el código del teléfono. ${esc(que || "")}</p>
+      <p class="ct-nota">Entra otra vez escribiendo el código; si todavía no lo tienes, actívalo en Conexiones y seguridad.</p>
+      <div class="ct-acciones"><button type="button" class="accion secundaria" data-nom-ir-cx>Conexiones y seguridad</button></div></section>` : "";
+  const wirePideNom = c => { const b = c.querySelector("[data-nom-ir-cx]"); if (b) b.addEventListener("click", () => { if (!S.ocupado) ir("conexiones"); }); };
   // el rojo del control, arriba de lo que el apartado deja ver sin cifras; «que»: lo que se puede hacer desde aquí
   const rojoNomHTML = (rojos, que) => `<section class="ct-card ct-rojo ct-nom-rojo" id="ct-nom-rojo" role="alert"><h2>La nómina no cuadra</h2>
       <p>Mientras no cuadre, la nómina no pinta ninguna cifra: pintarla sería mentir. Lo que no cuadra, como lo dice la base:</p>
@@ -8239,11 +8265,15 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
       <p class="ct-nota">${esc(que)}</p>
       <div class="ct-acciones"><button type="button" class="accion secundaria" data-nom-remirar>Volver a mirar</button></div></section>`;
   const wireRojoNom = c => { const b = c.querySelector("[data-nom-remirar]"); if (b) b.addEventListener("click", () => { if (!S.ocupado) repintar(); }); };
+  // (arreglo) un aviso que se arregla en otro apartado de la nómina lleva su botón: el 75 (la bolsa del burden real) a Ajustes
+  const AVISO_VA = { 75: ["ajustes", "Repartir la bolsa del burden"] };
   const avisosNomHTML = (avisos, solo) => {
     const vis = solo ? avisos.filter(f => solo.includes(Number(f.orden))) : avisos;
+    const va = f => { const d = AVISO_VA[Number(f.orden)]; return d && d[0] !== S.nom.sub ? `<div class="ct-acciones"><button type="button" class="accion secundaria chica" data-nom-va="${esc(d[0])}">${esc(d[1])}</button></div>` : ""; };
     return vis.length ? `<section class="ct-card ct-nom-avisos" id="ct-nom-avisos"><h2>Lo que hay que mirar (${vis.length})</h2><ul class="ct-jr-avisos">${vis.map(f =>
-      `<li class="ct-aviso warn" data-orden="${esc(f.orden)}"><details><summary>${esc(cap(f.control))}</summary><p>${esc(f.detalle || "")}</p></details></li>`).join("")}</ul></section>` : "";
+      `<li class="ct-aviso warn" data-orden="${esc(f.orden)}"><details><summary>${esc(cap(f.control))}</summary><p>${esc(f.detalle || "")}</p>${va(f)}</details></li>`).join("")}</ul></section>` : "";
   };
+  const wireAvisosNom = c => c.querySelectorAll("[data-nom-va]").forEach(b => b.addEventListener("click", () => { if (!S.ocupado) ir("nomina", { sub: b.dataset.nomVa }); }));
   // Una escritura de la nómina: la tarjeta se apaga, el error va a su forma; si salió, la nota arriba, el aviso y se vuelve a pintar.
   // opciones.mfa: el texto si falta el código; opciones.alFallar(err): true si atendió el error; opciones.despues(r): en vez de repintar
   async function accionNom(card, fn, args, exito, opciones = {}) {
@@ -8299,19 +8329,54 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
   // el nombre de una columna, limpio (como fn_nomina_norm de la base): minúsculas, y un espacio donde no hay letra ni número
   const normCol = s => String(s == null ? "" : s).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
   const FORMA_SSN = /(^|[^0-9])[0-9]{3}-[0-9]{2}-[0-9]{4}([^0-9]|$)/;
-  // LO QUE NO SALE DEL TELÉFONO. Una fila con dos o más nombres del mapeo es una cabecera (abre una sección). En cada sección se
-  // quitan, enteras, las columnas de clase «delicado» y las que la base no conoce (o ignora) y traen algo con forma de Seguro Social;
-  // si una columna que SÍ se guarda trae esa forma, el archivo no se manda. En el preámbulo, esa celda se vacía. Devuelve las filas
-  // limpias y lo que se quitó (solo los nombres de las columnas, nunca una celda). La misma regla la usa pruebas/conta/f15-capturar.js.
-  function nominaLimpiar(filas, mapa) {
-    const cab = filas.map(f => f.filter(x => mapa.has(normCol(x))).length >= 2);
+  // LO QUE NO SALE DEL TELÉFONO. Una CABECERA es lo que la base toma por cabecera (fn_nomina_leer): una fila con una columna de
+  // persona y una de dinero que el mapeo conoce, y ninguna celda que sea una cifra (antes: dos nombres del mapeo cualesquiera, y una
+  // fila de datos con dos celdas que coincidieran con un nombre del mapeo cortaba la sección y dejaba pasar lo delicado de debajo);
+  // o la fila que diga Edgar (filaCab, contando desde 1) cuando la base no la encontró. En cada sección se quitan, enteras, las
+  // columnas de clase «delicado», las que el mapeo NO conoce y por su nombre son un dato de la persona y no dinero (su Seguro Social,
+  // su cuenta del banco, su nacimiento, su dirección, su correo, su teléfono: no hacen falta y así no viajan) y las que la base no
+  // conoce (o ignora) y traen algo con forma de Seguro Social; si una columna que SÍ se guarda trae esa forma, el archivo no se
+  // manda. En el preámbulo, esa celda se vacía. Devuelve las filas limpias y lo que se quitó (solo los nombres de las columnas, nunca
+  // una celda). La misma regla la usa pruebas/conta/f15-capturar.js.
+  const CLASES_PERSONA_NOM = ["nombre", "apellido", "nombre_completo", "empleado_id"];
+  const CLASES_DINERO_NOM = ["bruto", "bruto_total", "imp_empleado", "imp_empleado_total", "deduccion", "deduccion_total", "neto", "reembolso", "reembolso_total", "cheque_total", "imp_patron", "imp_patron_total", "ben_patron", "ben_patron_total", "costo_total"];
+  // ¿una celda es una cifra, como la lee la base (fn_nomina_monto)? 1958.00, 1,958.00, $1,958.00, (50.00), -50.00 y «-»
+  const esCifraNom = x => {
+    let t = String(x == null ? "" : x).trim();
+    if (/^[-—–]$/.test(t)) return true;
+    if (/^\(.*\)$/.test(t)) t = t.slice(1, -1).trim();
+    if (t[0] === "-") t = t.slice(1).trim();
+    if (t[0] === "$") { t = t.slice(1).trim(); if (t[0] === "-") t = t.slice(1).trim(); }
+    return t.length <= 40 && (/^[0-9]{1,3}(,[0-9]{3})+(\.[0-9]+)?$/.test(t) || /^[0-9]+(\.[0-9]+)?$/.test(t) || /^\.[0-9]+$/.test(t));
+  };
+  const esCabNom = (f, mapa) => {
+    let per = false, din = false, cifra = false;
+    for (const x of f) {
+      const t = String(x == null ? "" : x).trim(); if (!t) continue;
+      const k = mapa.get(normCol(t));
+      if (k) { per = per || CLASES_PERSONA_NOM.includes(k); din = din || CLASES_DINERO_NOM.includes(k); }
+      else if (esCifraNom(t)) cifra = true;
+    }
+    return per && din && !cifra;
+  };
+  // el nombre (limpio) de una columna que el mapeo no conoce y que, por lo que dice, es un dato de la persona y no dinero. A propósito
+  // estrecho: «phone stipend» o «employee social security tax» son dinero y no caen aquí
+  const NOMBRE_DELICADO = new RegExp("(^| )(ssn|itin|social security (number|no|num)|tax ?payer id|tax id|date of birth|birth ?date|dob|bank account|routing|account (number|no|num)|passport|driver s? ?license)( |$)"
+    + "|(^| )birthday$|(^| )(home|mailing|residential|personal|employee|street) address( [a-z0-9]+)*$|^address( line)?( [0-9])?$|(^| )(zip|postal)( code)?$"
+    + "|(^| )e ?mail( address)?$|(^| )(phone|telephone|mobile|cell)( phone)?( number| no| num)?$");
+  function nominaLimpiar(filas, mapa, filaCab) {
+    const cab = filas.map((f, i) => esCabNom(f, mapa) || i + 1 === filaCab);
     const quitar = filas.map(() => new Set());
     const quitadas = [];
     let ini = -1, preambulo = 0;
     const cerrar = (a, b) => {
       if (a < 0) return;
       const fuera = new Set();
-      filas[a].forEach((x, j) => { if (mapa.get(normCol(x)) === "delicado") { fuera.add(j); quitadas.push({ columna: String(x).trim() || `columna ${j + 1}`, por: "delicado" }); } });
+      filas[a].forEach((x, j) => {
+        const n = normCol(x), k = mapa.get(n);
+        if (k === "delicado") { fuera.add(j); quitadas.push({ columna: String(x).trim() || `columna ${j + 1}`, por: "delicado" }); }
+        else if (!k && n && NOMBRE_DELICADO.test(n)) { fuera.add(j); quitadas.push({ columna: String(x).trim(), por: "nombre" }); }
+      });
       for (let i = a + 1; i < b; i++) filas[i].forEach((x, j) => {
         if (!FORMA_SSN.test(x) || fuera.has(j)) return;
         const k = mapa.get(normCol(filas[a][j]));
@@ -8339,7 +8404,7 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     if (!mfaActivo()) { input.value = ""; mostrarErrorForma(card, "Subir el journal " + SIN_CODIGO_NOM); return; }
     if (file.size > 5 * 1024 * 1024) { input.value = ""; mostrarErrorForma(card, "Ese archivo pasa de 5 MB: un «Payroll journal» de una nómina es mucho más chico. ¿Es el archivo correcto?"); return; }
     S.ocupado = true;
-    S.nom.ensayo = null; S.nom.ensayoErr = null; S.nom.importe = null; S.nom.archivo = null; S.nom.nota = null; S.nom.mismas = null;
+    S.nom.ensayo = null; S.nom.ensayoErr = null; S.nom.ensayoCod = null; S.nom.importe = null; S.nom.archivo = null; S.nom.opciones = null; S.nom.nota = null;
     const res = card.querySelector(".ct-nom-leyendo"); if (res) res.hidden = false;
     let archivo;
     try {
@@ -8360,12 +8425,16 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     S.ocupado = false;
     await ensayarJournal(card, {});
   }
-  // EL ENSAYO: la base lo lee y dice qué entraría, sin guardar nada
+  // EL ENSAYO: la base lo lee y dice qué entraría, sin guardar nada. Las opciones (lo que Edgar dijo de ESTE archivo: su día de pago,
+  // la fila de su cabecera) se quedan con él y van igual al importar.
+  // (revisión final) Si la base no lo puede leer sola (MX009: no trae su día de pago, o no encontró su cabecera), el archivo limpio
+  // se queda en memoria y la tarjeta deja decirlo y volver a leerlo; antes se soltaba, y la base pedía algo que aquí no se podía decir
   async function ensayarJournal(card, opciones) {
     if (!S.nom.archivo || S.ocupado) return;
     S.ocupado = true;
-    try { S.nom.ensayo = await rpcCie("fn_nomina_ensayo", { p_archivo: S.nom.archivo, p_opciones: opciones || {} }); S.nom.ensayoErr = null; }
-    catch (err) { S.nom.ensayo = null; S.nom.ensayoErr = mensajeNom(err); if (err.codigo === "MX009" || err.codigo === "MX005") S.nom.archivo = null; }
+    S.nom.opciones = opciones && Object.keys(opciones).length ? opciones : null;
+    try { S.nom.ensayo = await rpcCie("fn_nomina_ensayo", { p_archivo: S.nom.archivo, p_opciones: S.nom.opciones || {} }); S.nom.ensayoErr = null; S.nom.ensayoCod = null; }
+    catch (err) { S.nom.ensayo = null; S.nom.ensayoErr = mensajeNom(err); S.nom.ensayoCod = err.codigo || null; if (err.codigo === "MX005") { S.nom.archivo = null; S.nom.opciones = null; } }
     S.ocupado = false;
     await repintar();
   }
@@ -8374,7 +8443,9 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
   const ESTADO_CORR = { importada: ["por postear", "warn"], posteada: ["posteada", "ok"], anulada: ["anulada", "bad"], descartada: ["descartada", ""] };
   function pillCorrida(c) {
     if (c.estado === "importada" && (c.cuadra === false || (Array.isArray(c.sin_clasificar) && c.sin_clasificar.length))) return pill("frenada", "bad");
-    if (c.estado === "posteada") return noCero(c.por_pagar) ? pill(`falta casar ${fmt(c.por_pagar)}`, "warn") : pill("casada con el banco", "ok");
+    // (arreglo) por_pagar solo suma lo que se debe; lo que una corrección dejó a favor (y nadie ha descontado ni devuelto) va en a_favor
+    if (c.estado === "posteada") return noCero(c.por_pagar) ? pill(`falta casar ${fmt(c.por_pagar)}`, "warn")
+      : noCero(c.a_favor) ? pill(`a favor ${fmt(c.a_favor)}, sin descontar`, "warn") : pill("casada con el banco", "ok");
     const e = ESTADO_CORR[c.estado] || [c.estado, ""];
     return pill(e[0], e[1]);
   }
@@ -8384,17 +8455,18 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
   // una nómina de la lista; sin cifras (con el control en rojo): su nombre, su tipo, su período, su gente y su estado, sin montos
   const filaCorridaHTML = (x, cifras) => `<button type="button" class="ct-subs-fila ct-nom-fila${cifras ? "" : " sin-cifras"}" data-nom-corrida="${esc(x.corrida_id)}">
       <span class="ct-subs-n"><b>${esc(nombreCorrida(x))}</b><small>${esc(x.tipo_texto || (x.tipo === "regular" ? "Regular" : "Fuera de ciclo"))}${x.periodo_desde ? ` · período del ${esc(fecha(x.periodo_desde))} al ${esc(fechaLarga(x.periodo_hasta))}` : ""} · ${plural(num(x.personas) || 0, "persona", "personas")} · «${esc(x.archivo || "")}»</small>
-        ${porQueFrenada(x) ? `<small class="bad-txt">${esc(porQueFrenada(x))}</small>` : ""}</span>
+        ${porQueFrenada(x) ? `<small class="bad-txt">${esc(porQueFrenada(x))}</small>` : ""}${x.otra_porque ? `<small>Otra nómina con las mismas cifras que otra: «${esc(x.otra_porque)}»</small>` : ""}</span>
       ${cifras ? `<span class="ct-nom-m"><span class="ct-num">${fmt(x.bruto)}</span><small>bruto · neto ${fmt(x.neto)}</small></span>` : ""}
       <span class="ct-subs-chips">${cifras ? pillCorrida(x) : pill(...(ESTADO_CORR[x.estado] || [x.estado, ""]))}${x.asiento_numero && x.estado !== "importada" ? ` <span class="ct-sub">asiento ${esc(x.asiento_numero)}</span>` : ""}</span>
     </button>`;
   // LAS NÓMINAS: las vivas (en el libro o por postear) primero, como las ordena la base; las anuladas y las descartadas, plegadas abajo
-  const listaNomHTML = (corridas, cifras) => {
+  // (arreglo) sin el código la base no da ninguna nómina: la lista vacía es «entra con tu código», no «no hay nóminas»
+  const listaNomHTML = (corridas, cifras, sinCodigo) => {
     const vivas = corridas.filter(VIVA), muertas = corridas.filter(x => !VIVA(x));
     return `<section class="ct-card ct-nom-lista" id="ct-nom-lista">
         <h2>Las nóminas</h2>
         ${vivas.length ? `<div class="ct-subs-filas">${vivas.map(x => filaCorridaHTML(x, cifras)).join("")}</div>`
-          : `<p class="ct-vacio">${muertas.length ? "Ninguna nómina en el libro ni por postear." : "Ninguna nómina todavía: la primera de Gusto se paga el 8 de enero de 2027."}</p>`}
+          : `<p class="ct-vacio">${sinCodigo ? "Las nóminas solo se ven con el código del teléfono: entra con él." : muertas.length ? "Ninguna nómina en el libro ni por postear." : "Ninguna nómina todavía: la primera de Gusto se paga el 8 de enero de 2027."}</p>`}
         ${muertas.length ? `<details class="ct-wip-mas ct-nom-muertas"><summary>Anuladas y descartadas: ${muertas.length}</summary><div class="ct-subs-filas">${muertas.map(x => filaCorridaHTML(x, cifras)).join("")}</div></details>` : ""}
       </section>`;
   };
@@ -8409,16 +8481,17 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     corridas = Array.isArray(corridas) ? corridas : [];
     const vivas = corridas.filter(VIVA);
     const porPostear = corridas.filter(c => c.estado === "importada").length;
-    subNom(`<b>${plural(vivas.length, "nómina en el libro o por postear", "nóminas en el libro o por postear")}</b>${porPostear ? ` · <span class="bad-txt">${porPostear} por postear</span>` : ""}`);
+    const sinCodigo = !!ctl.pide.length;
+    subNom(sinCodigo && !corridas.length ? "<b>Con el código del teléfono</b> se ven las nóminas" : `<b>${plural(vivas.length, "nómina en el libro o por postear", "nóminas en el libro o por postear")}</b>${porPostear ? ` · <span class="bad-txt">${porPostear} por postear</span>` : ""}`);
     const c = nomCuerpo();
     // con un cuadre en rojo: el rojo y la lista sin cifras (la nómina del rojo se abre desde aquí para anularla o descartarla); no se sube nada
     if (ctl.rojos.length) {
-      c.innerHTML = notaNomHTML() + rojoNomHTML(ctl.rojos, "Si el rojo es de una nómina, ábrela aquí abajo: desde ella se anula (si se posteó) o se descarta (si no). No se sube ningún archivo hasta que cuadre.") + listaNomHTML(corridas, false);
-      wireRojoNom(c); wireListaNom(c);
+      c.innerHTML = notaNomHTML() + pideCodigoNomHTML(ctl) + rojoNomHTML(ctl.rojos, "Si el rojo es de una nómina, ábrela aquí abajo: desde ella se anula (si se posteó) o se descarta (si no). No se sube ningún archivo hasta que cuadre.") + listaNomHTML(corridas, false, sinCodigo);
+      wireRojoNom(c); wireListaNom(c); wirePideNom(c);
       return;
     }
     const mfa = mfaActivo();
-    c.innerHTML = notaNomHTML() + avisosNomHTML(ctl.avisos) +
+    c.innerHTML = notaNomHTML() + pideCodigoNomHTML(ctl, "Sin él, aquí no se ve ninguna nómina ni se sube ningún archivo.") + avisosNomHTML(ctl.avisos) +
       `<section class="ct-card ct-nom-subir" id="ct-nom-subir">
         <div class="ct-cab"><h2>Subir el «Payroll journal» de Gusto</h2></div>
         <p class="ct-nota">Después de cada nómina, baja de Gusto su «Payroll journal» en CSV y súbelo aquí. Se lee en este teléfono: los datos de cada persona que no hacen falta (Seguro Social, cuenta del banco, dirección, correo, teléfono) no salen de él.</p>
@@ -8428,10 +8501,10 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
         <p class="ct-aviso ct-espera ct-nom-leyendo" role="status" hidden>Leyendo el archivo…</p>
         ${sinCodigoNomHTML("Subir el journal")}
         <div class="ct-form" hidden></div>
-      </section>` + ensayoHTML() + importeNomHTML() + listaNomHTML(corridas, true);
+      </section>` + ensayoHTML() + importeNomHTML() + listaNomHTML(corridas, true, sinCodigo);
     const card = $("ct-nom-subir");
     $("ct-nom-archivo").addEventListener("change", ev => leerJournal(ev.target, card));
-    wireListaNom(c);
+    wireListaNom(c); wirePideNom(c); wireAvisosNom(c);
     wireEnsayo();
     wireImporte();
   }
@@ -8442,12 +8515,22 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
       ${kpiHTML("Lo del patrón", fmt(t.imp_patron), noCero(t.ben_patron) ? `y beneficios ${fmt(t.ben_patron)}` : "sus impuestos")}
     </div>`;
   function ensayoHTML() {
-    if (S.nom.ensayoErr) return `<section class="ct-card ct-nom-ensayo" id="ct-nom-ensayo"><h2>El archivo no se pudo leer</h2><p class="ct-aviso bad">${esc(S.nom.ensayoErr)}</p>
-      <div class="ct-acciones"><button type="button" class="accion secundaria" data-nom-ensayo-cerrar>Cerrar</button></div></section>`;
+    if (S.nom.ensayoErr) {
+      // (revisión final) lo que la base no pudo leer sola y Edgar le puede decir: el día de pago (el archivo no lo trae) o en qué fila
+      // está la cabecera (no la encontró); el archivo sigue en memoria y se vuelve a leer con eso
+      const o = S.nom.opciones || {}, decir = S.nom.ensayoCod === "MX009" && !!S.nom.archivo;
+      return `<section class="ct-card ct-nom-ensayo" id="ct-nom-ensayo"><h2>El archivo no se pudo leer</h2><p class="ct-aviso bad">${esc(S.nom.ensayoErr)}</p>
+      ${decir ? `<form class="ct-pide ct-nom-decir" novalidate>
+        <p class="ct-nota">Si el archivo no trae su día de pago, o su cabecera (la fila con los nombres de las columnas) no es la que busqué, dilo aquí y lo vuelvo a leer. Lo que no haga falta, vacío.</p>
+        <div class="ct-fila"><label class="ct-campo">El día de pago de esta nómina<input type="date" name="dia_pago" value="${esc(o.dia_pago || "")}"></label>
+          <label class="ct-campo">La fila de la cabecera (1 es la primera del archivo)<input name="fila_cabecera" inputmode="numeric" maxlength="4" value="${esc(o.fila_cabecera || "")}" autocomplete="off"></label></div>
+        <div class="ct-acciones"><button type="submit" class="accion"${deshab()}>Volver a leerlo con esto</button></div></form>` : ""}
+      <div class="ct-acciones"><button type="button" class="accion secundaria" data-nom-ensayo-cerrar>Cerrar</button></div><div class="ct-form" hidden></div></section>`;
+    }
     const e = S.nom.ensayo; if (!e) return "";
     const a = e.archivo || {}, q = S.nom.quitadas || { columnas: [], preambulo: 0 };
     const deliBase = Array.isArray(e.delicado) ? e.delicado : [];
-    const quitadasTxt = q.columnas.length ? `No salieron del teléfono: ${q.columnas.map(x => `«${x.columna}»${x.por === "forma" ? " (traía algo con forma de número de Seguro Social)" : ""}`).join(", ")}.` : "";
+    const quitadasTxt = q.columnas.length ? `No salieron del teléfono: ${q.columnas.map(x => `«${x.columna}»${x.por === "forma" ? " (traía algo con forma de número de Seguro Social)" : x.por === "nombre" ? " (por su nombre es un dato de la persona, no dinero; si es dinero, dilo en Ajustes → el mapeo de las columnas y vuelve a subirlo)" : ""}`).join(", ")}.` : "";
     const corridas = Array.isArray(e.corridas) ? e.corridas : [];
     return `<section class="ct-card ct-nom-ensayo" id="ct-nom-ensayo">
         <div class="ct-cab"><h2>Lo que dice la base del archivo</h2>${num(e.entraria) ? pill(`entraría ${plural(e.entraria, "nómina", "nóminas")}`, "ok") : pill("no entra nada nuevo", "warn")}</div>
@@ -8459,10 +8542,22 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
         <div class="ct-form" hidden></div>
       </section>`;
   }
-  // ¿el archivo trae el MISMO bruto y el mismo neto que la nómina que ya está, aunque la base no la dé por igual (la lee de otras
-  // columnas: su firma es otra)? Es otra lectura de la misma nómina, no otra del mismo día. Solo compara dos cifras que dio la base.
-  const mismasFuera = k => !!(k && k.ya_estaba && !k.ya_estaba.mismas_cifras && k.totales && k.ya_estaba.bruto != null && k.ya_estaba.neto != null &&
-    num(k.totales.bruto) === num(k.ya_estaba.bruto) && num(k.totales.neto) === num(k.ya_estaba.neto));
+  // ¿ESTA NÓMINA YA ESTÁ? Lo dice la base (ya_estaba): con las mismas cifras concepto por concepto (mismas_cifras); la MISMA nómina
+  // bajada de otra forma (misma: las mismas personas con su mismo bruto y su mismo neto, leídas de otras columnas o con otro tipo o
+  // período: no es otra del mismo día); o con otras cifras. Y lo que se puede hacer: reemplazar a la que está (se_puede_reemplazar:
+  // una, sin postear) y subirla como otra (se_puede_otra: si no es la misma; si lo es, solo con su porqué escrito). Aquí no se compara
+  // ninguna cifra: lo dice la base.
+  const tipoNom = t => t === "regular" ? "regular" : t ? "fuera de ciclo" : "";
+  function yaEstabaHTML(k) {
+    const y = k.ya_estaba; if (!y) return "";
+    const de = `Esta nómina ya está (${esc(y.estado)}${y.tipo ? `, ${esc(tipoNom(y.tipo))}` : ""}${y.personas != null ? `, ${plural(num(y.personas) || 0, "persona", "personas")}` : ""}, del archivo «${esc(y.archivo)}»)`;
+    // (por qué es la misma con otro día de pago, como lo dice la base: sale del mismo archivo —subido otra vez diciendo otro día—; o a
+    // una de las dos le falta el período y sus días quedan a menos de una semana; o, si nada de eso, su período se pisa con el suyo)
+    const dia = y.otro_dia ? ` Su día de pago es el ${esc(fechaLarga(y.dia_pago))}, pero trae a las mismas personas ${y.mismo_archivo ? "y sale del mismo archivo: es el mismo, subido otra vez con otro día" : y.cerca ? "y su día de pago queda a menos de una semana del que dices, sin un período que las distinga" : "con un período que se pisa con el suyo"}.` : "";
+    if (y.mismas_cifras) return `<p class="ct-aviso ct-nom-ya" data-ya="igual">${de} con las mismas cifras: no entra dos veces.${dia}${y.lee_distinto && y.se_puede_reemplazar ? " La que está se leyó de otra forma (le quedaban columnas sin clasificar, o no cuadraba): con lo que el mapeo dice hoy se leería distinto y se puede volver a leer en su lugar." : ""}</p>`;
+    if (y.misma) return `<p class="ct-aviso bad ct-nom-ya" data-ya="misma">${de} con su MISMO bruto (${fmt(y.bruto)}) y su mismo neto (${fmt(y.neto)}), persona por persona: es la misma nómina bajada de Gusto de otra forma, no otra del mismo día.${dia} ${y.se_puede_reemplazar ? "Si prefieres esta forma del archivo, al importar di que reemplaza a la que estaba." : y.estado === "posteada" ? "La que está ya se posteó: no hace falta subirla otra vez (si le faltaba algo, anúlala y sube esta)." : ""} Solo si de verdad son dos nóminas iguales (dos bonos iguales el mismo día) entra como otra, diciendo por qué.</p>`;
+    return `<p class="ct-aviso warn ct-nom-ya" data-ya="otra">${de}, con OTRAS cifras: bruto ${fmt(y.bruto)} y neto ${fmt(y.neto)}.${dia} Al importar, la base pregunta qué es.</p>`;
+  }
   function ensayoCorridaHTML(k) {
     const sc = Array.isArray(k.sin_clasificar) ? k.sin_clasificar : [], ds = Array.isArray(k.descuadres) ? k.descuadres : [];
     const ps = Array.isArray(k.personas) ? k.personas : [];
@@ -8471,9 +8566,8 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
         <p class="ct-sub">${esc(k.tipo_texto || k.tipo)}${k.periodo_desde ? ` · período del ${esc(fecha(k.periodo_desde))} al ${esc(fechaLarga(k.periodo_hasta))}` : " · sin período"}</p>
         ${k.totales ? totalesNomHTML(k.totales, true) : ""}
         ${ds.length ? `<ul class="ct-jr-avisos ct-nom-descuadres">${ds.map(t => `<li class="ct-aviso bad">${esc(t)}</li>`).join("")}</ul>` : ""}
-        ${k.ya_estaba ? `<p class="ct-aviso ${k.ya_estaba.mismas_cifras ? "" : mismasFuera(k) ? "bad" : "warn"} ct-nom-ya">Esta nómina ya está (${esc(k.ya_estaba.estado)}, del archivo «${esc(k.ya_estaba.archivo)}»)${k.ya_estaba.mismas_cifras ? " con las mismas cifras: no entra dos veces."
-          : mismasFuera(k) ? ` y este archivo trae su MISMO bruto (${fmt(k.ya_estaba.bruto)}) y su mismo neto (${fmt(k.ya_estaba.neto)}), leídos de otras columnas: es la misma nómina (bajada otra vez, o con algo de dentro corregido por Gusto), no otra del mismo día. ${k.ya_estaba.estado === "posteada" ? "Si Gusto la corrigió, anula la que está y vuelve a subir esta; si no, no hace falta subirla." : "Si Gusto la corrigió, al importar di que reemplaza a la que estaba; si no, no hace falta subirla."}`
-          : `, con OTRAS cifras: bruto ${fmt(k.ya_estaba.bruto)} y neto ${fmt(k.ya_estaba.neto)}. Al importar, la base pregunta qué es.`}</p>` : ""}
+        ${yaEstabaHTML(k)}
+        ${k.ya_estaba && k.ya_estaba.mismas_cifras && k.ya_estaba.lee_distinto && k.ya_estaba.se_puede_reemplazar ? `<div class="ct-acciones"><button type="button" class="accion secundaria chica" data-nom-releer${deshab()}>Volver a leerla con lo que el mapeo dice hoy</button></div>` : ""}
         ${sc.length ? `<div class="ct-nom-sc"><p class="ct-aviso bad"><b>${plural(sc.length, "columna trae", "columnas traen")} cifras que el mapeo no conoce:</b> di qué es cada una antes de importar (se queda en el mapeo para las próximas). Sin eso, la nómina entra pero no se puede postear.</p>
           <ul class="ct-wip-his">${sc.map(x => `<li class="ct-wip-hi" data-nom-col="${esc(x.columna)}"><p><b>«${esc(x.columna)}»</b>${x.celdas != null ? ` · ${plural(x.celdas, "celda con cifras", "celdas con cifras")}` : ""}</p>
             <div class="ct-acciones"><button type="button" class="accion secundaria chica" data-nom-clasificar="${esc(x.columna)}"${deshab()}>Decir qué es</button></div></li>`).join("")}</ul></div>` : ""}
@@ -8498,23 +8592,51 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
   }
   function wireEnsayo() {
     const card = $("ct-nom-ensayo"); if (!card) return;
-    card.querySelectorAll("[data-nom-ensayo-cerrar]").forEach(b => b.addEventListener("click", () => { S.nom.ensayo = null; S.nom.ensayoErr = null; S.nom.archivo = null; S.nom.quitadas = null; S.nom.mismas = null; repintar(); }));
+    card.querySelectorAll("[data-nom-ensayo-cerrar]").forEach(b => b.addEventListener("click", () => { S.nom.ensayo = null; S.nom.ensayoErr = null; S.nom.ensayoCod = null; S.nom.archivo = null; S.nom.opciones = null; S.nom.quitadas = null; repintar(); }));
+    // (revisión final) decir el día de pago o la fila de la cabecera, y volver a leerlo. Con la fila de la cabecera dicha, lo que no sale
+    // del teléfono se vuelve a quitar con ESA cabecera (lo que queda en memoria ya va sin lo que tenía forma de Seguro Social)
+    const fd = card.querySelector(".ct-nom-decir");
+    if (fd) fd.addEventListener("submit", async ev => {
+      ev.preventDefault();
+      if (S.ocupado || !S.nom.archivo) return;
+      const dia = String(fd.elements.dia_pago.value || "").trim(), fila = String(fd.elements.fila_cabecera.value || "").trim();
+      if (!dia && !fila) { mostrarErrorForma(card, "Di el día de pago, o en qué fila está la cabecera."); return; }
+      if (dia && !fechaOk(dia)) { mostrarErrorForma(card, "El día de pago es una fecha."); return; }
+      if (fila && !/^[1-9][0-9]{0,3}$/.test(fila)) { mostrarErrorForma(card, "La fila de la cabecera es un número: 1 es la primera fila del archivo."); return; }
+      const o = {};
+      if (dia) o.dia_pago = dia;
+      if (fila) {
+        o.fila_cabecera = fila;
+        try {
+          const limpio = nominaLimpiar(S.nom.archivo.filas, await mapaNom(), Number(fila));
+          S.nom.archivo = { ...S.nom.archivo, filas: limpio.filas };
+          const q = S.nom.quitadas || { columnas: [], preambulo: 0 };
+          S.nom.quitadas = { columnas: q.columnas.concat(limpio.quitadas), preambulo: q.preambulo + limpio.preambulo };
+        } catch (err) { mostrarErrorForma(card, err.local ? err.message : esFalloDeRed(err) ? "Sin señal: no se leyó el mapeo de columnas. Vuelve a intentarlo con señal." : `No se pudo volver a leer: ${err.message}`); return; }
+      }
+      await ensayarJournal(card, o);
+    });
+    // (arreglo) la que está se leyó de otra forma y es una, sin postear: se vuelve a leer en su lugar
+    card.querySelectorAll("[data-nom-releer]").forEach(b => b.addEventListener("click", () => importarJournal(card, { reemplazar: true })));
     card.querySelectorAll("[data-nom-clasificar]").forEach(b => b.addEventListener("click", () => formaColumna(card, b.dataset.nomClasificar, p =>
       accionNom(card, "fn_nomina_columna", { p }, r => ({ tipo: "ok", texto: `La columna «${p.columna}» queda en el mapeo como «${(CLASES_COL[r.clase] || r.clase || "").toLowerCase()}». La base vuelve a leer el archivo.` }),
-        { aviso: "Columna en el mapeo", mfa: "Cambiar el mapeo", despues: () => { S.nom.mapa = null; return ensayarJournal(card, {}); } }))));
+        { aviso: "Columna en el mapeo", mfa: "Cambiar el mapeo", despues: () => { S.nom.mapa = null; return ensayarJournal(card, S.nom.opciones); } }))));
     const bi = $("ct-nom-importar");
     if (bi) bi.addEventListener("click", () => importarJournal(card, {}));
   }
-  // IMPORTAR: lo mismo que se ensayó; lo que conteste la base, tal cual (una nueva se abre)
+  // IMPORTAR: lo mismo que se ensayó; lo que conteste la base, tal cual (una nueva se abre). Si la base deja algo por decidir (otra del
+  // mismo día, o volver a leerla en su lugar), el archivo limpio se queda en memoria para la segunda llamada
+  // (revisión final) también un «ya estaba» con otro día de pago: se puede decir por qué es otra, y hace falta el archivo en memoria
+  const pideDecidir = x => x.resultado === "otra_distinta" || (x.resultado === "ya_estaba" && (x.se_puede_reemplazar || x.otro_dia === true));
   function importarJournal(card, opciones) {
     if (!S.nom.archivo) { mostrarErrorForma(card, "Vuelve a elegir el archivo: lo de antes ya no está en memoria."); return; }
-    if (S.nom.ensayo) S.nom.mismas = (Array.isArray(S.nom.ensayo.corridas) ? S.nom.ensayo.corridas : []).filter(mismasFuera).map(k => String(k.n));
-    return accionNom(card, "fn_nomina_importar", { p_archivo: S.nom.archivo, p_opciones: opciones || {} }, r => {
+    // (revisión final) con lo que Edgar dijo de este archivo al ensayarlo (su día de pago, la fila de su cabecera): se importa como se leyó
+    return accionNom(card, "fn_nomina_importar", { p_archivo: S.nom.archivo, p_opciones: { ...(S.nom.opciones || {}), ...(opciones || {}) } }, r => {
       S.nom.importe = r; S.nom.ensayo = null;
       const nuevas = (r.corridas || []).filter(x => x.resultado === "nueva" || x.resultado === "reemplazada");
-      const otra = (r.corridas || []).some(x => x.resultado === "otra_distinta");
-      if (!otra) { S.nom.archivo = null; S.nom.quitadas = null; S.nom.mismas = null; }
-      if (nuevas.length === 1 && !otra) { S.nom.corrida = nuevas[0].corrida; S.nom.importe = null; return { tipo: "ok", texto: `${r.mensaje} ${nuevas[0].texto || ""}`.trim() }; }
+      const decidir = (r.corridas || []).some(pideDecidir);
+      if (!decidir) { S.nom.archivo = null; S.nom.opciones = null; S.nom.quitadas = null; }
+      if (nuevas.length === 1 && !decidir) { S.nom.corrida = nuevas[0].corrida; S.nom.importe = null; return { tipo: "ok", texto: `${r.mensaje} ${nuevas[0].texto || ""}`.trim() }; }
       return null;
     }, { aviso: "Archivo leído", mfa: "Importar el journal" });
   }
@@ -8523,10 +8645,12 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     const cs = Array.isArray(r.corridas) ? r.corridas : [];
     return `<section class="ct-card ct-nom-importe" id="ct-nom-importe">
         <h2>${esc(r.mensaje || "Lo que contestó la base")}</h2>
-        <ul class="ct-wip-his">${cs.map(x => { const misma = x.resultado === "otra_distinta" && Array.isArray(S.nom.mismas) && S.nom.mismas.includes(String(x.n));
-          return `<li class="ct-wip-hi" data-resultado="${esc(x.resultado)}"><p>${esc(x.texto || "")}</p>
-          ${misma ? `<p class="ct-aviso bad ct-nom-misma">Trae el mismo bruto y el mismo neto que la que está: es la misma nómina, no otra del mismo día, y no se sube como otra (entraría dos veces al libro). ${x.se_puede_reemplazar ? "Si Gusto la corrigió, di que reemplaza a la que estaba." : "Si Gusto la corrigió, anula la que está y vuelve a subir esta."}</p>` : ""}
-          <div class="ct-acciones">${x.resultado === "otra_distinta" ? `${x.se_puede_reemplazar ? `<button type="button" class="accion secundaria chica" data-nom-reemplazar>Reemplaza a la que estaba</button>` : ""}${misma ? "" : `<button type="button" class="accion secundaria chica" data-nom-otra="${esc(x.n)}">Es otra nómina del mismo día</button>`}` : ""}
+        <ul class="ct-wip-his">${cs.map(x => { const misma = x.resultado === "otra_distinta" && x.misma === true;
+          return `<li class="ct-wip-hi" data-resultado="${esc(x.resultado)}"${misma ? ` data-misma` : ""}><p>${esc(x.texto || "")}</p>
+          ${misma ? `<p class="ct-aviso bad ct-nom-misma">Trae a las mismas personas con su mismo bruto y su mismo neto que la que está: es la misma nómina, no otra del mismo día, y como «otra» entraría dos veces al libro. Solo entra como otra si de verdad lo es, diciendo por qué.</p>` : ""}
+          <div class="ct-acciones">${x.resultado === "otra_distinta" ? `${x.se_puede_reemplazar ? `<button type="button" class="accion secundaria chica" data-nom-reemplazar>Reemplaza a la que estaba</button>` : ""}${misma ? `<button type="button" class="accion secundaria chica" data-nom-otra-porque="${esc(x.n)}"${deshab()}>Son dos de verdad: decir por qué</button>` : `<button type="button" class="accion secundaria chica" data-nom-otra="${esc(x.n)}">Es otra nómina del mismo día</button>`}` : ""}
+            ${x.resultado === "ya_estaba" && x.se_puede_reemplazar ? `<button type="button" class="accion secundaria chica" data-nom-reemplazar>Volver a leerla con lo que el mapeo dice hoy</button>` : ""}
+            ${x.resultado === "ya_estaba" && x.otro_dia === true ? `<button type="button" class="accion secundaria chica" data-nom-otra-porque="${esc(x.n)}"${deshab()}>Son dos de verdad: decir por qué</button>` : ""}
             ${x.corrida && x.resultado !== "otra_distinta" ? `<button type="button" class="accion secundaria chica" data-nom-abrir="${esc(x.corrida)}">Abrir la nómina</button>` : ""}</div></li>`; }).join("")}</ul>
         <div class="ct-acciones"><button type="button" class="accion secundaria" data-nom-importe-cerrar>Cerrar</button></div>
         <div class="ct-form" hidden></div>
@@ -8534,8 +8658,22 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
   }
   function wireImporte() {
     const card = $("ct-nom-importe"); if (!card) return;
-    card.querySelector("[data-nom-importe-cerrar]").addEventListener("click", () => { S.nom.importe = null; S.nom.archivo = null; S.nom.quitadas = null; S.nom.mismas = null; repintar(); });
-    const re = card.querySelector("[data-nom-reemplazar]"); if (re) re.addEventListener("click", () => importarJournal(card, { reemplazar: true }));
+    card.querySelector("[data-nom-importe-cerrar]").addEventListener("click", () => { S.nom.importe = null; S.nom.archivo = null; S.nom.opciones = null; S.nom.quitadas = null; repintar(); });
+    card.querySelectorAll("[data-nom-reemplazar]").forEach(re => re.addEventListener("click", () => importarJournal(card, { reemplazar: true })));
+    // (arreglo) la MISMA nómina bajada de otra forma solo entra como otra con su porqué (de 3 a 300 letras; la base lo guarda en la corrida).
+    // (revisión final) Lo mismo cuando la base contesta «ya estaba» CON OTRO DÍA DE PAGO (el mismo archivo sin fechas subido con otro
+    // día dicho a mano, o un resumen sin período a menos de una semana): su texto dice «si de verdad es otra, súbela diciendo por qué»,
+    // y sin este botón no había por dónde (dos nóminas de sueldo fijo, idénticas, que salen del mismo resumen sin fechas)
+    const op = card.querySelector("[data-nom-otra-porque]");
+    if (op) op.addEventListener("click", () => {
+      const x = ((S.nom.importe && S.nom.importe.corridas) || []).find(z => String(z.n) === op.dataset.nomOtraPorque) || {};
+      montarForma(card, formaHTML(`¿Por qué es OTRA nómina del ${esc(fechaLarga(x.dia_pago))} y no la misma? Trae a las mismas personas con las mismas cifras: entra aparte y, al postearla, su sueldo y sus impuestos entran al libro además de los de la que ya está.`,
+        `<label class="ct-campo">Por qué son dos (queda en la nómina)<input name="porque" required maxlength="300" data-falta="Falta el porqué: qué hace que sean dos nóminas distintas." autocomplete="off"><span class="ct-sub">Por ejemplo: «dos bonos iguales, uno por cada obra».</span></label>`, "Sí, son dos: subirla como otra"), v => {
+        const porque = String(v.porque || "").trim();
+        if (porque.length < 3) { mostrarErrorForma(card, "El porqué son unas palabras (3 letras o más): qué hace que sean dos nóminas distintas."); return; }
+        importarJournal(card, { otra_nomina: true, otra_porque: porque });
+      });
+    });
     // «otra nómina del mismo día» entra APARTE y se postea además de la que está: se confirma, con lo que pasa si en verdad es la misma
     const ot = card.querySelector("[data-nom-otra]");
     if (ot) ot.addEventListener("click", () => {
@@ -8566,13 +8704,16 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     const c = nomCuerpo(), x = (corridas || []).find(k => k.corrida_id === id);
     const volver = `<div class="ct-acciones"><button type="button" class="accion secundaria" id="ct-nom-volver">← Las nóminas</button></div>`;
     const alVolver = () => { const b = $("ct-nom-volver"); if (b) b.addEventListener("click", () => { S.nom.corrida = null; S.nom.nota = null; S.hooks.titulo(KICKER, TITULOS.nomina); pintarNomina(); }); };
-    if (!x) { c.innerHTML = `<section class="ct-card"><p class="ct-vacio">Esa nómina ya no está (o la sesión no es la del dueño).</p>${volver}</section>`; alVolver(); return; }
+    // (arreglo) sin el código del teléfono la base no da ninguna nómina: no es que no esté
+    if (!x) { c.innerHTML = `<section class="ct-card"><p class="ct-vacio">${mfaActivo() ? "Esa nómina ya no está (o la sesión no es la del dueño)." : "Esta nómina solo se ve con el código del teléfono: entra con él."}</p>${volver}</section>`; alVolver(); return; }
     S.hooks.titulo(KICKER, nombreCorrida(x));
     marcarVolver();
     subNom(`<b>${esc(nombreCorrida(x))}</b> · ${esc(x.tipo_texto || x.tipo)} · ${(ESTADO_CORR[x.estado] || [x.estado])[0]}`);
     personas = Array.isArray(personas) ? personas : [];
     const obras = new Map();
     for (const p of (prop && prop.personas) || []) for (const q of p.partes || []) if (q.proyecto_id && q.obra) obras.set(q.proyecto_id, q.obra);
+    // (arreglo) el reembolso va a nombre del empleado por su perfil (el tercero de la línea), no escrito en el memo: su nombre, de aquí
+    obras.terceros = new Map(personas.filter(p => p.usuario_id && p.perfil).map(p => [p.usuario_id, p.perfil]));
     c.innerHTML = notaNomHTML() + volver + cabCorridaHTML(x, prop) +
       (propErr ? `<section class="ct-card ct-nom-mfa"><p class="ct-aviso warn">${esc(mensajeNom(propErr))}</p></section>` : "") +
       (x.estado === "importada" && prop ? frenosHTML(prop) + avisosCorridaHTML(prop) + personasCorridaHTML(prop, personas, perfiles, true) + asientoHTML(prop, obras, false) + postearHTML(x, prop) : "") +
@@ -8590,7 +8731,8 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
         <p class="ct-nota">${esc(x.tipo_texto || x.tipo)}${x.periodo_desde ? ` · período del ${esc(fecha(x.periodo_desde))} al ${esc(fechaLarga(x.periodo_hasta))}` : " · sin período"} · archivo «${esc(x.archivo || "")}», importado el ${esc(fechaLarga(x.importada_el))}${x.posteada_el ? ` · posteada el ${esc(fechaLarga(x.posteada_el))}` : ""}${x.toma_horas === false ? " · usa las horas del período sin quedárselas" : ""}.</p>
         ${totalesNomHTML({ ...x, personas: x.personas }, true)}
         ${ds.length ? `<ul class="ct-jr-avisos ct-nom-descuadres">${ds.map(t => `<li class="ct-aviso bad">${esc(t)}</li>`).join("")}</ul>` : ""}
-        ${sc.length ? `<p class="ct-aviso bad">Trae ${plural(sc.length, "columna", "columnas")} con cifras que el mapeo no conocía (${esc(sc.map(s => `«${s.columna || s}»`).join(", "))}). Lo que no se conocía no se guardó: di qué es cada una en Ajustes, descarta esta nómina y vuelve a subir su archivo.</p>` : ""}
+        ${sc.length ? `<p class="ct-aviso bad">Trae ${plural(sc.length, "columna", "columnas")} con cifras que el mapeo no conocía (${esc(sc.map(s => `«${s.columna || s}»`).join(", "))}). Lo que no se conocía no se guardó: vuelve a subir su archivo en «Nóminas», di ahí qué es cada una y la base la vuelve a leer en su lugar («Volver a leerla con lo que el mapeo dice hoy»).</p>` : ""}
+        ${x.otra_porque ? `<p class="ct-aviso warn ct-nom-porque">Trae a las mismas personas con las mismas cifras que otra nómina, y se dijo que es otra: «${esc(x.otra_porque)}».</p>` : ""}
         ${prop && prop.fecha_asiento && prop.fecha_asiento.nota ? `<p class="ct-aviso warn">${esc(prop.fecha_asiento.nota)}</p>` : ""}
       </section>`;
   }
@@ -8604,7 +8746,8 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
           <div class="ct-acciones">${f.codigo === "falta_cuenta_sin_obra" ? `<button type="button" class="accion secundaria chica" data-nom-sinobra${deshab()}>Decir la cuenta de lo sin obra</button>` : ""}
             ${f.codigo === "sin_horas" && f.persona ? `<button type="button" class="accion secundaria chica" data-nom-decidir="${esc(f.persona)}"${deshab()}>Mandarlo sin obra</button>` : ""}
             ${["sin_enlazar", "sin_confirmar", "perfil_no_existe"].includes(f.codigo) && f.persona ? `<button type="button" class="accion secundaria chica" data-nom-ir-per="${esc(f.persona)}">Decir quién es</button>` : ""}
-            ${f.codigo === "sin_periodo" ? `<button type="button" class="accion secundaria chica" data-nom-periodo${deshab()}>Decir el período</button>` : ""}</div></li>`).join("")}</ul>
+            ${f.codigo === "sin_periodo" ? `<button type="button" class="accion secundaria chica" data-nom-periodo${deshab()}>Decir el período</button>` : ""}
+            ${f.codigo === "repetida" ? `<button type="button" class="accion secundaria chica" data-nom-porque${deshab()}>Es otra: decir por qué</button>` : ""}</div></li>`).join("")}</ul>
         ${sinCodigoNomHTML("Lo que se decide aquí")}
         <div class="ct-form" hidden></div>
       </section>`;
@@ -8636,7 +8779,7 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
       </section>`;
   }
   // EL ASIENTO que va a entrar (o que entró): sus líneas tal como las da la base, y las del reparto del burden
-  const lineaHTML = (l, obras) => `<li class="ct-nom-l${num(l.monto) < 0 ? " haber" : ""}"><span class="ct-nom-l-t"><span><b>${esc(l.cuenta)}</b>${[nombreCuenta(l.cuenta) !== l.cuenta ? nombreCuenta(l.cuenta) : "", l.proyecto_id ? (obras.get(l.proyecto_id) || l.proyecto_id) : "", l.co || ""].filter(Boolean).map(x => ` · ${esc(x)}`).join("")}</span><small>${esc(l.memo || "")}</small></span><span class="ct-num">${num(l.monto) < 0 ? `${MENOS}${fmtAbs(l.monto)}` : fmt(l.monto)}</span></li>`;
+  const lineaHTML = (l, obras) => `<li class="ct-nom-l${num(l.monto) < 0 ? " haber" : ""}"><span class="ct-nom-l-t"><span><b>${esc(l.cuenta)}</b>${[nombreCuenta(l.cuenta) !== l.cuenta ? nombreCuenta(l.cuenta) : "", l.proyecto_id ? (obras.get(l.proyecto_id) || l.proyecto_id) : "", l.co || "", l.tercero_tipo === "empleado" && l.tercero_id ? `a nombre de ${(obras.terceros && obras.terceros.get(l.tercero_id)) || "un empleado"}` : ""].filter(Boolean).map(x => ` · ${esc(x)}`).join("")}</span><small>${esc(l.memo || "")}</small></span><span class="ct-num">${num(l.monto) < 0 ? `${MENOS}${fmtAbs(l.monto)}` : fmt(l.monto)}</span></li>`;
   function asientoHTML(prop, obras, hecho) {
     const a = prop.asiento || {}, b = prop.burden || null, fa = prop.fecha_asiento || {};
     const ls = Array.isArray(a.lineas) ? a.lineas : [], lb = b && Array.isArray(b.lineas) ? b.lineas : [];
@@ -8648,10 +8791,12 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
       </section>`;
   }
   // POSTEAR: lo que va a pasar, en una frase (con las cifras de la base), y el botón
+  // (arreglo) una corrección que devuelve deja sus cuentas A FAVOR (pasivos en negativo): se dicen aparte, nunca como «por pagar»
   function frasePostear(x, prop) {
     const t = prop.totales || {}, pas = prop.pasivos || {}, fa = prop.fecha_asiento || {};
-    const deudas = Object.keys(pas).sort().map(k => `${fmt(pas[k])} en ${k}`).join(", ");
-    return `Entra al libro, con fecha ${fechaLarga(fa.fecha || x.dia_pago)}, el journal de esta nómina (${fmt(t.debe)} en débitos): el sueldo bruto de ${fmt(t.bruto)} a sus obras y cuentas, lo del patrón (${fmt(t.imp_patron)}) a la bolsa del burden y a la oficina, y lo que queda por pagar a Gusto (${deudas}); y otro asiento reparte el burden real a las obras.`;
+    const ks = Object.keys(pas).sort(), deudas = ks.filter(k => num(pas[k]) > 0).map(k => `${fmt(pas[k])} en ${k}`).join(", "), favor = ks.filter(k => num(pas[k]) < 0).map(k => `${fmtAbs(pas[k])} en ${k}`).join(", ");
+    const queda = [deudas ? `lo que queda por pagar a Gusto (${deudas})` : "", favor ? `lo que queda A FAVOR, que Gusto descuenta o devuelve (${favor})` : ""].filter(Boolean).join(" y ");
+    return `Entra al libro, con fecha ${fechaLarga(fa.fecha || x.dia_pago)}, el journal de esta nómina (${fmt(t.debe)} en débitos): el sueldo bruto de ${fmt(t.bruto)} a sus obras y cuentas, lo del patrón (${fmt(t.imp_patron)}) a la bolsa del burden y a la oficina${queda ? `, y ${queda}` : ""}; y otro asiento reparte el burden real a las obras.`;
   }
   function postearHTML(x, prop) {
     const puede = !!prop.puede_postear;
@@ -8660,7 +8805,7 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
         <p class="ct-nota" id="ct-nom-frase">${puede ? esc(frasePostear(x, prop)) : "Todavía no se puede postear: arregla lo que frena (arriba) y vuelve a mirar."}</p>
         <div class="ct-acciones"><button type="button" class="accion" id="ct-nom-postear-b"${puede && mfaActivo() ? "" : " disabled"}>Postear</button>
           <button type="button" class="accion secundaria" id="ct-nom-descartar"${deshab()}>Descartar esta nómina</button>
-          ${x.tipo === "fuera_de_ciclo" ? `<button type="button" class="accion secundaria" id="ct-nom-toma"${deshab()}>${x.toma_horas ? "No es la que paga las horas del período" : "Esta es la que paga las horas del período"}</button>` : ""}</div>
+          ${x.tipo === "fuera_de_ciclo" || x.toma_horas === false || (prop.avisos || []).some(a => a.codigo === "sin_tipo") ? `<button type="button" class="accion secundaria" id="ct-nom-toma"${deshab()}>${x.toma_horas ? "No es la que paga las horas del período" : "Esta es la que paga las horas del período"}</button>` : ""}</div>
         ${sinCodigoNomHTML("Postear")}
         <div class="ct-form" hidden></div>
       </section>`;
@@ -8669,9 +8814,13 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     const ps = Array.isArray(pend) ? pend : [];
     if (!ps.length) return "";
     const CL = { neto: "el neto (y los reembolsos)", impuestos: "impuestos", deducciones: "deducciones" };
+    // (arreglo) en negativo, lo que una corrección dejó A FAVOR (Gusto lo descuenta de un cargo o lo devuelve al banco)
+    const favor = ps.some(p => num(p.acreditado) < 0);
     return `<section class="ct-card ct-nom-pend" id="ct-nom-pend">
-        <h2>Lo que dejó por pagar a Gusto</h2>
-        <ul class="ct-nom-lineas">${ps.map(p => `<li class="ct-nom-l${noCero(p.pendiente) ? " falta" : ""}"><span class="ct-nom-l-t"><b>${esc(p.cuenta)}</b> ${esc(CL[p.clase] || p.clase || "")}<small>${fmt(p.acreditado)} del journal · ${fmt(p.pagado)} ya cobrado por Gusto</small></span><span class="ct-num">${noCero(p.pendiente) ? `falta ${fmt(p.pendiente)}` : "pagado"}</span></li>`).join("")}</ul>
+        <h2>${favor ? "Lo que dejó a favor y por pagar" : "Lo que dejó por pagar a Gusto"}</h2>
+        ${favor ? `<p class="ct-nota">Lo que quedó a favor no es dinero que haya que pagar: Gusto lo descuenta de su cargo siguiente o lo devuelve al banco, y ese movimiento se casa en «Cargos de Gusto».</p>` : ""}
+        <ul class="ct-nom-lineas">${ps.map(p => { const n = num(p.pendiente);
+          return `<li class="ct-nom-l${n > 0 ? " falta" : n < 0 ? " favor" : ""}"><span class="ct-nom-l-t"><b>${esc(p.cuenta)}</b> ${esc(CL[p.clase] || p.clase || "")}<small>${num(p.acreditado) < 0 ? `${fmtAbs(p.acreditado)} a favor en el journal · ${fmtAbs(p.pagado)} ya descontado o devuelto` : `${fmt(p.acreditado)} del journal · ${fmt(p.pagado)} ya cobrado por Gusto`}</small></span><span class="ct-num">${n > 0 ? `falta ${fmt(p.pendiente)}` : n < 0 ? `a favor ${fmtAbs(p.pendiente)}` : num(p.acreditado) < 0 ? "devuelto" : "pagado"}</span></li>`; }).join("")}</ul>
       </section>`;
   }
   // LOS CARGOS DEL BANCO de esta nómina: los casados (por su texto) y los pendientes con fecha cerca de su día de pago
@@ -8688,7 +8837,9 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
         ${pendientes.length ? `<ul class="ct-wip-his">${pendientes.map(m => cargoPendienteHTML(m)).join("")}</ul>` : `<p class="ct-vacio">${casados.length ? "Ningún cargo de Gusto pendiente cerca de su día de pago." : "Ningún cargo de Gusto cerca de su día de pago todavía: cuando el banco lo traiga, sale aquí y en la Bandeja."}</p>`}
       </section>`;
   }
-  const cargoPendienteHTML = m => `<li class="ct-wip-hi ct-nom-cargo" data-nom-mov="${esc(m.movimiento_id)}"><p><b>${esc(m.descripcion)}</b> · ${esc(fechaLarga(m.fecha))} · <span class="ct-num">${fmt(m.monto)}</span> ${pill(m.clase_probable === "cuota" ? "¿la cuota?" : "pendiente", "warn")}</p>
+  // (arreglo) un movimiento de Gusto puede ser un DEPÓSITO (lo que devuelve de una corrección): la base lo da en negativo (lo que salió)
+  const montoMovHTML = m => num(m.monto) < 0 ? `<span class="ct-num">${fmtAbs(m.monto)}</span> depositado` : `<span class="ct-num">${fmt(m.monto)}</span>`;
+  const cargoPendienteHTML = m => `<li class="ct-wip-hi ct-nom-cargo" data-nom-mov="${esc(m.movimiento_id)}"${num(m.monto) < 0 ? " data-deposito" : ""}><p><b>${esc(m.descripcion)}</b> · ${esc(fechaLarga(m.fecha))} · ${montoMovHTML(m)} ${pill(m.clase_probable === "cuota" ? "¿la cuota?" : num(m.monto) < 0 ? "devolución de Gusto" : "pendiente", "warn")}</p>
       <p class="ct-sub">${esc(m.texto || "")}</p>
       <div class="ct-acciones"><button type="button" class="accion secundaria chica" data-nom-casar="${esc(m.movimiento_id)}"${deshab()}>${m.clase_probable === "cuota" ? "Ver qué es" : "Casar…"}</button></div>
       <div class="ct-form" hidden></div></li>`;
@@ -8706,13 +8857,18 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
   // por pagar (fn_nomina_pendiente). Los montos van como texto, tal como se escriben; la base comprueba que sumen el cargo al centavo
   // (MX001) y que nada pague de más (MX008): aquí no se suma nada.
   const CL_PEND = { neto: "neto y reembolsos", impuestos: "impuestos", deducciones: "deducciones" };
+  // (arreglo) las líneas son TODO lo que una nómina dejó por pagar o A FAVOR (una corrección): lo a favor se escribe en NEGATIVO (lo que
+  // Gusto descontó de este cargo, o lo que devuelve un depósito suyo). Un depósito de Gusto se dice igual, con sus partes en negativo.
   const manoNomHTML = (p, lineas, abierto) => `<details class="ct-nom-mano"${abierto ? " open" : ""}><summary>${abierto ? "Decir a mano qué paga" : "Ninguna es: decir a mano qué paga"}</summary>
       <form class="ct-pide ct-nom-mano-f" novalidate>
-        <p class="ct-nota">Escribe cuánto de este cargo (${esc(fmt(p.monto))}) paga cada cosa, como lo dice Gusto; deja vacío lo que no paga. La base comprueba que sume el cargo al centavo y que nada pague más de lo que su nómina dejó por pagar.</p>
-        ${lineas.map((l, i) => `<label class="ct-campo ct-nom-mano-l">Nómina del ${esc(fechaLarga(l.dia_pago))} · ${esc(l.cuenta)} ${esc(CL_PEND[l.clase] || l.clase || "")}<span class="ct-sub">por pagar ${esc(fmt(l.pendiente))}</span><input name="m${i}" inputmode="decimal" placeholder="0.00" autocomplete="off" data-corrida="${esc(l.corrida_id)}" data-cuenta="${esc(l.cuenta)}"></label>`).join("")}
+        <p class="ct-nota">${num(p.monto) < 0 ? `Escribe cuánto de este depósito (${esc(fmtAbs(p.monto))}) devuelve cada cosa que quedó a favor, en NEGATIVO (por ejemplo −25.30)` : `Escribe cuánto de este cargo (${esc(fmt(p.monto))}) paga cada cosa, como lo dice Gusto; lo que descontó de algo que quedó a favor, en NEGATIVO`}; deja vacío lo que no va. La base comprueba que sume el movimiento al centavo y que nada pague más de lo que su nómina dejó.</p>
+        ${lineas.map((l, i) => `<label class="ct-campo ct-nom-mano-l">Nómina del ${esc(fechaLarga(l.dia_pago))} · ${esc(l.cuenta)} ${esc(CL_PEND[l.clase] || l.clase || "")}<span class="ct-sub">${num(l.pendiente) < 0 ? `a favor ${esc(fmtAbs(l.pendiente))}: en negativo` : `por pagar ${esc(fmt(l.pendiente))}`}</span><input name="m${i}" inputmode="decimal" placeholder="${num(l.pendiente) < 0 ? `${MENOS}0.00` : "0.00"}" autocomplete="off" data-corrida="${esc(l.corrida_id)}" data-cuenta="${esc(l.cuenta)}"></label>`).join("")}
         <label class="ct-campo">Por qué (queda en su asiento)<input name="nota" autocomplete="off"></label>
         <div class="ct-acciones"><button type="submit" class="accion secundaria" data-nom-mano${deshab()}>Casar con estas partes</button></div>
       </form></details>`;
+  // lo que contestó la base al casar, en llano: un cargo, un depósito de Gusto, o un pago por fuera de Gusto
+  const casadoTxt = r => r.clase === "fuera" ? `Pago de ${fmt(r.monto)} del ${fechaLarga(r.fecha)} casado con la nómina, por fuera de Gusto`
+    : num(r.monto) < 0 ? `Depósito de Gusto de ${fmtAbs(r.monto)} del ${fechaLarga(r.fecha)} casado con lo que quedó a favor` : `Cargo de ${fmt(r.monto)} del ${fechaLarga(r.fecha)} casado con la nómina`;
   async function abrirCasarNom(card, movimiento, alTerminar) {
     if (S.ocupado) return;
     const f = card.querySelector(".ct-form");
@@ -8722,11 +8878,12 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     catch (err) { f.innerHTML = `<p class="ct-aviso bad ct-error">${esc(mensajeNom(err))}</p>`; return; }
     const ops = Array.isArray(p.opciones) ? p.opciones : [];
     // lo que cada nómina posteada dejó por pagar (la base), la de día de pago más cerca del cargo primero
-    const lineas = (Array.isArray(pend) ? pend : []).filter(l => num(l.pendiente) > 0)
+    const lineas = (Array.isArray(pend) ? pend : []).filter(l => noCero(l.pendiente))
       .sort((a, b) => Math.abs(diasEntre(a.dia_pago, p.fecha)) - Math.abs(diasEntre(b.dia_pago, p.fecha)) || String(b.dia_pago).localeCompare(String(a.dia_pago)) || String(a.cuenta).localeCompare(String(b.cuenta)));
-    const aMano = !p.pago && p.estado === "pendiente" && num(p.monto) > 0 && lineas.length;
+    const aMano = !p.pago && p.estado === "pendiente" && noCero(p.monto) && lineas.length;
+    const parteTxt = q => num(q.monto) < 0 ? `<span class="ct-num">${MENOS}${fmtAbs(q.monto)}</span> en ${esc(q.cuenta)} (a favor)` : `<span class="ct-num">${fmt(q.monto)}</span> en ${esc(q.cuenta)}`;
     f.innerHTML = `<div class="ct-nom-casar"><p class="ct-form-t">${esc(p.texto || "")}</p>
-        ${ops.map((o, i) => `<div class="ct-nom-op"><p>${esc(o.texto)}: ${(o.partes || []).map(q => `<span class="ct-num">${fmt(q.monto)}</span> en ${esc(q.cuenta)}`).join(", ")}</p>
+        ${ops.map((o, i) => `<div class="ct-nom-op"><p>${esc(o.texto)}: ${(o.partes || []).map(parteTxt).join(", ")}</p>
           <button type="button" class="accion${i ? " secundaria" : ""}" data-nom-op="${i}"${deshab()}>Casar así</button></div>`).join("")}
         ${aMano ? manoNomHTML(p, lineas, !ops.length && !p.cuota) : ""}
         <div class="ct-acciones">${p.cuota ? `<button type="button" class="accion${ops.length ? " secundaria" : ""}" data-nom-cuota${deshab()}>Es la cuota mensual de Gusto: a su gasto</button>` : ""}<button type="button" class="accion secundaria" data-cerrar>Cerrar</button></div>
@@ -8736,18 +8893,19 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
       const o = ops[Number(b.dataset.nomOp)]; if (!o) return;
       // el monto de cada parte, como texto con sus centavos (la base lo lee en numeric; aquí no se suma nada)
       const partesTxt = (o.partes || []).map(q => ({ corrida: q.corrida, cuenta: q.cuenta, monto: Number(q.monto).toFixed(2) }));
-      accionNom(card, "fn_nomina_cargo_casar", { p_movimiento: movimiento, p_partes: partesTxt, p_nota: null }, r => ({ tipo: "ok", texto: `Cargo de ${fmt(r.monto)} del ${fechaLarga(r.fecha)} casado con la nómina: asiento ${r.asiento}.` }),
+      accionNom(card, "fn_nomina_cargo_casar", { p_movimiento: movimiento, p_partes: partesTxt, p_nota: null }, r => ({ tipo: "ok", texto: `${casadoTxt(r)}: asiento ${r.asiento}.` }),
         { aviso: "Cargo casado con la nómina", mfa: "Casar un cargo", despues: alTerminar });
     }));
     const fm = f.querySelector(".ct-nom-mano-f");
     if (fm) fm.addEventListener("submit", ev => {
       ev.preventDefault();
       // cada parte con su corrida y su cuenta, y su monto como se escribió (sin $, comas ni espacios); las vacías no van
-      const partesTxt = [...fm.querySelectorAll("input[data-cuenta]")].map(i => ({ corrida: i.dataset.corrida, cuenta: i.dataset.cuenta, monto: String(i.value || "").replace(/[$,\s]/g, "") })).filter(x => x.monto !== "");
+      // (el menos tipográfico, o el guion, valen igual: lo que sale es «-25.30»; la base dice si está bien escrito)
+      const partesTxt = [...fm.querySelectorAll("input[data-cuenta]")].map(i => ({ corrida: i.dataset.corrida, cuenta: i.dataset.cuenta, monto: String(i.value || "").replace(/[$,\s]/g, "").replace(/^[−–]/, "-") })).filter(x => x.monto !== "");
       const nota = String(fm.elements.nota.value || "").trim();
       if (!partesTxt.length) { mostrarErrorForma(card, "Escribe cuánto paga este cargo de al menos una de las líneas."); return; }
       if (!nota) { mostrarErrorForma(card, "Falta la nota: por qué este cargo se parte así (por ejemplo, «Gusto cobró los impuestos en dos cargos»)."); return; }
-      accionNom(card, "fn_nomina_cargo_casar", { p_movimiento: movimiento, p_partes: partesTxt, p_nota: nota }, r => ({ tipo: "ok", texto: `Cargo de ${fmt(r.monto)} del ${fechaLarga(r.fecha)} casado con la nómina, con las partes que dijiste: asiento ${r.asiento}.` }),
+      accionNom(card, "fn_nomina_cargo_casar", { p_movimiento: movimiento, p_partes: partesTxt, p_nota: nota }, r => ({ tipo: "ok", texto: `${casadoTxt(r)}, con las partes que dijiste: asiento ${r.asiento}.` }),
         { aviso: "Cargo casado con la nómina", mfa: "Casar un cargo", despues: alTerminar });
     });
     const bc = f.querySelector("[data-nom-cuota]");
@@ -8773,6 +8931,15 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
         const li = document.querySelector(`[data-nom-persona="${CSS.escape(b.dataset.nomIrPer)}"]`), bb = li && li.querySelector("[data-nom-enlazar]");
         if (li && typeof li.scrollIntoView === "function") li.scrollIntoView({ behavior: "smooth", block: "center" });
         if (bb) bb.click();
+      }));
+      // (arreglo) «repetida»: otra posteada trae a las mismas personas con las mismas cifras; si de verdad es otra, su porqué (si es la
+      // misma, se descarta abajo). La base lo guarda en la corrida y vuelve a mirar
+      const bq = cf.querySelector("[data-nom-porque]");
+      if (bq) bq.addEventListener("click", () => montarForma(cf, formaHTML("¿Por qué es otra nómina y no la misma que ya está en el libro? Al postearla, su sueldo y sus impuestos entran además de los de aquella.",
+        `<label class="ct-campo">Por qué son dos (queda en la nómina)<input name="porque" required maxlength="300" data-falta="Falta el porqué: qué hace que sean dos nóminas distintas." autocomplete="off"></label>`, "Guardar el porqué"), v => {
+        const porque = String(v.porque || "").trim();
+        if (porque.length < 3) { mostrarErrorForma(cf, "El porqué son unas palabras (3 letras o más): qué hace que sean dos nóminas distintas."); return; }
+        accionNom(cf, "fn_nomina_corrida", { p_corrida: id, p: { otra_porque: porque } }, r => ({ tipo: "ok", texto: `Guardado: es otra nómina («${r.otra_porque}»). La base la vuelve a mirar.` }), { aviso: "Porqué guardado", mfa: "Cambiar la nómina" });
       }));
       const bp = cf.querySelector("[data-nom-periodo]");
       if (bp) bp.addEventListener("click", () => montarForma(cf, formaHTML("El período que paga esta nómina (lo trabajado)",
@@ -8816,44 +8983,83 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     document.querySelectorAll("#ct-nom-cargos-c [data-nom-casar]").forEach(b => b.addEventListener("click", () => abrirCasarNom(b.closest(".ct-nom-cargo"), b.dataset.nomCasar)));
   }
 
-  // ---------- Cargos del banco: los de Gusto pendientes, los casados y la cuota ----------
+  // ---------- Cargos del banco: los de Gusto pendientes, los des-casados, los que pueden ser pagos por fuera de Gusto, los resueltos ----------
   async function pintarNomCargos(mia) {
-    let ctl, cargos;
+    let ctl, cargos, fuera = [];
     try {
       await leerMfa();
-      [ctl, cargos] = await Promise.all([controlNom(), DB._leer("v_nomina_cargos?select=*&order=fecha.desc,monto.desc")]);
+      [ctl, cargos, fuera] = await Promise.all([controlNom(), DB._leer("v_nomina_cargos?select=*&order=fecha.desc,monto.desc"),
+        // (arreglo) los cargos del banco que NO son de Gusto y dan al centavo lo que Gusto no cobra (un cheque de papel, una deducción
+        // que se le paga a un tercero): candidatos, con el código del teléfono (sin él, la base no da ninguno)
+        DB._rpc("fn_nomina_cargos_fuera", {}).catch(e => { if (esFalloDeRed(e)) throw e; return []; })]);
       if (!vivaNom(mia)) return;
     } catch (err) { if (!vivaNom(mia)) return; return errorNom(err, pintarNomina); }
-    cargos = Array.isArray(cargos) ? cargos : [];
-    const pend = cargos.filter(m => m.estado === "pendiente"), hechos = cargos.filter(m => m.estado !== "pendiente");
-    subNom(`<b>${plural(pend.length, "cargo de Gusto espera", "cargos de Gusto esperan")}</b> · ${plural(hechos.length, "resuelto", "resueltos")}`);
+    cargos = Array.isArray(cargos) ? cargos : []; fuera = Array.isArray(fuera) ? fuera : [];
+    // (arreglo) «descasado»: casado aquí y des-casado después en la Bandeja del banco; va aparte, con su «Deshacer» (el mismo movimiento
+    // sale además entre los que esperan, con su propuesta)
+    const pend = cargos.filter(m => m.estado === "pendiente"), desc = cargos.filter(m => m.estado === "descasado"), hechos = cargos.filter(m => m.estado === "casado" || m.estado === "cuota");
+    const sinCodigo = !!ctl.pide.length;
+    subNom(`<b>${plural(pend.length, "movimiento de Gusto espera", "movimientos de Gusto esperan")}</b>${desc.length ? ` · <span class="bad-txt">${plural(desc.length, "des-casado", "des-casados")}</span>` : ""}${sinCodigo ? "" : ` · ${plural(hechos.length, "resuelto", "resueltos")}`}`);
     const c = nomCuerpo();
-    // con un cuadre en rojo, ningún cargo (son montos): el rojo y adónde ir
+    // (arreglo) los des-casados en la Bandeja: la base los pone en rojo (el cuadre 25) y dice que se deshagan AQUÍ; así que salen también
+    // con el rojo, sin su monto (con un cuadre en rojo no se pinta ninguna cifra), con su «Deshacer»
+    const descHTML = conCifras => desc.length ? `<section class="ct-card ct-nom-descasados${conCifras ? " ct-rojo" : ""}" id="ct-nom-descasados">
+        <h2>Se des-casaron en la Bandeja</h2>
+        <p class="ct-nota">Se casaron aquí con su nómina y después se des-casaron en la Bandeja del banco: su asiento ya está reversado y ya no cuentan como pagados. Deshazlos aquí también${conCifras ? ", o cásalos otra vez desde «Esperan en el banco» (se apuntan solos)" : ""}.</p>
+        <ul class="ct-wip-his">${desc.map(m => filaPago(m, pill("des-casado", "bad"), conCifras)).join("")}</ul>
+      </section>` : "";
+    const filaPago = (m, extra, conCifras = true) => `<li class="ct-wip-hi" data-nom-pago="${esc(m.pago_id)}"><p><b>${esc(m.descripcion)}</b> · ${esc(fechaLarga(m.fecha))}${conCifras ? ` · ${montoMovHTML(m)}` : ""} ${extra}</p>
+            <p class="ct-sub">${esc(m.texto || "")}${m.corridas ? ` · ${esc(m.corridas)}` : ""}${m.asiento ? ` · asiento ${esc(m.asiento)}` : ""}</p>
+            <div class="ct-acciones"><button type="button" class="accion secundaria chica" data-nom-deshacer="${esc(m.pago_id)}"${deshab()}>Deshacer</button></div>
+            <div class="ct-form" hidden></div></li>`;
+    const wireDeshacer = () => c.querySelectorAll("[data-nom-deshacer]").forEach(b => b.addEventListener("click", () => {
+      const li = b.closest("[data-nom-pago]"), m = desc.concat(hechos).find(z => z.pago_id === b.dataset.nomDeshacer) || {};
+      montarForma(li, formaHTML(m.estado === "descasado" ? `Deshacer aquí «${esc(m.descripcion || "")}» del ${esc(fechaLarga(m.fecha))}, que ya se des-casó en la Bandeja: queda apuntado como deshecho y el movimiento sigue esperando.`
+        : `Deshacer «${esc(m.descripcion || "")}» (${esc(fmtAbs(m.monto))}): su asiento se reversa y el movimiento vuelve a la Bandeja.`,
+        `<label class="ct-campo">Por qué se deshace<input name="motivo" required data-falta="Falta el motivo: por qué se deshace." autocomplete="off"></label>`, "Deshacerlo"), v =>
+        accionNom(li, "fn_nomina_cargo_deshacer", { p_pago: b.dataset.nomDeshacer, p_motivo: v.motivo }, r => ({ tipo: "ok", texto: `Deshecho${r.reverso ? ` (reverso ${r.reverso})` : ""}. ${r.nota || ""}`.trim() }), { aviso: "Cargo deshecho", mfa: "Deshacer un cargo" }));
+    }));
+    // con un cuadre en rojo, ningún cargo con su monto: el rojo, adónde ir y, si los hay, los des-casados para deshacerlos
     if (ctl.rojos.length) {
-      c.innerHTML = notaNomHTML() + rojoNomHTML(ctl.rojos, "Los cargos de Gusto se casan cuando cuadre. Si el rojo es de una nómina, ábrela desde «Nóminas»: desde ella se anula o se descarta.");
-      wireRojoNom(c);
+      c.innerHTML = notaNomHTML() + pideCodigoNomHTML(ctl) + rojoNomHTML(ctl.rojos, desc.length ? "Si el rojo es un cargo que se des-casó en la Bandeja, deshazlo aquí abajo. Si es de una nómina, ábrela desde «Nóminas»: desde ella se anula o se descarta. Los demás cargos se casan cuando cuadre."
+        : "Los cargos de Gusto se casan cuando cuadre. Si el rojo es de una nómina, ábrela desde «Nóminas»: desde ella se anula o se descarta.") + descHTML(false);
+      wireRojoNom(c); wirePideNom(c); wireDeshacer();
       return;
     }
-    c.innerHTML = notaNomHTML() + avisosNomHTML(ctl.avisos, [35, 60, 62]) +
+    const resueltoPill = m => m.estado === "cuota" ? pill("cuota", "") : m.clase_probable === "fuera" ? pill("por fuera de Gusto", "ok") : num(m.monto) < 0 ? pill("devolución casada", "ok") : pill("casado", "ok");
+    c.innerHTML = notaNomHTML() + pideCodigoNomHTML(ctl, "Sin él, aquí solo se ven los movimientos de Gusto que esperan, sin casarlos.") + avisosNomHTML(ctl.avisos, [35, 60, 62]) +
+      descHTML(true) +
       `<section class="ct-card ct-nom-cargos" id="ct-nom-cargos">
         <h2>Esperan en el banco</h2>
-        <p class="ct-nota">El banco los dejó en la Bandeja esperando su nómina. Cada uno se casa con lo que su nómina dejó por pagar, al centavo; la cuota mensual de Gusto va a su gasto.</p>
-        ${pend.length ? `<ul class="ct-wip-his">${pend.map(cargoPendienteHTML).join("")}</ul>` : `<p class="ct-vacio">Ningún cargo de Gusto espera.</p>`}
+        <p class="ct-nota">El banco los dejó en la Bandeja esperando su nómina. Cada cargo se casa con lo que su nómina dejó por pagar, al centavo; un depósito de Gusto, con lo que una corrección dejó a favor; la cuota mensual de Gusto va a su gasto.</p>
+        ${pend.length ? `<ul class="ct-wip-his">${pend.map(cargoPendienteHTML).join("")}</ul>` : `<p class="ct-vacio">Ningún movimiento de Gusto espera.</p>`}
         ${sinCodigoNomHTML("Casar un cargo")}
-      </section>
-      <section class="ct-card ct-nom-hechos" id="ct-nom-hechos">
+      </section>` +
+      (fuera.length ? `<section class="ct-card ct-nom-fuera" id="ct-nom-fuera">
+        <h2>Pueden ser pagos por fuera de Gusto</h2>
+        <p class="ct-nota">Cargos del banco que no son de Gusto y dan al centavo algo que una nómina dejó por pagar y que Gusto no cobra (el cheque de papel de alguien, una deducción que se le paga a un tercero). Si lo es, cásalo con su nota: queda pagado «por fuera de Gusto».</p>
+        <ul class="ct-wip-his">${fuera.map((m, i) => `<li class="ct-wip-hi ct-nom-cargo" data-nom-fuera="${i}" data-nom-mov="${esc(m.movimiento_id)}"><p><b>${esc(m.descripcion)}</b> · ${esc(fechaLarga(m.fecha))} · <span class="ct-num">${fmt(m.monto)}</span> ${pill(m.clase === "cheque" ? "¿un cheque de papel?" : "¿las deducciones?", "warn")}</p>
+            <p class="ct-sub">${esc(m.texto || "")}</p>
+            <div class="ct-acciones"><button type="button" class="accion secundaria chica" data-nom-fuera-casar="${i}"${deshab()}>Es esto: casarlo por fuera de Gusto</button></div>
+            <div class="ct-form" hidden></div></li>`).join("")}</ul>
+      </section>` : "") +
+      `<section class="ct-card ct-nom-hechos" id="ct-nom-hechos">
         <h2>Resueltos</h2>
-        ${hechos.length ? `<ul class="ct-wip-his">${hechos.map(m => `<li class="ct-wip-hi" data-nom-pago="${esc(m.pago_id)}"><p><b>${esc(m.descripcion)}</b> · ${esc(fechaLarga(m.fecha))} · <span class="ct-num">${fmt(m.monto)}</span> ${pill(m.estado === "cuota" ? "cuota" : "casado", m.estado === "cuota" ? "" : "ok")}</p>
-            <p class="ct-sub">${esc(m.texto || "")}${m.corridas ? ` · ${esc(m.corridas)}` : ""} · asiento ${esc(m.asiento || "")}</p>
-            <div class="ct-acciones"><button type="button" class="accion secundaria chica" data-nom-deshacer="${esc(m.pago_id)}"${deshab()}>Deshacer</button></div>
-            <div class="ct-form" hidden></div></li>`).join("")}</ul>` : `<p class="ct-vacio">Ninguno todavía.</p>`}
+        ${hechos.length ? `<ul class="ct-wip-his">${hechos.map(m => filaPago(m, resueltoPill(m))).join("")}</ul>` : `<p class="ct-vacio">${sinCodigo ? "Lo casado se ve con el código del teléfono." : "Ninguno todavía."}</p>`}
       </section>`;
+    wirePideNom(c); wireAvisosNom(c);
     c.querySelectorAll("#ct-nom-cargos [data-nom-casar]").forEach(b => b.addEventListener("click", () => abrirCasarNom(b.closest(".ct-nom-cargo"), b.dataset.nomCasar)));
-    c.querySelectorAll("[data-nom-deshacer]").forEach(b => b.addEventListener("click", () => {
-      const li = b.closest("[data-nom-pago]"), m = hechos.find(z => z.pago_id === b.dataset.nomDeshacer) || {};
-      montarForma(li, formaHTML(`Deshacer «${esc(m.descripcion || "")}» (${esc(fmt(m.monto))}): su asiento se reversa y el cargo vuelve a la Bandeja.`,
-        `<label class="ct-campo">Por qué se deshace<input name="motivo" required data-falta="Falta el motivo: por qué se deshace." autocomplete="off"></label>`, "Deshacerlo"), v =>
-        accionNom(li, "fn_nomina_cargo_deshacer", { p_pago: b.dataset.nomDeshacer, p_motivo: v.motivo }, r => ({ tipo: "ok", texto: `Deshecho (reverso ${r.reverso}). ${r.nota || ""}`.trim() }), { aviso: "Cargo deshecho", mfa: "Deshacer un cargo" }));
+    wireDeshacer();
+    // (arreglo) casar por fuera de Gusto: las partes que propone la base (sus montos como texto con sus centavos) y la nota, que pide la base
+    c.querySelectorAll("[data-nom-fuera-casar]").forEach(b => b.addEventListener("click", () => {
+      const li = b.closest("[data-nom-fuera]"), m = fuera[Number(b.dataset.nomFueraCasar)]; if (!m) return;
+      montarForma(li, formaHTML(`Casar «${esc(m.descripcion || "")}» (${esc(fmt(m.monto))}) con la nómina del ${esc(fechaLarga(m.dia_pago))}, pagado por fuera de Gusto`,
+        `<label class="ct-campo">Qué es (queda en su asiento)<input name="nota" required data-falta="Falta la nota: qué es este pago (a quién se le pagó y por qué)." autocomplete="off"><span class="ct-sub">Por ejemplo: «la cuota sindical de octubre, pagada al sindicato».</span></label>`, "Casarlo por fuera de Gusto"), v => {
+        const nota = String(v.nota || "").trim();
+        if (nota.length < 3) { mostrarErrorForma(li, "La nota son unas palabras (3 letras o más): qué es este pago."); return; }
+        const partesTxt = (m.partes || []).map(q => ({ corrida: q.corrida, cuenta: q.cuenta, monto: Number(q.monto).toFixed(2) }));
+        accionNom(li, "fn_nomina_cargo_casar", { p_movimiento: m.movimiento_id, p_partes: partesTxt, p_nota: nota }, r => ({ tipo: "ok", texto: `${casadoTxt(r)}: asiento ${r.asiento}.` }), { aviso: "Pago casado por fuera de Gusto", mfa: "Casar un cargo" });
+      });
     }));
   }
 
@@ -9008,7 +9214,7 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     subNom(`<b>${plural(personas.length, "persona", "personas")}</b> en la nómina${faltan ? ` · <span class="bad-txt">${faltan} por enlazar o confirmar</span>` : ""}`);
     const c = nomCuerpo();
     // (con un cuadre en rojo, igual: aquí no hay montos; el rojo, arriba)
-    c.innerHTML = notaNomHTML() + (ctl.rojos.length ? rojoNomHTML(ctl.rojos, "Las personas no llevan montos: se pueden mirar y cambiar aunque la nómina no cuadre.") : avisosNomHTML(ctl.avisos, [40])) + `<section class="ct-card ct-nom-gente" id="ct-nom-gente">
+    c.innerHTML = notaNomHTML() + pideCodigoNomHTML(ctl) + (ctl.rojos.length ? rojoNomHTML(ctl.rojos, "Las personas no llevan montos: se pueden mirar y cambiar aunque la nómina no cuadre.") : avisosNomHTML(ctl.avisos, [40])) + `<section class="ct-card ct-nom-gente" id="ct-nom-gente">
         <h2>Las personas de la nómina</h2>
         <p class="ct-nota">Cada empleado que trae un journal, enlazado una vez con su perfil de la app y su clase: campo (su sueldo va a sus obras por sus horas), oficial (el accionista: la parte de obra a 5001 y lo demás a 6005) u oficina (6000). Lo que cobra cada uno no sale aquí: está en cada nómina.</p>
         ${personas.length ? `<ul class="ct-wip-his">${personas.map(p => { const e = ESTADO_PER[p.estado] || [p.estado, ""];
@@ -9018,7 +9224,7 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
             <div class="ct-form" hidden></div></li>`; }).join("")}</ul>` : `<p class="ct-vacio">Nadie todavía: las personas salen con el primer journal.</p>`}
         ${sinCodigoNomHTML("Enlazar o cambiar a una persona")}
       </section>`;
-    wireRojoNom(c);
+    wireRojoNom(c); wirePideNom(c);
     c.querySelectorAll("[data-nom-gente-ed]").forEach(b => b.addEventListener("click", () => {
       const li = b.closest("[data-nom-gente]"), p = personas.find(z => z.persona_id === b.dataset.nomGenteEd) || {};
       const sel = p.usuario_id || p.propuesta_usuario_id || "", clase = p.clase || p.propuesta_clase || "";
@@ -9042,11 +9248,40 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
   }
 
   // ---------- Ajustes: las cuentas, la semana, los cargos, el amarre y el mapeo de columnas ----------
+  // (arreglo) LA BOLSA DEL BURDEN REAL: lo que queda en ella al terminar un mes y no es de ninguna nómina (la prima de WC que el banco
+  // amortiza cada mes) se reparte a las obras por las horas que la nómina pagó ese mes. Todo lo dice la base (fn_nomina_bolsa): el
+  // saldo, de dónde vino, la parte de cada obra y si se puede; «Repartir a las obras» manda lo visto (MX011: cambió, se vuelve a mirar).
+  const bolsaNomHTML = (b, err) => {
+    const cab = `<div class="ct-cab"><h2>La bolsa del burden real</h2>${b && b.mes ? `<span class="ct-sub">${esc(b.mes)}</span>` : ""}</div>`;
+    const mes = `<form class="ct-pide ct-nom-bolsa-mes" novalidate><div class="ct-fila"><label class="ct-campo">Otro mes<input type="month" name="mes" value="${esc((b && b.mes) || S.nom.bolsaMes || "")}"></label></div><div class="ct-acciones"><button type="submit" class="accion secundaria chica">Mirar ese mes</button></div></form>`;
+    if (err) return `<section class="ct-card ct-nom-bolsa" id="ct-nom-bolsa">${cab}<p class="ct-aviso warn">${esc(mensajeNom(err))}</p>${err.codigo === "22023" ? mes : ""}</section>`;
+    if (!b) return "";
+    const clave = Array.isArray(b.clave) ? b.clave : [], de = Array.isArray(b.de_donde) ? b.de_donde : [];
+    return `<section class="ct-card ct-nom-bolsa" id="ct-nom-bolsa">${cab}
+        <p class="ct-nota">Lo que entra a la bolsa del burden real (5015) y no es de ninguna nómina —la prima de WC que el banco amortiza cada mes— se reparte a las obras por las horas que la nómina pagó ese mes, para que el costo por obra lleve su parte. ▶ La clave y si se reparte cada mes los confirma el CPA.</p>
+        <p class="ct-aviso ${b.puede ? "warn" : "ok"} ct-nom-bolsa-t">${esc(b.texto || "")}</p>
+        ${de.length ? `<details class="ct-wip-mas"><summary>De dónde vino (${de.length})</summary><ul class="ct-nom-lineas">${de.map(x => `<li class="ct-nom-l"><span class="ct-nom-l-t"><b>${esc(x.asiento)}</b> · ${esc(fechaLarga(x.fecha))}<small>${esc(x.que || "")}</small></span><span class="ct-num">${fmt(x.monto)}</span></li>`).join("")}</ul></details>` : ""}
+        ${clave.length ? `<h3>A cada obra, por las ${esc(nHoras(b.horas))} h que pagó la nómina</h3><ul class="ct-nom-lineas">${clave.map(x => `<li class="ct-nom-l" data-obra="${esc(x.proyecto_id)}"><span class="ct-nom-l-t"><b>${esc(x.obra || x.proyecto_id)}</b>${x.co ? ` · ${esc(x.co)}` : ""}<small>${esc(horasTxt(x.horas))}</small></span><span class="ct-num">${fmt(x.monto)}</span></li>`).join("")}</ul>` : ""}
+        ${b.puede ? `<div class="ct-acciones"><button type="button" class="accion" id="ct-nom-bolsa-b"${deshab()}>Repartir a las obras</button></div>${sinCodigoNomHTML("Repartir la bolsa")}` : ""}
+        ${mes}
+        <div class="ct-form" hidden></div>
+      </section>`;
+  };
+  function wireBolsaNom(b) {
+    const card = $("ct-nom-bolsa"); if (!card) return;
+    const fm = card.querySelector(".ct-nom-bolsa-mes");
+    if (fm) fm.addEventListener("submit", ev => { ev.preventDefault(); if (S.ocupado) return; const m = String(new FormData(fm).get("mes") || "").trim(); S.nom.bolsaMes = /^\d{4}-\d{2}$/.test(m) ? m : null; S.nom.nota = null; repintar(); });
+    const bb = $("ct-nom-bolsa-b");
+    if (bb && b) bb.addEventListener("click", () => montarForma(card, formaHTML(`${esc(b.texto || "")} Entra un asiento con fecha ${esc(fechaLarga(b.hasta))}: el burden de cada obra (5010) contra la bolsa.`, "", "Sí, repartirla"), () =>
+      accionNom(card, "fn_nomina_bolsa_repartir", { p_mes: b.mes, p_visto: b.visto }, r => ({ tipo: "ok", texto: `Repartido: ${fmt(r.monto)} de ${r.mes} a ${plural(num(r.obras) || 0, "obra", "obras")}, asiento ${r.asiento} del ${fechaLarga(r.fecha)}. ${r.nota || ""}`.trim() }),
+        { aviso: "Bolsa repartida", mfa: "Repartir la bolsa", alFallar: err => { if (err.codigo !== "MX011") return false; S.nom.nota = { tipo: "warn", texto: err.message }; repintar(); return true; } })));
+  }
   async function pintarNomAjustes(mia) {
-    let ctl, cfg, cols;
+    let ctl, cfg, cols, bolsa = null, bolsaErr = null;
     try {
       await leerMfa();
-      [ctl, cfg, cols] = await Promise.all([controlNom(), DB._rpc("fn_nomina_config", {}), DB._leer("nomina_columnas?select=*&order=alias.asc")]);
+      [ctl, cfg, cols, bolsa] = await Promise.all([controlNom(), DB._rpc("fn_nomina_config", {}), DB._leer("nomina_columnas?select=*&order=alias.asc"),
+        DB._rpc("fn_nomina_bolsa", { p_mes: S.nom.bolsaMes || null }).catch(e => { if (esFalloDeRed(e)) throw e; bolsaErr = e; return null; })]);
       if (!vivaNom(mia)) return;
     } catch (err) { if (!vivaNom(mia)) return; return errorNom(err, pintarNomina); }
     const k = cfg || {};
@@ -9060,7 +9295,7 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
         ${x.de_fabrica ? "" : `<div class="ct-acciones"><button type="button" class="accion secundaria chica" data-nom-col-quitar="${esc(x.alias)}"${deshab()}>Quitar</button></div>`}</li>`;
     const c = nomCuerpo();
     // (con un cuadre en rojo, igual: los ajustes y el mapeo no llevan montos; el rojo, arriba)
-    c.innerHTML = notaNomHTML() + (ctl.rojos.length ? rojoNomHTML(ctl.rojos, "Los ajustes y el mapeo de las columnas no llevan montos: se pueden mirar y cambiar aunque la nómina no cuadre.") : avisosNomHTML(ctl.avisos, [85])) + `<section class="ct-card ct-wip-cfg ct-nom-cfg" id="ct-nom-cfg">
+    c.innerHTML = notaNomHTML() + pideCodigoNomHTML(ctl) + (ctl.rojos.length ? rojoNomHTML(ctl.rojos, "Los ajustes y el mapeo de las columnas no llevan montos: se pueden mirar y cambiar aunque la nómina no cuadre.") : avisosNomHTML(ctl.avisos, [75, 85])) + `<section class="ct-card ct-wip-cfg ct-nom-cfg" id="ct-nom-cfg">
         <h2>Ajustes de la nómina</h2>
         <form class="ct-pide" novalidate>
           <div class="ct-fila">
@@ -9092,8 +9327,8 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
         ${propias.length ? `<h3>Las que se añadieron aquí</h3><ul class="ct-wip-his">${propias.map(filaCol).join("")}</ul>` : `<p class="ct-vacio">Ninguna añadida todavía.</p>`}
         <details class="ct-wip-mas"><summary>Las de fábrica: ${fabrica.length}</summary><ul class="ct-wip-his">${fabrica.map(filaCol).join("")}</ul></details>
         <div class="ct-form" hidden></div>
-      </section>`;
-    wireRojoNom(c);
+      </section>` + (ctl.rojos.length ? "" : bolsaNomHTML(bolsa, bolsaErr));
+    wireRojoNom(c); wirePideNom(c); wireAvisosNom(c); wireBolsaNom(bolsa);
     const card = $("ct-nom-cfg");
     card.querySelector("form").addEventListener("submit", ev => {
       ev.preventDefault();

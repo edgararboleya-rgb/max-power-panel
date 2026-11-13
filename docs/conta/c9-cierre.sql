@@ -100,10 +100,18 @@
 --      179  subs (c14, si está): W-9 y TIN de cada sub con un pago de
 --           servicio en el mes (la arma c14, fn_subs_cierre; a quien su
 --           ficha dice que no se le reporta no se le pide)                  aviso
+--      180  nómina (c15, si está): cada cargo de Gusto del mes casado con
+--           su nómina (o dicho que es la cuota mensual)                    detiene
+--      181  nómina (c15): cada nómina con día de pago en el mes, posteada  detiene
+--      182  nómina (c15): sus cuadres, en una fila; su nombre dice cuáles
+--           están en rojo                                                  detiene
+--      183  nómina (c15): sus avisos, en una fila                           aviso
+--           (las cuatro las arma c15, fn_nomina_cierre; en la apertura y en
+--           un año la 180 y la 181 no aplican)
 --     En verde cada capa deja UN renglón resumen; en rojo, un renglón por
 --     control, con el detalle que esa capa escribió. Cada renglón dice qué
 --     hacer y a qué página ir (ir_a: bandeja, conciliar, movimientos,
---     estados, cobros, conexiones, cierre, cedula, subs, o nulo). La revisión de un
+--     estados, cobros, conexiones, cierre, cedula, subs, nomina, o nulo). La revisión de un
 --     período también se guarda (cierre_revisiones: la última, con su hora)
 --     para que v_cierre_estado diga cuántos detienen sin volver a correrla.
 --   · LA RONDA NOCTURNA (fn_ronda, SQL puro, sin API): corre la revisión
@@ -1577,6 +1585,30 @@ begin
     end;
   end if;
 
+  -- 180 a 183. La nómina (c15), si está: cada cargo de Gusto del mes casado
+  -- con su nómina (180) y cada nómina con día de pago en el mes posteada
+  -- (181) detienen, como sus cuadres (182); sus avisos (183) avisan. Las
+  -- cuatro filas las arma c15 (fn_nomina_cierre), con su detalle en llano,
+  -- qué hacer y a qué página ir; aquí solo se piden. Cuatro filas fijas, en
+  -- un rango que nadie más usa. (La 182 dice en su nombre cuáles de sus
+  -- cuadres están en rojo: la ronda avisa de un rojo nuevo por el nombre.)
+  if to_regprocedure('public.fn_nomina_cierre(text)') is not null then
+    declare
+      v_nomina jsonb := '[]'::jsonb;
+    begin
+      for r in execute 'select x.orden as o, x.control, x.nivel as n, x.ok is true as k, x.detalle, x.que_hacer, x.ir_a '
+                    || 'from public.fn_nomina_cierre($1) x where x.orden between 180 and 183 order by x.orden' using p.periodo loop
+        v_nomina := v_nomina || fn_cierre_fila(r.o, r.control, case when r.n = 'aviso' then 'aviso' else 'detiene' end, r.k,
+                                               coalesce(r.detalle, 'en rojo, sin detalle'), r.que_hacer, r.ir_a);
+      end loop;
+      v_rows := v_rows || v_nomina;
+    exception when others then
+      v_rows := v_rows || fn_cierre_fila(182, 'nómina: sus cuadres (c15)', 'detiene', false,
+        format('No se pudo revisar la nómina: %s %s.', sqlstate, sqlerrm),
+        'Avisa: el control de la nómina (c15) no responde.', 'nomina');
+    end;
+  end if;
+
   -- 150. Cambios del período (informativo): reversos y asientos de la IA.
   select count(*) filter (where a.camino in ('reverso', 'reverso_automatico')),
          coalesce(sum(d.deb) filter (where a.camino in ('reverso', 'reverso_automatico')), 0),
@@ -1670,7 +1702,7 @@ begin
 end $$;
 revoke execute on function public.fn_cierre_revisar(text) from public, anon, service_role;
 grant  execute on function public.fn_cierre_revisar(text) to authenticated;
-comment on function public.fn_cierre_revisar(text) is 'c9: la revisión de un período antes de cerrarlo: una fila por control, en orden (orden), con su nivel (detiene o aviso), ok, detalle en llano con números, qué hacer e ir_a (bandeja, conciliar, movimientos, estados, cobros, conexiones, cierre, cedula, subs o nulo). Reutiliza los controles de c2, c3, c4, c6, p1 y c8. Guarda la última revisión del período abierto en cierre_revisiones. Solo el dueño; con POST.';
+comment on function public.fn_cierre_revisar(text) is 'c9: la revisión de un período antes de cerrarlo: una fila por control, en orden (orden), con su nivel (detiene o aviso), ok, detalle en llano con números, qué hacer e ir_a (bandeja, conciliar, movimientos, estados, cobros, conexiones, cierre, cedula, subs, nomina o nulo). Reutiliza los controles de c2, c3, c4, c6, p1 y c8. Guarda la última revisión del período abierto en cierre_revisiones. Solo el dueño; con POST.';
 
 
 -- ---------------------------------------------------------------------

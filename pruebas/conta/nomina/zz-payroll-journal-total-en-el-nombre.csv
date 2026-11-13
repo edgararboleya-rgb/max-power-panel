@@ -1,0 +1,7 @@
+C15 PRUEBA ZZ Electric Inc
+Employer social security tax,Employer medicare tax,Employer FUTA tax,Employer SUTA tax,Employee first name,Employee last name,Pay period start,Pay period end,Check date,Payroll type,Gross earnings,Employee federal income tax,Employee social security tax,Employee medicare tax,Net pay
+Regular payroll
+121.40,28.39,11.75,52.87,ZZ Ayudante,Uno,01/03/2027,01/16/2027,01/22/2027,Regular,1958.00,142.00,121.40,28.39,1666.21
+Employer tax breakdown,C15 PRUEBA
+89.90,21.03,8.70,39.15,ZZ Ayudante,Dos,01/03/2027,01/16/2027,01/22/2027,Regular,1450.00,96.00,89.90,21.03,1243.07
+211.30,49.42,20.45,92.02,Totals,,,,,,3408.00,238.00,211.30,49.42,2909.28

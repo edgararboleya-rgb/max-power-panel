@@ -18,6 +18,11 @@
 -- el neto, la manutención (CSD) y los impuestos EN DOS CARGOS (el federal con
 -- el FUTA, y el reempleo de Florida aparte), que ninguna opción de la base casa
 -- solos al centavo (la pantalla los parte a mano); la cuota mensual, el 2.
+-- (arreglos) Y en noviembre: lo que Gusto DEVUELVE de una corrección de esa
+-- nómina (dos depósitos, el 2: el neto, 82.35, y los impuestos, 28.60), un
+-- cargo que NO es de Gusto (la cuota sindical, 50.00, el 3: lo que la nómina
+-- retuvo en deducciones, pagado por fuera de Gusto) y, el 31-oct, la prima de
+-- WC del mes en la bolsa del burden real (5015 contra 1410, 300.00).
 -- Las horas:
 --   ZZ Ayudante Uno   6-oct 8 h obra A · 7-oct 8 h obra A · 8-oct 10 h obra B
 --                     «CO #1» · 9-oct 4 h SIN OBRA (aprobadas) · y la
@@ -91,6 +96,15 @@ select fn_banco_importar_filas(jsonb_build_object(
     jsonb_build_object('id', 'c15-pantalla-net', 'fecha', '2026-10-19', 'plaid_monto', '4874.93', 'descripcion', 'GUSTO NET 6semk7 C15 PRUEBA', 'tipo', 'DEBIT', 'pendiente', false),
     jsonb_build_object('id', 'c15-pantalla-tax', 'fecha', '2026-10-19', 'plaid_monto', '1426.49', 'descripcion', 'GUSTO TAX 6semk7 C15 PRUEBA', 'tipo', 'DEBIT', 'pendiente', false),
     jsonb_build_object('id', 'c15-pantalla-sui', 'fecha', '2026-10-19', 'plaid_monto', '156.82',  'descripcion', 'GUSTO TAX SUI 6semk7 C15 PRUEBA', 'tipo', 'DEBIT', 'pendiente', false),
-    jsonb_build_object('id', 'c15-pantalla-csd', 'fecha', '2026-10-19', 'plaid_monto', '50.00',   'descripcion', 'GUSTO CSD 6semk7 C15 PRUEBA', 'tipo', 'DEBIT', 'pendiente', false)))) \gset
+    jsonb_build_object('id', 'c15-pantalla-csd', 'fecha', '2026-10-19', 'plaid_monto', '50.00',   'descripcion', 'GUSTO CSD 6semk7 C15 PRUEBA', 'tipo', 'DEBIT', 'pendiente', false),
+    -- (arreglos) lo que Gusto DEVUELVE de la corrección (dos depósitos: el neto y los impuestos) y un cargo que NO es de Gusto: la
+    -- cuota sindical que se le paga al sindicato (lo que la nómina retuvo en deducciones)
+    jsonb_build_object('id', 'c15-pantalla-dev', 'fecha', '2026-11-02', 'plaid_monto', '-82.35',  'descripcion', 'GUSTO NET REVERSAL 6semk7 C15 PRUEBA', 'tipo', 'CREDIT', 'pendiente', false),
+    jsonb_build_object('id', 'c15-pantalla-dvt', 'fecha', '2026-11-02', 'plaid_monto', '-28.60',  'descripcion', 'GUSTO TAX REVERSAL 6semk7 C15 PRUEBA', 'tipo', 'CREDIT', 'pendiente', false),
+    jsonb_build_object('id', 'c15-pantalla-sin', 'fecha', '2026-11-03', 'plaid_monto', '50.00',   'descripcion', 'ZZ SINDICATO C15 PRUEBA', 'tipo', 'DEBIT', 'pendiente', false)))) \gset
 select count(fn_banco_casar(m.id)) as casados from movimientos_banco m where m.id_externo like 'c15-pantalla-%' \gset
+-- (arreglos) la prima de WC del mes que el banco amortiza a la bolsa del burden real (5015) desde los seguros pagados por
+-- adelantado (1410): no es de ninguna nómina; la pantalla la reparte a las obras desde Nómina → Ajustes
+select fn_postear(jsonb_build_object('tipo', 'normal', 'fecha', '2026-10-31', 'descripcion', 'C15 PRUEBA: la prima de WC del mes',
+  'lineas', jsonb_build_array(jsonb_build_object('cuenta', '5015', 'monto', '300.00'), jsonb_build_object('cuenta', '1410', 'monto', '-300.00')))) as wc \gset
 commit;
