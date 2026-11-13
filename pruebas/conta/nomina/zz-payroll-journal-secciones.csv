@@ -1,0 +1,16 @@
+C15 PRUEBA ZZ Electric Inc
+123 ZZ Street
+Payroll Journal Summary by Employee
+Check date: 01/22/2027
+Pay period: 01/03/2027 - 01/16/2027
+
+Employee,Regular hours,Overtime hours,Gross earnings,Employee taxes,Employee deductions,Net pay,Employer taxes,Employer cost
+"Uno, ZZ Ayudante",80.00,6.00,"$1,958.00",$291.79,$0.00,"$1,666.21",$214.41,"$2,172.41"
+"Dos, ZZ Ayudante",72.50,0.00,"$1,450.00",$206.93,$50.00,"$1,193.07",$158.78,"$1,608.78"
+Total,152.50,6.00,"$3,408.00",$498.72,$50.00,"$2,859.28",$373.19,"$3,781.19"
+
+Employer tax breakdown
+Employee,Employer social security tax,Employer medicare tax,Employer FUTA tax,Employer SUTA tax
+"Uno, ZZ Ayudante",121.40,28.39,11.75,52.87
+"Dos, ZZ Ayudante",89.90,21.03,8.70,39.15
+Total,211.30,49.42,20.45,92.02

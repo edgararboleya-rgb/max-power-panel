@@ -1,0 +1,9 @@
+C15 PRUEBA ZZ Electric Inc
+Payroll journal
+Check date: 01/22/2027 - 01/22/2027
+
+Employee first name,Employee last name,Pay period start,Pay period end,Check date,Payroll type,Payment method,Regular hours,Regular earnings,Overtime hours,Overtime earnings,Gross earnings,Employee federal income tax,Employee social security tax,Employee medicare tax,Employee medicare additional tax,Employee taxes,Employee deductions,Net pay,Reimbursements,Check amount,Employer social security tax,Employer medicare tax,Employer FUTA tax,Employer SUTA tax,Employer taxes,Employer cost
+ZZ Ayudante,Uno,01/03/2027,01/16/2027,01/22/2027,Regular,Direct Deposit,80.00,1760.00,6.00,198.00,1958.00,142.00,121.40,28.39,0.00,291.79,0.00,1666.21,0.00,1666.21,121.40,28.39,11.75,52.87,214.41,2172.41
+ZZ Ayudante,Dos,01/03/2027,01/16/2027,01/22/2027,Regular,Direct Deposit,72.50,1450.00,0.00,0.00,1450.00,96.00,89.90,21.03,0.00,206.93,50.00,1193.07,0.00,1193.07,89.90,21.03,8.70,39.15,158.78,1608.78
+ZZ Oficial,Tres,01/03/2027,01/16/2027,01/22/2027,Regular,Direct Deposit,80.00,2400.00,0.00,0.00,2400.00,265.00,148.80,34.80,0.00,448.60,0.00,1951.40,64.25,2015.65,148.80,34.80,14.40,64.80,262.80,2662.80
+Totals,,,,,,,232.50,5610.00,6.00,198.00,5808.00,503.00,360.10,84.22,0.00,947.32,50.00,4810.68,64.25,4874.93,360.10,84.22,34.85,156.82,635.99,6443.99

@@ -1250,3 +1250,46 @@ body[data-vista="conta"] .fab { display: none; }
 /* «Se sostendría con»: en el teléfono lo dice la etiqueta de la columna; en la computadora (sin etiqueta), el propio texto */
 #conta-raiz .ct-ced-a-pre { display: none; }
 @media (min-width: 1024px) { #conta-raiz .ct-ced-a-pre { display: inline; } }
+
+/* (fase 11) la nómina: el archivo que se elige (una etiqueta con aspecto de botón), lo que dice la base de él, la lista de nóminas
+   (nombre, cifras y estado), las líneas de un reparto o de un asiento (cuenta y obra a la izquierda, monto a la derecha, apiladas en
+   el teléfono), los cargos de Gusto, las semanas de las horas para Gusto y las declaraciones */
+#conta-raiz .ct-nom-elegir { cursor: pointer; }
+#conta-raiz .ct-nom-elegir.apagado { opacity: .55; cursor: not-allowed; }
+#conta-raiz .ct-nom-leyendo { margin: .3rem 0; }
+#conta-raiz .ct-nom-quitadas, #conta-raiz .ct-nom-ya, #conta-raiz .ct-nom-bj { overflow-wrap: anywhere; }
+#conta-raiz .ct-nom-ens { border-top: 1px solid var(--mp-line); padding-top: .6rem; margin-top: .6rem; min-width: 0; }
+#conta-raiz .ct-nom-ens h3, #conta-raiz .ct-nom-dec h3, #conta-raiz .ct-nom-asiento h3, #conta-raiz .ct-nom-mapeo h3 { margin: .2rem 0; font-size: 1rem; overflow-wrap: anywhere; }
+#conta-raiz .ct-nom-sc .ct-wip-hi p { overflow-wrap: anywhere; }
+#conta-raiz .ct-nom-kpis .ct-val { font-size: 1.1rem; }
+#conta-raiz .ct-nom-fila .ct-nom-m { display: grid; gap: .05rem; }
+#conta-raiz .ct-nom-fila .ct-nom-m .ct-num { font-weight: 800; }
+#conta-raiz .ct-nom-fila .ct-nom-m small { font-size: .78rem; color: var(--mp-ink-3); }
+#conta-raiz .ct-nom-lineas { list-style: none; margin: .3rem 0 .4rem; padding: 0; display: grid; }
+#conta-raiz .ct-nom-l { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .2rem .7rem; align-items: start; padding: .4rem .2rem; border-top: 1px dashed var(--mp-line); min-width: 0; font-size: .9rem; }
+#conta-raiz .ct-nom-l:first-child { border-top: 0; }
+#conta-raiz .ct-nom-l-t { display: grid; gap: .1rem; min-width: 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-nom-l-t small { font-size: .78rem; color: var(--mp-ink-3); }
+#conta-raiz .ct-nom-l > .ct-num { font-weight: 700; text-align: right; white-space: nowrap; }
+#conta-raiz .ct-nom-l.haber > .ct-num { color: var(--mp-ink-2); }
+#conta-raiz .ct-nom-l.falta > .ct-num { color: var(--bad); }
+#conta-raiz .ct-nom-per .ct-cab p, #conta-raiz .ct-nom-hp .ct-cab p, #conta-raiz .ct-nom-gente .ct-cab p { margin: 0; overflow-wrap: anywhere; min-width: 0; }
+#conta-raiz .ct-nom-per .ct-nom-lineas { margin-left: .2rem; }
+#conta-raiz .ct-nom-casar { display: grid; gap: .4rem; }
+#conta-raiz .ct-nom-casar p { margin: 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-nom-op { display: grid; gap: .3rem; padding: .5rem .6rem; border: 1px solid var(--mp-line); border-radius: 10px; background: var(--mp-sky-1); }
+#conta-raiz .ct-nom-op .accion { justify-self: start; }
+#conta-raiz .ct-nom-cargo p, #conta-raiz .ct-nom-hechos p, #conta-raiz .ct-nom-cargos-c p { overflow-wrap: anywhere; }
+#conta-raiz .ct-nom-semanas { display: grid; gap: .5rem; margin: .4rem 0; }
+#conta-raiz .ct-nom-hp { border: 1px solid var(--mp-line); border-radius: 12px; padding: .45rem .7rem; min-width: 0; }
+#conta-raiz .ct-nom-hp small { font-weight: 500; color: var(--mp-ink-3); }
+#conta-raiz .ct-nom-dec { border-top: 1px solid var(--mp-line); padding-top: .5rem; margin-top: .5rem; min-width: 0; }
+#conta-raiz .ct-nom-dec:first-of-type { border-top: 0; margin-top: 0; }
+#conta-raiz .ct-nom-per .ct-fila, #conta-raiz .ct-nom-cfg .ct-fila { margin: .1rem 0; }
+#conta-raiz .ct-nom-ens-per summary, #conta-raiz .ct-nom-mapeo summary { overflow-wrap: anywhere; }
+@media (min-width: 700px) {
+  #conta-raiz .ct-nom-fila { grid-template-columns: minmax(0, 1fr) 10rem minmax(0, 13rem); align-items: center; }
+  #conta-raiz .ct-nom-fila .ct-nom-m { text-align: right; }
+  #conta-raiz .ct-nom-fila .ct-subs-chips { justify-content: flex-end; }
+  #conta-raiz .ct-nom-semanas { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

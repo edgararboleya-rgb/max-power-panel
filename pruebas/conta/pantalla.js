@@ -157,6 +157,20 @@
    avisa del TIN entero y se baja como archivo con lo que mandó la base), el COI,
    los ajustes, retirar un papel, la 160 y la 179 del cierre; la falla ruidosa,
    sin c13 ni c14, el equipo, sin el código y 390/820/1280 px.
+   Y la nómina (c15, fase 11): como la cédula y los subs, SIN mentira escrita a mano. La
+   base simulada es lo que contestó el banco (pruebas/conta/pantalla-f15.json, que arma
+   pruebas/conta/f15-capturar.js sobre g12a con c15 y f15-semilla.sql): se comprueba
+   subir el «Payroll journal» leído en el navegador (las columnas delicadas y la que trae
+   algo con forma de Seguro Social NUNCA salen ni se quedan en la memoria de la pantalla;
+   sus celdas, celda por celda, las mismas que mandó el capturador), lo que dice la base
+   y decirle ahí mismo qué es una columna, importar, enlazar a cada persona, la cuenta de
+   lo sin obra, «mandarlo sin obra», MX011, postear con su frase, lo que dejó por pagar,
+   casar los cargos de Gusto desde la nómina, desde «Cargos de Gusto» y desde la tarjeta
+   de la Bandeja («Casar con la nómina»; sin c15, la tarjeta de siempre), la cuota,
+   deshacer, el mismo archivo otra vez, el bono, anular, la otra nómina del mismo día y
+   descartarla, las horas para Gusto (el CSV del lote, tal cual, y el aviso cuando una
+   hora del lote cambió), el amarre, las personas, los ajustes y el mapeo, las filas 180
+   a 183 del cierre, sin el código, el equipo, el cuadre en rojo y 390/820/1280 px.
    Y los arreglos de la revisión (fase 12a, con la base arreglada): la cédula con
    el resultado sin cerrar (Activo = Pasivo + Patrimonio + Resultado), «del libro»
    en neutro y sin «Explicar», con qué cuadra cada cuenta (un papel o sus
@@ -882,6 +896,8 @@ function c9Revisar(periodo) {
     const xs = xLeer('c14', `fn_subs_cierre|${p.periodo}`) || [];
     if (xs.length) { for (let i = f.length - 1; i >= 0; i--) if (f[i].orden === 160) f.splice(i, 1); for (const x of xs) f.push(fila9(x.orden, x.control, 'aviso', x.ok === true, x.detalle, x.que_hacer, x.ir_a)); }
   }
+  // (fase 11) el bloque de c15 en fn_cierre_revisar (scratchpad f11/c9-bloque-c15.sql): las filas 180 a 183, como las da la nómina (del banco)
+  if (estado.c15Cierre && estado.c15) for (const x of (nLeer(`fn_nomina_cierre|${p.periodo}`) || [])) f.push(fila9(x.orden, x.control, x.nivel, x.ok === true, x.detalle, x.que_hacer, x.ir_a));
   return f.sort((a, b) => a.orden - b.orden);
 }
 const rojo9 = x => x.ok !== true;
@@ -2650,6 +2666,83 @@ function xVista(nombre) {
   if (nombre === 'proveedores' && estado.c14) return estado.c14NoDueno ? [] : (xLeer('c14', 'proveedores') || []);
   return null;
 }
+// ---- la nómina (c15), fase 11: SACADA DEL BANCO, como la cédula y los subs. pruebas/conta/pantalla-f15.json es lo que contestó el
+// banco (g12a + c15 + f15-semilla.sql: tres personas, dos obras, sus horas de octubre y los cargos de Gusto) a cada lectura de la
+// página «Nómina» y a cada escritura en el orden de esta prueba (lo arma pruebas/conta/f15-capturar.js). Una lectura sale de la escena
+// en que va la cadena; una escritura que es el paso siguiente (por su función y sus llaves: en el archivo que se sube, su nombre, su
+// sha256, su tamaño y CADA CELDA que mandó la pantalla) pasa a su escena y contesta lo del banco; los errores los elige la mentira con
+// la regla de la base (sin el código, lo visto que cambió, un monto mal escrito…) y contesta el del banco, tal cual.
+const F15 = JSON.parse(fs.readFileSync(path.join(__dirname, 'pantalla-f15.json'), 'utf8'));
+const N = {};
+function nReset(e = 0) { N.e = e; }
+nReset();
+const nVal = l => xCopia(l.filas ? l.filas.map(h => F15.filas[h]) : l.valor);
+function nLeer(k) {
+  const c = F15.c15;
+  for (let i = N.e; i >= 0; i--) { const l = c.escenas[i].lecturas[k]; if (l) return nVal(l); }
+  return undefined;
+}
+const nErr = (nombre, cambia) => { const e = F15.c15.errores[nombre]; let m = e.error.message; for (const [a, b] of cambia || []) m = m.split(a).join(b); return { status: e.status, error: { ...e.error, message: m } }; };
+// el paso siguiente de la cadena, si la llamada es la suya; si no, que la prueba lo vea
+function nPaso(fn, a) {
+  const c = F15.c15, nombre = c.orden[N.e], p = nombre && c.pasos[nombre];
+  if (!p || p.externo || p.fn !== fn || !p.igual.every(r => JSON.stringify(xGet(a, r)) === JSON.stringify(xGet(p.args, r))))
+    return xMal(`${fn}(${JSON.stringify(a).slice(0, 220)}): el paso que sigue en c15 es ${nombre ? `«${nombre}» (${p.fn || 'externo'})` : 'ninguno'}`);
+  N.e += 1;
+  return xCopia(p.respuesta);
+}
+// lo que no hace la pantalla (una hora que se aprueba en la app): la prueba lo pasa a mano
+function nExterno(nombre) { const c = F15.c15; if (c.orden[N.e] !== nombre || !c.pasos[nombre].externo) throw new Error(`el paso que sigue en c15 no es «${nombre}»`); N.e += 1; }
+const nHasta = nombre => { const i = F15.c15.orden.indexOf(nombre); if (i < 0) throw new Error('no hay paso ' + nombre); N.e = i + 1; };
+const N_MESC = ['', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+const nDia = iso => { const [a, m, d] = String(iso).slice(0, 10).split('-').map(Number); return `${d}-${N_MESC[m]}-${a}`; };
+// lo que pide el código del teléfono (lo de cada persona y toda escritura); lo que es lectura
+const N_CODIGO = ['fn_nomina_ensayo', 'fn_nomina_importar', 'fn_nomina_propuesta', 'fn_nomina_persona', 'fn_nomina_decidir', 'fn_nomina_postear', 'fn_nomina_anular', 'fn_nomina_descartar',
+  'fn_nomina_corrida', 'fn_nomina_columna', 'fn_nomina_cargo_casar', 'fn_nomina_cargo_cuota', 'fn_nomina_cargo_deshacer', 'fn_nomina_lote', 'fn_nomina_declaracion'];
+const N_LEE = ['fn_nomina_amarre', 'fn_nomina_propuesta', 'fn_nomina_pendiente', 'fn_nomina_cargo_propuesta', 'fn_nomina_horas_gusto', 'fn_nomina_lote_csv', 'fn_nomina_cargos', 'fn_nomina_cierre'];
+const N_MONTO = /^\$?(\d{1,3}(,\d{3})+|\d+)(\.\d{1,2})?$/;
+function xRpc15(fn, a, auth) {
+  if (!estado.c15) return xNoHay(fn);
+  const lee = N_LEE.includes(fn) || (fn === 'fn_nomina_config' && (!a.p || !Object.keys(a.p).length));
+  // el equipo: lo que pide al dueño contesta 42501; lo que es tabla, nada
+  if (estado.c15NoDueno) return ['fn_nomina_amarre', 'fn_nomina_pendiente', 'fn_nomina_horas_gusto', 'fn_nomina_cargos', 'fn_nomina_cierre'].includes(fn) ? [] : nErr(lee ? 'equipo_config' : 'equipo_ensayo');
+  if (N_CODIGO.includes(fn) && xAal(auth) !== 'aal2') return nErr(fn === 'fn_nomina_propuesta' ? 'propuesta_sin_codigo' : fn === 'fn_nomina_persona' ? 'persona_sin_codigo' : 'ensayo_sin_codigo');
+  const falta = k => xMal(`${fn}: el banco no leyó «${k}» en esta escena`);
+  if (fn === 'fn_nomina_config' && lee) return nLeer('fn_nomina_config|');
+  if (fn === 'fn_nomina_amarre') { const v = nLeer(`fn_nomina_amarre|${a.p_anio}`); return v === undefined ? [] : v; }
+  if (fn === 'fn_nomina_propuesta') { const v = nLeer(`fn_nomina_propuesta|${a.p_corrida}`); return v === undefined ? { status: 400, error: { code: '22023', message: 'No existe esa corrida.', details: null, hint: null } } : v; }
+  if (fn === 'fn_nomina_pendiente') return nLeer(`fn_nomina_pendiente|${a.p_corrida}`) || [];
+  if (fn === 'fn_nomina_cargo_propuesta') { const v = nLeer(`fn_nomina_cargo_propuesta|${a.p_movimiento}`); return v === undefined ? falta('cargo ' + a.p_movimiento) : v; }
+  if (fn === 'fn_nomina_horas_gusto') { const v = nLeer(`fn_nomina_horas_gusto|${a.p_desde}|${a.p_hasta}`); return v === undefined ? falta(`las horas del ${a.p_desde} al ${a.p_hasta}`) : v; }
+  if (fn === 'fn_nomina_lote_csv') { const v = nLeer(`fn_nomina_lote_csv|${a.p_lote}`); return v === undefined ? falta('lote ' + a.p_lote) : v; }
+  if (fn === 'fn_nomina_cargos') return nLeer('v_nomina_cargos') || [];
+  if (fn === 'fn_nomina_cierre') return nLeer(`fn_nomina_cierre|${a.p_periodo}`) || [];
+  // las escrituras: el error de la base, si la regla lo dice; si no, el paso siguiente
+  if (fn === 'fn_nomina_postear') { const pr = nLeer(`fn_nomina_propuesta|${a.p_corrida}`); if (pr && pr.visto !== a.p_visto) return nErr('postear_visto_viejo'); }
+  if (fn === 'fn_nomina_config' && a.p && a.p.semana_empieza != null && !(Number.isInteger(a.p.semana_empieza) && a.p.semana_empieza >= 1 && a.p.semana_empieza <= 7))
+    return nErr('config_mal', [['(llegó 9)', `(llegó ${a.p.semana_empieza})`]]);
+  if (fn === 'fn_nomina_anular') {
+    if (!String(a.p_motivo || '').trim()) return nErr('anular_sin_motivo');
+    if ((nLeer(`fn_nomina_pendiente|${a.p_corrida}`) || []).some(p => Number(p.pagado) > 0)) return nErr('anular_con_cargos');
+  }
+  if (fn === 'fn_nomina_cargo_deshacer' && !String(a.p_motivo || '').trim()) return nErr('deshacer_sin_motivo');
+  if (fn === 'fn_nomina_lote') {
+    const v = nLeer(`fn_nomina_horas_gusto|${a.p_desde}|${a.p_hasta}`);
+    if (v !== undefined && !v.some(f => f.por_horas && Number(f.horas) > 0)) return nErr('lote_vacio', [['1-sep-2026', nDia(a.p_desde)], ['14-sep-2026', nDia(a.p_hasta)]]);
+  }
+  if (fn === 'fn_nomina_declaracion' && a.p) for (const k of ['salarios', 'retencion', 'ss_medicare', 'futa', 'contribucion'])
+    if (a.p[k] != null && String(a.p[k]).trim() !== '' && !N_MONTO.test(String(a.p[k]).trim())) return nErr('declaracion_mal', [['salarios es', `${k} es`]]);
+  return nPaso(fn, a);
+}
+// las vistas y la tabla del mapeo (sin c15, 404 en simular; al equipo, nada) y las filas de la Bandeja de sus cargos de Gusto
+const N_VISTAS = ['v_nomina_control', 'v_nomina_corridas', 'v_nomina_personas', 'v_nomina_cargos', 'v_nomina_lotes', 'nomina_columnas'];
+function xVista15(nombre) {
+  if (!N_VISTAS.includes(nombre) || !estado.c15) return null;
+  if (estado.c15NoDueno) return [];
+  const v = nLeer(nombre) || [];
+  if (nombre === 'v_nomina_control' && estado.c15CuadreMal) return v.map(x => Number(x.orden) === 20 ? { ...x, ok: false, detalle: 'ZZ Ayudante Uno en la nómina del 23-oct-2026: su reparto suma $1,958.01 y su bruto es $1,958.00 (prueba).' } : x);
+  return v;
+}
 const estado = { controlMal: false, controlFilas: null, fallar: false, casarRondas: 0, concNueva: false, plaidFijada: false, plaidSinVista: false, plaidSinFijar: false, mfaFactores: [], sesionAal: undefined,
   // los interruptores de los estados: el control en rojo, el conteo distinto para una vista, el «Sigue» del tope por reloj (cuenta llamadas; 90 o más = nunca termina),
   // el equipo (no dueño), la apertura sin postear, el balance descuadrado, una vista que no existe en la base, un mayor que no termina donde dice la balanza
@@ -2681,7 +2774,11 @@ const estado = { controlMal: false, controlFilas: null, fallar: false, casarRond
   // (fase 12a, arreglos) la cédula con el «efectivo» de c3 apuntado a un banco que se concilia (del banco, aparte) y el 23505 de dos pestañas
   c13EfectivoBanco: false, c14Duplicado: false,
   // (fase 12a, revisión final) una línea de servicio pagada por DOS caminos: fn_subs_pagos da dos partes de la misma línea del asiento
-  c14DosCaminos: false };
+  c14DosCaminos: false,
+  // (fase 11) c15 pegado o no (sin él, sus vistas y nomina_columnas 404 y sus funciones también); sus cargos de Gusto en la Bandeja del
+  // banco (c15Banco, aunque c15 no esté: así se ve la tarjeta de siempre); el equipo; un cuadre en rojo; lo visto que cambió (MX011, una
+  // vez); y sus filas 180 a 183 en el cierre de c9
+  c15: false, c15Banco: false, c15NoDueno: false, c15CuadreMal: false, c15VistoViejo: false, c15Cierre: false };
 const llamadas = [], lecturas = []; // lecturas: cada GET a /rest/v1/<vista>?… tal como lo pidió la pantalla
 function tabla(nombre, q) {
   let filas = T[nombre] || [];
@@ -2695,6 +2792,9 @@ function tabla(nombre, q) {
   if (W_VISTAS[nombre]) filas = estado.c12 && !estado.c12NoDueno ? W_VISTAS[nombre]() : [];
   // (fase 12a) las vistas y tablas de c13 y c14, del banco (pantalla-f12.json)
   { const xv = xVista(nombre); if (xv) filas = xv; }
+  // (fase 11) las vistas de la nómina y su mapeo, del banco (pantalla-f15.json); los cargos de Gusto que el banco dejó en la Bandeja
+  { const nv = xVista15(nombre); if (nv) filas = nv; }
+  if (nombre === 'v_banco_bandeja' && estado.c15Banco) filas = filas.concat(nLeer('v_banco_bandeja') || []);
   if (nombre === 'proyectos' && estado.c11App) filas = filas.concat([{ id: 'c11-prueba-a', nombre: 'C11 PRUEBA Oficina Uno', estado: 'ejecucion', tipo: 'comercial', cliente: 'ZZ Cliente Uno', cliente_email: 'zz.uno@c11-pruebas.invalid' }]);
   if (nombre === 'hitos' && estado.c11App) filas = F.hitos.filter(h => h.p === 'c11-prueba-a').map(h => ({ id: h.id, proyecto_id: h.p, titulo: h.titulo, condicion: h.condicion, monto: h.monto / 100, estado: h.estado, orden: h.orden, es_deposito: h.dep }));
   if (nombre === 'finanzas_proyecto' && estado.c11App) filas = filas.concat([{ proyecto_id: 'c11-prueba-a', contrato: 18500.55, cobrado: 0 }]);
@@ -2748,6 +2848,11 @@ function rpc(fn, a, auth) {
   // (fase 12a) la cédula (c13) y los subs (c14): lo que contestó el banco
   if (fn.startsWith('fn_cedula')) return xRpc13(fn, a);
   if (fn.startsWith('fn_subs')) return xRpc14(fn, a, auth);
+  // (fase 11) la nómina (c15): lo que contestó el banco
+  if (fn.startsWith('fn_nomina')) {
+    if (fn === 'fn_nomina_postear' && estado.c15 && estado.c15VistoViejo) { estado.c15VistoViejo = false; return nErr('postear_visto_viejo'); }
+    return xRpc15(fn, a, auth);
+  }
   // (fase 8) las funciones de c9: sin c9 pegado, PostgREST no las encuentra
   if (C9_FN[fn]) return estado.c9 ? C9_FN[fn](a) : { status: 404, error: { code: 'PGRST202', message: `Could not find the function public.${fn} in the schema cache`, details: null, hint: null } };
   // (fase 10) las funciones de c11: sin c11 pegado, PostgREST no las encuentra
@@ -3002,6 +3107,12 @@ async function simular(ctx, rol) {
       lecturas.push(v + u.search);
       return route.fulfill({ status: 404, headers: CORS, contentType: 'application/json', body: JSON.stringify({ code: 'PGRST205', message: `Could not find the table 'public.${v}' in the schema cache`, details: null, hint: null }) });
     }
+    // (fase 11) c15 sin pegar: sus vistas y nomina_columnas no existen (la lectura se anota igual)
+    if (!estado.c15 && /^\/rest\/v1\/(v_nomina_control|v_nomina_corridas|v_nomina_personas|v_nomina_cargos|v_nomina_lotes|v_nomina_amarre|nomina_columnas)$/.test(u.pathname)) {
+      const v = u.pathname.slice('/rest/v1/'.length);
+      lecturas.push(v + u.search);
+      return route.fulfill({ status: 404, headers: CORS, contentType: 'application/json', body: JSON.stringify({ code: 'PGRST205', message: `Could not find the table 'public.${v}' in the schema cache`, details: null, hint: null }) });
+    }
     // (fase 12a) Storage, el bucket privado «subs»: subir (solo con el código del teléfono; nada se pisa: 409) y firmar para ver (también con el código)
     if (u.pathname.startsWith('/storage/v1/object/subs/') && req.method() === 'POST') {
       const ruta = decodeURIComponent(u.pathname.slice('/storage/v1/object/subs/'.length)), buf = req.postDataBuffer() || Buffer.alloc(0), auth = req.headers()['authorization'] || '';
@@ -3042,6 +3153,8 @@ async function simular(ctx, rol) {
       // el equipo (no dueño) recibe [] con 200 de toda vista de c4: la RLS no deja ver el libro
       let filas = estado.estadosNoDueno && nombre.startsWith('v_') ? [] : tabla(nombre, u.searchParams);
       if (nombre === 'perfiles') filas = [{ id: UID, nombre: rol === 'dueno' ? 'Edgar Prueba' : 'Campo Prueba', rol }];
+      // (fase 11) con c15, la lista de perfiles para enlazar a cada persona de la nómina es la del banco (los de prueba, ZZ)
+      if (nombre === 'perfiles' && estado.c15 && rol === 'dueno' && /order=nombre/.test(u.search)) filas = nLeer('perfiles') || filas;
       return route.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify(filas) });
     }
     return route.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: '[]' });
@@ -3056,10 +3169,13 @@ if (FOTOS) fs.mkdirSync(FOTOS, { recursive: true });
 const foto = async (p, nombre) => { if (FOTOS) await p.screenshot({ path: path.join(FOTOS, nombre + '.png'), fullPage: true, animations: 'disabled' }); };
 const texto = async (p, sel) => (await p.locator(sel).allTextContents()).join(' ');
 // (fase 12a) catorce: «Cédula de corte» después del cierre y «Subs y 1099» después de los cobros
-const PAGS = ['resumen', 'bancos', 'bandeja', 'conciliar', 'movimientos', 'estados', 'obras', 'wip', 'cierre', 'cedula', 'facturas', 'cobros', 'subs', 'conexiones'];
+// (fase 11) quince: «Nómina» después del WIP
+const PAGS = ['resumen', 'bancos', 'bandeja', 'conciliar', 'movimientos', 'estados', 'obras', 'wip', 'nomina', 'cierre', 'cedula', 'facturas', 'cobros', 'subs', 'conexiones'];
 // (fase 8) la lista de respaldo de js/app.js (CONTA_PAGINAS_FIJAS, por si conta.js no cargó) trae las mismas, «cierre», (fase 9) «obras» y (fase 10) «facturas» y «wip» incluidas.
 // (fase 12a) «cedula» y «subs» entran en ella cuando se añadan a app.js (no es de esta fase): hasta entonces trae las doce de antes, en el mismo orden
-const PAGS_APP = /\{ k: "cedula",/.test(fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8')) ? PAGS : PAGS.filter(k => k !== 'cedula' && k !== 'subs');
+// (fase 11) y «nomina» entra en ella cuando se añada a app.js (la pone el orquestador): hasta entonces, sin ella
+const APP_JS = fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8');
+const PAGS_APP = PAGS.filter(k => !(['cedula', 'subs'].includes(k) && !/\{ k: "cedula",/.test(APP_JS)) && !(k === 'nomina' && !/\{ k: "nomina",/.test(APP_JS)));
 // cambiar de página por su pestaña: en la computadora (≥ 1024 px) las pestañas están escondidas (las enseña el lateral de app.js), así que el clic es del DOM
 const titulo2 = async pg => (await pg.locator('#titulo-vista').textContent()).trim();
 const tab = async (pg, k) => { await pg.locator(`.ct-tab[data-pag="${k}"]`).evaluate(b => b.click()); };
@@ -3103,7 +3219,7 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
   const mesRegla = (() => { const meses = CORTES.filter(c => c.tipo === 'mes' && c.desde <= HOY).sort((x, y) => y.desde.localeCompare(x.desde)); return (meses.find(c => c.corte >= HOY) || meses[0]).periodo; })();
   const titulo = async () => (await p.locator('#titulo-vista').textContent()).trim();
   ok('Edgar tiene la loseta (escondida en Hoy, como las demás del dueño)', !(await p.locator('#btn-conta').getAttribute('hidden')) );
-  ok('…y la pestaña «Contabilidad» en el lateral con las 14 páginas como subtítulos (conta-<k>, los que da MXP_CONTA.paginas(): «Costo por obra», «Cierre del mes», «Cédula de corte» y «Subs y 1099» incluidas), y el botón de la barra de abajo', (await p.locator('#lateral [data-lat="conta"]').count()) === 1 &&
+  ok(`…y la pestaña «Contabilidad» en el lateral con las ${PAGS.length} páginas como subtítulos (conta-<k>, los que da MXP_CONTA.paginas(): «Costo por obra», «Nómina», «Cierre del mes», «Cédula de corte» y «Subs y 1099» incluidas), y el botón de la barra de abajo`, (await p.locator('#lateral [data-lat="conta"]').count()) === 1 &&
     JSON.stringify(await p.locator('#lateral [data-lat^="conta-"]').evaluateAll(bs => bs.map(b => b.dataset.lat))) === JSON.stringify(PAGS.map(k => 'conta-' + k)) && (await p.locator('#nav-abajo button[data-nav="conta"]').getAttribute('hidden')) === null);
 
   // ---- La portada («Resumen»): control antes de pintar, las fichas y «Qué atender» ----
@@ -3112,16 +3228,16 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
   await p.waitForSelector('#conta-raiz .ct-ficha', { timeout: 8000 });
   ok('Al entrar, la vista de la contabilidad se ve, la página es «Resumen» (la portada) y la pestaña «resumen» está marcada', await p.locator('#vista-conta').isVisible() && (await p.locator('#titulo-vista').textContent()).trim() === 'Resumen' && (await p.locator('.ct-tab[data-pag="resumen"][aria-current="page"]').count()) === 1, await p.locator('#titulo-vista').textContent());
   const pags = await p.evaluate(() => window.MXP_CONTA.paginas().map(x => [x.k, x.nombre, /^<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"/.test(x.svg) && /<\/svg>$/.test(x.svg)]));
-  ok('MXP_CONTA.paginas() da las 14 páginas en su orden (Costo por obra después de Estados; desde la fase 10, el WIP entre Costo por obra y Cierre del mes, y Facturas antes de Cobros en línea; desde la 12a, la Cédula de corte después del cierre y Subs y 1099 después de los cobros), con su nombre y un svg del estilo del menú', JSON.stringify(pags.map(x => x[0])) === JSON.stringify(PAGS) && pags.every(x => x[2]) && pags.map(x => x[1]).join('|') === 'Resumen|Bancos y tarjetas|Bandeja|Conciliar|Movimientos|Estados financieros|Costo por obra|WIP (obra en curso)|Cierre del mes|Cédula de corte|Facturas|Cobros en línea|Subs y 1099|Conexiones y seguridad', JSON.stringify(pags));
+  ok(`MXP_CONTA.paginas() da las ${PAGS.length} páginas en su orden (Costo por obra después de Estados; desde la fase 10, el WIP entre Costo por obra y Cierre del mes, y Facturas antes de Cobros en línea; desde la 12a, la Cédula de corte después del cierre y Subs y 1099 después de los cobros; desde la 11, la Nómina después del WIP), con su nombre y un svg del estilo del menú`, JSON.stringify(pags.map(x => x[0])) === JSON.stringify(PAGS) && pags.every(x => x[2]) && pags.map(x => x[1]).join('|') === 'Resumen|Bancos y tarjetas|Bandeja|Conciliar|Movimientos|Estados financieros|Costo por obra|WIP (obra en curso)|Nómina|Cierre del mes|Cédula de corte|Facturas|Cobros en línea|Subs y 1099|Conexiones y seguridad', JSON.stringify(pags));
   ok('La página no repite el título que ya pone la barra de la app: la cabecera trae la línea de cifras y, como aria-label, el nombre', (await p.locator('.ct-pag-h').count()) === 0 && (await p.locator('.ct-pag-cab').getAttribute('aria-label')) === 'Resumen' && (await p.locator('.ct-pag-sub').count()) === 1);
   {
     // la lista de respaldo de app.js (por si conta.js no cargó) lleva los mismos trazos que ICONOS de conta.js: el lateral y las pestañas nunca enseñan iconos distintos para la misma página
     const appJs = fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8'), contaJs = fs.readFileSync(path.join(ROOT, 'js', 'conta.js'), 'utf8');
     const fijos = Object.fromEntries([...appJs.matchAll(/\{ k: "(\w+)", nombre: "[^"]+", svg: SVG_MENU\('([^']*)'\) \}/g)].map(m => [m[1], m[2]]));
     const iconos = Object.fromEntries([...contaJs.matchAll(/^\s+(\w+): svgMenu\('([^']*)'\),?$/gm)].map(m => [m[1], m[2]]));
-    ok(`La lista de respaldo CONTA_PAGINAS_FIJAS de app.js trae ${PAGS_APP.length === PAGS.length ? 'las 14 páginas' : 'las 12 de antes (la Cédula y Subs y 1099 todavía no están en app.js)'} en el mismo orden y con los mismos trazos que ICONOS de conta.js («Costo por obra», «WIP», «Cierre del mes» y «Facturas» incluidas)`, JSON.stringify(Object.keys(fijos)) === JSON.stringify(PAGS_APP) && PAGS_APP.every(k => fijos[k] && fijos[k] === iconos[k]), PAGS_APP.filter(k => fijos[k] !== iconos[k]).join(',') || Object.keys(fijos).join(','));
+    ok(`La lista de respaldo CONTA_PAGINAS_FIJAS de app.js trae ${PAGS_APP.length === PAGS.length ? `las ${PAGS.length} páginas` : `${PAGS_APP.length} (le faltan ${PAGS.filter(k => !PAGS_APP.includes(k)).join(', ')}: no están en app.js todavía)`} en el mismo orden y con los mismos trazos que ICONOS de conta.js («Costo por obra», «WIP», «Cierre del mes» y «Facturas» incluidas)`, JSON.stringify(Object.keys(fijos)) === JSON.stringify(PAGS_APP) && PAGS_APP.every(k => fijos[k] && fijos[k] === iconos[k]), PAGS_APP.filter(k => fijos[k] !== iconos[k]).join(',') || Object.keys(fijos).join(','));
   }
-  ok('En la computadora (1280 px) las pestañas de arriba van escondidas (las enseña el lateral), pero siguen en el DOM con sus 14 páginas', (await p.locator('.ct-tabs').evaluate(e => getComputedStyle(e).display)) === 'none' && (await p.locator('.ct-tab').count()) === PAGS.length && JSON.stringify(await p.locator('.ct-tab').evaluateAll(bs => bs.map(b => b.dataset.pag))) === JSON.stringify(PAGS));
+  ok(`En la computadora (1280 px) las pestañas de arriba van escondidas (las enseña el lateral), pero siguen en el DOM con sus ${PAGS.length} páginas`, (await p.locator('.ct-tabs').evaluate(e => getComputedStyle(e).display)) === 'none' && (await p.locator('.ct-tab').count()) === PAGS.length && JSON.stringify(await p.locator('.ct-tab').evaluateAll(bs => bs.map(b => b.dataset.pag))) === JSON.stringify(PAGS));
   await espiar(p);
   const ctrlR0 = desde(n).find(l => l.fn === 'fn_banco_control');
   ok('La portada pidió fn_banco_control(hoy) con las cuatro vistas del banco (v_banco_saldos manda) y fn_estados_control con v_resultados del mes de hoy', !!ctrlR0 && ctrlR0.args.p_periodo === 'hoy' && JSON.stringify(ctrlR0.args.p_vistas) === '["v_banco_saldos","v_banco_bandeja","v_conciliacion","v_banco_movimientos"]' &&
@@ -3366,7 +3482,7 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
   const esperarTexto = (sel, re) => p.waitForFunction(([s, r]) => { const e = document.querySelector(s); return e && new RegExp(r).test(e.textContent); }, [sel, re.source], { timeout: 8000 });
   const nBal = T.v_balance_general.filter(f => f.periodo === '2026-10').length;
   nLect = lecturas.length; n = llamadas.length;
-  ok('Las pestañas van en el orden del menú: Resumen, Bancos, Bandeja, Conciliar, Movimientos, Estados, Obras, WIP, Cierre, Facturas, Cobros, Conexiones (cada una con su icono)', JSON.stringify(await p.locator('.ct-tab').evaluateAll(bs => bs.map(b => b.dataset.pag))) === JSON.stringify(PAGS) && (await p.locator('.ct-tab svg').count()) === PAGS.length && /Estados/.test(await p.locator('.ct-tab').nth(5).textContent()) && /Obras/.test(await p.locator('.ct-tab').nth(6).textContent()) && /WIP/.test(await p.locator('.ct-tab').nth(7).textContent()) && /Cierre/.test(await p.locator('.ct-tab').nth(8).textContent()));
+  ok('Las pestañas van en el orden del menú: Resumen, Bancos, Bandeja, Conciliar, Movimientos, Estados, Obras, WIP, Nómina, Cierre, Cédula, Facturas, Cobros, Subs, Conexiones (cada una con su icono)', JSON.stringify(await p.locator('.ct-tab').evaluateAll(bs => bs.map(b => b.dataset.pag))) === JSON.stringify(PAGS) && (await p.locator('.ct-tab svg').count()) === PAGS.length && /Estados/.test(await p.locator('.ct-tab').nth(5).textContent()) && /Obras/.test(await p.locator('.ct-tab').nth(6).textContent()) && /WIP/.test(await p.locator('.ct-tab').nth(7).textContent()) && /Nómina/.test(await p.locator('.ct-tab').nth(PAGS.indexOf('nomina')).textContent()) && /Cierre/.test(await p.locator('.ct-tab').nth(PAGS.indexOf('cierre')).textContent()));
   await tab(p, 'estados'); await p.waitForSelector('#ct-est-resultados', { timeout: 8000 });
   ok('Al tocarla el título es «Estados financieros» y aparece la barra de chips', (await titulo()) === 'Estados financieros' && (await p.locator('#ct-est-barra').count()) === 1, await titulo());
   const est0 = await estEst();
@@ -6041,8 +6157,8 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     let n0 = llamadas.length;
     await ve(q, 'wip');
     let r0 = ultima(n0, 'fn_wip_resumen'), c0 = ultima(n0, 'fn_wip_control');
-    ok('WIP · está en el menú entre «Costo por obra» y «Cierre del mes» (pestaña y lateral) y la página pide fn_wip_resumen sin mes (el que toca), v_wip_schedule FILTRADA por ese mes y fn_wip_control del mes antes de pintar',
-      /"obras","wip","cierre"/.test(JSON.stringify(await q.locator('.ct-tab').evaluateAll(bs => bs.map(x => x.dataset.pag)))) && (await q.locator('#lateral [data-lat="conta-wip"]').count()) === 1 && (await titulo2(q)) === 'WIP (obra en curso)' &&
+    ok('WIP · está en el menú después de «Costo por obra» y antes del cierre (desde la fase 11, con la Nómina en medio) (pestaña y lateral) y la página pide fn_wip_resumen sin mes (el que toca), v_wip_schedule FILTRADA por ese mes y fn_wip_control del mes antes de pintar',
+      /"obras","wip","nomina","cierre"/.test(JSON.stringify(await q.locator('.ct-tab').evaluateAll(bs => bs.map(x => x.dataset.pag)))) && (await q.locator('#lateral [data-lat="conta-wip"]').count()) === 1 && (await titulo2(q)) === 'WIP (obra en curso)' &&
       r0 && JSON.stringify(r0.args) === '{"p_periodo":null}' && lecturas.some(l => /^v_wip_schedule\?select=\*&periodo=eq\.2026-10/.test(l)) && c0 && JSON.stringify(c0.args) === '{"p_periodo":"2026-10"}', r0 && JSON.stringify(r0.args));
     let res = await txt(q.locator('#ct-wip-res'));
     ok('El mes que toca (Octubre de 2026): en llano cuántas obras y qué les falta, la nota de la base, «nada que postear», desde qué mes lo exige el cierre, y sin cifras (ninguna obra lista)',
@@ -7085,6 +7201,447 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     estado.c13 = false; estado.c14 = false; estado.c9 = false; c9Reset(); xReset(); conCodigo(false);
   }
 
+  // ---- La nómina (c15, fase 11), con la base simulada SACADA DEL BANCO (pantalla-f15.json): subir el «Payroll journal» (leído en el
+  // navegador: las columnas delicadas —«SSN», «Home address» y la que trae algo con forma de Seguro Social— nunca salen ni se quedan en
+  // la memoria de la pantalla; sus celdas, como texto, iguales a las que mandó el capturador), lo que dice la base (cuadra, la columna
+  // que no conoce y decirle qué es ahí mismo, lo que no salió), importar, enlazar a cada persona con su perfil y su clase, la cuenta de
+  // lo sin obra, «mandarlo sin obra», lo visto que cambió (MX011), postear con su frase, lo que dejó por pagar, casar los cargos de Gusto
+  // (desde la nómina, desde «Cargos de Gusto» y desde la tarjeta de la Bandeja), la cuota, deshacer, el mismo archivo otra vez, el bono
+  // fuera de ciclo, anular, la otra nómina del mismo día y descartarla, las horas para Gusto (la tabla por persona y semana, el CSV del
+  // lote como lo da la base, el aviso cuando una hora del lote cambió, armarlo otra vez), el amarre (el monto mal escrito, el 941, el
+  // 940 y el RT-6 que no amarra), las personas, los ajustes y el mapeo, las filas 180 a 183 del cierre con su botón; sin el código, el
+  // equipo, sin c15, el cuadre en rojo y 390/820/1280 sin desplazamiento lateral ni rojos ----
+  {
+    estado.c15 = true; estado.c15Banco = true; nReset();
+    const conCodigo = si => { estado.mfaFactores = si ? [{ id: 'f-1', friendly_name: 'Teléfono de Edgar', factor_type: 'totp', status: 'verified' }] : []; estado.sesionAal = si ? 'aal2' : undefined; };
+    const abrirCtx = async (w, codigo) => {
+      conCodigo(codigo);
+      const cx = await b.newContext({ viewport: { width: w, height: w < 700 ? 844 : 1000 }, deviceScaleFactor: w < 1024 ? 2 : 1, isMobile: w < 1024, hasTouch: w < 1024, serviceWorkers: 'block', acceptDownloads: true });
+      await simular(cx, 'dueno');
+      const q = await cx.newPage(); q.on('pageerror', e => errs.push(`f15 ${w}: ` + String(e).slice(0, 160)));
+      await q.goto('http://localhost:8873/index.html'); await q.waitForSelector('#vista-app:not([hidden])', { timeout: 15000 }); await q.waitForTimeout(800);
+      await q.evaluate(() => document.querySelectorAll('dialog[open]').forEach(d => d.close()));
+      await q.locator('#btn-conta').evaluate(x => x.click()); await q.waitForSelector('#conta-raiz .ct-ficha', { timeout: 8000 }); await pintado(q);
+      return { cx, q };
+    };
+    const ve = async (q, k, op) => { await q.evaluate(([k, o]) => window.MXP_CONTA.ir(k, o || {}), [k, op || null]); await pintado(q); };
+    const ultima = (n0, fn) => desde(n0).filter(l => l.fn === fn).pop();
+    const toca = async (q, sel) => { await q.locator(sel).first().evaluate(x => x.click()); await pintado(q); };
+    const txt = async loc => (await loc.evaluateAll(es => es.map(x => x.innerText).join(' '))).replace(/\s+/g, ' ').trim();
+    const enviar = async (q, form) => { await form.locator('button[type="submit"]').first().evaluate(x => x.click()); await pintado(q); };
+    const usd = v => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(v));
+    const esc = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = s => new RegExp(esc(s));
+    const I = F15.ids, TX = F15.textos, AR = F15.archivos, P = F15.c15.pasos;
+    const hecho = nombre => N.e === F15.c15.orden.indexOf(nombre) + 1;
+    const dirA = fs.mkdtempSync(path.join(require('os').tmpdir(), 'mxp-f15-'));
+    const archivo = k => { const r = path.join(dirA, AR[k].nombre); fs.writeFileSync(r, AR[k].texto, 'utf8'); return r; };
+    const DELICADO = ['000-00-0001', '000-00-0002', '000-00-0003', '000-00-0009', 'Calle Falsa', '"SSN"', 'Home address', 'ZZ Nota'];
+    const memoria = q => q.evaluate(() => JSON.stringify(window.MXP_CONTA._estado, (k, v) => typeof v === 'function' ? undefined : v instanceof Map ? [...v] : v));
+    const subir = async (q, k) => { const n0 = llamadas.length; await q.setInputFiles('#ct-nom-archivo', archivo(k)); await esperarLlamada(q, n0, 'fn_nomina_ensayo'); await pintado(q); return n0; };
+    let { cx, q } = await abrirCtx(1280, true);
+    { const h = f => require('crypto').createHash('sha1').update(fs.readFileSync(f)).digest('hex').slice(0, 12);
+      ok('La base simulada de la nómina (pantalla-f15.json) se sacó del banco con el c15-nomina.sql y la f15-semilla.sql de este árbol', F15.capturado.c15 === h(path.join(ROOT, 'docs', 'conta', 'c15-nomina.sql')) && F15.capturado.semilla === h(path.join(__dirname, 'f15-semilla.sql')),
+        `capturado ${F15.capturado.c15}, hoy ${h(path.join(ROOT, 'docs', 'conta', 'c15-nomina.sql'))}: vuelve a correr node pruebas/conta/f15-capturar.js <bd nueva>`); }
+
+    // ==================== LA PÁGINA, VACÍA ====================
+    let n0 = llamadas.length, nL = lecturas.length;
+    await ve(q, 'nomina');
+    const ctl0 = nLeer('v_nomina_control').filter(f => f.nivel === 'aviso' && f.ok !== true);
+    ok('Nómina · el título, sus seis apartados, y el control antes de pintar (v_nomina_control); sus avisos en rojo arriba (los de la base: ' + ctl0.map(f => f.orden).join(', ') + ')', (await titulo2(q)) === 'Nómina' &&
+      (await q.locator('[data-nom-sub]').count()) === 6 && lecturas.slice(nL).some(l => l.startsWith('v_nomina_control')) && (await q.locator('#ct-nom-avisos [data-orden]').count()) === ctl0.length &&
+      ctl0.every(f => re(String(f.detalle).slice(0, 50)).test(f.detalle)) && /Ninguna nómina todavía/.test(await txt(q.locator('#ct-nom-lista'))));
+    ok('…«Elegir el archivo (CSV)» encendido con el código del teléfono, y cómo bajarlo de Gusto, plegado', !(await q.locator('#ct-nom-archivo').isDisabled()) && (await q.locator('#ct-nom-subir details.ct-ayuda').count()) === 1);
+    await foto(q, 'f15-1-vacia');
+
+    // ==================== EL ARCHIVO ====================
+    n0 = await subir(q, 'journal');
+    const cE = ultima(n0, 'fn_nomina_ensayo'), mandado = JSON.stringify(cE ? cE.args : null);
+    ok('Subir el journal · se lee en el navegador y se manda fn_nomina_ensayo con su nombre, su tamaño y el sha256 del archivo ENTERO (el de los bytes tal cual), con el código del teléfono',
+      !!cE && cE.args.p_archivo.nombre === AR.journal.nombre && cE.args.p_archivo.sha256 === AR.journal.sha256 && cE.args.p_archivo.bytes === Buffer.byteLength(AR.journal.texto, 'utf8') && xAal(cE.auth) === 'aal2' && JSON.stringify(cE.args.p_opciones) === '{}', mandado.slice(0, 200));
+    ok('…sus celdas, como texto, son CELDA POR CELDA las que mandó el capturador al banco (la misma limpieza), sin ningún monto convertido', !!cE && JSON.stringify(cE.args.p_archivo.filas) === JSON.stringify(P.ensayo_journal.args.p_archivo.filas) && hecho('ensayo_journal') &&
+      cE.args.p_archivo.filas.flat().every(x => typeof x === 'string'));
+    ok('LO DELICADO NO SALE: ni «SSN», ni «Home address», ni la columna que traía algo con forma de Seguro Social, ni ninguno de sus valores, en lo mandado, en la página ni en la memoria de la pantalla',
+      DELICADO.every(t => !mandado.includes(t)), DELICADO.filter(t => mandado.includes(t)).join(', '));
+    { const pag = await q.evaluate(() => document.body.innerHTML), mem = await memoria(q);
+      ok('…(la página no tiene ningún valor delicado, y la memoria de la pantalla ni sus valores ni sus cabeceras: solo los nombres de lo que se quitó)', ['000-00-0001', '000-00-0002', '000-00-0003', '000-00-0009', 'Calle Falsa'].every(t => !pag.includes(t) && !mem.includes(t)) &&
+        !/"SSN","|Home address","/.test(mem.replace(/"columna":"(SSN|Home address|ZZ Nota)"/g, '')), mem.slice(0, 200)); }
+    const ens1 = P.ensayo_journal.respuesta.corridas[0];
+    let t = await txt(q.locator('#ct-nom-ensayo'));
+    ok(`…dice lo que no salió del teléfono («SSN», «Home address» y «ZZ Nota», por traer algo con forma de Seguro Social) y lo que dice la base: cuadra al centavo, bruto ${usd(ens1.totales.bruto)}, neto ${usd(ens1.totales.neto)}, ${ens1.totales.personas} personas`,
+      /No salieron del teléfono: «SSN», «Home address», «ZZ Nota» \(traía algo con forma de número de Seguro Social\)/.test(t) && /cuadra al centavo/.test(t) && re(usd(ens1.totales.bruto)).test(t) && re(usd(ens1.totales.neto)).test(t) && re(usd(ens1.totales.imp_patron)).test(t) && /Todavía no se guardó nada/.test(t), t.slice(0, 300));
+    ok('…y la columna que el mapeo no conoce («ZZ Dato raro», 3 celdas con cifras), con «Decir qué es»', /«ZZ Dato raro» · 3 celdas con cifras/.test(t) && (await q.locator('#ct-nom-ensayo [data-nom-clasificar="ZZ Dato raro"]').count()) === 1);
+    await foto(q, 'f15-2-ensayo');
+    // decir qué es: ignorarla, con su nota; la base vuelve a leer el MISMO archivo (lo limpio que quedó en memoria) y ya no la frena
+    let card = q.locator('#ct-nom-ensayo');
+    await card.locator('[data-nom-clasificar="ZZ Dato raro"]').click();
+    await card.locator('.ct-form select[name="clase"]').selectOption('ignorar');
+    await card.locator('.ct-form input[name="nota"]').fill(TX.raro);
+    n0 = llamadas.length;
+    await enviar(q, card.locator('.ct-form'));
+    await esperarLlamada(q, n0, 'fn_nomina_ensayo'); await pintado(q);
+    const cCol = ultima(n0, 'fn_nomina_columna'), cE2 = ultima(n0, 'fn_nomina_ensayo');
+    t = await txt(q.locator('#ct-nom-ensayo'));
+    ok('«Decir qué es» · fn_nomina_columna({columna, clase: ignorar, nota}) y la base vuelve a ensayar el mismo archivo: ya no hay columna sin clasificar, e «Importar (entra 1 nómina)»',
+      !!cCol && JSON.stringify(cCol.args.p) === JSON.stringify({ columna: 'ZZ Dato raro', clase: 'ignorar', nota: TX.raro }) && !!cE2 && JSON.stringify(cE2.args.p_archivo) === JSON.stringify(cE.args.p_archivo) && hecho('ensayo_journal_2') &&
+      !/Dato raro/.test(t) && /Importar \(entra 1 nómina\)/.test(await txt(q.locator('#ct-nom-importar'))), t.slice(0, 200));
+    n0 = llamadas.length;
+    await toca(q, '#ct-nom-importar');
+    const cImp = ultima(n0, 'fn_nomina_importar');
+    ok('Importar · fn_nomina_importar con lo mismo que se ensayó; la nómina nueva se abre sola («Nómina del 23 oct 2026», «←»), con lo que dijo la base', !!cImp && JSON.stringify(cImp.args.p_archivo) === JSON.stringify(cE.args.p_archivo) && hecho('importar_journal') &&
+      (await titulo2(q)) === 'Nómina del 23 oct 2026' && await q.locator('#btn-volver').isVisible() && re(P.importar_journal.respuesta.corridas[0].texto).test(await txt(q.locator('.ct-nom-nota'))));
+    { const mem = await memoria(q); ok('…y después de importar, la pantalla ya no guarda el archivo (ni limpio)', !/"archivo":\{/.test(mem) && !mem.includes('1760.00'), mem.slice(0, 160)); }
+
+    // ==================== LA NÓMINA IMPORTADA: FRENOS, PERSONAS, REPARTO, POSTEAR ====================
+    let pr = nLeer(`fn_nomina_propuesta|${I.journal}`);
+    t = await txt(q.locator('#ct-nom-frenos'));
+    ok(`La nómina · lo que la frena, como lo dice la base (${pr.frenos.length}: nadie enlazado), «Postear» apagado y su porqué`, pr.frenos.length === 3 && pr.frenos.every(f => re(f.texto).test(t)) && (await q.locator('#ct-nom-postear-b').isDisabled()) &&
+      /Todavía no se puede postear/.test(await txt(q.locator('#ct-nom-frase'))));
+    ok('…cada persona con lo que cobra (de la base) y «Decir quién es»', (await q.locator('[data-nom-enlazar]').count()) === 3 && re(`Bruto ${usd(1958)} · neto ${usd(1666.21)}`).test(await txt(q.locator(`[data-nom-persona="${I.persona.uno}"]`))));
+    const enlazar = async (k, clase) => {
+      const li = q.locator(`[data-nom-persona="${I.persona[k]}"]`);
+      await li.locator('[data-nom-enlazar]').click();
+      const elegido = await li.locator('.ct-form select[name="usuario_id"]').inputValue();
+      if (clase) await li.locator('.ct-form select[name="clase"]').selectOption(clase);
+      const m = llamadas.length;
+      await enviar(q, li.locator('.ct-form'));
+      return { elegido, c: ultima(m, 'fn_nomina_persona') };
+    };
+    let e1 = await enlazar('uno');
+    ok('Decir quién es · el perfil que propone la base viene elegido (ZZ Ayudante Uno) y su clase (campo); «Es así: confirmarlo» manda {id, usuario_id, clase, confirmar}', e1.elegido === I.perfil.uno && !!e1.c &&
+      JSON.stringify(e1.c.args.p) === JSON.stringify({ id: I.persona.uno, usuario_id: I.perfil.uno, clase: 'campo', confirmar: true }) && hecho('enlazar_uno'));
+    await enlazar('dos');
+    const e3 = await enlazar('tres', 'oficial');
+    ok('…el oficial: la base lo propone de campo (su perfil lo es) y Edgar lo cambia a oficial', !!e3.c && e3.c.args.p.clase === 'oficial' && hecho('enlazar_tres'));
+    pr = nLeer(`fn_nomina_propuesta|${I.journal}`);
+    t = await txt(q.locator('#ct-nom-frenos'));
+    ok(`…ahora frenan lo sin obra sin cuenta y ${'ZZ Ayudante Dos'} sin horas aprobadas (de la base), cada uno con su botón`, pr.frenos.map(f => f.codigo).join(',') === 'falta_cuenta_sin_obra,sin_horas' && pr.frenos.every(f => re(f.texto).test(t)) &&
+      (await q.locator('#ct-nom-frenos [data-nom-sinobra]').count()) === 1 && (await q.locator(`#ct-nom-frenos [data-nom-decidir="${I.persona.dos}"]`).count()) === 1);
+    card = q.locator('#ct-nom-frenos');
+    await card.locator('[data-nom-sinobra]').click();
+    n0 = llamadas.length;
+    await enviar(q, card.locator('.ct-form'));
+    const escribe = (n0, fn) => desde(n0).filter(l => l.fn === fn && l.args && l.args.p && Object.keys(l.args.p).length).pop();
+    const ordenado = o => JSON.stringify(Object.keys(o || {}).sort().reduce((x, k) => (x[k] = o[k], x), {}));
+    ok('«Decir la cuenta de lo sin obra» · 6000 ya escrito (▶ lo confirma el CPA) y fn_nomina_config({cuenta_sin_obra: "6000"})', JSON.stringify((escribe(n0, 'fn_nomina_config') || {}).args) === '{"p":{"cuenta_sin_obra":"6000"}}' && hecho('config_sin_obra'));
+    card = q.locator('#ct-nom-frenos');
+    await card.locator(`[data-nom-decidir="${I.persona.dos}"]`).click();
+    await enviar(q, card.locator('.ct-form'));
+    ok('«Mandarlo sin obra» · sin nota no sale', /Falta la nota/.test(await txt(card.locator('.ct-error'))) && N.e === 8);
+    await card.locator('.ct-form input[name="nota"]').fill(TX.dos);
+    n0 = llamadas.length;
+    await enviar(q, card.locator('.ct-form'));
+    const cDec = ultima(n0, 'fn_nomina_decidir');
+    ok('…con su nota: fn_nomina_decidir(corrida, persona, {decision: sin_obra, nota})', !!cDec && cDec.args.p_corrida === I.journal && cDec.args.p_persona === I.persona.dos && cDec.args.p.decision === 'sin_obra' && cDec.args.p.nota === TX.dos && hecho('decidir_dos'));
+    pr = nLeer(`fn_nomina_propuesta|${I.journal}`);
+    t = await txt(q.locator('#ct-nom-frase'));
+    const pasTxt = Object.keys(pr.pasivos).sort().map(k => `${usd(pr.pasivos[k])} en ${k}`).join(', ');
+    ok(`Ya se puede postear · sin frenos, y la frase dice lo que va a pasar con las cifras de la base (${usd(pr.totales.debe)} en débitos; ${pasTxt})`, pr.puede_postear === true && !(await q.locator('#ct-nom-frenos').count()) &&
+      re(`el journal de esta nómina (${usd(pr.totales.debe)} en débitos): el sueldo bruto de ${usd(pr.totales.bruto)}`).test(t) && re(pasTxt).test(t) && /otro asiento reparte el burden real a las obras/.test(t) && await q.locator('#ct-nom-postear-b').isEnabled(), t);
+    const asTxt = await txt(q.locator('#ct-nom-asiento'));
+    ok(`…el asiento que va a entrar, línea por línea como la da la base (${pr.asiento.lineas.length} y ${pr.burden.lineas.length} del burden), con el nombre de cada obra y los créditos con «−»`, (await q.locator('#ct-nom-asiento .ct-nom-l').count()) === pr.asiento.lineas.length + pr.burden.lineas.length &&
+      /5000.*C15 PRUEBA Obra A.*\$1,058\.38/.test(asTxt) && /5000.*C15 PRUEBA Obra B · CO #1.*\$264\.59/.test(asTxt) && /2210.*−\$4,874\.93/.test(asTxt) && /5010.*C15 PRUEBA Obra A.*\$181\.60/.test(asTxt), asTxt.slice(0, 300));
+    ok('…y el reparto de cada persona por obra (ZZ Ayudante Uno: 40 h en la obra A, $1,058.38; 4 h sin obra a 6000) y lo que la base avisa (el oficial en obra)', /5000 sueldo · C15 PRUEBA Obra A · 40 h \$1,058\.38/.test(await txt(q.locator(`[data-nom-persona="${I.persona.uno}"]`))) &&
+      /6000 sueldo · sin obra · 4 h/.test(await txt(q.locator(`[data-nom-persona="${I.persona.uno}"]`))) && /20 h aprobadas en obra de las 80/.test(await txt(q.locator('#ct-nom-avisos-c'))));
+    await foto(q, 'f15-3-lista-para-postear');
+    // lo visto cambió entre que miró y que tocó: MX011, no entra nada y se vuelve a mirar
+    estado.c15VistoViejo = true;
+    card = q.locator('#ct-nom-postear');
+    await card.locator('#ct-nom-postear-b').click();
+    ok('Postear · pide confirmarlo con la misma frase', re(t).test(await txt(card.locator('.ct-form .ct-form-t'))));
+    await enviar(q, card.locator('.ct-form'));
+    ok('…si lo visto ya cambió, la base dice MX011, no se posteó nada y la página vuelve a mirar (su mensaje, arriba)', re(F15.c15.errores.postear_visto_viejo.error.message).test(await txt(q.locator('.ct-nom-nota'))) && N.e === 9 && !estado.c15VistoViejo);
+    card = q.locator('#ct-nom-postear');
+    await card.locator('#ct-nom-postear-b').click();
+    n0 = llamadas.length;
+    await enviar(q, card.locator('.ct-form'));
+    const cPos = ultima(n0, 'fn_nomina_postear');
+    ok(`…y posteada: fn_nomina_postear(corrida, visto) con lo que dio la propuesta; «Posteada: asiento ${P.postear_journal.respuesta.asiento.numero}…»`, !!cPos && cPos.args.p_visto === pr.visto && hecho('postear_journal') &&
+      re(`Posteada: asiento ${P.postear_journal.respuesta.asiento.numero} del 23 oct 2026 y el reparto del burden, ${P.postear_journal.respuesta.burden.numero}`).test(await txt(q.locator('.ct-nom-nota'))));
+    t = await txt(q.locator('#ct-nom-pend'));
+    ok('La nómina posteada · lo que dejó por pagar a Gusto, cuenta por cuenta (de la base: falta todo)', (await q.locator('#ct-nom-pend .ct-nom-l.falta').count()) === 5 && /2210.*falta \$4,874\.93/.test(t) && /2240.*falta \$50\.00/.test(t), t);
+    t = await txt(q.locator('#ct-nom-cargos-c'));
+    ok('…sus cargos de Gusto del banco: los tres cerca de su día de pago (NET, TAX, CSD) con lo que dice la base de cada uno; la cuota del 2-oct no', (await q.locator('#ct-nom-cargos-c .ct-nom-cargo').count()) === 3 && /Paga el neto y los reembolsos de la nómina del 23-oct-2026 \(\$4,874\.93, al centavo\)/.test(t) && !/FEE/.test(t));
+    card = q.locator(`#ct-nom-cargos-c .ct-nom-cargo[data-nom-mov="${I.mov.net}"]`);
+    await card.locator('[data-nom-casar]').click(); await pintado(q);
+    ok('Casar… · la propuesta de la base para el cargo (fn_nomina_cargo_propuesta): una opción, «$4,874.93 en 2210»', /Paga el neto y los reembolsos de la nómina del 23-oct-2026: \$4,874\.93 en 2210/.test(await txt(card.locator('.ct-nom-op'))) && (await card.locator('[data-nom-op]').count()) === 1);
+    n0 = llamadas.length;
+    await card.locator('[data-nom-op="0"]').click(); await pintado(q);
+    const cCas = ultima(n0, 'fn_nomina_cargo_casar');
+    ok('…«Casar así» manda sus partes con el monto COMO TEXTO con sus centavos ([{corrida, cuenta: 2210, monto: "4874.93"}]) y la base lo casa', !!cCas && JSON.stringify(cCas.args.p_partes) === JSON.stringify([{ corrida: I.journal, cuenta: '2210', monto: '4874.93' }]) && cCas.args.p_nota === null && hecho('casar_net') &&
+      /casado con la nómina: asiento 2026-000004/.test(await txt(q.locator('.ct-nom-nota'))) && /2210.*pagado/.test(await txt(q.locator('#ct-nom-pend'))));
+    card = q.locator('#ct-nom-anular');
+    await card.locator('#ct-nom-anular-b').click();
+    await card.locator('.ct-form input[name="motivo"]').fill('ZZ: prueba');
+    n0 = llamadas.length;
+    await enviar(q, card.locator('.ct-form'));
+    ok('Anular con un cargo casado · la base dice que no (MX008) y se enseña tal cual; no cambió nada', !!ultima(n0, 'fn_nomina_anular') && (await txt(card.locator('.ct-error'))) === F15.c15.errores.anular_con_cargos.error.message && hecho('casar_net'));
+    await foto(q, 'f15-4-posteada');
+
+    // ==================== LOS CARGOS DE GUSTO ====================
+    await ve(q, 'nomina', { sub: 'cargos' });
+    t = await txt(q.locator('#ct-nom-cargos'));
+    ok('Cargos de Gusto · los que esperan (TAX, CSD y la cuota) con su texto de la base, y el casado (NET) en «Resueltos» con su asiento', (await q.locator('#ct-nom-cargos .ct-nom-cargo').count()) === 3 && /Parece la cuota mensual de Gusto \(\$49\.00\)/.test(t) &&
+      /GUSTO NET 6semk7 C15 PRUEBA.*\$4,874\.93.*casado.*Paga \$4,874\.93 en 2210/.test(await txt(q.locator('#ct-nom-hechos'))));
+    card = q.locator(`#ct-nom-cargos .ct-nom-cargo[data-nom-mov="${I.mov.tax}"]`);
+    await card.locator('[data-nom-casar]').click(); await pintado(q);
+    n0 = llamadas.length;
+    await card.locator('[data-nom-op="0"]').click(); await pintado(q);
+    ok('…casar el de impuestos: sus tres partes (2220, 2225, 2230) con sus centavos, como las dio la base', JSON.stringify((ultima(n0, 'fn_nomina_cargo_casar') || {}).args.p_partes) === JSON.stringify([{ corrida: I.journal, cuenta: '2220', monto: '1391.64' }, { corrida: I.journal, cuenta: '2225', monto: '34.85' }, { corrida: I.journal, cuenta: '2230', monto: '156.82' }]) && hecho('casar_tax'));
+    card = q.locator(`#ct-nom-cargos .ct-nom-cargo[data-nom-mov="${I.mov.fee}"]`);
+    await card.locator('[data-nom-casar]').click(); await pintado(q);
+    ok('…la cuota: la base dice que parece la cuota y no da opciones de nómina; un botón la manda a su gasto', !(await card.locator('[data-nom-op]').count()) && (await card.locator('[data-nom-cuota]').count()) === 1);
+    n0 = llamadas.length;
+    await card.locator('[data-nom-cuota]').click(); await pintado(q);
+    ok('…fn_nomina_cargo_cuota(movimiento): «La cuota de Gusto ($49.00) va a su gasto (6500)»', (ultima(n0, 'fn_nomina_cargo_cuota') || {}).args.p_movimiento === I.mov.fee && hecho('cuota_fee') && /La cuota de Gusto \(\$49\.00\) va a su gasto \(6500\)/.test(await txt(q.locator('.ct-nom-nota'))));
+
+    // ==================== LA BANDEJA: «CASAR CON LA NÓMINA» ====================
+    n0 = llamadas.length;
+    await tab(q, 'bandeja'); await pintado(q);
+    const filaCsd = q.locator(`.ct-mov[data-id="${I.mov.csd}"]`);
+    ok('La Bandeja · el cargo de Gusto que falta (CSD) sigue ahí, con el texto de c6 de siempre y, debajo, lo que dice la nómina; los casados ya no están; el control del banco en verde', (await filaCsd.count()) === 1 &&
+      !(await q.locator(`.ct-mov[data-id="${I.mov.net}"], .ct-mov[data-id="${I.mov.fee}"]`).count()) && !(await q.locator('#conta-raiz .ct-rojo').count()) && lecturas.slice(nL).some(l => l.startsWith('v_nomina_cargos')));
+    await filaCsd.locator('.ct-mov-fila').click();
+    t = await txt(filaCsd.locator('.ct-mov-det'));
+    ok('…desplegada: «La nómina dice: Paga las deducciones…» y el botón «Casar con la nómina» (con «Otra cosa…» como siempre)', /Débito de nómina: espera el journal de nómina/.test(t) && /La nómina dice: Paga las deducciones de la nómina del 23-oct-2026 \(\$50\.00, al centavo\)/.test(t) &&
+      await filaCsd.locator('[data-nom-bj-casar]').isEnabled() && (await filaCsd.locator('[data-otra]').count()) === 1);
+    await filaCsd.locator('[data-nom-bj-casar]').click(); await pintado(q);
+    n0 = llamadas.length;
+    await filaCsd.locator('[data-nom-op="0"]').click(); await pintado(q);
+    ok('…«Casar así» desde la Bandeja: fn_nomina_cargo_casar con «50.00» en 2240, y la Bandeja se vuelve a pintar sin él', JSON.stringify((ultima(n0, 'fn_nomina_cargo_casar') || {}).args.p_partes) === JSON.stringify([{ corrida: I.journal, cuenta: '2240', monto: '50.00' }]) && hecho('casar_csd') &&
+      !(await q.locator(`.ct-mov[data-id="${I.mov.csd}"]`).count()) && desde(n0).some(l => l.fn === 'fn_banco_control'));
+    await foto(q, 'f15-5-bandeja');
+    await ve(q, 'nomina', { sub: 'cargos' });
+    card = q.locator(`#ct-nom-hechos [data-nom-pago="${I.pago_csd}"]`);
+    await card.locator('[data-nom-deshacer]').click();
+    await enviar(q, card.locator('.ct-form'));
+    ok('Deshacer un cargo casado · sin motivo no sale', /Falta el motivo/.test(await txt(card.locator('.ct-error'))) && hecho('casar_csd'));
+    await card.locator('.ct-form input[name="motivo"]').fill(TX.deshacer);
+    n0 = llamadas.length;
+    await enviar(q, card.locator('.ct-form'));
+    ok('…con su motivo: fn_nomina_cargo_deshacer(pago, motivo) —el pago, no el movimiento— y vuelve a esperar en «Cargos de Gusto»', JSON.stringify((ultima(n0, 'fn_nomina_cargo_deshacer') || {}).args) === JSON.stringify({ p_pago: I.pago_csd, p_motivo: TX.deshacer }) && hecho('deshacer_csd') &&
+      (await q.locator(`#ct-nom-cargos .ct-nom-cargo[data-nom-mov="${I.mov.csd}"]`).count()) === 1 && /El cargo volvió a la Bandeja del banco/.test(await txt(q.locator('.ct-nom-nota'))));
+
+    // ==================== EL MISMO ARCHIVO, EL BONO Y LA OTRA NÓMINA DEL MISMO DÍA ====================
+    await ve(q, 'nomina', { sub: 'nominas' });
+    await subir(q, 'journal');
+    t = await txt(q.locator('#ct-nom-ensayo'));
+    ok('El mismo archivo otra vez · el ensayo dice que ya entró (y la nómina, con las mismas cifras) y «no entra nada nuevo»', hecho('ensayo_ya') && /este mismo archivo ya entró el/.test(t) && /Esta nómina ya está \(posteada, del archivo «zz-c15-journal-23oct\.csv»\) con las mismas cifras/.test(t) && /no entra nada nuevo/.test(t), t.slice(0, 200));
+    await toca(q, '#ct-nom-importar');
+    t = await txt(q.locator('#ct-nom-importe'));
+    ok('…importarlo igual: «Ese archivo ya estaba importado…» y la nómina que ya estaba, con su botón para abrirla', hecho('importar_ya') && re(P.importar_ya.respuesta.mensaje).test(t) && re(P.importar_ya.respuesta.corridas[0].texto).test(t) && (await q.locator(`#ct-nom-importe [data-nom-abrir="${I.journal}"]`).count()) === 1);
+    await toca(q, '[data-nom-importe-cerrar]');
+    await subir(q, 'bono');
+    ok('El bono fuera de ciclo · el ensayo (sin fila de total: lo avisa la base)', hecho('ensayo_bono') && /El archivo no trae fila de total/.test(await txt(q.locator('#ct-nom-ensayo'))));
+    await toca(q, '#ct-nom-importar');
+    ok('…se importa y se abre: «Bonus», sin frenos (su gente ya está enlazada), con el aviso de la base de que usa las horas del período sin quedárselas', hecho('importar_bono') && (await titulo2(q)) === 'Nómina del 23 oct 2026' && /Bonus/.test(await txt(q.locator('#ct-nom-cab'))) &&
+      !(await q.locator('#ct-nom-frenos').count()) && /fuera de ciclo/.test(await txt(q.locator('#ct-nom-avisos-c'))) && (await q.locator('#ct-nom-toma').count()) === 1);
+    card = q.locator('#ct-nom-postear'); await card.locator('#ct-nom-postear-b').click(); await enviar(q, card.locator('.ct-form'));
+    ok('…posteado', hecho('postear_bono'));
+    card = q.locator('#ct-nom-anular'); await card.locator('#ct-nom-anular-b').click();
+    await enviar(q, card.locator('.ct-form'));
+    ok('Anular · sin motivo no sale', /Falta el motivo/.test(await txt(card.locator('.ct-error'))) && hecho('postear_bono'));
+    await card.locator('.ct-form input[name="motivo"]').fill(TX.anular);
+    n0 = llamadas.length;
+    await enviar(q, card.locator('.ct-form'));
+    ok(`…con su motivo: fn_nomina_anular; «Anulada: reverso ${P.anular_bono.respuesta.reverso}…» y su archivo se puede volver a subir`, JSON.stringify((ultima(n0, 'fn_nomina_anular') || {}).args) === JSON.stringify({ p_corrida: I.bono, p_motivo: TX.anular }) && hecho('anular_bono') &&
+      re(`Anulada: reverso ${P.anular_bono.respuesta.reverso} (y ${P.anular_bono.respuesta.reverso_burden})`).test(await txt(q.locator('.ct-nom-nota'))) && /Anulada/.test(await txt(q.locator('.ct-nom-anulada'))));
+    await ve(q, 'nomina', { sub: 'nominas' });
+    await subir(q, 'otra');
+    t = await txt(q.locator('#ct-nom-ensayo'));
+    ok('La misma nómina con OTRAS cifras · el ensayo lo dice (la que está, con su bruto y su neto) y que al importar la base pregunta', hecho('ensayo_otra') && /con OTRAS cifras: bruto \$5,808\.00 y neto \$4,810\.68/.test(t));
+    await toca(q, '#ct-nom-importar');
+    t = await txt(q.locator('#ct-nom-importe'));
+    ok('…importarla: NO entra («otra_distinta», el texto de la base) y, como la que está ya se posteó, solo «Es otra nómina del mismo día» (no «Reemplaza»)', hecho('importar_otra') && re(P.importar_otra.respuesta.corridas[0].texto).test(t) &&
+      (await q.locator('#ct-nom-importe [data-nom-otra]').count()) === 1 && !(await q.locator('#ct-nom-importe [data-nom-reemplazar]').count()));
+    n0 = llamadas.length;
+    await toca(q, '#ct-nom-importe [data-nom-otra]');
+    ok('…«Es otra nómina del mismo día» vuelve a llamar con {otra_nomina: true} el mismo archivo, y la nueva se abre', JSON.stringify((ultima(n0, 'fn_nomina_importar') || {}).args.p_opciones) === '{"otra_nomina":true}' && hecho('importar_otra_nomina') && /por postear/.test(await txt(q.locator('#ct-nom-cab .ct-pill'))));
+    card = q.locator('#ct-nom-postear'); await card.locator('#ct-nom-descartar').click();
+    await card.locator('.ct-form input[name="motivo"]').fill(TX.descartar);
+    n0 = llamadas.length;
+    await enviar(q, card.locator('.ct-form'));
+    ok('…«Descartar esta nómina» con su motivo: fn_nomina_descartar; queda como rastro', JSON.stringify((ultima(n0, 'fn_nomina_descartar') || {}).args) === JSON.stringify({ p_corrida: I.otra, p_motivo: TX.descartar }) && hecho('descartar_otra') && /Descartada/.test(await txt(q.locator('.ct-nom-descartada'))));
+    await ve(q, 'nomina', { sub: 'nominas' });
+    const lista = nLeer('v_nomina_corridas');
+    t = await txt(q.locator('#ct-nom-lista'));
+    ok(`La lista · ${lista.length} nóminas con su estado: la del journal «falta casar $50.00» (la base: por_pagar), la anulada y la descartada`, (await q.locator('[data-nom-corrida]').count()) === lista.length &&
+      /falta casar \$50\.00/.test(await txt(q.locator(`[data-nom-corrida="${I.journal}"]`))) && /anulada/.test(await txt(q.locator(`[data-nom-corrida="${I.bono}"]`))) && /descartada/.test(await txt(q.locator(`[data-nom-corrida="${I.otra}"]`))), t.slice(0, 200));
+    await foto(q, 'f15-6-lista');
+
+    // ==================== LAS HORAS PARA GUSTO ====================
+    n0 = llamadas.length;
+    await ve(q, 'nomina', { sub: 'horas' });
+    const cH0 = ultima(n0, 'fn_nomina_horas_gusto');
+    ok(`Horas para Gusto · el período que toca es el que sigue a la última nómina regular (${I.rangos[1][0]} al ${I.rangos[1][1]}), y no tiene horas`, !!cH0 && cH0.args.p_desde === I.rangos[1][0] && cH0.args.p_hasta === I.rangos[1][1] && /Ninguna hora en ese período/.test(await txt(q.locator('#ct-nom-horas'))));
+    card = q.locator('#ct-nom-horas');
+    await card.locator('input[name="desde"]').fill(I.rangos[0][0]); await card.locator('input[name="hasta"]').fill(I.rangos[0][1]);
+    n0 = llamadas.length;
+    await enviar(q, card.locator('form.ct-nom-per'));
+    const hg = nLeer(`fn_nomina_horas_gusto|${I.rangos[0][0]}|${I.rangos[0][1]}`);
+    const uno = q.locator(`[data-nom-usuario="${I.perfil.uno}"]`);
+    ok('…otro período: fn_nomina_horas_gusto(5-oct, 18-oct) y, por persona y semana, las horas, regulares y extra de la base (ZZ Ayudante Uno: 30 h y 44 h con 4 extra)', (ultima(n0, 'fn_nomina_horas_gusto') || {}).args.p_desde === '2026-10-05' &&
+      (await q.locator('[data-nom-usuario]').count()) === new Set(hg.map(f => f.usuario_id)).size && (await uno.locator('.ct-nom-sem').count()) === 2 && /30 h regulares · 0 h extra/.test(await txt(uno)) && /40 h regulares · 4 h extra/.test(await txt(uno)), await txt(uno));
+    ok('…el oficial sale con «sueldo fijo: no va a Gusto», y lo sin aprobar en rojo', /sueldo fijo: no va a Gusto/.test(await txt(q.locator(`[data-nom-usuario="${I.perfil.tres}"]`))) && /8 h sin aprobar/.test(await txt(q.locator(`[data-nom-usuario="${I.perfil.dos}"]`))));
+    await card.locator('#ct-nom-lote').click();
+    await card.locator('.ct-form input[name="nota"]').fill(TX.lote);
+    n0 = llamadas.length;
+    let [dl] = await Promise.all([q.waitForEvent('download', { timeout: 8000 }), card.locator('.ct-form button[type="submit"]').click()]);
+    await pintado(q);
+    let bajado = fs.readFileSync(await dl.path(), 'utf8');
+    ok(`«Armar el lote y bajar el CSV» · fn_nomina_lote(5-oct, 18-oct, nota) y se baja «${dl.suggestedFilename()}» con el CSV de la base, tal cual`, JSON.stringify((ultima(n0, 'fn_nomina_lote') || {}).args) === JSON.stringify({ p_desde: '2026-10-05', p_hasta: '2026-10-18', p_nota: TX.lote }) && hecho('lote_1') &&
+      bajado === P.lote_1.respuesta.csv && dl.suggestedFilename() === 'horas-para-gusto-2026-10-05-al-2026-10-18.csv' && /^Employee name,Regular hours,Overtime hours,Total hours,Pay period start,Pay period end\n"ZZ Ayudante Uno",70,4,74,10\/05\/2026,10\/18\/2026\n$/.test(bajado), bajado);
+    t = await txt(q.locator('#ct-nom-lote-res'));
+    ok('…y lo que avisa la base (el oficial de sueldo fijo no va; las horas sin aprobar no van), y el resumen del lote con sus cifras', P.lote_1.respuesta.avisos.every(a => re(a.texto).test(t)) && (await q.locator('#ct-nom-lote-res [data-codigo]').count()) === P.lote_1.respuesta.avisos.length &&
+      /Lote armado: 1 persona, 74 h \(70 h regulares y 4 h extra\)/.test(t), t.slice(0, 200));
+    await foto(q, 'f15-7-horas');
+    nExterno('aprobar_hora');   // (en la app se aprueban después las 3 h del 17-oct de ZZ Ayudante Uno)
+    await ve(q, 'nomina', { sub: 'horas', desde: '2026-10-05', hasta: '2026-10-18' });
+    t = await txt(q.locator('#ct-nom-cambio'));
+    ok('Una hora del lote cambió · «Un lote ya no es el de hoy»: 1 reporte se aprobó después (3 h); ármalo otra vez (de v_nomina_lotes)', /El lote del 5 oct al 18 oct 2026 que se pasó a Gusto cambió: 1 reporte se aprobó después \(3 h\)/.test(t) && /ya no es el de hoy/.test(await txt(q.locator(`[data-nom-lote="${I.lote_1}"]`))), t);
+    card = q.locator('#ct-nom-horas');
+    await card.locator('#ct-nom-lote').click();
+    [dl] = await Promise.all([q.waitForEvent('download', { timeout: 8000 }), card.locator('.ct-form button[type="submit"]').click()]);
+    await pintado(q);
+    bajado = fs.readFileSync(await dl.path(), 'utf8');
+    ok('…armarlo otra vez: el CSV nuevo (77 h, 7 extra) y el de antes queda «sustituido»', hecho('lote_2') && bajado === P.lote_2.respuesta.csv && /"ZZ Ayudante Uno",70,7,77/.test(bajado) && !(await q.locator('#ct-nom-cambio').count()) &&
+      /sustituido/.test(await txt(q.locator(`[data-nom-lote="${I.lote_1}"]`))) && /vigente/.test(await txt(q.locator(`[data-nom-lote="${I.lote_2}"]`))));
+    n0 = llamadas.length;
+    [dl] = await Promise.all([q.waitForEvent('download', { timeout: 8000 }), q.locator(`[data-nom-lote="${I.lote_1}"] [data-nom-lote-csv]`).click()]);
+    bajado = fs.readFileSync(await dl.path(), 'utf8');
+    ok('…«Bajar su CSV» de un lote viejo: fn_nomina_lote_csv(lote), el CSV tal como quedó al armarlo', (ultima(n0, 'fn_nomina_lote_csv') || {}).args.p_lote === I.lote_1 && bajado === nLeer(`fn_nomina_lote_csv|${I.lote_1}`));
+
+    // ==================== EL AMARRE ====================
+    n0 = llamadas.length;
+    await ve(q, 'nomina', { sub: 'amarre' });
+    ok('941 · 940 · RT-6 · el año de la última nómina (2026), fn_nomina_amarre(2026): el 941 y el RT-6 del trimestre 4 y el 940, cada renglón con lo del libro y «sin teclear»', (ultima(n0, 'fn_nomina_amarre') || {}).args.p_anio === 2026 &&
+      (await q.locator('.ct-nom-dec').count()) === 3 && (await q.locator('.ct-nom-dec .ct-pill.warn').count()) === nLeer('fn_nomina_amarre|2026').length && /Social Security y Medicare.*\$888\.64/.test(await txt(q.locator('[data-nom-forma="941"]'))));
+    card = q.locator('[data-nom-forma="941"]');
+    await card.locator('[data-nom-teclear]').click();
+    await card.locator('.ct-form input[name="salarios"]').fill('58o8.00');
+    await card.locator('.ct-form input[name="retencion"]').fill('503.00');
+    await card.locator('.ct-form input[name="ss_medicare"]').fill('888.60');
+    n0 = llamadas.length;
+    await enviar(q, card.locator('.ct-form'));
+    ok('Teclear el 941 · un monto mal escrito: la base dice que no (MX005) y se enseña tal cual', !!ultima(n0, 'fn_nomina_declaracion') && (await txt(card.locator('.ct-error'))) === F15.c15.errores.declaracion_mal.error.message && hecho('lote_2'));
+    await card.locator('.ct-form input[name="salarios"]').fill('5808.00');
+    n0 = llamadas.length;
+    await enviar(q, card.locator('.ct-form'));
+    ok('…bien: fn_nomina_declaracion({forma 941, anio, trimestre 4, salarios, retencion, ss_medicare}) como texto, y «amarra» ($888.60 contra $888.64: dentro de la tolerancia)', JSON.stringify((ultima(n0, 'fn_nomina_declaracion') || {}).args.p) === JSON.stringify({ forma: '941', anio: 2026, trimestre: 4, salarios: '5808.00', retencion: '503.00', ss_medicare: '888.60' }) && hecho('declaracion_941') &&
+      /amarra con el libro/.test(await txt(q.locator('.ct-nom-nota'))) && (await q.locator('[data-nom-forma="941"] .ct-pill.ok').count()) === 3);
+    card = q.locator('[data-nom-forma="940"]');
+    await card.locator('[data-nom-teclear]').click();
+    await card.locator('.ct-form input[name="salarios"]').fill('5808.00'); await card.locator('.ct-form input[name="futa"]').fill('34.85');
+    n0 = llamadas.length;
+    await enviar(q, card.locator('.ct-form'));
+    ok('…el 940 (del año: sin trimestre)', JSON.stringify((ultima(n0, 'fn_nomina_declaracion') || {}).args.p) === JSON.stringify({ forma: '940', anio: 2026, salarios: '5808.00', futa: '34.85' }) && hecho('declaracion_940'));
+    card = q.locator('[data-nom-forma="rt6"]');
+    await card.locator('[data-nom-teclear]').click();
+    await card.locator('.ct-form input[name="salarios"]').fill('5800.00'); await card.locator('.ct-form input[name="contribucion"]').fill('156.82');
+    await enviar(q, card.locator('.ct-form'));
+    ok('…el RT-6 con $8.00 de menos en salarios: la nota en ámbar con lo que dice la base («NO amarra … diferencia -$8.00») y su renglón en rojo', hecho('declaracion_rt6') && /NO amarra: la declaración dice \$5,800\.00 y el libro tiene \$5,808\.00/.test(await txt(q.locator('.ct-nom-nota.warn'))) &&
+      (await q.locator('[data-nom-forma="rt6"] [data-campo="salarios"] .ct-pill.bad').count()) === 1);
+    await foto(q, 'f15-8-amarre');
+
+    // ==================== PERSONAS, AJUSTES Y EL MAPEO ====================
+    await ve(q, 'nomina', { sub: 'personas' });
+    ok('Personas · las tres, «lista», con su perfil y su clase; lo que cobra cada una no sale aquí', (await q.locator('[data-nom-gente]').count()) === 3 && (await q.locator('[data-nom-gente] .ct-pill.ok').count()) === 3 && !/\$/.test(await txt(q.locator('#ct-nom-gente'))));
+    card = q.locator(`[data-nom-gente="${I.persona.tres}"]`);
+    await card.locator('[data-nom-gente-ed]').click();
+    await card.locator('.ct-form input[name="horas_periodo"]').fill('86');
+    await card.locator('.ct-form input[name="nota"]').fill('ZZ: su sueldo cubre 86 h por quincena');
+    n0 = llamadas.length;
+    await enviar(q, card.locator('.ct-form'));
+    ok('…cambiar al oficial: las horas que cubre su sueldo (86, como texto) con su nota: fn_nomina_persona', ordenado((ultima(n0, 'fn_nomina_persona') || { args: {} }).args.p) === ordenado(P.persona_tres.args.p) && hecho('persona_tres') && /Su sueldo cubre 86 h por período/.test(await txt(q.locator(`[data-nom-gente="${I.persona.tres}"]`))));
+    await ve(q, 'nomina', { sub: 'ajustes' });
+    card = q.locator('#ct-nom-cfg');
+    ok('Ajustes · lo que hay (de la base): lo sin obra en 6000, la semana empieza el lunes, extra desde 40', (await card.locator('input[name="cuenta_sin_obra"]').inputValue()) === '6000' && (await card.locator('select[name="semana_empieza"]').inputValue()) === '1' && (await card.locator('input[name="horas_extra_desde"]').inputValue()) === '40');
+    await card.locator('input[name="amarre_tolerancia"]').fill('2.00');
+    n0 = llamadas.length;
+    await enviar(q, card.locator('form'));
+    ok('…guardar: fn_nomina_config con TODAS sus claves (los días como números; las horas y la tolerancia como texto)', ordenado((escribe(n0, 'fn_nomina_config') || { args: {} }).args.p) === ordenado(TX.cfg) && hecho('config') && /tolerancia del amarre \$2\.00/.test(await txt(q.locator('.ct-nom-nota'))), JSON.stringify((escribe(n0, 'fn_nomina_config') || {}).args));
+    ok('…el mapeo: la columna que se añadió («zz dato raro» → ignorar, con su nota) arriba con «Quitar»; las de fábrica, plegadas', /«zz dato raro» → Ignorarla/.test(await txt(q.locator('#ct-nom-mapeo [data-nom-alias="zz dato raro"]'))) && (await q.locator('#ct-nom-mapeo details.ct-wip-mas').count()) === 1);
+    n0 = llamadas.length;
+    await toca(q, '#ct-nom-mapeo [data-nom-col-quitar="zz dato raro"]');
+    ok('…«Quitar»: fn_nomina_columna({columna, quitar: true})', JSON.stringify((ultima(n0, 'fn_nomina_columna') || {}).args.p) === '{"columna":"zz dato raro","quitar":true}' && hecho('columna_quitar') && !(await q.locator('#ct-nom-mapeo [data-nom-alias="zz dato raro"]').count()));
+    ok('Al final de la cadena · cada paso de la base se dio, en su orden (' + F15.c15.orden.length + ')', N.e === F15.c15.orden.length);
+
+    // ==================== EL CIERRE: LAS FILAS 180 A 183 ====================
+    estado.c9 = true; c9Reset(); estado.c15Cierre = true;
+    await ve(q, 'cierre', { sub: 'cierre', periodo: '2026-10' });
+    const c180 = nLeer('fn_nomina_cierre|2026-10');
+    const filas180 = []; for (const o of [180, 181, 182, 183]) filas180.push(await q.locator(`#ct-cie-cuerpo [data-orden="${o}"]`).count());
+    ok('El cierre de octubre · las cuatro filas de la nómina (180 a 183) tal como las da la base; la 180 en rojo con su botón «Nómina»', filas180.every(x => x === 1) &&
+      (await q.locator('#ct-cie-cuerpo [data-orden="180"] [data-ir="nomina"]').count()) === 1 && re(c180[0].detalle).test(await txt(q.locator('#ct-cie-cuerpo [data-orden="180"]'))));
+    await toca(q, '#ct-cie-cuerpo [data-orden="180"] [data-ir="nomina"]');
+    ok('…y el botón lleva a «Nómina»', (await titulo2(q)) === 'Nómina');
+    estado.c9 = false; c9Reset(); estado.c15Cierre = false;
+    await cx.close();
+
+    // ---- sin el código del teléfono: nada se sube ni se toca, y lo de cada persona no se ve ----
+    ({ cx, q } = await abrirCtx(820, false));
+    await ve(q, 'nomina');
+    ok('Sin el código del teléfono · «Elegir el archivo» apagado y lo dice', (await q.locator('#ct-nom-archivo').isDisabled()) && /Subir el journal pide el código del teléfono/.test(await txt(q.locator('#ct-nom-subir'))));
+    n0 = llamadas.length;
+    await ve(q, 'nomina', { sub: 'nominas', corrida: I.journal });
+    ok('…una nómina: lo general (de v_nomina_corridas) sí; lo de cada persona no: la base dice «Falta el código del teléfono» y la pantalla lo dice', /Falta el código del teléfono/.test(await txt(q.locator('.ct-nom-mfa'))) && !(await q.locator('[data-nom-persona]').count()) &&
+      re(usd(5808)).test(await txt(q.locator('#ct-nom-cab'))) && !!ultima(n0, 'fn_nomina_propuesta'));
+    await ve(q, 'nomina', { sub: 'cargos' });
+    ok('…y los botones de los cargos apagados', (await q.locator('#ct-nom-cargos [data-nom-casar]').first().isDisabled()) && /pide el código del teléfono/.test(await txt(q.locator('#ct-nom-cargos'))));
+    await cx.close();
+
+    // ---- el cuadre en rojo, el equipo y sin c15 ----
+    ({ cx, q } = await abrirCtx(1280, true));
+    estado.c15CuadreMal = true;
+    await ve(q, 'nomina');
+    ok('Un cuadre en rojo (el 20) · «La nómina no cuadra» con su detalle, y ninguna cifra', /La nómina no cuadra/.test(await txt(q.locator('#ct-nom-cuerpo .ct-rojo h2'))) && /su reparto suma \$1,958\.01/.test(await txt(q.locator('#ct-nom-cuerpo .ct-rojo'))) && !(await q.locator('[data-nom-corrida]').count()));
+    estado.c15CuadreMal = false; estado.c15NoDueno = true;
+    await ve(q, 'nomina');
+    ok('El equipo (no dueño) · el control vacío: «El control de la nómina no devolvió nada», sin cifras', /El control de la nómina no devolvió nada/.test(await txt(q.locator('#ct-nom-cuerpo .ct-rojo h2'))) && !(await q.locator('[data-nom-corrida]').count()));
+    estado.c15NoDueno = false; estado.c15 = false;
+    await ve(q, 'nomina');
+    ok('Sin c15 · «Falta la nómina en la base» (pega c15-nomina.sql)', /Falta la nómina en la base/.test(await txt(q.locator('#ct-nom-cuerpo .ct-rojo h2'))) && /c15-nomina\.sql/.test(await txt(q.locator('#ct-nom-cuerpo .ct-rojo'))));
+    await tab(q, 'bandeja'); await pintado(q);
+    const filaSin = q.locator(`.ct-mov[data-id="${I.mov.csd}"]`);
+    await filaSin.locator('.ct-mov-fila').click();
+    ok('…y en la Bandeja el cargo de Gusto es la tarjeta de siempre: el texto de c6, «Otra cosa…» y ningún «Casar con la nómina»', (await filaSin.count()) === 1 && !(await filaSin.locator('[data-nom-bj-casar]').count()) && !/La nómina dice/.test(await txt(filaSin)) && (await filaSin.locator('[data-otra]').count()) === 1);
+    estado.c15 = true;
+    await cx.close();
+
+    // ---- el teléfono (390), el iPad (820) y la computadora (1280): sin desplazamiento lateral ni rojos ----
+    for (const w of [390, 820, 1280]) {
+      ({ cx, q } = await abrirCtx(w, true));
+      const mal = [];
+      const mide = async nombre => { const m = await q.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth, rojo: !!document.querySelector('#conta-raiz .ct-rojo') })); if (m.sw > m.iw + 1 || m.rojo) mal.push(`${nombre}: ${m.sw} > ${m.iw}${m.rojo ? ' (rojo)' : ''}`); await foto(q, `f15-${w}-${nombre}`); };
+      await ve(q, 'nomina'); await mide('nominas');
+      await ve(q, 'nomina', { sub: 'nominas', corrida: I.journal }); await q.locator(`#ct-nom-cargos-c [data-nom-casar]`).first().click(); await pintado(q); await mide('corrida');
+      await ve(q, 'nomina', { sub: 'nominas', corrida: I.bono }); await mide('anulada');
+      await ve(q, 'nomina', { sub: 'cargos' }); await q.locator('#ct-nom-hechos [data-nom-deshacer]').first().click(); await q.waitForTimeout(150); await mide('cargos');
+      await ve(q, 'nomina', { sub: 'horas', desde: '2026-10-05', hasta: '2026-10-18' }); await q.locator('#ct-nom-lote').click(); await q.waitForTimeout(150); await mide('horas');
+      await ve(q, 'nomina', { sub: 'amarre' }); await q.locator('[data-nom-forma="941"] [data-nom-teclear]').click(); await q.waitForTimeout(150); await mide('amarre');
+      await ve(q, 'nomina', { sub: 'personas' }); await q.locator('[data-nom-gente-ed]').first().click(); await q.waitForTimeout(150); await mide('personas');
+      await ve(q, 'nomina', { sub: 'ajustes' }); await mide('ajustes');
+      await tab(q, 'bandeja'); await pintado(q); await q.locator(`.ct-mov[data-id="${I.mov.csd}"] .ct-mov-fila`).click(); await q.locator(`.ct-mov[data-id="${I.mov.csd}"] [data-nom-bj-casar]`).click(); await pintado(q); await mide('bandeja');
+      // (el ensayo de un archivo, con su columna sin clasificar: un contexto nuevo no lleva el mapeo cambiado; se pinta con el ensayo del banco)
+      if (w === 390) {
+        await ve(q, 'nomina', { sub: 'nominas' });
+        const tv = await q.evaluate(() => { const t = document.querySelector('.ct-tabs'), a = t.querySelector('.ct-tab[aria-current="page"]'), T = t.getBoundingClientRect(), A = a.getBoundingClientRect(); return { pag: a.dataset.pag, izq: Math.round(A.left - T.left), der: Math.round(T.right - A.right) }; });
+        ok('Teléfono · la pestaña «Nómina» se ve entera dentro de la tira de pestañas', tv.pag === 'nomina' && tv.izq >= 14 && tv.der >= 14, JSON.stringify(tv));
+        const ap = await q.evaluate(() => { const l = document.querySelector('.ct-nom-fila'), r = l.getBoundingClientRect(); return { cols: getComputedStyle(l).gridTemplateColumns.split(' ').length, der: Math.round(r.right), iw: window.innerWidth }; });
+        ok('Teléfono · cada nómina de la lista se apila (una columna) y cabe en 390 px', ap.cols === 1 && ap.der <= ap.iw, JSON.stringify(ap));
+      }
+      if (w === 1280) {
+        await ve(q, 'nomina', { sub: 'nominas' });
+        const cols = await q.evaluate(() => getComputedStyle(document.querySelector('.ct-nom-fila')).gridTemplateColumns.split(' ').length);
+        ok('Computadora · cada nómina en columnas (la nómina, sus cifras y su estado)', cols === 3, cols);
+      }
+      ok(`Nómina · ${w} px: la lista, una nómina posteada (con su cargo abierto), la anulada, los cargos (con «Deshacer» abierto), las horas (con el lote abierto), el amarre (con el 941 abierto), las personas, los ajustes y la tarjeta de la Bandeja, sin desplazamiento lateral ni rojos`, !mal.length, mal.join(' | '));
+      await cx.close();
+    }
+    estado.c15 = false; estado.c15Banco = false; nReset(); conCodigo(false);
+    try { fs.rmSync(dirA, { recursive: true, force: true }); } catch { /* nada */ }
+  }
+
   // ---- Sin señal ----
   await ctx.setOffline(true);
   await tab(p, 'bancos'); await p.waitForSelector('.ct-rojo', { timeout: 8000 });
@@ -7109,6 +7666,8 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     estado.c12 = true; wReset();
     // (fase 12a) c13 y c14 pegados: la cédula y los subs como los dejó la última escena de cada cadena (lo que contestó el banco)
     estado.c13 = true; estado.c14 = true; xReset(); X.e13 = F12.c13.orden.length; X.e14 = F12.c14.orden.length;
+    // (fase 11) c15 pegado: «Nómina» como la dejó la última escena de su cadena (lo que contestó el banco)
+    estado.c15 = true; estado.c15Banco = true; nReset(F15.c15.orden.length);
     W_FN.fn_wip_antes({ p_proyecto: 'c12-prueba-d', p: { costo: '730.00', facturado: '1500.00' } });
     for (const [id, c, n] of [['c12-prueba-a', '6000', null], ['c12-prueba-b', '10000', 'ZZ: el bid'], ['c12-prueba-c', '11000', 'ZZ: subió el material'], ['c12-prueba-d', '12000', 'ZZ: estimado de prueba']])
       W_FN.fn_wip_revisar({ p_proyecto: id, p_periodo: '2026-10', p: n ? { costo_estimado: c, nota: n } : { costo_estimado: c } });
@@ -7135,6 +7694,7 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     }
     estado.mfaFactores = []; estado.sesionAal = undefined; estado.stripeDeposito = false; estado.c8 = false; estado.c9 = false; estado.c10 = false; estado.c11 = false; estado.c12 = false; wReset(); iaReset();
     estado.c13 = false; estado.c14 = false; xReset();
+    estado.c15 = false; estado.c15Banco = false; nReset();
   }
   ok('Sin errores de JavaScript en la página', errs.length === 0, errs.join(' | '));
   await b.close(); srv.close();

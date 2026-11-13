@@ -88,11 +88,24 @@
 // sub (W-9, TIN que nunca se ve entero, COI), el 1099 del año con cada pago que lo forma y la
 // hoja para el e-file con el código del teléfono. La cabecera de cada sección lo cuenta.
 //
+// Y la nómina (c15, fase 11: v_nomina_control, v_nomina_corridas, v_nomina_personas, v_nomina_cargos,
+// v_nomina_lotes, nomina_columnas; fn_nomina_ensayo, fn_nomina_importar, fn_nomina_propuesta,
+// fn_nomina_persona, fn_nomina_decidir, fn_nomina_postear, fn_nomina_anular, fn_nomina_descartar,
+// fn_nomina_corrida, fn_nomina_pendiente, fn_nomina_cargo_propuesta, fn_nomina_cargo_casar,
+// fn_nomina_cargo_cuota, fn_nomina_cargo_deshacer, fn_nomina_horas_gusto, fn_nomina_lote,
+// fn_nomina_lote_csv, fn_nomina_amarre, fn_nomina_declaracion, fn_nomina_config, fn_nomina_columna): la
+// página «Nómina» lee en el teléfono el «Payroll journal» de Gusto (CSV), quita lo que no debe salir de
+// él (las columnas delicadas y lo que tenga forma de Seguro Social) y manda sus celdas como texto con su
+// sha256; enseña lo que dice la base (si cuadra, las columnas que no conoce, a quién enlazar, el reparto
+// por obra, los avisos), postea con el código del teléfono, casa los cargos de Gusto del banco (también
+// desde la Bandeja, «Casar con la nómina»), arma las horas para Gusto (el CSV del lote aprobado) y
+// amarra con el 941, el 940 y el RT-6. La cabecera de su sección lo cuenta.
+//
 // Cómo está organizada (v290, «que se parezca a un programa de contabilidad»):
 // una portada («Resumen») con las cifras y lo que hay que atender, y una
 // página por tarea: Bancos y tarjetas, Bandeja (el bank feed), Conciliar,
 // Movimientos, Estados financieros, Costo por obra (fase 9), WIP (fase 10),
-// Cierre del mes (desde la fase 8), Cédula de corte (fase 12a), Facturas
+// Nómina (fase 11), Cierre del mes (desde la fase 8), Cédula de corte (fase 12a), Facturas
 // (fase 10), Cobros en línea, Subs y 1099 (fase 12a) y Conexiones y seguridad
 // (el código del teléfono, Plaid y la conexión con Stripe). En el teléfono y
 // el iPad las pestañas van arriba; en la computadora las enseña el lateral de
@@ -162,7 +175,13 @@
     ced: { sub: "cedula", fecha: null, cuenta: null, filtro: null, serie: 0, nota: null, qbPer: null },
     // (fase 12a) «Subs y 1099»: qué apartado, qué año, qué ficha está abierta («nueva» con lo que trae: nombre y tercero), qué fila del
     // 1099 está desplegada, el filtro de los pagos, la serie, la nota de la última acción y lo que dijo la última hoja (sin TIN)
-    subs: { sub: "fichas", anio: null, ficha: null, nueva: null, clave: null, filtro: "todos", serie: 0, nota: null, ultimaHoja: null }
+    subs: { sub: "fichas", anio: null, ficha: null, nueva: null, clave: null, filtro: "todos", serie: 0, nota: null, ultimaHoja: null },
+    // (fase 11) «Nómina»: qué apartado, qué nómina abierta, la serie, la nota de la última acción; el archivo elegido YA LIMPIO (sin las
+    // columnas delicadas: lo que se manda), lo que se le quitó (solo los nombres de las columnas), el ensayo y lo que contestó importar;
+    // el mapeo (nombre de columna → clase, para limpiar), el período de las horas para Gusto, el último lote armado y el año del amarre
+    nom: { sub: "nominas", corrida: null, serie: 0, nota: null, archivo: null, quitadas: null, ensayo: null, ensayoErr: null, importe: null, mapa: null, desde: null, hasta: null, lote: null, anio: null, anios: null },
+    // (fase 11) en la Bandeja, los cargos de Gusto pendientes que la nómina reconoce (movimiento → su fila de v_nomina_cargos); sin c15, nulo
+    nomBj: null
   };
   // Las páginas, en el orden del menú. TITULOS va en el membrete de la app y en el lateral; PESTANAS, corto, en las pestañas del teléfono
   // (fase 8) «Cierre del mes» va después de los estados: es lo último del mes, con lo de arriba ya hecho
@@ -171,9 +190,10 @@
   // (fase 10) «WIP» va entre «Costo por obra» y «Cierre del mes»: sale del costo de cada obra y se hace al cerrar
   // (fase 12a) «Cédula de corte» va después del cierre (es el corte de año que se hace al cerrar) y «Subs y 1099» después de los
   // cobros (lo que se les paga a los subs, su W-9, su COI y su 1099)
-  const ORDEN = ["resumen", "bancos", "bandeja", "conciliar", "movimientos", "estados", "obras", "wip", "cierre", "cedula", "facturas", "cobros", "subs", "conexiones"];
-  const TITULOS = { resumen: "Resumen", bancos: "Bancos y tarjetas", bandeja: "Bandeja", conciliar: "Conciliar", movimientos: "Movimientos", estados: "Estados financieros", obras: "Costo por obra", wip: "WIP (obra en curso)", cierre: "Cierre del mes", cedula: "Cédula de corte", facturas: "Facturas", cobros: "Cobros en línea", subs: "Subs y 1099", conexiones: "Conexiones y seguridad" };
-  const PESTANAS = { resumen: "Resumen", bancos: "Bancos", bandeja: "Bandeja", conciliar: "Conciliar", movimientos: "Movimientos", estados: "Estados", obras: "Obras", wip: "WIP", cierre: "Cierre", cedula: "Cédula", facturas: "Facturas", cobros: "Cobros", subs: "Subs", conexiones: "Conexiones" };
+  // (fase 11) «Nómina» va después del WIP: es la mano de obra de cada obra (su costo real) y se hace antes de cerrar el mes
+  const ORDEN = ["resumen", "bancos", "bandeja", "conciliar", "movimientos", "estados", "obras", "wip", "nomina", "cierre", "cedula", "facturas", "cobros", "subs", "conexiones"];
+  const TITULOS = { resumen: "Resumen", bancos: "Bancos y tarjetas", bandeja: "Bandeja", conciliar: "Conciliar", movimientos: "Movimientos", estados: "Estados financieros", obras: "Costo por obra", wip: "WIP (obra en curso)", nomina: "Nómina", cierre: "Cierre del mes", cedula: "Cédula de corte", facturas: "Facturas", cobros: "Cobros en línea", subs: "Subs y 1099", conexiones: "Conexiones y seguridad" };
+  const PESTANAS = { resumen: "Resumen", bancos: "Bancos", bandeja: "Bandeja", conciliar: "Conciliar", movimientos: "Movimientos", estados: "Estados", obras: "Obras", wip: "WIP", nomina: "Nómina", cierre: "Cierre", cedula: "Cédula", facturas: "Facturas", cobros: "Cobros", subs: "Subs", conexiones: "Conexiones" };
   // el icono de cada página, del mismo trazo que los del menú de la app (24 × 24, línea de 1.8)
   const svgMenu = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
   const ICONOS = {
@@ -185,6 +205,7 @@
     estados: svgMenu('<path d="M5 3h9l5 5v13H5z"/><path d="M14 3v5h5"/><path d="M8.5 17v-3M12 17v-6M15.5 17v-4"/>'),
     obras: svgMenu('<path d="M3 11l9-7 9 7"/><path d="M5 9.5V20h14V9.5"/><path d="M9.5 20v-5.5h5V20"/>'),
     wip: svgMenu('<rect x="3" y="8.5" width="18" height="7" rx="3.5"/><path d="M6.5 12h6"/><path d="M15.5 4.5v2.5M15.5 17v2.5"/>'),
+    nomina: svgMenu('<rect x="3" y="6" width="18" height="12" rx="2.5"/><path d="M6.5 10.5h5M6.5 14h6"/><path d="M17 8.5v7"/><path d="M18.6 10.2a1.7 1.4 0 0 0-1.6-.9c-.9 0-1.6.5-1.6 1.2s.7 1 1.6 1.2 1.6.5 1.6 1.2-.7 1.2-1.6 1.2a1.7 1.4 0 0 1-1.6-.9"/>'),
     cierre: svgMenu('<rect x="4" y="10.5" width="16" height="10.5" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><path d="M12 14.5v2.5"/>'),
     cedula: svgMenu('<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 9h18M9.5 9v11"/><path d="M13 15l2 2 3.5-3.5"/>'),
     facturas: svgMenu('<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/>'),
@@ -218,7 +239,7 @@
   }
   // «←» de la app: solo cuando hay algo interno que cerrar (una conciliación abierta, el mayor o el asiento de los estados). Se avisa en cada pintada
   const hayAtras = () => !!S.conc || (S.pagina === "estados" && !!(S.est.cuenta || S.est.asiento)) || (S.pagina === "obras" && !!(S.obras.sel || S.obras.bajar)) || (S.pagina === "facturas" && !!S.fac.doc)
-    || (S.pagina === "cedula" && !!S.ced.cuenta) || (S.pagina === "subs" && !!S.subs.ficha);
+    || (S.pagina === "cedula" && !!S.ced.cuenta) || (S.pagina === "subs" && !!S.subs.ficha) || (S.pagina === "nomina" && !!S.nom.corrida);
   const marcarVolver = () => S.hooks.volver(hayAtras());
   // La cabecera común de cada página: una línea con sus cifras (o lo que explica la página), los selectores si los hay y la acción principal a la derecha.
   // El título no se repite: ya lo pone la barra de la app (hooks.titulo); queda como aria-label de la cabecera
@@ -288,6 +309,14 @@
       S.subs.ficha = opciones.ficha !== undefined ? opciones.ficha : null;
       S.subs.nueva = opciones.nueva !== undefined ? opciones.nueva : (S.subs.ficha === "nueva" ? {} : null);
       S.subs.nota = null;
+    }
+    // (fase 11) la nómina: qué apartado, qué nómina, el período de las horas y el año del amarre; la pestaña tocada sin más vuelve a
+    // la lista (la nómina abierta se cierra)
+    if (pag === "nomina") {
+      if (opciones.sub !== undefined) S.nom.sub = opciones.sub;
+      S.nom.corrida = opciones.corrida !== undefined ? opciones.corrida : null;
+      for (const k of ["desde", "hasta", "anio"]) if (opciones[k] !== undefined) S.nom[k] = opciones[k];
+      S.nom.nota = null;
     }
     marcarPestana();
     S.hooks.titulo(KICKER, TITULOS[pag]);
@@ -1522,7 +1551,9 @@
       [S.stripePayouts, S.ia] = await Promise.all([
         S.stripe ? DB._leer("v_stripe_payouts?select=po,estado_pantalla,monto,llegada,fuera_motivo&estado_pantalla=in.(asentado,fuera)").catch(e => { if (esFalloDeRed(e)) throw e; return []; }) : [],
         leerContador(),
-        leerJornalBandeja()
+        leerJornalBandeja(),
+        // (fase 11) los cargos de Gusto que la nómina reconoce: «Casar con la nómina» (sin c15, nada)
+        leerNomBandeja(b)
       ]);
       const hoy = hoyMiami();
       await controlar(["v_banco_bandeja"], { v_banco_bandeja: b.filter(f => String(f.fecha) <= hoy).length });
@@ -1634,6 +1665,8 @@
     card.querySelectorAll("[data-stripe-po]").forEach(b => b.addEventListener("click", () => accionStripe(card, { accion: "casar_payout", po: b.dataset.stripePo, movimiento_id: m.movimiento_id },
       r => r && r.casado === false ? "No casó: sigue en la bandeja" : `Casado con el depósito de Stripe ${b.dataset.stripePo}`)));
     // (fase 9) la tarjeta de la mano de obra, o el enlace «Repartir por sus horas» de un pago a una persona
+    // (fase 11) un cargo de Gusto: «Casar con la nómina» (si c15 está)
+    wireNomBandeja(card, m);
     if (card.dataset.jr) { wireJornal(card, m); return; }
     wireRepartirLink(card, m);
     wireIA(card, m);
@@ -1714,12 +1747,12 @@
       </button>
       <div class="ct-mov-det" id="ct-det-${id}"${abierta ? "" : " hidden"}>
         <div class="ct-meta"><span>hace ${plural(m.dias, "día", "días")}</span>${m.cheque ? `<span>cheque ${esc(m.cheque)}</span>` : ""}${m.tipo_banco ? `<span>${esc(m.tipo_banco)}</span>` : ""}${m.origen ? `<span>entró por ${esc(m.origen)}</span>` : ""}${obra ? pill("obra: " + obra) : ""}</div>
-        ${jr ? jornalHTML(m, jr) : `<p class="ct-texto">${esc(m.texto)}</p>${repartirLinkHTML(m)}`}
+        ${jr ? jornalHTML(m, jr) : `<p class="ct-texto">${esc(m.texto)}</p>${nomBandejaHTML(m)}${repartirLinkHTML(m)}`}
         ${jr ? "" : `${m._esStripe ? `<p class="ct-aviso warn ct-aviso-dep">Depósito de Stripe: casa solo con su depósito en «Cobros en línea» (cuando Stripe mande su detalle${(m._stripe || []).length ? ", o con «Es el depósito…» aquí abajo" : ""}). No lo clasifiques ni lo registres aquí: el dinero entraría dos veces. Si es de antes de instalar los cobros en línea, sácalo allí con «Ya está en el libro» y vuelve aquí.</p>` : ""}
         ${m._stripeFuera ? `<p class="ct-aviso ct-aviso-dep">Depósito de Stripe de fuera de la app (${esc(m._stripeFuera.fuera_motivo || "ya está en el libro")}): regístralo aquí como siempre.</p>` : ""}
         ${m.posible_duplicado_de ? `<p class="ct-aviso warn">Se parece al del ${fecha(m.duplicado_fecha)} «${esc(m.duplicado_descripcion)}»${m.duplicado_origen ? ` (entró por ${esc(m.duplicado_origen)})` : ""}.</p>` : ""}
         ${iaBloqueHTML(m)}
-        <div class="ct-acciones">${(m._stripe || []).map(q => `<button type="button" class="accion" data-stripe-po="${esc(q.po)}">Es el depósito de Stripe del ${fechaLarga(q.llegada)}: casarlo</button>`).join("")}${ops.map((o, i) => `<button type="button" class="accion${i || (m._stripe || []).length ? " secundaria" : ""}" data-op="${i}">${esc(o.texto)}</button>`).join("")}
+        <div class="ct-acciones">${nomBotonHTML(m)}${(m._stripe || []).map(q => `<button type="button" class="accion" data-stripe-po="${esc(q.po)}">Es el depósito de Stripe del ${fechaLarga(q.llegada)}: casarlo</button>`).join("")}${ops.map((o, i) => `<button type="button" class="accion${i || (m._stripe || []).length ? " secundaria" : ""}" data-op="${i}">${esc(o.texto)}</button>`).join("")}
           ${m._esStripe ? "" : `<button type="button" class="accion secundaria ct-otra" data-otra>Otra cosa…</button>`}</div>
         <div class="ct-form" hidden></div>
         ${m._esStripe ? `<div class="ct-stripe-res"></div>` : ""}`}
@@ -4384,7 +4417,8 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
   // (los anteriores sin cerrar) lleva al período que toca
   // (fase 10) «wip» (las filas 174 a 177 de c12) lleva al WIP del mismo mes que se está revisando
   // (fase 12a) «cedula» (la fila 178 de c13) y «subs» (la 160 y la 179 de c14) llevan a sus páginas
-  const PAG_IR = ["bandeja", "conciliar", "movimientos", "estados", "wip", "facturas", "cobros", "conexiones", "cedula", "subs"];
+  // (fase 11) «nomina» (las filas 180 a 183 que c15 le da al cierre) lleva a la página de la nómina
+  const PAG_IR = ["bandeja", "conciliar", "movimientos", "estados", "wip", "facturas", "cobros", "conexiones", "cedula", "subs", "nomina"];
   function destinoCie(x, sig) {
     if (x.ir_a === "wip") return { txt: PESTANAS.wip, attr: `data-wip-ir="${/^\d{4}-\d{2}$/.test(String(S.cie.periodo || "")) ? esc(S.cie.periodo) : ""}"` };
     // (fase 12a) la 178 abre la cédula al último día del período que se revisa; la 160 y la 179, el COI y las fichas de los subs de ese año
@@ -8108,7 +8142,924 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     }));
   }
 
-  const PAGINAS = { resumen: pintarResumen, bancos: pintarBancos, bandeja: pintarBandeja, conciliar: pintarConciliar, movimientos: pintarMovimientos, estados: pintarEstados, obras: pintarObras, wip: pintarWip, cierre: pintarCierre, cedula: pintarCedula, facturas: pintarFacturas, cobros: pintarCobros, subs: pintarSubs, conexiones: pintarConexiones };
+  // ============================================================
+  // NÓMINA (c15, fase 11): el puente con Gusto, por archivo. Edgar baja de
+  // Gusto el «Payroll journal» de cada nómina (CSV) y lo sube aquí; la
+  // pantalla lo LEE en el teléfono (cabeceras y celdas como texto), quita lo
+  // que no debe salir de él (las columnas delicadas del mapeo y la que traiga
+  // algo con forma de Seguro Social) y manda solo eso con su sha256. La base
+  // lo lee en numeric, dice si cuadra, qué columnas no conoce, quién falta
+  // por enlazar y cómo se reparte por obra; Edgar decide y postea. Después:
+  // casar los cargos de Gusto del banco, las horas para Gusto (el CSV del
+  // lote aprobado), el amarre con el 941, el 940 y el RT-6, las personas y
+  // los ajustes. Nada se suma aquí: cada cifra es la que da la base.
+  // ============================================================
+  const SUBS_NOM = { nominas: "Nóminas", cargos: "Cargos de Gusto", horas: "Horas para Gusto", amarre: "941 · 940 · RT-6", personas: "Personas", ajustes: "Ajustes" };
+  const ORDEN_NOM = ["nominas", "cargos", "horas", "amarre", "personas", "ajustes"];
+  const nomCuerpo = () => $("ct-nom-cuerpo");
+  const vivaNom = mia => mia === S.nom.serie && S.pagina === "nomina" && !!nomCuerpo();
+  const subNom = html => { const s = main() && main().querySelector(".ct-pag-sub"); if (s) s.innerHTML = html; };
+  const SIN_CODIGO_NOM = "pide el código del teléfono: actívalo en Conexiones y seguridad y entra con él.";
+  // el día como lo escribe la base en sus textos (23-oct-2026): para reconocer una nómina en el texto de un cargo
+  const diaBase = iso => { if (!iso) return ""; const [a, m, d] = partes(iso); return `${d}-${MES[m] || ""}-${a}`; };
+  const mensajeNom = err => esFalloDeRed(err) || !navigator.onLine ? "Sin señal: no se hizo nada. Vuelve a intentarlo con señal."
+    : err.codigo === "MFA" || err.mfa ? "Falta el código del teléfono: lo que cobra cada persona solo se ve y se toca con él. Actívalo en Conexiones y seguridad (si no lo tienes) y entra otra vez escribiéndolo."
+    : err.codigo === "55P03" ? "La base estaba ocupada (se estaba pegando un SQL): no se hizo nada. Vuelve a intentarlo en un momento."
+    : /^(MX\d+|22023|22007|42501)$/.test(String(err.codigo || "")) ? err.message
+    : faltaCapa(err) ? "A la base le falta la nómina: pega docs/conta/c15-nomina.sql en Supabase (SQL Editor → pegar → Run)."
+    : err.codigo === "23505" ? "Otra pestaña (u otra persona) hizo lo mismo a la vez y se guardó una sola vez: no se repitió nada. Recarga la página y mira cómo quedó."
+    : `La base contestó con un error que no es de las reglas de la nómina: ${err.message || "sin texto"}. Recarga la app; si sigue, avisa.`;
+  const CLASE_PER = { campo: "Campo (mano de obra directa: 5000, por obra)", oficial: "Oficial (el accionista: 5001 por obra y 6005 lo demás)", oficina: "Oficina (6000)" };
+  const CLASE_PER_CORTA = { campo: "campo", oficial: "oficial", oficina: "oficina" };
+  const ESTADO_PER = { lista: ["lista", "ok"], sin_enlazar: ["sin enlazar", "bad"], sin_confirmar: ["sin confirmar", "warn"], perfil_no_existe: ["su perfil ya no existe", "bad"] };
+  const CLASES_COL = { bruto: "Parte del sueldo bruto", imp_empleado: "Impuesto retenido al empleado", deduccion: "Deducción al empleado", neto: "Neto (lo que cobra)",
+    reembolso: "Reembolso al empleado", imp_patron: "Impuesto del patrón", ben_patron: "Beneficio que paga el patrón", horas: "Horas trabajadas", horas_fuera: "Horas pagadas sin trabajar (vacaciones, enfermedad)",
+    bruto_total: "Total del bruto (control: no se suma)", imp_empleado_total: "Total retenido (control)", deduccion_total: "Total de deducciones (control)", reembolso_total: "Total de reembolsos (control)",
+    cheque_total: "Total del cheque (control)", imp_patron_total: "Total de impuestos del patrón (control)", ben_patron_total: "Total de beneficios del patrón (control)", costo_total: "Costo total del patrón (control)",
+    dia_pago: "Día de pago", periodo_desde: "Inicio del período", periodo_hasta: "Fin del período", periodo: "El período (en una celda)", tipo: "Tipo de nómina", llave: "Identificador de la nómina",
+    nombre: "Nombre", apellido: "Apellido", segundo: "Segunda inicial", nombre_completo: "Nombre completo", empleado_id: "Identificador del empleado en Gusto", metodo_pago: "Cómo se le paga",
+    delicado: "Delicado: no se guarda nunca", ignorar: "Ignorarla (no es dinero ni nada que se use)" };
+  const CLASES_DINERO = ["imp_empleado", "deduccion", "neto", "reembolso", "imp_patron", "ben_patron", "imp_empleado_total", "deduccion_total", "reembolso_total", "imp_patron_total", "ben_patron_total"];
+  const DECLARA = { fit: "941: retención federal", ss_ee: "941: Social Security del empleado", med_ee: "941: Medicare del empleado", med_adic: "941: Medicare adicional", ss_er: "941: Social Security del patrón",
+    med_er: "941: Medicare del patrón", futa: "940: FUTA", suta: "RT-6: reempleo de Florida" };
+  const FORMAS = { "941": "941", "940": "940", rt6: "RT-6" };
+  const CAMPOS_FORMA = { "941": [["salarios", "Salarios (línea 2)"], ["retencion", "Retención federal (línea 3)"], ["ss_medicare", "Social Security y Medicare (líneas 5e)"]],
+    "940": [["salarios", "Pagos a empleados (línea 3)"], ["futa", "FUTA (línea 12)"]], rt6: [["salarios", "Salarios brutos"], ["contribucion", "Contribución de reempleo"]] };
+  const CAMPO_AMARRE = { salarios: "salarios", retencion: "retención federal", ss_medicare: "Social Security y Medicare", futa: "FUTA", contribucion: "contribución de reempleo" };
+  const SEMANA = ["", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
+  const notaNomHTML = () => S.nom.nota ? `<p class="ct-aviso ${S.nom.nota.tipo || "ok"} ct-nom-nota" role="status">${esc(S.nom.nota.texto)}</p>` : "";
+  const sinCodigoNomHTML = que => mfaActivo() ? "" : `<p class="ct-nota ct-nom-sincodigo">${esc(que)} ${esc(SIN_CODIGO_NOM)}</p>`;
+  const deshab = () => mfaActivo() ? "" : " disabled";
+
+  async function pintarNomina() {
+    const mia = ++S.nom.serie;
+    if (!navigator.onLine) return sinSenal(pintarNomina);
+    if (!SUBS_NOM[S.nom.sub]) S.nom.sub = "nominas";
+    S.hooks.titulo(KICKER, TITULOS.nomina);
+    main().innerHTML = cabPagina(TITULOS.nomina, "Leyendo con la base…") +
+      `<section class="ct-card ct-ob-barra"><div class="ct-chips ct-nom-subs" aria-label="Qué parte">${ORDEN_NOM.map(k =>
+        `<button type="button" class="ct-chip" data-nom-sub="${k}" aria-pressed="${k === S.nom.sub ? "true" : "false"}">${esc(SUBS_NOM[k])}</button>`).join("")}</div></section>
+      <div id="ct-nom-cuerpo" class="ct-nom-cuerpo"><div class="ct-card ct-cargando">Cargando…</div></div>`;
+    main().querySelectorAll("[data-nom-sub]").forEach(b => b.addEventListener("click", () => { if (!S.ocupado) ir("nomina", { sub: b.dataset.nomSub }); }));
+    marcarVolver();
+    if (S.nom.sub === "nominas" && S.nom.corrida) return pintarNomCorrida(mia);
+    return ({ nominas: pintarNomLista, cargos: pintarNomCargos, horas: pintarNomHoras, amarre: pintarNomAmarre, personas: pintarNomPersonas, ajustes: pintarNomAjustes })[S.nom.sub](mia);
+  }
+  function errorNom(err, reintentar) {
+    const c = nomCuerpo(); if (!c) return;
+    if (faltaCapa(err) && !esFalloDeRed(err)) {
+      c.innerHTML = `<section class="ct-card ct-rojo" role="alert"><h2>Falta la nómina en la base</h2>
+        <p>Esta página lee lo que deja <span class="ct-num">docs/conta/c15-nomina.sql</span>, y la base todavía no lo tiene. Pégalo entero en Supabase (SQL Editor → pegar → Run), después de c1 a c14, y vuelve aquí. La tabla que sale al final del pegado dice qué falta (la cuenta de las horas sin obra, el primer archivo de Gusto).</p>
+        <div class="ct-acciones"><button type="button" class="accion secundaria" id="ct-reintentar">Reintentar</button></div></section>`;
+      $("ct-reintentar").addEventListener("click", reintentar);
+      return;
+    }
+    if ((err.codigo === "MFA" || err.mfa) && !esFalloDeRed(err)) {
+      c.innerHTML = `<section class="ct-card ct-rojo" role="alert"><h2>Falta el código del teléfono</h2><p>${esc(mensajeNom(err))}</p>
+        <div class="ct-acciones"><button type="button" class="accion secundaria" data-ir-cx>Conexiones y seguridad</button></div></section>`;
+      c.querySelector("[data-ir-cx]").addEventListener("click", () => ir("conexiones"));
+      return;
+    }
+    pintarError(err, reintentar, err.codigo === "42501" ? "La nómina es solo del dueño" : undefined, c);
+  }
+  // el control de la nómina: un cuadre en rojo y no se pinta ninguna cifra; los avisos se enseñan arriba
+  async function controlNom() {
+    const ctl = await DB._leer("v_nomina_control?select=*&order=orden.asc");
+    if (!Array.isArray(ctl) || !ctl.length) throw errorControl("El control de la nómina no devolvió nada", [{ vista: "control de la nómina", filas: 0, esperadas: 18, detalle: "Vacío: la sesión no es la del dueño o a la base le falta la nómina." }]);
+    const rojos = ctl.filter(f => f.nivel === "cuadre" && f.ok !== true);
+    if (rojos.length) throw errorControl("La nómina no cuadra", rojos.map(f => ({ vista: cap(f.control), filas: null, esperadas: null, detalle: f.detalle })));
+    return ctl.filter(f => f.nivel === "aviso" && f.ok !== true);
+  }
+  const avisosNomHTML = (avisos, solo) => {
+    const vis = solo ? avisos.filter(f => solo.includes(Number(f.orden))) : avisos;
+    return vis.length ? `<section class="ct-card ct-nom-avisos" id="ct-nom-avisos"><h2>Lo que hay que mirar</h2><ul class="ct-jr-avisos">${vis.map(f =>
+      `<li class="ct-aviso warn" data-orden="${esc(f.orden)}"><b>${esc(cap(f.control))}:</b> ${esc(f.detalle || "")}</li>`).join("")}</ul></section>` : "";
+  };
+  // Una escritura de la nómina: la tarjeta se apaga, el error va a su forma; si salió, la nota arriba, el aviso y se vuelve a pintar.
+  // opciones.mfa: el texto si falta el código; opciones.alFallar(err): true si atendió el error; opciones.despues(r): en vez de repintar
+  async function accionNom(card, fn, args, exito, opciones = {}) {
+    if (S.ocupado) return;
+    if (!navigator.onLine) { mostrarErrorForma(card, "Sin señal: no se hizo nada."); return; }
+    if (opciones.mfa !== false && !mfaActivo()) { mostrarErrorForma(card, (opciones.mfa || "Esto") + " " + SIN_CODIGO_NOM); return; }
+    S.ocupado = true;
+    const apagados = [...card.querySelectorAll("button, input, select, textarea")].filter(b => !b.disabled);
+    apagados.forEach(b => { b.disabled = true; });
+    let r;
+    try { r = await rpcCie(fn, args); }
+    catch (err) {
+      apagados.forEach(b => { b.disabled = false; });
+      S.ocupado = false;
+      if (opciones.alFallar && opciones.alFallar(err)) return;
+      mostrarErrorForma(card, mensajeNom(err));
+      return;
+    }
+    S.ocupado = false;
+    const n = exito(r) || null;
+    if (n) S.nom.nota = n;
+    S.hooks.avisar(opciones.aviso || "Hecho");
+    if (opciones.despues) return opciones.despues(r);
+    await repintar();
+  }
+  const descargarTexto = (texto, nombre) => {
+    try {
+      const blob = new Blob([String(texto || "")], { type: "text/csv;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = nombre; a.hidden = true;
+      document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+      return true;
+    } catch { return false; }
+  };
+
+  // ---------- EL ARCHIVO: leerlo aquí y quitar lo que no sale del teléfono ----------
+  // Las celdas de un CSV como texto (comillas, comas y saltos de línea dentro, la marca BOM, CRLF): nada se convierte ni se suma
+  function nominaCeldas(t) {
+    const filas = []; let f = [], c = "", dentro = false;
+    t = String(t || "").replace(/^﻿/, "").replace(/\r\n?/g, "\n");
+    for (let i = 0; i < t.length; i++) {
+      const ch = t[i];
+      if (dentro) { if (ch === '"') { if (t[i + 1] === '"') { c += '"'; i++; } else dentro = false; } else c += ch; }
+      else if (ch === '"') dentro = true;
+      else if (ch === ",") { f.push(c); c = ""; }
+      else if (ch === "\n") { f.push(c); filas.push(f); f = []; c = ""; }
+      else c += ch;
+    }
+    if (c !== "" || f.length) { f.push(c); filas.push(f); }
+    return filas;
+  }
+  // el nombre de una columna, limpio (como fn_nomina_norm de la base): minúsculas, y un espacio donde no hay letra ni número
+  const normCol = s => String(s == null ? "" : s).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const FORMA_SSN = /(^|[^0-9])[0-9]{3}-[0-9]{2}-[0-9]{4}([^0-9]|$)/;
+  // LO QUE NO SALE DEL TELÉFONO. Una fila con dos o más nombres del mapeo es una cabecera (abre una sección). En cada sección se
+  // quitan, enteras, las columnas de clase «delicado» y las que la base no conoce (o ignora) y traen algo con forma de Seguro Social;
+  // si una columna que SÍ se guarda trae esa forma, el archivo no se manda. En el preámbulo, esa celda se vacía. Devuelve las filas
+  // limpias y lo que se quitó (solo los nombres de las columnas, nunca una celda). La misma regla la usa pruebas/conta/f15-capturar.js.
+  function nominaLimpiar(filas, mapa) {
+    const cab = filas.map(f => f.filter(x => mapa.has(normCol(x))).length >= 2);
+    const quitar = filas.map(() => new Set());
+    const quitadas = [];
+    let ini = -1, preambulo = 0;
+    const cerrar = (a, b) => {
+      if (a < 0) return;
+      const fuera = new Set();
+      filas[a].forEach((x, j) => { if (mapa.get(normCol(x)) === "delicado") { fuera.add(j); quitadas.push({ columna: String(x).trim() || `columna ${j + 1}`, por: "delicado" }); } });
+      for (let i = a + 1; i < b; i++) filas[i].forEach((x, j) => {
+        if (!FORMA_SSN.test(x) || fuera.has(j)) return;
+        const k = mapa.get(normCol(filas[a][j]));
+        if (k && k !== "ignorar") { const e = new Error(`La columna «${String(filas[a][j]).trim()}» (fila ${i + 1}) trae algo con forma de número de Seguro Social: el archivo no se mandó. Bájalo otra vez de Gusto sin esa columna.`); e.local = true; throw e; }
+        fuera.add(j); quitadas.push({ columna: String(filas[a][j] || "").trim() || `columna ${j + 1}`, por: "forma" });
+      });
+      for (let i = a; i < b; i++) quitar[i] = fuera;
+    };
+    filas.forEach((f, i) => { if (cab[i]) { cerrar(ini, i); ini = i; } });
+    cerrar(ini, filas.length);
+    const limpias = filas.map((f, i) => f.filter((x, j) => !quitar[i].has(j)).map(x => { if (FORMA_SSN.test(x)) { preambulo++; return ""; } return x; }));
+    return { filas: limpias, quitadas, preambulo };
+  }
+  async function mapaNom() {
+    if (S.nom.mapa) return S.nom.mapa;
+    const cols = await DB._leer("nomina_columnas?select=alias,clase&order=alias.asc");
+    S.nom.mapa = new Map((Array.isArray(cols) ? cols : []).map(c => [c.alias, c.clase]));
+    return S.nom.mapa;
+  }
+  // Elegir el archivo: se lee entero aquí, se calcula su sha256 sobre los bytes tal cual, se limpia y solo queda lo limpio
+  async function leerJournal(input, card) {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    if (S.ocupado) return;
+    if (!mfaActivo()) { input.value = ""; mostrarErrorForma(card, "Subir el journal " + SIN_CODIGO_NOM); return; }
+    if (file.size > 5 * 1024 * 1024) { input.value = ""; mostrarErrorForma(card, "Ese archivo pasa de 5 MB: un «Payroll journal» de una nómina es mucho más chico. ¿Es el archivo correcto?"); return; }
+    S.ocupado = true;
+    S.nom.ensayo = null; S.nom.ensayoErr = null; S.nom.importe = null; S.nom.archivo = null; S.nom.nota = null;
+    const res = card.querySelector(".ct-nom-leyendo"); if (res) res.hidden = false;
+    let archivo;
+    try {
+      const mapa = await mapaNom();
+      const buf = new Uint8Array(await file.arrayBuffer());
+      const sha = await sha256Hex(buf);
+      const limpio = nominaLimpiar(nominaCeldas(new TextDecoder("utf-8").decode(buf)), mapa);
+      archivo = { nombre: file.name, sha256: sha, bytes: buf.byteLength, filas: limpio.filas };
+      S.nom.quitadas = { columnas: limpio.quitadas, preambulo: limpio.preambulo };
+    } catch (err) {
+      input.value = ""; S.ocupado = false;
+      if (res) res.hidden = true;
+      mostrarErrorForma(card, err.local ? err.message : esFalloDeRed(err) ? "Sin señal: no se leyó el mapeo de columnas. Vuelve a intentarlo con señal." : `No se pudo leer el archivo: ${err.message}`);
+      return;
+    }
+    input.value = "";
+    S.nom.archivo = archivo;
+    S.ocupado = false;
+    await ensayarJournal(card, {});
+  }
+  // EL ENSAYO: la base lo lee y dice qué entraría, sin guardar nada
+  async function ensayarJournal(card, opciones) {
+    if (!S.nom.archivo || S.ocupado) return;
+    S.ocupado = true;
+    try { S.nom.ensayo = await rpcCie("fn_nomina_ensayo", { p_archivo: S.nom.archivo, p_opciones: opciones || {} }); S.nom.ensayoErr = null; }
+    catch (err) { S.nom.ensayo = null; S.nom.ensayoErr = mensajeNom(err); if (err.codigo === "MX009" || err.codigo === "MX005") S.nom.archivo = null; }
+    S.ocupado = false;
+    await repintar();
+  }
+
+  // ---------- Nóminas: subir el journal, lo que dice la base de él y la lista de corridas ----------
+  const ESTADO_CORR = { importada: ["por postear", "warn"], posteada: ["posteada", "ok"], anulada: ["anulada", "bad"], descartada: ["descartada", ""] };
+  function pillCorrida(c) {
+    if (c.estado === "importada" && (c.cuadra === false || (Array.isArray(c.sin_clasificar) && c.sin_clasificar.length))) return pill("frenada", "bad");
+    if (c.estado === "posteada") return noCero(c.por_pagar) ? pill(`falta casar ${fmt(c.por_pagar)}`, "warn") : pill("casada con el banco", "ok");
+    const e = ESTADO_CORR[c.estado] || [c.estado, ""];
+    return pill(e[0], e[1]);
+  }
+  const porQueFrenada = c => c.estado !== "importada" ? "" : c.cuadra === false ? "No cuadra al centavo: mira dónde, dentro." : Array.isArray(c.sin_clasificar) && c.sin_clasificar.length ? `Trae ${plural(c.sin_clasificar.length, "columna", "columnas")} con cifras que el mapeo no conoce.` : "";
+  const nombreCorrida = c => `Nómina del ${fechaLarga(c.dia_pago)}`;
+  async function pintarNomLista(mia) {
+    let avisos, corridas;
+    try {
+      await leerMfa();
+      [avisos, corridas] = await Promise.all([controlNom(), DB._leer("v_nomina_corridas?select=*&order=dia_pago.desc,importada_el.desc")]);
+      if (!vivaNom(mia)) return;
+    } catch (err) { if (!vivaNom(mia)) return; return errorNom(err, pintarNomina); }
+    corridas = Array.isArray(corridas) ? corridas : [];
+    const vivas = corridas.filter(c => c.estado === "importada" || c.estado === "posteada");
+    const porPostear = corridas.filter(c => c.estado === "importada").length;
+    subNom(`<b>${plural(vivas.length, "nómina en el libro o por postear", "nóminas en el libro o por postear")}</b>${porPostear ? ` · <span class="bad-txt">${porPostear} por postear</span>` : ""}`);
+    const mfa = mfaActivo();
+    const c = nomCuerpo();
+    c.innerHTML = notaNomHTML() + avisosNomHTML(avisos) +
+      `<section class="ct-card ct-nom-subir" id="ct-nom-subir">
+        <div class="ct-cab"><h2>Subir el «Payroll journal» de Gusto</h2></div>
+        <p class="ct-nota">Después de cada nómina, baja de Gusto su «Payroll journal» en CSV y súbelo aquí. Se lee en este teléfono: los datos de cada persona que no hacen falta (Seguro Social, cuenta del banco, dirección, correo, teléfono) no salen de él.</p>
+        ${ayudaHTML(`<p>En Gusto: <b>Reports → Payroll journal</b> (o «Payroll Journal Builder»). Un archivo por nómina: los datos por <b>pay date</b> (el día de pago), con el rango igual a ese día, por empleado, en <b>CSV</b>. Si deja elegir columnas: el nombre y el apellido, las fechas del período y del pago, el tipo de nómina, las horas, cada parte del sueldo, cada impuesto del empleado y del patrón, las deducciones, el neto y los reembolsos.</p>
+          <p>▶ Los nombres exactos de las columnas de Gusto se confirman con el primer archivo de verdad: si trae una columna con cifras que la app no conoce, lo dice aquí mismo y tú dices qué es (una vez).</p>`, "¿Cómo se baja de Gusto?")}
+        <div class="ct-acciones"><label class="accion ct-nom-elegir${mfa ? "" : " apagado"}">Elegir el archivo (CSV)<input type="file" id="ct-nom-archivo" accept=".csv,text/csv" hidden${mfa ? "" : " disabled"}></label></div>
+        <p class="ct-aviso ct-espera ct-nom-leyendo" role="status" hidden>Leyendo el archivo…</p>
+        ${sinCodigoNomHTML("Subir el journal")}
+        <div class="ct-form" hidden></div>
+      </section>` + ensayoHTML() + importeNomHTML() +
+      `<section class="ct-card ct-nom-lista" id="ct-nom-lista">
+        <h2>Las nóminas</h2>
+        ${corridas.length ? `<div class="ct-subs-filas">${corridas.map(x => `<button type="button" class="ct-subs-fila ct-nom-fila" data-nom-corrida="${esc(x.corrida_id)}">
+            <span class="ct-subs-n"><b>${esc(nombreCorrida(x))}</b><small>${esc(x.tipo_texto || (x.tipo === "regular" ? "Regular" : "Fuera de ciclo"))}${x.periodo_desde ? ` · período del ${esc(fecha(x.periodo_desde))} al ${esc(fechaLarga(x.periodo_hasta))}` : ""} · ${plural(num(x.personas) || 0, "persona", "personas")} · «${esc(x.archivo || "")}»</small>
+              ${porQueFrenada(x) ? `<small class="bad-txt">${esc(porQueFrenada(x))}</small>` : ""}</span>
+            <span class="ct-nom-m"><span class="ct-num">${fmt(x.bruto)}</span><small>bruto · neto ${fmt(x.neto)}</small></span>
+            <span class="ct-subs-chips">${pillCorrida(x)}${x.asiento_numero && x.estado !== "importada" ? ` <span class="ct-sub">asiento ${esc(x.asiento_numero)}</span>` : ""}</span>
+          </button>`).join("")}</div>` : `<p class="ct-vacio">Ninguna nómina todavía: la primera de Gusto se paga el 8 de enero de 2027.</p>`}
+      </section>`;
+    const card = $("ct-nom-subir");
+    $("ct-nom-archivo").addEventListener("change", ev => leerJournal(ev.target, card));
+    c.querySelectorAll("[data-nom-corrida]").forEach(b => b.addEventListener("click", () => { if (S.ocupado) return; S.nom.corrida = b.dataset.nomCorrida; S.nom.nota = null; pintarNomina(); }));
+    wireEnsayo();
+    wireImporte();
+  }
+  const totalesNomHTML = (t, conHoras) => `<div class="ct-kpis cuatro ct-nom-kpis">
+      ${kpiHTML("Bruto", fmt(t.bruto), `${plural(num(t.personas) || 0, "persona", "personas")}`)}
+      ${kpiHTML("Retenido", fmt(t.imp_empleado), noCero(t.deducciones) ? `deducciones ${fmt(t.deducciones)}` : "al empleado")}
+      ${kpiHTML("Neto", fmt(t.neto), noCero(t.reembolsos) ? `más reembolsos ${fmt(t.reembolsos)}` : "lo que cobran")}
+      ${kpiHTML("Lo del patrón", fmt(t.imp_patron), noCero(t.ben_patron) ? `y beneficios ${fmt(t.ben_patron)}` : conHoras && t.horas != null ? `${nHoras(t.horas)} h en el archivo` : "impuestos")}
+    </div>`;
+  function ensayoHTML() {
+    if (S.nom.ensayoErr) return `<section class="ct-card ct-nom-ensayo" id="ct-nom-ensayo"><h2>El archivo no se pudo leer</h2><p class="ct-aviso bad">${esc(S.nom.ensayoErr)}</p>
+      <div class="ct-acciones"><button type="button" class="accion secundaria" data-nom-ensayo-cerrar>Cerrar</button></div></section>`;
+    const e = S.nom.ensayo; if (!e) return "";
+    const a = e.archivo || {}, q = S.nom.quitadas || { columnas: [], preambulo: 0 };
+    const deliBase = Array.isArray(e.delicado) ? e.delicado : [];
+    const quitadasTxt = q.columnas.length ? `No salieron del teléfono: ${q.columnas.map(x => `«${x.columna}»${x.por === "forma" ? " (traía algo con forma de número de Seguro Social)" : ""}`).join(", ")}.` : "";
+    const corridas = Array.isArray(e.corridas) ? e.corridas : [];
+    return `<section class="ct-card ct-nom-ensayo" id="ct-nom-ensayo">
+        <div class="ct-cab"><h2>Lo que dice la base del archivo</h2>${num(e.entraria) ? pill(`entraría ${plural(e.entraria, "nómina", "nóminas")}`, "ok") : pill("no entra nada nuevo", "warn")}</div>
+        <p class="ct-nota">«${esc(a.nombre)}» · ${esc(kb(a.bytes))} · ${plural(num(a.filas) || 0, "fila", "filas")}${a.ya_importado ? ` · <b>este mismo archivo ya entró el ${esc(fechaLarga(a.ya_importado.importado_el))}</b>` : ""}. Todavía no se guardó nada.</p>
+        ${quitadasTxt || q.preambulo ? `<p class="ct-aviso ok ct-nom-quitadas">${esc(quitadasTxt)}${q.preambulo ? ` ${plural(q.preambulo, "celda de arriba se vació", "celdas de arriba se vaciaron")} (traían algo con forma de número de Seguro Social).` : ""} El sha256 es el del archivo entero.</p>` : ""}
+        ${deliBase.length ? `<p class="ct-aviso ok">La base tampoco guardó: ${esc(deliBase.join(", "))}.</p>` : ""}
+        ${corridas.map(ensayoCorridaHTML).join("")}
+        <div class="ct-acciones"><button type="button" class="accion" id="ct-nom-importar"${deshab()}>Importar${num(e.entraria) ? ` (entra${num(e.entraria) === 1 ? "" : "n"} ${plural(e.entraria, "nómina", "nóminas")})` : ""}</button><button type="button" class="accion secundaria" data-nom-ensayo-cerrar>Cancelar</button></div>
+        <div class="ct-form" hidden></div>
+      </section>`;
+  }
+  function ensayoCorridaHTML(k) {
+    const sc = Array.isArray(k.sin_clasificar) ? k.sin_clasificar : [], ds = Array.isArray(k.descuadres) ? k.descuadres : [];
+    const ps = Array.isArray(k.personas) ? k.personas : [];
+    return `<article class="ct-nom-ens" data-nom-n="${esc(k.n)}">
+        <div class="ct-cab"><h3>Nómina del ${esc(fechaLarga(k.dia_pago))}</h3>${k.cuadra ? pill("cuadra al centavo", "ok") : pill("no cuadra", "bad")}</div>
+        <p class="ct-sub">${esc(k.tipo_texto || k.tipo)}${k.periodo_desde ? ` · período del ${esc(fecha(k.periodo_desde))} al ${esc(fechaLarga(k.periodo_hasta))}` : " · sin período"}</p>
+        ${k.totales ? totalesNomHTML(k.totales, true) : ""}
+        ${ds.length ? `<ul class="ct-jr-avisos ct-nom-descuadres">${ds.map(t => `<li class="ct-aviso bad">${esc(t)}</li>`).join("")}</ul>` : ""}
+        ${k.ya_estaba ? `<p class="ct-aviso ${k.ya_estaba.mismas_cifras ? "" : "warn"} ct-nom-ya">Esta nómina ya está (${esc(k.ya_estaba.estado)}, del archivo «${esc(k.ya_estaba.archivo)}»)${k.ya_estaba.mismas_cifras ? " con las mismas cifras: no entra dos veces." : `, con OTRAS cifras: bruto ${fmt(k.ya_estaba.bruto)} y neto ${fmt(k.ya_estaba.neto)}. Al importar, la base pregunta qué es.`}</p>` : ""}
+        ${sc.length ? `<div class="ct-nom-sc"><p class="ct-aviso bad"><b>${plural(sc.length, "columna trae", "columnas traen")} cifras que el mapeo no conoce:</b> di qué es cada una antes de importar (se queda en el mapeo para las próximas). Sin eso, la nómina entra pero no se puede postear.</p>
+          <ul class="ct-wip-his">${sc.map(x => `<li class="ct-wip-hi" data-nom-col="${esc(x.columna)}"><p><b>«${esc(x.columna)}»</b>${x.celdas != null ? ` · ${plural(x.celdas, "celda con cifras", "celdas con cifras")}` : ""}</p>
+            <div class="ct-acciones"><button type="button" class="accion secundaria chica" data-nom-clasificar="${esc(x.columna)}"${deshab()}>Decir qué es</button></div></li>`).join("")}</ul></div>` : ""}
+        ${(Array.isArray(k.avisos) ? k.avisos : []).map(x => `<p class="ct-aviso warn" data-codigo="${esc(x.codigo)}">${esc(x.texto)}</p>`).join("")}
+        ${ps.length ? `<details class="ct-wip-mas ct-nom-ens-per"><summary>Las ${plural(ps.length, "persona", "personas")} del archivo</summary><ul class="ct-wip-his">${ps.map(p => `<li class="ct-wip-hi"><p><b>${esc(p.nombre)}</b> · bruto <span class="ct-num">${fmt(p.bruto)}</span> · neto <span class="ct-num">${fmt(p.neto)}</span>${p.horas != null ? ` · ${esc(horasTxt(p.horas))} en Gusto` : ""}${p.cuadra === false ? ` ${pill("no cuadra", "bad")}` : ""}</p>
+            <p class="ct-sub">${p.confirmada ? `Enlazada: ${esc(p.perfil || "")} (${esc(CLASE_PER_CORTA[p.clase] || p.clase || "")})` : p.propuesta ? `Se propone: ${esc(p.propuesta.nombre)} (${esc(CLASE_PER_CORTA[p.propuesta.clase] || p.propuesta.clase || "")}); se confirma después de importar` : "Sin enlazar: se dice quién es después de importar"}</p></li>`).join("")}</ul></details>` : ""}
+      </article>`;
+  }
+  function formaColumna(card, columna, alGuardar) {
+    const ops = Object.keys(CLASES_COL).map(k => `<option value="${esc(k)}">${esc(CLASES_COL[k])}</option>`).join("");
+    montarForma(card, formaHTML(`¿Qué es la columna «${esc(columna)}»?`,
+      `<label class="ct-campo">Qué es<select name="clase" required data-falta="Falta decir qué es la columna."><option value="">Elige…</option>${ops}</select></label>
+       <div class="ct-fila"><label class="ct-campo">A qué cuenta va (si es un impuesto, una deducción, el neto o un reembolso)<input name="cuenta" inputmode="numeric" maxlength="4" placeholder="por ejemplo 2220" autocomplete="off"></label>
+       <label class="ct-campo">Con qué renglón de las declaraciones amarra (si es un impuesto)<select name="declara"><option value="">Ninguno</option>${Object.keys(DECLARA).map(k => `<option value="${k}">${esc(DECLARA[k])}</option>`).join("")}</select></label></div>
+       <label class="ct-campo">Nota (por qué)<input name="nota" autocomplete="off"></label>`, "Guardarla en el mapeo"), v => {
+      const p = { columna, clase: v.clase };
+      if (v.cuenta) p.cuenta = v.cuenta;
+      if (v.declara) p.declara = v.declara;
+      if (v.nota) p.nota = v.nota;
+      alGuardar(p);
+    });
+  }
+  function wireEnsayo() {
+    const card = $("ct-nom-ensayo"); if (!card) return;
+    card.querySelectorAll("[data-nom-ensayo-cerrar]").forEach(b => b.addEventListener("click", () => { S.nom.ensayo = null; S.nom.ensayoErr = null; S.nom.archivo = null; S.nom.quitadas = null; repintar(); }));
+    card.querySelectorAll("[data-nom-clasificar]").forEach(b => b.addEventListener("click", () => formaColumna(card, b.dataset.nomClasificar, p =>
+      accionNom(card, "fn_nomina_columna", { p }, r => ({ tipo: "ok", texto: `La columna «${p.columna}» queda en el mapeo como «${(CLASES_COL[r.clase] || r.clase || "").toLowerCase()}». La base vuelve a leer el archivo.` }),
+        { aviso: "Columna en el mapeo", mfa: "Cambiar el mapeo", despues: () => { S.nom.mapa = null; return ensayarJournal(card, {}); } }))));
+    const bi = $("ct-nom-importar");
+    if (bi) bi.addEventListener("click", () => importarJournal(card, {}));
+  }
+  // IMPORTAR: lo mismo que se ensayó; lo que conteste la base, tal cual (una nueva se abre)
+  function importarJournal(card, opciones) {
+    if (!S.nom.archivo) { mostrarErrorForma(card, "Vuelve a elegir el archivo: lo de antes ya no está en memoria."); return; }
+    return accionNom(card, "fn_nomina_importar", { p_archivo: S.nom.archivo, p_opciones: opciones || {} }, r => {
+      S.nom.importe = r; S.nom.ensayo = null;
+      const nuevas = (r.corridas || []).filter(x => x.resultado === "nueva" || x.resultado === "reemplazada");
+      const otra = (r.corridas || []).some(x => x.resultado === "otra_distinta");
+      if (!otra) { S.nom.archivo = null; S.nom.quitadas = null; }
+      if (nuevas.length === 1 && !otra) { S.nom.corrida = nuevas[0].corrida; S.nom.importe = null; return { tipo: "ok", texto: `${r.mensaje} ${nuevas[0].texto || ""}`.trim() }; }
+      return null;
+    }, { aviso: "Archivo leído", mfa: "Importar el journal" });
+  }
+  function importeNomHTML() {
+    const r = S.nom.importe; if (!r) return "";
+    const cs = Array.isArray(r.corridas) ? r.corridas : [];
+    return `<section class="ct-card ct-nom-importe" id="ct-nom-importe">
+        <h2>${esc(r.mensaje || "Lo que contestó la base")}</h2>
+        <ul class="ct-wip-his">${cs.map(x => `<li class="ct-wip-hi" data-resultado="${esc(x.resultado)}"><p>${esc(x.texto || "")}</p>
+          <div class="ct-acciones">${x.resultado === "otra_distinta" ? `${x.se_puede_reemplazar ? `<button type="button" class="accion secundaria chica" data-nom-reemplazar>Reemplaza a la que estaba</button>` : ""}<button type="button" class="accion secundaria chica" data-nom-otra>Es otra nómina del mismo día</button>` : ""}
+            ${x.corrida && x.resultado !== "otra_distinta" ? `<button type="button" class="accion secundaria chica" data-nom-abrir="${esc(x.corrida)}">Abrir la nómina</button>` : ""}</div></li>`).join("")}</ul>
+        <div class="ct-acciones"><button type="button" class="accion secundaria" data-nom-importe-cerrar>Cerrar</button></div>
+        <div class="ct-form" hidden></div>
+      </section>`;
+  }
+  function wireImporte() {
+    const card = $("ct-nom-importe"); if (!card) return;
+    card.querySelector("[data-nom-importe-cerrar]").addEventListener("click", () => { S.nom.importe = null; S.nom.archivo = null; S.nom.quitadas = null; repintar(); });
+    const re = card.querySelector("[data-nom-reemplazar]"); if (re) re.addEventListener("click", () => importarJournal(card, { reemplazar: true }));
+    const ot = card.querySelector("[data-nom-otra]"); if (ot) ot.addEventListener("click", () => importarJournal(card, { otra_nomina: true }));
+    card.querySelectorAll("[data-nom-abrir]").forEach(b => b.addEventListener("click", () => { S.nom.corrida = b.dataset.nomAbrir; S.nom.importe = null; pintarNomina(); }));
+  }
+
+  // ---------- Una nómina: lo de cada persona, el reparto por obra, el asiento, sus cargos del banco ----------
+  async function pintarNomCorrida(mia) {
+    const id = S.nom.corrida;
+    let corridas, prop = null, propErr = null, personas = [], perfiles = [], pend = [], cargos = [], cfg = null;
+    try {
+      await leerMfa();
+      [corridas, personas, cargos, cfg] = await Promise.all([DB._leer("v_nomina_corridas?select=*&order=dia_pago.desc,importada_el.desc"), DB._leer("v_nomina_personas?select=*&order=nombre.asc"),
+        DB._leer("v_nomina_cargos?select=*&order=fecha.desc,monto.desc"), DB._rpc("fn_nomina_config", {})]);
+      const c0 = (Array.isArray(corridas) ? corridas : []).find(x => x.corrida_id === id);
+      if (c0) {
+        try { prop = await rpcCie("fn_nomina_propuesta", { p_corrida: id }); }
+        catch (err) { if (esFalloDeRed(err)) throw err; propErr = err; }
+        if (c0.estado === "importada") perfiles = await DB._leer("perfiles?select=id,nombre,rol,activo&order=nombre.asc").catch(e => { if (esFalloDeRed(e)) throw e; return []; });
+        if (c0.estado === "posteada") pend = await DB._rpc("fn_nomina_pendiente", { p_corrida: id }).catch(e => { if (esFalloDeRed(e)) throw e; return []; });
+      }
+      if (!vivaNom(mia)) return;
+    } catch (err) { if (!vivaNom(mia)) return; return errorNom(err, pintarNomina); }
+    const c = nomCuerpo(), x = (corridas || []).find(k => k.corrida_id === id);
+    const volver = `<div class="ct-acciones"><button type="button" class="accion secundaria" id="ct-nom-volver">← Las nóminas</button></div>`;
+    const alVolver = () => { const b = $("ct-nom-volver"); if (b) b.addEventListener("click", () => { S.nom.corrida = null; S.nom.nota = null; S.hooks.titulo(KICKER, TITULOS.nomina); pintarNomina(); }); };
+    if (!x) { c.innerHTML = `<section class="ct-card"><p class="ct-vacio">Esa nómina ya no está (o la sesión no es la del dueño).</p>${volver}</section>`; alVolver(); return; }
+    S.hooks.titulo(KICKER, nombreCorrida(x));
+    marcarVolver();
+    subNom(`<b>${esc(nombreCorrida(x))}</b> · ${esc(x.tipo_texto || x.tipo)} · ${(ESTADO_CORR[x.estado] || [x.estado])[0]}`);
+    personas = Array.isArray(personas) ? personas : [];
+    const obras = new Map();
+    for (const p of (prop && prop.personas) || []) for (const q of p.partes || []) if (q.proyecto_id && q.obra) obras.set(q.proyecto_id, q.obra);
+    c.innerHTML = notaNomHTML() + volver + cabCorridaHTML(x, prop) +
+      (propErr ? `<section class="ct-card ct-nom-mfa"><p class="ct-aviso warn">${esc(mensajeNom(propErr))}</p></section>` : "") +
+      (x.estado === "importada" && prop ? frenosHTML(prop) + avisosCorridaHTML(prop) + personasCorridaHTML(prop, personas, perfiles, true) + asientoHTML(prop, obras, false) + postearHTML(x, prop) : "") +
+      (x.estado === "posteada" && prop ? asientoHTML(prop, obras, true) + pendienteHTML(pend) + cargosCorridaHTML(x, cargos, cfg) + avisosCorridaHTML(prop) + personasCorridaHTML(prop, personas, perfiles, false) + anularHTML(x) : "") +
+      (x.estado === "anulada" ? `<section class="ct-card ct-nom-anulada"><h2>Anulada</h2><p class="ct-nota">El ${esc(fechaLarga(x.anulada_el))}: «${esc(x.anulada_motivo || "")}». Su asiento ${esc(x.asiento_numero || "")} se reversó con el ${esc(x.reverso_numero || "")}${x.burden_numero ? ` (y el del burden, ${esc(x.burden_numero)})` : ""}. Su archivo se puede volver a subir: entra como una nómina nueva.</p></section>` + (prop ? asientoHTML(prop, obras, true) : "") : "") +
+      (x.estado === "descartada" ? `<section class="ct-card ct-nom-descartada"><h2>Descartada</h2><p class="ct-nota">El ${esc(fechaLarga(x.descartada_el))}: «${esc(x.descartada_motivo || "")}». Nunca entró al libro.</p></section>` : "") + volver.replace('id="ct-nom-volver"', 'id="ct-nom-volver2"');
+    alVolver();
+    const b2 = $("ct-nom-volver2"); if (b2) b2.addEventListener("click", () => $("ct-nom-volver").click());
+    wireCorrida(x, prop, personas, perfiles, cargos);
+  }
+  function cabCorridaHTML(x, prop) {
+    const sc = Array.isArray(x.sin_clasificar) ? x.sin_clasificar : [], ds = Array.isArray(x.descuadres) ? x.descuadres : [];
+    return `<section class="ct-card ct-nom-cab" id="ct-nom-cab">
+        <div class="ct-cab"><h2>${esc(nombreCorrida(x))}</h2>${pillCorrida(x)}</div>
+        <p class="ct-nota">${esc(x.tipo_texto || x.tipo)}${x.periodo_desde ? ` · período del ${esc(fecha(x.periodo_desde))} al ${esc(fechaLarga(x.periodo_hasta))}` : " · sin período"} · archivo «${esc(x.archivo || "")}», importado el ${esc(fechaLarga(x.importada_el))}${x.posteada_el ? ` · posteada el ${esc(fechaLarga(x.posteada_el))}` : ""}${x.toma_horas === false ? " · usa las horas del período sin quedárselas" : ""}.</p>
+        ${totalesNomHTML({ ...x, personas: x.personas }, true)}
+        ${ds.length ? `<ul class="ct-jr-avisos ct-nom-descuadres">${ds.map(t => `<li class="ct-aviso bad">${esc(t)}</li>`).join("")}</ul>` : ""}
+        ${sc.length ? `<p class="ct-aviso bad">Trae ${plural(sc.length, "columna", "columnas")} con cifras que el mapeo no conocía (${esc(sc.map(s => `«${s.columna || s}»`).join(", "))}). Lo que no se conocía no se guardó: di qué es cada una en Ajustes, descarta esta nómina y vuelve a subir su archivo.</p>` : ""}
+        ${prop && prop.fecha_asiento && prop.fecha_asiento.nota ? `<p class="ct-aviso warn">${esc(prop.fecha_asiento.nota)}</p>` : ""}
+      </section>`;
+  }
+  // LO QUE FRENA: cada freno con lo que se hace (enlazar, decir la cuenta de lo sin obra, mandarlo sin obra)
+  function frenosHTML(prop) {
+    const fs = Array.isArray(prop.frenos) ? prop.frenos : [];
+    if (!fs.length) return "";
+    return `<section class="ct-card ct-nom-frenos" id="ct-nom-frenos">
+        <h2>Lo que frena esta nómina</h2>
+        <ul class="ct-wip-his">${fs.map((f, i) => `<li class="ct-wip-hi" data-codigo="${esc(f.codigo)}"><p class="bad-txt">${esc(f.texto)}</p>
+          <div class="ct-acciones">${f.codigo === "falta_cuenta_sin_obra" ? `<button type="button" class="accion secundaria chica" data-nom-sinobra${deshab()}>Decir la cuenta de lo sin obra</button>` : ""}
+            ${f.codigo === "sin_horas" && f.persona ? `<button type="button" class="accion secundaria chica" data-nom-decidir="${esc(f.persona)}"${deshab()}>Mandarlo sin obra</button>` : ""}
+            ${["sin_enlazar", "sin_confirmar", "perfil_no_existe"].includes(f.codigo) && f.persona ? `<button type="button" class="accion secundaria chica" data-nom-ir-per="${esc(f.persona)}">Decir quién es</button>` : ""}
+            ${f.codigo === "sin_periodo" ? `<button type="button" class="accion secundaria chica" data-nom-periodo${deshab()}>Decir el período</button>` : ""}</div></li>`).join("")}</ul>
+        ${sinCodigoNomHTML("Lo que se decide aquí")}
+        <div class="ct-form" hidden></div>
+      </section>`;
+  }
+  const avisosCorridaHTML = prop => {
+    const as = Array.isArray(prop.avisos) ? prop.avisos : [];
+    return as.length ? `<section class="ct-card ct-nom-avisos-c" id="ct-nom-avisos-c"><h2>Lo que la base avisa</h2><ul class="ct-jr-avisos">${as.map(a => `<li class="ct-aviso warn" data-codigo="${esc(a.codigo)}">${esc(a.texto)}</li>`).join("")}</ul></section>` : "";
+  };
+  const DESTINO = { obra: "obra", sin_obra: "sin obra", oficina: "oficina", oficial: "oficial" };
+  const parteHTML = q => `<li class="ct-nom-l"><span class="ct-nom-l-t"><b>${esc(q.cuenta)}</b> ${esc(q.clase === "patron" ? "lo del patrón" : "sueldo")} · ${esc(q.obra || DESTINO[q.destino] || q.destino || "")}${q.co ? ` · ${esc(q.co)}` : ""}${q.horas != null ? ` · ${esc(horasTxt(q.horas))}` : ""}</span><span class="ct-num">${fmt(q.monto)}</span></li>`;
+  function personasCorridaHTML(prop, personas, perfiles, enlazar) {
+    const ps = Array.isArray(prop.personas) ? prop.personas : [];
+    return `<section class="ct-card ct-nom-personas" id="ct-nom-personas">
+        <h2>Cada persona</h2>
+        <p class="ct-nota">Lo que cobra cada uno y cómo se reparte su sueldo por obra según sus horas aprobadas del período (lo calcula la base, al centavo).</p>
+        <ul class="ct-wip-his">${ps.map(p => {
+          const v = personas.find(z => z.persona_id === p.persona_id) || {};
+          const est = ESTADO_PER[v.estado] || ["", ""];
+          return `<li class="ct-wip-hi ct-nom-per" data-nom-persona="${esc(p.persona_id)}">
+            <div class="ct-cab"><p><b>${esc(p.nombre)}</b>${p.clase ? ` · ${esc(CLASE_PER_CORTA[p.clase] || p.clase)}` : ""}${v.perfil ? ` · en la app: ${esc(v.perfil)}` : ""}</p>${est[0] ? pill(est[0], est[1]) : ""}</div>
+            <p class="ct-sub">Bruto <span class="ct-num">${fmt(p.bruto)}</span> · neto <span class="ct-num">${fmt(p.neto)}</span> · lo del patrón <span class="ct-num">${fmt(p.patron)}</span>${p.horas_gusto != null ? ` · Gusto pagó ${esc(horasTxt(p.horas_gusto))}` : ""}${p.horas_aprobadas != null ? ` · ${esc(horasTxt(p.horas_aprobadas))} aprobadas` : ""}${num(p.horas_sin_aprobar) ? ` · ${esc(horasTxt(p.horas_sin_aprobar))} sin aprobar` : ""}</p>
+            ${p.decision ? `<p class="ct-aviso warn">Decidido: ${p.decision === "sin_obra" ? "su sueldo va sin obra" : esc(p.decision)}${v.nota ? "" : ""}.</p>` : ""}
+            ${(p.partes || []).length ? `<ul class="ct-nom-lineas">${p.partes.map(parteHTML).join("")}</ul>` : ""}
+            <div class="ct-acciones">${enlazar && v.estado && v.estado !== "lista" ? `<button type="button" class="accion secundaria chica" data-nom-enlazar="${esc(p.persona_id)}"${deshab()}>Decir quién es</button>` : ""}
+              ${enlazar && p.decision ? `<button type="button" class="accion secundaria chica" data-nom-quitar-decision="${esc(p.persona_id)}"${deshab()}>Quitar la decisión</button>` : ""}</div>
+            <div class="ct-form" hidden></div>
+          </li>`;
+        }).join("")}</ul>
+      </section>`;
+  }
+  // EL ASIENTO que va a entrar (o que entró): sus líneas tal como las da la base, y las del reparto del burden
+  const lineaHTML = (l, obras) => `<li class="ct-nom-l${num(l.monto) < 0 ? " haber" : ""}"><span class="ct-nom-l-t"><b>${esc(l.cuenta)}</b> ${esc(nombreCuenta(l.cuenta) !== l.cuenta ? nombreCuenta(l.cuenta) : "")}${l.proyecto_id ? ` · ${esc(obras.get(l.proyecto_id) || l.proyecto_id)}` : ""}${l.co ? ` · ${esc(l.co)}` : ""}<small>${esc(l.memo || "")}</small></span><span class="ct-num">${num(l.monto) < 0 ? `${MENOS}${fmtAbs(l.monto)}` : fmt(l.monto)}</span></li>`;
+  function asientoHTML(prop, obras, hecho) {
+    const a = prop.asiento || {}, b = prop.burden || null, fa = prop.fecha_asiento || {};
+    const ls = Array.isArray(a.lineas) ? a.lineas : [], lb = b && Array.isArray(b.lineas) ? b.lineas : [];
+    return `<section class="ct-card ct-nom-asiento" id="ct-nom-asiento">
+        <div class="ct-cab"><h2>${hecho ? `El asiento ${esc(a.numero || "")}` : "Lo que va a entrar al libro"}</h2>${hecho && a.fecha ? `<span class="ct-sub">${esc(fechaLarga(a.fecha))}</span>` : fa.fecha ? `<span class="ct-sub">con fecha ${esc(fechaLarga(fa.fecha))}</span>` : ""}</div>
+        <p class="ct-nota">Débitos en positivo, créditos con ${MENOS}. El sueldo de cada obra (5000 y 5001) sale del reparto de arriba; lo del patrón por la gente de obra va a la bolsa del burden real (5015) y un segundo asiento lo reparte a sus obras (5010).</p>
+        ${ls.length ? `<ul class="ct-nom-lineas">${ls.map(l => lineaHTML(l, obras)).join("")}</ul>` : `<p class="ct-vacio">Todavía no hay asiento: falta lo de arriba.</p>`}
+        ${lb.length ? `<h3>El reparto del burden real${b.numero ? ` · asiento ${esc(b.numero)}` : ""}</h3><ul class="ct-nom-lineas">${lb.map(l => lineaHTML(l, obras)).join("")}</ul>` : ""}
+      </section>`;
+  }
+  // POSTEAR: lo que va a pasar, en una frase (con las cifras de la base), y el botón
+  function frasePostear(x, prop) {
+    const t = prop.totales || {}, pas = prop.pasivos || {}, fa = prop.fecha_asiento || {};
+    const deudas = Object.keys(pas).sort().map(k => `${fmt(pas[k])} en ${k}`).join(", ");
+    return `Entra al libro, con fecha ${fechaLarga(fa.fecha || x.dia_pago)}, el journal de esta nómina (${fmt(t.debe)} en débitos): el sueldo bruto de ${fmt(t.bruto)} a sus obras y cuentas, lo del patrón (${fmt(t.imp_patron)}) a la bolsa del burden y a la oficina, y lo que queda por pagar a Gusto (${deudas}); y otro asiento reparte el burden real a las obras.`;
+  }
+  function postearHTML(x, prop) {
+    const puede = !!prop.puede_postear;
+    return `<section class="ct-card ct-nom-postear" id="ct-nom-postear">
+        <h2>Postear</h2>
+        <p class="ct-nota" id="ct-nom-frase">${puede ? esc(frasePostear(x, prop)) : "Todavía no se puede postear: arregla lo que frena (arriba) y vuelve a mirar."}</p>
+        <div class="ct-acciones"><button type="button" class="accion" id="ct-nom-postear-b"${puede && mfaActivo() ? "" : " disabled"}>Postear</button>
+          <button type="button" class="accion secundaria" id="ct-nom-descartar"${deshab()}>Descartar esta nómina</button>
+          ${x.tipo === "fuera_de_ciclo" ? `<button type="button" class="accion secundaria" id="ct-nom-toma"${deshab()}>${x.toma_horas ? "No es la que paga las horas del período" : "Esta es la que paga las horas del período"}</button>` : ""}</div>
+        ${sinCodigoNomHTML("Postear")}
+        <div class="ct-form" hidden></div>
+      </section>`;
+  }
+  function pendienteHTML(pend) {
+    const ps = Array.isArray(pend) ? pend : [];
+    if (!ps.length) return "";
+    const CL = { neto: "el neto (y los reembolsos)", impuestos: "impuestos", deducciones: "deducciones" };
+    return `<section class="ct-card ct-nom-pend" id="ct-nom-pend">
+        <h2>Lo que dejó por pagar a Gusto</h2>
+        <ul class="ct-nom-lineas">${ps.map(p => `<li class="ct-nom-l${noCero(p.pendiente) ? " falta" : ""}"><span class="ct-nom-l-t"><b>${esc(p.cuenta)}</b> ${esc(CL[p.clase] || p.clase || "")}<small>${fmt(p.acreditado)} del journal · ${fmt(p.pagado)} ya cobrado por Gusto</small></span><span class="ct-num">${noCero(p.pendiente) ? `falta ${fmt(p.pendiente)}` : "pagado"}</span></li>`).join("")}</ul>
+      </section>`;
+  }
+  // LOS CARGOS DEL BANCO de esta nómina: los casados (por su texto) y los pendientes con fecha cerca de su día de pago
+  function cargosCorridaHTML(x, cargos, cfg) {
+    const cs = Array.isArray(cargos) ? cargos : [];
+    const antes = num(cfg && cfg.cargo_dias_antes), despues = num(cfg && cfg.cargo_dias_despues);
+    const cerca = m => { const d = diasEntre(x.dia_pago, m.fecha); return d >= -(despues == null ? 5 : despues) && d <= (antes == null ? 10 : antes); };
+    const casados = cs.filter(m => m.estado === "casado" && String(m.corridas || "").includes(diaBase(x.dia_pago)));
+    const pendientes = cs.filter(m => m.estado === "pendiente" && cerca(m));
+    return `<section class="ct-card ct-nom-cargos-c" id="ct-nom-cargos-c">
+        <h2>Sus cargos de Gusto en el banco</h2>
+        <p class="ct-nota">Gusto cobra el neto y los impuestos por separado, unos días antes del día de pago. Cada cargo se casa con lo que esta nómina dejó por pagar, al centavo.</p>
+        ${casados.length ? `<ul class="ct-wip-his">${casados.map(m => `<li class="ct-wip-hi"><p><b>${esc(m.descripcion)}</b> · ${esc(fechaLarga(m.fecha))} · <span class="ct-num">${fmt(m.monto)}</span> ${pill("casado", "ok")}</p><p class="ct-sub">${esc(m.texto || "")} · asiento ${esc(m.asiento || "")}</p></li>`).join("")}</ul>` : ""}
+        ${pendientes.length ? `<ul class="ct-wip-his">${pendientes.map(m => cargoPendienteHTML(m)).join("")}</ul>` : `<p class="ct-vacio">${casados.length ? "Ningún cargo de Gusto pendiente cerca de su día de pago." : "Ningún cargo de Gusto cerca de su día de pago todavía: cuando el banco lo traiga, sale aquí y en la Bandeja."}</p>`}
+      </section>`;
+  }
+  const cargoPendienteHTML = m => `<li class="ct-wip-hi ct-nom-cargo" data-nom-mov="${esc(m.movimiento_id)}"><p><b>${esc(m.descripcion)}</b> · ${esc(fechaLarga(m.fecha))} · <span class="ct-num">${fmt(m.monto)}</span> ${pill(m.clase_probable === "cuota" ? "¿la cuota?" : "pendiente", "warn")}</p>
+      <p class="ct-sub">${esc(m.texto || "")}</p>
+      <div class="ct-acciones"><button type="button" class="accion secundaria chica" data-nom-casar="${esc(m.movimiento_id)}"${deshab()}>${m.clase_probable === "cuota" ? "Ver qué es" : "Casar…"}</button></div>
+      <div class="ct-form" hidden></div></li>`;
+  function anularHTML(x) {
+    return `<section class="ct-card ct-nom-anular" id="ct-nom-anular">
+        <h2>Anular</h2>
+        <p class="ct-nota">Si Gusto la corrigió o se subió por error: sus dos asientos se reversan (nada se borra), sus horas quedan libres y su archivo se puede volver a subir. Con cargos casados, antes se deshacen.</p>
+        <div class="ct-acciones"><button type="button" class="accion secundaria" id="ct-nom-anular-b"${deshab()}>Anular esta nómina</button></div>
+        ${sinCodigoNomHTML("Anular")}
+        <div class="ct-form" hidden></div>
+      </section>`;
+  }
+  // CASAR un cargo: la propuesta de la base (sus opciones al centavo) y un botón por opción; o la cuota mensual
+  async function abrirCasarNom(card, movimiento, alTerminar) {
+    if (S.ocupado) return;
+    const f = card.querySelector(".ct-form");
+    f.hidden = false; f.innerHTML = `<p class="ct-aviso ct-espera" role="status">Pidiendo a la base cómo casa…</p>`;
+    let p;
+    try { p = await DB._rpc("fn_nomina_cargo_propuesta", { p_movimiento: movimiento }); }
+    catch (err) { f.innerHTML = `<p class="ct-aviso bad ct-error">${esc(mensajeNom(err))}</p>`; return; }
+    const ops = Array.isArray(p.opciones) ? p.opciones : [];
+    f.innerHTML = `<div class="ct-nom-casar"><p class="ct-form-t">${esc(p.texto || "")}</p>
+        ${ops.map((o, i) => `<div class="ct-nom-op"><p>${esc(o.texto)}: ${(o.partes || []).map(q => `<span class="ct-num">${fmt(q.monto)}</span> en ${esc(q.cuenta)}`).join(", ")}</p>
+          <button type="button" class="accion${i ? " secundaria" : ""}" data-nom-op="${i}"${deshab()}>Casar así</button></div>`).join("")}
+        <div class="ct-acciones">${p.cuota ? `<button type="button" class="accion${ops.length ? " secundaria" : ""}" data-nom-cuota${deshab()}>Es la cuota mensual de Gusto: a su gasto</button>` : ""}<button type="button" class="accion secundaria" data-cerrar>Cerrar</button></div>
+        ${sinCodigoNomHTML("Casar un cargo")}</div>`;
+    f.querySelector("[data-cerrar]").addEventListener("click", () => { f.hidden = true; f.innerHTML = ""; });
+    f.querySelectorAll("[data-nom-op]").forEach(b => b.addEventListener("click", () => {
+      const o = ops[Number(b.dataset.nomOp)]; if (!o) return;
+      // el monto de cada parte, como texto con sus centavos (la base lo lee en numeric; aquí no se suma nada)
+      const partesTxt = (o.partes || []).map(q => ({ corrida: q.corrida, cuenta: q.cuenta, monto: Number(q.monto).toFixed(2) }));
+      accionNom(card, "fn_nomina_cargo_casar", { p_movimiento: movimiento, p_partes: partesTxt, p_nota: null }, r => ({ tipo: "ok", texto: `Cargo de ${fmt(r.monto)} del ${fechaLarga(r.fecha)} casado con la nómina: asiento ${r.asiento}.` }),
+        { aviso: "Cargo casado con la nómina", mfa: "Casar un cargo", despues: alTerminar });
+    }));
+    const bc = f.querySelector("[data-nom-cuota]");
+    if (bc) bc.addEventListener("click", () => accionNom(card, "fn_nomina_cargo_cuota", { p_movimiento: movimiento, p_nota: null }, r => ({ tipo: "ok", texto: `La cuota de Gusto (${fmt(r.monto)}) va a su gasto (${r.cuenta}): asiento ${r.asiento}.` }),
+      { aviso: "Cuota de Gusto a su gasto", mfa: "Decir que es la cuota", despues: alTerminar }));
+  }
+  function wireCorrida(x, prop, personas, perfiles, cargos) {
+    const id = x.corrida_id;
+    // los frenos
+    const cf = $("ct-nom-frenos");
+    if (cf) {
+      const bs = cf.querySelector("[data-nom-sinobra]");
+      if (bs) bs.addEventListener("click", () => montarForma(cf, formaHTML("La cuenta de las horas sin obra de la gente de campo (una vez: vale para todas las nóminas)",
+        `<label class="ct-campo">La cuenta<input name="cuenta" inputmode="numeric" maxlength="4" value="6000" required data-falta="Falta la cuenta." autocomplete="off"><span class="ct-sub">▶ De fábrica no viene dicha: el sueldo de oficina (6000) es lo más común; lo confirma el CPA.</span></label>`, "Guardarla"), v =>
+        accionNom(cf, "fn_nomina_config", { p: { cuenta_sin_obra: v.cuenta } }, r => ({ tipo: "ok", texto: `Las horas sin obra van a ${r.cuenta_sin_obra}.` }), { aviso: "Cuenta guardada", mfa: "Cambiar los ajustes" })));
+      cf.querySelectorAll("[data-nom-decidir]").forEach(b => b.addEventListener("click", () => {
+        const p = (prop.personas || []).find(z => z.persona_id === b.dataset.nomDecidir);
+        montarForma(cf, formaHTML(`Mandar el sueldo de ${esc(p ? p.nombre : "esta persona")} sin obra, en esta nómina`,
+          `<label class="ct-campo">Por qué (queda escrito)<input name="nota" required data-falta="Falta la nota: por qué va sin obra." autocomplete="off"></label>`, "Mandarlo sin obra"), v =>
+          accionNom(cf, "fn_nomina_decidir", { p_corrida: id, p_persona: b.dataset.nomDecidir, p: { decision: "sin_obra", nota: v.nota } }, () => ({ tipo: "ok", texto: `${p ? p.nombre : "Su sueldo"}: va sin obra en esta nómina.` }), { aviso: "Decidido", mfa: "Decidir" }));
+      }));
+      cf.querySelectorAll("[data-nom-ir-per]").forEach(b => b.addEventListener("click", () => {
+        const li = document.querySelector(`[data-nom-persona="${CSS.escape(b.dataset.nomIrPer)}"]`), bb = li && li.querySelector("[data-nom-enlazar]");
+        if (li && typeof li.scrollIntoView === "function") li.scrollIntoView({ behavior: "smooth", block: "center" });
+        if (bb) bb.click();
+      }));
+      const bp = cf.querySelector("[data-nom-periodo]");
+      if (bp) bp.addEventListener("click", () => montarForma(cf, formaHTML("El período que paga esta nómina (lo trabajado)",
+        `<div class="ct-fila"><label class="ct-campo">Desde<input type="date" name="desde" required data-falta="Falta el primer día."></label><label class="ct-campo">Hasta<input type="date" name="hasta" required data-falta="Falta el último día."></label></div>`, "Guardarlo"), v =>
+        accionNom(cf, "fn_nomina_corrida", { p_corrida: id, p: { periodo_desde: v.desde, periodo_hasta: v.hasta } }, () => ({ tipo: "ok", texto: `El período: del ${fechaLarga(v.desde)} al ${fechaLarga(v.hasta)}.` }), { aviso: "Período guardado", mfa: "Cambiar la nómina" })));
+    }
+    // cada persona: enlazar y confirmar (su perfil y su clase), quitar una decisión
+    document.querySelectorAll("[data-nom-enlazar]").forEach(b => b.addEventListener("click", () => {
+      const li = b.closest("[data-nom-persona]"), v = personas.find(z => z.persona_id === b.dataset.nomEnlazar) || {};
+      const sel = v.usuario_id || v.propuesta_usuario_id || "", clase = v.clase || v.propuesta_clase || "";
+      const ops = (perfiles || []).filter(p => p.activo !== false || p.id === sel).map(p => `<option value="${esc(p.id)}"${p.id === sel ? " selected" : ""}>${esc(p.nombre)}${p.rol === "dueno" ? " (dueño)" : ""}</option>`).join("");
+      montarForma(li, formaHTML(`¿Quién es ${esc(v.nombre || "")} en la app?${v.propuesta_perfil ? ` La base propone a ${esc(v.propuesta_perfil)}.` : ""}`,
+        `<div class="ct-fila"><label class="ct-campo">Su perfil<select name="usuario_id" required data-falta="Falta elegir su perfil."><option value="">Elige…</option>${ops}</select></label>
+         <label class="ct-campo">Su clase<select name="clase" required data-falta="Falta su clase.">${Object.keys(CLASE_PER).map(k => `<option value="${k}"${k === clase ? " selected" : ""}>${esc(CLASE_PER[k])}</option>`).join("")}</select></label></div>
+         <p class="ct-sub">Se confirma una vez: vale para sus nóminas de ahora en adelante (se cambia en Personas).</p>`, "Es así: confirmarlo"), f =>
+        accionNom(li, "fn_nomina_persona", { p: { id: b.dataset.nomEnlazar, usuario_id: f.usuario_id, clase: f.clase, confirmar: true } }, r => ({ tipo: "ok", texto: `${r.nombre}: enlazado con ${r.perfil} (${CLASE_PER_CORTA[r.clase] || r.clase}) y confirmado.` }),
+          { aviso: "Persona confirmada", mfa: "Enlazar a una persona" }));
+    }));
+    document.querySelectorAll("[data-nom-quitar-decision]").forEach(b => b.addEventListener("click", () => {
+      const li = b.closest("[data-nom-persona]");
+      accionNom(li, "fn_nomina_decidir", { p_corrida: id, p_persona: b.dataset.nomQuitarDecision, p: { quitar: true } }, () => ({ tipo: "ok", texto: "Decisión quitada: su sueldo vuelve a repartirse por sus horas." }), { aviso: "Decisión quitada", mfa: "Decidir" });
+    }));
+    // postear (con la frase y una confirmación), descartar, la fuera de ciclo que paga las horas
+    const cp = $("ct-nom-postear");
+    if (cp) {
+      $("ct-nom-postear-b").addEventListener("click", () => montarForma(cp, formaHTML(esc(frasePostear(x, prop)), "", "Sí, postearla"), () =>
+        accionNom(cp, "fn_nomina_postear", { p_corrida: id, p_visto: prop.visto }, r => ({ tipo: "ok", texto: `Posteada: asiento ${r.asiento && r.asiento.numero} del ${fechaLarga(r.asiento && r.asiento.fecha)}${r.burden && r.burden.numero ? ` y el reparto del burden, ${r.burden.numero}` : ""}.${r.devengo ? ` ${r.devengo}` : ""} Ahora casa sus cargos de Gusto (abajo).` }),
+          { aviso: "Nómina posteada", mfa: "Postear", alFallar: err => { if (err.codigo !== "MX011") return false; S.nom.nota = { tipo: "warn", texto: err.message }; repintar(); return true; } })));
+      $("ct-nom-descartar").addEventListener("click", () => montarForma(cp, formaHTML("Descartar esta nómina: no entra al libro y queda como rastro con tu motivo. Su archivo se puede volver a subir.",
+        `<label class="ct-campo">Por qué se descarta<input name="motivo" required data-falta="Falta el motivo: por qué se descarta." autocomplete="off"></label>`, "Descartarla"), v =>
+        accionNom(cp, "fn_nomina_descartar", { p_corrida: id, p_motivo: v.motivo }, () => ({ tipo: "ok", texto: `Descartada la nómina del ${fechaLarga(x.dia_pago)}.` }), { aviso: "Nómina descartada", mfa: "Descartar" })));
+      const bt = $("ct-nom-toma");
+      if (bt) bt.addEventListener("click", () => accionNom(cp, "fn_nomina_corrida", { p_corrida: id, p: { toma_horas: !x.toma_horas } }, r => ({ tipo: "ok", texto: r.toma_horas ? "Esta nómina paga las horas de su período: se las queda." : "Esta nómina usa las horas de su período sin quedárselas." }), { aviso: "Hecho", mfa: "Cambiar la nómina" }));
+    }
+    // anular
+    const ca = $("ct-nom-anular");
+    if (ca) $("ct-nom-anular-b").addEventListener("click", () => montarForma(ca, formaHTML(`Anular la nómina del ${esc(fechaLarga(x.dia_pago))}: sus asientos se reversan con tu motivo.`,
+      `<label class="ct-campo">Por qué se anula (queda en su reverso)<input name="motivo" required data-falta="Falta el motivo: por qué se anula." autocomplete="off"></label>`, "Anularla"), v =>
+      accionNom(ca, "fn_nomina_anular", { p_corrida: id, p_motivo: v.motivo }, r => ({ tipo: "ok", texto: `Anulada: reverso ${r.reverso}${r.reverso_burden ? ` (y ${r.reverso_burden})` : ""}. ${r.nota || ""}`.trim() }), { aviso: "Nómina anulada", mfa: "Anular" })));
+    // casar sus cargos
+    document.querySelectorAll("#ct-nom-cargos-c [data-nom-casar]").forEach(b => b.addEventListener("click", () => abrirCasarNom(b.closest(".ct-nom-cargo"), b.dataset.nomCasar)));
+  }
+
+  // ---------- Cargos del banco: los de Gusto pendientes, los casados y la cuota ----------
+  async function pintarNomCargos(mia) {
+    let avisos, cargos;
+    try {
+      await leerMfa();
+      [avisos, cargos] = await Promise.all([controlNom(), DB._leer("v_nomina_cargos?select=*&order=fecha.desc,monto.desc")]);
+      if (!vivaNom(mia)) return;
+    } catch (err) { if (!vivaNom(mia)) return; return errorNom(err, pintarNomina); }
+    cargos = Array.isArray(cargos) ? cargos : [];
+    const pend = cargos.filter(m => m.estado === "pendiente"), hechos = cargos.filter(m => m.estado !== "pendiente");
+    subNom(`<b>${plural(pend.length, "cargo de Gusto espera", "cargos de Gusto esperan")}</b> · ${plural(hechos.length, "resuelto", "resueltos")}`);
+    const c = nomCuerpo();
+    c.innerHTML = notaNomHTML() + avisosNomHTML(avisos, [35, 60, 62]) +
+      `<section class="ct-card ct-nom-cargos" id="ct-nom-cargos">
+        <h2>Esperan en el banco</h2>
+        <p class="ct-nota">El banco los dejó en la Bandeja esperando su nómina. Cada uno se casa con lo que su nómina dejó por pagar, al centavo; la cuota mensual de Gusto va a su gasto.</p>
+        ${pend.length ? `<ul class="ct-wip-his">${pend.map(cargoPendienteHTML).join("")}</ul>` : `<p class="ct-vacio">Ningún cargo de Gusto espera.</p>`}
+        ${sinCodigoNomHTML("Casar un cargo")}
+      </section>
+      <section class="ct-card ct-nom-hechos" id="ct-nom-hechos">
+        <h2>Resueltos</h2>
+        ${hechos.length ? `<ul class="ct-wip-his">${hechos.map(m => `<li class="ct-wip-hi" data-nom-pago="${esc(m.pago_id)}"><p><b>${esc(m.descripcion)}</b> · ${esc(fechaLarga(m.fecha))} · <span class="ct-num">${fmt(m.monto)}</span> ${pill(m.estado === "cuota" ? "cuota" : "casado", m.estado === "cuota" ? "" : "ok")}</p>
+            <p class="ct-sub">${esc(m.texto || "")}${m.corridas ? ` · ${esc(m.corridas)}` : ""} · asiento ${esc(m.asiento || "")}</p>
+            <div class="ct-acciones"><button type="button" class="accion secundaria chica" data-nom-deshacer="${esc(m.pago_id)}"${deshab()}>Deshacer</button></div>
+            <div class="ct-form" hidden></div></li>`).join("")}</ul>` : `<p class="ct-vacio">Ninguno todavía.</p>`}
+      </section>`;
+    c.querySelectorAll("#ct-nom-cargos [data-nom-casar]").forEach(b => b.addEventListener("click", () => abrirCasarNom(b.closest(".ct-nom-cargo"), b.dataset.nomCasar)));
+    c.querySelectorAll("[data-nom-deshacer]").forEach(b => b.addEventListener("click", () => {
+      const li = b.closest("[data-nom-pago]"), m = hechos.find(z => z.pago_id === b.dataset.nomDeshacer) || {};
+      montarForma(li, formaHTML(`Deshacer «${esc(m.descripcion || "")}» (${esc(fmt(m.monto))}): su asiento se reversa y el cargo vuelve a la Bandeja.`,
+        `<label class="ct-campo">Por qué se deshace<input name="motivo" required data-falta="Falta el motivo: por qué se deshace." autocomplete="off"></label>`, "Deshacerlo"), v =>
+        accionNom(li, "fn_nomina_cargo_deshacer", { p_pago: b.dataset.nomDeshacer, p_motivo: v.motivo }, r => ({ tipo: "ok", texto: `Deshecho (reverso ${r.reverso}). ${r.nota || ""}`.trim() }), { aviso: "Cargo deshecho", mfa: "Deshacer un cargo" }));
+    }));
+  }
+
+  // ---------- Horas para Gusto: las aprobadas del período, por persona y semana, y el CSV del lote ----------
+  const isoMas = (iso, n) => { const [a, m, d] = partes(iso); return new Date(Date.UTC(a, m - 1, d + n)).toISOString().slice(0, 10); };
+  // el período que toca: el que sigue a la última nómina regular, o el último lote si es posterior; sin nada, las dos semanas
+  // laborales que terminaron antes de hoy (la semana empieza el día que diga la configuración)
+  function periodoNom(corridas, lotes, cfg) {
+    const regs = (corridas || []).filter(c => c.tipo === "regular" && (c.estado === "importada" || c.estado === "posteada") && c.periodo_hasta).sort((a, b) => String(b.periodo_hasta).localeCompare(String(a.periodo_hasta)));
+    const vig = (lotes || []).filter(l => l.vigente).sort((a, b) => String(b.desde).localeCompare(String(a.desde)));
+    let r = null;
+    if (regs.length) r = [isoMas(regs[0].periodo_hasta, 1), isoMas(regs[0].periodo_hasta, 14)];
+    if (vig.length && (!r || String(vig[0].desde) > r[0])) r = [String(vig[0].desde).slice(0, 10), String(vig[0].hasta).slice(0, 10)];
+    if (r) return r;
+    const hoy = hoyMiami(), [a, m, d] = partes(hoy), dow = (new Date(Date.UTC(a, m - 1, d)).getUTCDay() + 6) % 7 + 1, emp = num(cfg && cfg.semana_empieza) || 1;
+    const fin = isoMas(hoy, -(((dow - emp + 7) % 7) + 1));
+    return [isoMas(fin, -13), fin];
+  }
+  async function pintarNomHoras(mia) {
+    let lotes, corridas, cfg, filas;
+    try {
+      await leerMfa();
+      [lotes, corridas, cfg] = await Promise.all([DB._leer("v_nomina_lotes?select=*&order=creado_el.desc"), DB._leer("v_nomina_corridas?select=*&order=dia_pago.desc,importada_el.desc"), DB._rpc("fn_nomina_config", {})]);
+      if (!S.nom.desde || !S.nom.hasta) [S.nom.desde, S.nom.hasta] = periodoNom(corridas, lotes, cfg);
+      filas = await DB._rpc("fn_nomina_horas_gusto", { p_desde: S.nom.desde, p_hasta: S.nom.hasta });
+      if (!vivaNom(mia)) return;
+    } catch (err) { if (!vivaNom(mia)) return; return errorNom(err, pintarNomina); }
+    lotes = Array.isArray(lotes) ? lotes : []; filas = Array.isArray(filas) ? filas : [];
+    const vig = lotes.filter(l => l.vigente), cambio = vig.filter(l => l.cambio);
+    subNom(`Del <b>${esc(fechaLarga(S.nom.desde))}</b> al <b>${esc(fechaLarga(S.nom.hasta))}</b> · la semana empieza en ${esc(SEMANA[num(cfg && cfg.semana_empieza) || 1])} · extra desde ${esc(nHoras(cfg && cfg.horas_extra_desde))} h`);
+    const personas = [...new Set(filas.map(f => f.usuario_id))];
+    const c = nomCuerpo();
+    c.innerHTML = notaNomHTML() + (cambio.length ? `<section class="ct-card ct-nom-cambio" id="ct-nom-cambio"><h2>Un lote ya no es el de hoy</h2><ul class="ct-jr-avisos">${cambio.map(l =>
+        `<li class="ct-aviso bad">El lote del ${esc(fecha(l.desde))} al ${esc(fechaLarga(l.hasta))} que se pasó a Gusto cambió: ${num(l.cambiadas) ? `${plural(l.cambiadas, "reporte de horas cambió o perdió su aprobación", "reportes de horas cambiaron o perdieron su aprobación")}` : ""}${num(l.cambiadas) && num(l.nuevas) ? " y " : ""}${num(l.nuevas) ? `${plural(l.nuevas, "reporte se aprobó", "reportes se aprobaron")} después (${esc(horasTxt(l.nuevas_horas))})` : ""}. Ármalo otra vez y pásale a Gusto el CSV nuevo (si la nómina ya se corrió, la diferencia va en la siguiente).</li>`).join("")}</ul></section>` : "") +
+      `<section class="ct-card ct-nom-horas" id="ct-nom-horas">
+        <h2>Las horas aprobadas del período</h2>
+        <p class="ct-nota">«El lote aprobado es el que va a Gusto y al libro»: solo las horas aprobadas en la app, por persona y semana laboral (las extra, semana por semana). Quien cobra sueldo fijo sale aquí pero no va a Gusto.</p>
+        <form class="ct-pide ct-nom-per" novalidate><div class="ct-fila">
+          <label class="ct-campo">Desde<input type="date" name="desde" value="${esc(S.nom.desde)}" required></label>
+          <label class="ct-campo">Hasta<input type="date" name="hasta" value="${esc(S.nom.hasta)}" required></label>
+        </div><div class="ct-acciones"><button type="submit" class="accion secundaria">Ver ese período</button></div></form>
+        ${personas.length ? `<div class="ct-nom-semanas">${personas.map(u => {
+          const fs = filas.filter(f => f.usuario_id === u), p = fs[0];
+          return `<article class="ct-nom-hp" data-nom-usuario="${esc(u)}"><div class="ct-cab"><p><b>${esc(p.empleado || p.persona || "")}</b>${p.empleado && p.persona && p.empleado !== p.persona ? ` <small>(en la app: ${esc(p.persona)})</small>` : ""}</p>${p.por_horas ? (p.empleado ? "" : pill("sin enlazar con Gusto", "warn")) : pill("sueldo fijo: no va a Gusto", "")}</div>
+            <ul class="ct-nom-lineas">${fs.map(f => `<li class="ct-nom-l ct-nom-sem"><span class="ct-nom-l-t">Semana del ${esc(fecha(f.semana_desde))} al ${esc(fecha(f.semana_hasta))}${f.semana_partida ? ` ${pill("el período la corta", "warn")}` : ""}<small>${esc(horasTxt(f.regulares))} regulares · ${esc(horasTxt(f.extra))} extra${num(f.horas_antes) ? ` · ${esc(horasTxt(f.horas_antes))} de antes del período` : ""}${num(f.sin_aprobar) ? ` · <span class="bad-txt">${esc(horasTxt(f.sin_aprobar))} sin aprobar</span>` : ""}</small></span><span class="ct-num">${esc(horasTxt(f.horas))}</span></li>`).join("")}</ul></article>`;
+        }).join("")}</div>` : `<p class="ct-vacio">Ninguna hora en ese período.</p>`}
+        <div class="ct-acciones"><button type="button" class="accion" id="ct-nom-lote"${deshab()}>Armar el lote y bajar el CSV</button></div>
+        ${sinCodigoNomHTML("Armar el lote")}
+        <div class="ct-form" hidden></div>
+        <div id="ct-nom-lote-res">${S.nom.lote ? loteResHTML(S.nom.lote) : ""}</div>
+      </section>
+      <section class="ct-card ct-nom-lotes" id="ct-nom-lotes">
+        <h2>Los lotes que se pasaron a Gusto</h2>
+        ${lotes.length ? `<ul class="ct-wip-his">${lotes.map(l => `<li class="ct-wip-hi${l.vigente ? "" : " deshecho"}" data-nom-lote="${esc(l.lote_id)}"><p><b>Del ${esc(fecha(l.desde))} al ${esc(fechaLarga(l.hasta))}</b> · ${esc(horasTxt(l.horas))} (${esc(horasTxt(l.regulares))} regulares, ${esc(horasTxt(l.extra))} extra) · ${plural(num(l.personas) || 0, "persona", "personas")} ${l.vigente ? (l.cambio ? pill("ya no es el de hoy", "bad") : pill("vigente", "ok")) : pill("sustituido", "")}</p>
+            <p class="ct-sub">Armado el ${esc(fechaLarga(l.creado_el))}${l.nota ? ` · «${esc(l.nota)}»` : ""}${l.sustituido_el ? ` · sustituido el ${esc(fechaLarga(l.sustituido_el))}` : ""}</p>
+            <div class="ct-acciones"><button type="button" class="accion secundaria chica" data-nom-lote-csv="${esc(l.lote_id)}">Bajar su CSV</button></div></li>`).join("")}</ul>` : `<p class="ct-vacio">Ninguno todavía.</p>`}
+      </section>`;
+    const card = $("ct-nom-horas");
+    card.querySelector("form").addEventListener("submit", ev => {
+      ev.preventDefault();
+      const fd = new FormData(ev.target), d = String(fd.get("desde") || ""), h = String(fd.get("hasta") || "");
+      if (!fechaOk(d) || !fechaOk(h) || d > h) { mostrarErrorForma(card, "Elige el primer y el último día del período, en orden."); return; }
+      S.nom.desde = d; S.nom.hasta = h; S.nom.lote = null; repintar();
+    });
+    $("ct-nom-lote").addEventListener("click", () => montarForma(card, formaHTML(`Armar el lote del ${esc(fechaLarga(S.nom.desde))} al ${esc(fechaLarga(S.nom.hasta))}: queda guardado con sus horas como están hoy, y se baja su CSV para Gusto.`,
+      `<label class="ct-campo">Nota (si quieres)<input name="nota" autocomplete="off"></label>`, "Armarlo y bajar el CSV"), v =>
+      accionNom(card, "fn_nomina_lote", { p_desde: S.nom.desde, p_hasta: S.nom.hasta, p_nota: v.nota || null }, r => {
+        const nombre = `horas-para-gusto-${r.desde}-al-${r.hasta}.csv`;
+        const bajado = descargarTexto(r.csv, nombre);
+        S.nom.lote = { lote: r.lote, desde: r.desde, hasta: r.hasta, personas: r.personas, horas: r.horas, regulares: r.regulares, extra: r.extra, avisos: r.avisos || [], csv: r.csv, nombre, bajado };
+        return null;
+      }, { aviso: "Lote armado: CSV bajado", mfa: "Armar el lote" })));
+    const lr = $("ct-nom-lote-res"), bo = lr && lr.querySelector("[data-nom-otra-vez]");
+    if (bo) bo.addEventListener("click", () => descargarTexto(S.nom.lote.csv, S.nom.lote.nombre));
+    c.querySelectorAll("[data-nom-lote-csv]").forEach(b => b.addEventListener("click", async () => {
+      if (S.ocupado) return;
+      const li = b.closest("[data-nom-lote]"), l = lotes.find(z => z.lote_id === b.dataset.nomLoteCsv) || {};
+      try { const csvTxt = await DB._rpc("fn_nomina_lote_csv", { p_lote: b.dataset.nomLoteCsv }); descargarTexto(csvTxt, `horas-para-gusto-${String(l.desde).slice(0, 10)}-al-${String(l.hasta).slice(0, 10)}.csv`); S.hooks.avisar("CSV bajado"); }
+      catch (err) { li.insertAdjacentHTML("beforeend", `<p class="ct-aviso bad ct-error">${esc(mensajeNom(err))}</p>`); }
+    }));
+  }
+  const loteResHTML = l => `<div class="ct-nom-lote-res"><p class="ct-aviso ok">Lote armado: ${plural(num(l.personas) || 0, "persona", "personas")}, ${esc(horasTxt(l.horas))} (${esc(horasTxt(l.regulares))} regulares y ${esc(horasTxt(l.extra))} extra). ${l.bajado ? `Se bajó «${esc(l.nombre)}»: súbelo en Gusto («Import payroll data»).` : "El navegador no dejó bajarlo: usa «Bajar el CSV otra vez»."} ▶ Las columnas de la plantilla de Gusto se confirman con la primera nómina.</p>
+      ${(l.avisos || []).map(a => `<p class="ct-aviso warn" data-codigo="${esc(a.codigo)}">${esc(a.texto)}</p>`).join("")}
+      <div class="ct-acciones"><button type="button" class="accion secundaria chica" data-nom-otra-vez>Bajar el CSV otra vez</button></div></div>`;
+
+  // ---------- 941 · 940 · RT-6: lo que declaró Gusto contra lo posteado ----------
+  async function pintarNomAmarre(mia) {
+    let corridas, filas;
+    try {
+      await leerMfa();
+      corridas = await DB._leer("v_nomina_corridas?select=dia_pago,estado&order=dia_pago.desc");
+      const anios = [...new Set((Array.isArray(corridas) ? corridas : []).map(c => Number(String(c.dia_pago).slice(0, 4))).filter(Boolean))];
+      S.nom.anios = [...new Set([...anios, anioHoy()])].sort((a, b) => b - a);
+      if (!S.nom.anios.includes(Number(S.nom.anio))) S.nom.anio = anios.length ? Math.max(...anios) : anioHoy();
+      filas = await DB._rpc("fn_nomina_amarre", { p_anio: S.nom.anio });
+      if (!vivaNom(mia)) return;
+    } catch (err) { if (!vivaNom(mia)) return; return errorNom(err, pintarNomina); }
+    filas = Array.isArray(filas) ? filas : [];
+    const grupos = new Map();
+    for (const f of filas) { const k = `${f.forma}|${f.trimestre == null ? "" : f.trimestre}`; if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(f); }
+    const mal = filas.filter(f => f.ok === false).length, sin = filas.filter(f => f.ok == null).length;
+    subNom(`<b>${esc(S.nom.anio)}</b> · ${mal ? `<span class="bad-txt">${plural(mal, "renglón no amarra", "renglones no amarran")}</span>` : "lo tecleado amarra"}${sin ? ` · ${plural(sin, "renglón sin teclear", "renglones sin teclear")}` : ""}`);
+    const nombreG = (forma, tri) => `${FORMAS[forma] || forma}${tri ? ` del trimestre ${tri}` : ""} de ${S.nom.anio}`;
+    const c = nomCuerpo();
+    c.innerHTML = notaNomHTML() + `<section class="ct-card ct-nom-amarre" id="ct-nom-amarre">
+        <div class="ct-cab"><h2>Lo que declaró Gusto, contra el libro</h2>${S.nom.anios.length > 1 ? `<label class="ct-campo ct-subs-anio">Año<select id="ct-nom-anio">${S.nom.anios.map(a => `<option value="${a}"${a === Number(S.nom.anio) ? " selected" : ""}>${a}</option>`).join("")}</select></label>` : ""}</div>
+        <p class="ct-nota">Gusto presenta el 941 (cada trimestre), el 940 (el año) y el RT-6 de Florida (cada trimestre). Teclea sus totales de la copia que deja Gusto; la base los compara con lo posteado, por día de pago. Nada de esto postea.</p>
+        ${grupos.size ? [...grupos.entries()].map(([k, fs]) => { const [forma, tri] = k.split("|");
+          return `<article class="ct-nom-dec" data-nom-forma="${esc(forma)}" data-nom-tri="${esc(tri)}"><div class="ct-cab"><h3>${esc(nombreG(forma, tri))}</h3><button type="button" class="accion secundaria chica" data-nom-teclear="${esc(k)}"${deshab()}>Teclearla</button></div>
+            <ul class="ct-nom-lineas">${fs.map(f => `<li class="ct-nom-l${f.ok === false ? " falta" : ""}" data-campo="${esc(f.campo)}"><span class="ct-nom-l-t"><b>${esc(cap(CAMPO_AMARRE[f.campo] || f.campo))}</b> ${f.ok == null ? pill("sin teclear", "warn") : f.ok ? pill("amarra", "ok") : pill("no amarra", "bad")}<small>${esc(f.detalle || "")}</small></span><span class="ct-num">${fmt(f.libro)}</span></li>`).join("")}</ul>
+            <div class="ct-form" hidden></div></article>`; }).join("") : `<p class="ct-vacio">Ninguna nómina posteada en ${esc(S.nom.anio)}: no hay nada que amarrar.</p>`}
+        <div class="ct-acciones"><button type="button" class="accion secundaria" id="ct-nom-dec-otra"${deshab()}>Teclear otra declaración</button></div>
+        ${sinCodigoNomHTML("Teclear una declaración")}
+        <div class="ct-form" hidden></div>
+      </section>`;
+    const sa = $("ct-nom-anio"); if (sa) sa.addEventListener("change", () => { S.nom.anio = Number(sa.value); repintar(); });
+    const formaDec = (card, forma, tri) => {
+      const campos = CAMPOS_FORMA[forma] || [];
+      montarForma(card, formaHTML(`El ${esc(nombreG(forma, tri))}, como lo presentó Gusto`,
+        `<div class="ct-fila">${campos.map(([k, et]) => `<label class="ct-campo">${esc(et)}<input name="${k}" inputmode="decimal" placeholder="0.00" autocomplete="off"></label>`).join("")}</div>
+         <div class="ct-fila"><label class="ct-campo">Presentada el (si lo sabes)<input type="date" name="presentada_el"></label><label class="ct-campo">Número de confirmación<input name="confirmacion" autocomplete="off"></label></div>
+         <label class="ct-campo">Nota<input name="nota" autocomplete="off"></label>`, "Guardarla y comparar"), v => {
+        const p = { forma, anio: Number(S.nom.anio) };
+        if (forma !== "940") p.trimestre = Number(tri);
+        for (const [k] of campos) if (v[k]) p[k] = v[k];
+        for (const k of ["presentada_el", "confirmacion", "nota"]) if (v[k]) p[k] = v[k];
+        accionNom(card, "fn_nomina_declaracion", { p }, r => {
+          const no = (r.amarre || []).filter(a => a.ok === false);
+          return { tipo: no.length ? "warn" : "ok", texto: no.length ? `Guardado el ${nombreG(forma, tri)}: ${no.map(a => a.detalle).join(" ")}` : `Guardado el ${nombreG(forma, tri)}: amarra con el libro.` };
+        }, { aviso: "Declaración guardada", mfa: "Teclear una declaración" });
+      });
+    };
+    c.querySelectorAll("[data-nom-teclear]").forEach(b => b.addEventListener("click", () => { const [forma, tri] = b.dataset.nomTeclear.split("|"); formaDec(b.closest(".ct-nom-dec"), forma, tri); }));
+    $("ct-nom-dec-otra").addEventListener("click", () => {
+      const card = $("ct-nom-amarre");
+      montarForma(card, formaHTML("¿Qué declaración?", `<div class="ct-fila"><label class="ct-campo">La forma<select name="forma">${Object.keys(FORMAS).map(k => `<option value="${k}">${esc(FORMAS[k])}</option>`).join("")}</select></label>
+        <label class="ct-campo">Trimestre (no en el 940)<select name="tri"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></label></div>`, "Seguir"), v => formaDec(card, v.forma, v.forma === "940" ? "" : v.tri));
+    });
+  }
+
+  // ---------- Personas: quién es cada empleado del journal en la app, y su clase ----------
+  async function pintarNomPersonas(mia) {
+    let avisos, personas, perfiles;
+    try {
+      await leerMfa();
+      [avisos, personas, perfiles] = await Promise.all([controlNom(), DB._leer("v_nomina_personas?select=*&order=nombre.asc"),
+        DB._leer("perfiles?select=id,nombre,rol,activo&order=nombre.asc").catch(e => { if (esFalloDeRed(e)) throw e; return []; })]);
+      if (!vivaNom(mia)) return;
+    } catch (err) { if (!vivaNom(mia)) return; return errorNom(err, pintarNomina); }
+    personas = Array.isArray(personas) ? personas : [];
+    const faltan = personas.filter(p => p.estado !== "lista").length;
+    subNom(`<b>${plural(personas.length, "persona", "personas")}</b> en la nómina${faltan ? ` · <span class="bad-txt">${faltan} por enlazar o confirmar</span>` : ""}`);
+    const c = nomCuerpo();
+    c.innerHTML = notaNomHTML() + avisosNomHTML(avisos, [40]) + `<section class="ct-card ct-nom-gente" id="ct-nom-gente">
+        <h2>Las personas de la nómina</h2>
+        <p class="ct-nota">Cada empleado que trae un journal, enlazado una vez con su perfil de la app y su clase: campo (su sueldo va a sus obras por sus horas), oficial (el accionista: la parte de obra a 5001 y lo demás a 6005) u oficina (6000). Lo que cobra cada uno no sale aquí: está en cada nómina.</p>
+        ${personas.length ? `<ul class="ct-wip-his">${personas.map(p => { const e = ESTADO_PER[p.estado] || [p.estado, ""];
+          return `<li class="ct-wip-hi" data-nom-gente="${esc(p.persona_id)}"><div class="ct-cab"><p><b>${esc(p.nombre)}</b>${p.perfil ? ` · en la app: ${esc(p.perfil)}` : ""}${p.clase ? ` · ${esc(CLASE_PER_CORTA[p.clase] || p.clase)}` : ""}</p>${pill(e[0], e[1])}</div>
+            <p class="ct-sub">${p.estado === "sin_enlazar" && p.propuesta_perfil ? `La base propone: ${esc(p.propuesta_perfil)} (${esc(CLASE_PER_CORTA[p.propuesta_clase] || p.propuesta_clase || "")}). ` : ""}${p.clase === "oficial" ? `Su sueldo cubre ${esc(horasTxt(p.horas_periodo || "80"))} por período${p.horas_periodo ? "" : " (lo de los ajustes)"}; ${p.a_obra ? "sus horas en obra llevan parte de su sueldo a la obra" : "nada de su sueldo va a obra"}. ` : ""}${p.confirmado_el ? `Confirmada el ${esc(fechaLarga(p.confirmado_el))}.` : ""}${p.activo === false ? " Ya no está en la nómina." : ""}${p.nota ? ` «${esc(p.nota)}»` : ""}</p>
+            <div class="ct-acciones"><button type="button" class="accion secundaria chica" data-nom-gente-ed="${esc(p.persona_id)}"${deshab()}>${p.estado === "lista" ? "Cambiar" : "Decir quién es"}</button></div>
+            <div class="ct-form" hidden></div></li>`; }).join("")}</ul>` : `<p class="ct-vacio">Nadie todavía: las personas salen con el primer journal.</p>`}
+        ${sinCodigoNomHTML("Enlazar o cambiar a una persona")}
+      </section>`;
+    c.querySelectorAll("[data-nom-gente-ed]").forEach(b => b.addEventListener("click", () => {
+      const li = b.closest("[data-nom-gente]"), p = personas.find(z => z.persona_id === b.dataset.nomGenteEd) || {};
+      const sel = p.usuario_id || p.propuesta_usuario_id || "", clase = p.clase || p.propuesta_clase || "";
+      const ops = (perfiles || []).filter(x => x.activo !== false || x.id === sel).map(x => `<option value="${esc(x.id)}"${x.id === sel ? " selected" : ""}>${esc(x.nombre)}${x.rol === "dueno" ? " (dueño)" : ""}</option>`).join("");
+      montarForma(li, formaHTML(`${esc(p.nombre)}`,
+        `<div class="ct-fila"><label class="ct-campo">Su perfil en la app<select name="usuario_id" required data-falta="Falta elegir su perfil."><option value="">Elige…</option>${ops}</select></label>
+         <label class="ct-campo">Su clase<select name="clase" required data-falta="Falta su clase.">${Object.keys(CLASE_PER).map(k => `<option value="${k}"${k === clase ? " selected" : ""}>${esc(CLASE_PER[k])}</option>`).join("")}</select></label></div>
+         <div class="ct-fila"><label class="ct-campo">Horas que cubre su sueldo por período (solo el oficial; vacío = lo de los ajustes)<input name="horas_periodo" inputmode="decimal" value="${esc(p.horas_periodo == null ? "" : p.horas_periodo)}" autocomplete="off"></label>
+         <label class="ct-campo">Nota<input name="nota" value="${esc(p.nota || "")}" autocomplete="off"></label></div>
+         <label class="ct-check"><input type="checkbox" name="a_obra"${p.a_obra !== false ? " checked" : ""}> Sus horas en obra llevan parte de su sueldo a la obra (el oficial) <span class="ct-sub">▶ la regla es de Edgar y del CPA</span></label>
+         <label class="ct-check"><input type="checkbox" name="activo"${p.activo !== false ? " checked" : ""}> Sigue en la nómina</label>
+         ${p.estado !== "lista" ? `<label class="ct-check"><input type="checkbox" name="confirmar" checked> Confirmarla (sin eso, sus nóminas no se postean)</label>` : ""}`, "Guardar"), v => {
+        const q = { id: p.persona_id, clase: v.clase, a_obra: v.a_obra === "on", activo: v.activo === "on" };
+        if (v.usuario_id && v.usuario_id !== p.usuario_id) q.usuario_id = v.usuario_id;
+        q.horas_periodo = v.horas_periodo ? v.horas_periodo.replace(/[,\s]/g, "") : null;
+        q.nota = v.nota || null;
+        if (v.confirmar === "on") { q.confirmar = true; q.usuario_id = v.usuario_id; }
+        accionNom(li, "fn_nomina_persona", { p: q }, r => ({ tipo: "ok", texto: `Guardado: ${r.nombre}${r.perfil ? ` (${r.perfil})` : ""}, ${CLASE_PER_CORTA[r.clase] || r.clase}${r.confirmada ? ", confirmada" : ""}.` }), { aviso: "Persona guardada", mfa: "Cambiar a una persona" });
+      });
+    }));
+  }
+
+  // ---------- Ajustes: las cuentas, la semana, los cargos, el amarre y el mapeo de columnas ----------
+  async function pintarNomAjustes(mia) {
+    let avisos, cfg, cols;
+    try {
+      await leerMfa();
+      [avisos, cfg, cols] = await Promise.all([controlNom(), DB._rpc("fn_nomina_config", {}), DB._leer("nomina_columnas?select=*&order=alias.asc")]);
+      if (!vivaNom(mia)) return;
+    } catch (err) { if (!vivaNom(mia)) return; return errorNom(err, pintarNomina); }
+    const k = cfg || {};
+    cols = Array.isArray(cols) ? cols : [];
+    S.nom.mapa = new Map(cols.map(x => [x.alias, x.clase]));
+    const propias = cols.filter(x => !x.de_fabrica), fabrica = cols.filter(x => x.de_fabrica);
+    subNom(`Lo sin obra va a <b>${k.cuenta_sin_obra ? esc(k.cuenta_sin_obra) : "SIN DECIR"}</b> · ${plural(cols.length, "columna en el mapeo", "columnas en el mapeo")}`);
+    const v = x => esc(x == null ? "" : x);
+    const campoCta = (n, et, sub) => `<label class="ct-campo">${esc(et)}<input name="${n}" inputmode="numeric" maxlength="4" value="${v(k[n])}" autocomplete="off">${sub ? `<span class="ct-sub">${esc(sub)}</span>` : ""}</label>`;
+    const filaCol = x => `<li class="ct-wip-hi" data-nom-alias="${esc(x.alias)}"><p><b>«${esc(x.alias)}»</b> → ${esc(CLASES_COL[x.clase] || x.clase)}${x.cuenta ? ` · ${esc(x.cuenta)}` : ""}${x.declara ? ` · ${esc(DECLARA[x.declara] || x.declara)}` : ""}${x.nota ? ` · «${esc(x.nota)}»` : ""}</p>
+        ${x.de_fabrica ? "" : `<div class="ct-acciones"><button type="button" class="accion secundaria chica" data-nom-col-quitar="${esc(x.alias)}"${deshab()}>Quitar</button></div>`}</li>`;
+    const c = nomCuerpo();
+    c.innerHTML = notaNomHTML() + avisosNomHTML(avisos, [85]) + `<section class="ct-card ct-wip-cfg ct-nom-cfg" id="ct-nom-cfg">
+        <h2>Ajustes de la nómina</h2>
+        <form class="ct-pide" novalidate>
+          <div class="ct-fila">
+            ${campoCta("cuenta_sin_obra", "Las horas sin obra de la gente de campo van a", "▶ De fábrica no viene dicha: el sueldo de oficina (6000) es lo más común; lo confirma el CPA.")}
+            <label class="ct-campo">La semana laboral empieza el<select name="semana_empieza">${SEMANA.slice(1).map((d, i) => `<option value="${i + 1}"${i + 1 === num(k.semana_empieza) ? " selected" : ""}>${esc(d)}</option>`).join("")}</select><span class="ct-sub">▶ Edgar: el día en que empieza la semana de Gusto.</span></label>
+            <label class="ct-campo">Horas extra desde (a la semana)<input name="horas_extra_desde" inputmode="decimal" value="${v(k.horas_extra_desde)}" autocomplete="off"><span class="ct-sub">▶ 40 (FLSA); Florida: lo confirma el CPA.</span></label>
+          </div>
+          <div class="ct-fila">
+            <label class="ct-campo">El sueldo del oficial cubre (horas por período)<input name="horas_periodo_oficial" inputmode="decimal" value="${v(k.horas_periodo_oficial)}" autocomplete="off"></label>
+            <label class="ct-campo">Tolerancia del amarre (dólares)<input name="amarre_tolerancia" inputmode="decimal" value="${v(k.amarre_tolerancia == null ? "" : Number(k.amarre_tolerancia).toFixed(2))}" autocomplete="off"></label>
+            <label class="ct-campo">Avisar de lo por pagar a los (días)<input name="saldo_dias" inputmode="numeric" value="${v(k.saldo_dias)}" autocomplete="off"></label>
+          </div>
+          <div class="ct-fila">
+            <label class="ct-campo">Buscar el cargo de Gusto desde (días antes del pago)<input name="cargo_dias_antes" inputmode="numeric" value="${v(k.cargo_dias_antes)}" autocomplete="off"></label>
+            <label class="ct-campo">hasta (días después)<input name="cargo_dias_despues" inputmode="numeric" value="${v(k.cargo_dias_despues)}" autocomplete="off"></label>
+          </div>
+          <details class="ct-fac-avanzado"><summary>Las cuentas (avanzado)</summary><div class="ct-fila">
+            ${campoCta("cuenta_oficina", "Sueldo de oficina")}${campoCta("cuenta_oficial", "Compensación del oficial")}${campoCta("cuenta_bolsa", "Bolsa del burden real")}
+            ${campoCta("cuenta_burden_obra", "Burden por obra")}${campoCta("cuenta_burden_admin", "Burden de oficina")}${campoCta("cuenta_cuota", "Cuota mensual de Gusto")}
+          </div></details>
+          <div class="ct-acciones"><button class="accion" type="submit"${deshab()}>Guardar</button></div>
+          ${sinCodigoNomHTML("Cambiar los ajustes")}
+        </form>
+        <div class="ct-form" hidden></div>
+      </section>
+      <section class="ct-card ct-nom-mapeo" id="ct-nom-mapeo">
+        <div class="ct-cab"><h2>El mapeo de las columnas</h2><button type="button" class="accion chica" id="ct-nom-col-nueva"${deshab()}>Añadir o cambiar una</button></div>
+        <p class="ct-nota">Cada nombre de columna del «Payroll journal», limpio, con lo que es. Las de fábrica son las del motor de informes de Gusto (▶ se confirman con el primer archivo real). Una columna con cifras que no esté aquí frena su nómina hasta que se diga qué es.</p>
+        ${propias.length ? `<h3>Las que se añadieron aquí</h3><ul class="ct-wip-his">${propias.map(filaCol).join("")}</ul>` : `<p class="ct-vacio">Ninguna añadida todavía.</p>`}
+        <details class="ct-wip-mas"><summary>Las de fábrica: ${fabrica.length}</summary><ul class="ct-wip-his">${fabrica.map(filaCol).join("")}</ul></details>
+        <div class="ct-form" hidden></div>
+      </section>`;
+    const card = $("ct-nom-cfg");
+    card.querySelector("form").addEventListener("submit", ev => {
+      ev.preventDefault();
+      const fd = new FormData(ev.target), t = n => String(fd.get(n) == null ? "" : fd.get(n)).trim();
+      const entero = n => { const s = t(n); return /^\d+$/.test(s) ? Number(s) : s; };
+      const p = {};
+      for (const n of ["cuenta_sin_obra", "cuenta_oficina", "cuenta_oficial", "cuenta_bolsa", "cuenta_burden_obra", "cuenta_burden_admin", "cuenta_cuota"]) p[n] = t(n) || null;
+      p.semana_empieza = entero("semana_empieza");
+      p.horas_extra_desde = t("horas_extra_desde"); p.horas_periodo_oficial = t("horas_periodo_oficial");
+      p.cargo_dias_antes = entero("cargo_dias_antes"); p.cargo_dias_despues = entero("cargo_dias_despues"); p.saldo_dias = entero("saldo_dias");
+      p.amarre_tolerancia = t("amarre_tolerancia").replace(/[$,\s]/g, "");
+      accionNom(card, "fn_nomina_config", { p }, r => ({ tipo: "ok", texto: `Guardado: lo sin obra va a ${r.cuenta_sin_obra || "(sin decir)"}; la semana empieza el ${SEMANA[num(r.semana_empieza)] || r.semana_empieza}; extra desde ${nHoras(r.horas_extra_desde)} h; tolerancia del amarre ${fmt(r.amarre_tolerancia)}.` }), { aviso: "Ajustes guardados", mfa: "Cambiar los ajustes" });
+    });
+    const cm = $("ct-nom-mapeo");
+    $("ct-nom-col-nueva").addEventListener("click", () => {
+      montarForma(cm, formaHTML("La columna, tal como viene en la cabecera del archivo", `<label class="ct-campo">El nombre de la columna<input name="columna" required data-falta="Falta el nombre de la columna." autocomplete="off"></label>`, "Seguir"), v =>
+        formaColumna(cm, v.columna, p => accionNom(cm, "fn_nomina_columna", { p }, r => ({ tipo: "ok", texto: `«${r.alias}» queda en el mapeo como «${(CLASES_COL[r.clase] || r.clase || "").toLowerCase()}». ${r.nota_corridas || ""}`.trim() }), { aviso: "Columna en el mapeo", mfa: "Cambiar el mapeo" })));
+    });
+    cm.querySelectorAll("[data-nom-col-quitar]").forEach(b => b.addEventListener("click", () => {
+      const li = b.closest("[data-nom-alias]");
+      accionNom(li, "fn_nomina_columna", { p: { columna: b.dataset.nomColQuitar, quitar: true } }, r => ({ tipo: "ok", texto: `«${r.columna}» ya no está en el mapeo.` }), { aviso: "Columna quitada", mfa: "Cambiar el mapeo" });
+    }));
+  }
+
+  // ---------- La Bandeja: la tarjeta de un cargo de Gusto con «Casar con la nómina» (si c15 está) ----------
+  // Sin c15 (v_nomina_cargos no existe) o sin ser el dueño, nada: la tarjeta es la de siempre
+  async function leerNomBandeja(filas) {
+    S.nomBj = null;
+    if (!(filas || []).some(m => m.motivo === "nomina")) return;
+    try {
+      const cs = await DB._leer("v_nomina_cargos?select=movimiento_id,estado,texto,opciones,clase_probable&estado=eq.pendiente");
+      S.nomBj = new Map((Array.isArray(cs) ? cs : []).filter(x => x.estado === "pendiente").map(x => [x.movimiento_id, x]));
+    } catch (err) { if (esFalloDeRed(err)) throw err; S.nomBj = null; }
+  }
+  const nomDe = m => (m && m.motivo === "nomina" && S.nomBj && S.nomBj.get(m.movimiento_id)) || null;
+  const nomBandejaHTML = m => { const x = nomDe(m); return x ? `<p class="ct-aviso ct-nom-bj">La nómina dice: ${esc(x.texto || "")}</p>` : ""; };
+  const nomBotonHTML = m => nomDe(m) ? `<button type="button" class="accion" data-nom-bj-casar${mfaActivo() ? "" : " disabled"}>Casar con la nómina</button>` : "";
+  function wireNomBandeja(card, m) {
+    const b = card.querySelector("[data-nom-bj-casar]");
+    if (b) b.addEventListener("click", () => abrirCasarNom(card, m.movimiento_id, () => { S.saldos = null; return pintarBandeja(); }));
+  }
+
+  const PAGINAS = { resumen: pintarResumen, bancos: pintarBancos, bandeja: pintarBandeja, conciliar: pintarConciliar, movimientos: pintarMovimientos, estados: pintarEstados, obras: pintarObras, wip: pintarWip, nomina: pintarNomina, cierre: pintarCierre, cedula: pintarCedula, facturas: pintarFacturas, cobros: pintarCobros, subs: pintarSubs, conexiones: pintarConexiones };
 
   // ---------- Lo que la app llama (el contrato con js/app.js) ----------
   window.MXP_CONTA = {
@@ -8143,6 +9094,8 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
       // (fase 12a) la cuenta abierta de la cédula → la cédula; la ficha abierta → las fichas
       if (S.pagina === "cedula" && S.ced.cuenta) { S.ced.cuenta = null; S.ced.nota = null; S.hooks.titulo(KICKER, TITULOS.cedula); pintarCedula(); return true; }
       if (S.pagina === "subs" && S.subs.ficha) { S.subs.ficha = null; S.subs.nueva = null; S.subs.nota = null; S.hooks.titulo(KICKER, TITULOS.subs); pintarSubs(); return true; }
+      // (fase 11) la nómina abierta → la lista
+      if (S.pagina === "nomina" && S.nom.corrida) { S.nom.corrida = null; S.nom.nota = null; S.hooks.titulo(KICKER, TITULOS.nomina); pintarNomina(); return true; }
       return false;
     },
     // (fase 10) el 🧾 de un hito desde el corte (js/app.js): deja pedido su borrador; app.js abre después «Facturas» (irConta("facturas"))
