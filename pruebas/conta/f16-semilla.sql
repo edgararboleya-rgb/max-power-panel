@@ -5,48 +5,66 @@
 -- pega en Supabase. Todo inventado («ZZ …»): ni un nombre, ni un monto, ni
 -- un número de verdad.
 --
--- Se pega como editor_sql (el SQL Editor) sobre un clon de g12a (c1…c14):
+-- Se pega como editor_sql (el SQL Editor) sobre un clon de g12a (c1…c14 y
+-- lo del 12-nov), SIN «-1» (trae sus transacciones; las partes del dueño
+-- cambian de rol dentro de la suya):
 --   psql -X -q -v ON_ERROR_STOP=1 -U editor_sql -d <bd> -f pruebas/conta/f16-semilla.sql
--- (SIN «-1»: trae sus transacciones; las partes del dueño cambian de rol
--- dentro de la suya). No hace falta c16: la semilla no lo usa.
+-- No hace falta c16: la semilla no lo usa (se puede pegar antes o después).
 --
 -- «HOY». Todo se fecha del 1-oct-2026 a hoy (en Miami), mes a mes: cuanto
 -- más tarde se siembre, más meses trae. Para tener VARIOS MESES sin
 -- esperar, se le dice el día:
---   psql … -v hoy=2027-02-12 -f pruebas/conta/f16-semilla.sql
+--   psql … -v hoy=2027-03-10 -f pruebas/conta/f16-semilla.sql
 -- y la semilla FINGE EL RELOJ de esa base (como c4-volumen.sh: solo la hora
--- de ahora cae ese día; cualquier otra fecha es la suya) y lo deja así: en
--- esa base «hoy» es ese día (o el de verdad, cuando lo alcance). Sin «-v
--- hoy», el reloj es el de verdad.
+-- de ahora cae ese día; cualquier otra fecha es la suya; c2 vuelve a sellar
+-- sus huellas) y lo deja así: en esa base «hoy» es ese día. Sin «-v hoy»,
+-- el reloj es el de verdad. Con el reloj fingido en 2027 la base cruza un
+-- cambio de año (2026 → 2027).
 --
--- LO QUE SIEMBRA (cada cosa, por el camino de su capa: los puentes de c3,
--- el banco de c6, los cobros en línea de p1…; nada entra al libro a mano
--- por debajo):
+-- LO QUE SIEMBRA (cada cosa por el camino de su capa: los puentes de c3,
+-- fn_postear de c2, los cobros de c3, el banco y los préstamos de c6, Plaid
+-- de c7, Stripe de p1, el WIP de c12; nada entra al libro por debajo):
 --   · 6 obras (2 residenciales, 2 comerciales con retención, 2 de servicio)
---     y la APERTURA al 30-sep por su balanza de QuickBooks (c4): banco,
+--     y la APERTURA al 30-sep por su balanza de QuickBooks (c4): el banco,
 --     dos facturas de antes que siguen por cobrar (una con retención), una
---     cuenta por pagar VIEJA (de agosto, sin pagar), la camioneta y su
---     préstamo, el capital y el resultado de enero a septiembre;
---   · CADA MES: 6 facturas (unas cobradas enteras, una a medias, una sin
---     cobrar: vencidas de distinta edad), sus cobros por cheque y Zelle,
---     un anticipo; tickets con las dos tarjetas (material, combustible,
---     herramienta, renta de equipo), un permiso, recibos a cuenta de un supply y sus
---     pagos (uno se queda sin pagar), trabajos de un sub y su pago, la
---     renta, el seguro, el teléfono, el software, la publicidad, los
---     cargos del banco, la nómina de cada quincena, el use tax de dos
---     compras y su pago, el pago de las tarjetas y la CUOTA DEL PRÉSTAMO;
---   · EL BANCO (c6): lo que trae Plaid de Chase y de la Amex, casado con
---     el libro, y movimientos POR REVISAR en la Bandeja (recientes y uno
---     viejo, de más de 30 días); octubre conciliado;
---   · PLAID (c7): una conexión al día y otra que pide volver a conectar;
---   · STRIPE (p1): un cobro con tarjeta ya depositado en Chase, otro
+--     CUENTA POR PAGAR VIEJA (de agosto, vencida, sin pagar), la camioneta y
+--     su PRÉSTAMO, las tarjetas, el capital y el resultado de enero a
+--     septiembre;
+--   · los TÉRMINOS de las facturas en Facturas → Ajustes: Net 30 (de fábrica
+--     es «due on receipt»), para que la antigüedad tenga de todo;
+--   · CADA MES: 6 facturas (unas cobradas enteras, una A MEDIAS, una sin
+--     cobrar: vencidas de distinta edad y otras por vencer), sus cobros por
+--     cheque y Zelle, un anticipo; tickets con las dos tarjetas (material,
+--     combustible, herramienta, renta de equipo), un permiso por Zelle,
+--     recibos a cuenta del supply (Net 30) y su pago (uno se queda sin
+--     pagar), trabajos del sub y su pago, la renta, el seguro, el teléfono,
+--     el software, el CPA, la publicidad, los cargos del banco, la nómina de
+--     cada quincena (su journal entra con el débito del banco), el use tax
+--     de dos compras y su pago al DOR, el pago de cada tarjeta, la CUOTA DEL
+--     PRÉSTAMO y una distribución al accionista;
+--   · UN CHEQUE QUE REBOTÓ (c3: su devolución, seis días después): la
+--     factura vuelve a quedar por cobrar;
+--   · STRIPE (p1): un cobro con tarjeta ya depositado en el banco, otro
 --     cobrado que falta depositar y uno por cuenta de banco en camino;
---   · FACTURAS POR LA APP (c11): una emitida hoy, que todavía no vence;
---   · EL WIP (c12) de octubre posteado, y el costo por obra (c10) con lo
---     que el libro trae.
+--   · EL BANCO por PLAID (c7 → c6): lo que trae el banco de la cuenta y de
+--     la Amex Gold, casado con el libro; movimientos POR REVISAR en la
+--     Bandeja (recientes y uno de más de 30 días); los meses terminados,
+--     conciliados; y otra conexión (la Amex Blue) que pide volver a entrar:
+--     «con problemas»;
+--   · EL WIP (c12) de octubre: lo de antes del libro confirmado en las dos
+--     obras que ya andaban, el costo estimado de cada obra de precio fijo, y
+--     el ajuste posteado (su reverso automático cae el 1-nov: el tablero lo
+--     deja aparte mientras noviembre no tenga su propio ajuste);
+--   · LO QUE LAS REVISIONES DEL TABLERO PIDIERON VER (13-nov): el estado de
+--     cuenta de OCTUBRE de la Amex Blue, por archivo (su conexión de Plaid
+--     pide volver a entrar): un saldo del banco de otro día, «al
+--     31-oct-2026», que el tablero compara con el libro de ese día; y un
+--     CHEQUE POSFECHADO (unos días después de hoy, dentro del mes) que no va
+--     en el saldo de hoy y que la proyección de caja resta en su día.
 -- Lo que deja a propósito en la bandeja de los puentes: los papeles de la
 -- semilla de siempre que esperan una regla o un dato (un ticket sin forma
 -- de pago, uno con una tarjeta que no existe).
+-- Al final enseña una línea por cosa sembrada (SEMILLA …).
 -- =====================================================================
 \set ON_ERROR_STOP 1
 \set QUIET 1
@@ -96,6 +114,14 @@ select fn_proveedor_alta('ZZ SUPPLY UNO', 'Net 30', array['zz supply uno', 'zz s
 select fn_proveedor_alta('ZZ SUPPLY DOS', 'Net 15', array['zz supply dos']) is not null as ok \gset
 select fn_proveedor_alta('ZZ SUB ZANJAS', 'Net 15', array['zz sub zanjas']) is not null as ok \gset
 select fn_tarjeta_alta('2009', '2100-2009', 'ZZ Blue') is not null as ok \gset
+commit;
+
+-- ===== 1b. el dueño: los términos de las facturas (Facturas → Ajustes): Net 30 =====
+begin;
+select set_config('request.jwt.claims', json_build_object('sub', :'dueno', 'role', 'authenticated', 'aal', 'aal2')::text, true) \gset
+select set_config('request.jwt.claim.sub', :'dueno', true) \gset
+set local role authenticated;
+select (fn_emision_config('{"terminos_dias": 30}'::jsonb) ->> 'terminos_dias') as terminos \gset
 commit;
 
 -- ===== 2. el SQL Editor: la APERTURA al 30-sep por su balanza de QuickBooks (c4) =====
@@ -326,6 +352,14 @@ begin
 end $$;
 commit;
 
+-- ===== 4b. el SQL Editor: UN CHEQUE QUE REBOTÓ (c3) — el primer cheque de octubre, seis días después =====
+begin;
+select count(fn_cobro_devolver(c.id, c.fecha + 6, 'ZZ: el cheque rebotó (fondos insuficientes)')) as devueltos
+  from (select c.id, c.fecha from cobros c
+         where c.medio = 'cheque' and c.referencia like 'ZZ-C-2610-%' and c.estado = 'vigente' and c.fecha + 6 <= :'hoy'::date
+         order by c.fecha, c.referencia limit 1) c \gset
+commit;
+
 -- ===== 5. STRIPE (p1): un cobro con tarjeta ya depositado en el banco, otro cobrado que falta depositar y uno por cuenta de banco en camino =====
 -- (como la función de borde, que entra como postgres: aquí, el SQL Editor. Las «fotos» son las que le daría Stripe, inventadas)
 begin;
@@ -380,7 +414,7 @@ select fn_stripe_payout_sincronizar(
   'evt_ZZF16P') is not null as ok \gset
 commit;
 
--- ===== 6. EL BANCO (c6) por PLAID (c7): lo que el banco trae de Chase y de la Amex Gold, casado, y lo que queda POR REVISAR =====
+-- ===== 6. EL BANCO (c6) por PLAID (c7): lo que el banco trae de la cuenta y de la Amex Gold, casado, y lo que queda POR REVISAR =====
 -- (la función de borde entra como postgres —aquí, el SQL Editor— y fn_plaid_recibir importa y casa en nombre del dueño)
 begin;
 select fn_plaid_item_alta('item-zz-f16-uno', 'access-zz-f16-uno', 'ins_zz1', 'ZZ Banco Uno', jsonb_build_array(
@@ -469,3 +503,70 @@ begin
   end loop;
 end $$;
 commit;
+
+-- ===== 8. el dueño: EL WIP DE OCTUBRE (c12) =====
+-- (lo de antes del libro de las obras que ya andaban, inventado; el costo estimado de cada obra de precio fijo, holgado sobre lo
+--  que ya lleva; y el ajuste posteado)
+begin;
+select set_config('request.jwt.claims', json_build_object('sub', :'dueno', 'role', 'authenticated', 'aal', 'aal2')::text, true) \gset
+select set_config('request.jwt.claim.sub', :'dueno', true) \gset
+set local role authenticated;
+select count(fn_wip_antes(o.proyecto_id, jsonb_build_object('costo', o.costo::text, 'facturado', o.facturado::text,
+                                                           'nota', 'ZZ: lo de antes del libro, inventado para la semilla')))
+         as antes
+  from (values ('casa-perez-k3m9', 7400.00, 9100.00), ('oficina-nch-7xq2', 18250.00, 21400.00)) o(proyecto_id, costo, facturado)
+ where exists (select 1 from v_wip_obras w where w.proyecto_id = o.proyecto_id and w.lleva_wip and w.de_antes) \gset
+select count(fn_wip_revisar(w.proyecto_id, '2026-10', jsonb_build_object(
+         'costo_estimado', round(((coalesce(w.antes_costo, 0)
+                                   + coalesce((select sum(l.monto) from asiento_lineas l join asientos a on a.id = l.asiento_id
+                                                where l.proyecto_id = w.proyecto_id and l.cuenta like '5%' and a.fecha_contable <= date '2026-10-31'), 0))
+                                  * 2.4 + 3000)::numeric, 2)::text,
+         'nota', 'ZZ: el estimado de la semilla')))
+         as revisadas
+  from v_wip_obras w
+ where w.lleva_wip and w.activa \gset
+select fn_wip_postear('2026-10', null) ->> 'nota' as wip \gset
+commit;
+
+-- ===== 9. LO QUE LAS REVISIONES DEL TABLERO PIDIERON VER =====
+-- (a) el dueño: el estado de cuenta de octubre de la Amex Blue, por archivo (un lote, como el CSV del banco): su saldo al 31-oct es el
+--     del libro ese día (en el signo del libro: en una tarjeta, lo que se debe en negativo); sin movimientos nuevos.
+begin;
+select set_config('request.jwt.claims', json_build_object('sub', :'dueno', 'role', 'authenticated', 'aal', 'aal2')::text, true) \gset
+select set_config('request.jwt.claim.sub', :'dueno', true) \gset
+set local role authenticated;
+select count(fn_banco_importar_filas(jsonb_build_object(
+          'origen', 'csv', 'cuenta', '2100-2009', 'nombre', 'ZZ Blue · estado de cuenta de octubre',
+          'saldo', (select coalesce(sum(l.monto), 0) from asiento_lineas l join asientos a on a.id = l.asiento_id
+                     where l.cuenta = '2100-2009' and a.fecha_contable <= date '2026-10-31')::text,
+          'saldo_al', '2026-10-31', 'desde', '2026-10-01', 'hasta', '2026-10-31', 'filas', '[]'::jsonb))) as estado_blue
+  from (select 1) u
+ where :'hoy'::date > date '2026-10-31' \gset
+commit;
+-- (b) el SQL Editor: un cheque posfechado (un pago al seguro, unos días después de hoy y dentro del mes; si hoy es el último día del mes, no)
+begin;
+select count(fn_postear(jsonb_build_object('fecha', x.f::text, 'descripcion', 'ZZ: el seguro de la camioneta, con un cheque posfechado',
+         'lineas', jsonb_build_array(jsonb_build_object('cuenta', '6200', 'monto', '640.00'),
+                                     jsonb_build_object('cuenta', '1010', 'monto', '-640.00'))))) as posfechado
+  from (select least(:'hoy'::date + 4, (date_trunc('month', :'hoy'::date) + interval '1 month')::date - 1) as f) x
+ where x.f > :'hoy'::date \gset
+commit;
+
+-- ===== lo sembrado, en una línea por cosa =====
+\unset QUIET
+select 'SEMILLA ' || x.que || ': ' || x.cuanto as semilla
+  from (values
+    (1, 'hoy', (select fn_fecha_miami(now())::text)),
+    (2, 'asientos', (select count(*) || ' (del ' || min(fecha_contable) || ' al ' || max(fecha_contable) || ')' from asientos)),
+    (3, 'facturas', (select count(*)::text from facturas)),
+    (4, 'cobros', (select count(*) || ' (' || count(*) filter (where id in (select cobro_id from cobros_devoluciones)) || ' devuelto)' from cobros)),
+    (5, 'movimientos del banco', (select count(*) || ' (' || count(*) filter (where estado = 'pendiente') || ' por revisar)' from movimientos_banco)),
+    (6, 'conciliaciones confirmadas', (select count(*)::text from conciliaciones where estado = 'confirmada')),
+    (7, 'cuotas del préstamo', (select count(*)::text from prestamo_cuotas where anulada_el is null)),
+    (8, 'pagos en Stripe', (select count(*)::text from stripe_pagos)),
+    (9, 'conexiones de Plaid', (select string_agg(institucion || ' ' || estado, ', ' order by institucion) from plaid_conexiones)),
+    (10, 'WIP posteado', (select count(*)::text from wip_ajustes where deshecho_el is null)),
+    (11, 'saldo del banco de otro día', (select coalesce(string_agg(s.cuenta || ' al ' || s.saldo_banco_al, ', '), 'ninguno')
+                                           from v_banco_saldos s where s.saldo_banco_al < fn_fecha_miami(now()))),
+    (12, 'posfechados', (select count(*) || ' con fecha de después de hoy' from asientos where fecha_contable > fn_fecha_miami(now())))) x(o, que, cuanto)
+ order by x.o;
