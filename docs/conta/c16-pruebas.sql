@@ -2569,7 +2569,7 @@ end $$;
 do $$
 declare
   v_obt text; v_esp text; p jsonb := pg_temp.c16_tc('prestamos'); r record; v_l text := ''; v_o text := ''; v_ctas text[];
-  v_f date; v_part jsonb; v_id uuid; w jsonb; v_sem text; v_sem_esp text;
+  v_f date; v_part jsonb; v_id uuid; w jsonb; v_sem text; v_sem_esp text; v_d int;
 begin
   if pg_temp.c16_omitir(23, 'los préstamos', 'el saldo, la próxima cuota y el libro', false, array['c6_prestamos']) then return; end if;
   begin
@@ -2584,6 +2584,15 @@ begin
                            where (g::date + least(coalesce(r.dia_pago, extract(day from r.primer_pago)::int),
                                                    extract(day from (g + interval '1 month' - interval '1 day'))::int) - 1) > coalesce(r.saldo_inicial_al, r.primer_pago - 1)) end;
         v_f := v_f + least(coalesce(r.dia_pago, extract(day from r.primer_pago)::int), extract(day from (v_f + interval '1 month' - interval '1 day'))::int) - 1;
+      elsif r.cuotas_al_anio in (52, 26) then
+        -- (semanal o cada dos semanas: el calendario es el primer pago y cada 7 o 14 días. La próxima, la de después
+        -- de la última registrada —la fecha del calendario más cercana a ella: una pagada unos días antes o después
+        -- cuenta por la suya—; sin cuotas, la primera después del saldo inicial. 14-nov: en producción hay un préstamo
+        -- semanal de verdad y esta prueba solo sabía de los mensuales: ponía «?» y salía en rojo.)
+        v_d := case r.cuotas_al_anio when 52 then 7 else 14 end;
+        v_f := case when r.ultima is not null
+                    then r.primer_pago + (round((r.ultima - r.primer_pago)::numeric / v_d)::int + 1) * v_d
+                    else r.primer_pago + greatest(0, floor((coalesce(r.saldo_inicial_al, r.primer_pago - 1) - r.primer_pago)::numeric / v_d)::int + 1) * v_d end;
       else
         v_f := null;   -- (las otras frecuencias las mira el préstamo semanal de abajo)
       end if;
