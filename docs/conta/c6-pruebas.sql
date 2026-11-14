@@ -5609,7 +5609,9 @@ begin
   end if;
   begin
     perform pg_temp.c6_montar();
-    v_n0 := (select count(*) from asientos a where a.descripcion like 'Transferencia%');
+    -- (las transferencias de 500.00 que el libro ya tenía —en producción, las de verdad— no cuentan: solo las de la prueba)
+    v_n0 := (select count(*) from asientos a where a.descripcion like 'Transferencia%'
+                and exists (select 1 from asiento_lineas l where l.asiento_id = a.id and l.monto = -500.00));
     perform fn_banco_importar_ofx(pg_temp.c6_qfx('tarjeta', '372700000009996', d, d + 18, 0.00, jsonb_build_array(
               jsonb_build_object('tipo', 'CREDIT', 'fecha', d + 14, 'monto', '500.00', 'id', 'C6P1', 'nombre', 'ONLINE PAYMENT - THANK YOU'),
               jsonb_build_object('tipo', 'CREDIT', 'fecha', d + 9, 'monto', '300.00', 'id', 'C6P2', 'nombre', 'ONLINE PAYMENT - THANK YOU'))),
@@ -5629,7 +5631,7 @@ begin
     end;
     v_obt := format('banco=%s asientos=%s dif=%s tarde=%s otra=%s', pg_temp.c6_est('1098', 'C6P3'),
                     (select count(*) from asientos a where a.descripcion like 'Transferencia%'
-                        and exists (select 1 from asiento_lineas l where l.asiento_id = a.id and l.monto = -500.00)) ,
+                        and exists (select 1 from asiento_lineas l where l.asiento_id = a.id and l.monto = -500.00)) - v_n0,
                     '-', pg_temp.c6_est('1098', 'C6P4'), v_x);
     v_obt := replace(v_obt, 'dif=-', 'dif=' || (select (fn_conciliar('1098', d + 20, '-800.00')->>'diferencia')));
     raise exception using errcode = 'MXT00';
