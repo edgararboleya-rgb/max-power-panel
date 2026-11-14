@@ -202,10 +202,14 @@ nómina a la portada. Probada en los tres órdenes de pegado (sin c15, el de
 producción sobre la v305 y desde cero) y en la lista única desde el estado
 del 12-nov (`docs/conta/PEGAR-13NOV.md`, con el camino de quien ya pegó la
 v305).
-- **c3 · el devengo** (marca 2026111401; 136 pruebas): el devengo estándar
+- **c3 · el devengo** (marca 2026111402; 139 pruebas): el devengo estándar
   aparta también las horas que pagó un jornal dentro del mes y se pone al
   día solo. Aplicar un Zelle de un mes devengado ya no deja el «devengo» en
-  rojo. No toca ningún asiento.
+  rojo. No toca ningún asiento. **Segunda vuelta (el mismo 14-nov; la marca
+  pasa de …401 a …402):** el devengo que el puente deshizo y que vuelve a
+  tener horas aprobadas y sin pagar ya no queda callado (abajo, en «Lo que
+  queda», su punto ya hecho). Solo cambia c3: se pega encima de la v306 sin
+  volver a pegar nada más (probado).
 - **c6 · «GUSTO» como palabra entera** (marca 2026111401; 169 pruebas): un
   solo sitio dice si un movimiento nombra la nómina,
   `fn_banco_dice_nomina(descripción, memo)`, para los débitos y los
@@ -245,23 +249,14 @@ v305).
   cargos de Gusto). Gusto nunca cobra a una tarjeta de crédito: si
   molesta, se puede dejar fuera la cuenta de tarjeta, pero cambia la firma
   de `fn_banco_dice_nomina` (c6 y c15 a la vez).
-- **El devengo y una nómina ANULADA.** Con un jornal, el devengo que se
-  quedó sin horas vuelve solo. Con la nómina, no: si una nómina paga
-  dentro del mes todo lo que el devengo llevaba, c15 lo deshace; y si esa
-  nómina se anula y no se vuelve a subir, el devengo no vuelve y ningún
-  control lo dice (probado el 14-nov: c3, c10, c15 y el cierre, en verde;
-  y la guarda del cierre deja cerrar el mes así). Hay que devengar otra
-  vez: `select fn_horas_devengar('AAAA-MM');`. Es poco probable (pide
-  devengar el mes ANTES de la nómina que paga todo, y anularla para
-  siempre). La causa es de c3: el control «devengo» y la guarda del cierre
-  solo miran los devengos VIVOS, y el que el puente deshizo por quedarse
-  sin horas (papel «no_aplica: sin_horas») ya no lo es. Lo mismo pasa si
-  después se aprueban más horas de ese mes. El arreglo más corto va en c3
-  (probado el 14-nov en el banco, sin publicar: con él lo dicen el control,
-  la fila 131 del cierre y el propio cierre, y las pruebas de c3, c9, c10,
-  c15 y c16 siguen igual): que los dos miren también el mes abierto que se
-  devengó alguna vez, sin devengo vivo, con ese papel y con horas otra vez
-  por devengar. O en c15 (`fn_nomina_anular`), que lo vuelva a poner.
+- **HECHO (14-nov, segunda vuelta; c3, marca 2026111402): el devengo y una
+  nómina ANULADA, o unas horas aprobadas después.** Si el puente deshizo el
+  devengo de un mes y ese mes vuelve a tener horas aprobadas y sin pagar,
+  ahora lo dice el control «devengo» de c3 (y con él la fila «puentes:
+  devengo» del cierre, la 131 si es el único en rojo) y el mes no se cierra
+  (MX008). Lo resuelve `select fn_horas_devengar('AAAA-MM');`. El mes que
+  Edgar nunca devengó no sale. La red va solo en c3 (c15 no cambia; el
+  porqué, en la cabecera de `c3-puentes.sql`). Pruebas 137 a 139 de c3.
 - Cuándo sale de la caja lo que se debe de la nómina se lee de la nota que
   c15 escribe en el asiento de cada cargo casado («…la nómina del <día de
   pago>»). Si c15 cambia ese texto, la prueba 62 de c16 sale en rojo.
