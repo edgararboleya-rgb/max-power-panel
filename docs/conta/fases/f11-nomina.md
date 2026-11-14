@@ -257,12 +257,46 @@ v305).
   (MX008). Lo resuelve `select fn_horas_devengar('AAAA-MM');`. El mes que
   Edgar nunca devengó no sale. La red va solo en c3 (c15 no cambia; el
   porqué, en la cabecera de `c3-puentes.sql`). Pruebas 137 a 139 de c3.
+  La revisión independiente (Fable) no encontró ningún hueco ni rojo falso
+  en el control ni en la guarda, ni nada cambiado en los permisos, y pegarlo
+  dos veces no mueve nada. Arregló, cada cosa probada antes y después:
+  - la 139 salía en rojo falso en una base sana con un Zelle de verdad
+    repartido en el mes de las pruebas;
+  - la 137 no vigilaba que un mes ya CERRADO no salte (su tramo «g»);
+  - la 138 sale «omitida», no en rojo, con un c15 de antes del 13-nov;
+  - el mensaje dice «aprobadas y sin pagar al terminar el mes» en vez de
+    «hoy … sin pagar»: son las que nadie había pagado al acabar el mes, y
+    hoy pueden estar ya pagadas por la nómina del mes siguiente (por eso
+    se devengan).
 - Cuándo sale de la caja lo que se debe de la nómina se lee de la nota que
   c15 escribe en el asiento de cada cargo casado («…la nómina del <día de
   pago>»). Si c15 cambia ese texto, la prueba 62 de c16 sale en rojo.
 - La primera vez que se pega el c3 del 14-nov crea un trigger sobre los
   asientos: es el único archivo que espera si la app está abierta (por eso
   PEGAR dice que se cierre).
+- **De la revisión del c3 de la segunda vuelta, para más adelante (ninguna
+  pasa hoy: no hay ningún devengo en la base):**
+  - Con c3 en rojo por un mes así, el aviso 80 de c15 dice del mismo mes
+    «si quieres ese costo en su mes, devéngalo… no es un error». La orden
+    es la misma; choca el «si quieres». Se arregla con el próximo pegado
+    de c15.
+  - Si la marca de la nómina (c15) no contesta o no está, c3 toma el
+    journal de c15 como uno que no dice qué pagó y ese mes deshecho se
+    cierra callado. Hace falta romper c15 (se arregla volviéndolo a
+    pegar). La salida, si se quiere: que el plan diga si el journal es de
+    otro proveedor y tratar «marca rota, sin journals ajenos y con horas»
+    como los jornales sin leer (probado en el banco: 138 en verde).
+  - Unas horas pagadas por un Zelle clasificado A MANO en la Bandeja (no
+    repartido como jornal en Costo por obra) c3 no las ve pagadas: con el
+    devengo deshecho, ahora pide devengarlas, y hacerlo dejaría el costo
+    dos veces en el mes. La regla de siempre: el Zelle de una persona por
+    sus horas se reparte como jornal.
+  - Con tres meses así a la vez, el mensaje de «Cerrar» (400 letras por
+    fila) corta la orden del segundo mes; la fila del cierre (700) las trae
+    enteras. Ya pasaba.
+  - El tramo «b» de la 137 tiene el libro tomado durante una revisión
+    entera del cierre: con un libro de un año, unos 3 s. Cabe en la regla
+    de unos 5 s, pero crece con el libro.
 
 ## ▶ Pendientes
 - **Edgar, antes del 4-ene**: bajar de Gusto un «Payroll journal» en CSV

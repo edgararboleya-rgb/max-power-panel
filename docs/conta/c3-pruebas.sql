@@ -10312,6 +10312,7 @@ declare
   v_g      text;
   v_h      text := 'no_hay_mes';
   v_i      text;
+  v_j      text;
   v_obt    text;
   v_esp    text;
   v_nom    text := 'el devengo que se deshizo por quedarse sin horas y vuelve a tenerlas (se aprueban después): el control lo dice, el cierre lo cuenta y el mes no se cierra hasta devengarlo otra vez; el que sigue sin horas, el mes que nunca se devengó y el devengo retirado a mano no saltan';
@@ -10326,7 +10327,7 @@ begin
   end if;
   v_esp := format('devengo=%s/240.00 lo_paga_todo=reversado/no_aplica:sin_horas aprobada_despues=f/deshecho:4h:120.00 '
                   'devengar=sustituido/120.00/t | cierre=%s | cerrar=MX008/dice_como devengado=cerrado | sin_nada_que_devengar=t/cerrado '
-                  '| nunca_devengado=%s | retirado_a_mano=contabilizado:-/t/cerrado',
+                  '| nunca_devengado=%s | retirado_a_mano=contabilizado:-/t/cerrado | ya_cerrado=cerrado/t',
                   pg_temp.c3_dev_accion(v_mes), case when v_c9 then 'detiene/en_su_fila' else 'sin_c9' end,
                   case when v_nunca is not null then 't/cerrado' else 'no_hay_mes' end);
   if v_dueno is null or v_obra is null or v_desde is null or v_mes is null then
@@ -10428,9 +10429,21 @@ begin
     exception
       when sqlstate 'MXT00' then null;
     end;
+    -- g) El mes YA CERRADO con su devengo deshecho, al que se le aprueba una hora después: tampoco salta (cerrado ya no se
+    -- devenga: un rojo ahí no tendría arreglo, y el control de los puentes detiene el cierre de cualquier mes).
+    begin
+      perform pg_temp.c3_dv_abrir(true);
+      perform pg_temp.c3_dv_deshecho(v_mes, v_desde, v_k, 'C3-D37', -3511371);
+      perform pg_temp.c3_cerrar_hasta(v_mes);
+      perform pg_temp.c3_jhora(-3511376, v_desde + 19, 4.0, 'C3-D37');
+      v_j := (select p.estado from periodos p where p.periodo = v_mes) || '/' || pg_temp.c3_ctl_devengo(v_mes);
+      raise exception using errcode = 'MXT00';
+    exception
+      when sqlstate 'MXT00' then null;
+    end;
     v_obt := format('devengo=%s/%s lo_paga_todo=%s aprobada_despues=%s devengar=%s | cierre=%s | cerrar=%s devengado=%s '
-                    '| sin_nada_que_devengar=%s | nunca_devengado=%s | retirado_a_mano=%s',
-                    v_r1->>'accion', coalesce(v_l1, '-'), v_a, v_b, v_c, v_d, v_e, v_f, v_g, v_h, v_i);
+                    '| sin_nada_que_devengar=%s | nunca_devengado=%s | retirado_a_mano=%s | ya_cerrado=%s',
+                    v_r1->>'accion', coalesce(v_l1, '-'), v_a, v_b, v_c, v_d, v_e, v_f, v_g, v_h, v_i, v_j);
   exception
     when sqlstate 'MXT21' then v_obt := 'omitida: ' || sqlerrm;
     when sqlstate 'MXT22' then v_obt := 'omitida: ' || sqlerrm;
@@ -10494,6 +10507,12 @@ begin
     insert into _pruebas values (138, v_nom, v_esp,
       'omitida: la nómina (c15-nomina.sql) no está en esta base: sin ella no hay una nómina de verdad que postear y anular (lo de c3 '
       || 'lo miran la 137 y la 139, con una nómina de prueba)', null);
+    return;
+  end if;
+  if to_regprocedure('public.fn_nomina_horas_con_pago()') is null then
+    insert into _pruebas values (138, v_nom, v_esp,
+      'omitida: la nómina de esta base (c15-nomina.sql) es de antes del 13-nov: todavía no dice qué horas pagó cada nómina, y con un '
+      || 'journal suyo en el mes c3 no devenga (pega el c15 de hoy; lo de c3 lo miran la 137 y la 139, con una nómina de prueba)', null);
     return;
   end if;
   if pg_temp.c3_vivo('horas_devengo', v_mes) is not null
@@ -10591,6 +10610,7 @@ declare
   v_mo     text := fn_puente_cuenta_de('mano_obra');
   v_k      uuid := '00000000-0000-4000-a000-00000c300139';
   v_k2     uuid := '00000000-0000-4000-a000-00000c30013a';
+  v_k3     uuid := '00000000-0000-4000-a000-00000c30013b';
   v_n      int;
   v_j      uuid;
   v_r1     jsonb;
@@ -10660,6 +10680,12 @@ begin
           v_i := pg_temp.c3_dv_deshecho(v_mes, v_desde, v_k, 'C3-D39', -3511392);
           perform pg_temp.c3_corte_de_prueba();
           perform set_config('mx3.jornales_sin_leer', 'si', true);
+          -- (Si el mes trae horas de verdad que pagó un JORNAL de verdad —un Zelle repartido dentro del mes—, con los
+          -- repartos sin poder leerse c3 ya no sabe que están pagadas y las cuenta entre «las aprobadas que ninguna
+          -- nómina pagó»: la nómina de prueba las da también por pagadas, y lo que sigue mide solo las horas de la prueba.)
+          if jsonb_array_length(coalesce(fn_puente_devengo_plan(v_mes)->'documento'->'horas', '[]'::jsonb)) > 0 then
+            perform pg_temp.c3_paga_todo(v_mes, v_k3, v_desde + 12, 'C3-D39');
+          end if;
           if v_n = 3 then
             -- c) Sin horas nuevas, nada que decir; con una hora aprobada después, no se puede comprobar.
             v_e := v_i;

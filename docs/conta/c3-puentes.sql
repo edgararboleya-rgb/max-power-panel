@@ -7481,8 +7481,8 @@ begin
                            else format('ya no se contabilizaba (%s)', coalesce(v_cod, 'sin código')) end;
       if v_plan->>'accion' = 'postear' then
         raise exception using errcode = 'MX008',
-          message = format('El mes %s no se cierra así: su devengo estándar se deshizo porque %s, y hoy el mes tiene %s h aprobadas '
-                           'y sin pagar (%s a estándar) y ningún devengo; cerrado ya no se devenga. Devéngalo antes: select '
+          message = format('El mes %s no se cierra así: su devengo estándar se deshizo porque %s, y el mes tiene %s h aprobadas '
+                           'y sin pagar al terminar el mes (%s a estándar) y ningún devengo; cerrado ya no se devenga. Devéngalo antes: select '
                            'fn_horas_devengar(%L); y ciérralo después.', new.periodo, v_por,
                            (select trim_scale(coalesce(sum((e->>'horas')::numeric), 0))
                               from jsonb_array_elements(v_plan->'documento'->'horas') e),
@@ -8788,7 +8788,7 @@ begin
   --     cierre (fn_puente_periodos_devengo) mira lo mismo.
   select v_malos || coalesce(jsonb_agg(
            case when s.plan->>'accion' = 'postear'
-                then format('el devengo de %s se deshizo porque %s, y hoy ese mes tiene %s h aprobadas y sin pagar (%s a '
+                then format('el devengo de %s se deshizo porque %s, y ese mes tiene %s h aprobadas y sin pagar al terminar el mes (%s a '
                             'estándar) y ningún devengo: select fn_horas_devengar(''%s''); lo vuelve a poner. El mes no se '
                             'cierra así.', s.periodo, s.por,
                             (select trim_scale(coalesce(sum((e->>'horas')::numeric), 0))
