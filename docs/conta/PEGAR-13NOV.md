@@ -1,10 +1,27 @@
-# Lo que hay que pegar (14-nov · v306)
+# Lo que hay que pegar (14-nov por la tarde)
 
 **Una sola lista con todo lo pendiente.** Sustituye a la del 12-nov y a la
 primera versión de esta. Trae la cédula (c13), los subs y el 1099 (c14), la
 nómina (c15), el tablero (c16) y la Fase 11b, que enseña la nómina a las
 capas que ya tienes (c3, c6, c10, c12 y c13). Está probada desde lo que hoy
 tiene tu base: c1 a c12.
+
+**14-nov por la tarde: cambia otra vez solo `c3`.** El mes cuyo costo
+estimado de las horas (el devengo) se deshizo y que vuelve a tener horas
+sin pagar ya no se puede cerrar sin decírtelo. **Si ya pegaste la lista de
+esta mañana** (entera, o el camino de la v305 de abajo), pega solo esto y
+nada más (ni c6, ni c10, ni c15, ni c16):
+
+| # | Archivo | Filas que salen |
+|---|---|---|
+| 1 | `docs/conta/c3-puentes.sql` | 23, como la vez anterior; no cambia ningún dato |
+| 2 | `docs/conta/c3-pruebas.sql` | 139: en `true` u «omitida» con su porqué, igual que dice la fila 13 de la parte B (la 45 siempre sale «omitida») |
+
+Con la app cerrada, como siempre con c3. Si todavía no habías pegado nada,
+la lista de abajo ya trae el c3 nuevo. Y si alguna vez la fila
+`puentes · devengo` de c3 sale en `false`, haz lo que dice (te da la orden)
+antes de pegar las pruebas: con el devengo en rojo, las pruebas que cierran
+meses (la 16, 17, 73, 86 y 100) también salen en `false`.
 
 **14-nov (Fase 11c): cambian otra vez `c3`, `c6` (sus dos partes), `c10`,
 `c15` y `c16`, con sus pruebas.** La lista de abajo ya es la de hoy. Si
@@ -20,7 +37,7 @@ todavía no pegaste nada, sigue la lista entera y no hay nada más que hacer.
 | 5 | `docs/conta/c15-nomina.sql` (después de las dos partes de c6) | 9 |
 | 6 | `docs/conta/c16-tablero.sql` (la tarjeta de la nómina) | 6 |
 
-Y después sus pruebas: `c3-pruebas.sql` (136), `c6-pruebas.sql` (169),
+Y después sus pruebas: `c3-pruebas.sql` (139), `c6-pruebas.sql` (169),
 `c10-pruebas.sql` (64), `c15-pruebas.sql` (70) y `c16-pruebas.sql` (65), con
 lo que dice la parte B de cada una.
 
@@ -89,7 +106,7 @@ Lo que tiene que decir cada uno:
 | # | Archivo | Filas que salen |
 |---|---|---|
 | 12 | `docs/conta/c11-pruebas.sql` | 57 |
-| 13 | `docs/conta/c3-pruebas.sql` | 136 (la 45 sale «omitida»; las del devengo —de la 121 a la 125 y de la 127 a la 136— pueden decir «omitida» con su porqué: «pasa del tope de fecha», o que el mes ya tiene horas de verdad por devengar) |
+| 13 | `docs/conta/c3-pruebas.sql` | 139 (la 45 sale «omitida»; las del devengo —de la 121 a la 125 y de la 127 a la 139— pueden decir «omitida» con su porqué: «pasa del tope de fecha», o que el mes ya tiene horas de verdad por devengar) |
 | 14 | `docs/conta/c6-pruebas.sql` | 169 |
 | 15 | `docs/conta/c10-pruebas.sql` | 64 |
 | 16 | `docs/conta/c12-pruebas.sql` | 48 |
