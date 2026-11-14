@@ -6779,9 +6779,9 @@ declare
   -- lo que conta.js llama (el resto, sin grant a la API). (13-nov-2026, Fase
   -- 11b: y, al final, fn_banco_papel_nomina(), que no la llama conta.js sino
   -- v_papel_fases —security_invoker: la ejecuta quien lee la vista—: 9.1.
-  -- 14-nov-2026, Fase 11c: y fn_banco_dice_nomina(text), que la llama la
-  -- nómina —c15, con los permisos de quien llama—: ¿el texto nombra la
-  -- nómina como palabra entera? Un solo sitio para el banco y la nómina.)
+  -- 14-nov-2026, Fase 11c: y fn_banco_dice_nomina(text,text), que la llama
+  -- la nómina —c15, con los permisos de quien llama—: ¿el movimiento nombra
+  -- la nómina como palabra entera? Un solo sitio para el banco y la nómina.)
   v_app     text[] := array['fn_banco_importar_ofx(text,text,text)', 'fn_banco_importar_filas(jsonb)', 'fn_banco_casar(uuid)',
                             'fn_banco_casar_todo(text,date)', 'fn_banco_casar_con(uuid,jsonb,text)',
                             'fn_banco_cobrar(uuid,jsonb,text)', 'fn_banco_pagar_proveedor(uuid,uuid,jsonb)',
@@ -6791,7 +6791,7 @@ declare
                             'fn_conciliacion_partida(uuid,text,text)', 'fn_conciliacion_confirmar(uuid)',
                             'fn_conciliacion_reabrir(uuid,text)', 'fn_conciliacion_apertura(text,text,jsonb,text)',
                             'fn_prestamo_cuota(uuid,uuid,date,text,text,text,text)', 'fn_prepagados_amortizar(text)',
-                            'fn_banco_control(text,text[])', 'fn_banco_papel_nomina()', 'fn_banco_dice_nomina(text)'];
+                            'fn_banco_control(text,text[])', 'fn_banco_papel_nomina()', 'fn_banco_dice_nomina(text,text)'];
   v_hoy     boolean := p_periodo = 'hoy';
   v_pp      periodos;
   v_pid     text;
@@ -8771,7 +8771,7 @@ comment on function public.fn_banco_nomina(uuid, jsonb, text)       is 'c6: el j
 comment on function public.fn_banco_descriptor(text, text, text, text) is 'c6: cambia lo que se reconoce en la descripción de un movimiento (SQL Editor).';
 comment on function public.fn_banco_cuenta_personal(text, text, boolean, text) is 'c6: da de alta una cuenta personal de Edgar por sus 4 últimos, o la da de baja con su motivo (SQL Editor). Solo con ella el dinero de o a esa cuenta va al patrimonio del accionista sin motivo.';
 comment on function public.fn_banco_version()                       is 'c6: la marca de esta versión del banco (AAAAMMDDNN).';
-comment on function public.fn_banco_dice_nomina(text)               is 'c6: ¿el texto nombra la nómina (Gusto)? El descriptor «nomina» como PALABRA ENTERA («GUSTO», no «AUGUSTO»). El único sitio que lo decide: el débito y el depósito de R6 (la Bandeja) y la nómina (c15: sus cargos de Gusto). Solo lee el patrón de ese descriptor, con los permisos de quien llama (no es SECURITY DEFINER): al dueño, sí o no; al equipo, siempre false; anon y service_role no la ejecutan.';
+comment on function public.fn_banco_dice_nomina(text, text)         is 'c6: ¿el movimiento nombra la nómina (Gusto)? Recibe su descripción y su memo (desc_norm y memo de movimientos_banco), los junta y los normaliza como la Bandeja (R6), y busca el descriptor «nomina» como PALABRA ENTERA («GUSTO», no «AUGUSTO»). Un Zelle, nunca (lo que dice lo escribe una persona: «con gusto, gracias»). El único sitio que lo decide: el débito y el depósito de R6 (la Bandeja) y la nómina (c15: sus cargos de Gusto), con el mismo texto. Solo lee el patrón de ese descriptor, con los permisos de quien llama (no es SECURITY DEFINER): al dueño, sí o no; al equipo, siempre false; anon y service_role no la ejecutan.';
 comment on function public.fn_banco_papel_nomina()                  is 'c6: el papel de los asientos de la nómina de Gusto (c15: orígenes nomina_corridas y nomina_burden) para v_papel_fases, con sus cuatro columnas. Lee v_nomina_papel de c15 si está (sin c15, nada), con los permisos de quien mira: con el código del teléfono (o desde el SQL Editor), el papel de c15 tal cual; sin él, de cada asiento de la nómina dice que su papel es su nómina y que se ve con el código, sin cifras ni nombres. No es SECURITY DEFINER. La llama la vista, no conta.js.';
 
 

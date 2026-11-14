@@ -17,9 +17,22 @@
 -- «se pone al día solo»; con el de antes, «saldría dos veces»); la 39 y la
 -- 55 DEVENGAN ANTES DE REPARTIR (con el c3 nuevo, devengar después ya no
 -- cuenta esas horas: salían «omitida», o en rojo con más horas aprobadas en
--- el mes), y la 55 cierra el mes con la guarda del cierre de c3 apagada un
--- instante dentro de la prueba (ese c3 ya no deja cerrar un mes así). Las
--- tres valen con los dos c3. (Lo que
+-- el mes), y la 55 cierra el mes con la guarda del cierre de c3 sin efecto
+-- dentro de la prueba (ese c3 ya no deja cerrar un mes así; se cambia su
+-- función por una que deja pasar, «create or replace», sin apagar ningún
+-- trigger ni pedirle nada más a periodos), y pide periodos con un tope de
+-- medio segundo: si la app la tiene, sale «omitida». Las tres valen con los
+-- dos c3. Y LA MARCA DE PRUEBA DE LA NÓMINA (la 62, la 63 y la 64) se pone
+-- encima de la de verdad, sin borrarla: si algo de la base depende de ella
+-- (una vista), ya no salen en rojo (2BP01); corren igual, y la 64, que
+-- tiene que quitarla, sale «omitida» con ese porqué. Y LOS ARREGLOS DE LA
+-- VERIFICACIÓN DE ESA FASE (14-nov; la capa no cambia): la 30 probaba el
+-- freno del banco con un Zelle cuya descripción dice PAYROLL, que c6 tomaba
+-- por un débito de nómina. Con el c6 de esos arreglos UN ZELLE NUNCA ES DE
+-- NÓMINA (lo escribe una persona; Gusto no paga por Zelle), así que la 30
+-- prueba el freno con un débito que NO es un Zelle, y además que ese Zelle
+-- —el jornal de la semana pagado por Zelle con «payroll» en su nota— ya no
+-- se frena: entra por el jornal sin motivo. (Lo que
 -- esta suite no puede ver con sus pocas horas —que el costo por obra
 -- aguanta años de horas, y de horas pagadas por nómina, dentro del tope de
 -- la API— lo mira el banco: pruebas/conta/c10-volumen.sh.)
@@ -2448,17 +2461,24 @@ end $$;
 --     aquí. Un débito que c6 toma por nómina (su descripción dice PAYROLL):
 --     MX008 con el mensaje de c6, y nada cambia; con el motivo de Edgar
 --     (p_opciones.motivo), entra, y el asiento lo lleva.
+--     (14-nov, los arreglos de la verificación de la Fase 11c) El débito del
+--     ejemplo ya no es un Zelle: con el c6 de esos arreglos UN ZELLE NUNCA
+--     ES DE NÓMINA. Y se prueba lo que eso cambia aquí: el Zelle a esa misma
+--     persona cuya descripción dice PAYROLL (su jornal de la semana, con
+--     «payroll» en la nota) no lo frena c6 y entra por el jornal SIN motivo.
+--     Con un c6 anterior esa parte sale en rojo y dice qué pegar.
 do $$
 declare
-  v_obt text; v_mov uuid; v_r jsonb; v_j jsonb; a text; b text; v_antes int;
+  v_obt text; v_mov uuid; v_r jsonb; v_j jsonb; a text; b text; v_antes int; v_zel uuid; v_z jsonb; c text;
   v_esp text := 'c6 lo toma por nómina; la propuesta lo reconoce y deja | sin motivo: MX008, con el mensaje de c6 («dilo en el motivo»), y nada '
-                'cambia | con el motivo de Edgar: entra, el asiento lo lleva y el reparto lo guarda';
+                'cambia | con el motivo de Edgar: entra, el asiento lo lleva y el reparto lo guarda | un Zelle a la misma persona que dice '
+                'PAYROLL: c6 no lo toma por nómina (un Zelle nunca lo es) y entra por el jornal sin motivo';
 begin
   if pg_temp.c10_omitir(30, 'los frenos del banco valen', v_esp) then return; end if;
   begin
     perform pg_temp.c10_sembrar();
     perform pg_temp.c10_hora(1, 'p1', pg_temp.c10_w1(0), 'c10-prueba-a', 8);
-    v_mov := pg_temp.c10_cargo('c10-t30', pg_temp.c10_d(), 200.00, 'Zelle payment to C10 PRUEBA ZZANA PAYROLL 9030');
+    v_mov := pg_temp.c10_cargo('c10-t30', pg_temp.c10_d(), 200.00, 'ACH DEBIT C10 PRUEBA ZZANA PAYROLL 9030');
     perform pg_temp.c10_alta('p1');
     v_j := pg_temp.c10_propuesta(v_mov, pg_temp.c10_w1(0), pg_temp.c10_w1(6));
     a := format('%s; %s', case when (select m.estado_motivo from movimientos_banco m where m.id = v_mov) = 'nomina' then 'c6 lo toma por nómina'
@@ -2476,17 +2496,30 @@ begin
                         and not exists (select 1 from jornal_repartos r where r.movimiento_id = v_mov)
                    then ', y nada cambia' else ', y ALGO cambió' end;
     v_r := pg_temp.c10_aplicar(v_mov, pg_temp.c10_w1(0), pg_temp.c10_w1(6), '{"motivo": "c10-pruebas: es su jornal de la semana, no la nómina"}');
-    v_obt := format('%s | sin motivo: %s | con el motivo de Edgar: %s', a, b,
+    -- (el Zelle que dice PAYROLL, con sus horas de la semana de antes: c6 no lo toma por nómina y el jornal lo reparte sin motivo)
+    perform pg_temp.c10_hora(2, 'p1', pg_temp.c10_w2(0), 'c10-prueba-b', 4);
+    v_zel := pg_temp.c10_cargo('c10-t30z', pg_temp.c10_d(), 100.00, 'Zelle payment to C10 PRUEBA ZZANA PAYROLL 9031');
+    c := case when (select m.estado_motivo from movimientos_banco m where m.id = v_zel) is distinct from 'nomina'
+              then 'c6 no lo toma por nómina (un Zelle nunca lo es)'
+              else 'c6 LO TOMA POR NÓMINA (el c6 pegado es anterior a los arreglos del 14-nov: vuelve a pegar sus dos partes)' end;
+    begin
+      v_z := pg_temp.c10_aplicar(v_zel, pg_temp.c10_w2(0), pg_temp.c10_w2(6));
+      c := c || case when v_z->>'estado' = 'aplicado' and (select r.opciones->>'motivo' from jornal_repartos r where r.id = (v_z->>'reparto_id')::uuid) is null
+                     then ' y entra por el jornal sin motivo' else ' y no entra como debe: ' || left(v_z::text, 200) end;
+    exception when others then
+      c := c || ' y NO entra sin motivo: ' || sqlstate || ' (' || left(sqlerrm, 160) || ')';
+    end;
+    v_obt := format('%s | sin motivo: %s | con el motivo de Edgar: %s | un Zelle a la misma persona que dice PAYROLL: %s', a, b,
                     case when v_r->>'estado' = 'aplicado'
-                              and (select x.descripcion from asientos x where x.id = (v_r->'asiento'->>'id')::uuid) like 'c10-pruebas: es su jornal de la semana, no la nómina: Zelle%'
+                              and (select x.descripcion from asientos x where x.id = (v_r->'asiento'->>'id')::uuid) like 'c10-pruebas: es su jornal de la semana, no la nómina: ACH%'
                               and (select r.opciones->>'motivo' from jornal_repartos r where r.id = (v_r->>'reparto_id')::uuid) = 'c10-pruebas: es su jornal de la semana, no la nómina'
-                         then 'entra, el asiento lo lleva y el reparto lo guarda' else v_r::text end);
+                         then 'entra, el asiento lo lleva y el reparto lo guarda' else v_r::text end, c);
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (30, 'los frenos del banco valen: lo que c6 no deja clasificar sin el motivo escrito de Edgar (aquí, un débito que toma por nómina) tampoco pasa por el jornal: MX008 con el mensaje de c6 y nada cambia; con el motivo en p_opciones.motivo, entra',
+  insert into _pruebas values (30, 'los frenos del banco valen: lo que c6 no deja clasificar sin el motivo escrito de Edgar (aquí, un débito que toma por nómina) tampoco pasa por el jornal: MX008 con el mensaje de c6 y nada cambia; con el motivo en p_opciones.motivo, entra. Y un Zelle nunca es de nómina (c6, 14-nov): el que dice PAYROLL entra por el jornal sin motivo',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
@@ -4078,8 +4111,12 @@ end $$;
 --     ASÍ (su guarda del cierre lo para, MX008: lo prueba la 131 de c3):
 --     lo que aquí se mira es lo que dice c10 de un mes que SE CERRÓ con el
 --     doble dentro (antes de esa fase), así que la prueba cierra con esa
---     guarda de c3 apagada un instante, dentro de su transacción (se
---     deshace con ella; periodos ya está tomada en exclusiva).
+--     guarda de c3 SIN EFECTO dentro de su transacción: cambia su función
+--     por una que deja pasar («create or replace»: no le pide ningún candado
+--     a periodos, nadie más la ve cambiada y se deshace con la prueba; no
+--     apaga ningún trigger). Y, como cierra meses, toma periodos en
+--     exclusiva con un tope de MEDIO SEGUNDO puesto antes de pedirla: si
+--     alguien la tiene (la app posteando), sale «omitida» y lo dice.
 do $$
 declare
   v_obt text; v_mov uuid; v_r jsonb; v_mes periodos; v_ap periodos; v_dev jsonb; v_no text; a text; b text;
@@ -4090,6 +4127,8 @@ begin
   if pg_temp.c10_omitir_rojo(55, 'el doble de verdad, y al cerrar el mes', v_esp, 'jornal', array[50]) then return; end if;
   begin
     perform pg_temp.c10_ser('editor');
+    -- (el tope de medio segundo, ANTES de pedir periodos: si la app lo tiene, «omitida» en vez de hacerla esperar)
+    set local lock_timeout = '500ms';
     lock table periodos in exclusive mode;
     select * into v_mes from periodos p where p.tipo = 'mes' and p.estado = 'abierto' and p.hasta < fn_fecha_miami(now()) order by p.desde limit 1;
     if v_mes.periodo is null then
@@ -4131,11 +4170,11 @@ begin
           end if;
           perform fn_cerrar_periodo(v_ap.periodo);
         end if;
-        -- (la guarda del cierre del c3 de la Fase 11c no deja cerrar un mes con el doble dentro: aquí se mira el que ya se cerró así)
-        if pg_temp.c10_c3_aparta()
-           and exists (select 1 from pg_trigger t where t.tgrelid = 'public.periodos'::regclass
-                          and t.tgname = 'trg_puente_periodos_devengo' and not t.tgisinternal) then
-          execute 'alter table public.periodos disable trigger trg_puente_periodos_devengo';
+        -- (la guarda del cierre del c3 de la Fase 11c no deja cerrar un mes con el doble dentro: aquí se mira el que ya se cerró
+        --  así. Se deja sin efecto cambiando su función por una que deja pasar, dentro de la prueba: sin «alter table»)
+        if pg_temp.c10_c3_aparta() and to_regprocedure('public.fn_puente_periodos_devengo()') is not null then
+          execute 'create or replace function public.fn_puente_periodos_devengo() returns trigger language plpgsql '
+               || 'set search_path = public, pg_temp as $b$ begin return new; end $b$';
         end if;
         perform fn_cerrar_periodo(v_mes.periodo);
       exception when others then
@@ -4155,6 +4194,9 @@ begin
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
+    when lock_not_available then
+      v_obt := 'omitida: no se consiguió un candado en medio segundo (alguien está usando la app o pegando un archivo en este momento); '
+               || 'nada quedó a medias: vuelve a pegar este archivo en un rato';
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
   insert into _pruebas values (55, 'EL DOBLE DE VERDAD (el pago y el devengo estándar de las mismas horas en el mismo mes) pone el control 50 en rojo mientras ese mes está abierto y se puede arreglar; si el mes se cierra así, el control lo deja dicho y no se queda en rojo para siempre (el mes siguiente lo compensa con el reverso del devengo)',
@@ -4541,33 +4583,65 @@ $$;
 -- La marca de prueba. p_modo: 'ok' (devuelve esos reportes, con ese día de
 -- pago), 'falla' (existe y no contesta) o 'quitar' (no está: como una nómina
 -- de antes del 13-nov, que no la trae).
+-- (14-nov-2026, la Fase 11c) LA MARCA DE PRUEBA SE PONE ENCIMA, SIN BORRAR LA
+-- DE VERDAD («create or replace»: la misma forma que la de c15, sus tres
+-- columnas). Antes se borraba y se creaba la de prueba; si algo de la base
+-- dependía de ella (una vista, por ejemplo), la base no dejaba borrarla
+-- (2BP01) y la 62, la 63 y la 64 salían en rojo sin que nada estuviera roto.
+-- Puesta encima, lo que dependa de ella sigue en pie y la prueba corre. Solo
+-- hay que quitarla de verdad en 'quitar' (la 64) o si la de la base devuelve
+-- otra cosa (una nómina de otra versión: «create or replace» no deja cambiar
+-- lo que devuelve, 42P13); si entonces algo depende de ella, MXT22 y la
+-- prueba sale «omitida» con ese porqué. Todo se deshace con la prueba.
 create or replace function pg_temp.c10_marca(p_ids bigint[], p_dia date default null, p_modo text default 'ok') returns void
 language plpgsql as $$
+declare
+  v_def text;
+  v_det text;
 begin
   perform pg_temp.c10_ser('editor');
-  -- (si la de verdad está, se quita y se pone la de prueba: «create or replace» no deja cambiar lo que devuelve, y una
-  -- nómina de otra versión podría devolver otra cosa; todo se deshace con la prueba)
-  if to_regprocedure('public.fn_nomina_horas_con_pago()') is not null then
-    drop function public.fn_nomina_horas_con_pago();
-  end if;
   if p_modo = 'quitar' then
+    if to_regprocedure('public.fn_nomina_horas_con_pago()') is not null then
+      begin
+        drop function public.fn_nomina_horas_con_pago();
+      exception when dependent_objects_still_exist then
+        get stacked diagnostics v_det = pg_exception_detail;
+        raise exception using errcode = 'MXT22',
+          message = format('algo de esta base depende de la marca de la nómina (fn_nomina_horas_con_pago: %s) y no se deja quitar un '
+                           'instante para la prueba; nada se tocó', left(coalesce(nullif(v_det, ''), 'sin detalle'), 200));
+      end;
+    end if;
     return;
   end if;
-  if p_modo = 'falla' then
-    create function public.fn_nomina_horas_con_pago()
-    returns table (horas_id bigint, corrida_id uuid, dia_pago date)
-    language plpgsql stable
-    set search_path = public, pg_temp
-    as $b$ begin raise exception 'c10-pruebas: la marca de prueba no contesta'; end $b$;
-  else
-    execute format($f$
-      create function public.fn_nomina_horas_con_pago()
-      returns table (horas_id bigint, corrida_id uuid, dia_pago date)
-      language sql stable
-      set search_path = public, pg_temp
-      as $b$ select x, %L::uuid, %L::date from unnest(%L::bigint[]) x $b$
-    $f$, pg_temp.c10('corrida'), p_dia, p_ids);
-  end if;
+  v_def := case when p_modo = 'falla'
+                then $f$
+                  create or replace function public.fn_nomina_horas_con_pago()
+                  returns table (horas_id bigint, corrida_id uuid, dia_pago date)
+                  language plpgsql stable
+                  set search_path = public, pg_temp
+                  as $b$ begin raise exception 'c10-pruebas: la marca de prueba no contesta'; end $b$
+                $f$
+                else format($f$
+                  create or replace function public.fn_nomina_horas_con_pago()
+                  returns table (horas_id bigint, corrida_id uuid, dia_pago date)
+                  language sql stable
+                  set search_path = public, pg_temp
+                  as $b$ select x, %L::uuid, %L::date from unnest(%L::bigint[]) x $b$
+                $f$, pg_temp.c10('corrida'), p_dia, p_ids) end;
+  begin
+    execute v_def;
+  exception when invalid_function_definition then
+    begin
+      drop function public.fn_nomina_horas_con_pago();
+    exception when dependent_objects_still_exist then
+      get stacked diagnostics v_det = pg_exception_detail;
+      raise exception using errcode = 'MXT22',
+        message = format('la marca de la nómina de esta base (fn_nomina_horas_con_pago) devuelve otra cosa que la que c10 conoce, y '
+                         'algo depende de ella (%s): no se deja cambiar un instante para la prueba; nada se tocó',
+                         left(coalesce(nullif(v_det, ''), 'sin detalle'), 200));
+    end;
+    execute v_def;
+  end;
   revoke execute on function public.fn_nomina_horas_con_pago() from public, anon, service_role;
   grant  execute on function public.fn_nomina_horas_con_pago() to authenticated;
 end $$;
@@ -4741,6 +4815,7 @@ begin
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
+    when sqlstate 'MXT22' then v_obt := 'omitida: ' || sqlerrm;
     when lock_not_available then v_obt := pg_temp.c10_sin_candado();
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
@@ -4841,6 +4916,7 @@ begin
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
+    when sqlstate 'MXT22' then v_obt := 'omitida: ' || sqlerrm;
     when lock_not_available then v_obt := pg_temp.c10_sin_candado();
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
@@ -4951,6 +5027,7 @@ begin
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
+    when sqlstate 'MXT22' then v_obt := 'omitida: ' || sqlerrm;
     when lock_not_available then v_obt := pg_temp.c10_sin_candado();
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;

@@ -1645,6 +1645,10 @@ body[data-vista="conta"] .fab { display: none; }
 #conta-raiz .ct-tb-nom-dia { font-size: 1.35rem; font-weight: 800; letter-spacing: -.01em; line-height: 1.15; color: var(--mp-ink); white-space: nowrap; }
 #conta-raiz .ct-tb-nom-t { margin: .2rem 0 0; flex-basis: auto; }
 #conta-raiz .ct-tb[data-tb="nomina"] .ct-tb-st small { overflow-wrap: anywhere; }
+/* (11c, con el c16 de verdad) un cargo de Gusto que espera más de lo que la nómina tiene fijado para avisar, o uno des-casado: la cajita
+   con su borde en rojo y, en su línea, el aviso con su icono (el color nunca solo); la línea chica no crece */
+#conta-raiz .ct-tb-st.alarma { border-color: var(--bad); }
+#conta-raiz .ct-tb-st small .ct-tb-vencido { display: inline; font-size: inherit; white-space: nowrap; }
 /* el teléfono: las acciones en dos columnas (no una tira larga) */
 @media (max-width: 699px) {
   #conta-raiz .ct-tb-acc-t { flex-basis: 100%; }

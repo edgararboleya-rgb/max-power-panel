@@ -17,17 +17,24 @@
 # está una base que nadie ajustó, antes de este pegado): el paso del patrón
 # se prueba igual; lo que proponía la regla de antes, no (se dice).
 #
-# LA TABLA es pruebas/conta/nomina/zz-cargos-de-gusto-en-el-banco.csv: 16
-# descripciones del banco que SÍ son de nómina y 8 que NO (todo inventado).
-# Cada una entra como débito y como depósito.
-#   1. ANTES DEL PEGADO. Llegan los 48 movimientos y se «casan» con el banco
-#      que haya. Con el banco de antes (PLANTILLA): el débito de 7 de las 8
-#      que no son salía «nomina» (el Zelle a un Augusto), y el depósito de
-#      ZENPAYROLL no salía (con un banco anterior a la Fase 11b, ningún
-#      depósito salía de nómina). Tres se resuelven a propósito, como estarían en
+# LA TABLA es pruebas/conta/nomina/zz-cargos-de-gusto-en-el-banco.csv: 18
+# descripciones del banco que SÍ son de nómina y 11 que NO (todo inventado),
+# cada una con su NAME y su MEMO. Cada una entra como débito y como depósito.
+# (Las tres últimas que NO, de los arreglos de la verificación de la fase:
+# tres Zelle —uno con la nota «con gusto, gracias», otro con la nota
+# «payroll semana 3» y otro a alguien de nombre Gusto—. Un Zelle nunca es de
+# nómina, diga lo que diga: su texto lo escribe una persona.)
+#   1. ANTES DEL PEGADO. Llegan los 58 movimientos y se «casan» con el banco
+#      que haya. Con el banco de antes (PLANTILLA): el débito de 10 de las 11
+#      que no son salía «nomina» (el Zelle a un Augusto y los tres Zelle), el
+#      depósito de esos tres Zelle también, y el depósito de ZENPAYROLL no
+#      salía (con un banco anterior a la Fase 11b, ningún depósito salía de
+#      nómina). Tres se resuelven a propósito, como estarían en
 #      producción: el Zelle a un Augusto, clasificado a mano con su motivo
 #      (era la única salida); otro, ignorado con su motivo; y la cuota de
-#      Gusto, desde la nómina (si c15 está). Eso NO puede cambiar.
+#      Gusto, desde la nómina (si c15 está). Eso NO puede cambiar. Y se
+#      corre LA CONSULTA de más abajo (la que se mira en producción antes
+#      de pegar): lo que dice que va a cambiar se guarda para el paso 5.
 #   2. LA NÓMINA DE HOY SOBRE EL BANCO DE ANTES (solo con PLANTILLA y c15):
 #      c15-nomina.sql para con MX000, dice que se vuelva a pegar c6 y no
 #      toca nada.
@@ -39,12 +46,22 @@
 #      botones hasta entonces). Y con el c15 de antes todavía puesto, su
 #      lista de cargos sigue contestando.
 #   4. LA NÓMINA DE HOY (c15, si está): entra, 9 filas, sus cuadres en verde.
+#      Y LO RECIÉN LLEGADO, SIN «CASAR» (lo que encontró la revisión de la
+#      fase): la nómina decide con el mismo texto que la Bandeja, el NAME y
+#      el MEMO. Cuatro cargos que acaban de llegar (en una transacción que
+#      se deshace): los tres que nombran a Gusto solo en el memo salen en
+#      Nómina → Cargos de Gusto antes del primer «Casar», y el que lleva un
+#      Augusto en el memo, no; y de cada uno la función del banco dice lo
+#      que su Bandeja dirá al casar.
 #   5. «CASAR»: cada descripción de la tabla sale como dice su columna, con
 #      los dos signos; el Zelle a un Augusto que seguía pendiente, por lo
 #      que es (un cargo sin ticket); lo resuelto, igual que estaba; y la
-#      función que lo decide dice de cada pendiente lo mismo que la Bandeja.
+#      función que lo decide (con la descripción y el memo de cada uno, como
+#      la llama la nómina) dice de cada pendiente lo mismo que la Bandeja.
 #      La nómina (si está): en sus cargos de Gusto, los que son y ninguno
-#      de los que no; la cuota resuelta sigue siendo la cuota.
+#      de los que no; la cuota resuelta sigue siendo la cuota. Y lo que de
+#      verdad cambió de propuesta es lo que dijo la consulta del paso 1, ni
+#      un movimiento más ni uno menos.
 #   6. OTRA VEZ EL PEGADO (el banco entero y la nómina): ni una fila más en
 #      el historial del descriptor, y ninguna tabla cambia (ni un dato).
 #   7. UN PATRÓN AJUSTADO POR EDGAR NO SE TOCA: se pone uno con
@@ -60,15 +77,16 @@
 # propuesta va a cambiar con el primer «Casar» después del pegado. Ninguna
 # fila = no cambia la propuesta de nada. (Un DEPÓSITO que «será de nómina»
 # lo será solo si nada más lo explica —un cobro anotado, una factura por
-# ese monto—; si no, sigue como está y su texto avisa.)
+# ese monto—; si no, sigue como está y su texto avisa.) Este guion la corre
+# tal cual (la saca de este comentario) en el paso 1 y la comprueba en el 5.
 #   with d as (select '\m(' || case when patron = '(GUSTO|PAYROLL|\mADP\M|PAYCHEX)'
 #                                   then '(GUSTO|ZENPAYROLL|PAYROLL|\mADP\M|PAYCHEX)' else patron end || ')\M' as p
 #                from banco_descriptores where clave = 'nomina')
 #   select m.cuenta, m.fecha, m.monto, m.descripcion, coalesce(m.estado_motivo, '(sin propuesta)') as hoy,
 #          case when x.dice then 'será de nómina' else 'dejará de ser de nómina: saldrá por lo que es' end as despues
 #     from movimientos_banco m cross join d
-#    cross join lateral (select coalesce(btrim(m.desc_norm || ' ' || coalesce(regexp_replace(upper(m.memo), '[^[:alnum:]#&]+', ' ', 'g'), ''))
-#                                        ~* d.p, false) as dice) x
+#    cross join lateral (select btrim(regexp_replace(upper(concat_ws(' ', m.desc_norm, m.memo)), '[^[:alnum:]#&]+', ' ', 'g')) as v) t
+#    cross join lateral (select coalesce(t.v ~* d.p and t.v !~ '\mZELLE\M', false) as dice) x
 #    where m.estado = 'pendiente' and (m.estado_motivo is not distinct from 'nomina') <> x.dice
 #    order by m.fecha, m.monto;
 # Y el patrón, por si se ajustó a mano (si no es el de fábrica, el pegado no
@@ -189,7 +207,7 @@ C180_0=0
 [ "$HAY_C15" = "true" ] && C180_0="$(ed -c "select coalesce(substring(k.detalle from '^([0-9]+) cargo'), '0') from fn_nomina_cierre('$MES') k where k.orden = 180")"
 
 echo
-echo "== 1. Antes del pegado: llegan los 48 movimientos de la tabla y se «casan» con el banco que hay"
+echo "== 1. Antes del pegado: llegan los 58 movimientos de la tabla y se «casan» con el banco que hay"
 ed -v ON_ERROR_STOP=1 > "$TMP/tabla.out" 2>&1 <<SQL || { cat "$TMP/tabla.out"; echo "FALLÓ la tabla" >&2; exit 2; }
 create schema if not exists pruebas;
 revoke all on schema pruebas from public, anon, authenticated, service_role;
@@ -198,17 +216,17 @@ create table pruebas.c6_gusto_tabla (n serial, clave text, es_de_nomina text, de
 revoke all on pruebas.c6_gusto_tabla from public, anon, authenticated, service_role;
 \copy pruebas.c6_gusto_tabla (clave, es_de_nomina, descripcion, memo, por_que) from '$DIR/nomina/zz-cargos-de-gusto-en-el-banco.csv' csv header
 SQL
-revisa "la tabla: 16 que son de nómina y 8 que no" "16|8" "$(ed -c "select count(*) filter (where es_de_nomina = 'si') || '|' || count(*) filter (where es_de_nomina = 'no') from pruebas.c6_gusto_tabla")"
-revisa "entran los 24 débitos y los 24 depósitos (como los trae Plaid)" "24|24" \
+revisa "la tabla: 18 que son de nómina y 11 que no" "18|11" "$(ed -c "select count(*) filter (where es_de_nomina = 'si') || '|' || count(*) filter (where es_de_nomina = 'no') from pruebas.c6_gusto_tabla")"
+revisa "entran los 29 débitos y los 29 depósitos (como los trae Plaid)" "29|29" \
   "$(ed -c "select (fn_banco_importar_filas(jsonb_build_object('origen', 'plaid', 'cuenta', '1010', 'nombre', 'Plaid · c6-gusto · débitos', 'filas', (select jsonb_agg(jsonb_strip_nulls(jsonb_build_object('id', 'c6g-d-' || t.clave, 'fecha', '$HOY', 'plaid_monto', (310.37 + 7 * t.n)::numeric(12,2)::text, 'descripcion', t.descripcion, 'memo', t.memo, 'tipo', 'DEBIT', 'pendiente', false)) order by t.n) from pruebas.c6_gusto_tabla t)))->>'filas_nuevas') || '|' || (fn_banco_importar_filas(jsonb_build_object('origen', 'plaid', 'cuenta', '1010', 'nombre', 'Plaid · c6-gusto · depósitos', 'filas', (select jsonb_agg(jsonb_strip_nulls(jsonb_build_object('id', 'c6g-c-' || t.clave, 'fecha', '$HOY', 'plaid_monto', (-(51.17 + 3 * t.n))::numeric(12,2)::text, 'descripcion', t.descripcion, 'memo', t.memo, 'tipo', 'CREDIT', 'pendiente', false)) order by t.n) from pruebas.c6_gusto_tabla t)))->>'filas_nuevas')")"
 casar; revisa "«Casar» termina" "0" "$?"
-revisa "ninguno casó solo con algo del libro: los 48 esperan en la Bandeja" "48" "$(ed -c "select count(*) from movimientos_banco where id_externo like 'c6g-_-%' and estado = 'pendiente'")"
+revisa "ninguno casó solo con algo del libro: los 58 esperan en la Bandeja" "58" "$(ed -c "select count(*) from movimientos_banco where id_externo like 'c6g-_-%' and estado = 'pendiente'")"
 if [ "$ANTES" = "si" ] && [ "$MARCA_BD" -ge 2026111301 ]; then
-  revisa "CON EL BANCO DE ANTES (la Fase 11b): el débito de 7 de las 8 que NO son salía «nomina» (el Zelle a un Augusto), y el depósito de ZENPAYROLL (2 de 16) no salía" "16|7|14|0" "$(bandeja)"
+  revisa "CON EL BANCO DE ANTES (la Fase 11b): el débito de 10 de las 11 que NO son salía «nomina» (el Zelle a un Augusto y los tres Zelle que dicen gusto o payroll) y el depósito de esos tres Zelle también; el depósito de ZENPAYROLL (2 de 18) no salía" "18|10|16|3" "$(bandeja)"
 elif [ "$ANTES" = "si" ]; then
-  revisa "CON EL BANCO DE ANTES (anterior a la Fase 11b): el débito de 7 de las 8 que NO son salía «nomina» (el Zelle a un Augusto), y un depósito de Gusto todavía no salía de nómina" "16|7|0|0" "$(bandeja)"
+  revisa "CON EL BANCO DE ANTES (anterior a la Fase 11b): el débito de 10 de las 11 que NO son salía «nomina» (el Zelle a un Augusto y los tres Zelle que dicen gusto o payroll), y un depósito de Gusto todavía no salía de nómina" "18|10|0|0" "$(bandeja)"
 else
-  revisa "con el banco de hoy y el patrón de antes: palabra entera, pero ZENPAYROLL (2 débitos y 2 depósitos) no sale" "14|0|14|0" "$(bandeja)"
+  revisa "con el banco de hoy y el patrón de antes: palabra entera y ningún Zelle, pero ZENPAYROLL (2 débitos y 2 depósitos) no sale" "16|0|16|0" "$(bandeja)"
 fi
 # Tres se resuelven a propósito (lo que NO puede cambiar con el pegado)
 M_AUG="$(mov c6g-d-n02)"; M_IGN="$(mov c6g-d-n03)"; M_FEE="$(mov c6g-d-s03)"
@@ -219,6 +237,16 @@ revisa "otro, ignorado con su motivo" "ignorado" "$(ed -c "select estado from mo
 if [ "$HAY_C15" = "true" ]; then
   revisa "la cuota de Gusto (GUSTO FEE), resuelta desde la nómina" "cuota" "$(dueno "fn_nomina_cargo_cuota('$M_FEE')->>'clase'")"
 fi
+# LA CONSULTA DE LA CABECERA (la que se mira en producción ANTES de pegar: solo lee y vale con el banco de antes), tal cual: lo
+# que dice que va a cambiar de propuesta se guarda, y en el paso 5 se compara con lo que de verdad cambió.
+sed -n '/^#   with d as (select/,/^#    order by m.fecha, m.monto;/p' "${BASH_SOURCE[0]}" | sed -e 's/^#//' -e 's/;[[:space:]]*$//' > "$TMP/consulta.sql"
+ed -v ON_ERROR_STOP=1 > "$TMP/pred.out" 2>&1 <<SQL || { cat "$TMP/pred.out"; echo "FALLÓ la consulta de la cabecera" >&2; exit 2; }
+drop table if exists pruebas.c6_gusto_pred, pruebas.c6_gusto_antes;
+create table pruebas.c6_gusto_pred as select q.* from ($(cat "$TMP/consulta.sql")) q;
+create table pruebas.c6_gusto_antes as select m.id, m.estado, m.estado_motivo from movimientos_banco m where m.id_externo like 'c6g-_-%';
+revoke all on pruebas.c6_gusto_pred, pruebas.c6_gusto_antes from public, anon, authenticated, service_role;
+SQL
+nota "la consulta de antes de pegar dice que cambiarán de propuesta: $(ed -c "select count(*) filter (where despues like 'será%') || ' serán de nómina y ' || count(*) filter (where despues like 'dejará%') || ' dejarán de serlo' from pruebas.c6_gusto_pred")"
 R0="$(resuelto)"; H0="$(historial)"
 PENDN="$(ed -c "select count(*) from movimientos_banco where id_externo like 'c6g-_-%' and estado = 'pendiente'")"
 PEND0="$(ed -c "select md5(string_agg(m.id_externo || '|' || coalesce(m.estado_motivo, '-'), ';' order by m.id_externo)) from movimientos_banco m where m.id_externo like 'c6g-_-%' and m.estado = 'pendiente'")"
@@ -230,7 +258,7 @@ if [ "$ANTES" = "si" ] && [ "$HAY_C15" = "true" ]; then
   pegar "$DOCS/c15-nomina.sql" "$TMP/2.out"
   revisa "c15-nomina.sql no entra: para con MX000 y dice que se vuelva a pegar c6" "3|1" "$?|$(grep -c 'c15-nomina NO se aplicó, no se tocó nada: el c6-banco.sql pegado es anterior al 14-nov-2026.*vuelve a pegar c6-banco.sql' "$TMP/2.out")"
   revisa "y no tocó nada (ni un dato, ni la función de los cargos)" "igual|la de antes" \
-    "$([ "$(tablas)" = "$T0" ] && echo igual || echo CAMBIÓ)|$(ed -c "select case when p.prosrc like '%fn_banco_dice_nomina%' then 'LA DE HOY' else 'la de antes' end from pg_proc p where p.oid = to_regprocedure('public.fn_nomina_cargos()')")"
+    "$([ "$(tablas)" = "$T0" ] && echo igual || echo CAMBIÓ)|$(ed -c "select case when to_regprocedure('public.fn_nomina_cargos_esperan()') is not null then 'LA DE HOY' else 'la de antes' end")"
 else
   nota "omitida: hace falta una base con el banco de antes y con la nómina (PLANTILLA=<bd>)"
 fi
@@ -268,8 +296,27 @@ if [ "$HAY_C15" = "true" ]; then
   grep -h 'ERROR' "$TMP/4.out" | head -n 4
   revisa "sus nueve filas, y su control sin cuadres en rojo" "9|0 de 5 cuadres en rojo" \
     "$(ed -c "select count(*) from fn_nomina_pegado()")|$(ed -c "select substring(detalle from '^[0-9]+ de [0-9]+ cuadres en rojo') from fn_nomina_pegado() where que = 'control'")"
-  revisa "la función de los cargos es la de hoy (pregunta al banco)" "la de hoy" \
-    "$(ed -c "select case when p.prosrc like '%fn_banco_dice_nomina%' then 'la de hoy' else 'LA DE ANTES' end from pg_proc p where p.oid = to_regprocedure('public.fn_nomina_cargos()')")"
+  # (desde los arreglos de la verificación de la fase, cuáles son los cargos de Gusto lo dice fn_nomina_cargos_esperan —la que
+  # pregunta al banco—, y la lista entera, fn_nomina_cargos, los toma de ella)
+  revisa "la función de los cargos es la de hoy (pregunta al banco, en un solo sitio)" "la de hoy" \
+    "$(ed -c "select case when exists (select 1 from pg_proc p where p.oid = to_regprocedure('public.fn_nomina_cargos_esperan()') and p.prosrc like '%fn_banco_dice_nomina%') and exists (select 1 from pg_proc p where p.oid = to_regprocedure('public.fn_nomina_cargos()') and p.prosrc like '%fn_nomina_cargos_esperan%') then 'la de hoy' else 'LA DE ANTES' end")"
+  # LO RECIÉN LLEGADO, SIN «CASAR» (la revisión de la fase): la nómina mira lo que mira la Bandeja, el NAME y el MEMO. Cuatro cargos
+  # nuevos de la tabla (s10, s17 y s18: Gusto solo en el memo; n08: un Augusto en el memo), como el dueño por la API, en una
+  # transacción que se deshace: <los que salen en Cargos de Gusto sin «Casar»>|<sin propuesta todavía>|<la función = lo que la
+  # Bandeja dice al casarlos>
+  FILAS_R="$(ed -c "select jsonb_agg(jsonb_strip_nulls(jsonb_build_object('id', 'c6g-r-' || t.clave, 'fecha', '$HOY', 'plaid_monto', (910.37 + 7 * t.n)::numeric(12,2)::text, 'descripcion', t.descripcion, 'memo', t.memo, 'tipo', 'DEBIT', 'pendiente', false)) order by t.n) from pruebas.c6_gusto_tabla t where t.clave in ('s10', 's17', 's18', 'n08')")"
+  revisa "lo recién llegado, sin «Casar»: los que nombran a Gusto solo en el MEMO ya salen en Nómina → Cargos de Gusto, y el del Augusto en el memo, no" \
+    "c6g-r-s10,c6g-r-s17,c6g-r-s18|4 de 4 sin propuesta|4 de 4 como dice la Bandeja al casarlos" \
+    "$(ed -v ON_ERROR_STOP=1 2>&1 <<SQL | sed -n 's/^RESULTADO //p; s/^.*ERROR: *//p' | paste -sd'|' -
+begin; $(app)
+select fn_banco_importar_filas(jsonb_build_object('origen', 'plaid', 'cuenta', '1010', 'nombre', 'Plaid · c6-gusto · recién llegados', 'filas', \$j\$$FILAS_R\$j\$::jsonb)) is null;
+select 'RESULTADO ' || coalesce(string_agg(m.id_externo, ',' order by m.id_externo), '(ninguno)') from fn_nomina_cargos() g join movimientos_banco m on m.id = g.movimiento_id where m.id_externo like 'c6g-r-%' and g.estado = 'pendiente';
+select 'RESULTADO ' || count(*) filter (where m.estado = 'pendiente' and m.estado_motivo is null) || ' de ' || count(*) || ' sin propuesta' from movimientos_banco m where m.id_externo like 'c6g-r-%';
+select count(fn_banco_casar(m.id)) is null from movimientos_banco m where m.id_externo like 'c6g-r-%';
+select 'RESULTADO ' || count(*) filter (where fn_banco_dice_nomina(m.desc_norm, m.memo) = (m.estado_motivo is not distinct from 'nomina')) || ' de ' || count(*) || ' como dice la Bandeja al casarlos' from movimientos_banco m where m.id_externo like 'c6g-r-%';
+rollback;
+SQL
+)"
 else
   nota "omitida: esta base no tiene la nómina (c15 es opcional para el banco)"
 fi
@@ -277,21 +324,27 @@ fi
 echo
 echo "== 5. «Casar»: la marca nueva rehace lo pendiente"
 casar; revisa "«Casar» termina" "0" "$?"
-# (de los 48: tres resueltos —dos débitos que no son y la cuota, que sí es, si c15 está—; el resto, pendiente)
-if [ "$HAY_C15" = "true" ]; then ESP="15|0|16|0"; else ESP="16|0|16|0"; fi
-revisa "cada descripción sale como dice su columna, con los dos signos: de nómina las que son (débitos|…|depósitos|…) y ninguna de las que no" "$ESP" "$(bandeja)"
+# (de los 58: tres resueltos —dos débitos que no son y la cuota, que sí es, si c15 está—; el resto, pendiente)
+if [ "$HAY_C15" = "true" ]; then ESP="17|0|18|0"; else ESP="18|0|18|0"; fi
+revisa "cada descripción sale como dice su columna, con los dos signos: de nómina las que son (débitos|…|depósitos|…) y ninguna de las que no (tampoco los tres Zelle)" "$ESP" "$(bandeja)"
+revisa "los tres Zelle (la nota «con gusto», la nota «payroll» y el de nombre Gusto) salen por lo que son: un cargo sin ticket (R10), los tres" "3" \
+  "$(ed -c "select count(*) from movimientos_banco m where m.id_externo in ('c6g-d-n09', 'c6g-d-n10', 'c6g-d-n11') and m.estado_motivo = 'sin_ticket' and m.propuesta->>'regla' = 'R10'")"
 revisa "el Zelle a un Augusto que seguía pendiente sale por lo que es: un cargo sin ticket (R10), con el aviso de «un Zelle a una persona»" "sin_ticket|R10|sí" \
   "$(ed -c "select m.estado_motivo || '|' || (m.propuesta->>'regla') || '|' || case when m.propuesta->>'texto' like 'Sin ticket ni asiento que lo explique%Un Zelle a una persona%' then 'sí' else left(m.propuesta->>'texto', 80) end from movimientos_banco m where m.id_externo = 'c6g-d-n01'")"
 revisa "el depósito de ZENPAYROLL sale de nómina (una devolución de Gusto): antes no" "nomina|nomina" \
   "$(ed -c "select string_agg(m.estado_motivo, '|' order by m.id_externo) from movimientos_banco m where m.id_externo in ('c6g-c-s11', 'c6g-c-s12')")"
 revisa "nada de lo resuelto cambió (el clasificado, el ignorado, la cuota)" "igual" "$([ "$(resuelto)" = "$R0" ] && echo igual || echo CAMBIÓ)"
-revisa "la función que lo decide dice de cada pendiente lo mismo que la Bandeja" "0" \
-  "$(ed -c "select count(*) from movimientos_banco m where m.id_externo like 'c6g-_-%' and m.estado = 'pendiente' and fn_banco_dice_nomina(case when m.memo is null then m.desc_norm else btrim(m.desc_norm || ' ' || fn_banco_norm(m.memo)) end) is distinct from (m.estado_motivo is not distinct from 'nomina')")"
+# (lo que cambió de propuesta —de nómina a otra cosa, o al revés— entre lo que seguía pendiente, contra lo que dijo la consulta de
+# la cabecera antes del pegado: <cambiaron y no lo dijo>|<lo dijo y no cambiaron>)
+revisa "lo que de verdad cambió de propuesta es lo que decía la consulta de antes de pegar, ni uno más ni uno menos" "0|0|sí" \
+  "$(ed -c "with real as (select m.cuenta, m.fecha, m.monto, m.descripcion, case when m.estado_motivo is not distinct from 'nomina' then 'será' else 'dejará' end as dir from movimientos_banco m join pruebas.c6_gusto_antes a on a.id = m.id where a.estado = 'pendiente' and m.estado = 'pendiente' and (a.estado_motivo is not distinct from 'nomina') <> (m.estado_motivo is not distinct from 'nomina')), pred as (select p.cuenta, p.fecha, p.monto, p.descripcion, case when p.despues like 'será%' then 'será' else 'dejará' end as dir from pruebas.c6_gusto_pred p where exists (select 1 from movimientos_banco m where m.id_externo like 'c6g-_-%' and m.cuenta = p.cuenta and m.fecha = p.fecha and m.monto = p.monto and m.descripcion is not distinct from p.descripcion)) select (select count(*) from (select * from real except select * from pred) x) || '|' || (select count(*) from (select * from pred except select * from real) y) || '|' || case when (select count(*) from real) > 0 then 'sí' else 'no cambió ninguna' end")"
+revisa "la función que lo decide (con la descripción y el memo, como la llama la nómina) dice de cada pendiente lo mismo que la Bandeja" "0" \
+  "$(ed -c "select count(*) from movimientos_banco m where m.id_externo like 'c6g-_-%' and m.estado = 'pendiente' and fn_banco_dice_nomina(m.desc_norm, m.memo) is distinct from (m.estado_motivo is not distinct from 'nomina')")"
 if [ "$HAY_C15" = "true" ]; then
-  revisa "la nómina: en sus cargos de Gusto, los pendientes que son (15 débitos y 16 depósitos) y ninguno de los que no" "31|0" \
+  revisa "la nómina: en sus cargos de Gusto, los pendientes que son (17 débitos y 18 depósitos) y ninguno de los que no" "35|0" \
     "$(ed -c "select count(*) filter (where t.es_de_nomina = 'si') || '|' || count(*) filter (where t.es_de_nomina = 'no') from fn_nomina_cargos() g join movimientos_banco m on m.id = g.movimiento_id join pruebas.c6_gusto_tabla t on m.id_externo in ('c6g-d-' || t.clave, 'c6g-c-' || t.clave) where g.estado = 'pendiente'")"
   revisa "y la cuota que se resolvió antes del pegado sigue siendo la cuota" "cuota" "$(ed -c "select g.estado from fn_nomina_cargos() g where g.movimiento_id = '$M_FEE'")"
-  revisa "la fila 180 del cierre cuenta 31 más: los de Gusto, no los Zelle" "31" "$(( $(ed -c "select coalesce(substring(k.detalle from '^([0-9]+) cargo'), '0') from fn_nomina_cierre('$MES') k where k.orden = 180") - C180_0 ))"
+  revisa "la fila 180 del cierre cuenta 35 más: los de Gusto, no los Zelle" "35" "$(( $(ed -c "select coalesce(substring(k.detalle from '^([0-9]+) cargo'), '0') from fn_nomina_cierre('$MES') k where k.orden = 180") - C180_0 ))"
 fi
 
 echo

@@ -2239,21 +2239,28 @@ set search_path = public, pg_temp
 as $$ select coalesce((select coalesce(p_desc, '') ~* d.patron from banco_descriptores d where d.clave = p_clave), false) $$;
 revoke execute on function public.fn_banco_dice(text, text) from public, anon, authenticated, service_role;
 
--- (Fase 11c) ¿Nombra el texto la nómina? El descriptor «nomina» como PALABRA
--- ENTERA («GUSTO», no «AUGUSTO»): el único sitio que lo decide, para R6 y
--- para c15 (por eso authenticated la ejecuta; al equipo le dice false).
-create or replace function public.fn_banco_dice_nomina(p_texto text)
+-- (Fase 11c) ¿Nombra el movimiento la nómina? El descriptor «nomina» como
+-- PALABRA ENTERA («GUSTO», no «AUGUSTO») en su NAME y su MEMO (desc_norm y
+-- memo), normalizados aquí como fn_banco_norm: el texto de R6. El único sitio
+-- que lo decide, para R6 y para c15 (por eso authenticated la ejecuta; al
+-- equipo le dice false). (La de un argumento, de la primera versión de esta
+-- fase, no llegó a producción: si una base de pruebas la tiene, se quita.)
+-- UN ZELLE, NUNCA: su nota la escribe una persona («con gusto, gracias»).
+drop function if exists public.fn_banco_dice_nomina(text);
+create or replace function public.fn_banco_dice_nomina(p_desc text, p_memo text)
 returns boolean
 language plpgsql
 stable
 set search_path = public, pg_temp
 as $$
+declare
+  v text := btrim(regexp_replace(upper(concat_ws(' ', p_desc, p_memo)), '[^[:alnum:]#&]+', ' ', 'g'));
 begin
-  return coalesce((select coalesce(p_texto, '') ~* ('\m(' || d.patron || ')\M')
-                     from banco_descriptores d where d.clave = 'nomina'), false);
+  return v !~ '\mZELLE\M'
+         and coalesce((select v ~* ('\m(' || d.patron || ')\M') from banco_descriptores d where d.clave = 'nomina'), false);
 end $$;
-revoke execute on function public.fn_banco_dice_nomina(text) from public, anon, authenticated, service_role;
-grant  execute on function public.fn_banco_dice_nomina(text) to authenticated;
+revoke execute on function public.fn_banco_dice_nomina(text, text) from public, anon, authenticated, service_role;
+grant  execute on function public.fn_banco_dice_nomina(text, text) to authenticated;
 
 -- (Ronda 4) LOS 4 ÚLTIMOS DE LA OTRA CUENTA que nombra una transferencia
 -- («ONLINE TRANSFER TO CHK ...7781», «TO SAV XXXXXX1097», «FROM ACCT
@@ -6885,7 +6892,7 @@ begin
   -- «espera el journal (f11) y casa solo». El journal de Gusto, c15, no
   -- lleva línea del banco: su cargo se casa desde la página de la nómina.)
   -- (Fase 11c: como PALABRA ENTERA, igual que el depósito: «AUGUSTO» no es Gusto)
-  if m.monto < 0 and fn_banco_dice_nomina(v_txt) then
+  if m.monto < 0 and fn_banco_dice_nomina(m.desc_norm, m.memo) then
     return jsonb_build_object(
       'motivo', 'nomina', 'regla', 'R6',
       'texto', 'Débito de nómina (Gusto): se casa desde Contabilidad → Nómina → Cargos de Gusto, con lo que su nómina dejó por '
@@ -8113,7 +8120,7 @@ begin
     -- «AUGUSTO») y que nada más explica sale con el motivo «nomina» (R6),
     -- como el débito, y sus botones (las facturas abiertas, si las hay) piden
     -- su motivo. Si otra cosa lo explica, sigue como estaba y el texto avisa.
-    v_dice_nom := fn_banco_dice_nomina(v_txt);
+    v_dice_nom := fn_banco_dice_nomina(m.desc_norm, m.memo);
     v_nom_dep := v_dice_nom and not v_personal and v_cobros is null and v_grupos is null and not v_desconocida
                  and v_otro_cobro is null and v_devol is null and v_reemb is null and not (v_fact is not null and v_exacta)
                  and not v_nombrado and v_tr is null;

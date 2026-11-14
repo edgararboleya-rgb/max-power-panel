@@ -1,11 +1,12 @@
 -- =====================================================================
 -- c15-pruebas.sql — LA NÓMINA se prueba a sí misma (c15-nomina.sql).
--- 13-nov-2026 (14-nov: la Fase 11c, la 67 y la 68).
+-- 13-nov-2026 (14-nov: la Fase 11c, de la 67 a la 69; y la 70, la de los
+-- arreglos de su verificación).
 --
 -- CÓMO SE CORRE. En el SQL Editor de Supabase: DESPUÉS de c15-nomina.sql (y,
 -- si el c9-cierre.sql que tienes nombra las filas 180 a 183 en su cabecera,
 -- después de volver a pegarlo), pegar este archivo entero → Run. Sale la
--- tabla _pruebas: 68 filas, todas con ok = true (las que salen «omitida»
+-- tabla _pruebas: 70 filas, todas con ok = true (las que salen «omitida»
 -- dicen por qué y no son un fallo; una fila 99 solo sale si algo de este
 -- archivo falló). Si el editor se cansa antes del final, la corrida sigue en
 -- el servidor y se lee después en pruebas.c15_resultado (ver el final).
@@ -19,7 +20,7 @@
 -- asientos, ni las obras, las personas y las horas de prueba, ni un
 -- movimiento del banco, ni la revisión del cierre que c9 guarda, ni el
 -- reloj); la 51 lo comprueba, y la 52 otra vez al final de todo. (La 53 a
--- la 66, las de la revisión de la Fase 11b, y la 67 y la 68, las de la
+-- la 66, las de la revisión de la Fase 11b, y de la 67 a la 70, las de la
 -- Fase 11c, van ANTES de la 50: el número dice cuándo se escribió, no dónde
 -- corre.)
 --
@@ -72,7 +73,7 @@
 --     suya por la misma nómina (mismas personas, mismas cifras).
 --
 -- Lo que mira, una prueba cada una:
---  1 el pegado (precondiciones, 15 tablas, 7 vistas, las 66 funciones por su
+--  1 el pegado (precondiciones, 15 tablas, 7 vistas, las 68 funciones por su
 --    nombre exacto, la configuración, el mapeo de fábrica, cada objeto con
 --    su comentario «c15: …»);
 --  2 las precondiciones en rojo;
@@ -225,7 +226,7 @@
 -- patrón, sus archivos de prueba traen lo patronal, y la 180 no trae
 -- importes).
 -- LA FASE 11c (14-nov: «GUSTO» como palabra entera, también en los cargos;
--- las dos fallan con el c15 de antes y pasan con el de hoy; piden el c6 del
+-- las tres fallan con el c15 de antes y pasan con el de hoy; piden el c6 del
 -- 14-nov, con fn_banco_dice_nomina):
 -- 67 LA TABLA: las descripciones que SÍ son de Gusto (con su concepto, con
 --    «DES:» e «ID:», como «ORIG CO NAME:» de Chase, pegadas por un guion o
@@ -240,7 +241,27 @@
 --    cuota mensual» ni se deja decir sin nota; sale entre los candidatos
 --    «por fuera de Gusto» (el neto de quien cobró fuera); no se casa sin su
 --    nota y, con ella, queda «por fuera de Gusto»; y sin la función del
---    banco (un c6 anterior) la capa no se pega y dice qué volver a pegar.
+--    banco (un c6 anterior) la capa no se pega y dice qué volver a pegar;
+-- 69 EL MISMO TEXTO QUE EL BANCO, la descripción Y el memo (la revisión de
+--    la fase: la nómina miraba solo la descripción): cinco movimientos
+--    recién llegados —sin «Casar»— que nombran a Gusto solo en el memo salen
+--    en los cargos de Gusto y los cuenta la fila 180; al de la cuota se le
+--    ofrece y entra sin nota; el de las deducciones no es un candidato «por
+--    fuera de Gusto»; el del neto se casa sin nota, como de Gusto; y el que
+--    lleva un Augusto en el memo no sale.
+-- LOS ARREGLOS DE LA VERIFICACIÓN DE LA FASE 11c (14-nov; falla con el c15
+-- de antes y pasa con el de hoy):
+-- 70 LAS DOS LECTURAS LIGERAS, la de la portada (c16) y el cierre: los
+--    movimientos de Gusto que esperan, SIN armar su propuesta
+--    (fn_nomina_cargos_esperan: los mismos que la lista entera de los
+--    cargos, uno por uno, recién llegados, casados y des-casados en la
+--    Bandeja; y un Zelle que dice «con gusto» no es de Gusto: pide el c6 de
+--    estos arreglos), y el control SOLO con sus cuadres (fn_nomina_control_filas:
+--    las mismas cinco filas que el control entero, también en rojo); sin el
+--    código del teléfono, lo del banco y nada de lo que lleva dinero de una
+--    nómina; al equipo, nada; anon y service_role no las ejecutan; y el
+--    aviso 35 y la fila 180 del cierre ya no arman la propuesta de cada
+--    cargo para contarlos.
 -- Y el cierre de la suite:
 -- 50 con una nómina posteada, sus cargos casados, la cuota, un bono anulado,
 --    una declaración y un lote, NINGÚN control de c2, c3, c4, c6, c8, c9,
@@ -330,10 +351,11 @@ create or replace function pg_temp.c15_fn() returns text[] language sql immutabl
                'fn_nomina_importar', 'fn_nomina_corrida', 'fn_nomina_descartar', 'fn_nomina_persona', 'fn_nomina_decidir', 'fn_nomina_plan',
                'fn_nomina_propuesta', 'fn_nomina_postear', 'fn_nomina_anular', 'fn_nomina_pendiente', 'fn_nomina_cargos',
                'fn_nomina_cargo_propuesta', 'fn_nomina_cargo_casar', 'fn_nomina_cargo_cuota', 'fn_nomina_cargo_deshacer', 'fn_nomina_cargos_fuera',
+               'fn_nomina_cargos_esperan',
                'fn_nomina_declaracion', 'fn_nomina_amarre', 'fn_nomina_por_horas', 'fn_nomina_horas_gusto', 'fn_nomina_lote',
                'fn_nomina_lote_csv', 'fn_nomina_horas_pagadas', 'fn_nomina_horas_con_pago', 'fn_nomina_cola', 'fn_nomina_pagado_hasta', 'fn_nomina_auxiliar',
                'fn_nomina_bolsa', 'fn_nomina_bolsa_repartir',
-               'fn_nomina_control',
+               'fn_nomina_control', 'fn_nomina_control_filas',
                'fn_nomina_cierre', 'fn_nomina_pegado']
 $$;
 create or replace function pg_temp.c15_tablas() returns text[] language sql immutable as $$
@@ -1046,18 +1068,18 @@ end $$;
 
 -- =====================================================================
 -- 1. EL PEGADO: las precondiciones en verde, las 15 tablas, las 7 vistas y
---    las 66 funciones por su nombre exacto, cada objeto con su comentario
+--    las 68 funciones por su nombre exacto, cada objeto con su comentario
 --    «c15: …», la configuración (una fila) y el mapeo de fábrica.
 -- =====================================================================
 do $$
 declare
   v_obt text;
-  v_esp text := 'precondiciones: nada | tablas 15 de 15 | vistas 7 de 7 | funciones 66 de 66 | sin su comentario «c15: »: ninguno | la '
+  v_esp text := 'precondiciones: nada | tablas 15 de 15 | vistas 7 de 7 | funciones 68 de 68 | sin su comentario «c15: »: ninguno | la '
                 'configuración: 1 fila (id 1) | el mapeo de fábrica: 130 columnas | el puente: puesto';
 begin
   begin
     perform pg_temp.c15_ser('editor');
-    select format('precondiciones: %s | tablas %s de 15 | vistas %s de 7 | funciones %s de 66 | sin su comentario «c15: »: %s | la '
+    select format('precondiciones: %s | tablas %s de 15 | vistas %s de 7 | funciones %s de 68 | sin su comentario «c15: »: %s | la '
                   'configuración: %s fila (id %s) | el mapeo de fábrica: %s columnas | el puente: %s',
                   coalesce(fn_nomina_precondiciones(), 'nada'),
                   (select count(*) from unnest(pg_temp.c15_tablas()) t where to_regclass('public.' || t) is not null),
@@ -1079,7 +1101,7 @@ begin
       into v_obt;
   exception when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (1, 'el pegado: las precondiciones no piden nada, están las 15 tablas, las 7 vistas y las 66 funciones (por su nombre exacto), cada objeto con su comentario «c15: …», la configuración es una fila, el mapeo de fábrica trae sus 130 nombres de columna y el puente al libro está puesto',
+  insert into _pruebas values (1, 'el pegado: las precondiciones no piden nada, están las 15 tablas, las 7 vistas y las 68 funciones (por su nombre exacto), cada objeto con su comentario «c15: …», la configuración es una fila, el mapeo de fábrica trae sus 130 nombres de columna y el puente al libro está puesto',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
@@ -5269,8 +5291,9 @@ end $$;
 -- En un débito la capa buscaba el descriptor de nómina de c6 en cualquier
 -- parte de la descripción (también dentro de otra palabra: «AUGUSTO»); ahora
 -- pregunta al banco, fn_banco_dice_nomina (el descriptor como palabra
--- entera), en sus cinco funciones. La 67 y la 68 van aquí, antes del cierre
--- de la suite: la 51 y la 52 comprueban que tampoco estas dejan nada.
+-- entera), en sus cinco funciones, con la descripción y el memo de cada
+-- movimiento: el texto de su Bandeja. De la 67 a la 70 van aquí, antes del
+-- cierre de la suite: la 51 y la 52 comprueban que tampoco estas dejan nada.
 -- =====================================================================
 -- 67. LA TABLA. Diez cargos que SÍ son de Gusto como los escribe el banco
 --     (con su concepto —NET, TAX, REM, CSD, FEE—, con «DES:» e «ID:», como
@@ -5438,8 +5461,8 @@ begin
     select coalesce(substring(k.detalle from '^([0-9]+) cargo')::int, 0) into v_despues from fn_nomina_cierre(v_m) k where k.orden = 180;
     v_obt := v_obt || format(' | la fila 180 del cierre los cuenta: %s', v_despues - v_antes);
     -- (un c6 anterior al 14-nov: sin la función que dice si un movimiento nombra a Gusto —o sin poder ejecutarla—, esta capa no se pega)
-    if to_regprocedure('public.fn_banco_dice_nomina(text)') is not null then
-      execute 'revoke execute on function public.fn_banco_dice_nomina(text) from authenticated';
+    if to_regprocedure('public.fn_banco_dice_nomina(text,text)') is not null then
+      execute 'revoke execute on function public.fn_banco_dice_nomina(text, text) from authenticated';
     end if;
     v_obt := v_obt || ' | sin la función del banco (un c6 anterior), la capa no se pega y dice qué volver a pegar: '
              || case when fn_nomina_precondiciones() like 'el c6-banco.sql pegado es anterior al 14-nov-2026%vuelve a pegar c6-banco.sql%' then 'sí'
@@ -5450,6 +5473,237 @@ begin
     when others then v_obt := coalesce(v_obt || ' | ', '') || 'error ' || sqlstate || ': ' || sqlerrm;
   end;
   insert into _pruebas values (68, 'el Zelle a alguien que se llama Augusto no es un cargo de Gusto en ninguna puerta de la nómina (la Fase 11c): no sale entre los cargos de Gusto, no se le ofrece «es la cuota mensual» ni se deja decir sin nota (MX008: el banco no lo nombra como de Gusto), sale entre los candidatos «por fuera de Gusto» cuando da al centavo el neto de quien cobró fuera, no se casa sin su nota y con ella queda «por fuera de Gusto», y la fila 180 del cierre no lo cuenta; y sin la función del banco que lo decide (un c6 anterior al 14-nov) la capa no se pega y dice qué volver a pegar',
+    v_esp, v_obt, v_obt is not distinct from v_esp);
+end $$;
+
+-- 69. EL MISMO TEXTO QUE EL BANCO: LA DESCRIPCIÓN Y EL MEMO (14-nov, la
+--     revisión de la Fase 11c). La Bandeja del banco (c6, su regla R6) decide
+--     si un movimiento es de nómina mirando su descripción Y su memo; la
+--     nómina miraba solo la descripción: un cargo que nombra a Gusto solo en
+--     el memo («ZZ ACH DEBIT 5531», memo «Gusto, Inc. TAX 991122») no salía
+--     en Nómina → Cargos de Gusto hasta el primer «Casar» del banco, ni lo
+--     contaba la fila 180 del cierre; no se le ofrecía la cuota; pedía nota
+--     para casarse, como si no fuera de Gusto; y salía entre los candidatos
+--     «por fuera de Gusto». Ahora la nómina le pasa al banco las dos
+--     columnas del movimiento (fn_banco_dice_nomina(descripción, memo)) y el
+--     banco arma el texto que mira su Bandeja. Con una nómina posteada y
+--     seis movimientos RECIÉN LLEGADOS (sin «Casar»: sin su propuesta, que es
+--     cuando decide esta capa), cinco con Gusto solo en el memo (los
+--     impuestos, el neto, las deducciones, la cuota y una devolución) y uno
+--     con un Augusto en el memo: (1) en los cargos de Gusto salen los cinco
+--     y no el del Augusto; (2) la fila 180 del cierre cuenta cinco más; (3)
+--     al de la cuota se le ofrece «es la cuota mensual» y entra sin nota;
+--     (4) el de las deducciones no sale entre los candidatos «por fuera de
+--     Gusto»; y (5) el del neto se casa sin nota, como de Gusto.
+do $$
+declare
+  v_obt text; v_c uuid; r jsonb; v_m text := pg_temp.c15('mes'); v_antes int; v_despues int; v_x text; a1 text;
+  v_n int; v_a int; v_b int; v_e int; v_f int; m_fee uuid; m_ded uuid; m_net uuid;
+  v_nom text := 'la nómina decide con el mismo texto que el banco: la descripción y el memo del movimiento';
+  v_esp text := 'recién llegados del banco, sin su propuesta todavía (6 de 6): en los cargos de Gusto salen 5 de los 5 que nombran a Gusto solo en '
+                'el memo y 0 de 1 con un Augusto en el memo | la fila 180 del cierre cuenta 5 más | al de la cuota se le ofrece «es la cuota '
+                'mensual»: sí; decirlo sin nota: entra | el de las deducciones, entre los candidatos «por fuera de Gusto»: no | el del neto se '
+                'casa sin su nota: 1010 -4810.68 · 2210 4810.68 (como de Gusto: sí)';
+  -- (k: su clave; si: ¿es de Gusto?; x: lo que sale del banco —en negativo, un depósito—; d: su día; n: su descripción; m: su memo)
+  v_t   jsonb := jsonb_build_array(
+    jsonb_build_object('k', 'tax', 'si', true,  'x', '731.37',  'd', 16, 'n', 'ZZ ACH DEBIT 5531 C15 PRUEBA',  'm', 'Gusto, Inc. TAX 991122'),
+    jsonb_build_object('k', 'net', 'si', true,  'x', '4810.68', 'd', 16, 'n', 'ZZ ACH DEBIT 5535 C15 PRUEBA',  'm', 'GUSTO NET 991155'),
+    jsonb_build_object('k', 'ded', 'si', true,  'x', '50.00',   'd', 16, 'n', 'ZZ ACH DEBIT 5536 C15 PRUEBA',  'm', 'Gusto CSD 991166'),
+    jsonb_build_object('k', 'fee', 'si', true,  'x', '49.00',   'd', 22, 'n', 'ZZ ACH DEBIT 5533 C15 PRUEBA',  'm', 'gusto.com*FEE 7781'),
+    jsonb_build_object('k', 'dev', 'si', true,  'x', '-29.37',  'd', 16, 'n', 'ZZ ACH CREDIT 5534 C15 PRUEBA', 'm', 'Gusto refund 7c15t69'),
+    jsonb_build_object('k', 'aug', 'si', false, 'x', '732.37',  'd', 16, 'n', 'ZZ ACH DEBIT 5532 C15 PRUEBA',  'm', 'PAGO A AUGUSTO ZZ'));
+begin
+  if pg_temp.c15_omitir(69, v_nom, v_esp, true) then return; end if;
+  begin
+    select coalesce(substring(k.detalle from '^([0-9]+) cargo')::int, 0) into v_antes from fn_nomina_cierre(v_m) k where k.orden = 180;
+    v_c := pg_temp.c15_lista();
+    r := pg_temp.c15_postear(v_c);
+    -- (del banco, como los trae Plaid, cada uno con su memo, en un solo lote; SIN «Casar»: la Bandeja todavía no los ha propuesto)
+    perform pg_temp.c15_ser('dueno');
+    perform fn_banco_importar_filas(jsonb_build_object(
+      'origen', 'plaid', 'cuenta', pg_temp.c15('banco'), 'nombre', 'Plaid · c15-pruebas · t69',
+      'filas', (select jsonb_agg(jsonb_build_object('id', 'c15-t69-' || (x.t->>'k'), 'fecha', pg_temp.c15_d((x.t->>'d')::int)::text,
+                                                    'plaid_monto', x.t->>'x', 'descripcion', x.t->>'n', 'memo', x.t->>'m',
+                                                    'tipo', case when (x.t->>'x')::numeric >= 0 then 'DEBIT' else 'CREDIT' end,
+                                                    'pendiente', false) order by x.o)
+                  from jsonb_array_elements(v_t) with ordinality as x(t, o))));
+    perform pg_temp.c15_ser('editor');
+    select m.id into m_fee from movimientos_banco m where m.id_externo = 'c15-t69-fee';
+    select m.id into m_ded from movimientos_banco m where m.id_externo = 'c15-t69-ded';
+    select m.id into m_net from movimientos_banco m where m.id_externo = 'c15-t69-net';
+    -- (1) recién llegados, en los cargos de Gusto
+    select count(*) filter (where m.estado = 'pendiente' and m.estado_motivo is null), count(*),
+           count(*) filter (where t.si and g.movimiento_id is not null), count(*) filter (where t.si),
+           count(*) filter (where not t.si and g.movimiento_id is not null), count(*) filter (where not t.si)
+      into v_n, v_a, v_b, v_e, v_f, v_despues
+      from jsonb_to_recordset(v_t) as t(k text, si boolean)
+      join movimientos_banco m on m.id_externo = 'c15-t69-' || t.k
+      left join fn_nomina_cargos() g on g.movimiento_id = m.id and g.estado = 'pendiente';
+    v_obt := format('recién llegados del banco, sin su propuesta todavía (%s de %s): en los cargos de Gusto salen %s de los %s que nombran a Gusto '
+                    'solo en el memo y %s de %s con un Augusto en el memo', v_n, v_a, v_b, v_e, v_f, v_despues);
+    -- (2) la fila 180 del cierre
+    select coalesce(substring(k.detalle from '^([0-9]+) cargo')::int, 0) into v_despues from fn_nomina_cierre(v_m) k where k.orden = 180;
+    v_obt := v_obt || format(' | la fila 180 del cierre cuenta %s más', v_despues - v_antes);
+    -- (4) el de las deducciones: de Gusto, no un candidato «por fuera» (los de SU nómina: con los datos reales, otra puede dar lo mismo)
+    perform pg_temp.c15_ser('dueno');
+    begin
+      execute 'select string_agg(g.clase || '' '' || g.monto, '' · '' order by g.clase) from public.fn_nomina_cargos_fuera() g '
+              || 'where g.movimiento_id = $1 and g.corrida_id = $2' into a1 using m_ded, v_c;
+    exception when others then
+      a1 := 'no hay cómo (' || sqlstate || ')';
+    end;
+    -- (3) la cuota
+    r := fn_nomina_cargo_propuesta(m_fee);
+    perform pg_temp.c15_ser('editor');
+    v_x := pg_temp.c15_dice(format('select public.fn_nomina_cargo_cuota(%L)', m_fee));
+    v_obt := v_obt || format(' | al de la cuota se le ofrece «es la cuota mensual»: %s; decirlo sin nota: %s',
+                             case when (r->>'cuota')::boolean then 'sí' else 'no' end,
+                             case when v_x = 'ok' then 'entra'
+                                  when v_x like '%el banco no lo nombra como de Gusto%' then left(v_x, 5) || ', porque el banco no lo nombra como de Gusto'
+                                  else left(v_x, 120) end);
+    v_obt := v_obt || format(' | el de las deducciones, entre los candidatos «por fuera de Gusto»: %s', coalesce('sí (' || a1 || ')', 'no'));
+    -- (5) el del neto: se casa sin nota, como de Gusto
+    v_obt := v_obt || format(' | el del neto se casa sin su nota: %s', pg_temp.c15_casa_dice(m_net));
+    v_obt := v_obt || format(' (como de Gusto: %s)', coalesce((select case when g.clase = 'nomina' then 'sí' else 'no (' || g.clase || ')' end
+                                                                 from nomina_pagos g where g.movimiento_id = m_net and g.estado = 'aplicado'), 'sin pago'));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := coalesce(v_obt || ' | ', '') || 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (69, 'la nómina decide con el mismo texto que el banco, la descripción y el memo del movimiento (la revisión de la Fase 11c): con una nómina posteada y seis movimientos recién llegados del banco —sin «Casar» todavía—, cinco que nombran a Gusto solo en el memo (los impuestos, el neto, las deducciones, la cuota y una devolución) y uno con un Augusto en el memo, en los cargos de Gusto salen los cinco y no el del Augusto; la fila 180 del cierre —que detiene— cuenta cinco más; al de la cuota se le ofrece «es la cuota mensual» y entra sin nota; el de las deducciones no sale entre los candidatos «por fuera de Gusto»; y el del neto se casa sin nota, como de Gusto',
+    v_esp, v_obt, v_obt is not distinct from v_esp);
+end $$;
+
+-- 70. LAS DOS LECTURAS LIGERAS (14-nov, los arreglos de la verificación de la
+--     Fase 11c). La portada (c16) enseña la nómina, y para saber cuántos
+--     cargos de Gusto esperan y si algún cuadre está en rojo corría la lista
+--     entera de los cargos (que ARMA LA PROPUESTA de cada pendiente) y el
+--     control entero (19 filas, que por dentro armaba esas propuestas otra
+--     vez); el cierre (c9), lo mismo para su fila 180. Ahora:
+--       · fn_nomina_cargos_esperan(): los que esperan, sin su propuesta, y
+--         el único sitio que dice cuáles son (la lista entera los toma de
+--         ahí);
+--       · fn_nomina_control_filas(solo los cuadres): el control de siempre;
+--         con «verdadero», solo sus cinco cuadres.
+--     Con una nómina posteada y cuatro movimientos del banco (el neto, los
+--     impuestos y una devolución de Gusto, y un Zelle a un pintor que lleva
+--     «con gusto» en su texto: la palabra GUSTO, entera, y no es de Gusto
+--     —un Zelle nunca lo es: lo dice el banco, c6, desde estos arreglos—):
+--     (1) los que esperan son los de la lista entera, uno por uno, y de los
+--     cuatro salen tres; (2) casado el neto deja de esperar, y des-casado después
+--     en la Bandeja sale des-casado y otra vez pendiente, en las dos listas
+--     igual; (3) los cuadres solos son las cinco filas «cuadre» del control
+--     entero, una por una, con el 25 en rojo en las dos (el des-casado); (4)
+--     sin el código del teléfono esperan los del banco y ningún des-casado,
+--     y los cuatro cuadres del dinero dicen que hace falta el código (no se
+--     dan por buenos); (5) al equipo, nada; anon y service_role no las
+--     ejecutan; y (6) con la propuesta rota a propósito (dentro del bloque,
+--     que se deshace), los que esperan, los cuadres, el aviso 35 y la fila
+--     180 del cierre contestan igual: ya no la arman (la lista entera, que
+--     sí, falla).
+do $$
+declare
+  v_obt text; v_c uuid; r jsonb; v_m text := pg_temp.c15('mes'); m_net uuid; m_tax uuid; m_dev uuid; m_aug uuid;
+  v_a int; v_b int; v_n int; v_x text; v_y text; v_z text;
+  v_nom text := 'las dos lecturas ligeras de la nómina: los movimientos de Gusto que esperan, sin su propuesta, y el control solo con sus cuadres';
+  v_esp text := 'recién llegados del banco: los que esperan son los de la lista entera de los cargos, uno por uno: sí; de los cuatro de la '
+                'prueba salen 3 (el Zelle que dice «con gusto», no) | casado el neto: deja de esperar; des-casado después en la Bandeja: sale '
+                'des-casado y otra vez pendiente, y las dos listas siguen iguales: sí | los cuadres solos: 5 filas, las «cuadre» del control '
+                'entero (19 filas), una por una: sí; el 25, en rojo en las dos: sí | sin el código del teléfono: esperan 3 del banco y 0 '
+                'des-casados; los cuadres del dinero que dicen que hace falta el código: 4 de 4, ninguno en verde | el equipo: 0 y 0 filas; '
+                'anon y service_role: 42501 y 42501 | con la propuesta rota: los que esperan ok · los cuadres ok · el aviso 35 ok · la fila '
+                '180 del cierre ok · la lista entera, MXT70';
+  -- (las dos listas, comparadas en los dos sentidos: movimiento, fecha, monto y estado)
+  c_iguales constant text := $q$
+    select case when not exists (select e.movimiento_id, e.fecha, e.monto, e.estado from public.fn_nomina_cargos_esperan() e
+                                 except
+                                 select g.movimiento_id, g.fecha, g.monto, g.estado from public.fn_nomina_cargos() g
+                                  where g.estado in ('pendiente', 'descasado'))
+                 and not exists (select g.movimiento_id, g.fecha, g.monto, g.estado from public.fn_nomina_cargos() g
+                                  where g.estado in ('pendiente', 'descasado')
+                                 except
+                                 select e.movimiento_id, e.fecha, e.monto, e.estado from public.fn_nomina_cargos_esperan() e)
+                then 'sí' else 'no' end$q$;
+begin
+  if pg_temp.c15_omitir(70, v_nom, v_esp, true) then return; end if;
+  begin
+    if to_regprocedure('public.fn_nomina_cargos_esperan()') is null or to_regprocedure('public.fn_nomina_control_filas(boolean)') is null then
+      raise exception 'el c15 de esta base no trae las dos lecturas ligeras (fn_nomina_cargos_esperan y fn_nomina_control_filas): es el de antes';
+    end if;
+    v_c := pg_temp.c15_lista();
+    r := pg_temp.c15_postear(v_c);
+    m_net := pg_temp.c15_cargo('c15-t70-net', pg_temp.c15_d(16), 4810.68, 'GUSTO DES:NET 7c15t70 C15 PRUEBA');
+    m_tax := pg_temp.c15_cargo('c15-t70-tax', pg_temp.c15_d(16), 1583.31, 'GUSTO DES:TAX 7c15t70 C15 PRUEBA');
+    m_dev := pg_temp.c15_cargo('c15-t70-dev', pg_temp.c15_d(16), -27.31, 'GUSTO REFUND 7c15t70 C15 PRUEBA');
+    m_aug := pg_temp.c15_cargo('c15-t70-zel', pg_temp.c15_d(16), 311.17, 'ZELLE PAYMENT TO ZZ PINTOR CON GUSTO C15 PRUEBA 0311');
+    -- (1) recién llegados: las dos listas, y los cuatro de la prueba
+    select count(*) into v_n from fn_nomina_cargos_esperan() e where e.movimiento_id in (m_net, m_tax, m_dev, m_aug);
+    v_obt := format('recién llegados del banco: los que esperan son los de la lista entera de los cargos, uno por uno: %s; de los cuatro de la '
+                    'prueba salen %s (el Zelle que dice «con gusto», %s)', pg_temp.c15_da(c_iguales), v_n,
+                    case when exists (select 1 from fn_nomina_cargos_esperan() e where e.movimiento_id = m_aug) then 'también' else 'no' end);
+    -- (2) casado el neto; y des-casado después en la Bandeja del banco (por c6, sin pasar por la nómina)
+    r := pg_temp.c15_casar(m_net);
+    v_x := case when exists (select 1 from fn_nomina_cargos_esperan() e where e.movimiento_id = m_net) then 'sigue esperando' else 'deja de esperar' end;
+    perform pg_temp.c15_ser('dueno');
+    perform fn_banco_descasar(m_net, 'C15 PRUEBA: des-casado en la Bandeja');
+    perform pg_temp.c15_ser('editor');
+    select string_agg(e.estado, ' y otra vez ' order by e.estado) into v_y from fn_nomina_cargos_esperan() e where e.movimiento_id = m_net;
+    v_obt := v_obt || format(' | casado el neto: %s; des-casado después en la Bandeja: sale %s, y las dos listas siguen iguales: %s', v_x,
+                             coalesce(replace(v_y, 'descasado', 'des-casado'), 'nada'), pg_temp.c15_da(c_iguales));
+    -- (3) los cuadres solos y el control entero (como el dueño con su código)
+    v_obt := v_obt || ' | ' || pg_temp.c15_da($q$
+      select format('los cuadres solos: %s filas, las «cuadre» del control entero (%s filas), una por una: %s; el 25, en rojo en las dos: %s',
+                    (select count(*) from public.fn_nomina_control_filas(true)), (select count(*) from public.fn_nomina_control()),
+                    case when not exists (select * from public.fn_nomina_control_filas(true) except
+                                          select * from public.fn_nomina_control() k where k.nivel = 'cuadre')
+                           and not exists (select * from public.fn_nomina_control() k where k.nivel = 'cuadre' except
+                                           select * from public.fn_nomina_control_filas(true))
+                           and not exists (select * from public.fn_nomina_control_filas(false) except select * from public.fn_nomina_control())
+                           and not exists (select * from public.fn_nomina_control() except select * from public.fn_nomina_control_filas(false))
+                         then 'sí' else 'no' end,
+                    case when (select not k.ok from public.fn_nomina_control_filas(true) k where k.orden = 25)
+                              and (select not k.ok from public.fn_nomina_control() k where k.orden = 25) then 'sí' else 'no' end)$q$);
+    -- (4) sin el código del teléfono (el dueño que entró solo con su contraseña)
+    v_obt := v_obt || ' | ' || pg_temp.c15_da(format($q$
+      select format('sin el código del teléfono: esperan %%s del banco y %%s des-casados; los cuadres del dinero que dicen que hace falta el '
+                    'código: %%s de 4, %%s',
+                    (select count(*) from public.fn_nomina_cargos_esperan() e where e.estado = 'pendiente' and e.movimiento_id in (%L, %L, %L, %L)),
+                    (select count(*) from public.fn_nomina_cargos_esperan() e where e.estado = 'descasado'),
+                    (select count(*) from public.fn_nomina_control_filas(true) k
+                      where k.orden in (10, 15, 20, 25) and k.detalle like '%%hace falta el código del teléfono%%'),
+                    case when exists (select 1 from public.fn_nomina_control_filas(true) k where k.orden in (10, 15, 20, 25) and k.ok)
+                         then 'alguno en verde' else 'ninguno en verde' end)$q$, m_net, m_tax, m_dev, m_aug), 'dueno_aal1');
+    -- (5) el equipo, la llave pública y la de servicio
+    v_obt := v_obt || format(' | el equipo: %s y %s filas; anon y service_role: %s y %s',
+                             pg_temp.c15_da('select count(*) from public.fn_nomina_cargos_esperan()', 'equipo'),
+                             pg_temp.c15_da('select count(*) from public.fn_nomina_control_filas(true)', 'equipo'),
+                             (select string_agg(distinct pg_temp.c15_estado(q, 'anon'), '/')
+                                from unnest(array['select count(*) from public.fn_nomina_cargos_esperan()',
+                                                  'select count(*) from public.fn_nomina_control_filas(true)']) q),
+                             (select string_agg(distinct pg_temp.c15_estado(q, 'service_role'), '/')
+                                from unnest(array['select count(*) from public.fn_nomina_cargos_esperan()',
+                                                  'select count(*) from public.fn_nomina_control_filas(true)']) q));
+    -- (6) LA PROPUESTA, ROTA A PROPÓSITO (se deshace con la prueba): lo ligero no la arma
+    perform pg_temp.c15_ser('editor');
+    execute $f$create or replace function public.fn_nomina_cargo_propuesta(p_movimiento uuid) returns jsonb
+            language plpgsql stable set search_path = public, pg_temp
+            as $b$ begin raise exception using errcode = 'MXT70', message = 'c15-pruebas: aquí no se arma la propuesta de un cargo'; end $b$
+            $f$;
+    v_obt := v_obt || format(' | con la propuesta rota: los que esperan %s · los cuadres %s · el aviso 35 %s · la fila 180 del cierre %s · la '
+                             'lista entera, %s',
+                             pg_temp.c15_estado('select count(*) from public.fn_nomina_cargos_esperan()'),
+                             pg_temp.c15_estado('select count(*) from public.fn_nomina_control_filas(true)'),
+                             pg_temp.c15_estado('select k.ok from public.fn_nomina_control() k where k.orden = 35'),
+                             pg_temp.c15_estado(format('select k.ok from public.fn_nomina_cierre(%L) k where k.orden = 180', v_m)),
+                             pg_temp.c15_estado('select count(*) from public.fn_nomina_cargos()'));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := coalesce(v_obt || ' | ', '') || 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.c15_ser('editor');
+  insert into _pruebas values (70, 'las dos lecturas ligeras de la nómina (los arreglos de la verificación de la Fase 11c), para la portada y el cierre: los movimientos de Gusto que esperan SIN armar su propuesta son los mismos que los de la lista entera de los cargos, uno por uno (recién llegados, casados y des-casados después en la Bandeja); el control SOLO con sus cuadres da las mismas cinco filas que el control entero, también en rojo; sin el código del teléfono se ve lo del banco y nada de lo que lleva dinero de una nómina (los cuadres lo dicen y no se dan por buenos); al equipo, nada; anon y service_role no las ejecutan; y el aviso 35 y la fila 180 del cierre ya no arman la propuesta de cada cargo para contarlos',
     v_esp, v_obt, v_obt is not distinct from v_esp);
 end $$;
 

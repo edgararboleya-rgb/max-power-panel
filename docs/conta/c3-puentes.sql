@@ -154,21 +154,27 @@
 --     asiento que los pagó. La hora que pagaron una nómina Y un jornal sale
 --     una vez, con la nómina. (3) EL DEVENGO SE PONE AL DÍA SOLO: al
 --     repartir un jornal («Así es»), al deshacerlo o al des-casar su pago en
---     la Bandeja, si alguno de los meses de sus horas sigue abierto y tiene
---     su devengo vivo, ese devengo se rehace en la misma transacción (por
+--     la Bandeja, si alguno de los meses de sus horas sigue abierto y Edgar
+--     lo tiene devengado, ese devengo se rehace en la misma transacción (por
 --     fn_horas_devengar: su reverso y su asiento nuevo, como cuando lo hace
 --     la nómina). Nadie ve el control devengo ni el cuadre 50 en rojo por
---     esto. (4) El control «devengo» dice, si aun así un devengo cuenta
---     horas que un jornal pagó dentro del mes, cuántas y con qué asiento, y
---     qué hacer; y el mes no se cierra así. (5) DEVENGAR ESPERA SU TURNO
---     ANTES DE MIRAR: fn_horas_devengar toma el candado de la cadena del
---     libro (el de c2) antes de leer las horas, no al postear. Antes, con
---     una nómina o un jornal confirmando en ese mismo instante, el devengo
---     entraba con las horas que había visto antes de que confirmaran
---     (también las que ellos pagaban) y el control quedaba en rojo hasta
---     devengar otra vez; ahora espera a que confirmen y entra ya sin ellas.
---     Vale igual para la nómina. Y el trigger de los jornales no espera un
---     candado más de medio segundo (tiene la cadena: nadie más postea).
+--     esto. «Devengado» es con su devengo vivo o con el que se quedó sin
+--     horas: si un jornal paga dentro del mes TODO lo que el devengo
+--     llevaba, el devengo se deshace (no queda nada trabajado y sin pagar);
+--     y si ese jornal se deshace después, el devengo vuelve solo (la
+--     revisión de la fase: antes el mes se quedaba sin él, con horas sin
+--     pagar, y nada lo decía). (4) El control «devengo» dice, si aun así un
+--     devengo cuenta horas que un jornal pagó dentro del mes, cuántas y con
+--     qué asiento, y qué hacer; y el mes no se cierra así. (5) DEVENGAR
+--     ESPERA SU TURNO ANTES DE MIRAR: fn_horas_devengar toma el candado de
+--     la cadena del libro (el de c2) antes de leer las horas, no al
+--     postear. Antes, con una nómina o un jornal confirmando en ese mismo
+--     instante, el devengo entraba con las horas que había visto antes de
+--     que confirmaran (también las que ellos pagaban) y el control quedaba
+--     en rojo hasta devengar otra vez; ahora espera a que confirmen y entra
+--     ya sin ellas. Vale igual para la nómina. Y el trigger de los jornales
+--     no espera un candado más de medio segundo (tiene la cadena: nadie más
+--     postea).
 --   · c10 SE PEGA DESPUÉS Y ES OPCIONAL: de c10 se leen dos tablas
 --     (jornal_repartos y jornal_reparto_horas), solo si están (to_regclass
 --     y execute) y sin ningún importe ni nombre. Sin c10, todo como antes.
@@ -182,13 +188,18 @@
 --     el doble dentro (antes de este cambio: el devengo y un jornal del
 --     mismo mes; el cierre ya no lo deja), el control devengo lo dice en
 --     rojo, como con la nómina, con el ajuste que va en el mes abierto.
---   · LO QUE NO CAMBIA. El devengo sigue siendo opcional y de Edgar: sin un
---     devengo vivo, repartir un jornal no devenga nada. Aprobar o corregir
---     horas a mano en un mes ya devengado sigue dejando su devengo «de
---     ayer» (el control lo dice; fn_horas_devengar lo pone al día). El pago
---     a una persona resuelto FUERA del jornal (clasificado a mano en la
---     Bandeja) no dice qué horas pagó: sus horas siguen en el devengo (c10
---     lo avisa con su control 70).
+--   · LO QUE NO CAMBIA. El devengo sigue siendo opcional y de Edgar: en un
+--     mes que él no devengó, repartir un jornal no devenga nada. Aprobar o
+--     corregir horas a mano en un mes ya devengado sigue dejando su devengo
+--     «de ayer» (el control lo dice; fn_horas_devengar lo pone al día); y si
+--     el devengo se había quedado sin horas y se deshizo, aprobar horas a
+--     mano no lo vuelve a poner (solo lo hace un jornal, o Edgar con
+--     fn_horas_devengar). Con la NÓMINA sigue como en la Fase 11b: si una
+--     nómina paga todo lo que el devengo llevaba, c15 lo deshace, y anular
+--     esa nómina no lo vuelve a poner (c15 solo mira el devengo vivo): se
+--     devenga otra vez. El pago a una persona resuelto FUERA del jornal
+--     (clasificado a mano en la Bandeja) no dice qué horas pagó: sus horas
+--     siguen en el devengo (c10 lo avisa con su control 70).
 --   · ▶ DECISIONES DEL CPA (aquí no se inventan; hoy va como se dice):
 --       - El pago cuyo movimiento del banco es de un mes YA CERRADO cuenta
 --         con la fecha de su asiento (el primer día del mes abierto): el mes
@@ -207,12 +218,23 @@
 --         cuando ese mes ya está cerrado no entran en su devengo. Al cierre
 --         del año: aprobar las horas de diciembre antes de devengar y
 --         cerrar.
---   · La marca de versión sube a 2026111401. Sus pruebas: de la 127 a la 134
+--       - LA CUENTA DEL DEVENGO DE QUIEN COBRA POR JORNAL. El devengo
+--         estándar lleva TODAS las horas aprobadas y sin pagar a la cuenta
+--         de mano de obra (5000) contra sueldos devengados (2210), también
+--         las de quien cobra por jornal (por Zelle, sin nómina), cuyo pago
+--         real entra después a la cuenta del jornal (5200, o la de su
+--         persona). Por obra y entre los dos meses el costo es el real, una
+--         vez; pero el mes devengado lo enseña en 5000/2210 y el siguiente
+--         en 5200. No es de esta fase (el devengo va así desde su primera
+--         versión), y aquí no se cambia: ¿lo quiere el CPA en otra cuenta?
+--   · La marca de versión sube a 2026111401. Sus pruebas: de la 127 a la 136
 --     de c3-pruebas.sql (con un Zelle de prueba por las puertas de verdad de
 --     c6 y c10, si están); con Zelle de verdad, con y sin nómina en el mes,
 --     su anulación y el mes grande, pruebas/conta/c3-jornal.sh; el jornal a
 --     la vez que el devengo (dos sesiones de verdad, en los dos órdenes), su
---     escena 11; y la nómina a la vez que el devengo, las escenas 10 y 11 de
+--     escena 11; los repartos con otra forma, la 12; el devengo que se quedó
+--     sin horas y vuelve, y el trigger en «immediate», la 13; y la nómina a
+--     la vez que el devengo, las escenas 10 y 11 de
 --     pruebas/conta/c3-concurrencia.sh (en la 10 el devengo ya entra al día).
 --
 -- =====================================================================
@@ -485,10 +507,11 @@
 --     c10 (el pago por Zelle o efectivo repartido por horas): la hora que
 --     un jornal pagó con su asiento vivo fechado en ese mes o antes no se
 --     devenga, y al repartir, deshacer o des-casar un jornal el devengo
---     vivo de los meses abiertos de sus horas se pone al día solo. LA
---     REGLA: solo se devenga lo trabajado, aprobado y no pagado al cierre
---     del mes; lo pagado por cualquier camino dentro del mes sale del
---     devengo de ese mes.
+--     de los meses abiertos de sus horas se pone al día solo (el vivo; y el
+--     que se deshizo por quedarse sin horas, vuelve). LA REGLA: solo se
+--     devenga lo trabajado, aprobado y no pagado al cierre del mes; lo
+--     pagado por cualquier camino dentro del mes sale del devengo de ese
+--     mes.
 -- 17. LA NOTA DE CRÉDITO SALDA LA FACTURA COMO ESTÁ HOY: lo que su partida
 --     debe en cada cuenta de cobrar (1110 y 1120, con su obra, también
 --     después de reclasificar la retención) y el espejo de su ingreso. Si
@@ -7172,10 +7195,12 @@ begin
                                  'reporte(s)) ya las pagaron %s, con fecha de ese mes o de antes, y su costo real ya está en el '
                                  'libro (fuera: %s). No hay nada que devengar.',
                                  p_mes, trim_scale(v_pag_h + v_jor_h), v_pag_n + v_jor_n,
+                                 -- (los asientos de los jornales, como en la descripción del devengo: los doce
+                                 -- primeros y cuántos más; este texto es el motivo del reverso que lo deshace)
                                  case when v_pag_n > 0
                                       then format('la nómina (%s) y los jornales, los pagos repartidos por horas (%s)',
-                                                  v_pag_txt, v_jor_txt)
-                                      else format('los jornales, los pagos repartidos por horas (%s)', v_jor_txt) end,
+                                                  v_pag_txt, v_jor_cor)
+                                      else format('los jornales, los pagos repartidos por horas (%s)', v_jor_cor) end,
                                  v_fuera)
                      else format('No hay horas aprobadas con obra y con costo en %s (fuera: %s): no hay nada que devengar.',
                                  p_mes, v_fuera) end);
@@ -7396,13 +7421,28 @@ create or replace trigger trg_puente_periodos_devengo
 --     entra por el banco (origen movimientos_banco) y un reverso. Si es —o
 --     reversa— el asiento de un reparto, busca los meses de sus horas (los
 --     de su período y los de las fechas de sus reportes) que SIGUEN ABIERTOS
---     y tienen su devengo vivo, y llama a fn_horas_devengar con cada uno
+--     y que Edgar tiene devengados, y llama a fn_horas_devengar con cada uno
 --     (todo por índice: por un asiento del banco que no es de un jornal, una
---     búsqueda y nada más). Sin devengo vivo no devenga nada (el devengo es
---     opcional y lo pide Edgar), y un mes CERRADO no se toca: su devengo era
---     el de entonces y ya se deshizo el día 1 (el pago de un mes cerrado
---     entra el primer día del mes abierto, y lo que hubiera que decir lo
---     dice el control devengo).
+--     búsqueda y nada más). En un mes que Edgar no devengó no devenga nada
+--     (el devengo es opcional y lo pide él), y un mes CERRADO no se toca: su
+--     devengo era el de entonces y ya se deshizo el día 1 (el pago de un mes
+--     cerrado entra el primer día del mes abierto, y lo que hubiera que
+--     decir lo dice el control devengo).
+--   · «DEVENGADO» ES CON SU DEVENGO VIVO O CON EL QUE SE QUEDÓ SIN HORAS (la
+--     revisión de la Fase 11c). Si un jornal paga dentro del mes TODAS las
+--     horas que el devengo llevaba, el devengo no se rehace: se deshace (no
+--     queda nada trabajado y sin pagar), y su papel queda «no_aplica:
+--     sin_horas». Si después ese jornal se deshace o se des-casa —o un «Así
+--     es» aprueba horas del mes que se pagan con fecha posterior—, vuelve a
+--     haber horas sin pagar y el devengo VUELVE solo, como sustituto del que
+--     se deshizo. Antes (la primera vuelta de esta fase) solo se miraba el
+--     devengo vivo: el mes se quedaba sin su devengo, con horas aprobadas y
+--     sin pagar, y nada lo decía (el control solo compara devengos vivos).
+--     Solo vuelve el que deshizo el propio puente por falta de horas: uno
+--     retirado a mano (su reverso puesto por dentro, desde el SQL Editor;
+--     desde la app c2 no deja reversar el asiento de un puente) no deja ese
+--     papel y no vuelve solo; y el que se deshizo por un journal de nómina
+--     que no dice qué pagó, tampoco (fn_horas_devengar se niega).
 --   · NO TUMBA EL PAGO. Si el devengo no se puede poner al día (el libro lo
 --     rechaza, una cuenta inactiva…), el jornal entra igual y queda dicho
 --     donde se mira: el control devengo en rojo, con cuántas horas, qué
@@ -7414,10 +7454,25 @@ create or replace trigger trg_puente_periodos_devengo
 --     dueño (por la app) o el SQL Editor: los dos leen los repartos y pueden
 --     llamar a fn_horas_devengar, que comprueba por dentro que es el dueño.
 --     En cualquier otra sesión (el equipo, la lectura de recibos, Plaid) no
---     ve ningún reparto y no hace nada.
---   · SI ALGUIEN LO PONE «IMMEDIATE» (set constraints), puede correr en
---     medio de un posteo, con el asiento todavía sin sus líneas: entonces no
---     hace nada (postear dentro de otro posteo desordenaría el libro).
+--     ve ningún reparto y no hace nada. (En Postgres 17 —el del banco de
+--     pruebas— un trigger diferido corre con el rol de la sesión que
+--     confirma: probado. Postgres 18, según sus notas, lo corre con el rol
+--     que insertó la fila —aquí sería el de las funciones del banco, el
+--     dueño de la base—. Eso no está probado aquí, pero tampoco abriría
+--     nada: quién puede devengar lo decide fn_horas_devengar por la sesión
+--     —el dueño, por su token—, no por el rol.)
+--   · SI ALGUIEN LO PONE «IMMEDIATE» (set constraints; la app no lo hace
+--     nunca, las pruebas sí), no corre al confirmar sino al terminar la
+--     sentencia que insertó el asiento. En un «Así es» eso es ANTES de que
+--     c10 guarde el reparto: todavía no hay reparto de ese asiento y no
+--     hace nada (el devengo queda por poner al día, y lo dice el control).
+--     En un «Deshacer» o un des-casado el reparto ya está y su asiento ya
+--     tiene su reverso: pone el devengo al día en ese momento, y el libro
+--     queda en orden (cada asiento con su número y su sello, en la cadena).
+--     (La primera vuelta de esta fase decía que entonces «el asiento no
+--     tiene todavía sus líneas» y lo miraba; pero c2 inserta las líneas
+--     ANTES que la cabecera: esa comprobación no se cumplía nunca, y se
+--     quitó. Probado en el banco, pruebas/conta/c3-jornal.sh, escena 13.)
 --   · NO HACE ESPERAR AL LIBRO. Al confirmar, la transacción del pago ya
 --     tiene el candado de la cadena de c2 (nadie más postea hasta que
 --     termine), y devengar pide las filas de periodos: con un cierre de mes
@@ -7447,12 +7502,9 @@ begin
     return null;
   end if;
   begin
-    -- (en medio de un posteo —el trigger en «immediate»—: nada)
-    if not exists (select 1 from asiento_lineas l where l.asiento_id = new.id) then
-      return null;
-    end if;
     -- ¿Es —o reversa— el asiento de un reparto? (por su índice: casi ningún
-    -- asiento del banco lo es, y aquí se acaba)
+    -- asiento del banco lo es, y aquí se acaba. En «immediate», al repartir,
+    -- el reparto todavía no está guardado: tampoco hace nada.)
     execute 'select r.id, r.desde, r.hasta from public.jornal_repartos r where r.asiento_id = $1'
        into v_reparto, v_desde, v_hasta
       using v_asiento;
@@ -7469,14 +7521,22 @@ begin
          ||  'where rh.reparto_id = $1'
        into v_desde, v_hasta
       using v_reparto, v_desde, v_hasta;
-    -- Los meses de ese tramo que siguen ABIERTOS y tienen su devengo vivo.
+    -- Los meses de ese tramo que siguen ABIERTOS y que Edgar tiene
+    -- devengados: con su devengo vivo o, si no, con el que el propio puente
+    -- deshizo porque no quedaba nada sin pagar (su papel: «no_aplica:
+    -- sin_horas»). Ese vuelve solo si vuelve a haber horas sin pagar: lo
+    -- decide fn_horas_devengar (si sigue sin haber nada, se niega —MX008— y
+    -- aquí no pasa nada).
     select array_agg(p.periodo order by p.periodo) into v_meses
       from periodos p
      where p.tipo = 'mes' and p.estado = 'abierto' and p.desde <= v_hasta and p.hasta >= v_desde
        and exists (select 1 from asientos a
                     where a.origen_tabla = 'horas_devengo' and a.origen_id = p.periodo
                       and a.camino not in ('reverso', 'reverso_automatico')
-                      and not exists (select 1 from asientos x where x.reversa_a = a.id and x.camino = 'reverso'));
+                      and (   not exists (select 1 from asientos x where x.reversa_a = a.id and x.camino = 'reverso')
+                           or exists (select 1 from puente_documentos d
+                                       where d.tabla = 'horas_devengo' and d.documento_id = p.periodo
+                                         and d.estado = 'no_aplica' and d.codigo = 'sin_horas')));
     if v_meses is not null then
       foreach v_mes in array v_meses loop
         begin
@@ -8797,7 +8857,7 @@ comment on function public.fn_cobro_devolver(uuid, date, text, text) is 'La devo
 comment on function public.fn_anticipo_aplicar(uuid, bigint, text, date, boolean) is 'Aplica el anticipo de un cobro a una factura de su obra, sin dinero nuevo (a su retención, 1120, con es_retencion).';
 comment on function public.fn_factura_anular(bigint, text, date) is 'Anula una factura emitida con su nota de crédito (NC-AAAA-NNNN): el espejo de su asiento.';
 comment on function public.fn_horas_aprobar(uuid, date, date, jsonb) is 'Aprueba las horas de un trabajador en un período, las que Edgar vio (ids, o reportes y horas): si hay otras, no aprueba nada. Horas, nunca dinero.';
-comment on function public.fn_horas_devengar(text)            is 'El devengo ESTÁNDAR opcional de un mes: Dr 5000 / Cr 2210 por horas aprobadas × costo por hora (sin las del dueño), reversible el día 1. Solo lo trabajado, aprobado y todavía sin pagar al fin del mes: las horas que una nómina (c15) ya pagó con su journal fechado en ese mes o antes no entran, ni las que pagó un jornal (c10: el pago por Zelle o efectivo repartido por horas) con su asiento vivo fechado en ese mes o antes; las que se pagan después, sí. Sin horas que devengar, o con un journal de nómina en el mes que no dice qué horas pagó, no devenga (y deshace el que había); si los repartos de los jornales no se dejan leer, tampoco devenga (y el que había se queda como estaba). Al repartir, deshacer o des-casar un jornal, el devengo vivo de los meses abiertos de sus horas se pone al día solo (trg_puente_asientos_jornal).';
+comment on function public.fn_horas_devengar(text)            is 'El devengo ESTÁNDAR opcional de un mes: Dr 5000 / Cr 2210 por horas aprobadas × costo por hora (sin las del dueño), reversible el día 1. Solo lo trabajado, aprobado y todavía sin pagar al fin del mes: las horas que una nómina (c15) ya pagó con su journal fechado en ese mes o antes no entran, ni las que pagó un jornal (c10: el pago por Zelle o efectivo repartido por horas) con su asiento vivo fechado en ese mes o antes; las que se pagan después, sí. Sin horas que devengar, o con un journal de nómina en el mes que no dice qué horas pagó, no devenga (y deshace el que había); si los repartos de los jornales no se dejan leer, tampoco devenga (y el que había se queda como estaba). Al repartir, deshacer o des-casar un jornal, el devengo de los meses abiertos de sus horas se pone al día solo (trg_puente_asientos_jornal): el vivo, y el que se había deshecho por quedarse sin horas que devengar, que vuelve si vuelve a haberlas.';
 comment on function public.fn_recibo_anular(bigint, text)     is 'Anula un recibo (estado anulado) y el puente lo reversa con el motivo. Es lo que lo saca de las listas de la app.';
 comment on function public.fn_externo_anular(bigint, text)    is 'Anula un trabajo externo (costo 0) y el puente lo reversa con el motivo.';
 

@@ -22,6 +22,8 @@
 #     Z6  19-ene  294.00  la semana del 11 al 17-ene
 #     ZA   8-mar  301.00  la semana del 1 al 7-mar    (la escena de las dos
 #     ZB  15-mar  252.00  la semana del 8 al 14-mar    sesiones a la vez)
+#     ZC   9-abr  170.00  la semana del 5 al 11-abr   (la escena del devengo
+#     ZD  16-abr  126.00  la semana del 12 al 18-abr   que se queda sin horas)
 # y la nómina del 22-ene (el journal sintético de
 # pruebas/conta/nomina/zz-payroll-journal.csv: período 3 a 16-ene).
 # El reloj de la base va por delante (fn_fecha_miami, fingida), para que
@@ -96,10 +98,34 @@
 #      en el ZB en otra sesión: el jornal espera su turno, ve el devengo
 #      recién puesto y, al confirmar, lo deja al día solo (400.00). Nadie se
 #      queda esperando a nadie (ningún interbloqueo, ningún error).
-#  12. VOLVER A PEGAR c3 (dos veces) con todo dentro: los devengos son los
+#  12. LOS REPARTOS, CON OTRA FORMA (la revisión de la Fase 11c: lo que
+#      c3-pruebas.sql ya no hace con la tabla de verdad, para no pedirla en
+#      exclusiva con la app abierta). A jornal_reparto_horas se le cambia el
+#      nombre de una columna (como un c10 que c3 no conoce): c3 no sabe qué
+#      horas pagó ya un jornal y NO SUPONE NADA: el plan lo dice
+#      (jornales_sin_leer), devengar un mes sin devengo se niega (MX008, y
+#      manda a pegar c10 y c3), el devengo que había se queda como estaba
+#      (retenido), el control «devengo» lo dice de cada mes abierto con
+#      devengo, y un mes así NO se cierra (MX008). Con la columna de vuelta,
+#      todo en verde y los mismos asientos.
+# ABRIL, EL DEVENGO QUE SE QUEDA SIN HORAS:
+#  13. (La revisión de la Fase 11c.) Abril devengado con las horas del
+#      jornalero (280.00). El ZC paga las de una semana (queda 120.00) y el
+#      ZD las de la otra: ya no queda nada trabajado y sin pagar, y el
+#      devengo SE DESHACE (su papel: no_aplica, sin_horas). «Deshacer» el ZD:
+#      sus horas vuelven a estar sin pagar y EL DEVENGO VUELVE SOLO (120.00,
+#      como sustituto del que se deshizo). (Con el c3 de la primera vuelta
+#      el mes se quedaba sin devengo, con horas aprobadas y sin pagar, y
+#      nada lo decía.) Des-casado el ZC en la Bandeja, 280.00. Y EL TRIGGER
+#      EN «IMMEDIATE» (nadie lo pone así salvo las pruebas): en un «Así es»
+#      corre antes de que c10 guarde el reparto y no hace nada —el devengo
+#      queda por poner al día, el control lo dice y fn_horas_devengar lo
+#      arregla—; en un «Deshacer» pone el devengo al día en ese momento, y
+#      la cadena del libro queda en orden.
+#  14. VOLVER A PEGAR c3 (dos veces) con todo dentro: los devengos son los
 #      mismos asientos; y c3-pruebas.sql corre con los Zelle y la nómina de
 #      verdad dentro: ninguna falla, y las del corte de los jornales (de la
-#      127 a la 135) corren todas.
+#      127 a la 136) corren todas.
 # Y comprueba al final: la cadena del libro en verde (los permisos y las
 # huellas también, con el reloj de vuelta), los puentes (c3) sin nada nuevo
 # en rojo, los cuadres del jornal (c10) y de la nómina (c15) sin rojos.
@@ -196,7 +222,10 @@ begin
     ('2027-03-09', '00000000-0000-4000-a000-0000000c3104', 'c3-jor-a', 8,  null,    'ZZ C3 JOR', v_d, now()),
     ('2027-03-10', '00000000-0000-4000-a000-0000000c3104', 'c3-jor-b', 4,  null,    'ZZ C3 JOR', v_d, now()),
     -- MARZO · uno de la nómina (nadie se las paga en marzo)
-    ('2027-03-16', '00000000-0000-4000-a000-0000000c3101', 'c3-jor-a', 8,  null,    'ZZ C3 JOR', v_d, now());
+    ('2027-03-16', '00000000-0000-4000-a000-0000000c3101', 'c3-jor-a', 8,  null,    'ZZ C3 JOR', v_d, now()),
+    -- ABRIL de 2027 (el devengo que se queda sin horas) · solo el jornalero: la semana del 5 al 11 (ZC) y la del 12 al 18 (ZD)
+    ('2027-04-06', '00000000-0000-4000-a000-0000000c3104', 'c3-jor-a', 8,  null,    'ZZ C3 JOR', v_d, now()),
+    ('2027-04-13', '00000000-0000-4000-a000-0000000c3104', 'c3-jor-b', 6,  null,    'ZZ C3 JOR', v_d, now());
   -- SIN APROBAR (las aprueba el «Así es» de su Zelle)
   insert into horas (fecha, usuario_id, proyecto_id, horas, co, notas) values
     ('2026-12-14', '00000000-0000-4000-a000-0000000c3104', 'c3-jor-a', 8, null, 'ZZ C3 JOR'),   -- Z2
@@ -211,7 +240,8 @@ select fn_banco_importar_filas(jsonb_build_object('origen', 'plaid', 'cuenta', '
                                                 'descripcion', 'Zelle payment to ZZ JORNALERO CUATRO ' || z.n, 'tipo', 'DEBIT', 'pendiente', false))
               from (values ('z1', '2026-12-14', '451.00', 4001), ('z2', '2026-12-21', '330.00', 4002), ('z3', '2027-01-04', '352.00', 4003),
                            ('z9', '2026-12-30', '84.00', 4009), ('z5', '2027-01-11', '336.00', 4005), ('z6', '2027-01-19', '294.00', 4006),
-                           ('za', '2027-03-08', '301.00', 4011), ('zb', '2027-03-15', '252.00', 4012)) as z(k, fecha, monto, n))));
+                           ('za', '2027-03-08', '301.00', 4011), ('zb', '2027-03-15', '252.00', 4012),
+                           ('zc', '2027-04-09', '170.00', 4013), ('zd', '2027-04-16', '126.00', 4014)) as z(k, fecha, monto, n))));
 select count(fn_banco_casar(m.id)) from movimientos_banco m where m.id_externo like 'c3-jor-%';
 select fn_jornal_persona('{"usuario_id": "00000000-0000-4000-a000-0000000c3104", "patron": "\\mZZ JORNALERO CUATRO\\M"}')->>'nota_alta';
 select set_config('request.jwt.claims', '', false);
@@ -226,8 +256,8 @@ DUENO="$(ed -c "select id from perfiles where rol = 'dueno' and coalesce(activo,
 [ -n "$DUENO" ] || { echo "No hay un dueño en la base" >&2; exit 2; }
 [ "$(ed -c "select count(*) from periodos where periodo in ('2026-12', '2027-01', '2027-02', '2027-03', '2027-04') and estado = 'abierto'")" = "5" ] \
   || { echo "De diciembre de 2026 a abril de 2027 tienen que estar abiertos en una base nueva" >&2; exit 2; }
-[ "$(ed -c "select count(*) from v_jornal_pendientes")" = "8" ] \
-  || { echo "Los ocho Zelle del jornalero tienen que estar en la Bandeja, reconocidos" >&2; ed -c "select id_externo, estado from movimientos_banco"; exit 2; }
+[ "$(ed -c "select count(*) from v_jornal_pendientes")" = "10" ] \
+  || { echo "Los diez Zelle del jornalero tienen que estar en la Bandeja, reconocidos" >&2; ed -c "select id_externo, estado from movimientos_banco"; exit 2; }
 # (lo que la base recién cargada ya trae en rojo en los puentes —los papeles de la semilla sin evaluar—: no es de aquí)
 ROJOS_C3="$(ed -c "select coalesce(string_agg(control, '; ' order by control), '') from fn_puentes_verificar() where not ok")"
 
@@ -690,12 +720,96 @@ revisa "en el libro, marzo: el devengo de lo que nadie pagó (5000) y los dos Ze
 D03="$(numero 2027-03)"
 
 echo
-echo "== 12. Volver a pegar c3 (dos veces) con todo dentro, y sus pruebas"
+echo "== 12. Los repartos de los jornales, con otra forma: no se supone nada"
+# (como un c10 que c3 no conoce: a su tabla de detalle se le cambia el nombre de una columna; al final de la escena vuelve)
+ed -v ON_ERROR_STOP=1 -c "alter table public.jornal_reparto_horas rename column horas_id to horas_id_otra_forma" \
+  || { echo "No se pudo cambiar la columna de jornal_reparto_horas" >&2; exit 2; }
+revisa "el plan lo dice: no pudo leer qué horas pagaron los jornales, y no da ninguna por pagada" "jornales_sin_leer|error|0" \
+  "$(ed -c "select (pl->>'codigo') || '|' || (pl->'corte'->'jornales'->>'lectura') || '|' || coalesce(pl->'corte'->'jornales'->>'reportes', '0') from (select fn_puente_devengo_plan('2027-03') as pl) x")"
+revisa "devengar un mes sin devengo (febrero) se NIEGA en vez de devengar a ciegas, y dice qué pegar (el dueño, sin el código)" "1" \
+  "$(devengar 2027-02 aal1 | grep -c 'No se pudo leer qué horas de 2027-02 pagaron ya los jornales.*no se devenga.*c10-costo-obra.sql')"
+revisa "el devengo que había (marzo) se queda como estaba: ni se rehace ni se deshace (el mismo asiento)" "retenido|$D03" "$(devengar 2027-03 aal1)|$(numero 2027-03)"
+revisa "el control «devengo» lo dice de cada mes abierto con devengo (diciembre, enero y marzo): no se puede comprobar" "false/3|3" \
+  "$(control)|$(ed -c "select count(*) from fn_puentes_verificar() c cross join lateral jsonb_array_elements_text(c.detalle->'fallan') f(v) where c.control = 'devengo' and f.v like '%no se puede comprobar: no se pudo leer qué horas pagaron ya los jornales%c10-costo-obra.sql%el mes no se cierra así%'")"
+revisa "y un mes así NO se cierra, y dice qué hacer (se deshace)" "MX008/dice_como" \
+  "$(ed -v ON_ERROR_STOP=1 <<'SQL' 2>&1 | sed -n 's/^.*RESULTADO //p; /ERROR/p'
+begin;
+do $$
+declare
+  v_b text; v_q text;
+begin
+  lock table public.periodos in exclusive mode;
+  if not exists (select 1 from asientos a where a.tipo = 'apertura') then
+    perform fn_postear(jsonb_build_object('tipo', 'apertura', 'fecha', (select to_char(p.desde, 'YYYY-MM-DD') from periodos p where p.tipo = 'apertura' order by p.desde limit 1),
+      'descripcion', 'ZZ C3 JOR: apertura de prueba (se deshace)',
+      'lineas', jsonb_build_array(jsonb_build_object('cuenta', '1010', 'monto', '1000.00'), jsonb_build_object('cuenta', '3900', 'monto', '-1000.00'))));
+  end if;
+  begin
+    for v_q in select p.periodo from periodos p where p.tipo in ('mes', 'apertura') and p.estado = 'abierto' and p.desde <= date '2026-12-01' order by p.desde loop
+      perform fn_cerrar_periodo(v_q);
+    end loop;
+    v_b := 'cerrado';
+  exception when others then
+    v_b := sqlstate || case when sqlerrm like '%2026-12 no se cierra%sin comprobar%no se pudo leer qué horas pagaron ya los jornales%c10-costo-obra.sql%fn_horas_devengar(''2026-12'')%' then '/dice_como' else ': ' || sqlerrm end;
+  end;
+  raise notice 'RESULTADO %', v_b;
+end $$;
+rollback;
+SQL
+)"
+ed -v ON_ERROR_STOP=1 -c "alter table public.jornal_reparto_horas rename column horas_id_otra_forma to horas_id" \
+  || { echo "No se pudo devolver la columna de jornal_reparto_horas" >&2; exit 2; }
+revisa "con la columna de vuelta: los mismos asientos, todo en verde, y devengar no hace nada" "$D12|$D01|$D03|true/0|true|sin_cambios" \
+  "$(numero 2026-12)|$(numero 2027-01)|$(numero 2027-03)|$(control)|$(c50)|$(devengar 2027-03 aal1)"
+
+echo
+echo "== 13. El devengo que se queda sin horas, y vuelve; y el trigger en «immediate»"
+reloj 2027-04-30
+# El papel del devengo de un mes en el puente (su estado y su código), y si su devengo vivo sustituye a uno deshecho.
+papel() { ed -c "select coalesce((select d.estado || '/' || coalesce(d.codigo, '-') from puente_documentos d where d.tabla = 'horas_devengo' and d.documento_id = '$1'), 'sin papel')"; }
+sustituye() { ed -c "select coalesce((select case when a.sustituye_a is not null then 'sustituye' else 'no sustituye' end from asientos a where $VIVO and a.origen_id = '$1'), '-')"; }
+revisa "abril devengado: las horas del jornalero, aprobadas y sin pagar (14 h × 20)" "posteado|a 160.00 · b 120.00 = 280.00" "$(devengar 2027-04 aal1)|$(devengo 2027-04)"
+revisa "«Así es» en el ZC (9-abr): las horas de su semana salen del devengo" "aplicado 2027-04-09 devengo_estandar|b 120.00 = 120.00|true/0|true|-" \
+  "$(asi_es zc 2027-04-05 2027-04-11)|$(devengo 2027-04)|$(verde 2027-04)"
+revisa "«Así es» en el ZD (16-abr): ya no queda nada trabajado y sin pagar: el devengo SE DESHACE, y su papel lo dice" \
+  "aplicado 2027-04-16 devengo_estandar|sin devengo|no_aplica/sin_horas|true/0|true|-" \
+  "$(asi_es zd 2027-04-12 2027-04-18)|$(devengo 2027-04)|$(papel 2027-04)|$(verde 2027-04)"
+revisa "«Deshacer» el ZD: sus horas vuelven a estar sin pagar, y el devengo VUELVE solo, como sustituto del que se deshizo" \
+  "deshecho|b 120.00 = 120.00|sustituye|contabilizado/-|true/0|true|-" \
+  "$(deshacer zd)|$(devengo 2027-04)|$(sustituye 2027-04)|$(papel 2027-04)|$(verde 2027-04)"
+revisa "des-casar el ZC en la Bandeja: las suyas, también; y «Deshacer» cierra su reparto suelto" "clasificado|a 160.00 · b 120.00 = 280.00|deshecho|true/0|true" \
+  "$(descasar zc)|$(devengo 2027-04)|$(deshacer zc)|$(control)|$(c50)"
+# EL TRIGGER EN «IMMEDIATE» (la app no lo pone así nunca; las pruebas sí): no corre al confirmar, sino al terminar la sentencia
+# que insertó el asiento.
+MC="$(mov zc)"
+ed -v ON_ERROR_STOP=1 > "$TMP/13a.out" 2>&1 <<SQL
+begin; $(app aal2)
+set constraints public.trg_puente_asientos_jornal immediate;
+select 'RESULTADO ' || (fn_jornal_aplicar('$MC', '2027-04-05', '2027-04-11', fn_jornal_propuesta('$MC', '2027-04-05', '2027-04-11')->>'visto')->>'estado');
+commit;
+SQL
+revisa "en «immediate», un «Así es» corre ANTES de que c10 guarde el reparto: el pago entra, y el devengo se queda como estaba" \
+  "aplicado|a 160.00 · b 120.00 = 280.00" "$(sed -n 's/^RESULTADO //p' "$TMP/13a.out")|$(devengo 2027-04)"
+revisa "no queda callado: el control lo dice (8 h que un jornal ya pagó), y fn_horas_devengar lo pone al día" "false/1|8 h|sustituido|b 120.00 = 120.00|true/0" \
+  "$(control)|$(ed -c "select coalesce(substring(f.v from 'cuenta ([0-9.]+ h) que un jornal ya pagó dentro del mes'), '?') from fn_puentes_verificar() c cross join lateral jsonb_array_elements_text(c.detalle->'fallan') f(v) where c.control = 'devengo'")|$(devengar 2027-04 aal1)|$(devengo 2027-04)|$(control)"
+ed -v ON_ERROR_STOP=1 > "$TMP/13b.out" 2>&1 <<SQL
+begin; $(app aal2)
+set constraints public.trg_puente_asientos_jornal immediate;
+select 'RESULTADO ' || (fn_jornal_deshacer((select id from jornal_repartos where movimiento_id = '$MC' and estado = 'aplicado'), 'ZZ C3 JOR: se deshace con el trigger en immediate')->>'estado');
+commit;
+SQL
+revisa "en «immediate», un «Deshacer» pone el devengo al día en ese momento; el libro queda en orden (cada asiento, con su número y su sello en la cadena)" \
+  "deshecho|a 160.00 · b 120.00 = 280.00|true/0|true|" \
+  "$(sed -n 's/^RESULTADO //p' "$TMP/13b.out")|$(devengo 2027-04)|$(control)|$(c50)|$(ed -c "select coalesce(string_agg(control, '; ' order by control), '') from fn_verificar_cadena() where not ok and control in ('hash', 'enlace', 'numeracion', 'contadores', 'cuadre', 'reversos')")"
+D04="$(numero 2027-04)"
+
+echo
+echo "== 14. Volver a pegar c3 (dos veces) con todo dentro, y sus pruebas"
 reloj_de_verdad
 for i in 1 2; do
   pegar "$DOCS/c3-puentes.sql" > "$TMP/11c3-$i.out" 2>&1 || { tail -n 20 "$TMP/11c3-$i.out"; echo "FALLÓ volver a pegar c3 (vez $i)" >&2; exit 2; }
 done
-revisa "los devengos son los mismos asientos, y todo sigue en verde" "$D12|$D01|$D03|true/0|true" "$(numero 2026-12)|$(numero 2027-01)|$(numero 2027-03)|$(control)|$(c50)"
+revisa "los devengos son los mismos asientos, y todo sigue en verde" "$D12|$D01|$D03|$D04|true/0|true" "$(numero 2026-12)|$(numero 2027-01)|$(numero 2027-03)|$(numero 2027-04)|$(control)|$(c50)"
 PGPASSWORD=editor_sql psql -X -q -1 -v ON_ERROR_STOP=1 -h "${PGHOST:-127.0.0.1}" -p "${PGPORT:-5432}" -U editor_sql -d "$BD" \
   -c '\o /dev/null' -f "$DOCS/c3-pruebas.sql" -c '\o' \
   -c "select format('PRUEBAS total=%s ok=%s fallan=%s omitidas=%s', count(*), count(*) filter (where ok), count(*) filter (where not ok), count(*) filter (where ok is null)) from _pruebas" \
@@ -703,8 +817,8 @@ PGPASSWORD=editor_sql psql -X -q -1 -v ON_ERROR_STOP=1 -h "${PGHOST:-127.0.0.1}"
   -At > "$TMP/11pruebas.out" 2>&1 || { tail -n 20 "$TMP/11pruebas.out"; echo "FALLÓ c3-pruebas.sql" >&2; exit 2; }
 grep -E '^PRUEBAS|^[0-9]+ (FALLA|omitida)' "$TMP/11pruebas.out" | sed 's/^/     /'
 revisa "c3-pruebas.sql con los Zelle y la nómina de verdad dentro: ninguna falla" "0" "$(sed -n 's/^PRUEBAS .* fallan=\([0-9]*\) .*/\1/p' "$TMP/11pruebas.out")"
-revisa "y las del corte de los jornales (de la 127 a la 135) corrieron: ninguna omitida" "0" \
-  "$(grep -cE '^1(2[7-9]|3[0-5]) omitida' "$TMP/11pruebas.out")"
+revisa "y las del corte de los jornales (de la 127 a la 136) corrieron: ninguna omitida" "0" \
+  "$(grep -cE '^1(2[7-9]|3[0-6]) omitida' "$TMP/11pruebas.out")"
 
 echo
 echo "== Al final"

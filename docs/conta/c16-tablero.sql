@@ -2,14 +2,22 @@
 -- c16-tablero.sql — LOS NÚMEROS DEL TABLERO: la portada «Resumen» de
 -- Contabilidad, con gráficas, datos, números y enlaces, como el «Business
 -- at a glance» de QuickBooks · c16 (no es la Fase 16 del plan, que es el contador de guardia).
--- 13-nov-2026 (marca 2026111303: con lo que encontraron las dos revisiones
--- del 13-nov, cada arreglo con su prueba en c16-pruebas.sql, de la 36 a la
--- 43, y la revisión final, de la 46 a la 50; «LO QUE CAMBIÓ», al final de
--- esta cabecera). Se pega en el SQL Editor
--- DESPUÉS de c1, c2, c3 y c4 (y de
--- c6, c7, s1, p1, c8, c9, c10, c11, c12, c13 y c14 si se usan: la cadena de
--- siempre). Idempotente: se puede volver a pegar entero las veces que haga
--- falta. Después se pega c16-pruebas.sql.
+-- 13-nov-2026, y 14-nov-2026 (Fase 11c, marca 2026111403: EL TABLERO
+-- APRENDE LA NÓMINA de Gusto —c15—: su tarjeta, su acción rápida, lo suyo en
+-- «Qué atender» y en la proyección de la caja; «Y EL 14-NOV», al final de
+-- esta cabecera, y «LA NÓMINA Y EL CÓDIGO DEL TELÉFONO», en «LA SEGURIDAD».
+-- La marca 2026111402 fue la primera vuelta de la fase, que no llegó a
+-- publicarse; la 03 trae además lo que encontró su verificación: «Y LOS
+-- ARREGLOS DE LA VERIFICACIÓN», al final de esta cabecera).
+-- (La marca 2026111303 fue la del 13-nov: con lo que encontraron las dos
+-- revisiones, cada arreglo con su prueba en c16-pruebas.sql, de la 36 a la
+-- 43, y la revisión final, de la 46 a la 50; «LO QUE CAMBIÓ», abajo.)
+-- Se pega en el SQL Editor DESPUÉS de c1, c2, c3 y c4 (y de c6, c7, s1, p1,
+-- c8, c9, c10, c11, c12, c13, c14 y c15 si se usan: la cadena de siempre; con
+-- c15 da igual cuál de los dos se pegue antes). Idempotente: se puede volver
+-- a pegar entero las veces que haga falta, ENCIMA del c16 que haya (no
+-- guarda nada: no hay ningún dato que perder). Después se pega
+-- c16-pruebas.sql.
 --
 -- QUÉ ES. Edgar mandó dos capturas de la portada de QuickBooks y pidió que
 -- la de la app «se viera de esta manera, con gráficas, datos, números y
@@ -55,11 +63,12 @@
 --     tax» es el use tax del DR-15 (c9): las ventas gravables todavía no
 --     las separa nadie, y la tarjeta lo dice. «Customer Hub» y «Team» no
 --     son de Contabilidad. «Payroll» es la página Nómina (c15, la fase 11:
---     el journal de Gusto): el tablero cuenta lo que ella deja en el libro
---     —la mano de obra y su burden en Resultados, en Gastos y en el costo
---     por obra; lo que queda por pagar, en lo que la proyección de caja no
---     incluye— pero todavía no tiene su tarjeta ni su acción (▶ para
---     decidir, abajo).
+--     el journal de Gusto): desde el 14-nov tiene aquí su tarjeta
+--     («nomina») y su acción rápida; lo que deja en el libro —la mano de
+--     obra y su burden— sigue contado en Resultados, en Gastos y en el
+--     costo por obra, y lo que queda por pagar de ella va en la proyección
+--     de la caja. Lo que la app NO sabe es el calendario de Gusto: la
+--     próxima nómina sale solo si su journal ya se subió (no se inventa).
 --
 -- LAS TARJETAS (la clave de cada una en fn_tablero, su función y de dónde
 -- sale cada cosa). El jsonb exacto de cada una está en el comentario de su
@@ -69,8 +78,9 @@
 --       una factura (c11: por dónde se factura hoy y cuántos borradores),
 --       la Bandeja (c6: cuántos movimientos esperan y desde cuándo),
 --       Conciliar (c6: la cuenta más atrasada), pedir un pago en línea (p1:
---       enlaces activos), Cerrar el mes (c9: qué mes toca y qué lo detiene)
---       y los estados financieros (c4).
+--       enlaces activos), la Nómina (c15, desde el 14-nov: las que esperan
+--       por postear y los cargos de Gusto por casar), Cerrar el mes (c9: qué
+--       mes toca y qué lo detiene) y los estados financieros (c4).
 --   cobros            fn_tablero_cobros(p_dias)
 --       EL EMBUDO DE COBRO: por cobrar (las partidas abiertas de 1110, las
 --       de la antigüedad de c4: cuántas facturas y cuántas vencidas) →
@@ -115,11 +125,12 @@
 --       lo que se repite; la caja real será menor): hoy + lo por cobrar según
 --       su vencimiento (sin lo vencido de más de 60 días ni lo de un cheque
 --       devuelto) − lo por pagar según el suyo − las cuotas de los préstamos
---       (c6) − el use tax por la regla del DR-15 ± lo posfechado del libro,
---       con sus supuestos y lo que NO incluye (con sus montos: lo de la
---       nómina, lo devengado…). Sin la apertura en el libro, ni alarma de
---       sobregiro ni proyección (no hay de dónde partir). Sin nada con
---       fecha, sin proyección.
+--       (c6) − el use tax por la regla del DR-15 − (con la nómina de c15)
+--       lo que se debe de ella, el día de pago de su nómina ya posteada ±
+--       lo posfechado del libro, con sus supuestos y lo que NO incluye (con
+--       sus montos: lo devengado…; sin c15, lo de la nómina). Sin la
+--       apertura en el libro, ni alarma de sobregiro ni proyección (no hay
+--       de dónde partir). Sin nada con fecha, sin proyección.
 --   facturas          fn_tablero_facturas(p_dias)
 --       LAS FACTURAS no pagadas (vencidas y por vencer) y las pagadas en los
 --       últimos N días (depositadas y sin depositar).
@@ -161,8 +172,22 @@
 --       LO QUE EL LIBRO SABE DE LAS OBRAS: el WIP del mes que toca (c12:
 --       sobre y sub-facturado) y el costo por obra (c10: ingreso, costo y
 --       margen de las obras con más ingreso).
+--   nomina            fn_tablero_nomina(p_meses)       (14-nov, Fase 11c)
+--       LA NÓMINA DE GUSTO (c15), como «Payroll» en QuickBooks: la última
+--       nómina posteada y la próxima que la nómina ya tiene (lo de cada
+--       una —su período, cuántas personas, los totales de la empresa: costo
+--       = bruto + lo del patrón, neto, impuestos; lo que le queda por
+--       pagar—, CON EL CÓDIGO DEL TELÉFONO); lo que costó la nómina cada
+--       mes (del libro: una serie para su gráfica); lo que se debe de ella
+--       según el libro (2210 a 2250); los cargos de Gusto que esperan en la
+--       Bandeja sin casar con su nómina; las nóminas importadas sin postear;
+--       la bolsa del burden real sin repartir; los cuadres de la nómina en
+--       rojo; y «atender»: lo que pide algo a Edgar, cada cosa con su
+--       apartado de la página Nómina. Sin c15, dice que la nómina no está
+--       pegada.
 --   «Qué atender» NO está aquí: sigue como hoy, en la pantalla, con los
---   controles de cada capa.
+--   controles de cada capa (salvo lo de la nómina, que viene en su tarjeta:
+--   nomina.atender).
 --
 -- fn_tablero(p jsonb) — lo que llama la pantalla (una llamada). p, todo
 -- opcional:
@@ -175,6 +200,7 @@
 --    "caja": {"meses": 12, "proyeccion": 3},
 --    "ventas": {"anio": 2026},
 --    "obras": {"top": 5},
+--    "nomina": {"meses": 6},
 --    "tope_ms": 4000}
 -- Devuelve {ok, version, hoy, generado_el, libro, capas, tarjetas (las
 -- pedidas, en su orden), <una clave por tarjeta>, sigue (las que no
@@ -185,7 +211,7 @@
 -- ({"tarjetas": sigue}). Así una llamada nunca se acerca a los 8 s de la
 -- API. Lo que comparten varias tarjetas (las partidas por cobrar y por
 -- pagar, lo cobrado, las cuotas, el estado de Stripe, los saldos de los
--- bancos) se lee UNA vez por llamada.
+-- bancos, lo que espera de la nómina) se lee UNA vez por llamada.
 --
 -- LA SEGURIDAD (la regla de c2, B.20, y lo que c4, c6, c9, c10, c12 y c14
 -- sellan):
@@ -212,6 +238,66 @@
 --     13-nov lo confirmó: anon y service_role no ejecutan nada; el equipo,
 --     el equipo inactivo, una sesión sin perfil y el dueño inactivo reciben
 --     42501 o nada que tenga un monto.)
+--   · LA NÓMINA Y EL CÓDIGO DEL TELÉFONO (14-nov, Fase 11c). LA DECISIÓN,
+--     con el criterio que ya usan la nómina (c15: «el libro es el libro», y
+--     su aviso 75 de la bolsa del burden) y la página de Estados:
+--       – SIN EL CÓDIGO (el dueño que entró solo con su contraseña: aal1)
+--         la portada enseña de la nómina SOLO LO DE LA EMPRESA que el libro
+--         y el banco ya le enseñan sin él en Estados, en el Libro y en la
+--         Bandeja: lo que costó la nómina cada mes (sus asientos), lo que se
+--         debe de ella (2210 a 2250), la bolsa del burden (la 5015), los
+--         cargos de Gusto que esperan en el banco, y el día y el asiento de
+--         la última. NADA de lo que guarda la nómina (c15) y pide el
+--         código: lo de UNA nómina (sus totales, cuántas personas, su
+--         período, lo que le queda por pagar), las que esperan por postear,
+--         los cargos des-casados y sus cuadres. Eso no llega (lo paran las
+--         policies de c15, no esta capa: aquí ninguna función es SECURITY
+--         DEFINER, y lo de c15 se lee con los permisos de quien mira) y la
+--         tarjeta dice «con el código del teléfono»: nunca un cero, ni un
+--         «no hay», ni un «todo cuadra» que no pudo comprobar.
+--       – CON EL CÓDIGO (aal2), todo.
+--       – EL MES DE UNA SOLA PERSONA. Si en un mes la nómina le pagó a una
+--         sola persona (lo más probable al empezar: el oficial), lo que
+--         costó la nómina ese mes ES lo que costó esa persona. Y sin el
+--         código la base no puede saber cuántas personas hubo (eso lo
+--         guarda c15 y lo pide): no hay forma de tapar «solo ese mes». O se
+--         enseña siempre lo que el libro dice, o nunca. SE ENSEÑA (el
+--         criterio «libro»), por tres razones:
+--           (1) es lo que c15 ya decidió para el libro («el sueldo del
+--               único oficial es su cuenta, y una nómina de una sola
+--               persona es lo que cobró: eso no se puede esconder del
+--               libro») y para su aviso 75, que da la cifra de la bolsa sin
+--               el código «porque es de la empresa»;
+--           (2) quien abre la portada sin el código abre igual Estados →
+--               Resultados, donde la cuenta 6005 (la compensación del
+--               oficial) está mes a mes, y el Libro, donde el asiento de
+--               cada nómina dice cuántas personas, su bruto y su neto;
+--           (3) taparlo aquí no lo esconde: Resultados, Gastos y la caja de
+--               esta misma portada llevan la nómina dentro de sus totales,
+--               y quitársela los dejaría sin cuadrar con Estados.
+--         Lo que de verdad cierra el libro a una sesión sin código es s1:
+--         con el código activado en la cuenta, quien entra sin él no ve
+--         NADA (tampoco esta portada).
+--       – LO MISMO EN GASTOS. La tarjeta de gastos ya enseñaba la 6005 (el
+--         sueldo del único oficial; lo apuntó la verificación del 14-nov):
+--         con el criterio «libro» sigue igual que Estados → Resultados.
+--       – ▶ LO DECIDE EDGAR, EN UN SOLO SITIO: fn_tablero_nomina_criterio()
+--         (sección 1). Dice «libro». Si prefiere que la portada NO escriba
+--         el dinero de la nómina sin el código, se cambia esa palabra por
+--         «codigo» y se vuelve a pegar este archivo. Entonces, sin el
+--         código: la tarjeta de la nómina no da sus cifras (lo que costó
+--         cada mes, lo que se debe, la bolsa, el monto de los cargos: «con
+--         el código del teléfono»; siguen las fechas y cuántas cosas
+--         esperan), la de gastos deja fuera las cuentas de la nómina (las
+--         que dice c15: la mano de obra, los sueldos y lo del patrón) y lo
+--         dice, y la proyección de la caja no escribe aparte lo que sale
+--         por la nómina cada mes (va dentro de su saldo, y lo dice). No es
+--         un candado (Resultados y la caja la siguen llevando dentro de sus
+--         totales, Estados sigue abierto, y las piezas sueltas de la nómina
+--         —lo que se debe, cuándo sale— contestan igual a quien las llame):
+--         es no ponerlo a la vista. Con el código, los dos criterios dan lo
+--         mismo. Las dos posiciones están probadas (c16-pruebas.sql, la
+--         55).
 --
 -- LOS ERRORES CON NOMBRE (ninguno nuevo):
 --   MX000  falta algo que este archivo da por hecho: no se aplica nada
@@ -246,6 +332,17 @@
 --   c11  emision_config, emision_documentos y v_emision_estado
 --   c12  fn_wip_resumen, fn_wip_asientos y wip_ajustes (solo lee)
 --   c13  solo mira si está (para enlazar la cédula de corte)
+--   c15  fn_nomina_aal2, fn_nomina_cargos, fn_nomina_cuentas, fn_nomina_bolsa,
+--        v_nomina_corridas, v_nomina_control, nomina_config, nomina_columnas
+--        y nomina_archivos (solo lee, con los permisos de quien mira: lo de
+--        cada nómina no llega sin el código del teléfono). Si el c15 pegado
+--        ya las trae (el del 14-nov), en vez de la lista de los cargos y del
+--        control enteros lee sus dos lecturas ligeras:
+--        fn_nomina_cargos_esperan y fn_nomina_control_filas(solo cuadres).
+--        Y DEL LIBRO, dos cosas que escribe c15: los asientos de sus
+--        nóminas (origen «nomina_corridas», con su día de pago) y la nota
+--        que deja en cada línea del asiento de un cargo de Gusto ya casado
+--        («…la nómina del <día de pago>»: dice qué nómina pagó).
 --
 -- CÓMO SE INSTALA (Edgar, en este orden):
 --   1. SQL Editor → pegar ESTE archivo entero → Run. Al final sale una
@@ -274,6 +371,7 @@
 --   fn_tablero_use_tax()
 --   fn_tablero_prestamos()
 --   fn_tablero_obras(p_top int default 5)
+--   fn_tablero_nomina(p_meses int default 6)            (14-nov) la nómina de Gusto
 --   fn_tablero_libro()                                  desde cuándo hay libro
 --   fn_tablero_version()                                la marca (AAAAMMDDNN)
 -- Montos en dólares con dos decimales (numeric(14,2)); porcentajes con un
@@ -302,15 +400,18 @@
 --     con TODO lo que el libro tiene en esas cuentas (también lo fechado
 --     después de hoy: el journal de una nómina de c15 lleva la fecha de su
 --     día de pago, y Gusto cobra del banco unos días antes; contado solo
---     hasta hoy, esos días la deuda salía en negativo). ▶ La nómina (c15) no
---     dice cuándo cobra Gusto cada cosa: si se quisiera restar de la
---     proyección una nómina ya posteada con día de pago después de hoy, o
---     darle su tarjeta («Payroll» en QuickBooks: la última nómina, lo que
---     queda por pagar, los cargos de Gusto que esperan en la Bandeja), es
---     aquí y en la pantalla. Si se quisiera restar también un
---     promedio de lo que sale cada mes (la nómina, la renta), sería un
---     estimado y no el libro: hoy solo se dice, en la línea a la vista,
---     cuánto salió en los meses terminados.
+--     hasta hoy, esos días la deuda salía en negativo). (14-nov, HECHO: con
+--     la nómina de c15 en la base, lo que se debe de ella ya se resta en la
+--     proyección, el día de pago de su nómina ya posteada, y tiene su
+--     tarjeta.) ▶ Gusto cobra unos días ANTES del día de pago y la app no
+--     sabe cuántos: se usa el día de pago; si Gusto dice sus días, es aquí
+--     (fn_tablero_nomina_pagos). Si se quisiera restar también un
+--     promedio de lo que sale cada mes (la nómina que viene, la renta),
+--     sería un estimado y no el libro: hoy solo se dice, en la línea a la
+--     vista, cuánto salió en los meses terminados.
+--   · (14-nov) LO QUE LA PORTADA ENSEÑA DE LA NÓMINA SIN EL CÓDIGO DEL
+--     TELÉFONO: el criterio «libro» (fn_tablero_nomina_criterio; «LA
+--     SEGURIDAD», arriba). Lo decide Edgar.
 --   · Un banco por Plaid que lleva más de 48 horas sin traer nada sale «con
 --     problemas» (la rutina de c7 es diaria).
 --
@@ -362,6 +463,101 @@
 --     separan): con la nómina de c15, entre el cargo de Gusto y el día de
 --     pago salía una deuda en negativo, y una nómina ya posteada con día de
 --     pago después de hoy no se decía (50).
+-- Y EL 14-NOV (Fase 11c, marca 2026111402): EL TABLERO APRENDE LA NÓMINA.
+-- Lo dejó abierto la revisión final del 13-nov («▶ Lo que queda», en
+-- docs/conta/fases/tablero-c16.md). Cada cosa con su prueba (de la 51 a la
+-- 61 de c16-pruebas.sql; y la 1, la 3, la 5, la 7, la 15, de la 30 a la 35,
+-- la 44, la 45 y la 50, puestas al día):
+--   · fn_tablero_capas gana la clave c15 (lo que el tablero lee de la
+--     nómina, todo; si falta algo, es que no está). Sin c15, TODO COMO
+--     ANTES: la tarjeta dice que la nómina no está pegada, su acción sale
+--     apagada y la caja no cambia en nada.
+--   · LA TARJETA «nomina» (fn_tablero_nomina; fn_tablero la trae la última,
+--     con {"nomina": {"meses": 6}}) y sus piezas: fn_tablero_nomina_debe (lo
+--     que se debe según el libro), fn_tablero_nomina_pagos (cuándo sale de
+--     la caja), fn_tablero_nomina_estado (lo que espera de ella, de c15) y
+--     fn_tablero_nomina_de (la arma).
+--   · LA ACCIÓN RÁPIDA «Nómina» (antes de «Cerrar el mes»), con su número:
+--     las nóminas por postear más los cargos y devoluciones de Gusto por
+--     casar. Si lo de la nómina no se puede leer, las demás acciones
+--     siguen.
+--   · LA PROYECCIÓN DE LA CAJA resta lo que el libro dice que se debe de la
+--     nómina, el día de pago de su nómina ya posteada (y lo demás, hoy), y
+--     «no incluye» deja de contarlo. Lo que Gusto ya cobró del banco y ya
+--     está casado no se resta otra vez (el libro ya lo sacó del banco y de
+--     lo que se debe). El reparto entre hoy y cada día de pago se hace
+--     CUENTA POR CUENTA (fn_tablero_nomina_pagos): lo viejo que sigue
+--     debiéndose en una cuenta no lo tapa lo que Gusto ya cobró en otra.
+--     Con una cifra más por mes («nomina»; nula sin c15).
+--   · LA CUENTA DE LOS REEMBOLSOS A EMPLEADOS AL REVÉS no baja lo que se
+--     debe (no es dinero que vaya a entrar): va aparte, dicha.
+--   · EL CRITERIO de lo que se ve sin el código del teléfono, en un solo
+--     sitio (fn_tablero_nomina_criterio), y lo que tapa con «codigo»
+--     (fn_tablero_nomina_tapada: la tarjeta de gastos la mira; la de la
+--     nómina y la proyección de la caja miran el criterio). Las dos
+--     posiciones, probadas (la 55).
+--   · Lo que c15 dice de un cuadre en rojo va tal cual en «tecnico»
+--     ([{orden, control, dice}]), para soporte: el texto para Edgar es el
+--     de esta capa, en llano.
+--   · Sigue sin tablas, sin vistas y SIN NINGUNA función SECURITY DEFINER:
+--     66 funciones (las 59 del 13-nov, y 7 de la nómina); la de las
+--     acciones cambia de firma (un argumento más). Lo de c15 se lee por
+--     «execute» y con los permisos de quien mira.
+-- Y LOS ARREGLOS DE LA VERIFICACIÓN DE LA FASE 11c (14-nov, marca
+-- 2026111403). La fase se verificó dos veces desde cero antes de publicarla
+-- y esto es lo que salió del tablero. Cada cosa con su prueba, que falla
+-- con el c16 de la marca 02 y pasa con este (de la 62 a la 65 de
+-- c16-pruebas.sql; y la 1, la 10, la 53 y la 57, puestas al día):
+--   · CUÁNDO SALE DE LA CAJA LO QUE SE DEBE (fn_tablero_nomina_pagos). Lo
+--     que Gusto ya había cobrado de una cuenta se le quitaba SIEMPRE a lo
+--     más viejo que la cuenta debía. Con una deuda vieja en esa cuenta (un
+--     cheque de papel de una nómina anterior que nadie ha cobrado) y el
+--     cargo de la nómina PRÓXIMA ya casado, la portada decía que lo viejo
+--     se pagaba el día de pago de la próxima —hasta en el mes siguiente— y
+--     que hoy no salía nada. El total estaba bien; la fecha, no. Ahora cada
+--     cobro se le quita a LA NÓMINA QUE PAGÓ, y lo dice el libro, sin abrir
+--     nada de c15: la línea del asiento del cargo nombra su nómina por el
+--     día de pago (la nota la escribe c15 al casarlo). Sale lo mismo con y
+--     sin el código del teléfono, y lo mismo que dice c15 con él (la 62, y
+--     la 57 con su respuesta de verdad, sacada de lo que c15 tiene
+--     apuntado y no de repetir la cuenta de esta capa).
+--     ▶ LÍMITES, dichos: (1) esto descansa en el texto de esa nota: si c15
+--     la cambia, la 62 sale en rojo (y la portada vuelve a lo de antes: el
+--     total, bien; la fecha de lo viejo, tarde); (2) una línea que paga a
+--     la vez, en la misma cuenta, una nómina vieja y una que todavía no
+--     llega a su día se le cuenta primero a la que no ha llegado; (3) un
+--     traspaso hecho a mano entre cuentas de la nómina no lleva esa nota:
+--     cuenta como «falta por explicar» y se le quita a la más próxima.
+--   · LO QUE SE DEBE DE LA NÓMINA NO CUENTA LO QUE NINGUNA NÓMINA PAGA
+--     (fn_tablero_nomina_debe). El renglón «nómina por pagar» del Balance
+--     trae también las vacaciones devengadas (2215), que no las cobra Gusto
+--     ni salen con ninguna nómina: la tarjeta las sumaba a lo que se debe y
+--     la proyección las sacaba de la caja HOY. Ahora las cuentas de la
+--     nómina son las de su mapeo de columnas y las que sus asientos hayan
+--     usado; lo demás del renglón va aparte, dicho, en «otras» (la tarjeta,
+--     con su frase; la caja lo deja en lo que NO incluye, con el nombre de
+--     la cuenta). El renglón del Balance sigue saliendo entero en «libro»
+--     (la 63). Sin c15, todo el renglón cuenta, como antes.
+--   · LA PORTADA NO ARMA LAS PROPUESTAS DE LOS CARGOS (fn_tablero_nomina_
+--     estado). Leía la lista entera de los cargos de la nómina y su control
+--     entero: con un libro grande, unos 70 ms de cada pasada (y de la
+--     tarjeta de las acciones). Ahora lee lo ligero de c15 si lo trae
+--     (unos 20 ms) y, si no, lo de antes: da igual cuál de los dos se pegue
+--     primero. De paso, lo de «control» pierde «avisos» (la portada nunca
+--     los enseñó: se ven en la página de la nómina) y «sin_comprobar»
+--     cuenta solo cuadres (la 64, y la 53).
+--   · Lo de cuándo sale se calcula UNA VEZ por pasada (fn_tablero lo deja
+--     en lo que comparten la caja y la tarjeta).
+--   · GASTOS, con el criterio «codigo» y sin el código: la frase de que las
+--     cuentas de la nómina van tapadas salía dos veces (en «tapado» y en la
+--     nota). Queda una, en «tapado», y dice que se tapa la cuenta ENTERA,
+--     con todo lo que tenga (la 65).
+--   · La prueba 10 daba un rojo falso el último día de un mes de 30 que
+--     sigue a uno de 31 (el 30-nov): la función estaba bien, la prueba
+--     calculaba mal «el mismo día del mes pasado». Arreglada la prueba.
+--   · Sigue sin tablas, sin vistas, sin ninguna función SECURITY DEFINER y
+--     con las mismas 66 funciones y firmas: se pega encima del c16 que
+--     haya.
 -- =====================================================================
 -- (Lo primero, como en c4, c6, c10, c12 y c14: el pegado espera un candado
 -- como mucho medio segundo. Con la app leyendo, para con 55P03 («lock
@@ -390,18 +586,22 @@ as $$
     'fn_tablero_cobros_lista(date,date)', 'fn_tablero_devuelto(date,date)', 'fn_tablero_cobrado(jsonb,date,date)',
     'fn_tablero_por_revisar(date,date)',
     'fn_tablero_cuotas(date)', 'fn_tablero_cuotas_fecha(date,integer,integer,integer)', 'fn_tablero_stripe()', 'fn_tablero_saldos()',
-    'fn_tablero_acciones()', 'fn_tablero_acciones_de(jsonb,jsonb)',
+    'fn_tablero_acciones()', 'fn_tablero_acciones_de(jsonb,jsonb,jsonb)',
     'fn_tablero_cobros(integer)', 'fn_tablero_cobros_de(jsonb,jsonb)',
     'fn_tablero_bancos()', 'fn_tablero_bancos_de(jsonb)',
     'fn_tablero_resultados(date,date,text)', 'fn_tablero_gastos(integer,integer)',
-    'fn_tablero_caja(integer,integer)', 'fn_tablero_caja_de(integer,integer,jsonb,jsonb,jsonb)',
+    'fn_tablero_caja(integer,integer)', 'fn_tablero_caja_de(integer,integer,jsonb,jsonb,jsonb,jsonb)',
     'fn_tablero_facturas(integer)', 'fn_tablero_facturas_de(jsonb,jsonb)',
     'fn_tablero_ventas(integer)',
     'fn_tablero_antiguedad(text)', 'fn_tablero_antiguedad_de(text,jsonb)',
     'fn_tablero_conexiones()', 'fn_tablero_conexiones_de(jsonb)',
     'fn_tablero_cobros_en_linea()', 'fn_tablero_cobros_en_linea_de(jsonb)',
     'fn_tablero_use_tax()', 'fn_tablero_prestamos()', 'fn_tablero_prestamos_de(jsonb)',
-    'fn_tablero_obras(integer)', 'fn_tablero_entero(jsonb,text,integer)', 'fn_tablero(jsonb)', 'fn_tablero_pegado()']
+    'fn_tablero_obras(integer)',
+    -- (14-nov, Fase 11c: la nómina)
+    'fn_tablero_nomina_criterio()', 'fn_tablero_nomina_tapada()', 'fn_tablero_nomina_debe()', 'fn_tablero_nomina_pagos(jsonb)',
+    'fn_tablero_nomina_estado()', 'fn_tablero_nomina_de(jsonb,integer,jsonb)', 'fn_tablero_nomina(integer)',
+    'fn_tablero_entero(jsonb,text,integer)', 'fn_tablero(jsonb)', 'fn_tablero_pegado()']
 $$;
 revoke execute on function public.fn_tablero_funciones() from public, anon, service_role;
 grant  execute on function public.fn_tablero_funciones() to authenticated;
@@ -432,7 +632,7 @@ begin
     end if;
   end loop;
   if cardinality(v_falta) > 0 then
-    return format('c16 se pega después de c1, c2, c3 y c4 (y de c6, c7, s1, p1, c8, c9, c10, c11, c12, c13 y c14 si se usan), con las '
+    return format('c16 se pega después de c1, c2, c3 y c4 (y de c6, c7, s1, p1, c8, c9, c10, c11, c12, c13, c14 y c15 si se usan), con las '
                   'tablas de la app: falta %s.', array_to_string(v_falta, ', '));
   end if;
   -- (las marcas de c2 y c4 que van con esta capa: las de producción)
@@ -511,7 +711,7 @@ begin
   if v is not null then
     raise exception using errcode = 'MX000',
       message = 'c16-tablero NO se aplicó, no se tocó nada: ' || v,
-      hint    = 'El orden de pegado es c1, c2, c3, c4 (c6, c7, s1, p1, c8, c9, c10, c11, c12, c13, c14) y después este archivo (pruebas/conta/README.md, §0).';
+      hint    = 'El orden de pegado es c1, c2, c3, c4 (c6, c7, s1, p1, c8, c9, c10, c11, c12, c13, c14, c15) y después este archivo (pruebas/conta/README.md, §0).';
   end if;
 end $$;
 
@@ -541,7 +741,7 @@ end $$;
 create or replace function public.fn_tablero_version() returns bigint
 language sql immutable
 set search_path = public, pg_temp
-as $$ select 2026111303::bigint $$;
+as $$ select 2026111403::bigint $$;
 revoke execute on function public.fn_tablero_version() from public, anon, service_role;
 grant  execute on function public.fn_tablero_version() to authenticated;
 comment on function public.fn_tablero_version() is 'c16: la marca de esta versión del tablero (AAAAMMDDNN). La pantalla la mira para saber si la base ya trae la portada nueva.';
@@ -757,11 +957,39 @@ as $$
            and to_regclass('public.v_emision_estado') is not null,
     'c12', to_regprocedure('public.fn_wip_resumen(text)') is not null,
     'c13', to_regprocedure('public.fn_cedula_resumen(date)') is not null,
-    'c14', to_regclass('public.v_subs_control') is not null)
+    'c14', to_regclass('public.v_subs_control') is not null,
+    -- (14-nov, Fase 11c) la nómina con Gusto: todo lo que el tablero lee de ella (si falta algo, es que no está)
+    'c15', to_regprocedure('public.fn_nomina_aal2()') is not null and to_regprocedure('public.fn_nomina_cargos()') is not null
+           and to_regprocedure('public.fn_nomina_cuentas()') is not null
+           and to_regclass('public.v_nomina_corridas') is not null and to_regclass('public.v_nomina_control') is not null
+           and to_regclass('public.nomina_config') is not null and to_regclass('public.nomina_columnas') is not null
+           and to_regclass('public.nomina_archivos') is not null)
 $$;
 revoke execute on function public.fn_tablero_capas() from public, anon, service_role;
 grant  execute on function public.fn_tablero_capas() to authenticated;
-comment on function public.fn_tablero_capas() is 'c16: las capas que esta base tiene, por lo que el tablero lee de cada una ({c4, c6, c6_prestamos, c7, p1, c8, c9, c10, c11, c12, c13, c14}: verdadero o falso). La pantalla la usa para saber qué páginas enlazar.';
+comment on function public.fn_tablero_capas() is 'c16: las capas que esta base tiene, por lo que el tablero lee de cada una ({c4, c6, c6_prestamos, c7, p1, c8, c9, c10, c11, c12, c13, c14, c15}: verdadero o falso). La pantalla la usa para saber qué páginas enlazar.';
+
+-- ▶ EL CRITERIO DE LA NÓMINA SIN EL CÓDIGO DEL TELÉFONO, EN UN SOLO SITIO
+-- (14-nov, Fase 11c; el porqué, en «LA SEGURIDAD» de la cabecera). LO
+-- DECIDE EDGAR:
+--   'libro'   (así viene) sin el código, la portada enseña de la nómina lo
+--             que el libro ya enseña sin él en Estados: lo que costó cada
+--             mes, lo que se debe y la bolsa del burden; y la tarjeta de
+--             gastos, sus cuentas, como siempre. Lo de cada nómina (sus
+--             totales, cuántas personas, lo que le queda), NUNCA sin él.
+--   'codigo'  sin el código, la portada no escribe el dinero de la nómina,
+--             ni en su tarjeta ni en la de gastos: «con el código del
+--             teléfono».
+-- Para cambiarlo: la palabra de abajo, y volver a pegar este archivo. Con
+-- el código del teléfono las dos dan lo mismo. Cualquier otra palabra
+-- cuenta como 'codigo' (ante la duda, no se enseña).
+create or replace function public.fn_tablero_nomina_criterio() returns text
+language sql stable
+set search_path = public, pg_temp
+as $$ select 'libro'::text $$;
+revoke execute on function public.fn_tablero_nomina_criterio() from public, anon, service_role;
+grant  execute on function public.fn_tablero_nomina_criterio() to authenticated;
+comment on function public.fn_tablero_nomina_criterio() is 'c16: (14-nov, Fase 11c) EL CRITERIO, en un solo sitio, de lo que la portada enseña de la nómina SIN el código del teléfono: «libro» (así viene: lo que el libro ya enseña sin él en Estados —lo que costó cada mes, lo que se debe, la bolsa del burden— y la tarjeta de gastos como siempre) o «codigo» (sin el código, ni la tarjeta de la nómina ni la de gastos escriben el dinero de la nómina). Lo de cada nómina, nunca sin el código. Lo decide Edgar: se cambia la palabra y se vuelve a pegar c16.';
 
 -- EL LIBRO: desde cuándo hay libro. El día siguiente a la apertura (la
 -- regla de v_resultados de c4, de c10 y de c12); sin período de apertura,
@@ -1650,6 +1878,367 @@ comment on function public.fn_tablero_saldos() is 'c16: los bancos y las tarjeta
 
 
 -- ---------------------------------------------------------------------
+-- 2b. (14-nov, Fase 11c) LAS PIEZAS DE LA NÓMINA (c15): lo que se debe de
+--     ella según el libro, cuándo sale de la caja, lo que espera de ella y
+--     qué cuentas no se enseñan sin el código. Todo lo de c15 se lee por
+--     to_regclass / to_regprocedure y «execute» (sin c15, nada; y da igual
+--     qué se pegue antes), CON LOS PERMISOS DE QUIEN MIRA: lo que c15
+--     guarda con el código del teléfono (cada nómina, lo de cada persona,
+--     los cargos casados) no llega sin él —lo paran sus policies—, y aquí
+--     se dice «con el código del teléfono» en vez de un cero.
+-- ---------------------------------------------------------------------
+-- LAS CUENTAS DE LA NÓMINA QUE NO SE ENSEÑAN EN ESTA SESIÓN. Con el
+-- criterio «libro» (el de fábrica), ninguna. Con el criterio «codigo» y
+-- sin el código del teléfono, las cuentas de resultados que usa la nómina
+-- (las que dice c15: la mano de obra directa y la del oficial, los sueldos
+-- de oficina y del oficial, lo sin obra, la bolsa del burden, el burden por
+-- obra y el de oficina; no la cuota de Gusto, que es software), si en el
+-- libro hay alguna nómina de Gusto viva. La usa la tarjeta de gastos.
+create or replace function public.fn_tablero_nomina_tapada() returns text[]
+language plpgsql stable
+set search_path = public, pg_temp
+as $$
+declare
+  v_cod boolean;
+  v_c   jsonb;
+begin
+  perform fn_tablero_exigir_dueno();
+  if fn_tablero_nomina_criterio() = 'libro' or not coalesce((fn_tablero_capas() ->> 'c15')::boolean, false) then
+    return '{}'::text[];
+  end if;
+  execute 'select public.fn_nomina_aal2()' into v_cod;
+  if coalesce(v_cod, false) then
+    return '{}'::text[];
+  end if;
+  -- (sin ninguna nómina de Gusto viva en el libro no hay nada que tapar)
+  if not exists (select 1 from asientos a
+                  where a.origen_tabla = 'nomina_corridas' and a.reversa_a is null
+                    and not exists (select 1 from asientos r where r.reversa_a = a.id)) then
+    return '{}'::text[];
+  end if;
+  execute 'select public.fn_nomina_cuentas()' into v_c;
+  return coalesce(array(select distinct x.value from jsonb_each_text(coalesce(v_c, '{}'::jsonb)) x
+                         where x.key <> 'cuota' and x.value is not null order by 1), '{}'::text[]);
+end $$;
+revoke execute on function public.fn_tablero_nomina_tapada() from public, anon, service_role;
+grant  execute on function public.fn_tablero_nomina_tapada() to authenticated;
+comment on function public.fn_tablero_nomina_tapada() is 'c16: (14-nov, Fase 11c) las cuentas de la nómina cuyas cifras la portada NO enseña en esta sesión: ninguna con el criterio «libro» (el de fábrica), con el código del teléfono, sin c15 o sin ninguna nómina de Gusto viva en el libro; con el criterio «codigo» y sin el código, las cuentas de resultados que usa la nómina (las que dice c15, sin la cuota de Gusto). La usa la tarjeta de gastos. Solo el dueño.';
+
+-- LO QUE SE DEBE DE LA NÓMINA, SEGÚN EL LIBRO (sin el código del teléfono:
+-- son saldos de cuentas, lo mismo que enseña el Balance). LAS CUENTAS POR
+-- PAGAR QUE USA LA NÓMINA —las del mapeo de columnas de c15 (de fábrica:
+-- 2210 el neto, 2220 lo del 941, 2225 el FUTA, 2230 el reempleo, 2240 las
+-- deducciones y 2250 los reembolsos) y las que algún journal suyo haya
+-- usado—, dentro del renglón «nómina por pagar» del balance de c4, con TODO
+-- lo que el libro tiene en ellas (también lo fechado después de hoy: el
+-- journal de una nómina lleva la fecha de su día de pago, y Gusto cobra
+-- antes), cuenta por cuenta, en positivo lo que se debe. (Cuánto de eso sale
+-- hoy y cuánto en un día de pago que viene lo dice fn_tablero_nomina_pagos.)
+--   · LA CUENTA DE LOS REEMBOLSOS A EMPLEADOS (la 2250: la que dice el
+--     mapeo de columnas de la nómina o, sin él, la del puente de c3) cuenta
+--     solo si DEBE. El journal de una nómina la carga (lo reembolsado sale
+--     con el neto: está en la 2210) y la abona el recibo del empleado
+--     cuando entra al libro. Si se reembolsó por nómina algo cuyo recibo no
+--     está en el libro, queda AL REVÉS (saldo deudor): eso no es dinero que
+--     vaya a entrar ni baja lo que Gusto va a cobrar. Va APARTE, dicho, y
+--     no se resta: «monto» es lo que se debe.
+--   · Las demás cuentas de la nómina, con su signo: lo que una corrección de
+--     Gusto dejó a favor (saldo deudor) sí baja lo que se debe (Gusto lo
+--     descuenta del siguiente cargo o lo devuelve).
+--   · LO DEMÁS DEL RENGLÓN NO ES DE LA NÓMINA DE GUSTO (14-nov, los arreglos
+--     de la verificación). El renglón del Balance trae también cuentas que
+--     ninguna nómina paga: las vacaciones devengadas (2215), un devengo que
+--     el CPA postea a mano. Contadas aquí, la portada decía que «se deben de
+--     la nómina» y que «Gusto lo cobra», y la proyección las restaba de la
+--     caja este mes: no salen del banco con ninguna nómina. Van en «otras»,
+--     con su saldo: no cuentan en «monto», no tienen fecha de pago, y la
+--     proyección las sigue listando en lo que no incluye, como antes de la
+--     nómina. «libro» es el renglón entero (lo que dice el Balance): monto,
+--     menos lo de reembolsos que está al revés, más estas.
+-- Sin c15 no hay mapeo: cuentan todas las del renglón, como hasta ahora (la
+-- usa la proyección de la caja solo si c15 está).
+create or replace function public.fn_tablero_nomina_debe() returns jsonb
+language plpgsql stable
+set search_path = public, pg_temp
+as $$
+declare
+  v_reem text[] := '{}';
+  v_nom  text[];          -- las cuentas por pagar que usa la nómina (nulo sin c15: todas las del renglón)
+  v      jsonb;
+begin
+  perform fn_tablero_exigir_dueno();
+  if to_regclass('public.nomina_columnas') is not null then
+    execute $q$select coalesce(array_agg(distinct k.cuenta) filter (where k.clase in ('reembolso', 'reembolso_total')), '{}'::text[]),
+                      coalesce(array_agg(distinct k.cuenta), '{}'::text[])
+                 from public.nomina_columnas k where k.cuenta is not null$q$ into v_reem, v_nom;
+    -- (y las que algún journal de la nómina ya usó, aunque su mapeo haya cambiado después; las que no son del renglón no cuentan)
+    v_nom := v_nom || array(select distinct l.cuenta
+                              from asientos a join asiento_lineas l on l.asiento_id = a.id
+                             where a.origen_tabla = 'nomina_corridas');
+  end if;
+  if cardinality(coalesce(v_reem, '{}'::text[])) = 0 then
+    v_reem := array(select pc.cuenta from puente_cuentas pc where pc.rol = 'reembolso_empleado');
+  end if;
+  with c as materialized (
+    select m.cuenta, m.nombre, m.cuenta = any (v_reem) as reem,
+           (v_nom is null or m.cuenta = any (v_nom) or m.cuenta = any (v_reem)) as de_nomina
+      from fn_tablero_mapa() m where m.estado = 'balance' and m.linea = 'nomina_por_pagar'
+  ), s as materialized (
+    select c.cuenta, c.nombre, c.reem, c.de_nomina, coalesce(-sum(l.monto), 0)::numeric(14,2) as todo
+      from c
+      left join asiento_lineas l on l.cuenta = c.cuenta
+     group by c.cuenta, c.nombre, c.reem, c.de_nomina
+  )
+  select jsonb_build_object(
+           'monto', coalesce(sum(case when s.reem then greatest(s.todo, 0) else s.todo end) filter (where s.de_nomina), 0)::numeric(14,2),
+           'libro', coalesce(sum(s.todo), 0)::numeric(14,2),
+           'cuentas', coalesce(jsonb_agg(jsonb_build_object('cuenta', s.cuenta, 'nombre', s.nombre, 'monto', s.todo) order by s.cuenta)
+                                 filter (where s.de_nomina and s.todo <> 0 and not (s.reem and s.todo < 0)), '[]'::jsonb),
+           'aparte', coalesce(jsonb_agg(jsonb_build_object('cuenta', s.cuenta, 'nombre', s.nombre, 'monto', -s.todo) order by s.cuenta)
+                                filter (where s.reem and s.todo < 0), '[]'::jsonb),
+           -- (lo del renglón que la nómina no paga: aparte, con su saldo)
+           'otras', coalesce(jsonb_agg(jsonb_build_object('cuenta', s.cuenta, 'nombre', s.nombre, 'monto', s.todo) order by s.cuenta)
+                               filter (where not s.de_nomina and s.todo <> 0), '[]'::jsonb),
+           'de_pago', coalesce(jsonb_agg(s.cuenta order by s.cuenta) filter (where s.de_nomina and not s.reem), '[]'::jsonb),
+           'todas', coalesce(jsonb_agg(s.cuenta order by s.cuenta) filter (where s.de_nomina), '[]'::jsonb))
+    into v
+    from s;
+  return v;
+end $$;
+revoke execute on function public.fn_tablero_nomina_debe() from public, anon, service_role;
+grant  execute on function public.fn_tablero_nomina_debe() to authenticated;
+comment on function public.fn_tablero_nomina_debe() is 'c16: (14-nov, Fase 11c) lo que se debe de la nómina SEGÚN EL LIBRO: las cuentas por pagar que usa la nómina (las del mapeo de columnas de c15 y las que sus journals hayan usado, dentro del renglón «nómina por pagar» del balance de c4), con todo lo que el libro tiene en ellas, también lo fechado después de hoy: {monto (lo que se debe: cada cuenta con su signo —lo que una corrección dejó a favor baja—, salvo la de reembolsos a empleados, que cuenta solo si debe), libro (lo que dice el Balance en ese renglón: monto, menos lo que está aparte, más las otras), cuentas: [{cuenta, nombre, monto}] (las que suman «monto»), aparte: [{cuenta, nombre, monto}] (la cuenta de reembolsos a empleados AL REVÉS: se reembolsó por nómina algo cuyo recibo no está en el libro; no baja lo que se debe), otras: [{cuenta, nombre, monto}] (lo del renglón que ninguna nómina paga —las vacaciones devengadas—: no cuenta en «monto» ni tiene fecha de pago), de_pago y todas (las cuentas de la nómina: sin la de reembolsos, y con ella)}. Sin c15, todas las del renglón cuentan. Sin el código del teléfono: son saldos del libro. Solo lee. Solo el dueño.';
+
+-- CUÁNDO SALE DE LA CAJA LO QUE SE DEBE DE LA NÓMINA (del libro, sin el
+-- código; lo usa la proyección de la caja). Lo que se debe (monto de
+-- fn_tablero_nomina_debe) se reparte CUENTA POR CUENTA. En cada cuenta:
+--   · lo que le dejó cada nómina YA POSTEADA con día de pago DESPUÉS de hoy
+--     (su journal, vivo, con fecha de después de hoy) se debe ESE DÍA;
+--   · lo demás que la cuenta tiene (lo de las nóminas ya pagadas que sigue
+--     sin su cargo casado, lo retenido sin depositar) se debe HOY;
+--   · LO QUE GUSTO YA COBRÓ NO SE RESTA OTRA VEZ, Y SE LE QUITA A LA NÓMINA
+--     QUE PAGÓ (14-nov, los arreglos de la verificación). Gusto cobra del
+--     banco unos días ANTES del día de pago. Casado ese cargo en Nómina, el
+--     libro ya lo sacó del banco y de su cuenta. CUÁL nómina pagó lo dice
+--     el LIBRO, sin pedir el código: c15 escribe en cada línea del asiento
+--     del cargo «… lo de la nómina del <su día de pago>»
+--     (fn_nomina_cargo_casar). Lo que una línea así le pagó a una nómina de
+--     después de hoy se le quita A ESA, hasta lo que dejó en la cuenta; lo
+--     demás que la cuenta tiene es de antes y se debe HOY. (Hasta este
+--     arreglo se suponía que lo cobrado pagaba lo más viejo de la cuenta:
+--     con el cheque de papel de la nómina pasada sin cobrar y el neto de la
+--     que viene ya cobrado por Gusto, lo viejo salía «el día de pago que
+--     viene» —y en el mes que viene de la proyección— y hoy, nada.)
+--     Lo que falte por explicar —la cuenta tiene MENOS de lo que así les
+--     queda a las de después: algo se pagó sin pasar por la nómina, un
+--     asiento a mano— se le descuenta a la MÁS PRÓXIMA primero. Si una
+--     misma línea nombra a dos nóminas de después, se reparte en su orden,
+--     cada una hasta lo que dejó. El total es siempre lo que se debe.
+--     Un cargo de Gusto que todavía ESPERA en la Bandeja no ha bajado el
+--     banco del libro: lo que paga sigue debiéndose, y se resta una vez.
+--     ▶ Lo que el libro no dice (el total no cambia; esa parte puede quedar
+--     en hoy o en el día de pago que viene): si un mismo cargo pagó, en la
+--     MISMA cuenta, una nómina ya pasada y otra de después, su línea nombra
+--     a las dos sin decir cuánto a cada una: se toma que pagó primero la de
+--     después. Y lo que un cargo descontó de lo que había a favor en OTRA
+--     cuenta va en un asiento aparte de la nómina, sin ese texto: cuenta
+--     como «algo pagado sin explicar».
+--   · La cuenta de los reembolsos a empleados, si debe, hoy. Y lo que una
+--     corrección dejó A FAVOR en una cuenta baja lo que se debe: lo de hoy
+--     primero, y después lo más próximo.
+--   · Si en total no se debe nada (todo pagado, o a favor), ninguna fila.
+-- p_debe: lo de fn_tablero_nomina_debe ya leído (nulo: se lee aquí). Si ya
+-- trae sus «pagos» (fn_tablero los calcula UNA vez por llamada y los deja
+-- ahí para la caja y para la tarjeta), se devuelven esos.
+create or replace function public.fn_tablero_nomina_pagos(p_debe jsonb default null)
+returns table (fecha date, monto numeric, asiento text, de_hoy boolean)
+language plpgsql stable
+rows 4
+set search_path = public, pg_temp
+as $$
+declare
+  v_hoy  date := fn_tablero_hoy();
+  v_d    jsonb;
+  v_p    numeric;
+  v_ctas text[];
+begin
+  perform fn_tablero_exigir_dueno();
+  v_d := coalesce(p_debe, fn_tablero_nomina_debe());
+  if jsonb_typeof(v_d -> 'pagos') = 'array' then
+    return query
+    select (x ->> 'fecha')::date, (x ->> 'monto')::numeric, x ->> 'asiento', (x ->> 'de_hoy')::boolean
+      from jsonb_array_elements(v_d -> 'pagos') with ordinality t(x, o)
+     order by t.o;
+    return;
+  end if;
+  v_p := (v_d ->> 'monto')::numeric;
+  if v_p is null or v_p <= 0 then
+    return;
+  end if;
+  v_ctas := array(select jsonb_array_elements_text(v_d -> 'de_pago'));
+  return query
+  with c as materialized (
+    -- cada cuenta de lo que se debe, con todo lo que el libro tiene en ella (paga: falso en la de reembolsos, que va entera hoy)
+    select x ->> 'cuenta' as cuenta, (x ->> 'monto')::numeric as b, (x ->> 'cuenta') = any (v_ctas) as paga
+      from jsonb_array_elements(v_d -> 'cuentas') x
+  ), f0 as materialized (
+    -- lo que cada journal vivo con fecha de después de hoy dejó por pagar en cada cuenta, y su día de pago (el del papel)
+    select a.numero, a.fecha_contable as f,
+           case when a.procedencia ->> 'fecha_documento' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' then (a.procedencia ->> 'fecha_documento')::date
+                else a.fecha_contable end as dia,
+           l.cuenta, (-sum(l.monto))::numeric as deja
+      from asientos a
+      join asiento_lineas l on l.asiento_id = a.id
+     where a.origen_tabla = 'nomina_corridas' and a.fecha_contable > v_hoy and a.reversa_a is null
+       and not exists (select 1 from asientos r where r.reversa_a = a.id)
+       and l.cuenta = any (v_ctas)
+     group by a.id, a.numero, a.fecha_contable, a.procedencia, l.cuenta
+    having -sum(l.monto) > 0
+  ), k as (
+    -- LO QUE YA SE LE PAGÓ A CADA UNO, según el libro: las líneas al debe de los asientos VIVOS de un cargo del banco que dicen
+    -- que pagan su nómina (c15 escribe «… lo de la nómina del 4-dic-2026»: su día de pago). Una línea que nombra a varias de
+    -- después se reparte en su orden, cada una hasta lo que dejó.
+    select f0.numero, f0.cuenta,
+           greatest(0, least(f0.deja, l.monto - coalesce(sum(f0.deja) over (partition by l.asiento_id, l.orden order by f0.f, f0.numero
+                                                                             rows between unbounded preceding and 1 preceding), 0))) as pagado
+      from f0
+      join asiento_lineas l on l.cuenta = f0.cuenta and l.monto > 0
+                           and strpos(l.memo, 'la nómina del ' || fn_tablero_dia(f0.dia)) > 0
+      join asientos b on b.id = l.asiento_id
+     where b.origen_tabla = 'movimientos_banco' and b.reversa_a is null
+       and not exists (select 1 from asientos r where r.reversa_a = b.id)
+  ), f as materialized (
+    -- lo que a cada uno le QUEDA por pagar en cada cuenta
+    select f0.numero, f0.f, f0.cuenta,
+           (f0.deja - least(f0.deja, coalesce((select sum(k.pagado) from k where k.numero = f0.numero and k.cuenta = f0.cuenta), 0)))::numeric as deja
+      from f0
+  ), g as (
+    select f.*, sum(f.deja) over (partition by f.cuenta order by f.f, f.numero) as acum, sum(f.deja) over (partition by f.cuenta) as fut
+      from f
+     where f.deja > 0
+  ), m as (
+    -- (en cada cuenta, lo que falte por explicar —lo que les queda a los de después menos lo que la cuenta tiene, si es
+    --  positivo: algo pagado sin pasar por la nómina— baja el journal más próximo primero)
+    select g.f, g.numero,
+           (greatest(0, g.acum - greatest(g.fut - coalesce(c.b, 0), 0))
+            - greatest(0, g.acum - g.deja - greatest(g.fut - coalesce(c.b, 0), 0)))::numeric as m
+      from g left join c on c.cuenta = g.cuenta
+  ), t as (
+    -- lo de hoy: lo que cada cuenta tiene de más sobre lo que les queda a los de después; y lo que alguna tiene a favor
+    select coalesce(sum(greatest(c.b - coalesce((select max(g.fut) from g where g.cuenta = c.cuenta), 0), 0)), 0)::numeric as hoy,
+           coalesce(sum(greatest(-c.b, 0)) filter (where c.paga), 0)::numeric as favor
+      from c
+  ), u as (
+    select 0 as o, v_hoy as f, null::text as numero, t.hoy as m from t
+    union all
+    select 1, m.f, m.numero, sum(m.m) from m group by m.f, m.numero
+  ), w as (
+    -- (lo que hay a favor baja lo de hoy primero, y después lo más próximo)
+    select u.o, u.f, u.numero, u.m, sum(u.m) over (order by u.o, u.f, u.numero) as acum, (select t.favor from t) as favor from u
+  )
+  select w.f, (greatest(0, w.acum - w.favor) - greatest(0, w.acum - w.m - w.favor))::numeric(14,2), w.numero, w.o = 0
+    from w
+   where greatest(0, w.acum - w.favor) - greatest(0, w.acum - w.m - w.favor) > 0
+   order by 1, 3 nulls first;
+end $$;
+revoke execute on function public.fn_tablero_nomina_pagos(jsonb) from public, anon, service_role;
+grant  execute on function public.fn_tablero_nomina_pagos(jsonb) to authenticated;
+comment on function public.fn_tablero_nomina_pagos(jsonb) is 'c16: (14-nov, Fase 11c) cuándo sale de la caja lo que se debe de la nómina según el libro (sin el código del teléfono), cuenta por cuenta: lo que cada nómina ya posteada con día de pago después de hoy dejó en la cuenta, ese día, menos lo que Gusto ya le cobró y está casado (lo dice el libro: la línea del asiento del cargo nombra la nómina que paga por su día de pago) y menos lo que falte por explicar (descontado de la más próxima primero); lo demás de la cuenta —lo de antes—, hoy; lo que una corrección dejó a favor baja lo de hoy primero. Filas {fecha, monto, asiento (el journal; nulo en lo de hoy), de_hoy}; suman lo que se debe (fn_tablero_nomina_debe; p_debe: lo suyo ya leído —si trae sus «pagos» ya calculados, se devuelven esos—, o nulo). Sin nada que se deba, ninguna. Solo lee. Solo el dueño.';
+
+-- LO QUE ESPERA DE LA NÓMINA (la pieza que comparten su tarjeta y su
+-- acción rápida; fn_tablero la lee UNA vez). De c15, con los permisos de
+-- quien mira:
+--   · con_codigo: si la sesión pasó el código del teléfono (lo dice c15);
+--   · hay_nominas: si alguna vez entró un archivo de nómina (se sabe sin el
+--     código: los archivos no llevan dinero);
+--   · cargos: los cargos y las devoluciones de Gusto que esperan en la
+--     Bandeja del banco sin casar con su nómina (los que c15 da por tales;
+--     son del banco: se ven sin el código), el más viejo y si ya pasa de
+--     los días que la nómina tiene fijados para avisar (saldo_dias); y los
+--     que se casaron en Nómina y después se des-casaron en la Bandeja (eso
+--     es de c15: solo con el código; sin él, nulo);
+--   · por_postear: las nóminas importadas sin postear (con el código; sin
+--     él y con archivos en la base, NULO —no se sabe—, nunca un cero);
+--   · control: los CUADRES de c15 en rojo (lo que detiene el cierre) y los
+--     que SIN EL CÓDIGO NO SE PUEDEN COMPROBAR (c15 los deja en «no» con su
+--     frase «hace falta el código del teléfono»: no son un rojo, y no se
+--     cuentan como tal; tampoco como un verde). Lo que dijo c15, tal cual,
+--     en «rojos» (para la página de la nómina y para soporte).
+-- (14-nov, los arreglos de la verificación) LO LIGERO DE c15. Esto corría la
+-- lista entera de los cargos de la nómina (que ARMA LA PROPUESTA de cada
+-- pendiente, probando combinaciones al centavo) y su control entero (19
+-- filas, con esas propuestas otra vez): con un libro grande, unos 70 ms de
+-- cada pasada de la portada. Ahora pide a c15 sus dos lecturas ligeras, si
+-- su versión ya las trae (la del 14-nov): fn_nomina_cargos_esperan (los que
+-- esperan, sin su propuesta) y fn_nomina_control_filas(solo los cuadres).
+-- Los AVISOS de la nómina ya no se cuentan aquí: la portada nunca los
+-- enseñó (se ven en su página). Con un c15 anterior lee lo de antes (lo
+-- mismo, más despacio): da igual cuál de los dos se pegue primero.
+-- Sin c15, nulo.
+create or replace function public.fn_tablero_nomina_estado() returns jsonb
+language plpgsql stable
+set search_path = public, pg_temp
+as $$
+declare
+  v_hoy   date := fn_tablero_hoy();
+  v_cod   boolean;
+  v_hay   boolean;
+  v_dias  int;
+  v_n     bigint; v_monto numeric; v_viejo date; v_nd bigint; v_md numeric; v_des bigint;
+  v_ppn   bigint; v_pp1 date; v_pp2 date;
+  v_cua   bigint; v_sin bigint; v_rojos jsonb;
+  c_sin   constant text := '%hace falta el código del teléfono%';
+  -- (de dónde se lee: lo ligero de c15 si lo trae; si no, su lista entera y su control entero)
+  v_cargos  text := case when to_regprocedure('public.fn_nomina_cargos_esperan()') is not null
+                         then 'public.fn_nomina_cargos_esperan()' else 'public.fn_nomina_cargos()' end;
+  v_control text := case when to_regprocedure('public.fn_nomina_control_filas(boolean)') is not null
+                         then 'public.fn_nomina_control_filas(true)' else 'public.v_nomina_control' end;
+begin
+  perform fn_tablero_exigir_dueno();
+  if not coalesce((fn_tablero_capas() ->> 'c15')::boolean, false) then
+    return null;
+  end if;
+  execute 'select public.fn_nomina_aal2()' into v_cod;
+  v_cod := coalesce(v_cod, false);
+  execute 'select exists (select 1 from public.nomina_archivos), (select k.saldo_dias from public.nomina_config k where k.id = 1)'
+     into v_hay, v_dias;
+  execute format($q$
+    select count(*) filter (where g.estado = 'pendiente' and g.monto > 0),
+           coalesce(sum(g.monto) filter (where g.estado = 'pendiente' and g.monto > 0), 0)::numeric(14,2),
+           min(g.fecha) filter (where g.estado = 'pendiente' and g.monto > 0),
+           count(*) filter (where g.estado = 'pendiente' and g.monto < 0),
+           coalesce(-sum(g.monto) filter (where g.estado = 'pendiente' and g.monto < 0), 0)::numeric(14,2),
+           count(*) filter (where g.estado = 'descasado')
+      from %s g where g.estado in ('pendiente', 'descasado')$q$, v_cargos)
+     into v_n, v_monto, v_viejo, v_nd, v_md, v_des;
+  if v_cod then
+    execute $q$select count(*), min(k.dia_pago), max(k.dia_pago) from public.v_nomina_corridas k where k.estado = 'importada'$q$
+       into v_ppn, v_pp1, v_pp2;
+  end if;
+  execute format($q$
+    select count(*) filter (where k.ok is not true and not ($1 and k.detalle like $2)),
+           count(*) filter (where k.ok is not true and $1 and k.detalle like $2),
+           coalesce(jsonb_agg(jsonb_build_object('orden', k.orden, 'control', k.control, 'dice', k.corto) order by k.orden)
+                      filter (where k.ok is not true and not ($1 and k.detalle like $2)), '[]'::jsonb)
+      from %s k where k.nivel = 'cuadre'$q$, v_control)
+     into v_cua, v_sin, v_rojos using not v_cod, c_sin;
+  return jsonb_build_object(
+    'con_codigo', v_cod, 'hay_nominas', coalesce(v_hay, false),
+    'cargos', jsonb_build_object('n', v_n, 'monto', v_monto, 'mas_viejo', v_viejo, 'dias', v_hoy - v_viejo,
+                                 'alarma', coalesce(v_hoy - v_viejo > coalesce(v_dias, 10), false), 'aviso_dias', coalesce(v_dias, 10),
+                                 'devoluciones', jsonb_build_object('n', v_nd, 'monto', v_md),
+                                 'descasados', case when v_cod then v_des end),
+    -- (sin el código c15 no deja ver ninguna corrida: si hay archivos, el número no se sabe —nulo—; no es un cero)
+    'por_postear', case when v_cod then jsonb_build_object('n', v_ppn, 'primero', v_pp1, 'ultimo', v_pp2)
+                        when not coalesce(v_hay, false) then jsonb_build_object('n', 0, 'primero', null, 'ultimo', null) end,
+    'control', jsonb_build_object('cuadres_rojos', v_cua, 'sin_comprobar', v_sin, 'rojos', v_rojos));
+end $$;
+revoke execute on function public.fn_tablero_nomina_estado() from public, anon, service_role;
+grant  execute on function public.fn_tablero_nomina_estado() to authenticated;
+comment on function public.fn_tablero_nomina_estado() is 'c16: (14-nov, Fase 11c) lo que espera de la nómina (c15), una vez por llamada y con los permisos de quien mira: {con_codigo (la sesión pasó el código del teléfono), hay_nominas (alguna vez entró un archivo), cargos: {n, monto, mas_viejo, dias, alarma (espera más de los días que la nómina tiene para avisar: aviso_dias), devoluciones: {n, monto}, descasados (nulo sin el código)} (los movimientos de Gusto que esperan en la Bandeja del banco sin casar con su nómina, los que dice c15), por_postear: {n, primero, ultimo} (las importadas sin postear; NULO sin el código si hay archivos: no se sabe), control: {cuadres_rojos, sin_comprobar (los cuadres que sin el código no se pueden comprobar: ni rojo ni verde), rojos: [{orden, control, dice}] (lo que dijo c15, tal cual)}}. Lee lo ligero de c15 (los que esperan sin armar su propuesta; el control solo con sus cuadres) si su versión lo trae. Sin c15, nulo. Solo lee. Solo el dueño.';
+
+
+-- ---------------------------------------------------------------------
 -- 3. LAS TARJETAS, una función por tarjeta. Cada una contesta un jsonb con
 --    «ok», su nombre («tarjeta»), su corte y todo lo que enseña ya
 --    calculado, con «fuente» e «ir». Si la capa de la que sale no está, lo
@@ -1661,8 +2250,10 @@ comment on function public.fn_tablero_saldos() is 'c16: los bancos y las tarjeta
 
 -- 3.1 · ACCIONES RÁPIDAS: lo que cambia de cada una (la etiqueta corta y el
 -- icono son de la pantalla). p_saldos: lo de fn_tablero_saldos;
--- p_stripe: lo de fn_tablero_stripe.
-create or replace function public.fn_tablero_acciones_de(p_saldos jsonb, p_stripe jsonb) returns jsonb
+-- p_stripe: lo de fn_tablero_stripe; p_nomina (14-nov, Fase 11c): lo de
+-- fn_tablero_nomina_estado (nulo: c15 no está; {"error": true}: no se pudo
+-- leer, y las demás acciones siguen).
+create or replace function public.fn_tablero_acciones_de(p_saldos jsonb, p_stripe jsonb, p_nomina jsonb default null) returns jsonb
 language plpgsql stable
 set search_path = public, pg_temp
 as $$
@@ -1673,6 +2264,13 @@ declare
   v_l     jsonb := '[]'::jsonb;
   v_bj    jsonb;
   r       record;
+  -- (11c) la nómina: las que esperan por postear (nulo: no se sabe sin el código), los cargos y devoluciones de Gusto por casar, los
+  -- des-casados y los cuadres en rojo
+  v_npp   int;
+  v_nca   int;
+  v_nde   int;
+  v_nds   int;
+  v_ncu   int;
 begin
   perform fn_tablero_exigir_dueno();
   -- CREAR UNA FACTURA (c11): por dónde se factura hoy
@@ -1756,6 +2354,41 @@ begin
     v_l := v_l || jsonb_build_object('clave', 'pago', 'texto', 'Pedir un pago en línea', 'disponible', false, 'falta', 'p1',
                                      'detalle', 'Los cobros en línea (p1) no están en esta base.', 'ir', jsonb_build_object('pagina', 'cobros'));
   end if;
+  -- (14-nov, Fase 11c) LA NÓMINA (c15): las nóminas importadas sin postear (con el código del teléfono) y los cargos y las
+  -- devoluciones de Gusto que esperan casarse con su nómina (del banco). Sin el código, el número cuenta solo lo del banco y el
+  -- detalle lo dice: nunca «nada espera» sin haber podido mirar.
+  if p_nomina is null then
+    v_l := v_l || jsonb_build_object('clave', 'nomina', 'texto', 'Nómina', 'disponible', false, 'falta', 'c15',
+                                     'detalle', 'La nómina con Gusto (c15) no está pegada en esta base.', 'ir', jsonb_build_object('pagina', 'nomina'));
+  elsif coalesce((p_nomina ->> 'error')::boolean, false) then
+    v_l := v_l || jsonb_build_object('clave', 'nomina', 'texto', 'Nómina', 'disponible', true, 'n', null,
+                                     'detalle', 'Lo de la nómina no se pudo leer ahora: míralo en Nómina.', 'alarma', false,
+                                     'ir', jsonb_build_object('pagina', 'nomina', 'sub', 'nominas'));
+  else
+    v_npp := case when jsonb_typeof(p_nomina -> 'por_postear') = 'object' then (p_nomina -> 'por_postear' ->> 'n')::int end;
+    v_nca := coalesce((p_nomina -> 'cargos' ->> 'n')::int, 0);
+    v_nde := coalesce((p_nomina -> 'cargos' -> 'devoluciones' ->> 'n')::int, 0);
+    v_nds := coalesce((p_nomina -> 'cargos' ->> 'descasados')::int, 0);
+    v_ncu := coalesce((p_nomina -> 'control' ->> 'cuadres_rojos')::int, 0);
+    v_l := v_l || jsonb_build_object(
+      'clave', 'nomina', 'texto', 'Nómina', 'disponible', true,
+      'n', coalesce(v_npp, 0) + v_nca + v_nde + v_nds,
+      'detalle', concat_ws(' ',
+                   case when v_ncu > 0 then format('La nómina no cuadra con el libro (%s).', fn_tablero_plural(v_ncu, 'cuadre en rojo', 'cuadres en rojo')) end,
+                   case when v_npp is null then 'Las nóminas por postear se ven con el código del teléfono.'
+                        when v_npp > 0 then format('%s por postear.', fn_tablero_plural(v_npp, 'nómina', 'nóminas')) end,
+                   case when v_nca > 0 then format('%s de Gusto por casar; el más viejo, del %s.', fn_tablero_plural(v_nca, 'cargo', 'cargos'),
+                                                   fn_tablero_dia((p_nomina -> 'cargos' ->> 'mas_viejo')::date)) end,
+                   case when v_nde > 0 then format('%s de Gusto por casar.', fn_tablero_plural(v_nde, 'devolución', 'devoluciones')) end,
+                   case when v_nds > 0 then format('%s en la Bandeja después de casarse en Nómina.',
+                                                   fn_tablero_plural(v_nds, 'cargo se des-casó', 'cargos se des-casaron')) end,
+                   case when v_npp is not null and v_npp + v_nca + v_nde + v_nds + v_ncu = 0 then 'Nada espera.' end),
+      'alarma', v_ncu > 0 or v_nds > 0 or coalesce((p_nomina -> 'cargos' ->> 'alarma')::boolean, false)
+                or coalesce((p_nomina -> 'por_postear' ->> 'primero')::date <= v_hoy, false),
+      'con_codigo', coalesce((p_nomina ->> 'con_codigo')::boolean, false),
+      'ir', jsonb_build_object('pagina', 'nomina',
+                               'sub', case when coalesce(v_npp, 0) = 0 and v_ncu = 0 and v_nca + v_nde + v_nds > 0 then 'cargos' else 'nominas' end));
+  end if;
   -- CERRAR EL MES (c9): el período que toca
   if (v_capas ->> 'c9')::boolean then
     execute 'select e.periodo, e.nombre, e.terminado, e.detienen, e.avisos, e.revisado_el, e.hasta
@@ -1780,11 +2413,11 @@ begin
                                    'detalle', 'Resultados, balance, balanza y flujo de caja, del libro.', 'alarma', false,
                                    'ir', jsonb_build_object('pagina', 'estados', 'sub', 'resultados'));
   return jsonb_build_object('ok', true, 'tarjeta', 'acciones', 'corte', v_hoy, 'lista', v_l,
-                            'fuente', 'Facturas (c11), la Bandeja y las conciliaciones (c6), los enlaces de pago (p1), el cierre (c9) y los estados (c4)');
+                            'fuente', 'Facturas (c11), la Bandeja y las conciliaciones (c6), los enlaces de pago (p1), la nómina (c15), el cierre (c9) y los estados (c4)');
 end $$;
-revoke execute on function public.fn_tablero_acciones_de(jsonb, jsonb) from public, anon, service_role;
-grant  execute on function public.fn_tablero_acciones_de(jsonb, jsonb) to authenticated;
-comment on function public.fn_tablero_acciones_de(jsonb, jsonb) is 'c16: arma la fila de acciones rápidas con los saldos de los bancos y Stripe ya leídos (los de fn_tablero_saldos y fn_tablero_stripe; nulos si su capa no está). La tarjeta es fn_tablero_acciones. Solo el dueño.';
+revoke execute on function public.fn_tablero_acciones_de(jsonb, jsonb, jsonb) from public, anon, service_role;
+grant  execute on function public.fn_tablero_acciones_de(jsonb, jsonb, jsonb) to authenticated;
+comment on function public.fn_tablero_acciones_de(jsonb, jsonb, jsonb) is 'c16: arma la fila de acciones rápidas con los saldos de los bancos, Stripe y lo que espera de la nómina ya leídos (los de fn_tablero_saldos, fn_tablero_stripe y fn_tablero_nomina_estado; nulos si su capa no está; la nómina, {error: true} si no se pudo leer: su acción lo dice y las demás siguen). La tarjeta es fn_tablero_acciones. Solo el dueño.';
 
 create or replace function public.fn_tablero_acciones() returns jsonb
 language plpgsql stable
@@ -1792,11 +2425,11 @@ set search_path = public, pg_temp
 as $$
 begin
   perform fn_tablero_exigir_dueno();
-  return fn_tablero_acciones_de(fn_tablero_saldos(), fn_tablero_stripe());
+  return fn_tablero_acciones_de(fn_tablero_saldos(), fn_tablero_stripe(), fn_tablero_nomina_estado());
 end $$;
 revoke execute on function public.fn_tablero_acciones() from public, anon, service_role;
 grant  execute on function public.fn_tablero_acciones() to authenticated;
-comment on function public.fn_tablero_acciones() is 'c16: la fila de acciones rápidas: {ok, tarjeta: «acciones», corte, lista: [{clave (factura | bandeja | conciliar | pago | cierre | estados), texto, disponible, n (borradores; movimientos por revisar; cuentas por conciliar; enlaces activos; cosas que detienen el cierre), detalle (en llano), alarma, camino? (factura: app | quickbooks), mas_viejo? y dias? (bandeja), hasta? (conciliar: el fin del mes pasado), periodo? y terminado? (cierre), falta? (la capa que no está), ir: {pagina, sub?, cuenta?, periodo?}}], fuente}. Solo lee. Solo el dueño.';
+comment on function public.fn_tablero_acciones() is 'c16: la fila de acciones rápidas: {ok, tarjeta: «acciones», corte, lista: [{clave (factura | bandeja | conciliar | pago | nomina | cierre | estados), texto, disponible, n (borradores; movimientos por revisar; cuentas por conciliar; enlaces activos; nóminas por postear más cargos y devoluciones de Gusto por casar —sin el código del teléfono, solo lo del banco, y el detalle lo dice—; cosas que detienen el cierre), detalle (en llano), alarma, camino? (factura: app | quickbooks), mas_viejo? y dias? (bandeja), hasta? (conciliar: el fin del mes pasado), con_codigo? (nomina), periodo? y terminado? (cierre), falta? (la capa que no está), ir: {pagina, sub?, cuenta?, periodo?}}], fuente}. Solo lee. Solo el dueño.';
 
 -- 3.2 · EL EMBUDO DE COBRO: por cobrar → cobrado en los últimos N días →
 -- depositado. p_cxc: las partidas de fn_tablero_cxc (jsonb); p_cobrado: lo
@@ -2288,6 +2921,12 @@ comment on function public.fn_tablero_resultados(date, date, text) is 'c16: el r
 -- Lo que espera en la Bandeja se dice con su sentido: un cargo pendiente
 -- puede ser un gasto que falta (lo gastado puede ser más); uno que «llegó
 -- su ticket» está dos veces en el libro (lo gastado va de más).
+-- (14-nov, Fase 11c) LAS CUENTAS DE LA NÓMINA (la 6005 del oficial, los
+-- sueldos, la mano de obra, lo del patrón): con el criterio «libro» (el de
+-- fábrica: fn_tablero_nomina_criterio) salen como siempre, como en Estados
+-- → Resultados. Con el criterio «codigo» y sin el código del teléfono, no
+-- van (fn_tablero_nomina_tapada): ni en las categorías ni en el total, y
+-- «tapado» lo dice (sin cifras).
 create or replace function public.fn_tablero_gastos(p_dias int default 30, p_top int default 5) returns jsonb
 language plpgsql stable
 set search_path = public, pg_temp
@@ -2303,6 +2942,8 @@ declare
   v_comp  boolean;
   v_rev   jsonb;
   v_wip   int := 0;
+  v_tapa  text[];        -- (11c) las cuentas de la nómina que no se enseñan en esta sesión (de fábrica, ninguna)
+  v_tapn  int := 0;      -- (11c) cuántas de ellas tienen movimiento en estos días
   r       record;
 begin
   perform fn_tablero_exigir_dueno();
@@ -2321,6 +2962,13 @@ begin
   a_hasta := v_desde - 1;
   v_comp := a_desde >= v_libro;
   v_rev := fn_tablero_por_revisar(greatest(v_desde, v_libro), v_hoy);
+  -- (11c) las cuentas de la nómina que esta sesión no ve (solo con el criterio «codigo» y sin el código del teléfono)
+  v_tapa := coalesce(fn_tablero_nomina_tapada(), '{}'::text[]);
+  if cardinality(v_tapa) > 0 then
+    select count(distinct li.cuenta) into v_tapn
+      from asiento_lineas li join asientos a on a.id = li.asiento_id
+     where li.cuenta = any (v_tapa) and a.fecha_contable >= v_desde and a.fecha_contable <= v_hoy;
+  end if;
   -- (cuántos asientos del WIP con líneas de gasto caen en estos días: no se cuentan)
   select count(distinct x.asiento_id) into v_wip
     from fn_tablero_wip() x
@@ -2337,6 +2985,7 @@ begin
       from asiento_lineas li
       join asientos a on a.id = li.asiento_id
      where li.cuenta in (select m.cuenta from m)
+       and li.cuenta <> all (v_tapa)
        and a.fecha_contable >= a_desde and a.fecha_contable <= v_hoy
        and (a.afecta_periodo is null
             or coalesce((select pa.anio from periodos pa where pa.periodo = a.afecta_periodo), a.anio) = a.anio)
@@ -2394,7 +3043,15 @@ begin
     'por_revisar', v_rev -> 'cargos',
     'dobles', v_rev -> 'dobles',
     'wip_fuera', case when v_wip > 0 then v_wip end,
+    -- (11c) lo de la nómina que esta sesión no ve (el criterio «codigo», sin el código del teléfono): sin cifras
+    'tapado', case when cardinality(v_tapa) > 0
+                   then jsonb_build_object('cuentas', to_jsonb(v_tapa), 'categorias', v_tapn,
+                          'texto', 'Sin el código del teléfono no se enseñan aquí las cuentas de la nómina (los sueldos, la mano de obra y '
+                                   'lo que paga el patrón), con todo lo que tengan: el total de arriba no las cuenta. Con el código sale '
+                                   'entero.',
+                          'ir', jsonb_build_object('pagina', 'conexiones')) end,
     'ir_bandeja', jsonb_build_object('pagina', 'bandeja', 'cuenta', null, 'desde', v_desde, 'hasta', v_hoy),
+    -- ((11c) lo de la nómina que esta sesión no ve se dice UNA vez, en «tapado»: aquí ya no se repite)
     'nota', nullif(concat_ws(' ',
               case when v_desde < v_libro
                    then format('El libro empieza el %s: de estos %s días solo cuentan los que tienen libro.', fn_tablero_libro() ->> 'empieza', v_dias) end,
@@ -2418,7 +3075,7 @@ begin
 end $$;
 revoke execute on function public.fn_tablero_gastos(int, int) from public, anon, service_role;
 grant  execute on function public.fn_tablero_gastos(int, int) to authenticated;
-comment on function public.fn_tablero_gastos(int, int) is 'c16: lo gastado en los últimos N días (hoy y los N − 1 anteriores; de fábrica 30) por categoría, contra los N días de antes: {ok, tarjeta: «gastos», dias, desde, hasta, corte, etiqueta, total, n_categorias, categorias: [{cuenta, nombre (la etiqueta de c4), seccion (costo | gastos | otros_gastos), monto, pct (del total), anterior, variacion, variacion_pct}] (de mayor a menor), grafica: [{clave (la cuenta, u «otras»), nombre, monto, pct, categorias}] (las p_top mayores y las demás juntas; pct de total_grafica), total_grafica (lo gastado en positivo), abonos (lo que hay a favor, si lo hay), anterior: {desde, hasta, total, etiqueta}, variacion, variacion_pct, sin_comparar (por qué no hay anterior), parcial, por_revisar: {n, monto} (cargos pendientes de esos días en la Bandeja: lo gastado puede ser más; nulo sin c6), dobles: {n, monto} (gastos de esos días que están dos veces en el libro porque su ticket llegó después: lo gastado va de más; nulo sin c6), wip_fuera (cuántos asientos del ajuste del WIP caen en estos días: no se cuentan, no son un gasto), ir_bandeja, nota (en llano: lo de antes del libro, los abonos, lo pendiente, lo doble y el WIP), fuente, ir}. Sin el ajuste del WIP (c12). Un ajuste del CPA que corrige otro año no cuenta. 22023 con días o top fuera de rango. Solo lee. Solo el dueño.';
+comment on function public.fn_tablero_gastos(int, int) is 'c16: lo gastado en los últimos N días (hoy y los N − 1 anteriores; de fábrica 30) por categoría, contra los N días de antes: {ok, tarjeta: «gastos», dias, desde, hasta, corte, etiqueta, total, n_categorias, categorias: [{cuenta, nombre (la etiqueta de c4), seccion (costo | gastos | otros_gastos), monto, pct (del total), anterior, variacion, variacion_pct}] (de mayor a menor), grafica: [{clave (la cuenta, u «otras»), nombre, monto, pct, categorias}] (las p_top mayores y las demás juntas; pct de total_grafica), total_grafica (lo gastado en positivo), abonos (lo que hay a favor, si lo hay), anterior: {desde, hasta, total, etiqueta}, variacion, variacion_pct, sin_comparar (por qué no hay anterior), parcial, por_revisar: {n, monto} (cargos pendientes de esos días en la Bandeja: lo gastado puede ser más; nulo sin c6), dobles: {n, monto} (gastos de esos días que están dos veces en el libro porque su ticket llegó después: lo gastado va de más; nulo sin c6), wip_fuera (cuántos asientos del ajuste del WIP caen en estos días: no se cuentan, no son un gasto), tapado (nulo de fábrica; con el criterio «codigo» de la nómina y sin el código del teléfono: {cuentas, categorias, texto, ir}: las cuentas de la nómina, ENTERAS, no van ni en las categorías ni en el total; se dice aquí y solo aquí), ir_bandeja, nota (en llano: lo de antes del libro, los abonos, lo pendiente, lo doble y el WIP), fuente, ir}. Sin el ajuste del WIP (c12). Un ajuste del CPA que corrige otro año no cuenta. 22023 con días o top fuera de rango. Solo lee. Solo el dueño.';
 
 -- 3.6 · LAS VENTAS: lo vendido (las cuentas de la sección «ingresos» de c4)
 -- de cada mes de un año, y su total. Solo los meses que el libro tiene: los
@@ -2859,17 +3516,25 @@ comment on function public.fn_tablero_prestamos() is 'c16: los préstamos (v_pre
 --     − el USE TAX por su regla (el DR-15: lo de un mes se paga a más tardar
 --       el 20 del mes que sigue; lo que ya se debía de antes, el 20 de este
 --       mes, o hoy si ya pasó)
+--     − (14-nov, Fase 11c: solo con la nómina de c15 en la base) lo que el
+--       libro dice que SE DEBE DE LA NÓMINA (2210 a 2250), el día de pago
+--       de su nómina ya posteada (la que lo tiene después de hoy), y lo
+--       demás, hoy (fn_tablero_nomina_pagos: lo que Gusto ya cobró del banco
+--       y ya está casado no se resta otra vez)
 --     ± lo que el LIBRO ya tiene con fecha de después de hoy (un cheque
 --       posfechado: sale en su día), salvo lo que ya va por otro lado (un
 --       pago posfechado de una factura, de una cuota o del use tax).
 --   NO incluye nada que el libro no tenga con fecha (lo que falta facturar
---   o comprar, la nómina, la renta, lo de las tarjetas, la retención, lo
---   que se debe de la nómina, lo devengado, la línea de crédito): lo dice en
---   «no_incluye», con sus montos. Si no hay nada que proyectar en esos meses,
---   NO HAY PROYECCIÓN.
+--   o comprar, la nómina que todavía no está en el libro, la renta, lo de
+--   las tarjetas, la retención, lo devengado, la línea de crédito; y, sin
+--   c15, lo que se debe de la nómina): lo dice en «no_incluye», con sus
+--   montos. Si no hay nada que proyectar en esos meses, NO HAY PROYECCIÓN.
 --   p_cxc, p_cxp y p_cuotas: las partidas y las cuotas ya leídas (jsonb de
 --   fn_tablero_cxc, fn_tablero_cxp y fn_tablero_cuotas); nulas, sin ellas.
-create or replace function public.fn_tablero_caja_de(p_meses int, p_proyeccion int, p_cxc jsonb, p_cxp jsonb, p_cuotas jsonb)
+--   p_nomina (14-nov, Fase 11c): lo que se debe de la nómina según el libro,
+--   ya leído (fn_tablero_nomina_debe); nulo, se lee aquí si c15 está.
+create or replace function public.fn_tablero_caja_de(p_meses int, p_proyeccion int, p_cxc jsonb, p_cxp jsonb, p_cuotas jsonb,
+                                                     p_nomina jsonb default null)
 returns jsonb
 language plpgsql stable
 set search_path = public, pg_temp
@@ -2916,6 +3581,14 @@ declare
   v_neto_m numeric;     -- el mes de hoy, hasta hoy: el neto del efectivo
   v_mov    record;      -- el mes de hoy: lo que entró y salió hasta hoy, y lo que tiene fecha de después de hoy
   v_fmes   date := (date_trunc('month', fn_tablero_hoy()) + interval '1 month')::date - 1;   -- el último día del mes de hoy
+  -- (14-nov, Fase 11c) la nómina con Gusto (c15): si está, lo que se debe de ella va en la proyección, en su día
+  v_c15    boolean := coalesce((fn_tablero_capas() ->> 'c15')::boolean, false);
+  v_nom    jsonb := '[]'::jsonb;   -- lo que se debe de la nómina, por día (fn_tablero_nomina_pagos)
+  v_nomd   numeric := 0;           -- de eso, lo que cae después del último mes de la proyección
+  v_nomt   numeric := 0;           -- lo que se debe de la nómina según el libro (en negativo: a favor)
+  v_nd     jsonb;                  -- lo de fn_tablero_nomina_debe
+  v_nctas  text[] := '{}';         -- las cuentas por pagar de la nómina (lo demás de su renglón sigue en «no incluye»)
+  v_nvis   boolean := true;        -- la cifra de la nómina va escrita aparte en esta respuesta (el criterio; con el código, siempre)
   r        record;
   w        record;
 begin
@@ -3092,6 +3765,24 @@ begin
     v_ut_h := -fn_tablero_saldo(array[v_ut], v_hoy);
     v_ut_v := greatest(least(v_ut_s0 - v_ut_p, v_ut_h), 0);
     v_ut_n := greatest(v_ut_h - v_ut_v, 0);
+    -- (14-nov, Fase 11c) LA NÓMINA: con c15 en la base, lo que el libro dice que se debe de ella (2210 a 2250) sale el día de pago de
+    -- su nómina ya posteada (la que lo tiene después de hoy) y lo demás, hoy (fn_tablero_nomina_pagos, del libro: lo que Gusto ya
+    -- cobró del banco y está casado ya no se debe, y no se resta otra vez). Sin c15, como antes: va en «no incluye».
+    if v_c15 then
+      -- (con el criterio «codigo» y sin el código del teléfono, la cifra de la nómina no se escribe aparte: va dentro del neto y
+      --  del saldo de cada mes, y «nomina_a_la_vista» lo dice; con el criterio «libro» —el de fábrica—, siempre a la vista)
+      if fn_tablero_nomina_criterio() <> 'libro' then
+        execute 'select public.fn_nomina_aal2()' into v_nvis;
+        v_nvis := coalesce(v_nvis, false);
+      end if;
+      v_nd := coalesce(p_nomina, fn_tablero_nomina_debe());
+      v_nomt := coalesce((v_nd ->> 'monto')::numeric, 0);
+      v_nctas := array(select jsonb_array_elements_text(v_nd -> 'todas'));
+      select coalesce(jsonb_agg(jsonb_build_object('f', x.fecha, 'monto', x.monto)), '[]'::jsonb),
+             coalesce(sum(x.monto) filter (where x.fecha > v_fin), 0)
+        into v_nom, v_nomd
+        from fn_tablero_nomina_pagos(v_nd) x;
+    end if;
     with c as (
       select greatest(x.vence, v_hoy) as f, x.por_cobrar as monto, x.vence < v_hoy as vencido
         from jsonb_to_recordset(coalesce(p_cxc, '[]'::jsonb)) as x(por_cobrar numeric, vence date, tramo text, dias_vencida int, factura_id bigint)
@@ -3115,6 +3806,9 @@ begin
         from asiento_lineas l join asientos a on a.id = l.asiento_id
        where l.cuenta = any (v_efe) and a.fecha_contable > v_hoy and a.fecha_contable <= v_fin
          and not exists (select 1 from asiento_lineas l2 where l2.asiento_id = a.id and l2.cuenta = any (v_mod || coalesce(v_pres, '{}'::text[])))
+    ), nm as (
+      -- (11c) lo que se debe de la nómina, en su día (lo de después del último mes de la proyección no entra: va en «no incluye»)
+      select x.f, x.monto from jsonb_to_recordset(v_nom) as x(f date, monto numeric)
     ), ms as (
       select g::date as mes, ((g + interval '1 month')::date - 1) as hasta
         from generate_series(v_mhoy::timestamp, v_fin::timestamp, interval '1 month') g
@@ -3127,19 +3821,22 @@ begin
              coalesce((select sum(q.monto) from q where q.f between ms.mes and ms.hasta), 0)::numeric(14,2) as cuotas,
              coalesce((select sum(q.monto) from q where q.atrasada and q.f between ms.mes and ms.hasta), 0)::numeric(14,2) as cuotas_atrasadas,
              coalesce((select sum(u.monto) from u where u.f between ms.mes and ms.hasta), 0)::numeric(14,2) as impuestos,
+             coalesce((select sum(nm.monto) from nm where nm.f between ms.mes and ms.hasta), 0)::numeric(14,2) as nomina,
              coalesce((select sum(lb.monto) from lb where lb.f between ms.mes and ms.hasta), 0)::numeric(14,2) as libro
         from ms
     ), z as (
-      select k.*, (k.cobrar - k.pagar - k.cuotas - k.impuestos + k.libro)::numeric(14,2) as neto,
-             (v_neto + sum(k.cobrar - k.pagar - k.cuotas - k.impuestos + k.libro) over (order by k.mes))::numeric(14,2) as saldo
+      select k.*, (k.cobrar - k.pagar - k.cuotas - k.impuestos - k.nomina + k.libro)::numeric(14,2) as neto,
+             (v_neto + sum(k.cobrar - k.pagar - k.cuotas - k.impuestos - k.nomina + k.libro) over (order by k.mes))::numeric(14,2) as saldo
         from k
     )
     select coalesce(jsonb_agg(jsonb_build_object(
              'mes', to_char(z.mes, 'YYYY-MM'), 'etiqueta', fn_tablero_mes(z.mes), 'corto', fn_tablero_mes_corto(z.mes), 'hasta', z.hasta,
              'cobrar', z.cobrar, 'cobrar_vencido', z.cobrar_vencido, 'pagar', z.pagar, 'pagar_vencido', z.pagar_vencido,
-             'cuotas', z.cuotas, 'cuotas_atrasadas', z.cuotas_atrasadas, 'impuestos', z.impuestos, 'libro', z.libro,
+             'cuotas', z.cuotas, 'cuotas_atrasadas', z.cuotas_atrasadas, 'impuestos', z.impuestos,
+             -- (11c) lo que se debe de la nómina que sale en el mes (solo con c15 en la base: sin ella, nulo, como antes)
+             'nomina', case when v_c15 and v_nvis then z.nomina end, 'libro', z.libro,
              'neto', z.neto, 'saldo', z.saldo) order by z.mes), '[]'::jsonb),
-           coalesce(bool_or(z.cobrar <> 0 or z.pagar <> 0 or z.cuotas <> 0 or z.impuestos <> 0 or z.libro <> 0), false)
+           coalesce(bool_or(z.cobrar <> 0 or z.pagar <> 0 or z.cuotas <> 0 or z.impuestos <> 0 or z.nomina <> 0 or z.libro <> 0), false)
       into v_pm, v_hay
       from z;
     if v_hay then
@@ -3149,7 +3846,9 @@ begin
         into v_serie
         from jsonb_array_elements(v_pm) e;
     else
-      v_sin := 'No hay nada con fecha por cobrar, por pagar, de cuotas de préstamos ni de impuestos en esos meses: sin proyección.';
+      v_sin := case when v_c15
+                    then 'No hay nada con fecha por cobrar, por pagar, de cuotas de préstamos, de impuestos ni de la nómina en esos meses: sin proyección.'
+                    else 'No hay nada con fecha por cobrar, por pagar, de cuotas de préstamos ni de impuestos en esos meses: sin proyección.' end;
     end if;
     -- LO QUE NO INCLUYE, con sus montos (lo que el libro sí sabe pero no tiene fecha, o no se cuenta a propósito)
     select coalesce(sum(x.retencion), 0)::numeric(14,2) as ret_c,
@@ -3171,8 +3870,12 @@ begin
       into w
       from jsonb_to_recordset(coalesce(p_cxp, '[]'::jsonb)) as x(por_pagar numeric, retencion numeric, vence date, tramo text);
     v_no := jsonb_build_array(
-      jsonb_build_object('clave', 'sin_fecha', 'texto', 'Lo que todavía no está en el libro: lo que falta facturar o comprar, la nómina, la '
-                                                      'renta, los seguros y los demás gastos que se repiten.'),
+      jsonb_build_object('clave', 'sin_fecha', 'texto', case when v_c15
+                                                             then 'Lo que todavía no está en el libro: lo que falta facturar o comprar, las nóminas '
+                                                                  'que todavía no se han subido a Nómina, la renta, los seguros y los demás gastos '
+                                                                  'que se repiten.'
+                                                             else 'Lo que todavía no está en el libro: lo que falta facturar o comprar, la nómina, la '
+                                                                  'renta, los seguros y los demás gastos que se repiten.' end),
       jsonb_build_object('clave', 'tarjetas', 'texto', 'Lo que se debe en las tarjetas: no se sabe cuándo se paga.',
                          'monto', (select -fn_tablero_saldo(array_agg(m.cuenta), v_hoy) from fn_tablero_mapa() m
                                     where m.estado = 'balance' and m.linea = 'tarjetas')),
@@ -3182,11 +3885,17 @@ begin
       -- (CON TODO LO QUE EL LIBRO TIENE en esas cuentas, también lo fechado después de hoy —la revisión final—: el journal de una
       --  nómina (c15) lleva la fecha de su día de pago y Gusto cobra del banco unos días antes: contada solo hasta hoy, esos días
       --  la deuda salía en negativo; y una nómina ya posteada con día de pago después de hoy no se decía. a_hoy y despues lo separan.)
-      || coalesce((select jsonb_agg(jsonb_build_object('clave', 'deuda', 'linea', d.linea, 'etiqueta', d.etiqueta, 'monto', d.monto,
+      || coalesce((select jsonb_agg(jsonb_build_object('clave', 'deuda', 'linea', d.linea,
+                                                       -- ((11c) con c15, de «nómina por pagar» solo queda aquí lo que no es de la nómina)
+                                                       'etiqueta', case when v_c15 and d.linea = 'nomina_por_pagar' then d.nombres else d.etiqueta end,
+                                                       'monto', d.monto,
                                                        'a_hoy', d.a_hoy, 'despues', (d.monto - d.a_hoy)::numeric(14,2),
                                                        'cuentas', to_jsonb(d.cuentas),
                                                        'texto', case d.linea
-                                                                  when 'nomina_por_pagar' then 'Lo que se debe de la nómina (los impuestos retenidos y lo demás): se paga con cada declaración y cada nómina.'
+                                                                  when 'nomina_por_pagar'
+                                                                    then case when v_c15
+                                                                              then 'Está en el renglón «nómina por pagar» del Balance, pero no es de la nómina de Gusto (ninguna nómina lo paga): el libro no tiene cuándo se paga.'
+                                                                              else 'Lo que se debe de la nómina (los impuestos retenidos y lo demás): se paga con cada declaración y cada nómina.' end
                                                                   when 'devengados' then 'Lo devengado que todavía no tiene su factura: sale cuando llegue.'
                                                                   when 'linea_credito' then 'La línea de crédito: el libro no tiene cuándo se paga.'
                                                                   else d.etiqueta || ': el libro no tiene cuándo se paga.' end
@@ -3196,7 +3905,7 @@ begin
                                                                         else '' end)
                                     order by d.orden)
                      from (select m.linea, min(coalesce(el.etiqueta_es, m.linea)) as etiqueta, min(m.orden) as orden,
-                                  array_agg(m.cuenta order by m.cuenta) as cuentas,
+                                  array_agg(m.cuenta order by m.cuenta) as cuentas, string_agg(m.nombre, ', ' order by m.cuenta) as nombres,
                                   (-fn_tablero_saldo(array_agg(m.cuenta), null))::numeric(14,2) as monto,
                                   (-fn_tablero_saldo(array_agg(m.cuenta), v_hoy))::numeric(14,2) as a_hoy
                              from fn_tablero_mapa() m
@@ -3204,8 +3913,24 @@ begin
                             where m.estado = 'balance' and m.seccion = 'pasivo_circulante'
                               and m.linea not in ('cuentas_por_pagar', 'retencion_por_pagar', 'tarjetas', 'impuestos_por_pagar', 'wip_pasivo',
                                                   'provision_perdidas', 'prestamos_corto')
+                              -- (11c) con c15 en la base, lo que se debe de la nómina ya va en la proyección (o, lo de más adelante
+                              --  y lo que hay a favor, en sus dos renglones de abajo): aquí no se repite. Lo de su renglón que NO es
+                              --  de la nómina de Gusto (las vacaciones devengadas) sí sigue aquí, como antes: no tiene fecha de pago
+                              and not (v_c15 and m.cuenta = any (v_nctas))
                             group by m.linea) d
                     where d.monto <> 0), '[]'::jsonb)
+      || case when v_c15 and v_nomd > 0
+              then jsonb_build_array(jsonb_build_object('clave', 'nomina_despues', 'monto', case when v_nvis then v_nomd end,
+                                                        'texto', format('Lo que se debe de una nómina ya posteada con día de pago después del %s.',
+                                                                        fn_tablero_dia(v_fin))
+                                                                 || case when v_nvis then '' else ' Su cifra, con el código del teléfono.' end))
+              else '[]'::jsonb end
+      || case when v_c15 and v_nomt < 0
+              then jsonb_build_array(jsonb_build_object('clave', 'nomina_a_favor', 'monto', case when v_nvis then -v_nomt end,
+                                                        'texto', 'Lo que el libro tiene a favor en las cuentas de la nómina (una corrección de Gusto '
+                                                                 'que devuelve, o algo pagado de más): no tiene fecha, no se cuenta.'
+                                                                 || case when v_nvis then '' else ' Su cifra, con el código del teléfono.' end))
+              else '[]'::jsonb end
       || case when r.viejo_c <> 0
               then jsonb_build_array(jsonb_build_object('clave', 'vencido_viejo', 'monto', r.viejo_c, 'n', r.n_viejo_c,
                                                         'texto', format('Lo por cobrar vencido hace más de 60 días (%s): no se cuenta como cobrado.',
@@ -3230,8 +3955,12 @@ begin
       into v_sal
       from jsonb_array_elements(v_hist) h
      where (h ->> 'hasta')::date < v_hoy;
-    v_aviso := 'Proyección, no el libro: solo cuenta lo facturado por cobrar, lo por pagar, las cuotas de los préstamos y el use tax. '
-               'No cuenta la nómina, la renta ni los demás gastos que se repiten: la caja real será menor.'
+    v_aviso := case when v_c15
+                    then 'Proyección, no el libro: solo cuenta lo facturado por cobrar, lo por pagar, las cuotas de los préstamos, el use tax y lo que '
+                         'se debe de las nóminas ya posteadas. No cuenta las nóminas que todavía no se han subido, la renta ni los demás gastos '
+                         'que se repiten: la caja real será menor.'
+                    else 'Proyección, no el libro: solo cuenta lo facturado por cobrar, lo por pagar, las cuotas de los préstamos y el use tax. '
+                         'No cuenta la nómina, la renta ni los demás gastos que se repiten: la caja real será menor.' end
                || case when (v_sal ->> 'n')::int = 1
                          then format(' En %s salieron de la caja %s.', fn_tablero_mes_largo(date_trunc('month', (v_sal ->> 'mes')::date)::date),
                                      fn_tablero_usd((v_sal ->> 'max')::numeric))
@@ -3256,6 +3985,9 @@ begin
     'proyeccion', case when v_proy > 0 and v_en and v_hay
                        then jsonb_build_object(
                               'meses', v_pm, 'desde', v_hoy, 'hasta', v_fin, 'saldo_inicial', v_neto,
+                              -- (11c) si la cifra de la nómina de cada mes va escrita aparte (nulo sin c15; falso: va dentro del
+                              --  neto y del saldo, y se ve con el código del teléfono)
+                              'nomina_a_la_vista', case when v_c15 then v_nvis end,
                               'aviso', v_aviso,
                               'supuestos', jsonb_build_array(
                                  'Es una proyección, no el libro: lo que ya se sabe con fecha.',
@@ -3263,18 +3995,28 @@ begin
                                  'Lo por pagar sale el día que vence; lo ya vencido, este mes.',
                                  'Las cuotas de los préstamos salen en su fecha, con la fórmula de c6; las que faltan por registrar, este mes.',
                                  'El use tax sale el 20 del mes que sigue al de la compra (el DR-15); lo que ya se debía, el 20 de este mes (o hoy, si ya pasó).',
-                                 'Lo que el libro ya tiene con fecha de después de hoy (un cheque posfechado) sale o entra en su día.'),
+                                 'Lo que el libro ya tiene con fecha de después de hoy (un cheque posfechado) sale o entra en su día.')
+                               -- (11c) con la nómina (c15) en la base
+                               || case when v_c15 then jsonb_build_array(
+                                    'Lo que el libro dice que se debe de la nómina (las cuentas 2210 a 2250) sale el día de pago de su nómina ya '
+                                    'posteada; lo de las nóminas ya pagadas que sigue sin su cargo, hoy. Gusto lo cobra del banco unos días antes '
+                                    'de cada día de pago: la app no sabe qué día exacto, y usa el día de pago. Lo que Gusto ya cobró y ya está '
+                                    'casado no se resta otra vez.'
+                                    || case when v_nvis then '' else ' Su cifra de cada mes va dentro del saldo: aparte, se ve con el código '
+                                                                     'del teléfono.' end)
+                                  else '[]'::jsonb end,
                               'no_incluye', v_no) end,
     'sin_proyeccion', case when not (v_proy > 0 and v_en and v_hay) then v_sin end,
     'cuadre', jsonb_build_object('ok', v_ini is null or v_ini = v_ini_l, 'libro', v_ini_l, 'vista', v_ini,
                                  'texto', 'el efectivo con que empieza este mes (el flujo de caja de c4) = el del libro al cierre del mes pasado'),
     'fuente', 'el efectivo del balance de c4 (bancos, reserva, Stripe en tránsito y caja chica): mes a mes, lo mismo que Estados → Flujo de caja; hoy, el '
-              || 'libro hasta hoy; la proyección, con lo por cobrar, lo por pagar, las cuotas de los préstamos, el use tax y lo posfechado',
+              || 'libro hasta hoy; la proyección, con lo por cobrar, lo por pagar, las cuotas de los préstamos, el use tax'
+              || case when v_c15 then ', lo que se debe de la nómina' else '' end || ' y lo posfechado',
     'ir', jsonb_build_object('pagina', 'estados', 'sub', 'flujo', 'periodo', to_char(v_hoy, 'YYYY-MM')));
 end $$;
-revoke execute on function public.fn_tablero_caja_de(int, int, jsonb, jsonb, jsonb) from public, anon, service_role;
-grant  execute on function public.fn_tablero_caja_de(int, int, jsonb, jsonb, jsonb) to authenticated;
-comment on function public.fn_tablero_caja_de(int, int, jsonb, jsonb, jsonb) is 'c16: arma el flujo de caja con las partidas por cobrar y por pagar y las cuotas ya leídas (jsonb de fn_tablero_cxc, fn_tablero_cxp y fn_tablero_cuotas). La tarjeta es fn_tablero_caja. Solo el dueño.';
+revoke execute on function public.fn_tablero_caja_de(int, int, jsonb, jsonb, jsonb, jsonb) from public, anon, service_role;
+grant  execute on function public.fn_tablero_caja_de(int, int, jsonb, jsonb, jsonb, jsonb) to authenticated;
+comment on function public.fn_tablero_caja_de(int, int, jsonb, jsonb, jsonb, jsonb) is 'c16: arma el flujo de caja con las partidas por cobrar y por pagar y las cuotas ya leídas (jsonb de fn_tablero_cxc, fn_tablero_cxp y fn_tablero_cuotas) y, si se le da, lo que se debe de la nómina según el libro (fn_tablero_nomina_debe; con la nómina de c15 en la base va en la proyección, cada parte en su día: fn_tablero_nomina_pagos, o sus «pagos» si ya vienen calculados). La tarjeta es fn_tablero_caja. Solo el dueño.';
 
 create or replace function public.fn_tablero_caja(p_meses int default 12, p_proyeccion int default 3) returns jsonb
 language plpgsql stable
@@ -3295,7 +4037,7 @@ begin
 end $$;
 revoke execute on function public.fn_tablero_caja(int, int) from public, anon, service_role;
 grant  execute on function public.fn_tablero_caja(int, int) to authenticated;
-comment on function public.fn_tablero_caja(int, int) is 'c16: el flujo de caja: {ok, tarjeta: «caja», corte, hoy: {saldo (el efectivo del libro hoy, las cuentas en negro), sobregiro, neto, cuentas: [{cuenta, nombre, saldo}], alarma (sobregiro de verdad: solo con la apertura en el libro), sin_apertura, texto (en llano: de qué cuentas sale, o que sin la apertura no es lo del banco), ir}, sin_apertura (la apertura todavía no está en el libro: la caja no es lo del banco, sin alarma ni proyección), apertura: {fecha, en_el_libro, saldo} (con lo que empezó el libro; saldo nulo si su asiento todavía no está), meses: [{mes, etiqueta, corto, desde, hasta, inicial, entradas, salidas, neto, sobregiro, final, asientos, en_curso, sin_movimientos; el de hoy además corte y despues_de_hoy: {asientos, entradas, salidas, texto}}] (v_flujo_real_por_mes de c4: solo los meses del libro, hasta p_meses; el mes que c4 no trae —sin efectivo ni movimientos— va en cero; EL MES EN CURSO, HASTA HOY, con la regla de c4: lo que entró y salió del 1 a hoy y al terminar = el efectivo de hoy; lo que tiene fecha de después de hoy en él, aparte, en despues_de_hoy), meses_pedidos, meses_con_libro, antes_del_libro: {texto} (si la serie pedida empieza antes del libro; con las palabras del libro, con o sin la apertura), serie: [{fecha, mes?, etiqueta, saldo, tipo (apertura | cierre | hoy | proyeccion)}] (la línea, en orden: la apertura si su asiento está, lo de verdad hasta hoy y lo proyectado después), proyeccion: {meses: [{mes, etiqueta, corto, hasta, cobrar, cobrar_vencido, pagar, pagar_vencido, cuotas, cuotas_atrasadas, impuestos (el use tax por la regla del DR-15), libro (lo posfechado del libro), neto, saldo}], desde, hasta, saldo_inicial, aviso (LA LÍNEA VISIBLE bajo la gráfica: lo que no cuenta y que la caja real será menor, con lo que salió de verdad en los meses terminados), supuestos: [texto], no_incluye: [{clave (sin_fecha | tarjetas | retencion | deuda | vencido_viejo | cheque_devuelto | sin_vencimiento | despues), texto, monto? | cobrar?, pagar?, n?, linea?, etiqueta?, cuentas?, a_hoy? y despues? (deuda: su monto es todo lo que el libro tiene en esas cuentas; a_hoy, lo de hasta hoy; despues, lo fechado después)}]} (nulo sin apertura en el libro o sin nada con fecha), sin_proyeccion (por qué no hay), cuadre: {ok, libro, vista, texto}, fuente, ir}. p_meses de 1 a 36 (12); p_proyeccion de 0 a 12 (3), contando el mes de hoy. 22023 fuera de rango. Solo lee. Solo el dueño.';
+comment on function public.fn_tablero_caja(int, int) is 'c16: el flujo de caja: {ok, tarjeta: «caja», corte, hoy: {saldo (el efectivo del libro hoy, las cuentas en negro), sobregiro, neto, cuentas: [{cuenta, nombre, saldo}], alarma (sobregiro de verdad: solo con la apertura en el libro), sin_apertura, texto (en llano: de qué cuentas sale, o que sin la apertura no es lo del banco), ir}, sin_apertura (la apertura todavía no está en el libro: la caja no es lo del banco, sin alarma ni proyección), apertura: {fecha, en_el_libro, saldo} (con lo que empezó el libro; saldo nulo si su asiento todavía no está), meses: [{mes, etiqueta, corto, desde, hasta, inicial, entradas, salidas, neto, sobregiro, final, asientos, en_curso, sin_movimientos; el de hoy además corte y despues_de_hoy: {asientos, entradas, salidas, texto}}] (v_flujo_real_por_mes de c4: solo los meses del libro, hasta p_meses; el mes que c4 no trae —sin efectivo ni movimientos— va en cero; EL MES EN CURSO, HASTA HOY, con la regla de c4: lo que entró y salió del 1 a hoy y al terminar = el efectivo de hoy; lo que tiene fecha de después de hoy en él, aparte, en despues_de_hoy), meses_pedidos, meses_con_libro, antes_del_libro: {texto} (si la serie pedida empieza antes del libro; con las palabras del libro, con o sin la apertura), serie: [{fecha, mes?, etiqueta, saldo, tipo (apertura | cierre | hoy | proyeccion)}] (la línea, en orden: la apertura si su asiento está, lo de verdad hasta hoy y lo proyectado después), proyeccion: {meses: [{mes, etiqueta, corto, hasta, cobrar, cobrar_vencido, pagar, pagar_vencido, cuotas, cuotas_atrasadas, impuestos (el use tax por la regla del DR-15), nomina (14-nov: con la nómina de c15 en la base, lo que el libro dice que se debe de ella y sale en el mes —el día de pago de su nómina ya posteada; lo demás, hoy—; nulo sin c15, y con el criterio «codigo» de la nómina sin el código del teléfono: entonces va dentro de neto y de saldo), libro (lo posfechado del libro), neto, saldo}], desde, hasta, saldo_inicial, nomina_a_la_vista (nulo sin c15; falso: la cifra de la nómina no va escrita aparte), aviso (LA LÍNEA VISIBLE bajo la gráfica: lo que no cuenta y que la caja real será menor, con lo que salió de verdad en los meses terminados), supuestos: [texto], no_incluye: [{clave (sin_fecha | tarjetas | retencion | deuda | nomina_despues | nomina_a_favor | vencido_viejo | cheque_devuelto | sin_vencimiento | despues), texto, monto? | cobrar?, pagar?, n?, linea?, etiqueta?, cuentas?, a_hoy? y despues? (deuda: su monto es todo lo que el libro tiene en esas cuentas; a_hoy, lo de hasta hoy; despues, lo fechado después; con la nómina de c15, la del renglón «nómina por pagar» trae solo lo que ninguna nómina paga, con el nombre de sus cuentas en etiqueta)}]} (nulo sin apertura en el libro o sin nada con fecha), sin_proyeccion (por qué no hay), cuadre: {ok, libro, vista, texto}, fuente, ir}. p_meses de 1 a 36 (12); p_proyeccion de 0 a 12 (3), contando el mes de hoy. 22023 fuera de rango. Solo lee. Solo el dueño.';
 
 -- 3.11 · LAS CONEXIONES: lo que la app tiene conectado con el mundo. Cada
 -- banco por Plaid (c7), Stripe (p1) y la IA contable (c8). «Conectada»: al
@@ -3715,6 +4457,381 @@ grant  execute on function public.fn_tablero_obras(int) to authenticated;
 comment on function public.fn_tablero_obras(int) is 'c16: lo que el libro sabe de las obras: {ok, tarjeta: «obras», corte, top, wip: {ok, periodo (el mes que toca), nombre, cerrado, terminado, exigido, sobre_facturado, sub_facturado, neto (sub − sobre), perdida_provision, obras: {total, listas, pendientes, por_revisar, …}, ajuste: {vivo, al_dia, …}, por_que_no, nota, ir} (sin c12: {ok: false, falta: «c12»}), costo: {ok, obras: [{proyecto_id, obra, cliente, estado, ingreso, costo, margen, margen_pct, parcial, parcial_por, ir}] (las p_top con más ingreso), totales: {n, ingreso, costo, margen, margen_pct, parciales}, nota, ir} (sin c10: {ok: false, falta: «c10»}), fuente, ir}. Sin las dos: {ok: false}. 22023 con p_top fuera de 1–30. Solo lee. Solo el dueño.';
 
 
+-- 3.15 · (14-nov, Fase 11c) LA NÓMINA DE GUSTO (c15), como «Payroll» en la
+-- portada de QuickBooks. Lo que enseña y DE DÓNDE SALE CADA COSA:
+--   DEL LIBRO Y DEL BANCO (lo de la EMPRESA: se ve sin el código del
+--   teléfono, con el criterio «libro»; «LA SEGURIDAD», en la cabecera):
+--     · meses: lo que costó la nómina de Gusto cada mes (hasta p_meses; solo
+--       los del libro). Sus journals VIVOS (ni anulados ni reversos), hasta
+--       hoy, por el mes en que el libro los lleva (el de su fecha; el de una
+--       nómina tardía que entró como ajuste de un ejercicio anterior, el
+--       mes que corrige): lo que cargan a resultados es el costo (el sueldo
+--       y lo del patrón; lo que dejan en el balance —lo que se debe, los
+--       reembolsos— no es costo). «patron»: lo que va a la bolsa del burden
+--       y al burden de oficina y de obra (las cuentas de la configuración
+--       de la nómina); «sueldos», lo demás. El reparto del burden a las
+--       obras (su segundo asiento) no cuenta: mueve lo mismo de una cuenta
+--       a otra.
+--     · debe: lo que se debe de ella (fn_tablero_nomina_debe: 2210 a 2250).
+--     · bolsa: lo que hay en la bolsa del burden real sin repartir a las
+--       obras (la cuenta de la configuración: 5015), y lo del último mes
+--       terminado (lo que había al terminarlo, como mucho lo que hoy queda:
+--       la regla de c15).
+--     · cargos: los cargos y devoluciones de Gusto que esperan en la
+--       Bandeja sin casar con su nómina (fn_tablero_nomina_estado).
+--     · de la última y de la próxima, su día de pago y su asiento (los dice
+--       el libro: el journal lleva su día de pago).
+--   DE c15, SOLO CON EL CÓDIGO (v_nomina_corridas, que lo pide):
+--     · ultima: la última nómina posteada con día de pago hasta hoy: su
+--       período, su tipo, cuántas personas y los totales de la EMPRESA
+--       (costo = bruto + lo del patrón; neto; impuestos = lo retenido al
+--       empleado + los del patrón; deducciones; reembolsos), lo que le
+--       queda por pagar y lo que tiene a favor;
+--     · proxima: la primera nómina que c15 YA TIENE con día de pago después
+--       de hoy (posteada o importada). Si no hay ninguna, NO SE INVENTA:
+--       Gusto no le dice a la app su calendario («siguiente» lo explica);
+--     · por_postear, los cargos des-casados y los cuadres de c15;
+--     · si la bolsa del último mes ya se puede repartir (fn_nomina_bolsa).
+--   Sin el código, de eso solo sale lo que el libro dice (el día y el
+--   asiento) y «con el código del teléfono»: nunca un cero.
+--   atender: lo de la nómina que pide algo a Edgar, cada cosa con su
+--   apartado de la página Nómina (los textos, en llano y sin el nombre ni
+--   las cifras de nadie; lo que dijo c15 de un cuadre, tal cual, en
+--   «tecnico»).
+-- Con el criterio «codigo» y sin el código, las cifras de dinero no van
+-- (a_la_vista: false): las fechas y cuántas cosas esperan, sí.
+-- p_e: lo de fn_tablero_nomina_estado (nulo: c15 no está). p_debe: lo de
+-- fn_tablero_nomina_debe ya leído (nulo: se lee aquí).
+create or replace function public.fn_tablero_nomina_de(p_e jsonb, p_meses int default 6, p_debe jsonb default null) returns jsonb
+language plpgsql stable
+set search_path = public, pg_temp
+as $$
+declare
+  v_hoy    date := fn_tablero_hoy();
+  v_mhoy   date := date_trunc('month', fn_tablero_hoy())::date;
+  v_meses  int := coalesce(p_meses, 6);
+  v_lib    jsonb;
+  v_m0     date;
+  v_cod    boolean;
+  v_hay    boolean;       -- alguna vez entró un archivo de nómina
+  v_vista  boolean;       -- el dinero de la nómina que sale del libro se enseña en esta sesión (el criterio; con el código, siempre)
+  v_cbol   text;          -- la bolsa del burden real
+  v_cadm   text;          -- el burden de oficina
+  v_cobr   text;          -- el burden por obra
+  v_bur    text[];
+  v_serie  jsonb;
+  v_uid    uuid; v_unum text; v_udia date;   -- la última, del libro
+  v_pnum   text; v_pdia date;                -- la próxima ya posteada, del libro
+  v_ulj    jsonb;
+  v_pxj    jsonb;
+  v_debe   jsonb;
+  v_dt     numeric;
+  v_ap     numeric;
+  v_ot     numeric;       -- lo del renglón del Balance que no es de la nómina de Gusto (las vacaciones devengadas)
+  v_pagos  jsonb;         -- cuándo sale de la caja lo que se debe (fn_tablero_nomina_pagos)
+  v_desp   numeric;       -- de eso, lo que sale en un día de pago que viene
+  v_bolsa  numeric;
+  v_bmes   numeric;
+  v_bm     jsonb;
+  v_fmes   date := date_trunc('month', fn_tablero_hoy())::date - 1;   -- el último día del mes pasado
+  v_puede  boolean;
+  v_at     jsonb := '[]'::jsonb;
+  v_car    jsonb;
+  v_pp     jsonb;
+  v_ctl    jsonb;
+  v_n      int;
+  v_libro  boolean;       -- hay alguna nómina de Gusto viva en el libro
+  -- (una nómina con lo de c15: sus totales de la empresa; lo que le queda, solo si está posteada)
+  c_una    constant text := $q$jsonb_build_object(
+      'corrida', k.corrida_id, 'estado', k.estado, 'dia_pago', k.dia_pago, 'etiqueta', public.fn_tablero_dia(k.dia_pago),
+      'periodo_desde', k.periodo_desde, 'periodo_hasta', k.periodo_hasta,
+      'periodo', case when k.periodo_desde is not null then public.fn_tablero_rango(k.periodo_desde, k.periodo_hasta) end,
+      'tipo', k.tipo, 'tipo_texto', k.tipo_texto, 'personas', k.personas,
+      'costo', (k.bruto + k.imp_patron + k.ben_patron)::numeric(14,2), 'bruto', k.bruto,
+      'patron', (k.imp_patron + k.ben_patron)::numeric(14,2), 'impuestos', (k.imp_empleado + k.imp_patron)::numeric(14,2),
+      'neto', k.neto, 'deducciones', k.deducciones, 'reembolsos', k.reembolsos,
+      'por_pagar', case when k.estado = 'posteada' then coalesce(k.por_pagar, 0) end,
+      'a_favor', case when k.estado = 'posteada' then coalesce(k.a_favor, 0) end,
+      'asiento', k.asiento_numero, 'con_codigo', true,
+      'ir', jsonb_build_object('pagina', 'nomina', 'sub', 'nominas', 'corrida', k.corrida_id))$q$;
+begin
+  perform fn_tablero_exigir_dueno();
+  if v_meses < 1 or v_meses > 24 then
+    raise exception using errcode = '22023', message = format('Los meses de la nómina van de 1 a 24 (llegó %s).', v_meses);
+  end if;
+  if p_e is null then
+    return fn_tablero_no('nomina', 'La nómina con Gusto (c15) no está pegada en esta base: cuando se pegue, aquí salen la última nómina, lo '
+                                   'que se debe de ella y los cargos de Gusto que esperan.', 'c15');
+  end if;
+  -- (si la sesión pasó el código lo dice c15, no lo que traiga p_e: lo de cada nómina lo paran sus policies, pase lo que pase aquí)
+  execute 'select public.fn_nomina_aal2()' into v_cod;
+  v_cod := coalesce(v_cod, false);
+  v_hay := coalesce((p_e ->> 'hay_nominas')::boolean, false);
+  v_vista := v_cod or fn_tablero_nomina_criterio() = 'libro';
+  v_car := coalesce(p_e -> 'cargos', '{}'::jsonb);
+  v_pp  := nullif(p_e -> 'por_postear', 'null'::jsonb);
+  v_ctl := coalesce(p_e -> 'control', '{}'::jsonb);
+  v_lib := fn_tablero_libro();
+  execute 'select k.cuenta_bolsa, k.cuenta_burden_admin, k.cuenta_burden_obra from public.nomina_config k where k.id = 1'
+     into v_cbol, v_cadm, v_cobr;
+  v_bur := array_remove(array[v_cbol, v_cadm, v_cobr], null);
+  v_m0 := greatest(date_trunc('month', coalesce((v_lib ->> 'desde')::date, v_mhoy))::date, (v_mhoy - make_interval(months => v_meses - 1))::date);
+
+  -- LOS MESES: lo que costó la nómina de Gusto cada mes, del libro
+  with j as materialized (
+    select a.id,
+           coalesce((select date_trunc('month', pe.hasta)::date from periodos pe
+                      where a.tipo = 'ajuste_cpa' and pe.periodo = a.afecta_periodo),
+                    date_trunc('month', a.fecha_contable)::date) as mes
+      from asientos a
+     where a.origen_tabla = 'nomina_corridas' and a.reversa_a is null and a.fecha_contable <= v_hoy
+       and not exists (select 1 from asientos r where r.reversa_a = a.id)
+  ), s as (
+    select j.mes, coalesce(sum(l.monto), 0)::numeric(14,2) as costo,
+           coalesce(sum(l.monto) filter (where l.cuenta = any (v_bur)), 0)::numeric(14,2) as patron,
+           count(distinct j.id) as n
+      from j
+      -- (lo que el journal carga a cuentas de resultados —costo y gasto, por el tipo de la cuenta en el plan—; lo demás es balance)
+      left join asiento_lineas l on l.asiento_id = j.id
+                                and l.cuenta in (select cu.codigo from cuentas cu
+                                                  where cu.tipo in ('ingreso', 'costo', 'gasto', 'otro_ingreso', 'otro_gasto'))
+     group by j.mes
+  )
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'mes', to_char(g.mes, 'YYYY-MM'), 'etiqueta', fn_tablero_mes(g.mes), 'corto', fn_tablero_mes_corto(g.mes),
+           'en_curso', g.mes = v_mhoy,
+           'costo', case when v_vista then coalesce(s.costo, 0) end,
+           'sueldos', case when v_vista then coalesce(s.costo - s.patron, 0) end,
+           'patron', case when v_vista then coalesce(s.patron, 0) end,
+           'nominas', coalesce(s.n, 0)) order by g.mes), '[]'::jsonb)
+    into v_serie
+    from (select gs::date as mes from generate_series(v_m0::timestamp, v_mhoy::timestamp, interval '1 month') gs) g
+    left join s on s.mes = g.mes;
+
+  -- LA ÚLTIMA (día de pago hasta hoy) y LA PRÓXIMA YA POSTEADA (día de pago después de hoy), del libro: el journal dice su día de
+  -- pago (el del papel; sin él, su fecha en el libro)
+  with j as materialized (
+    select a.id, a.numero,
+           case when a.procedencia ->> 'fecha_documento' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' then (a.procedencia ->> 'fecha_documento')::date
+                else a.fecha_contable end as dia
+      from asientos a
+     where a.origen_tabla = 'nomina_corridas' and a.reversa_a is null
+       and not exists (select 1 from asientos r where r.reversa_a = a.id)
+  )
+  select (select j.id from j where j.dia <= v_hoy order by j.dia desc, j.numero desc limit 1),
+         (select j.numero from j where j.dia <= v_hoy order by j.dia desc, j.numero desc limit 1),
+         (select j.dia from j where j.dia <= v_hoy order by j.dia desc, j.numero desc limit 1),
+         (select j.numero from j where j.dia > v_hoy order by j.dia, j.numero limit 1),
+         (select j.dia from j where j.dia > v_hoy order by j.dia, j.numero limit 1),
+         exists (select 1 from j)
+    into v_uid, v_unum, v_udia, v_pnum, v_pdia, v_libro;
+  -- (lo de cada una: con el código, de c15 —que lo pide—; sin él, su día y su asiento, y que lo demás va con el código)
+  if v_cod then
+    if v_uid is not null then
+      execute 'select ' || c_una || ' from public.v_nomina_corridas k where k.asiento_id = $1 and k.estado = ''posteada'''
+         into v_ulj using v_uid;
+    end if;
+    execute 'select ' || c_una || ' from public.v_nomina_corridas k
+              where k.estado in (''importada'', ''posteada'') and k.dia_pago > $1
+              order by k.dia_pago, k.importada_el, k.corrida_id limit 1'
+       into v_pxj using v_hoy;
+  end if;
+  if v_uid is not null and v_ulj is null then
+    v_ulj := jsonb_build_object(
+      'dia_pago', v_udia, 'etiqueta', fn_tablero_dia(v_udia), 'asiento', v_unum, 'con_codigo', false,
+      'texto', case when v_cod then 'El libro tiene el asiento de esta nómina, pero en Nómina no está posteada: su control lo dice.'
+                    else 'Sus totales, cuántas personas y lo que le queda por pagar, con el código del teléfono.' end,
+      'ir', jsonb_build_object('pagina', 'nomina', 'sub', 'nominas'))
+      || case when v_cod then jsonb_build_object('sin_corrida', true) else '{}'::jsonb end;
+  end if;
+  if v_pxj is null and v_pdia is not null then
+    v_pxj := jsonb_build_object(
+      'estado', 'posteada', 'dia_pago', v_pdia, 'etiqueta', fn_tablero_dia(v_pdia), 'asiento', v_pnum, 'con_codigo', false,
+      'texto', case when v_cod then 'El libro tiene el asiento de esta nómina, pero en Nómina no está posteada: su control lo dice.'
+                    else 'Sus totales, cuántas personas y lo que le queda por pagar, con el código del teléfono.' end,
+      'ir', jsonb_build_object('pagina', 'nomina', 'sub', 'nominas'))
+      || case when v_cod then jsonb_build_object('sin_corrida', true) else '{}'::jsonb end;
+  end if;
+
+  -- LO QUE SE DEBE, del libro
+  v_debe := coalesce(p_debe, fn_tablero_nomina_debe());
+  v_dt := (v_debe ->> 'monto')::numeric;
+  select coalesce(sum((x ->> 'monto')::numeric), 0) into v_ap from jsonb_array_elements(v_debe -> 'aparte') x;
+  select coalesce(sum((x ->> 'monto')::numeric), 0) into v_ot from jsonb_array_elements(coalesce(v_debe -> 'otras', '[]'::jsonb)) x;
+  -- (y cuándo sale: lo de la nómina ya posteada con día de pago después de hoy, ese día; lo demás, hoy)
+  select coalesce(jsonb_agg(jsonb_build_object('fecha', x.fecha, 'etiqueta', case when x.de_hoy then 'hoy' else fn_tablero_dia(x.fecha) end,
+                                               'monto', x.monto, 'asiento', x.asiento, 'de_hoy', x.de_hoy)
+                            order by x.fecha, x.asiento nulls first), '[]'::jsonb),
+         coalesce(sum(x.monto) filter (where not x.de_hoy), 0)::numeric(14,2)
+    into v_pagos, v_desp
+    from fn_tablero_nomina_pagos(v_debe) x;
+
+  -- LA BOLSA DEL BURDEN REAL: lo que hay sin repartir (todo lo que el libro tiene en ella, como el aviso de la nómina) y, de eso,
+  -- lo del último mes terminado (lo que había al terminarlo, como mucho lo que hoy queda)
+  select coalesce(sum(l.monto), 0)::numeric(14,2), coalesce(sum(l.monto) filter (where a.fecha_contable <= v_fmes), 0)::numeric(14,2)
+    into v_bolsa, v_bmes
+    from asiento_lineas l join asientos a on a.id = l.asiento_id
+   where l.cuenta = v_cbol;
+  v_bmes := case when sign(v_bmes) = sign(v_bolsa) then sign(v_bmes) * least(abs(v_bmes), abs(v_bolsa)) else 0 end;
+  -- (si ya se puede repartir lo dice c15 —mira las horas que pagó la nómina ese mes—: solo con el código)
+  if v_cod and v_bmes <> 0 and to_regprocedure('public.fn_nomina_bolsa(text)') is not null then
+    begin
+      execute 'select public.fn_nomina_bolsa(null)' into v_bm;
+      if v_bm ->> 'mes' = to_char(v_fmes, 'YYYY-MM') then
+        v_puede := (v_bm ->> 'puede')::boolean;
+      end if;
+    exception when others then
+      v_puede := null;   -- (sin un mes terminado en el libro c15 contesta con un error: aquí no se sabe, y no se dice)
+    end;
+  end if;
+
+  -- «QUÉ ATENDER»: lo de la nómina que pide algo a Edgar, cada cosa con su apartado
+  v_n := coalesce((v_ctl ->> 'cuadres_rojos')::int, 0);
+  if v_n > 0 then
+    v_at := v_at || jsonb_build_object('clave', 'cuadre', 'alarma', true,
+              'texto', format('La nómina no cuadra con el libro (%s): en Nómina dice cuál y qué hacer. Mientras no cuadre, no se cierra el mes.',
+                              fn_tablero_plural(v_n, 'cuadre en rojo', 'cuadres en rojo')),
+              'tecnico', coalesce(v_ctl -> 'rojos', '[]'::jsonb),
+              'ir', jsonb_build_object('pagina', 'nomina', 'sub', 'nominas'));
+  end if;
+  v_n := coalesce((v_pp ->> 'n')::int, 0);
+  if v_n > 0 then
+    v_at := v_at || jsonb_build_object('clave', 'por_postear', 'alarma', coalesce((v_pp ->> 'primero')::date <= v_hoy, false),
+              'texto', format('%s de Gusto %s sin postear (%s): mientras no, no está en el libro.',
+                              fn_tablero_plural(v_n, 'nómina importada', 'nóminas importadas'),
+                              case when v_n = 1 then 'espera' else 'esperan' end,
+                              case when v_pp ->> 'primero' = v_pp ->> 'ultimo' then 'día de pago, ' || fn_tablero_dia((v_pp ->> 'primero')::date)
+                                   else 'días de pago del ' || fn_tablero_dia((v_pp ->> 'primero')::date) || ' al '
+                                        || fn_tablero_dia((v_pp ->> 'ultimo')::date) end),
+              'ir', jsonb_build_object('pagina', 'nomina', 'sub', 'nominas'));
+  end if;
+  v_n := coalesce((v_car ->> 'n')::int, 0);
+  if v_n > 0 then
+    v_at := v_at || jsonb_build_object('clave', 'cargos', 'alarma', coalesce((v_car ->> 'alarma')::boolean, false),
+              'texto', format('%s de Gusto%s %s en el banco sin casar con su nómina (el más viejo, del %s): mientras no, la conciliación del banco no se confirma.',
+                              fn_tablero_plural(v_n, 'cargo', 'cargos'),
+                              case when v_vista then ' por ' || fn_tablero_usd((v_car ->> 'monto')::numeric) else '' end,
+                              case when v_n = 1 then 'espera' else 'esperan' end, fn_tablero_dia((v_car ->> 'mas_viejo')::date)),
+              'ir', jsonb_build_object('pagina', 'nomina', 'sub', 'cargos'));
+  end if;
+  v_n := coalesce((v_car -> 'devoluciones' ->> 'n')::int, 0);
+  if v_n > 0 then
+    v_at := v_at || jsonb_build_object('clave', 'devoluciones', 'alarma', false,
+              'texto', format('%s de Gusto%s %s en el banco: se casa con lo que su nómina dejó a favor.',
+                              fn_tablero_plural(v_n, 'devolución', 'devoluciones'),
+                              case when v_vista then ' por ' || fn_tablero_usd((v_car -> 'devoluciones' ->> 'monto')::numeric) else '' end,
+                              case when v_n = 1 then 'espera' else 'esperan' end),
+              'ir', jsonb_build_object('pagina', 'nomina', 'sub', 'cargos'));
+  end if;
+  if coalesce(v_puede, false) then
+    v_at := v_at || jsonb_build_object('clave', 'bolsa', 'alarma', false,
+              'texto', format('La bolsa del burden real tiene %s de %s sin repartir a las obras: ya se puede repartir.',
+                              fn_tablero_usd(v_bmes), fn_tablero_mes_largo(v_fmes)),
+              'ir', jsonb_build_object('pagina', 'nomina', 'sub', 'ajustes'));
+  end if;
+  if not v_cod and v_hay then
+    v_at := v_at || jsonb_build_object('clave', 'codigo', 'alarma', false,
+              'texto', 'Hay nóminas en la base y esta sesión entró sin el código del teléfono: sin él no se puede comprobar si cuadran ni '
+                       'si alguna espera por postear. Sal y vuelve a entrar con el código.',
+              'ir', jsonb_build_object('pagina', 'conexiones'));
+  end if;
+
+  return jsonb_build_object(
+    'ok', true, 'tarjeta', 'nomina', 'corte', v_hoy, 'con_codigo', v_cod,
+    'criterio', case when fn_tablero_nomina_criterio() = 'libro' then 'libro' else 'codigo' end, 'a_la_vista', v_vista,
+    'codigo', case when not v_cod then jsonb_build_object(
+                'texto', case when v_vista
+                              then 'Lo de cada nómina (sus totales, cuántas personas, lo que le queda por pagar, las que esperan por postear y '
+                                   'sus cuadres) se ve con el código del teléfono. Lo que sí se ve aquí es lo de la empresa, del libro.'
+                              else 'El dinero de la nómina (lo que costó cada mes, lo que se debe, lo de cada nómina) se ve con el código '
+                                   'del teléfono.' end,
+                'ir', jsonb_build_object('pagina', 'conexiones')) end,
+    'sin_nominas', not v_libro,
+    'texto', case when v_libro then null
+                  when not v_hay then 'Todavía no ha entrado ninguna nómina de Gusto: sale aquí cuando subas su primer «Payroll journal» '
+                                      '(Nómina → Nóminas).'
+                  when not v_cod then 'Todavía no hay ninguna nómina de Gusto en el libro. Si ya subiste alguna y espera por postear, se ve '
+                                      'con el código del teléfono.'
+                  when coalesce((v_pp ->> 'n')::int, 0) > 0
+                    then format('Todavía no hay ninguna nómina de Gusto en el libro: %s por postear (Nómina → Nóminas).',
+                                case when (v_pp ->> 'n')::int = 1 then '1 espera' else (v_pp ->> 'n') || ' esperan' end)
+                  else 'No hay ninguna nómina de Gusto en el libro: las que entraron se anularon o se descartaron.' end,
+    'ultima', v_ulj, 'proxima', v_pxj,
+    'siguiente', case when v_pxj is null then jsonb_build_object(
+                   'texto', 'La app no sabe cuándo es la siguiente nómina: Gusto no se lo dice. Sale aquí en cuanto subas su journal.'
+                            || case when not v_cod and v_hay then ' Si ya lo subiste y espera por postear, se ve con el código del teléfono.'
+                                    else '' end) end,
+    'meses', v_serie, 'meses_pedidos', v_meses,
+    'meses_con_nomina', (select count(*) from jsonb_array_elements(v_serie) s where (s ->> 'nominas')::int > 0),
+    'debe', case when v_vista
+                 then (v_debe - 'de_pago' - 'todas' - 'aparte' - 'otras' - 'pagos')
+                      || jsonb_build_object(
+                           -- (lo que sale hoy —lo que ya se debía— y lo que sale en un día de pago que viene, con sus fechas)
+                           'a_hoy', (v_dt - v_desp)::numeric(14,2), 'despues', v_desp, 'pagos', v_pagos,
+                           'aparte', case when v_ap > 0 then jsonb_build_object(
+                               'monto', v_ap, 'cuentas', v_debe -> 'aparte',
+                               'texto', format('Aparte: la cuenta de los reembolsos a empleados (%s) está al revés por %s: por la nómina se '
+                                               'reembolsó algo cuyo recibo no está en el libro. No baja lo que se debe; en el Balance, '
+                                               '«nómina por pagar» dice %s.',
+                                               (select string_agg(x ->> 'cuenta', ', ') from jsonb_array_elements(v_debe -> 'aparte') x),
+                                               fn_tablero_usd(v_ap), fn_tablero_usd((v_debe ->> 'libro')::numeric))) end,
+                           -- (lo del renglón que ninguna nómina paga: no va en lo que se debe; dicho, con su saldo)
+                           'otras', case when v_ot <> 0 then jsonb_build_object(
+                               'monto', v_ot, 'cuentas', v_debe -> 'otras',
+                               'texto', format('Aparte: en el mismo renglón del Balance («nómina por pagar») el libro tiene %s en %s. No lo '
+                                               'cobra Gusto ni sale con ninguna nómina, y el libro no dice cuándo se paga: no va en lo que '
+                                               'se debe de la nómina.', fn_tablero_usd(v_ot),
+                                               (select string_agg(format('%s (%s)', x ->> 'nombre', x ->> 'cuenta'), ', ')
+                                                  from jsonb_array_elements(v_debe -> 'otras') x))) end,
+                           'a_la_vista', true,
+                           'texto', case when v_dt > 0 then 'Lo que el libro dice que se debe de la nómina (lo neto, lo retenido, lo del patrón y las '
+                                                            'deducciones): Gusto lo cobra del banco unos días antes de cada día de pago.'
+                                         when v_dt < 0 then 'El libro tiene a favor en las cuentas de la nómina (una corrección de Gusto que '
+                                                            'devuelve, o algo pagado de más): se casa con su devolución en Nómina.'
+                                         else 'Nada se debe de la nómina según el libro.' end,
+                           'ir', jsonb_build_object('pagina', 'nomina', 'sub', 'cargos'))
+                 else jsonb_build_object('a_la_vista', false, 'texto', 'Lo que se debe de la nómina, con el código del teléfono.',
+                                         'ir', jsonb_build_object('pagina', 'nomina', 'sub', 'cargos')) end,
+    'cargos', (case when v_vista then v_car else v_car - 'monto' || jsonb_build_object('devoluciones', (v_car -> 'devoluciones') - 'monto') end)
+              || jsonb_build_object('ir', jsonb_build_object('pagina', 'nomina', 'sub', 'cargos')),
+    'por_postear', case when v_pp is not null then v_pp || jsonb_build_object('ir', jsonb_build_object('pagina', 'nomina', 'sub', 'nominas')) end,
+    'bolsa', jsonb_build_object(
+               'cuenta', v_cbol, 'monto', case when v_vista then v_bolsa end,
+               'mes', case when v_vista and v_bmes <> 0 then jsonb_build_object(
+                        'mes', to_char(v_fmes, 'YYYY-MM'), 'etiqueta', fn_tablero_mes(v_fmes), 'monto', v_bmes, 'puede', v_puede) end,
+               'texto', case when not v_vista then 'La bolsa del burden real, con el código del teléfono.'
+                             when v_bolsa = 0 then 'La bolsa del burden real no tiene nada sin repartir a las obras.'
+                             when v_bolsa < 0 then format('La bolsa del burden real está al revés (%s): en Nómina dice por qué.', fn_tablero_usd(v_bolsa))
+                             when coalesce(v_puede, false)
+                               then format('La bolsa del burden real tiene %s sin repartir a las obras; lo de %s (%s) ya se puede repartir.',
+                                           fn_tablero_usd(v_bolsa), fn_tablero_mes_largo(v_fmes), fn_tablero_usd(v_bmes))
+                             else format('La bolsa del burden real tiene %s sin repartir a las obras: se reparte al terminar cada mes.',
+                                         fn_tablero_usd(v_bolsa)) end,
+               'ir', jsonb_build_object('pagina', 'nomina', 'sub', 'ajustes')),
+    'control', v_ctl - 'rojos',
+    'atender', v_at,
+    'fuente', 'las nóminas de Gusto que entraron por Nómina: lo que costó cada mes, de sus asientos en el libro; lo que se debe, de las '
+              || 'cuentas 2210 a 2250 del libro; la bolsa del burden, de su cuenta; los cargos de Gusto, de la Bandeja del banco; y lo de '
+              || 'cada nómina, de Nómina, con el código del teléfono',
+    'ir', jsonb_build_object('pagina', 'nomina', 'sub', 'nominas'));
+end $$;
+revoke execute on function public.fn_tablero_nomina_de(jsonb, int, jsonb) from public, anon, service_role;
+grant  execute on function public.fn_tablero_nomina_de(jsonb, int, jsonb) to authenticated;
+comment on function public.fn_tablero_nomina_de(jsonb, int, jsonb) is 'c16: (14-nov, Fase 11c) arma la tarjeta de la nómina con lo que espera de ella ya leído (fn_tablero_nomina_estado; nulo sin c15) y, si se le da, lo que se debe según el libro (fn_tablero_nomina_debe). La tarjeta es fn_tablero_nomina. Si la sesión pasó el código del teléfono lo vuelve a mirar en c15 (no se fía de lo que le pasen). Solo el dueño.';
+
+create or replace function public.fn_tablero_nomina(p_meses int default 6) returns jsonb
+language plpgsql stable
+set search_path = public, pg_temp
+as $$
+begin
+  perform fn_tablero_exigir_dueno();
+  return fn_tablero_nomina_de(fn_tablero_nomina_estado(), p_meses);
+end $$;
+revoke execute on function public.fn_tablero_nomina(int) from public, anon, service_role;
+grant  execute on function public.fn_tablero_nomina(int) to authenticated;
+comment on function public.fn_tablero_nomina(int) is 'c16: (14-nov, Fase 11c) LA TARJETA DE LA NÓMINA de Gusto (c15): {ok, tarjeta: «nomina», corte, con_codigo (la sesión pasó el código del teléfono), criterio (libro | codigo) y a_la_vista (si el dinero de la nómina que sale del libro va en esta respuesta: con el criterio «libro», siempre; con «codigo», solo con el código), codigo (sin el código: {texto, ir}), sin_nominas (ninguna viva en el libro) y texto (por qué), ultima y proxima (CON EL CÓDIGO: {corrida, estado, dia_pago, etiqueta, periodo_desde, periodo_hasta, periodo, tipo, tipo_texto, personas, costo (bruto + lo del patrón), bruto, patron, impuestos (lo retenido + los del patrón), neto, deducciones, reembolsos, por_pagar, a_favor, asiento, con_codigo: true, ir}; SIN ÉL, lo que dice el libro: {dia_pago, etiqueta, asiento, con_codigo: false, texto, ir}; la próxima es la primera que la nómina ya tiene con día de pago después de hoy, posteada o importada), siguiente ({texto} si no hay próxima: no se inventa), meses: [{mes, etiqueta, corto, en_curso, costo, sueldos, patron, nominas}] (lo que costó cada mes, de sus asientos vivos en el libro hasta hoy; hasta p_meses, de 1 a 24), meses_pedidos, meses_con_nomina, debe: {monto, libro, cuentas: [{cuenta, nombre, monto}], a_hoy (lo que ya se debía: sale hoy), despues (lo de una nómina ya posteada con día de pago después de hoy), pagos: [{fecha, etiqueta, monto, asiento, de_hoy}] (cuándo sale de la caja: fn_tablero_nomina_pagos), aparte ({monto, cuentas, texto}: la cuenta de reembolsos al revés), otras ({monto, cuentas, texto}: lo del renglón «nómina por pagar» del Balance que ninguna nómina paga —las vacaciones devengadas—: no va en «monto» ni en los pagos; nulo si no hay), a_la_vista, texto, ir} (fn_tablero_nomina_debe), cargos: {n, monto, mas_viejo, dias, alarma, aviso_dias, devoluciones: {n, monto}, descasados (nulo sin el código), ir}, por_postear ({n, primero, ultimo, ir}; NULO sin el código si hay archivos), bolsa: {cuenta, monto, mes: {mes, etiqueta, monto, puede (nulo sin el código)}, texto, ir}, control: {cuadres_rojos, sin_comprobar}, atender: [{clave (cuadre | por_postear | cargos | devoluciones | bolsa | codigo), alarma, texto, tecnico?, ir}], fuente, ir}. Con a_la_vista en falso, las cifras de dinero van en nulo (o sin su clave) y los textos lo dicen. Sin c15: {ok: false, falta: «c15», motivo}. 22023 con los meses fuera de rango. Solo lee. Solo el dueño.';
+
+
 -- ---------------------------------------------------------------------
 -- 4. fn_tablero: TODAS LAS TARJETAS EN UNA LLAMADA (lo que pide la
 --    pantalla). Lee cada pieza compartida una vez; cada tarjeta, en su
@@ -3748,9 +4865,10 @@ set search_path = public, pg_temp
 as $$
 declare
   c_todas constant text[] := array['acciones', 'cobros', 'bancos', 'resultados', 'gastos', 'caja', 'facturas', 'ventas', 'por_cobrar',
-                                   'por_pagar', 'conexiones', 'cobros_en_linea', 'use_tax', 'prestamos', 'obras'];
+                                   'por_pagar', 'conexiones', 'cobros_en_linea', 'use_tax', 'prestamos', 'obras', 'nomina'];
   c_subs  constant jsonb := '{"cobros": ["dias"], "facturas": ["dias"], "resultados": ["periodo", "desde", "hasta"],
-                              "gastos": ["dias", "top"], "caja": ["meses", "proyeccion"], "ventas": ["anio"], "obras": ["top"]}';
+                              "gastos": ["dias", "top"], "caja": ["meses", "proyeccion"], "ventas": ["anio"], "obras": ["top"],
+                              "nomina": ["meses"]}';
   v_p     jsonb := coalesce(p, '{}'::jsonb);
   v_t0    timestamptz := clock_timestamp();
   v_hoy   date;
@@ -3775,6 +4893,7 @@ declare
   v_caja_p    int;
   v_ven_anio  int;
   v_obr_top   int;
+  v_nom_mes   int;   -- (11c)
   -- LAS PIEZAS COMPARTIDAS: lo leído (s_), si ya se leyó (l_) y su error (e_: «código|mensaje»)
   s_cxc jsonb; l_cxc boolean := false; e_cxc text;
   s_cxp jsonb; l_cxp boolean := false; e_cxp text;
@@ -3783,6 +4902,9 @@ declare
   s_cuo jsonb; l_cuo boolean := false; e_cuo text;   -- las cuotas de los próximos 12 meses
   s_str jsonb; l_str boolean := false; e_str text;   -- Stripe
   s_sal jsonb; l_sal boolean := false; e_sal text;   -- los saldos de los bancos
+  s_nom jsonb; l_nom boolean := false; e_nom text;   -- (11c) lo que espera de la nómina (c15; nulo sin ella)
+  s_ndb jsonb; l_ndb boolean := false; e_ndb text;   -- (11c) lo que se debe de la nómina según el libro (con c15 en la base)
+  v_c15 boolean := coalesce((fn_tablero_capas() ->> 'c15')::boolean, false);
 begin
   perform fn_tablero_exigir_dueno();
   v_hoy := fn_tablero_hoy();
@@ -3793,7 +4915,7 @@ begin
   for v_k in select jsonb_object_keys(v_p) loop
     if v_k <> 'tarjetas' and v_k <> 'tope_ms' and not c_subs ? v_k then
       raise exception using errcode = '22023',
-        message = format('Clave desconocida: «%s». Las que hay: tarjetas, tope_ms, cobros, facturas, resultados, gastos, caja, ventas, obras.', left(v_k, 40));
+        message = format('Clave desconocida: «%s». Las que hay: tarjetas, tope_ms, cobros, facturas, resultados, gastos, caja, ventas, obras, nomina.', left(v_k, 40));
     end if;
     if c_subs ? v_k then
       if jsonb_typeof(v_p -> v_k) <> 'object' then
@@ -3835,6 +4957,10 @@ begin
   v_caja_p   := fn_tablero_entero(v_p -> 'caja', 'proyeccion', 3);
   v_ven_anio := fn_tablero_entero(v_p -> 'ventas', 'anio', extract(year from v_hoy)::int);
   v_obr_top  := fn_tablero_entero(v_p -> 'obras', 'top', 5);
+  v_nom_mes  := fn_tablero_entero(v_p -> 'nomina', 'meses', 6);
+  if v_nom_mes < 1 or v_nom_mes > 24 then
+    raise exception using errcode = '22023', message = format('Los meses de la nómina van de 1 a 24 (llegó %s).', v_nom_mes);
+  end if;
   foreach v_x in array array[v_cob_dias, v_fac_dias, v_gas_dias]::text[] loop
     if v_x::int < 1 or v_x::int > 366 then
       raise exception using errcode = '22023', message = format('Los días van de 1 a 366 (llegó %s).', v_x);
@@ -3916,31 +5042,54 @@ begin
         exception when others then e_sal := sqlstate || '|' || sqlerrm;
         end;
       end if;
+      -- (11c) lo que se debe de la nómina según el libro: lo leen su tarjeta y la proyección de la caja (solo con c15 en la base)
+      if v_c15 and v_k in ('caja', 'nomina') and not l_ndb and not (v_k = 'caja' and v_caja_p = 0) then
+        l_ndb := true;
+        begin
+          s_ndb := fn_tablero_nomina_debe();
+          -- (y cuándo sale de la caja, UNA vez: lo leen de aquí la proyección y la tarjeta)
+          s_ndb := s_ndb || jsonb_build_object('pagos', coalesce(
+                     (select jsonb_agg(jsonb_build_object('fecha', x.fecha, 'monto', x.monto, 'asiento', x.asiento, 'de_hoy', x.de_hoy)
+                                       order by x.fecha, x.asiento nulls first)
+                        from fn_tablero_nomina_pagos(s_ndb) x), '[]'::jsonb));
+        exception when others then e_ndb := sqlstate || '|' || sqlerrm;
+        end;
+      end if;
+      -- (11c) lo que espera de la nómina: lo leen su tarjeta y su acción rápida
+      if v_k in ('acciones', 'nomina') and not l_nom then
+        l_nom := true;
+        begin
+          s_nom := fn_tablero_nomina_estado();
+        exception when others then e_nom := sqlstate || '|' || sqlerrm;
+        end;
+      end if;
       -- la tarjeta (si una pieza que necesita falló, lo dice ella)
       v_x := case v_k
                when 'cobros' then coalesce(e_cxc, e_cob)
                when 'facturas' then coalesce(e_cxc, case when v_fac_dias = v_cob_dias then e_cob else e_cof end)
                when 'por_cobrar' then e_cxc
                when 'por_pagar' then e_cxp
-               when 'caja' then case when v_caja_p > 0 then coalesce(e_cxc, e_cxp, e_cuo) end
+               when 'caja' then case when v_caja_p > 0 then coalesce(e_cxc, e_cxp, e_cuo, e_ndb) end
                when 'prestamos' then e_cuo
+               -- ((11c) si lo de la nómina no se pudo leer, las acciones siguen: la suya lo dice)
                when 'acciones' then coalesce(e_sal, e_str)
                when 'bancos' then e_sal
                when 'conexiones' then e_str
-               when 'cobros_en_linea' then e_str end;
+               when 'cobros_en_linea' then e_str
+               when 'nomina' then coalesce(e_nom, e_ndb) end;
       if v_x is not null then
         v_j := fn_tablero_no(v_k, 'Esta tarjeta no se pudo leer ahora: la base contestó con un error. Las demás siguen.', null, split_part(v_x, '|', 1))
                || jsonb_build_object('error', fn_tablero_corto(substr(v_x, strpos(v_x, '|') + 1), 300));
       else
         v_j := case v_k
-                 when 'acciones' then fn_tablero_acciones_de(s_sal, s_str)
+                 when 'acciones' then fn_tablero_acciones_de(s_sal, s_str, case when e_nom is not null then '{"error": true}'::jsonb else s_nom end)
                  when 'cobros' then fn_tablero_cobros_de(s_cxc, s_cob)
                  when 'bancos' then fn_tablero_bancos_de(s_sal)
                  when 'resultados' then case when v_res_desde is not null or v_res_hasta is not null
                                              then fn_tablero_resultados(v_res_desde, v_res_hasta, v_res_per)
                                              else fn_tablero_resultados(null, null, v_res_per) end
                  when 'gastos' then fn_tablero_gastos(v_gas_dias, v_gas_top)
-                 when 'caja' then fn_tablero_caja_de(v_caja_m, v_caja_p, s_cxc, s_cxp, s_cuo)
+                 when 'caja' then fn_tablero_caja_de(v_caja_m, v_caja_p, s_cxc, s_cxp, s_cuo, s_ndb)
                  when 'facturas' then fn_tablero_facturas_de(s_cxc, case when v_fac_dias = v_cob_dias then s_cob else s_cof end)
                  when 'ventas' then fn_tablero_ventas(v_ven_anio)
                  when 'por_cobrar' then fn_tablero_antiguedad_de('cobrar', s_cxc)
@@ -3949,7 +5098,8 @@ begin
                  when 'cobros_en_linea' then fn_tablero_cobros_en_linea_de(s_str)
                  when 'use_tax' then fn_tablero_use_tax()
                  when 'prestamos' then fn_tablero_prestamos_de(s_cuo)
-                 when 'obras' then fn_tablero_obras(v_obr_top) end;
+                 when 'obras' then fn_tablero_obras(v_obr_top)
+                 when 'nomina' then fn_tablero_nomina_de(s_nom, v_nom_mes, s_ndb) end;
       end if;
     exception when others then
       -- (lo mal pedido —un número fuera de su rango, un período que no existe— es de quien pide: falla la llamada entera)
@@ -3968,7 +5118,7 @@ begin
 end $$;
 revoke execute on function public.fn_tablero(jsonb) from public, anon, service_role;
 grant  execute on function public.fn_tablero(jsonb) to authenticated;
-comment on function public.fn_tablero(jsonb) is 'c16: el tablero de la portada de Contabilidad en UNA llamada. p (todo opcional): {tarjetas: [acciones, cobros, bancos, resultados, gastos, caja, facturas, ventas, por_cobrar, por_pagar, conexiones, cobros_en_linea, use_tax, prestamos, obras] (solo esas, en ese orden), cobros: {dias}, facturas: {dias}, resultados: {periodo: mes | mes_pasado | anio | anio_pasado} o {desde, hasta}, gastos: {dias, top}, caja: {meses, proyeccion}, ventas: {anio}, obras: {top}, tope_ms (por la API, de fábrica 4000; 0 = sin tope)}. Devuelve {ok, version, hoy, generado_el, libro (fn_tablero_libro), capas (fn_tablero_capas), tarjetas (las pedidas), una clave por tarjeta con lo de su función más «ms» (la que falla: {ok: false, motivo (en llano), codigo, error (lo que contestó la base, para quien da soporte)}; la que no tiene su capa: {ok: false, motivo, falta}; la que no alcanzó el tope: {ok: false, sigue: true}), sigue (las que no alcanzaron: se piden otra vez), ms}. Lo que comparten varias tarjetas se lee una vez. 22023 con una clave, una tarjeta o un número que no existe; 22007 con una fecha mal escrita; 42501 si no es el dueño. Solo lee.';
+comment on function public.fn_tablero(jsonb) is 'c16: el tablero de la portada de Contabilidad en UNA llamada. p (todo opcional): {tarjetas: [acciones, cobros, bancos, resultados, gastos, caja, facturas, ventas, por_cobrar, por_pagar, conexiones, cobros_en_linea, use_tax, prestamos, obras, nomina] (solo esas, en ese orden), cobros: {dias}, facturas: {dias}, resultados: {periodo: mes | mes_pasado | anio | anio_pasado} o {desde, hasta}, gastos: {dias, top}, caja: {meses, proyeccion}, ventas: {anio}, obras: {top}, nomina: {meses}, tope_ms (por la API, de fábrica 4000; 0 = sin tope)}. Devuelve {ok, version, hoy, generado_el, libro (fn_tablero_libro), capas (fn_tablero_capas), tarjetas (las pedidas), una clave por tarjeta con lo de su función más «ms» (la que falla: {ok: false, motivo (en llano), codigo, error (lo que contestó la base, para quien da soporte)}; la que no tiene su capa: {ok: false, motivo, falta}; la que no alcanzó el tope: {ok: false, sigue: true}), sigue (las que no alcanzaron: se piden otra vez), ms}. Lo que comparten varias tarjetas se lee una vez. 22023 con una clave, una tarjeta o un número que no existe; 22007 con una fecha mal escrita; 42501 si no es el dueño. Solo lee.';
 
 
 -- ---------------------------------------------------------------------
@@ -4016,7 +5166,7 @@ begin
   return query select 'las capas que ve'::text,
     (select string_agg(x.k || ' ' || case when (v_t ->> x.k)::boolean then 'sí' else 'no' end, ' · ' order by x.o)
        from (values (1, 'c4'), (2, 'c6'), (3, 'c6_prestamos'), (4, 'c7'), (5, 'p1'), (6, 'c8'), (7, 'c9'), (8, 'c10'), (9, 'c11'),
-                    (10, 'c12'), (11, 'c13'), (12, 'c14')) x(o, k));
+                    (10, 'c12'), (11, 'c13'), (12, 'c14'), (13, 'c15')) x(o, k));
   return query select 'el libro'::text,
     (fn_tablero_libro() ->> 'texto') || coalesce(' · ' || (select fn_tablero_plural(count(*), 'asiento', 'asientos') || ', del ' || fn_tablero_dia(min(a.fecha_contable))
                                                                    || ' al ' || fn_tablero_dia(max(a.fecha_contable))

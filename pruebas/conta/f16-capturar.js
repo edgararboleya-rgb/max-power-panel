@@ -64,11 +64,22 @@
    la tarjeta dice que falta, la acción no está disponible y la caja como
    antes), una nómina de UNA persona posteada después de la última (un bono:
    con y sin el código) y una nómina importada SIN POSTEAR (con y sin el
-   código). Mientras el c16 y la semilla de la nómina no estén en el árbol
-   (el agente de c16 no llegó: los escribió como prototipo el de la
-   pantalla), se le dicen con C16=<archivo> y SEMILLA_NOMINA=<archivo>; el
-   JSON guarda la huella de lo que se usó y pantalla.js la compara con la del
-   árbol.
+   código). (C16=<archivo> y SEMILLA_NOMINA=<archivo> dejan probar otro c16
+   u otra semilla de la nómina; el JSON guarda la huella de lo que se usó y
+   pantalla.js la compara con la del árbol: la base simulada de verdad se
+   saca sin ellos.)
+   Y CON EL c16 DE VERDAD (marca 2026111402; la pantalla se hizo antes contra
+   un prototipo): además, en transacciones que se deshacen, el CRITERIO
+   «codigo» de la nómina (sin el código no se escribe su dinero: la tarjeta,
+   gastos y la proyección; con el código da lo mismo que «libro», y se
+   comprueba), la cuenta de REEMBOLSOS A EMPLEADOS AL REVÉS (va aparte), la
+   PRÓXIMA IMPORTADA sin postear (con y sin el código) y un cargo de Gusto
+   DES-CASADO en la Bandeja (su cuadre en rojo; con y sin el código).
+   Y CON EL c16 DE LOS ARREGLOS DE LA VERIFICACIÓN (marca 2026111403): unas
+   VACACIONES DEVENGADAS a mano (400.00 en la 2215, del renglón «nómina por
+   pagar» del Balance): no son de la nómina de Gusto, así que lo que se
+   debe de ella y cuándo sale no cambian; van aparte («otras»), y la caja
+   las deja en lo que no incluye.
 
    Uso (solo el banco; nada de red):
      node pruebas/conta/f16-capturar.js <bd> [plantilla=g16a]
@@ -309,8 +320,9 @@ const [sin_c15] = pedir(BD, [tablero({})], SIN_C15);
 sano(sin_c15, 'sin c15');
 if (!(sin_c15.nomina.ok === false && sin_c15.nomina.falta === 'c15' && sin_c15.capas.c15 === false && sin_c15.acciones.lista.some(x => x.clave === 'nomina' && x.disponible === false)))
   throw new Error('sin c15, la tarjeta y la acción de la nómina no lo dicen: ' + JSON.stringify([sin_c15.nomina, sin_c15.capas]));
-// (el bono de UNA persona —ZZ Nomina Uno—, con día de pago ayer: bruto 400.00, retenido 70.60, neto 329.40; patrón 43.80)
-const BONO = postear => `
+// (el bono de UNA persona —ZZ Nomina Uno—, con día de pago ayer —o el día que se diga: hoy + «pago»—: bruto 400.00, retenido 70.60,
+// neto 329.40; patrón 43.80)
+const BONO = (postear, pago = -1) => `
 do $d$
 declare r jsonb; c uuid; hoy date := fn_fecha_miami(now()); csv text;
 begin
@@ -318,7 +330,7 @@ begin
          || 'Employee federal income tax,Employee social security tax,Employee medicare tax,Employee taxes,Net pay,Check amount,'
          || 'Employer social security tax,Employer medicare tax,Employer FUTA tax,Employer SUTA tax,Employer taxes' || E'\n'
          || format('ZZ Nomina,Uno,%s,%s,%s,Bonus,Direct Deposit,400.00,400.00,40.00,24.80,5.80,70.60,329.40,329.40,24.80,5.80,2.40,10.80,43.80',
-                   to_char(hoy - 14, 'MM/DD/YYYY'), to_char(hoy - 1, 'MM/DD/YYYY'), to_char(hoy - 1, 'MM/DD/YYYY')) || E'\n';
+                   to_char(hoy - 14, 'MM/DD/YYYY'), to_char(hoy - 1, 'MM/DD/YYYY'), to_char(hoy + (${pago}), 'MM/DD/YYYY')) || E'\n';
   r := fn_nomina_importar(jsonb_build_object('nombre', 'zz-f16-bono.csv', 'sha256', encode(sha256(convert_to(csv, 'UTF8')), 'hex'), 'bytes', octet_length(csv),
          'filas', (select jsonb_agg(to_jsonb(string_to_array(l, ',')) order by o) from unnest(string_to_array(rtrim(csv, E'\n'), E'\n')) with ordinality u(l, o))), '{}'::jsonb);
   c := (select (q ->> 'corrida')::uuid from jsonb_array_elements(r -> 'corridas') q where q ->> 'resultado' = 'nueva' limit 1);
@@ -334,6 +346,73 @@ sano(pp_c, 'por postear'); sano(pp_s, 'por postear sin el código');
 if (!(Number(pp_c.nomina.por_postear.n) === 1 && pp_c.nomina.atender.some(a => a.clave === 'por_postear') && pp_s.nomina.por_postear == null
       && pp_c.acciones.lista.find(x => x.clave === 'nomina').n === hoy.todas.acciones.lista.find(x => x.clave === 'nomina').n + 1))
   throw new Error('la nómina sin postear: ' + JSON.stringify([pp_c.nomina.por_postear, pp_s.nomina.por_postear]));
+
+// (11c, con el c16 de verdad —marca 2026111402—) LO QUE SU CONTRATO TRAE Y EL PROTOTIPO NO, del banco y en transacciones que se deshacen:
+// (e) EL CRITERIO «codigo» (fn_tablero_nomina_criterio cambiada dentro de la transacción, como la cambiaría Edgar al volver a pegar c16):
+//     sin el código, ni la tarjeta de la nómina ni la de gastos ni la proyección de la caja escriben el dinero de la nómina; con el
+//     código, lo mismo que con «libro»
+console.log('(11c) el criterio «codigo», la cuenta de reembolsos al revés, la próxima importada y un cargo des-casado…');
+const CRITERIO = `create or replace function public.fn_tablero_nomina_criterio() returns text language sql stable
+  set search_path = public, pg_temp as $c$ select 'codigo'::text $c$;`;
+const [crit_s, crit_c] = pedir(BD, [{ ...tablero({}), aal: 'aal1' }, tablero({})], CRITERIO);
+sano(crit_s, 'criterio «codigo» sin el código'); sano(crit_c, 'criterio «codigo» con el código');
+if (!(crit_s.nomina.ok === true && crit_s.nomina.criterio === 'codigo' && crit_s.nomina.a_la_vista === false && crit_s.nomina.meses.every(m => m.costo == null)
+      && crit_s.nomina.debe.a_la_vista === false && crit_s.nomina.debe.monto === undefined && crit_s.nomina.cargos.monto === undefined && crit_s.nomina.bolsa.monto == null
+      && crit_s.gastos.tapado && crit_s.gastos.tapado.cuentas.length > 0 && crit_s.caja.proyeccion.nomina_a_la_vista === false && crit_s.caja.proyeccion.meses.every(m => m.nomina == null)))
+  throw new Error('el criterio «codigo» sin el código: la tarjeta, gastos o la caja enseñan el dinero de la nómina: ' + JSON.stringify([crit_s.nomina.a_la_vista, crit_s.nomina.debe, crit_s.gastos.tapado, crit_s.caja.proyeccion && crit_s.caja.proyeccion.nomina_a_la_vista]).slice(0, 400));
+{ const sinMs = x => { const c = { ...x }; delete c.ms; delete c.criterio; return JSON.stringify(c); };
+  if (!(crit_c.nomina.a_la_vista === true && sinMs(crit_c.nomina) === sinMs(hoy.todas.nomina) && sinMs(crit_c.gastos) === sinMs(hoy.todas.gastos) && sinMs(crit_c.caja) === sinMs(hoy.todas.caja)))
+    throw new Error('el criterio «codigo» CON el código no da lo mismo que «libro» (la nómina, gastos y la caja)'); }
+// (f) LA CUENTA DE REEMBOLSOS A EMPLEADOS AL REVÉS: una de las dos compras que el oficial pagó de su bolsillo sale del libro (un asiento
+//     al revés del SQL Editor): la nómina ya se la reembolsó, así que esa cuenta queda debiendo a favor (58.40); no baja lo que se debe
+//     (va «aparte», con su texto) y el Balance dice 58.40 menos
+const APARTE = `do $d$ begin perform fn_postear(jsonb_build_object('fecha', fn_fecha_miami(now())::text,
+  'descripcion', 'ZZ PRUEBA: la compra del oficial sale del libro (se deshace)',
+  'lineas', jsonb_build_array(jsonb_build_object('cuenta', '2250', 'monto', '58.40', 'tercero_tipo', 'empleado',
+                                                 'tercero_id', (select p.id::text from perfiles p where p.nombre = 'ZZ Oficial Tres')),
+                              jsonb_build_object('cuenta', '5100', 'monto', '-58.40', 'proyecto_id', 'zz-nave-cuatro-a1b2')))); end $d$;`;
+const [aparte] = pedir(BD, [tablero({})], APARTE);
+sano(aparte, 'reembolsos al revés');
+if (!(aparte.nomina.debe.aparte && Number(aparte.nomina.debe.aparte.monto) === 58.4 && Number(aparte.nomina.debe.monto) === Number(hoy.todas.nomina.debe.monto)
+      && Number(aparte.nomina.debe.libro) === Number((Number(hoy.todas.nomina.debe.libro) - 58.4).toFixed(2))))
+  throw new Error('la cuenta de reembolsos al revés: se esperaba «aparte» con 58.40 y lo que se debe igual que hoy: ' + JSON.stringify(aparte.nomina.debe).slice(0, 400));
+// (f2) (los arreglos de la verificación, c16 marca 2026111403) UNAS VACACIONES DEVENGADAS A MANO: 400.00 en la 2215, que está en el renglón
+//     «nómina por pagar» del Balance y ninguna nómina paga. Lo que se debe de la nómina, cuándo sale y lo que la proyección resta cada mes
+//     NO cambian; van aparte («otras», con su texto), el Balance dice 400.00 más y la caja las deja en lo que no incluye, con su nombre
+const OTRAS = `do $d$ begin perform fn_postear(jsonb_build_object('fecha', fn_fecha_miami(now())::text,
+  'descripcion', 'ZZ PRUEBA: unas vacaciones devengadas a mano (se deshace)',
+  'lineas', jsonb_build_array(jsonb_build_object('cuenta', '6100', 'monto', '400.00'), jsonb_build_object('cuenta', '2215', 'monto', '-400.00')))); end $d$;`;
+const [otras] = pedir(BD, [tablero({})], OTRAS);
+sano(otras, 'las vacaciones devengadas');
+{ const o = otras.nomina.debe, h = hoy.todas.nomina.debe, ni = x => ((x.caja.proyeccion || {}).no_incluye || []).find(s => s.clave === 'deuda' && s.linea === 'nomina_por_pagar');
+  if (!(o.otras && Number(o.otras.monto) === 400 && o.otras.cuentas.length === 1 && o.otras.cuentas[0].cuenta === '2215' && /no va en lo que se debe de la nómina/.test(o.otras.texto)
+        && h.otras == null && Number(o.monto) === Number(h.monto) && JSON.stringify(o.pagos) === JSON.stringify(h.pagos) && JSON.stringify(o.cuentas) === JSON.stringify(h.cuentas)
+        && Number(o.libro) === Number((Number(h.libro) + 400).toFixed(2))
+        && JSON.stringify(otras.caja.proyeccion.meses.map(m => m.nomina)) === JSON.stringify(hoy.todas.caja.proyeccion.meses.map(m => m.nomina))
+        && ni(otras) && Number(ni(otras).monto) === 400 && JSON.stringify(ni(otras).cuentas) === '["2215"]' && !ni(hoy.todas)))
+    throw new Error('las vacaciones devengadas: se esperaban aparte («otras», 400.00 en la 2215), lo que se debe de la nómina y cuándo sale igual que hoy, y en lo que la caja no incluye: ' + JSON.stringify([o, ni(otras)]).slice(0, 600)); }
+// (g) LA PRÓXIMA, IMPORTADA Y SIN POSTEAR: el bono con día de pago mañana (antes que la B, que es dentro de 3 días): con el código, la
+//     próxima es esa (importada: sin «por pagar» ni asiento); sin el código, la del libro (la B)
+const [pxi_c, pxi_s] = pedir(BD, [tablero({}), { ...tablero({}), aal: 'aal1' }], BONO(false, 1));
+sano(pxi_c, 'próxima importada'); sano(pxi_s, 'próxima importada sin el código');
+if (!(pxi_c.nomina.proxima && pxi_c.nomina.proxima.estado === 'importada' && pxi_c.nomina.proxima.por_pagar == null && pxi_c.nomina.proxima.asiento == null
+      && Number(pxi_c.nomina.proxima.personas) === 1 && pxi_s.nomina.proxima.con_codigo === false && pxi_s.nomina.proxima.dia_pago === hoy.todas.nomina.proxima.dia_pago))
+  throw new Error('la próxima importada: ' + JSON.stringify([pxi_c.nomina.proxima, pxi_s.nomina.proxima]).slice(0, 400));
+// (h) UN CARGO DE GUSTO DES-CASADO EN LA BANDEJA (el de los impuestos de la nómina A, que se casó en Nómina): c15 lo cuenta como
+//     des-casado (con el código), su cuadre 25 sale en rojo y el cargo vuelve a esperar: la tarjeta, la acción y «Qué atender» lo dicen
+const DESCASAR = `do $d$ begin
+  perform set_config('request.jwt.claims', json_build_object('sub', '${DUENO}', 'role', 'authenticated', 'aal', 'aal2')::text, true);
+  perform set_config('request.jwt.claim.sub', '${DUENO}', true);
+  execute 'set local role authenticated';
+  perform fn_banco_descasar((select id from movimientos_banco where id_externo = 'zz-gusto-tax'), 'ZZ PRUEBA: se des-casa en la Bandeja (se deshace)');
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '', true);
+end $d$;`;
+const [desc_c, desc_s] = pedir(BD, [tablero({}), { ...tablero({}), aal: 'aal1' }], DESCASAR);
+sano(desc_c, 'des-casado'); sano(desc_s, 'des-casado sin el código');
+if (!(Number(desc_c.nomina.cargos.descasados) === 1 && Number(desc_c.nomina.control.cuadres_rojos) > 0 && desc_c.nomina.atender.some(a => a.clave === 'cuadre')
+      && desc_c.acciones.lista.find(x => x.clave === 'nomina').alarma === true && desc_s.nomina.cargos.descasados == null && !desc_s.nomina.atender.some(a => a.clave === 'cuadre')))
+  throw new Error('el cargo des-casado: ' + JSON.stringify([desc_c.nomina.cargos, desc_c.nomina.control, desc_s.nomina.cargos]).slice(0, 400));
 
 // los errores que la pantalla enseña
 console.log('errores…');
@@ -356,7 +435,8 @@ if (distintas.length) throw new Error('pedir unas sueltas NO da lo mismo que el 
 // y se quitan; en lo demás, ningún nombre de la semilla de siempre, ni en minúsculas.
 const SEMILLA02 = fs.readFileSync(path.join(__dirname, '02-semilla.sql'), 'utf8'), SEMILLA16 = fs.readFileSync(path.join(__dirname, 'f16-semilla.sql'), 'utf8');
 const ids = new Set(), noEsId = [];
-const todo = JSON.stringify({ hoy, marzo, enero, produccion, tope1, tope2, capas, falla, reembolso, renta, primer_mes, devuelto_antes, sin_codigo, sin_c15, una_c, una_s, pp_c, pp_s }, (k, v) => {
+const todo = JSON.stringify({ hoy, marzo, enero, produccion, tope1, tope2, capas, falla, reembolso, renta, primer_mes, devuelto_antes, sin_codigo, sin_c15, una_c, una_s, pp_c, pp_s,
+  crit_s, aparte, otras, pxi_c, pxi_s, desc_c, desc_s }, (k, v) => {
   if ((k === 'sel' || k === 'proyecto_id') && typeof v === 'string') {
     if (SEMILLA02.includes(`'${v}'`) || (/^zz-/.test(v) && SEMILLA16.includes(`'${v}'`))) { ids.add(v); return '«id»'; }
     noEsId.push(v);
@@ -374,6 +454,7 @@ const salida = {
     // (11c) las capas de la Fase 11c pegadas encima de la plantilla (su huella), la semilla de la nómina si vino aparte, y si el c16 no era el del árbol
     capas: Object.fromEntries(CAPAS.map(f => [f, huella(f)])), semilla_nomina: SEMILLA_NOM ? huella(SEMILLA_NOM) : null,
     c16_del_arbol: C16 === path.join(ROOT, 'docs/conta/c16-tablero.sql'),
+    criterio_codigo_con_codigo: 'con el criterio «codigo» y CON el código, la tarjeta de la nómina, gastos y la caja dan lo mismo que con «libro» (salvo «ms» y «criterio»): comprobado',
     sueltas_igual: 'pedir unas tarjetas sueltas da lo mismo que esas tarjetas en el tablero entero, salvo «ms» (comprobado con ' + sueltas.map(t => t.join('+')).join(' · ') + ')',
     ids_de_obra: `los ids de obra que salen (${[...ids].sort().join(', ')}) son de 02-semilla.sql o de f16-semilla.sql; ningún nombre de la semilla de siempre, sin distinguir mayúsculas` },
   hoy, marzo, enero, produccion,
@@ -381,7 +462,11 @@ const salida = {
   capas, falla,
   aparte: { reembolso, renta, primer_mes, devuelto_antes },
   // (11c) la nómina: el tablero entero sin el código; sin c15; una nómina de una persona y una sin postear, con y sin el código
-  sin_codigo, nomina: { sin_c15, una_persona: { codigo: una_c, sin_codigo: una_s }, por_postear: { codigo: pp_c, sin_codigo: pp_s } },
+  sin_codigo, nomina: { sin_c15, una_persona: { codigo: una_c, sin_codigo: una_s }, por_postear: { codigo: pp_c, sin_codigo: pp_s },
+    // ((11c, el c16 de verdad) el criterio «codigo» sin el código —con él da lo mismo que «libro»: comprobado—; la cuenta de reembolsos al
+    // revés; la próxima importada sin postear; un cargo de Gusto des-casado en la Bandeja —con y sin el código—; y (los arreglos de la
+    // verificación) unas vacaciones devengadas, que no son de la nómina: «otras»)
+    criterio_codigo: crit_s, aparte, otras, proxima_importada: { codigo: pxi_c, sin_codigo: pxi_s }, descasado: { codigo: desc_c, sin_codigo: desc_s } },
   errores: { equipo: comoPostgrest(equipo), tarjeta_mala: comoPostgrest(clave) }
 };
 fs.writeFileSync(SALIDA, JSON.stringify(salida) + '\n');

@@ -255,6 +255,23 @@
    nunca un 0), sin c15, una nómina de una persona y una por postear, a 390,
    820 y 1280 px (sin desplazamiento lateral, nada encimado ni fuera de la
    tarjeta).
+   (Y con el c16 de los arreglos de la verificación de la fase, marca
+   2026111403: unas vacaciones devengadas a mano, del banco —lo del renglón
+   «nómina por pagar» del Balance que ninguna nómina paga—, van aparte
+   («otras»), no suben lo que se debe de la nómina y la caja las deja en lo
+   que no incluye; y gastos, con el criterio «codigo», dice una sola vez que
+   las cuentas de la nómina van tapadas.)
+   Y CON EL c16 DE VERDAD (marca 2026111402; la pantalla se hizo contra un
+   prototipo), del banco: lo que se debe como lo manda la base («de eso, X con
+   día de pago después de hoy») y cuándo sale de la caja (debe.pagos), los
+   cargos que pasan de los días para avisar (la cajita en rojo con su icono) y
+   los que no, la cuenta de reembolsos al revés (va aparte; también con
+   Privacidad), la próxima importada sin postear (no «ya en el libro»), un
+   cargo de Gusto des-casado (el cuadre en rojo, sin lo técnico de c15; sin el
+   código, nada inventado), el criterio «codigo» sin el código (ni un monto
+   de la nómina en la tarjeta, gastos sin la nómina y con su botón, la caja
+   sin la columna) y la tarjeta que llega tarde por el tope por reloj (lo suyo
+   en «Qué atender», al llegar).
    Los datos son inventados (la forma es la de las vistas de c4, c6 y p1).
    Uso: NODE_PATH=/opt/node22/lib/node_modules node pruebas/conta/pantalla.js
    (con --fotos guarda capturas en el temporal del sistema, o en FOTOS_DIR:
@@ -2631,7 +2648,11 @@ const TODAS16 = F16.hoy.todas.tarjetas.slice();
 // (11c) las escenas de la nómina, del banco: el tablero entero sin el código del teléfono (aal1), sin c15, con una nómina de una persona
 // posteada después de la última y con una importada sin postear (cada una con y sin el código)
 const F16_NOM = { sin_codigo: () => F16.sin_codigo, sin_c15: () => F16.nomina.sin_c15, una_persona: () => F16.nomina.una_persona.codigo,
-  una_persona_sin: () => F16.nomina.una_persona.sin_codigo, por_postear: () => F16.nomina.por_postear.codigo, por_postear_sin: () => F16.nomina.por_postear.sin_codigo };
+  una_persona_sin: () => F16.nomina.una_persona.sin_codigo, por_postear: () => F16.nomina.por_postear.codigo, por_postear_sin: () => F16.nomina.por_postear.sin_codigo,
+  // ((11c, el c16 de verdad) el criterio «codigo» sin el código; la cuenta de reembolsos al revés; la próxima importada sin postear (con y sin
+  // el código); un cargo de Gusto des-casado en la Bandeja (con y sin el código))
+  criterio_codigo: () => F16.nomina.criterio_codigo, aparte_nom: () => F16.nomina.aparte, otras_nom: () => F16.nomina.otras, proxima_importada: () => F16.nomina.proxima_importada.codigo,
+  proxima_importada_sin: () => F16.nomina.proxima_importada.sin_codigo, descasado: () => F16.nomina.descasado.codigo, descasado_sin: () => F16.nomina.descasado.sin_codigo };
 function rpcTablero(a) {
   if (!estado.c16) return xNoHay('fn_tablero');
   if (estado.c16NoDueno) return F16.errores.equipo;
@@ -8600,10 +8621,13 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
         F16.capturado.plantilla === 'g16a' && F16.capturado.c16 === h16('docs/conta/c16-tablero.sql') && F16.capturado.semilla === h16('pruebas/conta/f16-semilla.sql') && F16.capturado.semilla_nomina == null &&
         capas16.length === 5 && capas16.every(([f, v]) => h16(f) === v),
         `capturado c16 ${F16.capturado.c16}${F16.capturado.c16_del_arbol === false ? ' (el prototipo, no el del árbol)' : ''}, semilla ${F16.capturado.semilla}${F16.capturado.semilla_nomina ? ` + la de la nómina aparte (${F16.capturado.semilla_nomina})` : ''}; hoy c16 ${h16('docs/conta/c16-tablero.sql')}, semilla ${h16('pruebas/conta/f16-semilla.sql')}${capas16.filter(([f, v]) => h16(f) !== v).map(([f]) => `; ${f} cambió`).join('')}: integra el c16 y la semilla de la nómina en el árbol y vuelve a correr node pruebas/conta/f16-capturar.js <bd nueva>`);
-      ok('Tablero · …y es la del contrato de la 11c (marca 2026111401, con la tarjeta de la nómina al final) en todas sus escenas', T16.version === 2026111401 && TODAS16[TODAS16.length - 1] === 'nomina' && TODAS16.length === 16 &&
+      // ((11c) la marca del c16 de verdad: el prototipo con el que se hizo la pantalla era la 2026111401; la primera vuelta de la fase, la
+      // 2026111402; con los arreglos de su verificación, la 2026111403)
+      ok('Tablero · …y es la del contrato de la 11c (el c16 de verdad con los arreglos de la verificación, marca 2026111403, con la tarjeta de la nómina al final) en todas sus escenas', T16.version === 2026111403 && TODAS16[TODAS16.length - 1] === 'nomina' && TODAS16.length === 16 &&
         [F16.marzo.todas, F16.enero.todas, F16.produccion.todas, F16.aparte.renta, F16.aparte.reembolso, F16.aparte.primer_mes, F16.aparte.devuelto_antes, F16.sin_codigo, F16.nomina.sin_c15,
-         F16.nomina.una_persona.codigo, F16.nomina.una_persona.sin_codigo, F16.nomina.por_postear.codigo, F16.nomina.por_postear.sin_codigo].every(x => x.version === 2026111401),
-        `marca ${T16.version}, tarjetas ${TODAS16.join(',')}`); }
+         F16.nomina.una_persona.codigo, F16.nomina.una_persona.sin_codigo, F16.nomina.por_postear.codigo, F16.nomina.por_postear.sin_codigo,
+         F16.nomina.criterio_codigo, F16.nomina.aparte, F16.nomina.otras, F16.nomina.proxima_importada.codigo, F16.nomina.proxima_importada.sin_codigo, F16.nomina.descasado.codigo, F16.nomina.descasado.sin_codigo].every(x => x && x.version === 2026111403),
+        `marca ${T16.version}, ${TODAS16.length} tarjetas, la última ${TODAS16[TODAS16.length - 1]}`); }
     // ni un total, ni una resta, ni un porcentaje de dinero en la pantalla: el bloque del tablero de conta.js no suma nada (ni reduce ni suma)
     { const js = fs.readFileSync(path.join(ROOT, 'js', 'conta.js'), 'utf8'), a = js.indexOf('// EL TABLERO (c16)'), z = js.indexOf('// BANCOS Y TARJETAS: primero las cuentas');
       const blq = a > 0 && z > a ? js.slice(a, z) : '';
@@ -8716,7 +8740,7 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
         obras: [usd(ob.wip.sub_facturado), usd(ob.wip.sobre_facturado), ob.wip.nota, usd(ob.costo.totales.ingreso), usd(ob.costo.totales.margen), ob.costo.nota, ...ob.costo.obras.flatMap(o => [o.obra, usd(o.margen), pc(o.margen_pct)])],
         // (11c) la nómina: la última (su costo para la empresa, cuántas personas y su desglose), la próxima, lo que se debe y los cargos por casar
         nomina: [`Última nómina · ${nm.ultima.etiqueta}`, usd(nm.ultima.costo), `${nm.ultima.personas} personas`, `sueldo ${usd(nm.ultima.bruto)}`, `lo del patrón ${usd(nm.ultima.patron)}`, `neto ${usd(nm.ultima.neto)}`,
-          `impuestos ${usd(nm.ultima.impuestos)}`, `queda por pagar ${usd(nm.ultima.por_pagar)}`, `Próxima: ${nm.proxima.etiqueta} (ya en el libro) · ${usd(nm.proxima.costo)}`, usd(nm.debe.monto), `${usd(nm.debe.despues)} con fecha de después de hoy`,
+          `impuestos ${usd(nm.ultima.impuestos)}`, `queda por pagar ${usd(nm.ultima.por_pagar)}`, `Próxima: ${nm.proxima.etiqueta} (ya en el libro) · ${usd(nm.proxima.costo)}`, usd(nm.debe.monto), `de eso, ${usd(nm.debe.despues)} con día de pago después de hoy`,
           usd(nm.cargos.monto), `${nm.cargos.n} cargos`, 'Nóminas por postear', 'Al día de hoy']
       };
       for (const k of ORD16) {
@@ -9085,7 +9109,14 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     { const l = llam16(n0), sig = F16.tope.primera.sigue;
       ok(`Tablero · el tope por reloj: lo que no alcanzó (${sig.length} de ${TODAS16.length}) llega en «sigue», se pinta «Leyendo…» y se pide otra vez solo eso; al llegar, todas con sus números`,
         l.length === 2 && JSON.stringify(l[0].args) === '{"p":{}}' && JSON.stringify(l[1].args.p.tarjetas) === JSON.stringify(sig) && (await q.locator('#ct-tb .ct-tb').count()) === ORD16.length && !/Leyendo…/.test(await visTxt(q.locator('#ct-tb-rejilla'))) &&
-        (await visTxt(tarj(q, 'obras'))).includes(usd(F16.tope.segunda.obras.wip.sub_facturado)) && (await q.locator('#ct-tb .ct-tb-chip').count()) === T16.acciones.lista.length, JSON.stringify(l.map(x => x.args))); }
+        (await visTxt(tarj(q, 'obras'))).includes(usd(F16.tope.segunda.obras.wip.sub_facturado)) && (await q.locator('#ct-tb .ct-tb-chip').count()) === T16.acciones.lista.length, JSON.stringify(l.map(x => x.args)));
+      // ((11c) la tarjeta de la nómina también puede llegar en la segunda: lo suyo en «Qué atender» —que viene en ella— sale al llegar, sin
+      // esperar a la siguiente visita a Resumen)
+      const atn = F16.tope.segunda.nomina && F16.tope.segunda.nomina.ok === true ? F16.tope.segunda.nomina.atender.map(a => `nomina-${a.clave}`) : null;
+      const lis = await q.locator('#ct-atender [data-atn^="nomina-"]').evaluateAll(ls => ls.map(l => l.dataset.atn));
+      await q.locator('#ct-atender [data-atn="nomina-cargos"] button').click(); await pintado(q);
+      ok('(11c) Nómina · si su tarjeta no alcanzó el tope por reloj y llega en la segunda llamada, lo suyo sale en «Qué atender» al llegar (con su botón a su apartado)',
+        sig.includes('nomina') && !!atn && atn.length > 0 && JSON.stringify(lis) === JSON.stringify(atn) && (await q.evaluate(() => [window.MXP_CONTA._estado.pagina, window.MXP_CONTA._estado.nom.sub].join())) === 'nomina,cargos', JSON.stringify([sig.includes('nomina'), atn, lis])); }
     await cx.close();
 
     // la base que nunca alcanza: tras tres vueltas más, cada tarjeta lo dice y ofrece «Reintentar» (no se queda «Leyendo…» para siempre)
@@ -9243,9 +9274,10 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
         tn.includes(`Última nómina · ${N.ultima.etiqueta}`) && tn.includes(usd(N.ultima.costo)) && tn.includes(`${N.ultima.personas} personas`) && tn.includes(`Próxima: ${N.proxima.etiqueta} (ya en el libro) · ${usd(N.proxima.costo)}`) &&
         JSON.stringify(sts) === JSON.stringify([['debe', usd(N.debe.monto)], ['cargos', usd(N.cargos.monto)], ['por_postear', String(N.por_postear.n)]]) && (await tarj(q, 'nomina').locator('[data-tb-nom-codigo]').count()) === 0, JSON.stringify(sts) + ' | ' + tn.slice(0, 300));
       const ms1 = mesesNom(N);
-      ok(`(11c) Nómina · un solo mes con nóminas de Gusto (${ms1.length === 1 ? ms1[0].etiqueta : '—'}): la cifra sola y lo dice, sin una gráfica de una columna; la tabla «Ver los números» con el mes, lo que se debe por cuenta y la última y la próxima`,
+      // ((11c, el c16 de verdad) y cuándo sale de la caja lo que se debe: hoy y cada día de pago que viene, con su asiento —debe.pagos—)
+      ok(`(11c) Nómina · un solo mes con nóminas de Gusto (${ms1.length === 1 ? ms1[0].etiqueta : '—'}): la cifra sola y lo dice, sin una gráfica de una columna; la tabla «Ver los números» con el mes, la última y la próxima, cuándo sale de la caja y lo que se debe por cuenta`,
         ms1.length === 1 && (await tarj(q, 'nomina').locator('[data-tb-nom-un-mes]').count()) === 1 && (await tarj(q, 'nomina').locator('svg.ct-tb-svg').count()) === 0 &&
-        (await tarj(q, 'nomina').locator('details.ct-tb-tabla table').count()) === 3 && (await tarj(q, 'nomina').locator('details.ct-tb-tabla').evaluate(d => d.textContent)).includes(N.debe.cuentas[0].nombre), ms1.map(m => m.mes).join());
+        (await tarj(q, 'nomina').locator('details.ct-tb-tabla table').count()) === 4 && (await tarj(q, 'nomina').locator('details.ct-tb-tabla').evaluate(d => d.textContent)).includes(N.debe.cuentas[0].nombre), ms1.map(m => m.mes).join());
       // la acción rápida «Nómina», con el contador y el detalle de la base; lleva a Nómina, al apartado que dice la base
       { const chip = tarj(q, 'nomina').page().locator('#ct-tb .ct-tb-chip[data-tb-acc="nomina"]');
         const c = await chip.evaluate(e => ({ n: (e.querySelector('.ct-tb-n') || {}).textContent || null, alarma: e.classList.contains('alarma'), d: (document.getElementById(e.getAttribute('aria-describedby')) || {}).textContent || '', t: e.getAttribute('title') }));
@@ -9424,6 +9456,176 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
       ok('(11c) Nómina · …y sin el código, la misma base: «—» y «con el código del teléfono» (no un 0 ni un 1), sin «Postear»', Ps.nomina.por_postear == null &&
         (await tarj(q, 'nomina').locator('[data-st="por_postear"]').innerText()).replace(/\s+/g, ' ') === 'Nóminas por postear — con el código del teléfono' && (await tarj(q, 'nomina').locator('.ct-tb-pie [data-tb-ir]').filter({ hasText: 'Postear' }).count()) === 0);
       await cx.close(); }
+
+    // ==================== (11c) CON EL c16 DE VERDAD (marca 2026111402; la pantalla se hizo contra un prototipo): lo que su contrato trae
+    // y el prototipo no, cada cosa con las palabras y los números del banco ====================
+    const montoSinSigno = /(^|[^\w.,$])\d[\d,]*\.\d{2}(?![\d.,]*\d)(?!\s?%)/;
+    // (un día de la base como lo escriben la base y la pantalla: «1-nov-2026»)
+    const diaX = iso => { const [a, m, d] = String(iso).split('-'); return `${Number(d)}-${['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'][Number(m) - 1]}-${a}`; };
+    const textoYAtrs = sel => document.querySelector(sel) ? (() => { const c = document.querySelector(sel); return [c.textContent, ...[...c.querySelectorAll('[aria-label],[title]'), c].map(x => `${x.getAttribute('aria-label') || ''} ${x.getAttribute('title') || ''}`)].join(' ‖ '); })() : '';
+    // LO QUE SE DEBE Y CUÁNDO SALE (hoy, del banco): la cifra de la base; «de eso, X con día de pago después de hoy»; en «Ver los números»,
+    // cuándo sale de la caja (debe.pagos: lo de hoy y lo de cada día de pago, con su asiento) y por cuenta (que suma la cifra)
+    { const N = T16.nomina;
+      estado.c16Escena = 'hoy';
+      ({ cx, q } = await abrir16(1280, { prefs: { 'mxp.tablero.privado': null, 'mxp.tablero.ocultas': null } }));
+      const T = tarj(q, 'nomina');
+      await T.locator('details.ct-tb-tabla > summary').first().click();
+      const filas = async n => (await T.locator(`[data-tb-tabla="${n}"] tbody tr`).evaluateAll(trs => trs.map(tr => [...tr.cells].map(c => c.innerText.replace(/\s+/g, ' ').trim()))));
+      const pg = await filas('pagos'), db = await filas('debe');
+      const debe = await T.locator('[data-st="debe"]').evaluate(e => [e.querySelector('.ct-tb-st-v').textContent.trim(), e.querySelector('small').textContent.trim()]);
+      ok(`(11c) Nómina · lo que se debe, como lo manda la base (${usd(N.debe.monto)}; «de eso, ${usd(N.debe.despues)} con día de pago después de hoy»); en «Ver los números», cuándo sale de la caja (${N.debe.pagos.map(x => `${x.etiqueta} ${usd(x.monto)}`).join(', ')}, con el asiento de su nómina) y por cuenta, con su total`,
+        JSON.stringify(debe) === JSON.stringify([usd(N.debe.monto), `de eso, ${usd(N.debe.despues)} con día de pago después de hoy`]) &&
+        JSON.stringify(pg) === JSON.stringify(N.debe.pagos.map(x => [x.de_hoy ? 'Hoy (lo que ya se debía)' : `El ${x.etiqueta}${x.asiento ? ` el día de pago de su nómina · asiento ${x.asiento}` : ''}`, usd(x.monto)])) &&
+        JSON.stringify(db) === JSON.stringify([...N.debe.cuentas.map(c => [`${c.cuenta} ${c.nombre}`, usd(c.monto)]), ['Total', usd(N.debe.monto)]]) && (await T.locator('[data-tb-nom-aparte], [data-tb-nom-otras]').count()) === 0,
+        JSON.stringify([debe, pg]));
+      // LOS CARGOS DE GUSTO QUE ESPERAN MÁS DE LO QUE LA NÓMINA TIENE PARA AVISAR (cargos.alarma): la cajita con su borde rojo y «hace N días» con su icono
+      const cg = await T.locator('[data-st="cargos"]').evaluate(e => ({ alarma: e.classList.contains('alarma'), borde: getComputedStyle(e).borderTopColor, sub: e.querySelector('small').textContent.replace(/\s+/g, ' ').trim(),
+        ico: !!e.querySelector('[data-tb-nom-alarma] svg'), title: (e.querySelector('[data-tb-nom-alarma]') || {}).title || '', bad: getComputedStyle(document.body).getPropertyValue('--bad').trim() }));
+      ok(`(11c) Nómina · los cargos de Gusto que esperan más de ${N.cargos.aviso_dias} días (el más viejo, del ${N.cargos.mas_viejo}: ${N.cargos.dias} días): la cajita con el borde rojo y «hace ${N.cargos.dias} días» con su icono (no el color solo)`,
+        N.cargos.alarma === true && cg.alarma && cg.ico && cg.sub === `${N.cargos.n} cargos · el más viejo, del ${diaX(N.cargos.mas_viejo)} hace ${N.cargos.dias} días` && cg.title.includes(`${N.cargos.aviso_dias} días`) && /rgb\(200, 55, 45\)/.test(cg.borde), JSON.stringify(cg));
+      await cx.close(); }
+    { const M = F16.marzo.todas.nomina;
+      estado.c16Escena = 'marzo';
+      ({ cx, q } = await abrir16(390, { prefs: { 'mxp.tablero.privado': null, 'mxp.tablero.ocultas': null } }));
+      const cg = await tarj(q, 'nomina').locator('[data-st="cargos"]').evaluate(e => ({ alarma: e.classList.contains('alarma'), sub: e.querySelector('small').textContent.replace(/\s+/g, ' ').trim(), ico: !!e.querySelector('[data-tb-nom-alarma]') }));
+      ok(`(11c) Nómina · …y los que todavía no pasan de esos días (el 10-mar-2027: ${M.cargos.dias} días), sin rojo: «(hace ${M.cargos.dias} días)»`,
+        M.cargos.alarma === false && !cg.alarma && !cg.ico && cg.sub === `${M.cargos.n} cargos · el más viejo, del ${diaX(M.cargos.mas_viejo)} (hace ${M.cargos.dias} días)`, JSON.stringify(cg));
+      await cx.close(); }
+
+    // LA CUENTA DE REEMBOLSOS A EMPLEADOS AL REVÉS (del banco: una compra del oficial que la nómina ya reembolsó sale del libro): lo que se debe
+    // no baja (la cifra es la de la base, sin la 2250), y lo de aparte se dice con las palabras de la base, también con Privacidad (tapado)
+    { const A = F16.nomina.aparte.nomina;
+      estado.c16Escena = 'aparte_nom';
+      ({ cx, q } = await abrir16(390, { prefs: { 'mxp.tablero.privado': null, 'mxp.tablero.ocultas': null } }));
+      const T = tarj(q, 'nomina');
+      await T.locator('details.ct-tb-tabla > summary').first().click();
+      const v = await T.locator('[data-st="debe"] .ct-tb-st-v').textContent(), ap = await T.locator('.ct-tb-cuerpo > [data-tb-nom-aparte]').innerText();
+      const db = await T.locator('[data-tb-tabla="debe"] tbody tr').evaluateAll(trs => trs.map(tr => tr.cells[0].innerText.replace(/\s+/g, ' ').trim().slice(0, 4)));
+      ok(`(11c) Nómina · la cuenta de reembolsos a empleados al revés (${usd(A.debe.aparte.monto)}): lo que se debe sigue en ${usd(A.debe.monto)} (no baja) y lo de aparte lo dice la base («${A.debe.aparte.texto.slice(0, 60)}…»), en la tarjeta y bajo la tabla por cuenta, que no lleva la 2250`,
+        v.trim() === usd(A.debe.monto) && ap.replace(/\s+/g, ' ').trim() === A.debe.aparte.texto && (await T.locator('details [data-tb-nom-aparte]').count()) === 1 && !db.includes('2250') && db[db.length - 1] === 'Tota', `${v} | ${ap.slice(0, 80)} | ${db}`);
+      await q.locator('#ct-tb-privado').click(); await q.waitForTimeout(250);
+      await q.evaluate(() => document.querySelectorAll('#ct-tb .ct-tb[data-tb="nomina"] details').forEach(d => { d.open = true; }));
+      const t = await q.evaluate(textoYAtrs, '#ct-tb .ct-tb[data-tb="nomina"]');
+      ok('(11c) Nómina · …con Privacidad, ni lo de aparte ni cuándo sale de la caja dejan un monto a la vista (con «$» o sin él)', !/\$\s?\d/.test(t) && !montoSinSigno.test(t) && /\$•••/.test(t), (t.match(/.{0,30}\d[\d,]*\.\d{2}.{0,10}/g) || []).slice(0, 3).join(' ‖ '));
+      await cx.close(); }
+
+    // (LOS ARREGLOS DE LA VERIFICACIÓN, c16 marca 2026111403) UNAS VACACIONES DEVENGADAS A MANO (del banco: 400.00 en la 2215, que está en el
+    // renglón «nómina por pagar» del Balance y ninguna nómina paga): lo que se debe de la nómina es lo de hoy (no las cuenta), cuándo sale no
+    // cambia, y lo de aparte lo dice la base, en la tarjeta y bajo la tabla por cuenta (que no lleva la 2215); la caja lo deja en lo que NO
+    // incluye, con el nombre de la cuenta; con Privacidad, tapado; a 390 px, sin desplazar la página de lado
+    { const O = F16.nomina.otras.nomina, H = T16.nomina, NI = (F16.nomina.otras.caja.proyeccion.no_incluye || []).find(s => s.clave === 'deuda' && s.linea === 'nomina_por_pagar') || {};
+      estado.c16Escena = 'otras_nom';
+      ({ cx, q } = await abrir16(390, { prefs: { 'mxp.tablero.privado': null, 'mxp.tablero.ocultas': null } }));
+      const T = tarj(q, 'nomina');
+      await T.locator('details.ct-tb-tabla > summary').first().click();
+      const filas = async n => (await T.locator(`[data-tb-tabla="${n}"] tbody tr`).evaluateAll(trs => trs.map(tr => [...tr.cells].map(c => c.innerText.replace(/\s+/g, ' ').trim()))));
+      const v = await T.locator('[data-st="debe"] .ct-tb-st-v').textContent(), ot = await T.locator('.ct-tb-cuerpo > [data-tb-nom-otras]').innerText();
+      const pg = await filas('pagos'), db = (await filas('debe')).map(f => f[0].slice(0, 4));
+      ok(`(11c, los arreglos) Nómina · unas vacaciones devengadas a mano (${usd(O.debe.otras.monto)} en la 2215, del renglón «nómina por pagar» del Balance): lo que se debe de la nómina sigue en ${usd(H.debe.monto)} (no las cuenta), cuándo sale no cambia, y lo de aparte lo dice la base («${O.debe.otras.texto.slice(0, 60)}…»), en la tarjeta y bajo la tabla por cuenta, que no lleva la 2215`,
+        Number(O.debe.otras.monto) === 400 && Number(O.debe.monto) === Number(H.debe.monto) && v.trim() === usd(H.debe.monto) && ot.replace(/\s+/g, ' ').trim() === O.debe.otras.texto &&
+        (await T.locator('details [data-tb-nom-otras]').count()) === 1 && (await T.locator('[data-tb-nom-aparte]').count()) === 0 && !db.includes('2215') && db[db.length - 1] === 'Tota' &&
+        JSON.stringify(pg) === JSON.stringify(H.debe.pagos.map(x => [x.de_hoy ? 'Hoy (lo que ya se debía)' : `El ${x.etiqueta}${x.asiento ? ` el día de pago de su nómina · asiento ${x.asiento}` : ''}`, usd(x.monto)])),
+        `${v} | ${ot.slice(0, 80)} | ${db} | ${JSON.stringify(pg)}`);
+      await tarj(q, 'caja').locator('details[data-tabla="como"] > summary').click();
+      const ni = await tarj(q, 'caja').locator('details[data-tabla="como"] li[data-ni="deuda"]').evaluateAll(ls => ls.map(l => l.innerText.replace(/\s+/g, ' ').trim()));
+      const sw = await q.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]);
+      ok(`(11c, los arreglos) Nómina · …y la caja las deja en lo que NO incluye, con el nombre de la cuenta, las palabras de la base y su monto («${NI.etiqueta}: ${String(NI.texto).slice(0, 50)}… (${usd(NI.monto)})»); la proyección resta por la nómina lo mismo que hoy; a 390 px, sin desplazar la página de lado`,
+        NI.etiqueta === 'Vacaciones devengadas' && Number(NI.monto) === 400 && ni.includes(`${NI.etiqueta}: ${NI.texto} (${usd(NI.monto)})`) &&
+        JSON.stringify(F16.nomina.otras.caja.proyeccion.meses.map(m => m.nomina)) === JSON.stringify(T16.caja.proyeccion.meses.map(m => m.nomina)) && sw[0] <= sw[1] + 1,
+        JSON.stringify([ni, sw]));
+      await q.locator('#ct-tb-privado').click(); await q.waitForTimeout(250);
+      await q.evaluate(() => document.querySelectorAll('#ct-tb .ct-tb[data-tb="nomina"] details, #ct-tb .ct-tb[data-tb="caja"] details').forEach(d => { d.open = true; }));
+      const t = (await q.evaluate(textoYAtrs, '#ct-tb .ct-tb[data-tb="nomina"]')) + ' ‖ ' + (await tarj(q, 'caja').locator('details[data-tabla="como"]').innerText());
+      ok('(11c, los arreglos) Nómina · …con Privacidad, ni lo de aparte en la tarjeta ni su renglón en lo que la caja no incluye dejan un monto a la vista (con «$» o sin él)', !/\$\s?\d/.test(t) && !montoSinSigno.test(t) && /\$•••/.test(t), (t.match(/.{0,30}\d[\d,]*\.\d{2}.{0,10}/g) || []).slice(0, 3).join(' ‖ '));
+      await foto(q, 'f16-390-nomina-otras');
+      await cx.close(); }
+
+    // LA PRÓXIMA, IMPORTADA Y SIN POSTEAR (del banco: un bono con día de pago mañana): dice eso —no «ya en el libro»—, sin «por pagar» ni asiento;
+    // sin el código, la próxima es la del libro (la que ya está posteada)
+    { const P = F16.nomina.proxima_importada.codigo.nomina.proxima, Ps = F16.nomina.proxima_importada.sin_codigo.nomina.proxima;
+      estado.c16Escena = 'proxima_importada';
+      ({ cx, q } = await abrir16(820, { prefs: { 'mxp.tablero.privado': null, 'mxp.tablero.ocultas': null } }));
+      const T = tarj(q, 'nomina');
+      const px = (await T.locator('[data-tb-nom-proxima]').innerText()).replace(/\s+/g, ' ').trim();
+      await T.locator('details.ct-tb-tabla > summary').first().click();
+      const fila = await T.locator('[data-tb-tabla="unas"] tbody tr').last().evaluate(tr => [...tr.cells].map(c => c.innerText.replace(/\s+/g, ' ').trim()));
+      await cx.close();
+      estado.c16Escena = 'proxima_importada_sin';
+      ({ cx, q } = await abrir16(820, { prefs: { 'mxp.tablero.privado': null, 'mxp.tablero.ocultas': null } }));
+      const pxS = (await tarj(q, 'nomina').locator('[data-tb-nom-proxima]').innerText()).replace(/\s+/g, ' ').trim();
+      ok(`(11c) Nómina · la próxima importada y sin postear (un bono del ${P.etiqueta}): «(importada, sin postear)», con su costo y «1 persona», sin «por pagar» ni asiento (no está en el libro); sin el código, la del libro (${Ps.etiqueta}, ya posteada)`,
+        P.estado === 'importada' && px === `Próxima: ${P.etiqueta} (importada, sin postear) · ${usd(P.costo)} · 1 persona.` && fila[0] === `Próxima · ${P.etiqueta} 1 persona · importada, sin postear` && fila[fila.length - 1] === '—' &&
+        pxS === `Próxima: ${Ps.etiqueta} (ya en el libro).`, `${px} | ${JSON.stringify(fila)} | ${pxS}`);
+      await cx.close(); }
+
+    // UN CARGO DE GUSTO DES-CASADO EN LA BANDEJA (del banco): con el código, el cuadre de la nómina en rojo en la tarjeta (las palabras de la
+    // base; lo técnico de c15, nunca), el des-casado en la cajita de los cargos, la acción en rojo y «Qué atender» con el cuadre primero; sin el
+    // código, nada de eso se sabe y nada lo inventa
+    { const D = F16.nomina.descasado.codigo, Ds = F16.nomina.descasado.sin_codigo, AD = D.acciones.lista.find(x => x.clave === 'nomina'), ADs = Ds.acciones.lista.find(x => x.clave === 'nomina');
+      const cuadre = D.nomina.atender.find(a => a.clave === 'cuadre'), tec = cuadre.tecnico[0].dice;
+      estado.c16Escena = 'descasado';
+      ({ cx, q } = await abrir16(390, { prefs: { 'mxp.tablero.privado': null, 'mxp.tablero.ocultas': null } }));
+      const T = tarj(q, 'nomina');
+      const rojo = (await T.locator('[data-tb-nom-cuadre]').innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
+      const cg = await T.locator('[data-st="cargos"]').evaluate(e => ({ alarma: e.classList.contains('alarma'), sub: e.querySelector('small').textContent.replace(/\s+/g, ' ').trim() }));
+      const atn = await q.locator('#ct-atender [data-atn^="nomina-"]').evaluateAll(ls => ls.map(l => l.dataset.atn));
+      const chip = await q.locator('#ct-tb .ct-tb-chip[data-tb-acc="nomina"]').evaluate(e => ({ n: (e.querySelector('.ct-tb-n') || {}).textContent || null, alarma: e.classList.contains('alarma'), t: e.title }));
+      const todo = await q.evaluate(() => document.getElementById('ct-tb').textContent);
+      await cx.close();
+      estado.c16Escena = 'descasado_sin';
+      ({ cx, q } = await abrir16(390, { prefs: { 'mxp.tablero.privado': null, 'mxp.tablero.ocultas': null } }));
+      const T2 = tarj(q, 'nomina');
+      const s2 = { cuadre: await T2.locator('[data-tb-nom-cuadre]').count(), sub: (await T2.locator('[data-st="cargos"] small').textContent()).replace(/\s+/g, ' ').trim(),
+        atn: await q.locator('#ct-atender [data-atn="nomina-cuadre"]').count(), chip: await q.locator('#ct-tb .ct-tb-chip[data-tb-acc="nomina"] .ct-tb-n').textContent() };
+      ok(`(11c) Nómina · un cargo de Gusto des-casado en la Bandeja: el cuadre en rojo en la tarjeta («${cuadre.texto.slice(0, 50)}…»), «1 cargo des-casado en la Bandeja» en la cajita de los cargos (en rojo), la acción en rojo con lo que cuenta la base (${AD.n}) y «Qué atender» con el cuadre primero; lo técnico de c15 no sale en la portada`,
+        rojo === cuadre.texto && cg.alarma && cg.sub.includes('1 cargo des-casado en la Bandeja') && chip.n === String(AD.n) && chip.alarma && chip.t === AD.detalle &&
+        JSON.stringify(atn) === JSON.stringify(D.nomina.atender.map(a => `nomina-${a.clave}`)) && atn[0] === 'nomina-cuadre' && !todo.includes(tec), JSON.stringify([rojo.slice(0, 60), cg, chip, atn]));
+      ok(`(11c) Nómina · …y sin el código, la misma base: ni el cuadre ni el des-casado (no se saben sin él: ni un rojo falso ni un «todo cuadra»), la acción cuenta lo del banco (${ADs.n})`,
+        Ds.nomina.cargos.descasados == null && s2.cuadre === 0 && s2.atn === 0 && !/des-casad/.test(s2.sub) && s2.chip === String(ADs.n), JSON.stringify(s2));
+      await cx.close(); }
+
+    // EL CRITERIO «codigo» DE c16 SIN EL CÓDIGO DEL TELÉFONO (del banco): la tarjeta no escribe el dinero de la nómina (ni lo de cada mes, ni lo
+    // que se debe, ni la bolsa, ni el monto de los cargos: «—» y «con el código del teléfono»; cuántos cargos y desde cuándo, sí), gastos deja
+    // fuera las cuentas de la nómina y lo dice con su botón a Conexiones y seguridad, y la caja no escribe aparte la columna de la nómina
+    { const C = F16.nomina.criterio_codigo, CN = C.nomina;
+      estado.c16Escena = 'criterio_codigo';
+      for (const w of [390, 1280]) {
+        ({ cx, q } = await abrir16(w, { prefs: { 'mxp.tablero.privado': null, 'mxp.tablero.ocultas': null } }));
+        const T = tarj(q, 'nomina');
+        await q.evaluate(() => document.querySelectorAll('#ct-tb .ct-tb[data-tb="nomina"] details').forEach(d => { d.open = true; }));
+        const t = await q.evaluate(textoYAtrs, '#ct-tb .ct-tb[data-tb="nomina"]');
+        const sts = await T.locator('.ct-tb-st').evaluateAll(es => es.map(e => [e.dataset.st, e.querySelector('.ct-tb-st-v').textContent.trim(), e.querySelector('small').textContent.replace(/\s+/g, ' ').trim()]));
+        const meses = await T.locator('details.ct-tb-tabla > .ct-tabla-env:not([data-tb-tabla]) tbody tr').evaluateAll(trs => trs.map(tr => [...tr.cells].map(c => c.innerText.trim())));
+        ok(`(11c) Nómina · ${w} px, el criterio «codigo» sin el código: «${CN.codigo.texto.slice(0, 50)}…» con su botón; ni un monto de la nómina en la tarjeta (con o sin «$», ni en sus nombres para el lector de pantalla), ni gráfica; lo que se debe «—» y «con el código del teléfono»; los cargos, cuántos (${CN.cargos.n}) y desde cuándo; cada mes, cuántas nóminas`,
+          CN.a_la_vista === false && t.includes(CN.codigo.texto) && !/\$\s?\d/.test(t) && !montoSinSigno.test(t) && (await T.locator('svg.ct-tb-svg, [data-tb-nom-un-mes]').count()) === 0 &&
+          JSON.stringify(sts) === JSON.stringify([['debe', '—', 'con el código del teléfono'], ['cargos', String(CN.cargos.n), `el más viejo, del ${diaX(CN.cargos.mas_viejo)} hace ${CN.cargos.dias} días · su monto, con el código del teléfono`], ['por_postear', '—', 'con el código del teléfono']]) &&
+          JSON.stringify(meses) === JSON.stringify(CN.meses.slice(CN.meses.findIndex(m => m.nominas > 0)).map(m => [`${m.etiqueta}${m.en_curso ? ' (hasta hoy)' : ''}`, '—', '—', '—', String(m.nominas)])) &&
+          (await T.locator('[data-tb-nom-meses-codigo]').count()) === 1 && (await T.locator('[data-tb-nom-debe-codigo]').innerText()).trim() === CN.debe.texto,
+          JSON.stringify([sts, meses]) + ' ‖ ' + (t.match(/.{0,30}\d[\d,]*\.\d{2}.{0,10}/g) || []).slice(0, 3).join(' ‖ '));
+        if (w === 1280) {
+          // (gastos: lo de la base —su total sin la nómina— y «tapado» con su botón; la caja: sin la columna de la nómina, y lo dice)
+          const gt = (await tarj(q, 'gastos').locator('[data-tb-gas-tapado]').innerText()).replace(/\s+/g, ' ').replace('›', '').trim();
+          await tarj(q, 'caja').locator('details[data-tabla="real"] > summary').click();
+          const cols = await tarj(q, 'caja').locator('details[data-tabla="real"] td[data-col="Nómina"]').count(), nota = await tarj(q, 'caja').locator('[data-tb-caja-nom-codigo]').count();
+          const hit = tarj(q, 'caja').locator('.ct-tb-hit.cruz'); await hit.focus(); await q.keyboard.press('ArrowRight'); await q.waitForTimeout(80);
+          const tip = (await q.locator('#ct-tb-tip').innerText()).replace(/\s+/g, ' ');
+          await q.keyboard.press('Escape');
+          await tarj(q, 'gastos').locator('[data-tb-gas-tapado] [data-tb-ir]').click(); await pintado(q);
+          ok('(11c) Nómina · …gastos dice que deja fuera lo de la nómina (las palabras de la base, con su botón a Conexiones y seguridad, que lleva ahí) y su total es el de la base; la proyección de la caja, sin la columna «Nómina», lo dice, y su tooltip no la escribe',
+            gt === `${C.gastos.tapado.texto} Conexiones y seguridad` && (await q.evaluate(() => window.MXP_CONTA._estado.pagina)) === 'conexiones' && cols === 0 && nota === 1 && !/Nómina \(lo que se debe\)/.test(tip) && C.caja.proyeccion.nomina_a_la_vista === false,
+            JSON.stringify([gt.slice(0, 80), cols, nota, tip.slice(0, 120)]));
+          await volverResumen(q);
+          ok('(11c) Nómina · …y el total de gastos en la tarjeta es el de la base (sin las cuentas de la nómina)', (await visTxt(tarj(q, 'gastos'))).includes(usd(C.gastos.total)), String(C.gastos.total));
+          // ((los arreglos de la verificación) la base lo decía dos veces —en «tapado» y en la nota—: una sola, en «tapado», y dice que la cuenta va entera)
+          { const tg = (await tarj(q, 'gastos').innerText()).replace(/\s+/g, ' '), frase = 'no se enseñan aquí las cuentas de la nómina';
+            ok('(11c, los arreglos) Nómina · …y gastos lo dice UNA sola vez (en «tapado», que avisa de que la cuenta va entera, con todo lo que tenga); la nota de la base no lo repite',
+              C.gastos.tapado.texto.includes(frase) && /con todo lo que tengan/.test(C.gastos.tapado.texto) && !String(C.gastos.nota || '').includes(frase) && tg.split(frase).length - 1 === 1 &&
+              !/Sin el código del teléfono|lo de la nómina/.test(String(C.gastos.nota || '')) && tg.split('Sin el código del teléfono').length - 1 === 1,
+              `${tg.split(frase).length - 1} veces · nota: ${String(C.gastos.nota || '').slice(0, 120)}`); }
+        }
+        await foto(q, `f16-${w}-nomina-criterio-codigo`);
+        await cx.close();
+      } }
 
     // 390, 820 y 1280 px: la tarjeta de la nómina sin desplazamiento lateral, nada encimado (sus partes no se pisan) y nada fuera de la tarjeta
     estado.c16Escena = 'hoy';
