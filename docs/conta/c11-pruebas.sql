@@ -754,7 +754,11 @@ begin
   if pg_temp.c11('hay_p1') = 'true' then
     execute 'select format('' · enlaces %s · pagos %s · avisos de p1 %s · ajustes de p1 %s'', (select count(*) from public.stripe_enlaces), '
             '(select count(*) from public.stripe_pagos), (select count(*) from public.stripe_avisos), '
-            '(select md5(to_jsonb(c)::text) from public.stripe_config c where c.id = 1))' into x;
+            -- (sin lo que el barrido de Stripe —pg_cron, cada 15 minutos— anota de sí mismo: si pasa mientras corren las
+            -- pruebas, cambia su hora y no es de ellas; el 14-nov en producción daba la 42 y la 44 en rojo por eso)
+            '(select md5((to_jsonb(c) - ''ultimo_barrido_el'' - ''ultimo_barrido_completo_el'' - ''ultimo_barrido'' '
+            '- ''ultimo_evento_el'' - ''ultimo_evento_tipo'' - ''ultimo_error'' - ''ultimo_error_el'')::text) '
+            'from public.stripe_config c where c.id = 1))' into x;
     v := v || x;
   end if;
   if pg_temp.c11('hay_gc') = 'true' then
