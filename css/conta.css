@@ -1545,6 +1545,13 @@ body[data-vista="conta"] .fab { display: none; }
   #conta-raiz .ct-tb-tabla .ct-tabla tbody td:first-child { grid-column: 1 / -1; font-weight: 700; }
   #conta-raiz .ct-tb-tabla .ct-tabla td[data-col]::before { content: attr(data-col); display: block; font-family: var(--font); font-size: .68rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--mp-ink-3); }
 }
+/* (11c) la misma, apilada SIEMPRE (también en una tarjeta ancha): la proyección de la caja con la columna de la nómina (ocho columnas) no
+   cabe a lo ancho ni en la computadora */
+#conta-raiz .ct-tb-tabla .ct-tabla.apilada thead { display: none; }
+#conta-raiz .ct-tb-tabla .ct-tabla.apilada tbody tr { display: grid; grid-template-columns: repeat(var(--tb-cols, 2), minmax(0, 1fr)); gap: .15rem .6rem; padding: .45rem 0; border-bottom: 1px solid var(--mp-line); }
+#conta-raiz .ct-tb-tabla .ct-tabla.apilada tbody td, #conta-raiz .ct-tb-tabla .ct-tabla.apilada tbody td.r { display: block; border: 0; padding: 0; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+#conta-raiz .ct-tb-tabla .ct-tabla.apilada tbody td:first-child { grid-column: 1 / -1; font-weight: 700; }
+#conta-raiz .ct-tb-tabla .ct-tabla.apilada td[data-col]::before { content: attr(data-col); display: block; font-family: var(--font); font-size: .68rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--mp-ink-3); }
 /* el embudo de cobro: tres pasos con el cable de cobre arriba (la raya de color de QuickBooks), en fila cuando la tarjeta es ancha */
 #conta-raiz .ct-tb-embudo { display: grid; grid-template-columns: minmax(0, 1fr); gap: .5rem; }
 #conta-raiz .ct-tb-paso { position: relative; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .3rem .5rem; min-width: 0;
@@ -1633,6 +1640,15 @@ body[data-vista="conta"] .fab { display: none; }
 #conta-raiz .ct-tb-ob-w, #conta-raiz .ct-tb-ob-c { display: grid; gap: .4rem; }
 #conta-raiz .ct-tb-ob-c { padding-top: .55rem; border-top: 1px solid var(--mp-line); }
 #conta-raiz .ct-tb-ob-w .ct-tb-et, #conta-raiz .ct-tb-ob-c .ct-tb-et { margin: 0; }
+/* (11c) la nómina: el día de la última nómina como cifra (sin el código: un día, no un monto), el título de su gráfica y sus tres
+   cifras (lo que se debe, los cargos por casar y las nóminas por postear) en su cajita, como los cobros en línea */
+#conta-raiz .ct-tb-nom-dia { font-size: 1.35rem; font-weight: 800; letter-spacing: -.01em; line-height: 1.15; color: var(--mp-ink); white-space: nowrap; }
+#conta-raiz .ct-tb-nom-t { margin: .2rem 0 0; flex-basis: auto; }
+#conta-raiz .ct-tb[data-tb="nomina"] .ct-tb-st small { overflow-wrap: anywhere; }
+/* (11c, con el c16 de verdad) un cargo de Gusto que espera más de lo que la nómina tiene fijado para avisar, o uno des-casado: la cajita
+   con su borde en rojo y, en su línea, el aviso con su icono (el color nunca solo); la línea chica no crece */
+#conta-raiz .ct-tb-st.alarma { border-color: var(--bad); }
+#conta-raiz .ct-tb-st small .ct-tb-vencido { display: inline; font-size: inherit; white-space: nowrap; }
 /* el teléfono: las acciones en dos columnas (no una tira larga) */
 @media (max-width: 699px) {
   #conta-raiz .ct-tb-acc-t { flex-basis: 100%; }

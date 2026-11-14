@@ -2,13 +2,18 @@
 # =====================================================================
 # c16-volumen.sh — lo que c16-pruebas.sql no puede ver con los pocos
 # asientos de una base de pruebas: que el tablero entero (fn_tablero, sus
-# 15 tarjetas) contesta en MENOS DE UN SEGUNDO con un libro grande, y que
+# 16 tarjetas) contesta en MENOS DE UN SEGUNDO con un libro grande, y que
 # con miles de asientos sus cuadres con el libro siguen al centavo.
+# (14-nov, Fase 11c: con la tarjeta de la nómina. Sobre una plantilla con la
+# nómina de c15, la semilla trae dos nóminas de Gusto y sus cargos, y la
+# tarjeta se mide con ellas; sobre una sin c15 —g12a—, la tarjeta dice que
+# c15 no está y lo demás se mide igual.)
 #
 #   ./c16-volumen.sh <plantilla> [nombre_bd]   (por defecto c16_volumen)
 #
 # <plantilla>: una base del banco con la cadena ya pegada (c1 … c14, la de
-# la fase 12a en el banco de la casa). Se CLONA (la plantilla no se toca) y
+# la fase 12a en el banco de la casa; o con c15, la de la nómina). Se CLONA
+# (la plantilla no se toca) y
 # a la copia se le pega:
 #   · la semilla de la fase 16 (f16-semilla.sql: un libro en uso, de la
 #     apertura al 30-sep a hoy);
@@ -20,7 +25,8 @@
 #   · c16-tablero.sql, y las estadísticas de la base (analyze), como las
 #     tiene una base en uso.
 # Y comprueba, como el dueño por la API (su rol y el tope de 8 s):
-#   1. LAS TARJETAS: las 15 contestan, nada queda en «sigue», y los cuadres
+#   1. LAS TARJETAS: las 16 contestan (la de la nómina, o dice que c15 no
+#      está), nada queda en «sigue», y los cuadres
 #      con el libro (el embudo de cobro, lo por cobrar, lo por pagar y la
 #      caja) en verde, al centavo;
 #   2. LOS TIEMPOS: siete pasadas de fn_tablero con el tope de fábrica; la
@@ -159,8 +165,8 @@ api "$TMP/tarjetas.out" "select 'R ' || (select count(*) from jsonb_array_elemen
           || ' | cuadres ' || concat_ws(' ', 'embudo=' || (t -> 'cobros' -> 'cuadre' ->> 'ok'), 'cobrar=' || (t -> 'por_cobrar' -> 'cuadre' ->> 'ok'),
                                         'pagar=' || (t -> 'por_pagar' -> 'cuadre' ->> 'ok'), 'caja=' || (t -> 'caja' -> 'cuadre' ->> 'ok'))
           from (select fn_tablero('{\"tope_ms\": 0}') as t offset 0) x"
-revisa "las 15 tarjetas contestan, nada en «sigue» y los cuadres con el libro en verde" \
-  "15 contestan | sigue 0 | cuadres embudo=true cobrar=true pagar=true caja=true" "$(sed -n 's/^R //p' "$TMP/tarjetas.out")"
+revisa "las 16 tarjetas contestan (la de la nómina, o dice que c15 no está), nada en «sigue» y los cuadres con el libro en verde" \
+  "16 contestan | sigue 0 | cuadres embudo=true cobrar=true pagar=true caja=true" "$(sed -n 's/^R //p' "$TMP/tarjetas.out")"
 
 echo "== 2. Los tiempos (siete pasadas, cada una su llamada, con el tope de fábrica)"
 TODAS=""; SIGUE=0

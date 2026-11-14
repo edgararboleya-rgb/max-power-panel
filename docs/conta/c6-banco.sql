@@ -10,9 +10,11 @@
 -- ESTA MISMA ENTREGA (sus marcas: c2 2026100201, c3 2026092601 y c4
 -- 2026100901; ver «CAMBIOS A c2, c3 Y c4», abajo: en la ronda 4 cambiaron
 -- c2 y c4, y en la ronda 5 c4 —la 2540 corriente—; se pegan ANTES que este,
--- que pide c2 y c4 con 2026100201 al menos). La marca de este archivo es 2026111301
--- (fn_banco_version; la del 13-nov-2026, la Fase 11b: la costura con la nómina
--- de c15, ver «LA FASE 11b», abajo. La anterior, 2026100901, la ronda 5).
+-- que pide c2 y c4 con 2026100201 al menos). La marca de este archivo es 2026111401
+-- (fn_banco_version; la del 14-nov-2026, la Fase 11c: «GUSTO» como palabra
+-- entera también en los débitos, ver «LA FASE 11c», abajo. La anterior,
+-- 2026111301, la del 13-nov, la Fase 11b: la costura con la nómina de c15,
+-- ver «LA FASE 11b»; y antes, 2026100901, la ronda 5).
 -- Si falta alguno o es anterior, para con MX000 y dice qué volver
 -- a pegar, sin tocar nada. Se puede volver a pegar encima de sí mismo las
 -- veces que haga falta: no duplica nada, no pisa lo que Edgar ajustó (un
@@ -65,7 +67,10 @@
 --      Contabilidad → Nómina → Cargos de Gusto, con lo que su nómina dejó
 --      por pagar, por la puerta de clasificar de este archivo. Una
 --      devolución de Gusto —un depósito—, igual, contra lo que quedó a
---      favor.)
+--      favor.) (14-nov-2026, Fase 11c: «su débito» es el que NOMBRA la
+--      nómina como PALABRA ENTERA —«GUSTO», no «AUGUSTO»—, como ya el
+--      depósito, en su descripción o en su memo: lo decide un solo sitio,
+--      fn_banco_dice_nomina.)
 --
 -- EL SIGNO. El monto de un movimiento lleva el signo que tiene en el libro
 -- la línea de SU cuenta: en el banco (1010, 1030), un depósito es positivo
@@ -240,6 +245,15 @@
 --   (y v_papel_fases, para v_asiento_papel de c4; desde el 13-nov-2026 trae
 --   también el papel de los asientos de la nómina de Gusto —c15—, que lee
 --   por fn_banco_papel_nomina(): 9.1)
+--
+-- Y UNA QUE LLAMA LA NÓMINA (c15), no conta.js (14-nov-2026, Fase 11c):
+--   fn_banco_dice_nomina(p_desc text, p_memo text) → boolean
+--       ¿El movimiento nombra la nómina? Recibe su descripción y su memo
+--       (desc_norm y memo de movimientos_banco), arma con ellos el texto
+--       que mira la Bandeja y busca el descriptor «nomina» como PALABRA
+--       ENTERA. Es el único sitio que lo decide, para el banco (R6: el
+--       débito y el depósito) y para la nómina. Solo lee el patrón de ese
+--       descriptor, con los permisos de quien llama: al equipo, false.
 --
 -- LOS ERRORES CON NOMBRE (los de c2 y c3, y uno nuevo):
 --   MX000  falta algo que este archivo da por hecho (al pegarlo)
@@ -1533,6 +1547,134 @@
 --   piden esta marca; y la 25 de c4-pruebas.sql con una nómina de verdad en
 --   el libro.
 --
+-- LA FASE 11c (14-nov-2026; marca 2026111401): «GUSTO» COMO PALABRA ENTERA
+-- TAMBIÉN EN LOS DÉBITOS. Lo dejó abierto la revisión final de la 11b. En
+-- un DÉBITO, R6 buscaba el descriptor «nomina» en cualquier parte de la
+-- descripción, también DENTRO de otra palabra: un «ZELLE PAYMENT TO AUGUSTO
+-- ZZ LOPEZ» salía en la Bandeja como «Débito de nómina (Gusto)», sin
+-- botones; la nómina (c15) lo listaba entre los cargos de Gusto, y la fila
+-- 180 del cierre —que detiene— se quedaba en rojo hasta clasificarlo a mano
+-- con su motivo. Así desde octubre. En un DEPÓSITO ya se pedía palabra
+-- entera (la 11b). Lo que cambia, y nada más (ninguna tabla, ningún casado,
+-- ningún texto de la Bandeja, ninguna regla de lo que no es de nómina):
+--   · UN SOLO SITIO LO DECIDE: fn_banco_dice_nomina(descripción, memo) (2),
+--     nueva. Dice si un MOVIMIENTO nombra la nómina: el descriptor «nomina»
+--     como PALABRA ENTERA ('\m(' || patrón || ')\M': «GUSTO», no «AUGUSTO»
+--     ni «DEGUSTOS»; «PAYROLL», no «PAYROLLS»). La usan el débito y el
+--     depósito de R6 (fn_banco_proponer_base: antes cada uno llevaba su
+--     expresión, y por eso se separaron) y, desde su versión del 14-nov, la
+--     nómina (c15: fn_nomina_cargos, fn_nomina_cargo_propuesta,
+--     fn_nomina_cargo_casar, fn_nomina_cargo_cuota y fn_nomina_cargos_fuera),
+--     para que el banco y la nómina no vuelvan a decir cosas distintas del
+--     mismo movimiento. Y CON EL MISMO TEXTO: las dos le pasan las dos
+--     columnas del movimiento (desc_norm y memo) y ES LA FUNCIÓN la que arma
+--     el texto que siempre ha mirado R6, el NAME y el MEMO normalizados y
+--     separados por un espacio. (La primera versión de esta fase recibía un
+--     texto ya armado: R6 le pasaba el NAME con el MEMO y la nómina solo la
+--     descripción. Su revisión lo encontró: un cargo que nombra a Gusto solo
+--     en el memo —«ZZ ACH DEBIT 5531», memo «Gusto, Inc. TAX …»— no salía
+--     en Nómina → Cargos de Gusto, ni lo contaba la fila 180 del cierre,
+--     hasta el primer «Casar». Esa versión no llegó a producción; si una
+--     base de pruebas la tiene, se quita.) El memo se normaliza DENTRO, con
+--     la misma expresión que fn_banco_norm (lo que no es letra, cifra, # o
+--     & es un espacio): quien llama desde c15 lo hace con sus propios
+--     permisos y no puede ejecutar las internas de este archivo, y no se
+--     abre ninguna. La 168 de c6-pruebas.sql amarra las dos expresiones (un
+--     memo con guion bajo, otro detrás de un NAME que termina en letras).
+--     Por lo mismo lleva EXECUTE para authenticated. No es SECURITY DEFINER,
+--     no escribe, no arma SQL, y lee solo el patrón de «nomina», con los
+--     permisos de quien llama (la policy del dueño): al equipo le contesta
+--     siempre false —no ve el descriptor—; anon y service_role no la
+--     ejecutan. Devuelve un sí o un no sobre el texto que se le pasa: ni una
+--     cifra ni un nombre. El control la conoce («protecciones del banco»:
+--     está en su lista) y el resumen del pegado cuenta 23 funciones con la
+--     API (las 21 de conta.js, fn_banco_papel_nomina y esta).
+--   · NINGÚN CARGO DE GUSTO SE PIERDE. El banco escribe «GUSTO» como palabra
+--     suelta, con su concepto detrás (NET, TAX, FEE, REM, CSD…), con «DES:»
+--     e «ID:» o sin ellos («ORIG CO NAME:GUSTO … CO ENTRY DESCR:NET …», en
+--     Chase), o pegado a otro texto por un guion, una barra o un asterisco:
+--     la descripción se compara NORMALIZADA (fn_banco_norm: lo que no es
+--     letra, cifra, # o & es un espacio), así que «GUSTO-NET», «GUSTO/TAX» y
+--     «NAME:GUSTO» llevan la palabra GUSTO. Lo que la palabra entera sí
+--     dejaba fuera es «ZENPAYROLL» (el nombre de Gusto hasta 2015, que los
+--     estados de cuenta viejos y algún banco siguen escribiendo): antes
+--     casaba por llevar PAYROLL dentro. Por eso EL PATRÓN DE FÁBRICA GANA
+--     «ZENPAYROLL»: '(GUSTO|ZENPAYROLL|PAYROLL|\mADP\M|PAYCHEX)' (1.13). En
+--     una base que ya lo tenía se pone al día SOLO si sigue siendo el de
+--     fábrica de antes, '(GUSTO|PAYROLL|\mADP\M|PAYCHEX)', con su rastro en
+--     banco_historial (una fila, una vez; como el «para» de la 11b). Si
+--     Edgar lo ajustó (fn_banco_descriptor), NO se toca, y el pegado lo
+--     dice: una fila más en el resumen del final, «c6 · el descriptor de la
+--     nómina», con su patrón, el de fábrica y qué hacer (su patrón pasa a
+--     casar como palabra entera: lo que contara con casar dentro de otra
+--     palabra hay que escribirlo entero). Con el de fábrica esa fila no
+--     sale: el resumen sigue siendo de 7. «PAYROLLS», en plural, ya no
+--     casa: es otra palabra, como en los depósitos, y ni Gusto ni ADP ni
+--     Paychex la escriben. De paso, la guarda de los descriptores prueba el
+--     patrón de «nomina» también como se usa (entre '\m(' y ')\M'): uno que
+--     solo fuera válido suelto rompería cada «Casar».
+--   · UN ZELLE NUNCA ES «DE NÓMINA» (los arreglos de la verificación de
+--     esta fase). La palabra entera dejaba todavía un falso positivo: el
+--     español. Un «ZELLE PAYMENT TO ZZ PINTOR 8899» con la nota «con gusto,
+--     gracias» lleva la palabra GUSTO, entera, en su memo: salía «nomina ·
+--     R6», la nómina lo listaba entre los cargos de Gusto desde que
+--     llegaba, y lo contaban su aviso 35 y la fila 180 del cierre, que
+--     detiene. Lo mismo con «payroll semana 3» en la nota de un Zelle a un
+--     ayudante (que además se quedaba sin su reparto por horas), y con el
+--     depósito de un cliente por Zelle (salía como «devolución de Gusto»).
+--     Gusto —y ADP, y Paychex— cobran y devuelven por ACH, nunca por Zelle;
+--     y lo que dice un Zelle (a quién, y su nota) lo escribe una persona.
+--     Así que fn_banco_dice_nomina contesta que NO a todo movimiento cuyo
+--     texto (NAME y MEMO, normalizados) lleve la palabra ZELLE, diga lo que
+--     diga lo demás. Es la misma función para R6 y para la nómina: los dos
+--     dejan de verlo a la vez. Ese Zelle sale por lo que es (un cargo sin
+--     ticket, R10: «Un Zelle a una persona…»; o un depósito por explicar).
+--     ▶ Lo que NO cubre, y se dice: la palabra «gusto» (o «payroll») en la
+--     descripción o en la nota de un movimiento que NO es un Zelle (un
+--     cheque, una transferencia con su referencia escrita a mano) sigue
+--     saliendo «nomina»: su salida es la de siempre, clasificarlo en la
+--     Bandeja con su motivo escrito. Plaid casi nunca trae la nota.
+--     Probado en la 168 de c6-pruebas.sql (tres filas más en su tabla: la
+--     nota «con gusto», la nota «payroll» y un Zelle a alguien de nombre
+--     Gusto, en el débito y en el depósito) y en pruebas/conta/c6-gusto.sh
+--     (las mismas tres en su tabla, y la consulta de antes de pegar).
+--   · LO QUE CAMBIA EN LA BANDEJA: solo lo PENDIENTE, y en el primer
+--     «Casar» después del pegado (la marca nueva rehace las propuestas,
+--     como en cada pegado: 153). Un débito pendiente que decía «nomina» por
+--     llevar el patrón dentro de otra palabra (el Zelle a un Augusto) sale
+--     entonces por lo que es (un cargo sin ticket, un pago a un proveedor…)
+--     y se clasifica como cualquier otro (ya no lo frena «Es un débito de
+--     nómina»): antes estaba mal. Un depósito pendiente de «ZENPAYROLL»
+--     pasa a «nomina» (una devolución de Gusto): antes estaba mal también.
+--     Lo casado, lo clasificado y lo ignorado no se tocan. (Antes de la
+--     primera nómina con Gusto, enero de 2027, no debería haber ninguno
+--     así; cuáles cambiarían se ve ANTES de pegar con la consulta de la
+--     cabecera de pruebas/conta/c6-gusto.sh, que solo lee.)
+--   Encima de producción: este archivo (entero o sus dos partes) y, después,
+--   c15-nomina.sql (el del 14-nov: pide esta función; sobre un c6 anterior
+--   para con MX000 sin tocar nada). Sin c15 se pega y funciona igual. Las
+--   mismas 14 tablas y 8 vistas; 23 funciones con la API (antes 22).
+--   Pruebas: la 168 (las descripciones que SÍ son de nómina y las que NO,
+--   en el débito y en el depósito, por la Bandeja y por la función —llamada
+--   como la llama la nómina—; y el Zelle a un Augusto, que sale por lo que
+--   es y se clasifica) y la 169 (la guarda, el patrón ajustado que manda
+--   —como palabra entera—, quién ejecuta la función, las protecciones y el
+--   rastro del patrón) de c6-pruebas.sql, que piden esta marca; de la 67 a
+--   la 69 de c15-pruebas.sql (la 69, el memo: lo recién llegado, sin
+--   «Casar»); y pruebas/conta/c6-gusto.sh, lo que hace EL PEGADO (el patrón
+--   de antes que pasa al de hoy con su rastro, una vez; el ajustado que no
+--   se toca y la fila que lo dice; lo resuelto, que no cambia; lo
+--   pendiente, que cambia en el primer «Casar»; lo recién llegado, que la
+--   nómina ya ve; y c15 sobre un c6 anterior, MX000).
+--   LAS PARTES (pruebas/conta/partir-c6.py): el corte sigue al empezar la
+--   sección 5; la parte 1 mide 647,885 bytes y la parte 2, 608,510 (tope:
+--   650,000 cada una). La parte 1 queda a 2,115 bytes del tope (antes de
+--   esta fase, a 3,805), y no hay otro corte que deje las dos por debajo:
+--   un cambio de más de 2 KB en las secciones 0 a 4 ya no cabría (habría
+--   que enseñarle al partidor a cortar dentro de la sección 4). Por eso lo
+--   nuevo de esas secciones lleva comentarios cortos, y lo largo está aquí,
+--   en la cabecera, que no va en las partes.
+--
 -- EL TIEMPO (banco de pruebas, pruebas/conta/c6-volumen.sh, 27-sep, con
 -- la ronda 3: el libro de c4-volumen, 10.333 asientos, con 2026 ya
 -- cerrado —así lo deja: las pruebas corren en enero de 2027—, y 12 meses
@@ -1788,7 +1930,7 @@ returns bigint
 language sql
 immutable
 set search_path = public, pg_temp
-as $$ select 2026111301::bigint $$;
+as $$ select 2026111401::bigint $$;
 revoke execute on function public.fn_banco_version() from public, anon, authenticated, service_role;
 -- =====================================================================
 -- 1 · LAS TABLAS
@@ -3009,9 +3151,13 @@ begin
     if v_marca = 'descriptor:' || new.clave then
       begin
         perform '' ~* new.patron;
+        if new.clave = 'nomina' then  -- (Fase 11c: se usa como palabra entera)
+          perform '' ~* ('\m(' || new.patron || ')\M');
+        end if;
       exception when others then
         raise exception using errcode = '22023',
-          message = format('El patrón de «%s» no es una expresión regular válida (%s): %s', new.clave, new.patron, sqlerrm);
+          message = format('El patrón de «%s» no es una expresión regular válida%s (%s): %s', new.clave,
+                           case new.clave when 'nomina' then ' como palabra entera (va entre \m( y )\M)' else '' end, new.patron, sqlerrm);
       end;
       new.cambiado_por := auth.uid();
       new.cambiado_rol := fn_rol_llamante();
@@ -3212,7 +3358,8 @@ end $$;
 -- como lo sembró una versión anterior (nadie lo tocó) se pone al día.
 --   nomina           la nómina (Gusto; ADP o Paychex del proveedor viejo
 --                    hasta el 31-dic): no se clasifica a mano; la de Gusto
---                    se casa desde su página (c15; 13-nov-2026, Fase 11b)
+--                    se casa desde su página (c15; 13-nov-2026, Fase 11b).
+--                    Casa como PALABRA ENTERA (Fase 11c: por eso ZENPAYROLL)
 --   cargo_banco      un cargo del banco o de la tarjeta → 6130 (fijo si
 --                    además el tipo es FEE o SRVCHG y el signo es de cargo).
 --                    También la COMISIÓN de un cheque devuelto («RETURNED
@@ -3244,10 +3391,10 @@ declare
   r record;
 begin
   for r in select * from (values
-      ('nomina',          '(GUSTO|PAYROLL|\mADP\M|PAYCHEX)',
+      ('nomina',          '(GUSTO|ZENPAYROLL|PAYROLL|\mADP\M|PAYCHEX)',
        'Débito de nómina (Gusto): se casa desde Contabilidad → Nómina → Cargos de Gusto, con lo que su nómina dejó por pagar. '
        || 'Un depósito de Gusto (una devolución), igual, contra lo que quedó a favor. La nómina del proveedor anterior, con su '
-       || 'journal (fn_banco_nomina).', null),
+       || 'journal (fn_banco_nomina).', '(GUSTO|PAYROLL|\mADP\M|PAYCHEX)'),
       ('cargo_banco',     '(SERVICE (FEE|CHARGE)|MONTHLY (SERVICE |MAINTENANCE )?FEE|MAINTENANCE FEE|WIRE (TRANSFER )?FEE|'
                           || 'OVERDRAFT|INSUFFICIENT FUNDS|\mNSF\M|ATM FEE|FOREIGN TRANSACTION FEE|ANNUAL (MEMBERSHIP )?FEE|'
                           || 'LATE (PAYMENT )?FEE|RETURNED PAYMENT FEE|STOP PAYMENT FEE|RETURN(ED)? (DEPOSITED )?ITEM (FEE|CHARGE)|'
@@ -3807,6 +3954,29 @@ stable
 set search_path = public, pg_temp
 as $$ select coalesce((select coalesce(p_desc, '') ~* d.patron from banco_descriptores d where d.clave = p_clave), false) $$;
 revoke execute on function public.fn_banco_dice(text, text) from public, anon, authenticated, service_role;
+
+-- (Fase 11c) ¿Nombra el movimiento la nómina? El descriptor «nomina» como
+-- PALABRA ENTERA («GUSTO», no «AUGUSTO») en su NAME y su MEMO (desc_norm y
+-- memo), normalizados aquí como fn_banco_norm: el texto de R6. El único sitio
+-- que lo decide, para R6 y para c15 (por eso authenticated la ejecuta; al
+-- equipo le dice false). (La de un argumento, de la primera versión de esta
+-- fase, no llegó a producción: si una base de pruebas la tiene, se quita.)
+-- UN ZELLE, NUNCA: su nota la escribe una persona («con gusto, gracias»).
+drop function if exists public.fn_banco_dice_nomina(text);
+create or replace function public.fn_banco_dice_nomina(p_desc text, p_memo text)
+returns boolean
+language plpgsql
+stable
+set search_path = public, pg_temp
+as $$
+declare
+  v text := btrim(regexp_replace(upper(concat_ws(' ', p_desc, p_memo)), '[^[:alnum:]#&]+', ' ', 'g'));
+begin
+  return v !~ '\mZELLE\M'
+         and coalesce((select v ~* ('\m(' || d.patron || ')\M') from banco_descriptores d where d.clave = 'nomina'), false);
+end $$;
+revoke execute on function public.fn_banco_dice_nomina(text, text) from public, anon, authenticated, service_role;
+grant  execute on function public.fn_banco_dice_nomina(text, text) to authenticated;
 
 -- (Ronda 4) LOS 4 ÚLTIMOS DE LA OTRA CUENTA que nombra una transferencia
 -- («ONLINE TRANSFER TO CHK ...7781», «TO SAV XXXXXX1097», «FROM ACCT
@@ -8437,7 +8607,8 @@ begin
   -- 2. La nómina: no se clasifica a mano. (13-nov-2026, Fase 11b: decía
   -- «espera el journal (f11) y casa solo». El journal de Gusto, c15, no
   -- lleva línea del banco: su cargo se casa desde la página de la nómina.)
-  if m.monto < 0 and coalesce(v_txt ~* (k->'pat'->>'nomina'), false) then
+  -- (Fase 11c: como PALABRA ENTERA, igual que el depósito: «AUGUSTO» no es Gusto)
+  if m.monto < 0 and fn_banco_dice_nomina(m.desc_norm, m.memo) then
     return jsonb_build_object(
       'motivo', 'nomina', 'regla', 'R6',
       'texto', 'Débito de nómina (Gusto): se casa desde Contabilidad → Nómina → Cargos de Gusto, con lo que su nómina dejó por '
@@ -9665,7 +9836,7 @@ begin
     -- «AUGUSTO») y que nada más explica sale con el motivo «nomina» (R6),
     -- como el débito, y sus botones (las facturas abiertas, si las hay) piden
     -- su motivo. Si otra cosa lo explica, sigue como estaba y el texto avisa.
-    v_dice_nom := coalesce(v_txt ~* ('\m(' || (k->'pat'->>'nomina') || ')\M'), false);
+    v_dice_nom := fn_banco_dice_nomina(m.desc_norm, m.memo);
     v_nom_dep := v_dice_nom and not v_personal and v_cobros is null and v_grupos is null and not v_desconocida
                  and v_otro_cobro is null and v_devol is null and v_reemb is null and not (v_fact is not null and v_exacta)
                  and not v_nombrado and v_tr is null;
@@ -18314,7 +18485,10 @@ declare
                             'v_conciliacion_partidas', 'v_prestamos', 'v_prepagados'];
   -- lo que conta.js llama (el resto, sin grant a la API). (13-nov-2026, Fase
   -- 11b: y, al final, fn_banco_papel_nomina(), que no la llama conta.js sino
-  -- v_papel_fases —security_invoker: la ejecuta quien lee la vista—: 9.1.)
+  -- v_papel_fases —security_invoker: la ejecuta quien lee la vista—: 9.1.
+  -- 14-nov-2026, Fase 11c: y fn_banco_dice_nomina(text,text), que la llama
+  -- la nómina —c15, con los permisos de quien llama—: ¿el movimiento nombra
+  -- la nómina como palabra entera? Un solo sitio para el banco y la nómina.)
   v_app     text[] := array['fn_banco_importar_ofx(text,text,text)', 'fn_banco_importar_filas(jsonb)', 'fn_banco_casar(uuid)',
                             'fn_banco_casar_todo(text,date)', 'fn_banco_casar_con(uuid,jsonb,text)',
                             'fn_banco_cobrar(uuid,jsonb,text)', 'fn_banco_pagar_proveedor(uuid,uuid,jsonb)',
@@ -18324,7 +18498,7 @@ declare
                             'fn_conciliacion_partida(uuid,text,text)', 'fn_conciliacion_confirmar(uuid)',
                             'fn_conciliacion_reabrir(uuid,text)', 'fn_conciliacion_apertura(text,text,jsonb,text)',
                             'fn_prestamo_cuota(uuid,uuid,date,text,text,text,text)', 'fn_prepagados_amortizar(text)',
-                            'fn_banco_control(text,text[])', 'fn_banco_papel_nomina()'];
+                            'fn_banco_control(text,text[])', 'fn_banco_papel_nomina()', 'fn_banco_dice_nomina(text,text)'];
   v_hoy     boolean := p_periodo = 'hoy';
   v_pp      periodos;
   v_pid     text;
@@ -20304,6 +20478,7 @@ comment on function public.fn_banco_nomina(uuid, jsonb, text)       is 'c6: el j
 comment on function public.fn_banco_descriptor(text, text, text, text) is 'c6: cambia lo que se reconoce en la descripción de un movimiento (SQL Editor).';
 comment on function public.fn_banco_cuenta_personal(text, text, boolean, text) is 'c6: da de alta una cuenta personal de Edgar por sus 4 últimos, o la da de baja con su motivo (SQL Editor). Solo con ella el dinero de o a esa cuenta va al patrimonio del accionista sin motivo.';
 comment on function public.fn_banco_version()                       is 'c6: la marca de esta versión del banco (AAAAMMDDNN).';
+comment on function public.fn_banco_dice_nomina(text, text)         is 'c6: ¿el movimiento nombra la nómina (Gusto)? Recibe su descripción y su memo (desc_norm y memo de movimientos_banco), los junta y los normaliza como la Bandeja (R6), y busca el descriptor «nomina» como PALABRA ENTERA («GUSTO», no «AUGUSTO»). Un Zelle, nunca (lo que dice lo escribe una persona: «con gusto, gracias»). El único sitio que lo decide: el débito y el depósito de R6 (la Bandeja) y la nómina (c15: sus cargos de Gusto), con el mismo texto. Solo lee el patrón de ese descriptor, con los permisos de quien llama (no es SECURITY DEFINER): al dueño, sí o no; al equipo, siempre false; anon y service_role no la ejecutan.';
 comment on function public.fn_banco_papel_nomina()                  is 'c6: el papel de los asientos de la nómina de Gusto (c15: orígenes nomina_corridas y nomina_burden) para v_papel_fases, con sus cuatro columnas. Lee v_nomina_papel de c15 si está (sin c15, nada), con los permisos de quien mira: con el código del teléfono (o desde el SQL Editor), el papel de c15 tal cual; sin él, de cada asiento de la nómina dice que su papel es su nómina y que se ve con el código, sin cifras ni nombres. No es SECURITY DEFINER. La llama la vista, no conta.js.';
 
 
@@ -20344,14 +20519,14 @@ select 'c6 · ' || x.que as control, x.ok, to_jsonb(x.detalle) as detalle
                    and v.relname in ('v_papel_fases', 'v_banco_movimientos', 'v_banco_bandeja', 'v_banco_saldos', 'v_conciliacion',
                                      'v_conciliacion_partidas', 'v_prestamos', 'v_prepagados')),
      '8 vistas, todas security_invoker, solo SELECT para authenticated'),
-    ('funciones de la app', (select count(*) = 22 from pg_proc p
+    ('funciones de la app', (select count(*) = 23 from pg_proc p
                               where p.pronamespace = 'public'::regnamespace
                                 and has_function_privilege('authenticated', p.oid, 'execute')
                                 and not has_function_privilege('anon', p.oid, 'execute')
                                 and (p.proname like 'fn\_banco\_%' or p.proname like 'fn\_conciliacion\_%' or p.proname = 'fn_conciliar'
                                      or p.proname like 'fn\_prestamo\_%' or p.proname like 'fn\_prepagado%')),
-     '21 funciones que llama conta.js y fn_banco_papel_nomina, la que lee la vista de los papeles (anon ninguna); el resto, '
-     || 'sin grant a la API'),
+     '21 funciones que llama conta.js y fn_banco_papel_nomina, la que lee la vista de los papeles, y fn_banco_dice_nomina, la '
+     || 'que comparten el banco y la nómina (anon ninguna); el resto, sin grant a la API'),
     ('en el reparto de c2', not exists (select 1 from pg_proc p
                                           where p.pronamespace = 'public'::regnamespace and p.prosecdef
                                             and has_function_privilege('authenticated', p.oid, 'execute')
@@ -20363,6 +20538,17 @@ select 'c6 · ' || x.que as control, x.ok, to_jsonb(x.detalle) as detalle
                                                               where pp.oid = to_regprocedure('public.fn_verificar_cadena()'))) = 0),
      'las SECURITY DEFINER que llama la app están en el reparto de c2 (c_fn_app_fases): su control permisos las conoce')
   ) as x(que, ok, detalle)
+union all
+-- (14-nov-2026, Fase 11c) SOLO si el patrón de «nomina» no es el de fábrica
+-- (Edgar lo ajustó con fn_banco_descriptor): no se tocó, y aquí se dice.
+select 'c6 · el descriptor de la nómina', true,
+       to_jsonb(format('OJO: el patrón del descriptor «nomina» de esta base no es el de fábrica (se ajustó con fn_banco_descriptor): no '
+                       'se tocó. El tuyo es %s; el de fábrica de hoy, %s. Desde esta versión casa como PALABRA ENTERA, en los débitos '
+                       'y en los depósitos («GUSTO», no «AUGUSTO»): lo que contara con casar dentro de otra palabra hay que escribirlo '
+                       'entero (el de fábrica ganó ZENPAYROLL, el nombre viejo de Gusto, por eso). Para ponerlo: select '
+                       'fn_banco_descriptor(''nomina'', ''el patrón'');', d.patron, '(GUSTO|ZENPAYROLL|PAYROLL|\mADP\M|PAYCHEX)'))
+  from public.banco_descriptores d
+ where d.clave = 'nomina' and d.patron <> '(GUSTO|ZENPAYROLL|PAYROLL|\mADP\M|PAYCHEX)'
 union all
 select 'banco · ' || c.vista, c.ok,
        to_jsonb(coalesce(c.detalle, case when c.filas is null then 'bien' else format('%s filas', c.filas) end))

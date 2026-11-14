@@ -1,17 +1,23 @@
 -- =====================================================================
 -- c16-pruebas.sql — el tablero de la portada se prueba a sí mismo
--- (c16-tablero.sql). 13-nov-2026 (la marca 2026111303: con los arreglos de
--- las dos revisiones, cada uno con su prueba, de la 36 a la 43, y los de la
--- revisión final, de la 46 a la 50).
+-- (c16-tablero.sql). 14-nov-2026, Fase 11c (la marca 2026111403: EL TABLERO
+-- APRENDE LA NÓMINA de Gusto —c15—: su tarjeta, su acción rápida, lo que
+-- pide atender y la proyección de la caja; de la 51 a la 61, y la 1, la 3,
+-- la 5, la 7, la 15, la 30 a la 35, la 44, la 45 y la 50, puestas al día; y
+-- los arreglos de su verificación, de la 62 a la 65: «LO QUE CAMBIÓ EL
+-- 14-NOV», abajo). (El 13-nov, la marca 2026111303: los
+-- arreglos de las dos revisiones, cada uno con su prueba, de la 36 a la 43,
+-- y los de la revisión final, de la 46 a la 50.)
 --
 -- CÓMO SE CORRE. En el SQL Editor de Supabase: DESPUÉS de c16-tablero.sql,
--- pegar este archivo entero → Run. Sale la tabla _pruebas: 50 filas, todas
+-- pegar este archivo entero → Run. Sale la tabla _pruebas: 65 filas, todas
 -- con ok = true (las que salen «omitida» dicen por qué y no son un fallo;
 -- una fila 99 solo sale si algo de este archivo falló). Si el editor se
 -- cansa antes del final, la corrida sigue en el servidor y se lee después
 -- en pruebas.c16_resultado (ver el final).
 -- En el banco de pruebas (Postgres 17 en el puerto 5433, con la cadena
--- c1..c14 y c16-tablero.sql):
+-- c1..c15 y c16-tablero.sql; sin c15 corre igual: lo de la nómina sale
+-- «omitida», menos la 58):
 --   PGPASSWORD=editor_sql psql -h 127.0.0.1 -p 5433 -U editor_sql -d <bd> -1 \
 --     -f docs/conta/c16-pruebas.sql
 --
@@ -36,12 +42,60 @@
 -- de su subtransacción (el de c2-pruebas: «hoy» pasa a ser otro día). Al
 -- final el archivo comprueba que el reloj quedó como estaba (si no, lo
 -- restaura y sale un fallo, la fila 99) y que nada quedó.
--- Las capas que no estén en la base (c6, c7, p1, c8, c9, c10, c11, c12)
--- hacen que su tarjeta diga que no está: lo que necesita una de ellas sale
--- «omitida» con su porqué, y lo demás se prueba igual.
--- Los controles ajenos (c2, c3, c4, c6, c8, c9, c10, c11, c12, c14) se
+-- LO DE LA NÓMINA (de la 52 a la 60, y de la 62 a la 65) siembra, también dentro de su bloque
+-- que se deshace: tres personas inventadas («ZZ C16 Prueba Uno», «Dos» y
+-- «Tres»: su usuario y su perfil), la configuración y el mapeo de columnas
+-- de la nómina como de fábrica mientras dura la prueba (como c15-pruebas),
+-- sus journals de prueba por el camino de c15 (importar, enlazar, postear)
+-- y, por el banco (c6), unos cargos de Gusto («… C16 PRUEBA», con
+-- identificadores «ZZ0000000n»). Nada de eso es de nadie y nada queda.
+-- Las capas que no estén en la base (c6, c7, p1, c8, c9, c10, c11, c12,
+-- c15) hacen que su tarjeta diga que no está: lo que necesita una de ellas
+-- sale «omitida» con su porqué, y lo demás se prueba igual.
+-- Los controles ajenos (c2, c3, c4, c6, c8, c9, c10, c11, c12, c14, c15) se
 -- comparan con cómo estaban SIN c16 (dentro de un bloque que lo quita y se
 -- deshace): lo que ya estaba en rojo se dice y no se cuenta.
+--
+-- LO QUE CAMBIÓ EL 14-NOV (Fase 11c), y por qué:
+--  · NUEVAS, de la 51 a la 61: la tarjeta de la nómina contra el libro
+--    crudo y las tablas y vistas de c15, con el código del teléfono y sin él
+--    (el dueño con aal2 y con aal1, como c15-pruebas), una nómina de una
+--    sola persona y los dos criterios de la decisión de seguridad, una
+--    importada sin postear, los cargos de Gusto, la proyección, sin c15, el
+--    equipo, sus textos, y qué pasa si lo de la nómina no se deja leer.
+--  · PUESTAS AL DÍA: la 1 (la marca), la 3 (las funciones nuevas, en la
+--    API), la 5 (16 tarjetas; la de la nómina dice que c15 falta si no
+--    está), la 7 (la acción «Nómina»), la 15 (con c15 la proyección resta
+--    lo que se debe de la nómina y ya no lo lista en «no incluye»; sin c15,
+--    como antes), la 30, la 31 y la 32 (16 tarjetas), la 33 (los meses de
+--    la nómina fuera de rango), la 34 (las funciones nuevas tampoco
+--    escriben), la 35 (lo que mira, ahora en una función que usan también
+--    las nuevas), la 44 (los cuadres de c15 entre los ajenos), la 45 (las
+--    tablas de la nómina y los usuarios de prueba, en la huella) y la 50
+--    (con c15 esa deuda va EN la proyección; sin c15, como antes).
+--  · LOS ARREGLOS DE LA VERIFICACIÓN (marca 2026111403), cada uno con su
+--    prueba, que falla con el c16 de antes y pasa con el de hoy:
+--      – CUÁNDO SALE LO QUE SE DEBE (la 62, y la 57 con su cuenta rehecha):
+--        lo que Gusto ya cobró se le quita a la nómina que PAGÓ, no a lo
+--        más viejo de la cuenta. La cuenta independiente de aquí
+--        (c16_nom_pagos) ya no repite el método de c16: usa lo que la
+--        nómina (c15) sabe —lo que le QUEDA a cada corrida, por las partes
+--        de sus cargos casados—, que c16 no lee (lee solo el libro). Con
+--        el método de antes, la 57 daba por bueno el mismo error.
+--      – LO QUE NO ES DE LA NÓMINA DE GUSTO (la 63): las vacaciones
+--        devengadas (2215) no cuentan en lo que se debe de la nómina ni se
+--        restan de la caja; van aparte, y la proyección las sigue listando
+--        en lo que no incluye.
+--      – LO LIGERO (la 64): la portada ya no arma la propuesta de cada
+--        cargo de Gusto ni corre los avisos de la nómina; «control» trae
+--        los cuadres en rojo y los que sin el código no se pueden
+--        comprobar (ya no «avisos»: la 51 a la 56, al día).
+--      – GASTOS, LO TAPADO, UNA VEZ (la 65).
+--      – LA 10, EL ÚLTIMO DÍA DE UN MES más corto que el anterior (el 30 de
+--        noviembre): el mes ya va entero y se compara con el mes pasado
+--        ENTERO (del 1 al 31 de octubre), como hace la tarjeta; la prueba
+--        esperaba «del 1 al 30» y daba un rojo falso ese día. Ya estaba en
+--        la v305; la capa no cambia.
 --
 -- Lo que mira, una prueba cada una:
 --  1 el pegado: precondiciones, las funciones por su firma exacta, cada una
@@ -53,7 +107,7 @@
 --  4 el catálogo: nada SECURITY DEFINER, todas con search_path, ninguna
 --    volátil (no pueden escribir), solo nombres fn_tablero_*, y «permisos»
 --    de c2 en verde con c16 puesto;
---  5 el tablero entero: las 15 tarjetas, en su orden, todas contestan (o
+--  5 el tablero entero: las 16 tarjetas, en su orden, todas contestan (o
 --    dicen qué capa falta), el libro en llano y las capas;
 --  6 rápido: una pasada como el dueño por la API, con el tope de fábrica;
 -- CADA TARJETA CONTRA EL LIBRO, al centavo:
@@ -105,8 +159,36 @@
 -- 48 lo devuelto de un cobro de antes: no se resta de lo cobrado (aparte);
 -- 49 Stripe: lo que queda de un pago de antes reembolsado hoy no es cobrado
 --    de estos días;
--- 50 la proyección, lo que no incluye: la deuda de la nómina con todo lo
---    que el libro tiene (también lo fechado después de hoy);
+-- 50 la proyección y la deuda de la nómina con todo lo que el libro tiene
+--    (también lo fechado después de hoy): sin c15, en «no incluye»; con
+--    c15, restada en la proyección, y sin restar dos veces;
+-- LA NÓMINA DE GUSTO EN LA PORTADA (14-nov, Fase 11c; corren antes del
+-- cierre):
+-- 51 la tarjeta de la nómina, como está la base, con el código: cada cifra
+--    contra el libro crudo y las tablas de c15;
+-- 52 una nómina de tres personas, posteada: la última, con sus totales;
+-- 53 la misma, SIN EL CÓDIGO (aal1): solo lo de la empresa; de la nómina,
+--    «con el código del teléfono», nunca un cero;
+-- 54 los cargos de Gusto: esperan con su enlace; casados, la proyección no
+--    los resta otra vez; una devolución;
+-- 55 una nómina de UNA SOLA PERSONA y los dos criterios de la decisión de
+--    seguridad («libro», el de fábrica, y «codigo»), con y sin el código;
+-- 56 una nómina importada sin postear (con el código, cuántas; sin él, «no
+--    se sabe»);
+-- 57 la proyección de la caja con la nómina, paso a paso;
+-- 58 sin c15: todo como antes;
+-- 59 el equipo y los de fuera, con una nómina en la base: 42501;
+-- 60 la nómina, en llano y sin el nombre de nadie;
+-- 61 si lo de la nómina no se deja leer: su tarjeta lo dice, lo demás sigue;
+-- LOS ARREGLOS DE LA VERIFICACIÓN DE LA FASE 11c (corren antes del cierre):
+-- 62 lo que Gusto ya cobró se le quita a la nómina que pagó: el cheque de
+--    papel de la nómina pasada, sin cobrar, sale HOY, y lo que le queda a la
+--    que viene, su día de pago;
+-- 63 lo que no es de la nómina de Gusto (las vacaciones devengadas) no va en
+--    lo que se debe de la nómina ni se resta de la caja: va aparte;
+-- 64 la portada no arma la propuesta de ningún cargo de Gusto ni corre los
+--    avisos de la nómina (lo ligero de c15);
+-- 65 en Gastos, lo que se tapa sin el código se dice una vez;
 -- Y el cierre de la suite:
 -- 44 las demás capas como estaban sin c16 (lo que ya estaba en rojo se dice
 --    y no cuenta);
@@ -114,11 +196,15 @@
 -- Última sentencia: select * from _pruebas order by n;
 --
 -- NO FRENA A LA APP: lo primero que hace es poner lock_timeout a MEDIO
--- SEGUNDO para toda la corrida, como el pegado. Las pruebas 2, 30, 31 y 40
--- renombran o quitan el permiso de una vista ajena DENTRO de un bloque que
--- se deshace: si la app la tiene tomada y no la suelta en medio segundo,
--- esa prueba sale «omitida» (no es un fallo: se vuelve a pegar en un
--- momento más tranquilo).
+-- SEGUNDO para toda la corrida, como el pegado. Las pruebas 2, 30, 31, 40,
+-- 58 y 61 renombran o quitan el permiso de una vista o una tabla ajena, y la
+-- 64 y la 65 rehacen un instante una función (de c15 y de esta capa)
+-- DENTRO de un bloque que se deshace (la 58 y la 61, de la nómina de c15:
+-- su vista de las nóminas y su tabla de archivos): si la app la
+-- tiene tomada y no la suelta en medio segundo, esa prueba sale «omitida»
+-- (no es un fallo: se vuelve a pegar en un momento más tranquilo). Las de
+-- la nómina (52 a 60) escriben por las puertas de c15 y de c6 dentro de su
+-- bloque, como las de esas capas: lo que toman lo sueltan al deshacerse.
 -- =====================================================================
 -- (Dura lo que dura la corrida, una transacción.)
 set local lock_timeout = '500ms';
@@ -150,6 +236,24 @@ begin
   insert into _c16 values ('terminos', v::text);
 end $$;
 insert into _c16 select 'reloj_def', pg_get_functiondef('public.fn_fecha_miami(timestamptz)'::regprocedure);
+-- (14-nov, Fase 11c) LA NÓMINA DE GUSTO (c15) en las pruebas: la cuenta del banco, si el banco (c6) puede traer un cargo de Gusto,
+-- los perfiles de las tres personas de prueba (se siembran y se deshacen) y un día de pago DESPUÉS de hoy dentro de un mes
+-- abierto (mañana; si hoy es el último día de su mes, mañana solo si el mes que sigue está abierto: si no, nulo).
+insert into _c16 select 'banco', pc.cuenta from puente_cuentas pc where pc.rol = 'banco';
+-- (si la nómina de c15 está en esta base, mirado AQUÍ —sus tablas, sus vistas y su puerta de importar—, sin preguntárselo a c16:
+--  lo que c16 dice de sus capas se compara con esto, la 51 y la 58)
+insert into _c16 values ('hay_c15', (to_regclass('public.nomina_corridas') is not null and to_regclass('public.nomina_archivos') is not null
+                                     and to_regclass('public.v_nomina_corridas') is not null and to_regclass('public.v_nomina_control') is not null
+                                     and to_regprocedure('public.fn_nomina_importar(jsonb,jsonb)') is not null)::text);
+insert into _c16 values ('hay_banco', (to_regclass('public.movimientos_banco') is not null and to_regproc('public.fn_banco_importar_filas') is not null
+                                       and to_regproc('public.fn_banco_casar') is not null
+                                       and exists (select 1 from puente_cuentas pc where pc.rol = 'banco'))::text);
+insert into _c16 values ('n1', gen_random_uuid()::text), ('n2', gen_random_uuid()::text), ('n3', gen_random_uuid()::text);
+insert into _c16
+select 'pago_despues', (fn_fecha_miami(now()) + 1)::text
+  from periodos p
+ where p.tipo = 'mes' and p.estado = 'abierto' and fn_fecha_miami(now()) + 1 between p.desde and p.hasta
+   and exists (select 1 from _c16 m where m.k = 'mes');
 grant select on _c16 to public;  -- las pruebas cambian de rol y siguen leyendo lo común
 
 -- El control de c4 sin tope por reloj para la sesión (como c8, c9, c10, c12
@@ -163,6 +267,7 @@ end $$;
 create or replace function pg_temp.c16(k text) returns text language sql as $$ select v from _c16 where k = $1 $$;
 create or replace function pg_temp.c16_capa(k text) returns boolean language sql as $$ select coalesce((pg_temp.c16('capas')::jsonb ->> k)::boolean, false) $$;
 create or replace function pg_temp.c16_hoy() returns date language sql as $$ select fn_fecha_miami(now()) $$;
+create or replace function pg_temp.c16_hay_c15() returns boolean language sql as $$ select coalesce(pg_temp.c16('hay_c15') = 'true', false) $$;
 -- (un monto como texto con sus dos decimales, para comparar al centavo; nulo = «—»)
 create or replace function pg_temp.c16_m(p numeric) returns text language sql immutable as $$ select coalesce(round(p, 2)::numeric(14,2)::text, '—') $$;
 create or replace function pg_temp.c16_mj(p jsonb) returns text language sql immutable as $$
@@ -170,11 +275,12 @@ create or replace function pg_temp.c16_mj(p jsonb) returns text language sql imm
 $$;
 
 -- Ser: el SQL Editor (editor: sin rol ni sesión), el dueño o alguien del
--- equipo por la API (authenticated, con su código: aal2), anon o
--- service_role.
+-- equipo por la API (authenticated, con su código: aal2), el dueño SIN su
+-- código (dueno_aal1: entró solo con la contraseña; 14-nov, como
+-- c15-pruebas), anon o service_role.
 create or replace function pg_temp.c16_ser(quien text) returns void language plpgsql as $$
 declare
-  v_id text := pg_temp.c16(quien);
+  v_id text := pg_temp.c16(case when quien = 'dueno_aal1' then 'dueno' else quien end);
 begin
   execute 'reset role';
   if quien = 'editor' then
@@ -185,7 +291,9 @@ begin
     perform set_config('request.jwt.claim.sub', '', true);
     execute format('set local role %I', quien);
   else
-    perform set_config('request.jwt.claims', json_build_object('sub', v_id, 'role', 'authenticated', 'aal', 'aal2')::text, true);
+    perform set_config('request.jwt.claims',
+                       json_build_object('sub', v_id, 'role', 'authenticated',
+                                         'aal', case when quien = 'dueno_aal1' then 'aal1' else 'aal2' end)::text, true);
     perform set_config('request.jwt.claim.sub', coalesce(v_id, ''), true);
     execute 'set local role authenticated';
   end if;
@@ -302,6 +410,187 @@ begin
   return (r ->> 'id')::uuid;
 end $$;
 
+-- ---------------------------------------------------------------------
+-- (14-nov, Fase 11c) LA NÓMINA DE GUSTO (c15) DE PRUEBA. Todo lo que
+-- siembra es inventado y se deshace con su prueba (MXT00): tres personas
+-- («ZZ C16 Prueba Uno» y «Dos», de oficina, y «ZZ C16 Prueba Tres», el
+-- oficial: su usuario y su perfil), la configuración y el mapeo de
+-- columnas de la nómina como de fábrica mientras dura la prueba (como
+-- c15-pruebas: en la base real Edgar puede haberlos cambiado) y los
+-- journals de abajo, con montos raros que cuadran al centavo. Las
+-- funciones son plpgsql a propósito: en una base sin c15 se crean igual,
+-- y nadie las llama.
+-- ---------------------------------------------------------------------
+-- LOS JOURNALS DE PRUEBA (sintéticos, como los exporta Gusto: «Payroll
+-- journal»), con su período y su día de pago:
+--   «tres» · tres personas · bruto 5,600.75 · retenido 899.46 · deducciones 37.50 · neto 4,663.79 · reembolsos 61.30 (cheque
+--            4,725.09) · patrón 613.28 (941: 471.00 + 2 × 347.25 + 2 × 81.21 = 1,327.92 · FUTA 33.60 · reempleo 151.22)
+--            → costo de la empresa 6,214.03 · impuestos 1,512.74 · deja por pagar 6,275.33 (el costo más lo reembolsado)
+--        ZZ C16 Prueba Uno   bruto 1,873.60 · retenido 274.33 · neto 1,599.27 · patrón 205.16
+--        ZZ C16 Prueba Dos   bruto 1,415.25 · retenido 201.27 · deducción 37.50 · neto 1,176.48 · patrón 154.97
+--        ZZ C16 Prueba Tres  bruto 2,311.90 · retenido 423.86 · neto 1,888.04 · reembolso 61.30 · patrón 253.15
+--   «dos»  · dos personas (Uno y Dos) · bruto 3,234.40 · retenido 467.42 · deducciones 37.50 · neto 2,729.48 · patrón 354.14
+--            (941: 220.00 + 2 × 200.53 + 2 × 46.89 = 714.84 · FUTA 19.40 · reempleo 87.32) → costo 3,588.54 · impuestos 821.56 ·
+--            deja por pagar 3,588.54
+--   «una»  · UNA SOLA PERSONA (Tres, el oficial) · bruto 2,468.35 · retenido 456.83 · neto 2,011.52 · patrón 270.29 (941: 268.00 +
+--            2 × 153.04 + 2 × 35.79 = 645.66 · FUTA 14.81 · reempleo 66.65) → costo 2,738.64 · impuestos 727.12 · deja por pagar
+--            2,738.64
+create or replace function pg_temp.c16_nom_csv(p_cual text, p_desde date, p_hasta date, p_pago date) returns text language plpgsql as $$
+declare
+  c_cab constant text := 'Employee first name,Employee last name,Pay period start,Pay period end,Check date,Payroll type,Payment method,Regular hours,'
+                         'Regular earnings,Overtime hours,Overtime earnings,Gross earnings,Employee federal income tax,Employee social security tax,'
+                         'Employee medicare tax,Employee medicare additional tax,Employee taxes,Employee deductions,Net pay,Reimbursements,Check amount,'
+                         'Employer social security tax,Employer medicare tax,Employer FUTA tax,Employer SUTA tax,Employer taxes,Employer cost';
+  v_f text[];
+begin
+  v_f := case p_cual
+    when 'tres' then array[
+      'ZZ C16 Prueba,Uno,%1$s,%2$s,%3$s,Regular,Direct Deposit,80.00,1873.60,0.00,0.00,1873.60,131.00,116.16,27.17,0.00,274.33,0.00,1599.27,0.00,1599.27,116.16,27.17,11.24,50.59,205.16,2078.76',
+      'ZZ C16 Prueba,Dos,%1$s,%2$s,%3$s,Regular,Direct Deposit,76.50,1415.25,0.00,0.00,1415.25,93.00,87.75,20.52,0.00,201.27,37.50,1176.48,0.00,1176.48,87.75,20.52,8.49,38.21,154.97,1570.22',
+      'ZZ C16 Prueba,Tres,%1$s,%2$s,%3$s,Regular,Direct Deposit,80.00,2311.90,0.00,0.00,2311.90,247.00,143.34,33.52,0.00,423.86,0.00,1888.04,61.30,1949.34,143.34,33.52,13.87,62.42,253.15,2565.05',
+      'Totals,,,,,,,236.50,5600.75,0.00,0.00,5600.75,471.00,347.25,81.21,0.00,899.46,37.50,4663.79,61.30,4725.09,347.25,81.21,33.60,151.22,613.28,6214.03']
+    when 'dos' then array[
+      'ZZ C16 Prueba,Uno,%1$s,%2$s,%3$s,Regular,Direct Deposit,80.00,1902.40,0.00,0.00,1902.40,134.00,117.95,27.58,0.00,279.53,0.00,1622.87,0.00,1622.87,117.95,27.58,11.41,51.36,208.30,2110.70',
+      'ZZ C16 Prueba,Dos,%1$s,%2$s,%3$s,Regular,Direct Deposit,72.00,1332.00,0.00,0.00,1332.00,86.00,82.58,19.31,0.00,187.89,37.50,1106.61,0.00,1106.61,82.58,19.31,7.99,35.96,145.84,1477.84',
+      'Totals,,,,,,,152.00,3234.40,0.00,0.00,3234.40,220.00,200.53,46.89,0.00,467.42,37.50,2729.48,0.00,2729.48,200.53,46.89,19.40,87.32,354.14,3588.54']
+    when 'una' then array[
+      'ZZ C16 Prueba,Tres,%1$s,%2$s,%3$s,Regular,Direct Deposit,80.00,2468.35,0.00,0.00,2468.35,268.00,153.04,35.79,0.00,456.83,0.00,2011.52,0.00,2011.52,153.04,35.79,14.81,66.65,270.29,2738.64',
+      'Totals,,,,,,,80.00,2468.35,0.00,0.00,2468.35,268.00,153.04,35.79,0.00,456.83,0.00,2011.52,0.00,2011.52,153.04,35.79,14.81,66.65,270.29,2738.64']
+    end;
+  if v_f is null then
+    raise exception 'c16-pruebas: no hay un journal de prueba «%»', p_cual;
+  end if;
+  return c_cab || E'\n'
+         || (select string_agg(format(f, to_char(p_desde, 'MM/DD/YYYY'), to_char(p_hasta, 'MM/DD/YYYY'), to_char(p_pago, 'MM/DD/YYYY')), E'\n' order by o)
+               from unnest(v_f) with ordinality u(f, o)) || E'\n';
+end $$;
+
+-- SEMBRAR LO DE LA NÓMINA (como el SQL Editor; se deshace con la prueba): la
+-- configuración y el mapeo de columnas como de fábrica (con la marca de la
+-- guarda de c15) y las tres personas de prueba (su usuario y su perfil).
+create or replace function pg_temp.c16_nom_sembrar() returns void language plpgsql as $$
+declare
+  v_meta boolean := exists (select 1 from information_schema.columns
+                             where table_schema = 'auth' and table_name = 'users' and column_name = 'raw_user_meta_data');
+  r record;
+begin
+  perform pg_temp.c16_ser('editor');
+  perform set_config('mx_nomina.escribe', 'nomina_config', true);
+  update nomina_config
+     set cuenta_sin_obra = '6000', cuenta_oficina = '6000', cuenta_oficial = '6005', cuenta_bolsa = '5015', cuenta_burden_obra = '5010',
+         cuenta_burden_admin = '6010', cuenta_cuota = '6500', cargo_dias_antes = 10, cargo_dias_despues = 5, saldo_dias = 10,
+         cargo_patrones = '{"neto": "\\mNET\\M", "impuestos": "\\mTAX\\M", "reembolsos": "\\mREM\\M", "manutencion": "\\mCSD\\M", "cuota": "\\mFEE\\M"}'::jsonb
+   where id = 1;
+  perform set_config('mx_nomina.escribe', 'nomina_columnas', true);
+  update nomina_columnas k
+     set concepto = v.concepto, clase = v.clase, cuenta = v.cuenta, declara = v.declara
+    from (values
+      ('employee first name', 'employee_first_name', 'nombre', null, null), ('employee last name', 'employee_last_name', 'apellido', null, null),
+      ('pay period start', 'pay_period_start', 'periodo_desde', null, null), ('pay period end', 'pay_period_end', 'periodo_hasta', null, null),
+      ('check date', 'check_date', 'dia_pago', null, null), ('payroll type', 'payroll_type', 'tipo', null, null),
+      ('payment method', 'payment_method', 'metodo_pago', null, null), ('regular hours', 'regular_hours', 'horas', null, null),
+      ('overtime hours', 'overtime_hours', 'horas', null, null), ('regular earnings', 'regular_earnings', 'bruto', null, null),
+      ('overtime earnings', 'overtime_earnings', 'bruto', null, null), ('gross earnings', 'gross_earnings', 'bruto_total', null, null),
+      ('employee federal income tax', 'employee_federal_income_tax', 'imp_empleado', '2220', 'fit'),
+      ('employee social security tax', 'employee_social_security_tax', 'imp_empleado', '2220', 'ss_ee'),
+      ('employee medicare tax', 'employee_medicare_tax', 'imp_empleado', '2220', 'med_ee'),
+      ('employee medicare additional tax', 'employee_medicare_additional_tax', 'imp_empleado', '2220', 'med_adic'),
+      ('employee taxes', 'employee_taxes', 'imp_empleado_total', '2220', null), ('employee deductions', 'employee_deductions', 'deduccion', '2240', null),
+      ('net pay', 'net_pay', 'neto', '2210', null), ('reimbursements', 'reimbursements', 'reembolso_total', '2250', null),
+      ('check amount', 'check_amount', 'cheque_total', null, null),
+      ('employer social security tax', 'employer_social_security_tax', 'imp_patron', '2220', 'ss_er'),
+      ('employer medicare tax', 'employer_medicare_tax', 'imp_patron', '2220', 'med_er'),
+      ('employer futa tax', 'employer_futa_tax', 'imp_patron', '2225', 'futa'), ('employer suta tax', 'employer_suta_tax', 'imp_patron', '2230', 'suta'),
+      ('employer taxes', 'employer_taxes', 'imp_patron_total', null, null), ('employer cost', 'employer_cost', 'costo_total', null, null))
+      as v(alias, concepto, clase, cuenta, declara)
+   where k.alias = v.alias
+     and (k.concepto, k.clase, k.cuenta, k.declara) is distinct from (v.concepto, v.clase, v.cuenta, v.declara);
+  perform set_config('mx_nomina.escribe', '', true);
+  for r in select * from (values ('n1', 'ZZ C16 Prueba Uno'), ('n2', 'ZZ C16 Prueba Dos'), ('n3', 'ZZ C16 Prueba Tres')) as x(k, nombre) loop
+    if v_meta then
+      execute format('insert into auth.users (id, email, raw_user_meta_data) values (%L, %L, %L::jsonb) on conflict (id) do nothing',
+                     pg_temp.c16(r.k), 'c16-' || r.k || '@c16-pruebas.invalid',
+                     json_build_object('nombre', r.nombre, 'name', r.nombre, 'full_name', r.nombre)::text);
+    else
+      execute format('insert into auth.users (id, email) values (%L, %L) on conflict (id) do nothing',
+                     pg_temp.c16(r.k), 'c16-' || r.k || '@c16-pruebas.invalid');
+    end if;
+    insert into perfiles (id, nombre, rol, activo) values (pg_temp.c16(r.k)::uuid, r.nombre, 'campo', true)
+    on conflict (id) do update set nombre = excluded.nombre, rol = excluded.rol, activo = true;
+  end loop;
+end $$;
+
+-- UNA NÓMINA DE PRUEBA, por el camino de c15 y como el dueño con su código:
+-- el journal importado, su gente enlazada y confirmada (Uno y Dos, de
+-- oficina; Tres, el oficial) y, si se pide, la propuesta vista y posteada.
+-- Devuelve la corrida. Si la nómina no la toma por nueva (en la base hay
+-- otra con ese mismo día de pago y ese período), lo dice con MXT01: la
+-- prueba sale «omitida».
+create or replace function pg_temp.c16_nom(p_cual text, p_desde date, p_hasta date, p_pago date, p_postear boolean default true)
+returns uuid language plpgsql as $$
+declare
+  v_csv text := pg_temp.c16_nom_csv(p_cual, p_desde, p_hasta, p_pago);
+  r jsonb; c uuid; x record;
+begin
+  perform pg_temp.c16_ser('dueno');
+  r := fn_nomina_importar(jsonb_build_object(
+         'nombre', format('zz-c16-prueba-%s-%s.csv', p_cual, to_char(p_pago, 'YYYYMMDD')),
+         'sha256', encode(sha256(convert_to(v_csv, 'UTF8')), 'hex'), 'bytes', octet_length(v_csv),
+         'filas', (select jsonb_agg(to_jsonb(string_to_array(l, ',')) order by o)
+                     from unnest(string_to_array(rtrim(v_csv, E'\n'), E'\n')) with ordinality u(l, o))), '{}'::jsonb);
+  c := (select (q ->> 'corrida')::uuid from jsonb_array_elements(r -> 'corridas') q where q ->> 'resultado' = 'nueva' order by (q ->> 'n')::int limit 1);
+  if c is null then
+    perform pg_temp.c16_ser('editor');
+    raise exception using errcode = 'MXT01',
+      message = format('la nómina no tomó por nueva la de prueba (%s): en esta base ya hay una con ese día de pago y ese período',
+                       coalesce(r -> 'corridas' -> 0 ->> 'resultado', left(r::text, 200)));
+  end if;
+  for x in select pe.id, case pe.nombre when 'ZZ C16 Prueba Uno' then 'n1' when 'ZZ C16 Prueba Dos' then 'n2' else 'n3' end as k,
+                  case when pe.nombre = 'ZZ C16 Prueba Tres' then 'oficial' else 'oficina' end as clase
+             from nomina_personas pe
+            where pe.nombre in ('ZZ C16 Prueba Uno', 'ZZ C16 Prueba Dos', 'ZZ C16 Prueba Tres') and pe.confirmado_el is null loop
+    perform fn_nomina_persona(jsonb_build_object('id', x.id, 'usuario_id', pg_temp.c16(x.k), 'clase', x.clase, 'confirmar', true));
+  end loop;
+  if p_postear then
+    perform fn_nomina_postear(c, fn_nomina_propuesta(c) ->> 'visto');
+  end if;
+  perform set_config('mx_nomina.escribe', '', true);
+  perform pg_temp.c16_ser('editor');
+  return c;
+end $$;
+
+-- UN MOVIMIENTO DE GUSTO EN EL BANCO, como lo trae Plaid (en nombre del
+-- dueño) y «Casar» solo para él: c6 lo deja en la Bandeja esperando su
+-- nómina. p_monto en positivo = lo que salió (un cargo); en negativo, un
+-- depósito (una devolución de Gusto). La descripción lleva «C16 PRUEBA».
+create or replace function pg_temp.c16_nom_cargo(p_id text, p_fecha date, p_monto numeric, p_desc text) returns uuid language plpgsql as $$
+declare
+  v_mov uuid;
+begin
+  perform pg_temp.c16_ser('dueno');
+  perform fn_banco_importar_filas(jsonb_build_object(
+    'origen', 'plaid', 'cuenta', pg_temp.c16('banco'), 'nombre', 'Plaid · c16-pruebas · ' || p_id,
+    'filas', jsonb_build_array(jsonb_build_object('id', p_id, 'fecha', p_fecha::text, 'plaid_monto', p_monto::text,
+                                                  'descripcion', p_desc || ' C16 PRUEBA', 'tipo', case when p_monto >= 0 then 'DEBIT' else 'CREDIT' end,
+                                                  'pendiente', false))));
+  select m.id into v_mov from movimientos_banco m where m.id_externo = p_id order by m.importado_el desc limit 1;
+  perform fn_banco_casar(v_mov);
+  perform pg_temp.c16_ser('editor');
+  if not exists (select 1 from movimientos_banco m where m.id = v_mov and m.estado = 'pendiente') then
+    raise exception using errcode = 'MXT01',
+      message = format('el movimiento de prueba %s casó solo con algo del libro (¿un monto real igual?)', p_id);
+  end if;
+  return v_mov;
+end $$;
+-- (casar un cargo con lo que paga de una nómina, como el dueño con su código: fn_nomina_cargo_casar de c15)
+create or replace function pg_temp.c16_nom_casar(p_mov uuid, p_partes jsonb) returns void language plpgsql as $$
+begin
+  perform pg_temp.c16_ser('dueno');
+  perform fn_nomina_cargo_casar(p_mov, p_partes, null);
+  perform set_config('mx_nomina.escribe', '', true);
+  perform pg_temp.c16_ser('editor');
+end $$;
+
 -- ¿Se puede sembrar en esta base? Se prueba UNA vez, antes de todo, y se deshace.
 do $$
 declare
@@ -327,6 +616,47 @@ declare
                  when p_siembra and pg_temp.c16('mes') is null then 'el mes de hoy no está abierto: no hay dónde sembrar lo de la prueba'
                  when p_siembra and pg_temp.c16('siembra') <> 'ok'
                    then 'esta base no deja sembrar las obras y la factura de prueba (' || left(pg_temp.c16('siembra'), 300) || ')' end;
+begin
+  if v is null then
+    return false;
+  end if;
+  insert into _pruebas values (p_n, p_prueba, p_esperado, 'omitida: ' || v, null);
+  return true;
+end $$;
+
+-- (14-nov, Fase 11c) ¿Se puede sembrar una NÓMINA de prueba en esta base? Se prueba UNA vez (las personas, la nómina de una sola
+-- persona, importada, enlazada y posteada con día de pago hoy) y se deshace. Si no (un trigger de auth.users que pida más datos,
+-- una nómina de verdad con ese mismo día de pago y ese período), las pruebas que la siembran salen «omitida» con lo que dijo la
+-- base. Sin c15, ni se intenta.
+do $$
+declare
+  v text := 'ok';
+begin
+  if pg_temp.c16_hay_c15() and pg_temp.c16('mes') is not null and pg_temp.c16('dueno') is not null then
+    begin
+      perform pg_temp.c16_nom_sembrar();
+      perform pg_temp.c16_nom('una', fn_fecha_miami(now()) - 12, fn_fecha_miami(now()) - 4, fn_fecha_miami(now()));
+      raise exception using errcode = 'MXT00';
+    exception
+      when sqlstate 'MXT00' then null;
+      when others then v := sqlstate || ': ' || sqlerrm;
+    end;
+    perform pg_temp.c16_ser('editor');
+  end if;
+  insert into _c16 values ('siembra_nomina', v);
+end $$;
+-- (la fila «omitida» de una prueba de la nómina: sin c15, sin dónde o sin cómo sembrarla, o sin el banco; true si la puso)
+create or replace function pg_temp.c16_nom_omitir(p_n int, p_prueba text, p_esperado text, p_siembra boolean default true,
+                                                  p_banco boolean default false) returns boolean language plpgsql as $$
+declare
+  v text := case when not pg_temp.c16_hay_c15()
+                   then 'la nómina con Gusto (c15) no está pegada en esta base (lo que la portada dice entonces lo mira la 58)'
+                 when pg_temp.c16('dueno') is null then 'no hay un dueño activo en perfiles'
+                 when p_siembra and pg_temp.c16('mes') is null then 'el mes de hoy no está abierto: no hay dónde postear una nómina de prueba'
+                 when p_siembra and pg_temp.c16('siembra_nomina') <> 'ok'
+                   then 'esta base no deja sembrar una nómina de prueba (' || left(pg_temp.c16('siembra_nomina'), 300) || ')'
+                 when p_banco and pg_temp.c16('hay_banco') <> 'true'
+                   then 'el banco (c6) o su cuenta no están en esta base: no hay cómo traer un cargo de Gusto' end;
 begin
   if v is null then
     return false;
@@ -492,10 +822,383 @@ begin
    where c.estado = 'vigente' and pg_temp.c16_origen(c.id) between p_desde and p_hasta;
 end $$;
 
+-- ---------------------------------------------------------------------
+-- (14-nov, Fase 11c) LO QUE DICEN EL LIBRO Y LA NÓMINA (c15) DE LA NÓMINA,
+-- escrito aquí sin usar nada de c16 y como el SQL Editor (que lee enteras
+-- las tablas de c15). Cada prueba de la tarjeta de la nómina compara con
+-- esto. Son plpgsql con «execute» a propósito: en una base sin c15 se crean
+-- igual, y nadie las llama.
+-- ---------------------------------------------------------------------
+-- LO QUE COSTÓ LA NÓMINA CADA MES: los asientos de las corridas que la
+-- nómina tiene POSTEADAS (nomina_corridas, de c15), con fecha hasta hoy, por
+-- el mes en que el libro los lleva (el de un ajuste del CPA, el mes que
+-- corrige). Lo que cargan a las cuentas del estado de resultados de c4
+-- (v_estados_mapeo) es el costo; de eso, lo del patrón es lo que va a la
+-- bolsa del burden y al burden de oficina y de obra (las cuentas de la
+-- configuración de la nómina). Un trozo por mes: «AAAA-MM costo (sueldos +
+-- patrón), cuántas».
+create or replace function pg_temp.c16_nom_meses(p_meses int default 6) returns text language plpgsql as $$
+declare
+  v_hoy date := fn_fecha_miami(now());
+  v_m0  date := greatest(date_trunc('month', pg_temp.c16('libro_desde')::date)::date,
+                         (date_trunc('month', fn_fecha_miami(now())) - make_interval(months => p_meses - 1))::date);
+  v text;
+begin
+  execute $q$
+    with j as (
+      select a.id, coalesce((select date_trunc('month', pe.hasta)::date from public.periodos pe
+                              where a.tipo = 'ajuste_cpa' and pe.periodo = a.afecta_periodo),
+                            date_trunc('month', a.fecha_contable)::date) as mes
+        from public.nomina_corridas k join public.asientos a on a.id = k.asiento_id
+       where k.estado = 'posteada' and a.fecha_contable <= $1
+    ), s as (
+      select j.mes, count(distinct j.id) as n,
+             coalesce(sum(l.monto) filter (where l.cuenta in (select m.cuenta from public.v_estados_mapeo m where m.estado = 'resultados')), 0) as costo,
+             coalesce(sum(l.monto) filter (where l.cuenta in (select u from public.nomina_config c,
+                                                                     unnest(array[c.cuenta_bolsa, c.cuenta_burden_admin, c.cuenta_burden_obra]) u
+                                                               where c.id = 1)), 0) as patron
+        from j join public.asiento_lineas l on l.asiento_id = j.id
+       group by j.mes
+    )
+    select string_agg(format('%s %s (%s + %s), %s', to_char(g.mes, 'YYYY-MM'), pg_temp.c16_m(coalesce(s.costo, 0)),
+                             pg_temp.c16_m(coalesce(s.costo - s.patron, 0)), pg_temp.c16_m(coalesce(s.patron, 0)), coalesce(s.n, 0)),
+                      '; ' order by g.mes)
+      from generate_series($2::timestamp, date_trunc('month', $1::timestamp), interval '1 month') g(mes)
+      left join s on s.mes = g.mes::date$q$ into v using v_hoy, v_m0;
+  return coalesce(v, 'ninguno');
+end $$;
+
+-- LO QUE SE DEBE DE LA NÓMINA: las cuentas por pagar que usa la nómina (las
+-- del mapeo de columnas de c15 y las que los journals de sus corridas han
+-- usado; y la de reembolsos), dentro del renglón «nómina y retenciones por
+-- pagar» del balance de c4 (v_estados_mapeo), con TODO lo que el libro
+-- tiene en ellas (también lo fechado después de hoy), en positivo lo que se
+-- debe. La cuenta de los reembolsos a empleados (la que dice el mapeo de
+-- columnas de la nómina; sin él, la del puente de c3) cuenta solo si debe: al
+-- revés va aparte. LO DEMÁS DEL RENGLÓN (las vacaciones devengadas: ninguna
+-- nómina las paga) no es de la nómina: va en «otras». {monto, libro (el del
+-- Balance: el renglón entero), aparte, otras (su suma) y otras_cuentas,
+-- cuentas («2210 4725.09, …»: las que suman «monto»), reem (las cuentas de
+-- reembolsos), nom (las de la nómina)}. Sin c15, todas las del renglón.
+create or replace function pg_temp.c16_nom_debe() returns jsonb language plpgsql as $$
+declare
+  v_reem text[] := '{}'; v_nom text[]; r record; v_m numeric := 0; v_l numeric := 0; v_a numeric := 0; v_o numeric := 0; v_c text := '';
+  v_oc text[] := '{}'; v_s numeric;
+begin
+  if to_regclass('public.nomina_columnas') is not null then
+    execute $q$select coalesce(array_agg(distinct k.cuenta), '{}'::text[]) from public.nomina_columnas k
+                where k.clase in ('reembolso', 'reembolso_total') and k.cuenta is not null$q$ into v_reem;
+    execute $q$select array(select k.cuenta from public.nomina_columnas k where k.cuenta is not null
+                            union
+                            select l.cuenta from public.nomina_corridas c join public.asiento_lineas l on l.asiento_id = c.asiento_id)$q$ into v_nom;
+  end if;
+  if cardinality(v_reem) = 0 then
+    v_reem := array(select pc.cuenta from puente_cuentas pc where pc.rol = 'reembolso_empleado');
+  end if;
+  for r in select m.cuenta from v_estados_mapeo m where m.estado = 'balance' and m.linea = 'nomina_por_pagar' order by m.cuenta loop
+    select coalesce(-sum(l.monto), 0) into v_s from asiento_lineas l where l.cuenta = r.cuenta;
+    v_l := v_l + v_s;
+    if v_nom is not null and r.cuenta <> all (v_nom) and r.cuenta <> all (v_reem) then
+      -- (del renglón, pero no de la nómina de Gusto)
+      v_o := v_o + v_s;
+      if v_s <> 0 then v_oc := v_oc || r.cuenta; end if;
+    elsif r.cuenta = any (v_reem) and v_s < 0 then
+      v_a := v_a - v_s;
+    else
+      v_m := v_m + v_s;
+      if v_s <> 0 then
+        v_c := v_c || r.cuenta || ' ' || pg_temp.c16_m(v_s) || ', ';
+      end if;
+    end if;
+  end loop;
+  return jsonb_build_object('monto', round(v_m, 2), 'libro', round(v_l, 2), 'aparte', round(v_a, 2), 'otras', round(v_o, 2),
+                            'otras_cuentas', to_jsonb(v_oc), 'cuentas', coalesce(nullif(rtrim(v_c, ', '), ''), 'ninguna'),
+                            'reem', to_jsonb(v_reem), 'nom', to_jsonb(v_nom));
+end $$;
+
+-- CUÁNDO SALE DE LA CAJA LO QUE SE DEBE DE LA NÓMINA, hecho aquí paso a paso
+-- y a mano (con bucles: no como lo hace c16) y CON LO QUE LA NÓMINA (c15)
+-- SABE DE CADA UNA, que c16 no lee (c16 mira solo el libro: qué nómina pagó
+-- cada cargo lo saca de la descripción de su asiento). CUENTA POR CUENTA,
+-- de las de la nómina: lo que le QUEDA por pagar a cada corrida posteada con
+-- journal de fecha de después de hoy —lo que dejó en la cuenta (sus
+-- «pasivos») menos lo que sus cargos casados, vivos, ya le pagaron (sus
+-- partes: nomina_pago_partes)— se debe su día; lo demás que la cuenta
+-- tiene, hoy. Si la cuenta tiene MENOS de lo que así les queda (algo se
+-- pagó sin pasar por la nómina), la diferencia se le quita a la más próxima
+-- primero. La de reembolsos, si debe, hoy. Lo que una cuenta tiene a favor
+-- baja lo de hoy primero y después lo más próximo. Si en total no se debe
+-- nada, nada. (Hasta los arreglos de la verificación del 14-nov esta cuenta
+-- repetía el método de c16 —lo cobrado, contra lo más viejo de la cuenta— y
+-- daba por bueno su mismo error.)
+create or replace function pg_temp.c16_nom_pagos() returns table (fecha date, monto numeric, asiento text) language plpgsql as $$
+declare
+  v_hoy date := fn_fecha_miami(now()); d jsonb := pg_temp.c16_nom_debe(); v_reem text[]; v_nom text[];
+  v_cor uuid[] := '{}'; v_num text[] := '{}'; v_fec date[] := '{}'; v_mon numeric[] := '{}'; v_que numeric[];
+  v_hoy_m numeric := 0; v_favor numeric := 0; v_b numeric; v_s numeric; v_x numeric; v_q numeric; i int; r record; c record;
+begin
+  if (d ->> 'monto')::numeric <= 0 then
+    return;
+  end if;
+  v_reem := array(select jsonb_array_elements_text(d -> 'reem'));
+  v_nom := case when jsonb_typeof(d -> 'nom') = 'array' then array(select jsonb_array_elements_text(d -> 'nom')) end;
+  -- las corridas posteadas con journal de fecha de después de hoy, en su orden
+  if to_regclass('public.nomina_corridas') is not null then
+    for r in execute $q$select k.id, a.numero, a.fecha_contable as f from public.nomina_corridas k join public.asientos a on a.id = k.asiento_id
+                         where k.estado = 'posteada' and a.fecha_contable > $1 order by a.fecha_contable, a.numero$q$ using v_hoy loop
+      v_cor := v_cor || r.id; v_num := v_num || r.numero; v_fec := v_fec || r.f; v_mon := v_mon || 0::numeric;
+    end loop;
+  end if;
+  for c in select m.cuenta from v_estados_mapeo m where m.estado = 'balance' and m.linea = 'nomina_por_pagar' order by m.cuenta loop
+    if v_nom is not null and c.cuenta <> all (v_nom) and c.cuenta <> all (v_reem) then
+      continue;   -- (del renglón, pero no de la nómina: no cuenta)
+    end if;
+    select coalesce(-sum(l.monto), 0) into v_b from asiento_lineas l where l.cuenta = c.cuenta;
+    if c.cuenta = any (v_reem) then
+      v_hoy_m := v_hoy_m + greatest(v_b, 0);
+      continue;
+    end if;
+    -- lo que a cada corrida de después LE QUEDA en esta cuenta, según la nómina: lo que dejó menos lo que sus cargos casados y
+    -- vivos le pagaron
+    v_que := '{}'; v_s := 0;
+    for i in 1 .. coalesce(array_length(v_cor, 1), 0) loop
+      execute $q$select greatest(coalesce((k.pasivos ->> $2)::numeric, 0)
+                                 - coalesce((select sum(pp.monto)
+                                               from public.nomina_pago_partes pp
+                                               join public.nomina_pagos g on g.id = pp.pago_id
+                                               join public.movimientos_banco m on m.id = g.movimiento_id
+                                              where pp.corrida_id = k.id and pp.cuenta = $2 and g.estado = 'aplicado'
+                                                and m.asiento_id = g.asiento_id and m.estado in ('casado', 'en_transito')), 0), 0)
+                   from public.nomina_corridas k where k.id = $1$q$ into v_q using v_cor[i], c.cuenta;
+      v_que := v_que || coalesce(v_q, 0); v_s := v_s + coalesce(v_q, 0);
+    end loop;
+    v_favor := v_favor + greatest(-v_b, 0);
+    v_hoy_m := v_hoy_m + greatest(v_b - v_s, 0);
+    v_x := greatest(v_s - v_b, 0);                      -- lo que falta por explicar, en esta cuenta: se le quita a la más próxima
+    for i in 1 .. coalesce(array_length(v_cor, 1), 0) loop
+      v_mon[i] := v_mon[i] + greatest(v_que[i] - v_x, 0);
+      v_x := greatest(v_x - v_que[i], 0);
+    end loop;
+  end loop;
+  -- lo que hay a favor: de lo de hoy primero, y después de lo más próximo
+  v_x := least(v_favor, v_hoy_m); v_hoy_m := v_hoy_m - v_x; v_favor := v_favor - v_x;
+  if v_hoy_m > 0 then
+    fecha := v_hoy; monto := round(v_hoy_m, 2); asiento := null;
+    return next;
+  end if;
+  for i in 1 .. coalesce(array_length(v_num, 1), 0) loop
+    v_x := least(v_favor, v_mon[i]); v_mon[i] := v_mon[i] - v_x; v_favor := v_favor - v_x;
+    if v_mon[i] > 0 then
+      fecha := v_fec[i]; monto := round(v_mon[i], 2); asiento := v_num[i];
+      return next;
+    end if;
+  end loop;
+end $$;
+create or replace function pg_temp.c16_nom_pagos_txt() returns text language sql as $$
+  select coalesce(string_agg(case when p.asiento is null then 'hoy ' || pg_temp.c16_m(p.monto)
+                                  else format('%s %s (%s)', p.fecha, pg_temp.c16_m(p.monto), p.asiento) end,
+                             ', ' order by p.fecha, p.asiento nulls first), 'nada')
+    from pg_temp.c16_nom_pagos() p
+$$;
+
+-- UNA NÓMINA, con lo que la nómina (c15) tiene de ella en sus tablas: su
+-- estado, su día de pago y su período, cuántas personas (las filas de sus
+-- personas) y los totales de la empresa SUMADOS DE LO DE CADA PERSONA; y, si
+-- está posteada, lo que le queda por pagar y lo que tiene a favor (lo que su
+-- journal dejó en cada cuenta menos lo que sus cargos casados ya pagaron).
+create or replace function pg_temp.c16_nom_una(p_corrida uuid) returns text language plpgsql as $$
+declare
+  v text;
+begin
+  if p_corrida is null or to_regclass('public.nomina_corridas') is null then
+    return 'ninguna';
+  end if;
+  execute $q$
+    select format('%s · %s · %s · %s personas · costo %s · bruto %s · patrón %s · impuestos %s · neto %s · deducciones %s · reembolsos %s · '
+                  'por pagar %s · a favor %s · asiento %s',
+                  k.estado, k.dia_pago, coalesce(k.periodo_desde::text || ' a ' || k.periodo_hasta::text, 'sin período'), s.n,
+                  pg_temp.c16_m(s.bruto + s.imp_p + s.ben_p), pg_temp.c16_m(s.bruto), pg_temp.c16_m(s.imp_p + s.ben_p),
+                  pg_temp.c16_m(s.imp_e + s.imp_p), pg_temp.c16_m(s.neto), pg_temp.c16_m(s.ded), pg_temp.c16_m(s.reem),
+                  pg_temp.c16_m(case when k.estado = 'posteada' then coalesce(pd.por_pagar, 0) end),
+                  pg_temp.c16_m(case when k.estado = 'posteada' then coalesce(pd.a_favor, 0) end), coalesce(k.asiento_numero, '—'))
+      from public.nomina_corridas k
+      cross join lateral (select count(*) as n, coalesce(sum(cp.bruto), 0) as bruto, coalesce(sum(cp.imp_empleado), 0) as imp_e,
+                                 coalesce(sum(cp.imp_patron), 0) as imp_p, coalesce(sum(cp.ben_patron), 0) as ben_p,
+                                 coalesce(sum(cp.neto), 0) as neto, coalesce(sum(cp.deducciones), 0) as ded, coalesce(sum(cp.reembolsos), 0) as reem
+                            from public.nomina_corrida_personas cp where cp.corrida_id = k.id) s
+      left join lateral (select sum(greatest(e.value::numeric - coalesce(pg.s, 0), 0)) as por_pagar,
+                                sum(greatest(coalesce(pg.s, 0) - e.value::numeric, 0)) as a_favor
+                           from jsonb_each_text(k.pasivos) e
+                           left join lateral (select sum(pp.monto) as s
+                                                from public.nomina_pago_partes pp
+                                                join public.nomina_pagos g on g.id = pp.pago_id
+                                                join public.movimientos_banco m on m.id = g.movimiento_id
+                                               where pp.corrida_id = k.id and pp.cuenta = e.key and g.estado = 'aplicado'
+                                                 and m.asiento_id = g.asiento_id and m.estado in ('casado', 'en_transito')) pg on true) pd on true
+     where k.id = $1$q$ into v using p_corrida;
+  return coalesce(v, 'ninguna');
+end $$;
+-- (cuál es la última —posteada, con día de pago hasta hoy— y cuál la próxima —la primera que la nómina ya tiene, posteada o
+--  importada, con día de pago después de hoy—, por las tablas de c15)
+create or replace function pg_temp.c16_nom_cual(p_que text) returns uuid language plpgsql as $$
+declare
+  v uuid; v_hoy date := fn_fecha_miami(now());
+begin
+  if to_regclass('public.nomina_corridas') is null then
+    return null;
+  end if;
+  if p_que = 'ultima' then
+    execute $q$select k.id from public.nomina_corridas k where k.estado = 'posteada' and k.dia_pago <= $1
+                order by k.dia_pago desc, k.asiento_numero desc limit 1$q$ into v using v_hoy;
+  else
+    execute $q$select k.id from public.nomina_corridas k where k.estado in ('importada', 'posteada') and k.dia_pago > $1
+                order by k.dia_pago, k.importada_el, k.id limit 1$q$ into v using v_hoy;
+  end if;
+  return v;
+end $$;
+-- LOS MOVIMIENTOS DE GUSTO QUE ESPERAN EN EL BANCO, de la vista de la página
+-- (v_nomina_cargos de c15): los cargos pendientes, las devoluciones (un
+-- depósito: monto en negativo) y los que se des-casaron en la Bandeja.
+create or replace function pg_temp.c16_nom_cargos() returns text language plpgsql as $$
+declare
+  v text;
+begin
+  execute $q$
+    select format('%s por %s desde %s · devoluciones %s por %s · des-casados %s',
+                  count(*) filter (where g.estado = 'pendiente' and g.monto > 0),
+                  pg_temp.c16_m(coalesce(sum(g.monto) filter (where g.estado = 'pendiente' and g.monto > 0), 0)),
+                  coalesce((min(g.fecha) filter (where g.estado = 'pendiente' and g.monto > 0))::text, '—'),
+                  count(*) filter (where g.estado = 'pendiente' and g.monto < 0),
+                  pg_temp.c16_m(coalesce(-sum(g.monto) filter (where g.estado = 'pendiente' and g.monto < 0), 0)),
+                  count(*) filter (where g.estado = 'descasado'))
+      from public.v_nomina_cargos g$q$ into v;
+  return v;
+end $$;
+-- (cuántas cosas de la nómina esperan a Edgar: las importadas sin postear, los cargos y las devoluciones de Gusto por casar y los
+--  des-casados; lo que cuenta su acción rápida con el código)
+create or replace function pg_temp.c16_nom_esperan() returns int language plpgsql as $$
+declare
+  v int;
+begin
+  execute $q$select (select count(*) from public.nomina_corridas k where k.estado = 'importada')
+                    + (select count(*) from public.v_nomina_cargos g where g.estado in ('pendiente', 'descasado') and g.monto <> 0)$q$ into v;
+  return v;
+end $$;
+
+-- (lo que la tarjeta dice de cuándo sale lo que se debe, en una línea: como c16_nom_pagos_txt)
+create or replace function pg_temp.c16_nom_sale_de(n jsonb) returns text language sql as $$
+  select coalesce((select string_agg(case when (x ->> 'de_hoy')::boolean then 'hoy ' || pg_temp.c16_mj(x -> 'monto')
+                                          else format('%s %s (%s)', x ->> 'fecha', pg_temp.c16_mj(x -> 'monto'), x ->> 'asiento') end, ', ' order by o)
+                     from jsonb_array_elements(n -> 'debe' -> 'pagos') with ordinality t(x, o)), 'nada')
+$$;
+-- (las cuentas de lo que se debe suman su total; lo que sale —si se debe algo—, también; lo de hoy más lo de después es el total;
+--  y el total menos lo que dice el Balance es lo de reembolsos que va aparte, menos lo del renglón que no es de la nómina)
+create or replace function pg_temp.c16_nom_suma(n jsonb) returns text language sql as $$
+  select case when (select coalesce(sum((x ->> 'monto')::numeric), 0) from jsonb_array_elements(n -> 'debe' -> 'cuentas') x) = (n -> 'debe' ->> 'monto')::numeric
+                   and ((n -> 'debe' ->> 'monto')::numeric <= 0
+                        or (select coalesce(sum((x ->> 'monto')::numeric), 0) from jsonb_array_elements(n -> 'debe' -> 'pagos') x)
+                           = (n -> 'debe' ->> 'monto')::numeric)
+                   and (n -> 'debe' ->> 'a_hoy')::numeric + (n -> 'debe' ->> 'despues')::numeric = (n -> 'debe' ->> 'monto')::numeric
+                   and (n -> 'debe' ->> 'monto')::numeric - (n -> 'debe' ->> 'libro')::numeric
+                       = coalesce((nullif(n -> 'debe' -> 'aparte', 'null'::jsonb) ->> 'monto')::numeric, 0)
+                         - coalesce((nullif(n -> 'debe' -> 'otras', 'null'::jsonb) ->> 'monto')::numeric, 0)
+              then 'sí' else 'no' end
+$$;
+-- LO QUE SALE POR LA NÓMINA CADA MES DE LA PROYECCIÓN (p_meses meses, contando el de hoy), de la cuenta de arriba; y lo mismo, de
+-- la tarjeta de la caja.
+create or replace function pg_temp.c16_nom_por_mes(p_meses int) returns text language sql as $$
+  select string_agg(to_char(g.mes, 'YYYY-MM') || ' '
+                    || pg_temp.c16_m(coalesce((select sum(p.monto) from pg_temp.c16_nom_pagos() p where date_trunc('month', p.fecha) = g.mes), 0)),
+                    ', ' order by g.mes)
+    from generate_series(date_trunc('month', fn_fecha_miami(now())::timestamp),
+                         date_trunc('month', fn_fecha_miami(now())::timestamp) + make_interval(months => p_meses - 1), interval '1 month') g(mes)
+$$;
+create or replace function pg_temp.c16_nom_por_mes_de(c jsonb) returns text language sql as $$
+  select coalesce(string_agg((m ->> 'mes') || ' ' || pg_temp.c16_mj(m -> 'nomina'), ', ' order by o), 'sin proyección')
+    from jsonb_array_elements(c -> 'proyeccion' -> 'meses') with ordinality t(m, o)
+$$;
+
+-- LA TARJETA DE LA NÓMINA, DICHA EN UNA LÍNEA (lo que contestó c16) y lo
+-- mismo ESPERADO, de las consultas de arriba (con el código del teléfono).
+create or replace function pg_temp.c16_nom_una_de(u jsonb) returns text language sql as $$
+  select case when u is null or jsonb_typeof(u) = 'null' then 'ninguna'
+              when not coalesce((u ->> 'con_codigo')::boolean, false)
+                then format('sin sus totales: %s · asiento %s', u ->> 'dia_pago', coalesce(u ->> 'asiento', '—'))
+              else format('%s · %s · %s · %s personas · costo %s · bruto %s · patrón %s · impuestos %s · neto %s · deducciones %s · reembolsos %s · '
+                          'por pagar %s · a favor %s · asiento %s',
+                          u ->> 'estado', u ->> 'dia_pago', coalesce((u ->> 'periodo_desde') || ' a ' || (u ->> 'periodo_hasta'), 'sin período'),
+                          u ->> 'personas', pg_temp.c16_mj(u -> 'costo'), pg_temp.c16_mj(u -> 'bruto'), pg_temp.c16_mj(u -> 'patron'),
+                          pg_temp.c16_mj(u -> 'impuestos'), pg_temp.c16_mj(u -> 'neto'), pg_temp.c16_mj(u -> 'deducciones'),
+                          pg_temp.c16_mj(u -> 'reembolsos'), pg_temp.c16_mj(u -> 'por_pagar'), pg_temp.c16_mj(u -> 'a_favor'),
+                          coalesce(u ->> 'asiento', '—')) end
+$$;
+create or replace function pg_temp.c16_nom_dice(n jsonb) returns text language sql as $$
+  select case when (n ->> 'ok')::boolean is not true then 'la tarjeta no contestó: ' || coalesce(n ->> 'motivo', '?')
+    else format('con el código: %s | meses: %s | se debe %s (en el Balance %s; aparte %s): %s | sale: %s | la bolsa %s (del mes pasado: %s) | '
+                'los cargos: %s | por postear: %s | la última: %s | la próxima: %s | cuadres en rojo %s, sin comprobar %s',
+      case when (n ->> 'con_codigo')::boolean then 'sí' else 'no' end,
+      coalesce((select string_agg(format('%s %s (%s + %s), %s', x ->> 'mes', pg_temp.c16_mj(x -> 'costo'), pg_temp.c16_mj(x -> 'sueldos'),
+                                         pg_temp.c16_mj(x -> 'patron'), x ->> 'nominas'), '; ' order by o)
+                  from jsonb_array_elements(n -> 'meses') with ordinality t(x, o)), 'ninguno'),
+      pg_temp.c16_mj(n -> 'debe' -> 'monto'), pg_temp.c16_mj(n -> 'debe' -> 'libro'),
+      case when n -> 'debe' -> 'aparte' is null or jsonb_typeof(n -> 'debe' -> 'aparte') = 'null' then '0.00'
+           else pg_temp.c16_mj(n -> 'debe' -> 'aparte' -> 'monto') end,
+      coalesce((select string_agg((x ->> 'cuenta') || ' ' || pg_temp.c16_mj(x -> 'monto'), ', ' order by x ->> 'cuenta')
+                  from jsonb_array_elements(n -> 'debe' -> 'cuentas') x), 'ninguna'),
+      pg_temp.c16_nom_sale_de(n),
+      pg_temp.c16_mj(n -> 'bolsa' -> 'monto'),
+      case when n -> 'bolsa' -> 'mes' is null or jsonb_typeof(n -> 'bolsa' -> 'mes') = 'null' then 'nada'
+           else format('%s, %s', pg_temp.c16_mj(n -> 'bolsa' -> 'mes' -> 'monto'),
+                       case n -> 'bolsa' -> 'mes' ->> 'puede' when 'true' then 'ya se puede repartir' when 'false' then 'todavía no se puede repartir'
+                            else 'sin decir si se puede repartir' end) end,
+      format('%s por %s desde %s · devoluciones %s por %s · des-casados %s', n -> 'cargos' ->> 'n', pg_temp.c16_mj(n -> 'cargos' -> 'monto'),
+             coalesce(n -> 'cargos' ->> 'mas_viejo', '—'), n -> 'cargos' -> 'devoluciones' ->> 'n',
+             pg_temp.c16_mj(n -> 'cargos' -> 'devoluciones' -> 'monto'), coalesce(n -> 'cargos' ->> 'descasados', 'no se sabe')),
+      case when n -> 'por_postear' is null or jsonb_typeof(n -> 'por_postear') = 'null' then 'no se sabe'
+           else format('%s (%s a %s)', n -> 'por_postear' ->> 'n', coalesce(n -> 'por_postear' ->> 'primero', '—'),
+                       coalesce(n -> 'por_postear' ->> 'ultimo', '—')) end,
+      pg_temp.c16_nom_una_de(n -> 'ultima'), pg_temp.c16_nom_una_de(n -> 'proxima'),
+      n -> 'control' ->> 'cuadres_rojos', n -> 'control' ->> 'sin_comprobar') end
+$$;
+create or replace function pg_temp.c16_nom_espera() returns text language plpgsql as $$
+declare
+  d jsonb := pg_temp.c16_nom_debe(); v_bol numeric; v_pp text; v_ctl jsonb; b jsonb; v_bm text := 'nada';
+begin
+  -- (lo de la bolsa del último mes terminado lo dice la nómina, c15, con el código: lo que queda de ese mes —como mucho lo que hoy
+  --  hay— y si ya se puede repartir; sin un mes terminado en el libro contesta con un error: entonces, nada)
+  begin
+    b := pg_temp.c16_j('select public.fn_nomina_bolsa(null)');
+    if b ->> 'mes' = to_char(date_trunc('month', fn_fecha_miami(now())) - interval '1 month', 'YYYY-MM') and (b ->> 'saldo')::numeric <> 0 then
+      v_bm := format('%s, %s', pg_temp.c16_mj(b -> 'saldo'),
+                     case when (b ->> 'puede')::boolean then 'ya se puede repartir' else 'todavía no se puede repartir' end);
+    end if;
+  exception when others then
+    perform pg_temp.c16_ser('editor');
+  end;
+  execute $q$select coalesce(sum(l.monto), 0) from public.asiento_lineas l
+              where l.cuenta = (select c.cuenta_bolsa from public.nomina_config c where c.id = 1)$q$ into v_bol;
+  execute $q$select format('%s (%s a %s)', count(*), coalesce(min(k.dia_pago)::text, '—'), coalesce(max(k.dia_pago)::text, '—'))
+               from public.nomina_corridas k where k.estado = 'importada'$q$ into v_pp;
+  -- (los cuadres de la nómina, como los ve el dueño con su código en su página: su control entero)
+  v_ctl := pg_temp.c16_j($q$select jsonb_build_object('c', count(*) filter (where k.nivel = 'cuadre' and k.ok is not true))
+                               from public.v_nomina_control k$q$);
+  return format('con el código: sí | meses: %s | se debe %s (en el Balance %s; aparte %s): %s | sale: %s | la bolsa %s (del mes pasado: %s) | '
+                'los cargos: %s | por postear: %s | la última: %s | la próxima: %s | cuadres en rojo %s, sin comprobar 0',
+                pg_temp.c16_nom_meses(6), pg_temp.c16_mj(d -> 'monto'), pg_temp.c16_mj(d -> 'libro'), pg_temp.c16_mj(d -> 'aparte'), d ->> 'cuentas',
+                pg_temp.c16_nom_pagos_txt(), pg_temp.c16_m(v_bol), v_bm, pg_temp.c16_nom_cargos(), v_pp,
+                pg_temp.c16_nom_una(pg_temp.c16_nom_cual('ultima')), pg_temp.c16_nom_una(pg_temp.c16_nom_cual('proxima')),
+                v_ctl ->> 'c');
+end $$;
+-- (la tarjeta de la nómina, como el dueño con su código —o sin él: 'dueno_aal1'—)
+create or replace function pg_temp.c16_nom_tarjeta(p_quien text default 'dueno') returns jsonb language sql as $$
+  select pg_temp.c16_j('select public.fn_tablero_nomina()', p_quien)
+$$;
+
 -- LOS CONTROLES DE LAS OTRAS CAPAS que están en rojo: la cadena (c2), los
 -- puentes (c3), los estados (c4), el banco (c6), los cuadres de la IA (c8),
 -- los del jornal y el margen (c10), los de las facturas (c11), los del WIP
--- (c12), los de los subs (c14) y lo que detiene el cierre del mes (c9);
+-- (c12), los de los subs (c14), los de la nómina (c15; 14-nov) y lo que
+-- detiene el cierre del mes (c9);
 -- cada una, si está. Como el SQL Editor, dentro de un bloque que se deshace
 -- (la revisión del cierre de c9 guarda lo que encuentra: estas pruebas no
 -- dejan nada, ni eso).
@@ -546,6 +1249,11 @@ begin
                     from public.v_subs_control k where k.nivel = 'cuadre' and not k.ok $q$ into x;
       v := v || x;
     end if;
+    if to_regclass('public.v_nomina_control') is not null then
+      execute $q$ select coalesce(array_agg('c15: ' || k.orden order by k.orden), '{}')
+                    from public.v_nomina_control k where k.nivel = 'cuadre' and not k.ok $q$ into x;
+      v := v || x;
+    end if;
     if to_regprocedure('public.fn_cierre_revisar(text)') is not null and v_mes is not null then
       execute $q$ select coalesce(array_agg('c9: ' || k.orden || ' ' || k.control order by k.orden), '{}')
                     from public.fn_cierre_revisar($1) k where k.nivel = 'detiene' and k.ok is distinct from true $q$ into x using v_mes;
@@ -574,7 +1282,10 @@ begin
                            'facturas', 'cobros', 'cobros_devoluciones', 'aplicaciones_cobro', 'puente_documentos', 'mapeo_tipo_proyecto',
                            'movimientos_banco', 'banco_casados', 'banco_casado_lineas', 'archivos_banco', 'conciliaciones', 'prestamos',
                            'prestamo_cuotas', 'plaid_conexiones', 'stripe_config', 'stripe_pagos', 'stripe_payouts', 'stripe_enlaces',
-                           'contador_config', 'cierre_revisiones', 'emision_config', 'emision_documentos', 'wip_ajustes', 'wip_revisiones'] loop
+                           'contador_config', 'cierre_revisiones', 'emision_config', 'emision_documentos', 'wip_ajustes', 'wip_revisiones',
+                           -- (14-nov, Fase 11c) lo que la tarjeta de la nómina lee y lo que sus pruebas siembran
+                           'perfiles', 'nomina_config', 'nomina_columnas', 'nomina_archivos', 'nomina_personas', 'nomina_corridas',
+                           'nomina_corrida_personas', 'nomina_lineas', 'nomina_pagos', 'nomina_pago_partes', 'nomina_historial'] loop
     if to_regclass('public.' || t) is not null then
       execute format('select count(*) from public.%I', t) into n;
       v := v || t || '=' || n || ' ';
@@ -583,8 +1294,63 @@ begin
   return v || '· reloj ' || left(md5(pg_get_functiondef('public.fn_fecha_miami(timestamptz)'::regprocedure)), 12)
          || ' · funciones ' || (select count(*) from pg_proc where pronamespace = 'public'::regnamespace)
          || ' · obras de prueba ' || (select count(*) from proyectos where id like 'c16-prueba-%')
-         || ' · asientos de prueba ' || (select count(*) from asientos where descripcion like 'C16 PRUEBA%');
+         || ' · asientos de prueba ' || (select count(*) from asientos where descripcion like 'C16 PRUEBA%')
+         || ' · personas de prueba ' || (select count(*) from perfiles where nombre like 'ZZ C16 Prueba%');
 end $$;
+
+-- (14-nov, Fase 11c) ¿QUEDÓ ALGO DE LA NÓMINA DE PRUEBA? Sus personas, sus archivos, sus usuarios o sus cargos de Gusto en el
+-- banco (por EXECUTE: en una base sin c15 o sin c6, esas tablas no existen).
+create or replace function pg_temp.c16_quedo_de_la_nomina() returns boolean language plpgsql as $$
+declare
+  v boolean := false; x boolean;
+begin
+  if to_regclass('public.nomina_personas') is not null then
+    execute $q$select exists (select 1 from public.nomina_personas p where p.nombre like 'ZZ C16 Prueba%')
+                   or exists (select 1 from public.nomina_archivos a where a.nombre like 'zz-c16-prueba-%')$q$ into x;
+    v := v or x;
+  end if;
+  if to_regclass('public.movimientos_banco') is not null then
+    execute $q$select exists (select 1 from public.movimientos_banco m where m.id_externo like 'zz-c16-prueba-%')$q$ into x;
+    v := v or x;
+  end if;
+  if to_regclass('auth.users') is not null then
+    execute $q$select exists (select 1 from auth.users u where u.email like '%@c16-pruebas.invalid')$q$ into x;
+    v := v or x;
+  end if;
+  return v;
+end $$;
+
+-- EN LLANO (lo que mira la 35, en una función: la usan también las de la
+-- nómina). De un jsonb del tablero, los textos para Edgar (texto, detalle,
+-- nota, regla, fuente, motivo, etiqueta, titulo, aviso, cuantas, que_es,
+-- sin_comparar, alarma_texto, por_que_no, sin_proyeccion, supuestos) que
+-- dicen el nombre de una función, una vista o una columna, «null», llaves
+-- de JSON, un mensaje de error de la base, un código o un secreto en
+-- mayúsculas, una fecha AAAA-MM-DD, un plural a medias, un texto cortado,
+-- «ráfaga» o «partidas». Nulo si ninguno. (Un nombre de la base en
+-- minúsculas fuera de unas comillas «»: lo que va entre «» es una etiqueta
+-- que Edgar ve tal cual en otra página.)
+create or replace function pg_temp.c16_llano(t jsonb) returns text language sql as $$
+  with s as (
+    select k, x #>> '{}' as s
+      from unnest(array['texto', 'detalle', 'nota', 'regla', 'fuente', 'motivo', 'etiqueta', 'titulo', 'aviso', 'cuantas', 'que_es',
+                        'sin_comparar', 'alarma_texto', 'por_que_no', 'sin_proyeccion']) k,
+           lateral jsonb_path_query(t, ('strict $.**.' || k)::jsonpath) x
+     where jsonb_typeof(x) = 'string'
+    union all
+    select 'supuestos', x #>> '{}' from jsonb_path_query(t, 'strict $.**.supuestos[*]') x where jsonb_typeof(x) = 'string'
+  )
+  select string_agg(distinct k || ': «' || left(s.s, 120) || '»', ' · ')
+    from s
+   where s.s ~* '(\mfn_[a-z]|\mv_[a-z]+_|\mnull\M|\mnan\M|undefined|[{}]|\msqlstate\M|\mjsonb?\M|\mselect\M|\mpg_|permission denied|does not exist)'
+      or regexp_replace(s.s, '«[^»]*»', '', 'g') ~ '\m[a-z]+_[a-z_]+\M'
+      -- (un código o un secreto en mayúsculas, una fecha AAAA-MM-DD, un plural a medias, un texto cortado, jerga)
+      or s.s ~ '\m[A-Z][A-Z0-9]+(_[A-Z0-9]+)+\M'
+      or s.s ~ '\m[0-9]{4}-[0-9]{2}-[0-9]{2}\M'
+      or s.s ~ '\((s|es)\)'
+      or s.s like '%…%'
+      or s.s ~* '\mráfaga|\mpartidas?\M'
+$$;
 insert into _c16 values ('huella', pg_temp.c16_huella());
 
 -- (lo de las otras capas que ya estaba en rojo SIN c16: se quita c16 dentro de un bloque que se deshace y se miran los
@@ -639,7 +1405,7 @@ declare
   v_tot int := cardinality(fn_tablero_funciones());
 begin
   v_esp := format('precondiciones: nada falta | funciones: %1$s de %1$s (%1$s con su comentario «c16: …») | otras con nombre de c16: 0 | '
-                  'tablas o vistas de c16: 0 | el pegado: 6 filas | marca: 2026111303', v_tot);
+                  'tablas o vistas de c16: 0 | el pegado: 6 filas | marca: 2026111403', v_tot);
   begin
     v_pre := fn_tablero_precondiciones();
     select count(*) filter (where to_regprocedure('public.' || f) is not null),
@@ -718,7 +1484,10 @@ declare
     'select public.fn_tablero_antiguedad(''cobrar'')', 'select public.fn_tablero_antiguedad(''pagar'')', 'select public.fn_tablero_conexiones()',
     'select public.fn_tablero_cobros_en_linea()', 'select public.fn_tablero_use_tax()', 'select public.fn_tablero_prestamos()',
     'select public.fn_tablero_obras()', 'select public.fn_tablero_libro()', 'select count(*) from public.fn_tablero_cxc()',
-    'select count(*) from public.fn_tablero_cxp()', 'select public.fn_tablero_stripe()', 'select public.fn_tablero_saldos()'];
+    'select count(*) from public.fn_tablero_cxp()', 'select public.fn_tablero_stripe()', 'select public.fn_tablero_saldos()',
+    -- (14-nov, Fase 11c) la tarjeta de la nómina y sus piezas
+    'select public.fn_tablero_nomina()', 'select public.fn_tablero_nomina_estado()', 'select public.fn_tablero_nomina_debe()',
+    'select count(*) from public.fn_tablero_nomina_pagos()', 'select public.fn_tablero_nomina_tapada()'];
   v_esp text;
 begin
   v_esp := format('anon y service_role, funciones que pueden ejecutar: 0 y 0 | anon y service_role llaman al tablero: 42501 y 42501 | '
@@ -781,7 +1550,7 @@ begin
     v_esp, v_obt, v_obt = v_esp or v_obt = v_esp || ' (c2 ya en rojo por otra cosa)');
 end $$;
 
--- 5. EL TABLERO ENTERO, como el dueño: las 15 tarjetas en su orden, cada una
+-- 5. EL TABLERO ENTERO, como el dueño: las 16 tarjetas en su orden, cada una
 --    contesta (o dice qué capa no está, si es eso: ninguna falla), el libro
 --    en llano («lo de antes vive en QuickBooks»), las capas, y nada en
 --    «sigue» sin tope.
@@ -789,7 +1558,7 @@ do $$
 declare
   v_obt text; v_esp text; t jsonb; v_k text; v_ok int := 0; v_falta text[] := '{}'; v_mal text[] := '{}'; v_espf text[] := '{}';
   c_orden constant text[] := array['acciones', 'cobros', 'bancos', 'resultados', 'gastos', 'caja', 'facturas', 'ventas', 'por_cobrar',
-                                   'por_pagar', 'conexiones', 'cobros_en_linea', 'use_tax', 'prestamos', 'obras'];
+                                   'por_pagar', 'conexiones', 'cobros_en_linea', 'use_tax', 'prestamos', 'obras', 'nomina'];
 begin
   -- (lo que debe decir que su capa no está, por las capas de esta base)
   if not pg_temp.c16_capa('c6') then v_espf := v_espf || 'bancos'::text; end if;
@@ -797,8 +1566,10 @@ begin
   if not pg_temp.c16_capa('c9') then v_espf := v_espf || 'use_tax'::text; end if;
   if not pg_temp.c16_capa('c6_prestamos') then v_espf := v_espf || 'prestamos'::text; end if;
   if not pg_temp.c16_capa('c10') and not pg_temp.c16_capa('c12') then v_espf := v_espf || 'obras'::text; end if;
+  -- (14-nov, Fase 11c) la de la nómina, sin c15
+  if not pg_temp.c16_hay_c15() then v_espf := v_espf || 'nomina'::text; end if;
   v_esp := format('ok: true | las tarjetas, en su orden: sí | contestan: %s | dicen qué capa no está: %s | fallan: ninguna | el libro: en llano | '
-                  'capas: las de esta base | sigue: nada', 15 - cardinality(v_espf),
+                  'capas: las de esta base | sigue: nada', 16 - cardinality(v_espf),
                   coalesce(nullif(array_to_string(v_espf, ', '), ''), 'ninguna'));
   begin
     t := pg_temp.c16_t();
@@ -822,7 +1593,7 @@ begin
                     case when jsonb_array_length(t -> 'sigue') = 0 then 'nada' else t ->> 'sigue' end);
   exception when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (5, 'EL TABLERO ENTERO, como el dueño: las 15 tarjetas en su orden; cada una contesta, o dice que su capa no está (ninguna falla); el libro en llano («lo de antes vive en QuickBooks»); las capas de esta base; sin tope, nada en «sigue»',
+  insert into _pruebas values (5, 'EL TABLERO ENTERO, como el dueño: las 16 tarjetas en su orden; cada una contesta, o dice que su capa no está (ninguna falla); el libro en llano («lo de antes vive en QuickBooks»); las capas de esta base; sin tope, nada en «sigue»',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
@@ -866,12 +1637,14 @@ create or replace function pg_temp.c16_tc(k text) returns jsonb language sql as 
 -- 7. LAS ACCIONES RÁPIDAS: cada una con su número de donde sale (los
 --    borradores y por dónde se factura, de c11; lo que espera en la Bandeja y
 --    las cuentas por conciliar, de c6; los enlaces de pago activos, de p1; el
---    mes que toca cerrar y lo que lo detiene, de c9).
+--    mes que toca cerrar y lo que lo detiene, de c9; y —14-nov— lo de la
+--    nómina que espera a Edgar, de c15: las importadas sin postear, los
+--    cargos y las devoluciones de Gusto por casar y los des-casados).
 do $$
 declare
   v_obt text; v_esp text; a jsonb := pg_temp.c16_tc('acciones'); r record;
   v_ocultas text[] := '{}'; v_fin date := date_trunc('month', pg_temp.c16_hoy())::date - 1;
-  e_fac text; e_ban text; e_con text; e_pag text; e_cie text;
+  e_fac text; e_ban text; e_con text; e_pag text; e_cie text; e_nom text;
 begin
   begin
     if pg_temp.c16_capa('p1') then
@@ -903,12 +1676,19 @@ begin
     else
       e_cie := 'false';
     end if;
-    v_esp := format('factura: %s | bandeja: %s | conciliar: %s | pago: %s | cierre: %s | estados: true', e_fac, e_ban, e_con, e_pag, e_cie);
-    select format('factura: %s | bandeja: %s | conciliar: %s | pago: %s | cierre: %s | estados: %s',
+    -- (14-nov, Fase 11c: la nómina, con el código; sin c15, no disponible)
+    e_nom := 'false';
+    if pg_temp.c16_hay_c15() then
+      e_nom := format('true %s', pg_temp.c16_nom_esperan());
+    end if;
+    v_esp := format('factura: %s | bandeja: %s | conciliar: %s | pago: %s | nómina: %s | cierre: %s | estados: true',
+                    e_fac, e_ban, e_con, e_pag, e_nom, e_cie);
+    select format('factura: %s | bandeja: %s | conciliar: %s | pago: %s | nómina: %s | cierre: %s | estados: %s',
              max(case when x ->> 'clave' = 'factura' then case when (x ->> 'disponible')::boolean then format('true %s %s', x ->> 'n', x ->> 'camino') else 'false' end end),
              max(case when x ->> 'clave' = 'bandeja' then case when (x ->> 'disponible')::boolean then format('true %s %s', x ->> 'n', coalesce(x ->> 'mas_viejo', '—')) else 'false' end end),
              max(case when x ->> 'clave' = 'conciliar' then case when (x ->> 'disponible')::boolean then format('true %s', x ->> 'n') else 'false' end end),
              max(case when x ->> 'clave' = 'pago' then case when (x ->> 'disponible')::boolean then format('true %s', x ->> 'n') else 'false' end end),
+             max(case when x ->> 'clave' = 'nomina' then case when (x ->> 'disponible')::boolean then format('true %s', x ->> 'n') else 'false' end end),
              max(case when x ->> 'clave' = 'cierre' then case when (x ->> 'disponible')::boolean then format('true %s %s', x ->> 'n', coalesce(x ->> 'periodo', '—')) else 'false' end end),
              max(case when x ->> 'clave' = 'estados' then x ->> 'disponible' end))
       into v_obt
@@ -916,7 +1696,7 @@ begin
     if (a ->> 'ok')::boolean is not true then v_obt := 'la tarjeta no contestó: ' || coalesce(a ->> 'motivo', pg_temp.c16('t_error')); end if;
   exception when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (7, 'ACCIONES RÁPIDAS: crear una factura (los borradores y por dónde se factura, c11), la Bandeja (lo que espera y desde cuándo, contado como su página: v_banco_bandeja, c6), conciliar (las cuentas con banco sin conciliar hasta el fin del mes pasado, c6), pedir un pago en línea (los enlaces activos, p1), cerrar el mes (el que toca y lo que lo detiene, c9) y los estados',
+  insert into _pruebas values (7, 'ACCIONES RÁPIDAS: crear una factura (los borradores y por dónde se factura, c11), la Bandeja (lo que espera y desde cuándo, contado como su página: v_banco_bandeja, c6), conciliar (las cuentas con banco sin conciliar hasta el fin del mes pasado, c6), pedir un pago en línea (los enlaces activos, p1), la nómina (lo suyo que espera: las importadas sin postear y los cargos y devoluciones de Gusto por casar, c15), cerrar el mes (el que toca y lo que lo detiene, c9) y los estados',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
@@ -1047,7 +1827,11 @@ begin
     r := pg_temp.c16_tc('resultados');
     e := pg_temp.c16_res(v_d, v_hoy);
     a_d := (v_d - interval '1 month')::date;
-    a_h := least(v_d - 1, (v_hoy - interval '1 month')::date);
+    -- (los MISMOS días del mes pasado mientras el mes va a medias; EL ÚLTIMO DÍA del mes ya va entero y se compara con el mes
+    --  pasado ENTERO —el 30 de noviembre, con octubre del 1 al 31—: así lo hace la tarjeta. Antes aquí se esperaba «del 1 al
+    --  30» también ese día, y la prueba daba un rojo falso el último día de un mes más corto que el anterior.)
+    a_h := case when v_hoy = (v_d + interval '1 month')::date - 1 then v_d - 1
+                else least(v_d - 1, (v_hoy - interval '1 month')::date) end;
     v_comp := a_d >= pg_temp.c16('libro_desde')::date;
     a := case when v_comp then pg_temp.c16_res(a_d, a_h) end;
     v_esp := format('del %s al %s: ingresos %s, costo %s, gastos %s, otros %s/%s, resultado %s, margen %s, barras %s − %s | anterior %s',
@@ -1305,11 +2089,17 @@ end $$;
 --     devuelto, lo vencido de más de 60 días). Sin la apertura en el libro,
 --     no hay de dónde partir: sin proyección, y lo dice. O, sin nada con
 --     fecha, que no hay proyección.
+--     (14-nov, Fase 11c) CON LA NÓMINA DE c15 EN LA BASE, lo que el libro
+--     dice que se debe de ella se RESTA en la proyección (lo que ya se
+--     debía, hoy; lo de una nómina ya posteada con día de pago después de
+--     hoy, ese día: la cuenta de c16_nom_pagos) y ya no va en «no incluye».
+--     Sin c15, como antes.
 do $$
 declare
   v_obt text; v_esp text; c jsonb := pg_temp.c16_tc('caja'); v_hoy date := pg_temp.c16_hoy(); v_fin date; v_cob numeric; v_pag numeric;
   v_cuo numeric := 0; v_imp numeric; v_lib numeric; p jsonb; v_ap boolean; v_dev bigint[]; v_ut text; v_s0 numeric; v_p numeric; v_h numeric;
   v_mod text[]; v_nom numeric; v_dv numeric; v_vj numeric; v_m0 date := date_trunc('month', pg_temp.c16_hoy())::date;
+  v_c15 boolean := pg_temp.c16_hay_c15(); v_nomm numeric := 0;
 begin
   begin
     v_fin := (v_m0 + interval '1 month')::date - 1;
@@ -1366,20 +2156,28 @@ begin
       -- (lo que se debe de la nómina, que no va: con su monto, con todo lo que el libro tiene en sus cuentas —también lo fechado
       --  después de hoy: la 50—)
       v_nom := -pg_temp.c16_libro(array(select m.cuenta from v_estados_mapeo m where m.estado = 'balance' and m.linea = 'nomina_por_pagar'), date 'infinity');
-      if v_cob = 0 and v_pag = 0 and v_cuo = 0 and v_imp = 0 and v_lib = 0 and (p is null or p = 'null'::jsonb) then
+      -- (14-nov, Fase 11c: con c15, lo de la nómina que sale este mes —lo que ya se debía, hoy; lo de una nómina ya posteada con día
+      --  de pago en lo que queda del mes, ese día—)
+      if v_c15 then
+        select coalesce(sum(q.monto), 0) into v_nomm from pg_temp.c16_nom_pagos() q where q.fecha <= v_fin;
+      end if;
+      if v_cob = 0 and v_pag = 0 and v_cuo = 0 and v_imp = 0 and v_lib = 0 and v_nomm = 0 and (p is null or p = 'null'::jsonb) then
         v_esp := 'sin nada con fecha: sin proyección (lo dice)';
         v_obt := case when c ->> 'sin_proyeccion' is not null and (p is null or p = 'null'::jsonb) then 'sin nada con fecha: sin proyección (lo dice)' else 'otra cosa: ' || coalesce(p::text, '') end;
       else
-        v_esp := format('este mes: cobrar %s, pagar %s, cuotas %s, use tax %s, posfechado %s, saldo %s | cada mes, el anterior más su neto: sí | '
+        v_esp := format('este mes: cobrar %s, pagar %s, cuotas %s, use tax %s, la nómina %s, posfechado %s, saldo %s | cada mes, el anterior más su neto: sí | '
                         'marcada como proyección, con la línea a la vista: sí | no incluye, con su monto: la nómina %s, un cheque devuelto %s, más de 60 días %s',
-                        pg_temp.c16_m(v_cob), pg_temp.c16_m(v_pag), pg_temp.c16_m(v_cuo), pg_temp.c16_m(v_imp), pg_temp.c16_m(v_lib),
-                        pg_temp.c16_m((c -> 'hoy' ->> 'neto')::numeric + v_cob - v_pag - v_cuo - v_imp + v_lib),
-                        case when v_nom <> 0 then pg_temp.c16_m(v_nom) else 'nada' end, case when v_dv <> 0 then pg_temp.c16_m(v_dv) else 'nada' end,
+                        pg_temp.c16_m(v_cob), pg_temp.c16_m(v_pag), pg_temp.c16_m(v_cuo), pg_temp.c16_m(v_imp),
+                        case when v_c15 then pg_temp.c16_m(v_nomm) else '—' end, pg_temp.c16_m(v_lib),
+                        pg_temp.c16_m((c -> 'hoy' ->> 'neto')::numeric + v_cob - v_pag - v_cuo - v_imp - v_nomm + v_lib),
+                        case when v_c15 then 'va en la proyección' when v_nom <> 0 then pg_temp.c16_m(v_nom) else 'nada' end,
+                        case when v_dv <> 0 then pg_temp.c16_m(v_dv) else 'nada' end,
                         case when v_vj <> 0 then pg_temp.c16_m(v_vj) else 'nada' end);
-        v_obt := format('este mes: cobrar %s, pagar %s, cuotas %s, use tax %s, posfechado %s, saldo %s | cada mes, el anterior más su neto: %s | '
+        v_obt := format('este mes: cobrar %s, pagar %s, cuotas %s, use tax %s, la nómina %s, posfechado %s, saldo %s | cada mes, el anterior más su neto: %s | '
                         'marcada como proyección, con la línea a la vista: %s | no incluye, con su monto: la nómina %s, un cheque devuelto %s, más de 60 días %s',
                         pg_temp.c16_mj(p -> 'meses' -> 0 -> 'cobrar'), pg_temp.c16_mj(p -> 'meses' -> 0 -> 'pagar'), pg_temp.c16_mj(p -> 'meses' -> 0 -> 'cuotas'),
-                        pg_temp.c16_mj(p -> 'meses' -> 0 -> 'impuestos'), pg_temp.c16_mj(p -> 'meses' -> 0 -> 'libro'),
+                        pg_temp.c16_mj(p -> 'meses' -> 0 -> 'impuestos'), pg_temp.c16_mj(p -> 'meses' -> 0 -> 'nomina'),
+                        pg_temp.c16_mj(p -> 'meses' -> 0 -> 'libro'),
                         pg_temp.c16_mj(p -> 'meses' -> 0 -> 'saldo'),
                         case when not exists (select 1 from jsonb_array_elements(p -> 'meses') with ordinality t(x, o)
                                                where o > 1 and (x ->> 'saldo')::numeric <> (p -> 'meses' -> (o::int - 2) ->> 'saldo')::numeric + (x ->> 'neto')::numeric)
@@ -1389,7 +2187,8 @@ begin
                                   and (select count(*) from jsonb_array_elements(c -> 'serie') x where x ->> 'tipo' = 'proyeccion') = jsonb_array_length(p -> 'meses')
                              then 'sí' else 'no' end,
                         coalesce((select pg_temp.c16_mj(x -> 'monto') from jsonb_array_elements(p -> 'no_incluye') x
-                                   where x ->> 'clave' = 'deuda' and x ->> 'linea' = 'nomina_por_pagar'), 'nada'),
+                                   where x ->> 'clave' = 'deuda' and x ->> 'linea' = 'nomina_por_pagar'),
+                                 case when v_c15 then 'va en la proyección' else 'nada' end),
                         coalesce((select pg_temp.c16_mj(x -> 'monto') from jsonb_array_elements(p -> 'no_incluye') x where x ->> 'clave' = 'cheque_devuelto'), 'nada'),
                         coalesce((select pg_temp.c16_mj(x -> 'monto') from jsonb_array_elements(p -> 'no_incluye') x where x ->> 'clave' = 'vencido_viejo'), 'nada'));
       end if;
@@ -1397,7 +2196,7 @@ begin
     if (c ->> 'ok')::boolean is not true then v_obt := 'la tarjeta no contestó: ' || coalesce(c ->> 'motivo', pg_temp.c16('t_error')); end if;
   exception when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (15, 'LA PROYECCIÓN DE CAJA, con lo que se sabe y dicho de frente: en el mes de hoy, lo por cobrar que vence en él o ya venció hasta hace 60 días (sin lo de un cheque devuelto) − lo por pagar igual − las cuotas de los préstamos − el use tax por la regla del DR-15 ± lo posfechado del libro; cada mes, el saldo anterior más su neto; la línea a la vista («la caja real será menor») y lo que no incluye con su monto; sin la apertura en el libro, sin proyección (lo dice)',
+  insert into _pruebas values (15, 'LA PROYECCIÓN DE CAJA, con lo que se sabe y dicho de frente: en el mes de hoy, lo por cobrar que vence en él o ya venció hasta hace 60 días (sin lo de un cheque devuelto) − lo por pagar igual − las cuotas de los préstamos − el use tax por la regla del DR-15 − (con la nómina de c15 en la base) lo que se debe de la nómina ± lo posfechado del libro; cada mes, el saldo anterior más su neto; la línea a la vista («la caja real será menor») y lo que no incluye con su monto; sin la apertura en el libro, sin proyección (lo dice)',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
@@ -2135,7 +2934,7 @@ begin
    where (t0 -> k ->> 'ok')::boolean is false and t0 -> k ->> 'falta' is not null;
   v_mas := (select count(*) from unnest(array['prestamos', 'use_tax', 'cobros_en_linea']) k where (t0 -> k ->> 'ok')::boolean);
   v_esp := format('préstamos: falta c6 | use tax: falta c9 | cobros en línea: falta p1 | conexiones: contesta, Stripe sin instalar (p1) | '
-                  'acciones, pedir un pago: no disponible (p1) | el tablero: 15 contestan, %s dicen que falta su capa, 0 fallan', v_antes + v_mas);
+                  'acciones, pedir un pago: no disponible (p1) | el tablero: 16 contestan, %s dicen que falta su capa, 0 fallan', v_antes + v_mas);
   begin
     execute 'alter view public.v_prestamos rename to v_prestamos_c16_fuera';
     execute 'alter view public.v_dr15_mes rename to v_dr15_mes_c16_fuera';
@@ -2176,7 +2975,7 @@ declare
   v_obt text; v_esp text; t jsonb; e text;
 begin
   if pg_temp.c16_omitir(31, 'una tarjeta que falla', 'la que falla lo dice y las demás contestan') then return; end if;
-  v_esp := 'no se pudieron leer, con 42501: caja, cobros, facturas, por_cobrar | las demás contestan: 11 | la tarjeta sola: 42501';
+  v_esp := 'no se pudieron leer, con 42501: caja, cobros, facturas, por_cobrar | las demás contestan: 12 | la tarjeta sola: 42501';
   begin
     execute 'revoke select on public.v_cxc_antiguedad from authenticated';
     t := pg_temp.c16_t();
@@ -2193,19 +2992,19 @@ begin
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
   perform pg_temp.c16_ser('editor');
-  insert into _pruebas values (31, 'UNA TARJETA QUE FALLA: sin permiso para leer la antigüedad de lo por cobrar de c4, las cuatro tarjetas que la usan dicen que no se pudieron leer (con su código, 42501) y las otras once contestan; la tarjeta sola, por la API, da el error',
+  insert into _pruebas values (31, 'UNA TARJETA QUE FALLA: sin permiso para leer la antigüedad de lo por cobrar de c4, las cuatro tarjetas que la usan dicen que no se pudieron leer (con su código, 42501) y las otras doce contestan; la tarjeta sola, por la API, da el error',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
 -- 32. EL TOPE POR RELOJ: con un tope de 1 ms, lo que no alcanzó sale en
 --     «sigue» ({ok: false, sigue: true}, sin error) y, pedido otra vez, llega
---     igual que sin tope; entre las dos llamadas, las 15 tarjetas.
+--     igual que sin tope; entre las dos llamadas, las 16 tarjetas.
 do $$
 declare
   v_obt text; v_esp text; t0 jsonb := pg_temp.c16('t')::jsonb; t1 jsonb; t2 jsonb; v_dif text;
 begin
   if pg_temp.c16_omitir(32, 'el tope por reloj', 'lo que no alcanzó sale en «sigue» y llega al pedirlo otra vez') then return; end if;
-  v_esp := 'la primera: ok, lo que no alcanzó en «sigue» (sin error) | la segunda: lo de «sigue», igual que sin tope | entre las dos: las 15';
+  v_esp := 'la primera: ok, lo que no alcanzó en «sigue» (sin error) | la segunda: lo de «sigue», igual que sin tope | entre las dos: las 16';
   begin
     t1 := pg_temp.c16_t('{"tope_ms": 1}');
     t2 := pg_temp.c16_t(jsonb_build_object('tarjetas', t1 -> 'sigue', 'tope_ms', 0));
@@ -2223,14 +3022,14 @@ begin
                          else 'distinto en: ' || coalesce(v_dif, 'sigue otra vez') end,
                     case when (select count(distinct k) from (select jsonb_array_elements_text(t1 -> 'tarjetas') k
                                                               except select jsonb_array_elements_text(t1 -> 'sigue')
-                                                              union select jsonb_array_elements_text(t2 -> 'tarjetas')) u) = 15
-                         then 'las 15' else 'faltan' end);
+                                                              union select jsonb_array_elements_text(t2 -> 'tarjetas')) u) = 16
+                         then 'las 16' else 'faltan' end);
     if jsonb_array_length(t1 -> 'sigue') = 0 then
       v_obt := replace(v_obt, 'no hizo falta (todo alcanzó en 1 ms)', 'lo de «sigue», igual que sin tope');
     end if;
   exception when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (32, 'EL TOPE POR RELOJ: con un tope de 1 ms, lo que no alcanzó sale en «sigue» ({ok: false, sigue: true}, sin error) y, pedido otra vez, llega igual que sin tope; entre las dos llamadas, las 15 tarjetas',
+  insert into _pruebas values (32, 'EL TOPE POR RELOJ: con un tope de 1 ms, lo que no alcanzó sale en «sigue» ({ok: false, sigue: true}, sin error) y, pedido otra vez, llega igual que sin tope; entre las dos llamadas, las 16 tarjetas',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
@@ -2260,7 +3059,11 @@ begin
       (14, 'las ventas del año 1800', 'select public.fn_tablero_ventas(1800)', '22023'),
       (15, '0 obras', 'select public.fn_tablero_obras(0)', '22023'),
       (16, 'el embudo de 400 días', 'select public.fn_tablero_cobros(400)', '22023'),
-      (17, 'ninguna tarjeta', 'select public.fn_tablero(''{"tarjetas": []}'')', 'ok')) x(o, que, s, codigo)
+      (17, 'ninguna tarjeta', 'select public.fn_tablero(''{"tarjetas": []}'')', 'ok'),
+      -- (14-nov, Fase 11c) la nómina: sus meses van de 1 a 24, esté o no c15; y no tiene más claves
+      (18, 'una nómina de 0 meses', 'select public.fn_tablero(''{"nomina": {"meses": 0}}'')', '22023'),
+      (19, 'una nómina de 25 meses', 'select public.fn_tablero_nomina(25)', '22023'),
+      (20, 'la nómina con una clave de más', 'select public.fn_tablero(''{"nomina": {"dias": 30}}'')', '22023')) x(o, que, s, codigo)
     order by o loop
     v_esp := v_esp || r.que || ': ' || r.codigo || ' · ';
     v_obt := v_obt || r.que || ': ' || pg_temp.c16_estado(r.s) || ' · ';
@@ -2293,7 +3096,8 @@ begin
                              public.fn_tablero_caja(), public.fn_tablero_facturas(), public.fn_tablero_ventas(), public.fn_tablero_antiguedad(''cobrar''),
                              public.fn_tablero_antiguedad(''pagar''), public.fn_tablero_conexiones(), public.fn_tablero_cobros_en_linea(),
                              public.fn_tablero_use_tax(), public.fn_tablero_prestamos(), public.fn_tablero_obras(), public.fn_tablero_libro(),
-                             public.fn_tablero_capas())');
+                             public.fn_tablero_capas(), public.fn_tablero_nomina(), public.fn_tablero_nomina_estado(), public.fn_tablero_nomina_debe(),
+                             to_jsonb(public.fn_tablero_nomina_tapada()), (select to_jsonb(count(*)) from public.fn_tablero_nomina_pagos()))');
     select coalesce(sum(s.n_tup_ins + s.n_tup_upd + s.n_tup_del - coalesce((j0 ->> s.relname)::bigint, 0)), 0),
            string_agg(s.relname, ', ' order by s.relname) filter (where s.n_tup_ins + s.n_tup_upd + s.n_tup_del <> coalesce((j0 ->> s.relname)::bigint, 0))
       into v1, v_t
@@ -2324,27 +3128,8 @@ declare
 begin
   v_esp := 'ningún texto con nombres de la base, códigos, fechas AAAA-MM-DD, plurales a medias, textos cortados ni jerga';
   begin
-    with s as (
-      select k, x #>> '{}' as s
-        from unnest(array['texto', 'detalle', 'nota', 'regla', 'fuente', 'motivo', 'etiqueta', 'titulo', 'aviso', 'cuantas', 'que_es',
-                          'sin_comparar', 'alarma_texto', 'por_que_no', 'sin_proyeccion']) k,
-             lateral jsonb_path_query(t, ('strict $.**.' || k)::jsonpath) x
-       where jsonb_typeof(x) = 'string'
-      union all
-      select 'supuestos', x #>> '{}' from jsonb_path_query(t, 'strict $.**.supuestos[*]') x where jsonb_typeof(x) = 'string'
-    )
-    select string_agg(distinct k || ': «' || left(s.s, 120) || '»', ' · '), count(*) into v_mal, v_n
-      from s
-     where s.s ~* '(\mfn_[a-z]|\mv_[a-z]+_|\mnull\M|\mnan\M|undefined|[{}]|\msqlstate\M|\mjsonb?\M|\mselect\M|\mpg_|permission denied|does not exist)'
-        or regexp_replace(s.s, '«[^»]*»', '', 'g') ~ '\m[a-z]+_[a-z_]+\M'
-        -- (un código o un secreto en mayúsculas, una fecha AAAA-MM-DD, un plural a medias, un texto cortado, jerga)
-        or s.s ~ '\m[A-Z][A-Z0-9]+(_[A-Z0-9]+)+\M'
-        or s.s ~ '\m[0-9]{4}-[0-9]{2}-[0-9]{2}\M'
-        or s.s ~ '\((s|es)\)'
-        or s.s like '%…%'
-        or s.s ~* '\mráfaga|\mpartidas?\M';
-       -- (un nombre de la base en minúsculas, como_pagar, fuera de unas comillas «»: lo que va entre «» es una etiqueta que Edgar ve
-       --  tal cual en otra página)
+    -- (lo que mira está en pg_temp.c16_llano, arriba: lo usan también las pruebas de la nómina)
+    v_mal := pg_temp.c16_llano(t);
     v_obt := coalesce('dicen cosas que Edgar no entiende: ' || v_mal, 'ningún texto con nombres de la base, códigos, fechas AAAA-MM-DD, plurales a medias, textos cortados ni jerga');
   exception when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
@@ -2965,8 +3750,15 @@ begin
     coalesce(v_esp, 'lo que queda del pago no es cobrado de estos días'), v_obt, case when v_obt like 'omitida:%' then null else v_obt = v_esp end);
 end $$;
 
--- 50. LA PROYECCIÓN, LO QUE NO INCLUYE: LA DEUDA DE LA NÓMINA CON TODO LO QUE
---     EL LIBRO TIENE (la revisión final, con la nómina de c15 en producción).
+-- 50. LA PROYECCIÓN Y LA DEUDA DE LA NÓMINA CON TODO LO QUE EL LIBRO TIENE (la
+--     revisión final, con la nómina de c15 en producción). (14-nov, Fase 11c:
+--     CON c15 EN LA BASE esa deuda ya no va en «no incluye»: va EN la
+--     proyección, y esta prueba mira lo mismo ahí —(a) una deuda de la nómina
+--     fechada después de hoy, a mano y sin journal, se resta ya, este mes;
+--     (b) si su cargo ya salió del banco, lo que se debe vuelve a lo de
+--     antes, el banco baja y el saldo proyectado no cambia: no se resta dos
+--     veces—. Lo de una nómina de verdad con día de pago después de hoy, la
+--     57. SIN c15, como estaba:)
 --     El journal de una nómina lleva la fecha de su día de pago, y Gusto cobra
 --     del banco unos días antes. (a) Una nómina ya posteada con día de pago
 --     después de hoy: lo que deja por pagar se dice (la deuda sube y el texto
@@ -2980,7 +3772,7 @@ declare
   v_obt text; v_esp text; v_hoy date := pg_temp.c16_hoy(); v_f date := pg_temp.c16_hoy() + 3;
   v_banco text := (select pc.cuenta from puente_cuentas pc where pc.rol = 'banco');
   v_nom text := (select m.cuenta from v_estados_mapeo m where m.estado = 'balance' and m.linea = 'nomina_por_pagar' order by m.cuenta limit 1);
-  c0 jsonb; c1 jsonb; c2 jsonb; d0 jsonb; d1 jsonb; d2 jsonb;
+  c0 jsonb; c1 jsonb; c2 jsonb; d0 jsonb; d1 jsonb; d2 jsonb; v_c15 boolean := pg_temp.c16_hay_c15();
 begin
   if pg_temp.c16_omitir(50, 'la proyección, lo que no incluye: la deuda de la nómina', 'con todo lo que el libro tiene, también lo fechado después de hoy', true) then return; end if;
   if not exists (select 1 from asientos a where a.tipo = 'apertura' and a.reversa_a is null and not exists (select 1 from asientos r where r.reversa_a = a.id)) then
@@ -2993,8 +3785,12 @@ begin
       'omitida: el mapeo de c4 no tiene ninguna cuenta en «nómina y retenciones por pagar», o los puentes no dicen cuál es el banco', null);
     return;
   end if;
-  v_esp := 'una nómina posteada con día de pago después de hoy: la deuda sube 500.00, lo de hasta hoy igual, lo dice | '
-           || 'su cargo ya salió del banco: la deuda vuelve a la de antes, lo de hasta hoy baja 500.00';
+  v_esp := case when v_c15
+                then 'con la nómina de c15: una deuda de la nómina fechada después de hoy (a mano, sin journal) se resta ya, este mes (500.00 más), y '
+                     || 'no va en «no incluye» | su cargo ya salió del banco: lo que sale por la nómina vuelve a lo de antes, el banco baja 500.00 y el '
+                     || 'saldo proyectado no cambia (no se resta dos veces)'
+                else 'una nómina posteada con día de pago después de hoy: la deuda sube 500.00, lo de hasta hoy igual, lo dice | '
+                     || 'su cargo ya salió del banco: la deuda vuelve a la de antes, lo de hasta hoy baja 500.00' end;
   begin
     c0 := pg_temp.c16_j('select public.fn_tablero_caja(12, 3)');
     if c0 -> 'proyeccion' is null or c0 -> 'proyeccion' = 'null'::jsonb then
@@ -3015,6 +3811,23 @@ begin
     select x into d0 from jsonb_array_elements(c0 -> 'proyeccion' -> 'no_incluye') x where x ->> 'clave' = 'deuda' and x ->> 'linea' = 'nomina_por_pagar';
     select x into d1 from jsonb_array_elements(c1 -> 'proyeccion' -> 'no_incluye') x where x ->> 'clave' = 'deuda' and x ->> 'linea' = 'nomina_por_pagar';
     select x into d2 from jsonb_array_elements(c2 -> 'proyeccion' -> 'no_incluye') x where x ->> 'clave' = 'deuda' and x ->> 'linea' = 'nomina_por_pagar';
+    if v_c15 then
+      -- (14-nov, Fase 11c) con c15, EN la proyección: lo que sale por la nómina este mes y el saldo del mes
+      v_obt := format('con la nómina de c15: una deuda de la nómina fechada después de hoy (a mano, sin journal) %s, y %s | su cargo ya salió del '
+                      'banco: lo que sale por la nómina %s, el banco baja %s y el saldo proyectado %s',
+        case when (c1 -> 'proyeccion' -> 'meses' -> 0 ->> 'nomina')::numeric - (c0 -> 'proyeccion' -> 'meses' -> 0 ->> 'nomina')::numeric = 500
+             then 'se resta ya, este mes (500.00 más)'
+             else format('no se resta este mes (%s → %s)', c0 -> 'proyeccion' -> 'meses' -> 0 ->> 'nomina', c1 -> 'proyeccion' -> 'meses' -> 0 ->> 'nomina') end,
+        case when d0 is null and d1 is null and d2 is null then 'no va en «no incluye»' else 'sigue en «no incluye»' end,
+        case when c2 -> 'proyeccion' -> 'meses' -> 0 -> 'nomina' = c0 -> 'proyeccion' -> 'meses' -> 0 -> 'nomina' then 'vuelve a lo de antes'
+             else format('no es lo de antes (%s → %s)', c0 -> 'proyeccion' -> 'meses' -> 0 ->> 'nomina', c2 -> 'proyeccion' -> 'meses' -> 0 ->> 'nomina') end,
+        pg_temp.c16_m((c0 -> 'hoy' ->> 'neto')::numeric - (c2 -> 'hoy' ->> 'neto')::numeric),
+        case when c2 -> 'proyeccion' -> 'meses' -> 0 -> 'saldo' = c1 -> 'proyeccion' -> 'meses' -> 0 -> 'saldo'
+                  and (c0 -> 'proyeccion' -> 'meses' -> 0 ->> 'saldo')::numeric - (c1 -> 'proyeccion' -> 'meses' -> 0 ->> 'saldo')::numeric = 500
+             then 'no cambia (no se resta dos veces)'
+             else format('cambia (%s → %s → %s)', c0 -> 'proyeccion' -> 'meses' -> 0 ->> 'saldo', c1 -> 'proyeccion' -> 'meses' -> 0 ->> 'saldo',
+                         c2 -> 'proyeccion' -> 'meses' -> 0 ->> 'saldo') end);
+    else
     v_obt := format('una nómina posteada con día de pago después de hoy: la deuda %s, lo de hasta hoy %s, %s | su cargo ya salió del banco: la deuda %s, lo de hasta hoy %s',
       case when coalesce((d1 ->> 'monto')::numeric, 0) - coalesce((d0 ->> 'monto')::numeric, 0) = 500 then 'sube 500.00'
            else format('no sube 500.00 (%s → %s)', coalesce(d0 ->> 'monto', '0.00'), coalesce(d1 ->> 'monto', '0.00')) end,
@@ -3027,6 +3840,7 @@ begin
       case when d2 is null then case when coalesce((d0 ->> 'monto')::numeric, 0) = 0 then 'baja 500.00' else 'sin decir' end
            when coalesce((d2 ->> 'a_hoy')::numeric, 0) - coalesce((d0 ->> 'a_hoy')::numeric, (d0 ->> 'monto')::numeric, 0) = -500 then 'baja 500.00'
            else format('otro (%s → %s)', coalesce(d0 ->> 'a_hoy', d0 ->> 'monto', '0.00'), coalesce(d2 ->> 'a_hoy', '?')) end);
+    end if;
     if (c2 ->> 'ok')::boolean is not true then v_obt := 'la tarjeta no contestó: ' || coalesce(c2 ->> 'motivo', '?'); end if;
     raise exception using errcode = 'MXT00';
   exception
@@ -3034,12 +3848,1077 @@ begin
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
   perform pg_temp.c16_ser('editor');
-  insert into _pruebas values (50, 'LA PROYECCIÓN, LO QUE NO INCLUYE: LA DEUDA DE LA NÓMINA con todo lo que el libro tiene en sus cuentas, también lo fechado después de hoy: una nómina ya posteada con día de pago después de hoy se dice (la deuda sube); y si su cargo ya salió del banco antes de ese día, la deuda no baja en negativo (vuelve a la de antes)',
+  insert into _pruebas values (50, 'LA PROYECCIÓN Y LA DEUDA DE LA NÓMINA con todo lo que el libro tiene en sus cuentas, también lo fechado después de hoy. Sin c15, en «no incluye»: una nómina ya posteada con día de pago después de hoy se dice (la deuda sube); y si su cargo ya salió del banco antes de ese día, la deuda no baja en negativo (vuelve a la de antes). Con la nómina de c15 en la base, EN la proyección: se resta ya, y con su cargo ya salido del banco no se resta dos veces',
     v_esp, v_obt, case when v_obt like 'omitida:%' then null else v_obt = v_esp end);
 end $$;
 
+-- =====================================================================
+-- LA NÓMINA DE GUSTO EN LA PORTADA (14-nov, Fase 11c; de la 51 a la 61).
+-- La tarjeta «nomina», su acción rápida, lo que pide atender y la
+-- proyección de la caja, contra el libro crudo y las tablas y vistas de la
+-- nómina (c15): con el código del teléfono y sin él (el dueño con aal2 y
+-- con aal1), una nómina de una sola persona, una importada sin postear,
+-- los cargos de Gusto, el equipo, y sin c15. Cada una en su bloque que se
+-- deshace (MXT00). Sin la nómina de c15 en la base salen «omitida» (menos
+-- la 58, que mira justo eso).
+-- =====================================================================
+
+-- 51. LA TARJETA DE LA NÓMINA, COMO ESTÁ LA BASE (sin sembrar nada), con el
+--     código del teléfono: lo que costó la nómina cada mes y lo que se debe
+--     de ella (del libro crudo), cuándo sale de la caja, la bolsa del
+--     burden, los cargos de Gusto que esperan (la vista de su página), las
+--     que esperan por postear, la última y la próxima (de las tablas de la
+--     nómina: sus personas contadas y sus totales sumados de lo de cada
+--     una), sus cuadres; lo que cuenta su acción rápida, y los meses que se
+--     piden.
+do $$
+declare
+  v_obt text; v_esp text; n jsonb := pg_temp.c16_tc('nomina'); a jsonb; t2 jsonb; v_meses int; v_hoy date := pg_temp.c16_hoy();
+begin
+  if pg_temp.c16_nom_omitir(51, 'la tarjeta de la nómina, como está la base', 'cada cifra, la del libro o la de la nómina', false) then return; end if;
+  begin
+    -- (de los 2 meses que se piden, los que el libro tiene)
+    select count(*) into v_meses
+      from generate_series(greatest(date_trunc('month', pg_temp.c16('libro_desde')::date), date_trunc('month', v_hoy) - interval '1 month'),
+                           date_trunc('month', v_hoy), interval '1 month') g;
+    v_esp := pg_temp.c16_nom_espera()
+             || format(' || su acción rápida: %s esperan, lleva a la página de la nómina | pedida con 2 meses: %s | la tarjeta lleva a Nómina | '
+                       'el tablero dice que la nómina (c15) está: sí', pg_temp.c16_nom_esperan(), v_meses);
+    select x into a from jsonb_array_elements(pg_temp.c16_tc('acciones') -> 'lista') x where x ->> 'clave' = 'nomina';
+    t2 := pg_temp.c16_t('{"tarjetas": ["nomina"], "nomina": {"meses": 2}}');
+    v_obt := pg_temp.c16_nom_dice(n)
+             || format(' || su acción rápida: %s esperan, lleva a %s | pedida con 2 meses: %s | la tarjeta lleva a %s | '
+                       'el tablero dice que la nómina (c15) está: %s',
+                       coalesce(a ->> 'n', 'no dice cuántas'),
+                       case when a -> 'ir' ->> 'pagina' = 'nomina' and a -> 'ir' ->> 'sub' in ('nominas', 'cargos') then 'la página de la nómina'
+                            else coalesce(a ->> 'ir', 'ningún sitio') end,
+                       jsonb_array_length(t2 -> 'nomina' -> 'meses'),
+                       case when n -> 'ir' ->> 'pagina' = 'nomina' then 'Nómina' else coalesce(n ->> 'ir', '?') end,
+                       case when pg_temp.c16_capa('c15') then 'sí' else 'no' end);
+  exception when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.c16_ser('editor');
+  insert into _pruebas values (51, 'LA TARJETA DE LA NÓMINA, COMO ESTÁ LA BASE, con el código del teléfono, contra el libro crudo y las tablas de la nómina (c15), al centavo: lo que costó cada mes (sueldos y lo del patrón, de sus asientos), lo que se debe de ella (2210 a 2250; la de reembolsos al revés, aparte) y cuándo sale, la bolsa del burden, los cargos de Gusto que esperan, las que esperan por postear, la última y la próxima (sus personas contadas y sus totales sumados de lo de cada una), sus cuadres; lo que cuenta su acción rápida y los meses pedidos',
+    v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 52. UNA NÓMINA DE TRES PERSONAS, POSTEADA, CON EL CÓDIGO: entra por el
+--     camino de c15 (el journal de prueba «tres», con día de pago hoy) y la
+--     tarjeta la trae como la última, con los totales de la EMPRESA al
+--     centavo (los inventados, y los mismos que suman sus tres personas en
+--     las tablas de la nómina); el mes de hoy sube lo que costó, y lo que el
+--     Balance dice que se debe, lo que dejó por pagar menos lo reembolsado.
+do $$
+declare
+  v_obt text; v_esp text; v_hoy date := pg_temp.c16_hoy(); c uuid; n0 jsonb; n jsonb; u jsonb; m0 jsonb; m1 jsonb;
+begin
+  if pg_temp.c16_nom_omitir(52, 'una nómina de tres personas, posteada, con el código', 'la última, con sus totales al centavo') then return; end if;
+  begin
+    n0 := pg_temp.c16_nom_tarjeta();
+    perform pg_temp.c16_nom_sembrar();
+    c := pg_temp.c16_nom('tres', v_hoy - 12, v_hoy - 4, v_hoy);
+    -- (y la prima de WC del mes pasado, a mano, a la bolsa del burden: queda sin repartir; si ese mes ya está cerrado no entra, y
+    --  la bolsa se compara como esté)
+    begin
+      perform pg_temp.c16_postear(date_trunc('month', v_hoy)::date - 1, 'la prima de WC del mes pasado, a la bolsa del burden',
+                jsonb_build_array(jsonb_build_object('cuenta', '5015', 'monto', '123.45'), jsonb_build_object('cuenta', '1410', 'monto', '-123.45')));
+    exception when others then
+      perform pg_temp.c16_ser('editor');
+    end;
+    n := pg_temp.c16_nom_tarjeta();
+    u := n -> 'ultima'; m0 := n0 -> 'meses' -> -1; m1 := n -> 'meses' -> -1;
+    v_esp := pg_temp.c16_nom_espera()
+             || ' || la de prueba es la última: 3 personas, costo 6214.03 (bruto 5600.75 + patrón 613.28), impuestos 1512.74, neto 4663.79, '
+             || 'deducciones 37.50, reembolsos 61.30, le quedan por pagar 6275.33 | el mes de hoy sube 6214.03 (sueldos 5600.75 + patrón 613.28), '
+             || 'con una nómina más | lo que el Balance dice que se debe sube 6214.03 (lo que dejó por pagar, 6275.33, menos lo reembolsado, 61.30) | '
+             || 'las cuentas suman lo que se debe, y lo que sale también: sí | en llano: sí';
+    v_obt := pg_temp.c16_nom_dice(n)
+             || format(' || la de prueba %s: %s personas, costo %s (bruto %s + patrón %s), impuestos %s, neto %s, deducciones %s, reembolsos %s, '
+                       'le quedan por pagar %s | el mes de hoy sube %s (sueldos %s + patrón %s), con %s | lo que el Balance dice que se debe sube %s '
+                       '(lo que dejó por pagar, 6275.33, menos lo reembolsado, 61.30) | las cuentas suman lo que se debe, y lo que sale también: %s | '
+                       'en llano: %s',
+                       case when u ->> 'corrida' = c::text then 'es la última' else 'NO es la última' end, u ->> 'personas',
+                       pg_temp.c16_mj(u -> 'costo'), pg_temp.c16_mj(u -> 'bruto'), pg_temp.c16_mj(u -> 'patron'), pg_temp.c16_mj(u -> 'impuestos'),
+                       pg_temp.c16_mj(u -> 'neto'), pg_temp.c16_mj(u -> 'deducciones'), pg_temp.c16_mj(u -> 'reembolsos'), pg_temp.c16_mj(u -> 'por_pagar'),
+                       pg_temp.c16_m((m1 ->> 'costo')::numeric - (m0 ->> 'costo')::numeric),
+                       pg_temp.c16_m((m1 ->> 'sueldos')::numeric - (m0 ->> 'sueldos')::numeric),
+                       pg_temp.c16_m((m1 ->> 'patron')::numeric - (m0 ->> 'patron')::numeric),
+                       case when (m1 ->> 'nominas')::int - (m0 ->> 'nominas')::int = 1 then 'una nómina más'
+                            else format('%s nóminas más', (m1 ->> 'nominas')::int - (m0 ->> 'nominas')::int) end,
+                       pg_temp.c16_m((n -> 'debe' ->> 'libro')::numeric - (n0 -> 'debe' ->> 'libro')::numeric),
+                       pg_temp.c16_nom_suma(n), coalesce(pg_temp.c16_llano(n), 'sí'));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when sqlstate 'MXT01' then v_obt := 'omitida: ' || sqlerrm;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.c16_ser('editor');
+  insert into _pruebas values (52, 'UNA NÓMINA DE TRES PERSONAS, POSTEADA, CON EL CÓDIGO DEL TELÉFONO (el journal de prueba, por el camino de c15, con día de pago hoy): la tarjeta entera contra el libro y las tablas de la nómina, al centavo; es la última, con los totales de la EMPRESA (cuántas personas, costo = bruto + lo del patrón, impuestos, neto, deducciones, reembolsos, lo que le queda por pagar); el mes de hoy sube lo que costó; lo que el Balance dice que se debe sube lo que dejó por pagar menos lo reembolsado; las cuentas y los pagos suman lo que se debe; sus textos, en llano',
+    coalesce(v_esp, 'la última, con sus totales al centavo'), v_obt, case when v_obt like 'omitida:%' then null else coalesce(v_obt = v_esp, false) end);
+end $$;
+
+-- 53. LA MISMA NÓMINA, SIN EL CÓDIGO DEL TELÉFONO (el dueño con aal1): la
+--     decisión de seguridad. De la última, solo lo que el libro dice (su día
+--     y su asiento) y «con el código del teléfono»; NADA de una nómina en la
+--     tarjeta (cuántas personas, su bruto, su neto, sus impuestos, lo que le
+--     queda, su período); las que esperan por postear y los des-casados, «no
+--     se sabe» (nulo), NUNCA un cero; los cuadres que la nómina tapa sin el
+--     código no son un rojo ni un verde (sin_comprobar); lo de la empresa
+--     (del libro y del banco), igual que con el código; lo que pide atender,
+--     entrar con el código; y el tablero entero contesta sin el código (sin
+--     el error «MFA» de c15).
+do $$
+declare
+  v_obt text; v_esp text; v_hoy date := pg_temp.c16_hoy(); c uuid; n1 jsonb; n2 jsonb; t1 jsonb; a jsonb; v_num text; v_sin int; v_de text; v_ult text;
+begin
+  if pg_temp.c16_nom_omitir(53, 'la misma nómina, sin el código del teléfono', 'solo lo de la empresa; lo de la nómina, «con el código»') then return; end if;
+  begin
+    perform pg_temp.c16_nom_sembrar();
+    c := pg_temp.c16_nom('tres', v_hoy - 12, v_hoy - 4, v_hoy);
+    select k.asiento_numero into v_num from nomina_corridas k where k.id = c;
+    n2 := pg_temp.c16_nom_tarjeta();
+    n1 := pg_temp.c16_nom_tarjeta('dueno_aal1');
+    t1 := pg_temp.c16_j($q$select public.fn_tablero('{"tope_ms": 0}'::jsonb)$q$, 'dueno_aal1');
+    -- (los cuadres que la nómina tapa sin el código, contados en su vista —su control entero— como lo ve esa sesión)
+    v_sin := (pg_temp.c16_j($q$select to_jsonb(count(*)) from public.v_nomina_control k
+                                where k.nivel = 'cuadre' and k.ok is not true
+                                  and k.detalle like '%hace falta el código del teléfono%'$q$, 'dueno_aal1') #>> '{}')::int;
+    select x into a from jsonb_array_elements(t1 -> 'acciones' -> 'lista') x where x ->> 'clave' = 'nomina';
+    v_esp := format('con el código: no, y lo dice | la última: su día (%s) y su asiento (%s), y que lo demás va con el código del teléfono | '
+                    'de una nómina (cuántas personas, su bruto, su neto, sus impuestos, lo que le queda, su período), en la tarjeta: nada | '
+                    'por postear: no se sabe (ni un cero) | des-casados: no se sabe | cuadres en rojo: no más que con el código | '
+                    'sin comprobar: %s (los cuadres que la nómina tapa sin el código; más de cero) | lo de la empresa (los meses, lo que se debe y cuándo '
+                    'sale, la bolsa, los cargos que esperan en el banco): igual que con el código | qué atender: entrar con el código | '
+                    'su acción rápida: sin el código, y dice que las por postear se ven con él | el tablero entero sin el código: 16 tarjetas '
+                    'contestan o dicen qué capa falta | en llano: sí', v_hoy, v_num, v_sin);
+    select string_agg(k, ', ' order by k) into v_de
+      from unnest(array['personas', 'bruto', 'neto', 'impuestos', 'deducciones', 'reembolsos', 'por_pagar', 'a_favor', 'periodo', 'periodo_desde',
+                        'periodo_hasta', 'tipo', 'tipo_texto', 'corrida']) k
+     where jsonb_path_exists(n1, ('strict $.**.' || k)::jsonpath);
+    select string_agg(k, ', ' order by k) into v_ult
+      from (select jsonb_object_keys(coalesce(nullif(n1 -> 'ultima', 'null'::jsonb), '{}'::jsonb)) as k
+            union select jsonb_object_keys(coalesce(nullif(n1 -> 'proxima', 'null'::jsonb), '{}'::jsonb))) q
+     where k not in ('dia_pago', 'etiqueta', 'asiento', 'con_codigo', 'texto', 'ir', 'estado');
+    v_obt := format('con el código: %s | la última: su día (%s) y su asiento (%s)%s | de una nómina (cuántas personas, su bruto, su neto, sus '
+                    'impuestos, lo que le queda, su período), en la tarjeta: %s | por postear: %s | des-casados: %s | cuadres en rojo: %s | '
+                    'sin comprobar: %s (los cuadres que la nómina tapa sin el código; %s) | lo de la empresa (los meses, lo que se debe y cuándo sale, la '
+                    'bolsa, los cargos que esperan en el banco): %s | qué atender: %s | su acción rápida: %s | el tablero entero sin el código: %s '
+                    'tarjetas contestan o dicen qué capa falta | en llano: %s',
+                    case when (n1 ->> 'con_codigo')::boolean is false and n1 -> 'codigo' ->> 'texto' like '%código del teléfono%' then 'no, y lo dice'
+                         else coalesce(n1 ->> 'con_codigo', '?') || ', sin decirlo' end,
+                    n1 -> 'ultima' ->> 'dia_pago', n1 -> 'ultima' ->> 'asiento',
+                    case when (n1 -> 'ultima' ->> 'con_codigo')::boolean is false and n1 -> 'ultima' ->> 'texto' like '%con el código del teléfono%'
+                         then ', y que lo demás va con el código del teléfono' else ', sin decir lo del código' end,
+                    coalesce(nullif(concat_ws(', ', v_de, v_ult), ''), 'nada'),
+                    case when n1 ? 'por_postear' and jsonb_typeof(n1 -> 'por_postear') = 'null' then 'no se sabe (ni un cero)'
+                         else coalesce(n1 ->> 'por_postear', 'sin la clave') end,
+                    case when n1 -> 'cargos' ? 'descasados' and jsonb_typeof(n1 -> 'cargos' -> 'descasados') = 'null' then 'no se sabe'
+                         else coalesce(n1 -> 'cargos' ->> 'descasados', 'sin la clave') end,
+                    case when (n1 -> 'control' ->> 'cuadres_rojos')::int <= (n2 -> 'control' ->> 'cuadres_rojos')::int then 'no más que con el código'
+                         else format('%s (con el código, %s)', n1 -> 'control' ->> 'cuadres_rojos', n2 -> 'control' ->> 'cuadres_rojos') end,
+                    n1 -> 'control' ->> 'sin_comprobar',
+                    case when (n1 -> 'control' ->> 'sin_comprobar')::int > 0 then 'más de cero' else 'cero' end,
+                    case when n1 -> 'meses' = n2 -> 'meses' and n1 -> 'debe' = n2 -> 'debe' and n1 -> 'bolsa' -> 'monto' = n2 -> 'bolsa' -> 'monto'
+                              and (n1 -> 'cargos') - 'descasados' = (n2 -> 'cargos') - 'descasados' then 'igual que con el código'
+                         else 'distinto que con el código' end,
+                    case when exists (select 1 from jsonb_array_elements(n1 -> 'atender') x where x ->> 'clave' = 'codigo')
+                              and not exists (select 1 from jsonb_array_elements(n1 -> 'atender') x where x ->> 'clave' = 'por_postear')
+                         then 'entrar con el código' else 'otra cosa: ' || (n1 ->> 'atender') end,
+                    case when (a ->> 'con_codigo')::boolean is false and a ->> 'detalle' like '%por postear se ven con el código del teléfono%'
+                         then 'sin el código, y dice que las por postear se ven con él' else coalesce(a ->> 'detalle', 'no está') end,
+                    (select count(*) from jsonb_array_elements_text(t1 -> 'tarjetas') k where (t1 -> k ->> 'ok')::boolean or t1 -> k ->> 'falta' is not null),
+                    coalesce(pg_temp.c16_llano(n1), 'sí'));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when sqlstate 'MXT01' then v_obt := 'omitida: ' || sqlerrm;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.c16_ser('editor');
+  insert into _pruebas values (53, 'LA MISMA NÓMINA, SIN EL CÓDIGO DEL TELÉFONO (el dueño que entró solo con su contraseña: aal1): de la última, solo lo que el libro dice (su día y su asiento) y «con el código del teléfono»; nada de una nómina en la tarjeta (cuántas personas, su bruto, su neto, sus impuestos, lo que le queda, su período); las que esperan por postear y los des-casados, «no se sabe» (nulo), NUNCA un cero; lo que la nómina tapa sin el código no cuenta como rojo ni como verde; lo de la EMPRESA (del libro y del banco), igual que con el código; pide entrar con el código; y el tablero entero contesta sin él',
+    coalesce(v_esp, 'solo lo de la empresa; lo de la nómina, «con el código»'), v_obt, case when v_obt like 'omitida:%' then null else coalesce(v_obt = v_esp, false) end);
+end $$;
+
+-- 54. LOS CARGOS DE GUSTO: el cargo del neto de la nómina de prueba llega al
+--     banco (Plaid) y espera en la Bandeja: sale en la tarjeta (uno más, por
+--     su monto), en lo que pide atender y en la acción rápida, con su
+--     enlace a Nómina → Cargos de Gusto; mientras espera, lo que se debe no
+--     baja. CASADO con su nómina (c15), deja de esperar, lo que se debe y lo
+--     que le queda a la nómina bajan en eso, y la proyección NO LO RESTA
+--     OTRA VEZ: el banco bajó y lo que se debe también; el saldo proyectado
+--     no cambia. Y una devolución de Gusto (un depósito) que espera.
+do $$
+declare
+  v_obt text; v_esp text; v_hoy date := pg_temp.c16_hoy(); c uuid; n0 jsonb; n1 jsonb; n2 jsonb; n3 jsonb; a0 jsonb; a1 jsonb; c0 jsonb; c1 jsonb; c2 jsonb;
+  v_mov uuid; v_dev uuid; v_proy boolean; x1 jsonb;
+begin
+  if pg_temp.c16_nom_omitir(54, 'los cargos de Gusto', 'esperan con su enlace; casados, no se restan otra vez', true, true) then return; end if;
+  begin
+    perform pg_temp.c16_nom_sembrar();
+    c := pg_temp.c16_nom('tres', v_hoy - 12, v_hoy - 4, v_hoy);
+    n0 := pg_temp.c16_nom_tarjeta();
+    c0 := pg_temp.c16_j('select public.fn_tablero_caja(12, 3)');
+    select x into a0 from jsonb_array_elements(pg_temp.c16_j('select public.fn_tablero_acciones()') -> 'lista') x where x ->> 'clave' = 'nomina';
+    v_proy := c0 -> 'proyeccion' is not null and c0 -> 'proyeccion' <> 'null'::jsonb;
+    -- (a) el cargo del neto (4,725.09) llega al banco y espera
+    v_mov := pg_temp.c16_nom_cargo('zz-c16-prueba-net', v_hoy, 4725.09, 'GUSTO DES:NET ID:ZZ00000001');
+    n1 := pg_temp.c16_nom_tarjeta();
+    c1 := pg_temp.c16_j('select public.fn_tablero_caja(12, 3)');
+    select x into a1 from jsonb_array_elements(pg_temp.c16_j('select public.fn_tablero_acciones()') -> 'lista') x where x ->> 'clave' = 'nomina';
+    select x into x1 from jsonb_array_elements(n1 -> 'atender') x where x ->> 'clave' = 'cargos';
+    -- (b) casado con el neto de su nómina, desde Nómina → Cargos de Gusto
+    perform pg_temp.c16_nom_casar(v_mov, jsonb_build_array(jsonb_build_object('corrida', c, 'cuenta', '2210', 'monto', '4725.09')));
+    n2 := pg_temp.c16_nom_tarjeta();
+    c2 := pg_temp.c16_j('select public.fn_tablero_caja(12, 3)');
+    -- (c) una devolución de Gusto (un depósito de 12.34) que espera
+    v_dev := pg_temp.c16_nom_cargo('zz-c16-prueba-dev', v_hoy, -12.34, 'GUSTO DES:REV ID:ZZ00000002');
+    n3 := pg_temp.c16_nom_tarjeta();
+    v_esp := 'el cargo espera: uno más, 4725.09 más, lo que se debe igual | pide atenderlo, en Nómina → Cargos de Gusto | su acción rápida: uno más, '
+             || 'lleva a Nómina | casado: deja de esperar, lo que se debe baja 4725.09, a la nómina le quedan 1550.24 | '
+             || case when v_proy then 'la proyección: mientras espera, igual; casado, el banco baja 4725.09, lo que sale por la nómina baja 4725.09 y '
+                                      'el saldo proyectado no cambia (no se resta otra vez)'
+                     else 'la proyección: no la hay en esta base (sin la apertura en el libro, o sin nada con fecha)' end
+             || ' | la devolución espera: una más, por 12.34, y pide atenderla | las tres veces, como dice la vista de los cargos de la nómina: sí';
+    v_obt := format('el cargo espera: %s, %s más, lo que se debe %s | pide atenderlo, en %s | su acción rápida: %s, lleva a %s | casado: %s, lo que se '
+                    'debe baja %s, a la nómina le quedan %s | %s | la devolución espera: %s, por %s, y %s | las tres veces, como dice la vista de '
+                    'los cargos de la nómina: %s',
+                    case when (n1 -> 'cargos' ->> 'n')::int - (n0 -> 'cargos' ->> 'n')::int = 1 then 'uno más'
+                         else format('%s más', (n1 -> 'cargos' ->> 'n')::int - (n0 -> 'cargos' ->> 'n')::int) end,
+                    pg_temp.c16_m((n1 -> 'cargos' ->> 'monto')::numeric - (n0 -> 'cargos' ->> 'monto')::numeric),
+                    case when n1 -> 'debe' -> 'monto' = n0 -> 'debe' -> 'monto' then 'igual' else 'otro' end,
+                    case when x1 -> 'ir' ->> 'pagina' = 'nomina' and x1 -> 'ir' ->> 'sub' = 'cargos' and x1 ->> 'texto' like '%Gusto%'
+                         then 'Nómina → Cargos de Gusto' else coalesce(x1 ->> 'ir', 'ningún sitio (no lo pide)') end,
+                    case when (a1 ->> 'n')::int - (a0 ->> 'n')::int = 1 then 'uno más' else format('%s más', (a1 ->> 'n')::int - (a0 ->> 'n')::int) end,
+                    case when a1 -> 'ir' ->> 'pagina' = 'nomina' then 'Nómina' else coalesce(a1 ->> 'ir', '?') end,
+                    case when n2 -> 'cargos' -> 'n' = n0 -> 'cargos' -> 'n' and n2 -> 'cargos' -> 'monto' = n0 -> 'cargos' -> 'monto' then 'deja de esperar'
+                         else 'sigue esperando' end,
+                    pg_temp.c16_m((n0 -> 'debe' ->> 'monto')::numeric - (n2 -> 'debe' ->> 'monto')::numeric),
+                    pg_temp.c16_mj(n2 -> 'ultima' -> 'por_pagar'),
+                    case when not v_proy then 'la proyección: no la hay en esta base (sin la apertura en el libro, o sin nada con fecha)'
+                         else format('la proyección: mientras espera, %s; casado, el banco baja %s, lo que sale por la nómina baja %s y el saldo '
+                                     'proyectado %s',
+                                     case when c1 -> 'proyeccion' -> 'meses' = c0 -> 'proyeccion' -> 'meses' then 'igual' else 'otra' end,
+                                     pg_temp.c16_m((c0 -> 'hoy' ->> 'neto')::numeric - (c2 -> 'hoy' ->> 'neto')::numeric),
+                                     pg_temp.c16_m((select sum((m ->> 'nomina')::numeric) from jsonb_array_elements(c0 -> 'proyeccion' -> 'meses') m)
+                                                   - (select sum((m ->> 'nomina')::numeric) from jsonb_array_elements(c2 -> 'proyeccion' -> 'meses') m)),
+                                     case when c2 -> 'proyeccion' -> 'meses' -> -1 -> 'saldo' = c0 -> 'proyeccion' -> 'meses' -> -1 -> 'saldo'
+                                          then 'no cambia (no se resta otra vez)' else 'cambia' end) end,
+                    case when (n3 -> 'cargos' -> 'devoluciones' ->> 'n')::int - (n2 -> 'cargos' -> 'devoluciones' ->> 'n')::int = 1 then 'una más'
+                         else 'no sale' end,
+                    pg_temp.c16_m((n3 -> 'cargos' -> 'devoluciones' ->> 'monto')::numeric - (n2 -> 'cargos' -> 'devoluciones' ->> 'monto')::numeric),
+                    case when exists (select 1 from jsonb_array_elements(n3 -> 'atender') x where x ->> 'clave' = 'devoluciones'
+                                         and x -> 'ir' ->> 'sub' = 'cargos') then 'pide atenderla' else 'no lo pide' end,
+                    'sí');
+    -- (lo de la tarjeta al final, contra la vista de los cargos de la nómina tal como queda)
+    if pg_temp.c16_nom_dice(n3) <> pg_temp.c16_nom_espera() then
+      v_obt := regexp_replace(v_obt, 'sí$', 'no: ' || pg_temp.c16_nom_dice(n3) || ' ≠ ' || pg_temp.c16_nom_espera());
+    end if;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when sqlstate 'MXT01' then v_obt := 'omitida: ' || sqlerrm;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.c16_ser('editor');
+  insert into _pruebas values (54, 'LOS CARGOS DE GUSTO: el cargo del neto de la nómina de prueba llega al banco y espera en la Bandeja: sale en la tarjeta (uno más, por su monto), en lo que pide atender y en la acción rápida, con su enlace a Nómina → Cargos de Gusto, y mientras espera lo que se debe no baja; CASADO con su nómina, deja de esperar, lo que se debe y lo que le queda a la nómina bajan en eso, y LA PROYECCIÓN NO LO RESTA OTRA VEZ (el banco bajó y lo que se debe también: el saldo proyectado no cambia); y una devolución de Gusto (un depósito) que espera',
+    coalesce(v_esp, 'esperan con su enlace; casados, no se restan otra vez'), v_obt, case when v_obt like 'omitida:%' then null else coalesce(v_obt = v_esp, false) end);
+end $$;
+
+-- 55. UNA NÓMINA DE UNA SOLA PERSONA, Y LOS DOS CRITERIOS (la decisión de
+--     seguridad, entera). Con el código: una persona y sus totales. SIN EL
+--     CÓDIGO, con el criterio de fábrica («libro»): lo que costó la nómina
+--     ese mes sale (es lo que el libro dice: lo mismo que Estados →
+--     Resultados; con una sola persona, eso es lo que costó ella) y de la
+--     nómina, nada; Gastos trae la cuenta del oficial, como siempre. Con el
+--     criterio «codigo» (cambiando la palabra de fn_tablero_nomina_criterio
+--     dentro del bloque) y sin el código: la tarjeta no escribe ninguna
+--     cifra de dinero de la nómina (ni una de las inventadas aparece), Gastos
+--     deja fuera las cuentas de la nómina y lo dice, y la proyección no
+--     escribe aparte lo que sale por la nómina; con el código, los dos
+--     criterios dan lo mismo. Al deshacerse, el criterio vuelve a «libro».
+do $$
+declare
+  v_obt text; v_esp text; v_hoy date := pg_temp.c16_hoy(); c uuid; n0 jsonb; l2 jsonb; l1 jsonb; k2 jsonb; k1 jsonb; g0 jsonb; gl jsonb; gk jsonb; gk2 jsonb;
+  ck jsonb; ck2 jsonb; ak jsonb; u jsonb; v_cifras text; v_fuera numeric; v_crit text; v_proy boolean;
+  c_cifras constant text[] := array['2738.64', '2468.35', '2011.52', '727.12', '456.83', '270.29', '645.66'];
+begin
+  if pg_temp.c16_nom_omitir(55, 'una nómina de una sola persona, y los dos criterios', 'con el criterio «libro» sale lo del libro; con «codigo», ninguna cifra') then return; end if;
+  begin
+    n0 := pg_temp.c16_nom_tarjeta('dueno_aal1');
+    g0 := pg_temp.c16_j('select public.fn_tablero_gastos()', 'dueno_aal1');
+    perform pg_temp.c16_nom_sembrar();
+    c := pg_temp.c16_nom('una', v_hoy - 12, v_hoy - 4, v_hoy);
+    -- el criterio de fábrica: «libro»
+    l2 := pg_temp.c16_nom_tarjeta();
+    l1 := pg_temp.c16_nom_tarjeta('dueno_aal1');
+    gl := pg_temp.c16_j('select public.fn_tablero_gastos()', 'dueno_aal1');
+    u := l2 -> 'ultima';
+    -- el criterio «codigo»: la misma función, con la otra palabra (se deshace con el bloque)
+    execute $f$create or replace function public.fn_tablero_nomina_criterio() returns text
+              language sql stable set search_path = public, pg_temp as $b$ select 'codigo'::text $b$ $f$;
+    k2 := pg_temp.c16_nom_tarjeta();
+    k1 := pg_temp.c16_nom_tarjeta('dueno_aal1');
+    gk := pg_temp.c16_j('select public.fn_tablero_gastos()', 'dueno_aal1');
+    gk2 := pg_temp.c16_j('select public.fn_tablero_gastos()');
+    ck := pg_temp.c16_j('select public.fn_tablero_caja(12, 3)', 'dueno_aal1');
+    ck2 := pg_temp.c16_j('select public.fn_tablero_caja(12, 3)');
+    ak := pg_temp.c16_j('select public.fn_tablero_acciones()', 'dueno_aal1');
+    v_proy := ck2 -> 'proyeccion' is not null and ck2 -> 'proyeccion' <> 'null'::jsonb;
+    -- (las cifras inventadas de esta nómina que aparecen en lo que la portada escribe de la nómina sin el código, con «codigo»)
+    select string_agg(x, ', ' order by x) into v_cifras from unnest(c_cifras) x
+     where position(x in k1::text) > 0 or position(x in ak::text) > 0
+        or position(x in (select coalesce(jsonb_agg(q), '[]'::jsonb)::text from jsonb_array_elements(gk -> 'categorias') q
+                           where q ->> 'cuenta' = any (array(select jsonb_array_elements_text(gk -> 'tapado' -> 'cuentas'))))) > 0;
+    -- (lo que Gastos deja fuera con «codigo» y sin el código: las cuentas de la nómina, como las trae con el código)
+    select coalesce(sum((q ->> 'monto')::numeric), 0) into v_fuera from jsonb_array_elements(gk2 -> 'categorias') q
+     where q ->> 'cuenta' = any (array(select jsonb_array_elements_text(gk -> 'tapado' -> 'cuentas')));
+    v_esp := 'con el código: 1 persona, costo 2738.64 (bruto 2468.35 + patrón 270.29), impuestos 727.12, neto 2011.52, le quedan por pagar 2738.64 | '
+             || 'SIN EL CÓDIGO, criterio «libro» (el de fábrica): el mes de hoy sube 2738.64 (lo que dice el libro: lo que costó esa persona), de la '
+             || 'última solo su día y su asiento, y Gastos trae la cuenta del oficial 2468.35 más, como Estados | '
+             || 'SIN EL CÓDIGO, criterio «codigo»: lo dice (a_la_vista: no); los meses sin cifras pero con cuántas nóminas; lo que se debe, la bolsa y el '
+             || 'monto de los cargos, «con el código del teléfono»; cifras de esta nómina en la tarjeta, en su acción o en las cuentas de la nómina de '
+             || 'Gastos: ninguna; Gastos deja fuera las cuentas de la nómina (su total baja en lo de ellas) y lo dice; '
+             || case when v_proy then 'la proyección no escribe aparte lo de la nómina y su saldo es el mismo que con el código'
+                     else 'la proyección: no la hay en esta base' end
+             || ' | con el código, los dos criterios dan lo mismo: sí | en llano, los dos sin el código: sí | al deshacerse, el criterio vuelve a: libro';
+    v_obt := format('con el código: %s, costo %s (bruto %s + patrón %s), impuestos %s, neto %s, le quedan por pagar %s | '
+                    'SIN EL CÓDIGO, criterio «%s» (el de fábrica): el mes de hoy sube %s (lo que dice el libro: lo que costó esa persona), de la '
+                    'última %s, y Gastos trae la cuenta del oficial %s más, como Estados | '
+                    'SIN EL CÓDIGO, criterio «%s»: %s; los meses %s; lo que se debe, la bolsa y el monto de los cargos, %s; cifras de esta nómina en '
+                    'la tarjeta, en su acción o en las cuentas de la nómina de Gastos: %s; Gastos %s; %s | con el código, los dos criterios dan lo '
+                    'mismo: %s | en llano, los dos sin el código: %s',
+                    case when u ->> 'corrida' is distinct from c::text then 'otra nómina' when (u ->> 'personas')::int = 1 then '1 persona'
+                         else (u ->> 'personas') || ' personas' end,
+                    pg_temp.c16_mj(u -> 'costo'), pg_temp.c16_mj(u -> 'bruto'), pg_temp.c16_mj(u -> 'patron'), pg_temp.c16_mj(u -> 'impuestos'),
+                    pg_temp.c16_mj(u -> 'neto'), pg_temp.c16_mj(u -> 'por_pagar'),
+                    l1 ->> 'criterio',
+                    pg_temp.c16_m((l1 -> 'meses' -> -1 ->> 'costo')::numeric - (n0 -> 'meses' -> -1 ->> 'costo')::numeric),
+                    case when (l1 -> 'ultima' ->> 'con_codigo')::boolean is false and not (l1 -> 'ultima' ? 'costo') and not (l1 -> 'ultima' ? 'personas')
+                              and l1 -> 'ultima' ->> 'dia_pago' = v_hoy::text then 'solo su día y su asiento' else 'algo más: ' || (l1 ->> 'ultima') end,
+                    pg_temp.c16_m(coalesce((select (q ->> 'monto')::numeric from jsonb_array_elements(gl -> 'categorias') q where q ->> 'cuenta' = '6005'), 0)
+                                  - coalesce((select (q ->> 'monto')::numeric from jsonb_array_elements(g0 -> 'categorias') q where q ->> 'cuenta' = '6005'), 0)),
+                    k1 ->> 'criterio',
+                    case when (k1 ->> 'a_la_vista')::boolean is false and k1 -> 'codigo' ->> 'texto' like '%con el código del teléfono%'
+                         then 'lo dice (a_la_vista: no)' else 'no lo dice' end,
+                    case when not exists (select 1 from jsonb_array_elements(k1 -> 'meses') m
+                                           where jsonb_typeof(m -> 'costo') <> 'null' or jsonb_typeof(m -> 'sueldos') <> 'null'
+                                              or jsonb_typeof(m -> 'patron') <> 'null' or jsonb_typeof(m -> 'nominas') <> 'number')
+                              and (k1 -> 'meses' -> -1 ->> 'nominas')::int = (l1 -> 'meses' -> -1 ->> 'nominas')::int
+                         then 'sin cifras pero con cuántas nóminas' else 'con cifras: ' || (k1 ->> 'meses') end,
+                    case when (k1 -> 'debe' ->> 'a_la_vista')::boolean is false and not (k1 -> 'debe' ? 'monto') and not (k1 -> 'debe' ? 'cuentas')
+                              and not (k1 -> 'debe' ? 'pagos') and k1 -> 'debe' ->> 'texto' like '%con el código del teléfono%'
+                              and jsonb_typeof(k1 -> 'bolsa' -> 'monto') = 'null' and k1 -> 'bolsa' ->> 'texto' like '%con el código del teléfono%'
+                              and not (k1 -> 'cargos' ? 'monto') and not (k1 -> 'cargos' -> 'devoluciones' ? 'monto')
+                              and k1 -> 'cargos' -> 'n' = l1 -> 'cargos' -> 'n'
+                         then '«con el código del teléfono»' else 'a la vista' end,
+                    coalesce(v_cifras, 'ninguna'),
+                    case when gk -> 'tapado' ->> 'texto' like '%código del teléfono%'
+                              and not exists (select 1 from jsonb_array_elements(gk -> 'categorias') q
+                                               where q ->> 'cuenta' = any (array(select jsonb_array_elements_text(gk -> 'tapado' -> 'cuentas'))))
+                              and (gk2 ->> 'total')::numeric - (gk ->> 'total')::numeric = v_fuera and v_fuera >= 2738.64
+                              and (gk2 -> 'tapado' is null or gk2 -> 'tapado' = 'null'::jsonb)
+                         then 'deja fuera las cuentas de la nómina (su total baja en lo de ellas) y lo dice'
+                         else format('no: fuera %s, total %s contra %s, tapado %s', v_fuera, gk ->> 'total', gk2 ->> 'total', gk ->> 'tapado') end,
+                    case when not v_proy then 'la proyección: no la hay en esta base'
+                         when (ck -> 'proyeccion' ->> 'nomina_a_la_vista')::boolean is false
+                              and not exists (select 1 from jsonb_array_elements(ck -> 'proyeccion' -> 'meses') m where jsonb_typeof(m -> 'nomina') <> 'null')
+                              and (select jsonb_agg(m -> 'saldo') from jsonb_array_elements(ck -> 'proyeccion' -> 'meses') m)
+                                  = (select jsonb_agg(m -> 'saldo') from jsonb_array_elements(ck2 -> 'proyeccion' -> 'meses') m)
+                              and (ck2 -> 'proyeccion' ->> 'nomina_a_la_vista')::boolean
+                              and not exists (select 1 from jsonb_array_elements(ck -> 'proyeccion' -> 'no_incluye') q
+                                               where q ->> 'clave' like 'nomina%' and jsonb_typeof(q -> 'monto') = 'number')
+                           then 'la proyección no escribe aparte lo de la nómina y su saldo es el mismo que con el código'
+                         else 'la proyección la escribe: ' || left(ck -> 'proyeccion' ->> 'meses', 300) end,
+                    case when k2 - 'criterio' = l2 - 'criterio' and k2 ->> 'criterio' = 'codigo' and l2 ->> 'criterio' = 'libro' then 'sí' else 'no' end,
+                    coalesce(pg_temp.c16_llano(jsonb_build_array(l1, k1, gk, ck)), 'sí'));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when sqlstate 'MXT01' then v_obt := 'omitida: ' || sqlerrm;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.c16_ser('editor');
+  -- (deshecho el bloque, el criterio es otra vez el de fábrica: lo dicen la función y la tarjeta)
+  if v_obt not like 'omitida:%' and v_obt not like 'error %' then
+    begin
+      v_crit := fn_tablero_nomina_criterio();
+      v_obt := v_obt || ' | al deshacerse, el criterio vuelve a: '
+               || case when v_crit = pg_temp.c16_nom_tarjeta() ->> 'criterio' then v_crit else v_crit || ' (y la tarjeta dice otro)' end;
+    exception when others then v_obt := v_obt || ' | al deshacerse: error ' || sqlstate || ': ' || sqlerrm;
+    end;
+    perform pg_temp.c16_ser('editor');
+  end if;
+  insert into _pruebas values (55, 'UNA NÓMINA DE UNA SOLA PERSONA, Y LOS DOS CRITERIOS (la decisión de seguridad): con el código, una persona y sus totales; SIN EL CÓDIGO y con el criterio de fábrica («libro»), lo que costó la nómina ese mes sale (lo que el libro dice, lo mismo que Estados: con una sola persona, lo que costó ella), de la nómina nada, y Gastos trae la cuenta del oficial como siempre; con el criterio «codigo» (la palabra de fn_tablero_nomina_criterio, cambiada dentro del bloque) y sin el código, la portada no escribe ninguna cifra de dinero de la nómina (la tarjeta, su acción, Gastos sin sus cuentas —y lo dice—, la proyección sin su renglón); con el código los dos criterios dan lo mismo; al deshacerse, vuelve a «libro»',
+    coalesce(v_esp, 'con el criterio «libro» sale lo del libro; con «codigo», ninguna cifra'), v_obt, case when v_obt like 'omitida:%' then null else coalesce(v_obt = v_esp, false) end);
+end $$;
+
+-- 56. UNA NÓMINA IMPORTADA SIN POSTEAR (dos: una con día de pago hoy y otra
+--     con día de pago mañana): no está en el libro (ni en los meses ni en lo
+--     que se debe); con el código, la tarjeta dice cuántas esperan y desde
+--     cuándo, lo pide atender (con alarma: el día de pago de una ya llegó) y
+--     la acción rápida las cuenta; la de mañana es «la próxima» (importada:
+--     sin lo que le queda por pagar) si la nómina no tiene otra antes. SIN
+--     EL CÓDIGO: «no se sabe» (nulo), nunca «cero esperan», y lo dice.
+do $$
+declare
+  v_obt text; v_esp text; v_hoy date := pg_temp.c16_hoy(); ca uuid; cb uuid; n0 jsonb; n jsonb; n1 jsonb; a jsonb; a1 jsonb; x jsonb; v_lib boolean;
+begin
+  if pg_temp.c16_nom_omitir(56, 'una nómina importada sin postear', 'con el código, cuántas esperan; sin él, «no se sabe»') then return; end if;
+  begin
+    n0 := pg_temp.c16_nom_tarjeta();
+    perform pg_temp.c16_nom_sembrar();
+    ca := pg_temp.c16_nom('una', v_hoy - 12, v_hoy - 4, v_hoy, false);
+    cb := pg_temp.c16_nom('dos', v_hoy - 3, v_hoy - 1, v_hoy + 1, false);
+    n := pg_temp.c16_nom_tarjeta();
+    n1 := pg_temp.c16_nom_tarjeta('dueno_aal1');
+    select q into a from jsonb_array_elements(pg_temp.c16_j('select public.fn_tablero_acciones()') -> 'lista') q where q ->> 'clave' = 'nomina';
+    select q into a1 from jsonb_array_elements(pg_temp.c16_j('select public.fn_tablero_acciones()', 'dueno_aal1') -> 'lista') q where q ->> 'clave' = 'nomina';
+    select q into x from jsonb_array_elements(n -> 'atender') q where q ->> 'clave' = 'por_postear';
+    v_lib := exists (select 1 from nomina_corridas k where k.estado = 'posteada');
+    v_esp := pg_temp.c16_nom_espera()
+             || ' || con el código: dos más por postear; no están en el libro (los meses y lo que se debe, igual); lo pide atender, con alarma (el día '
+             || 'de pago de una ya llegó), en Nómina → Nóminas; su acción rápida, dos más y con alarma | la próxima: '
+             || case when pg_temp.c16_nom_cual('proxima') = cb then 'la de mañana, importada (2 personas, costo 3588.54, sin lo que le queda por pagar)'
+                     else 'otra que la nómina ya tenía antes (la de arriba)' end
+             || ' | SIN EL CÓDIGO: por postear, no se sabe (ni un cero); no lo pide atender (pide entrar con el código); su acción rápida dice que se '
+             || 'ven con el código'
+             || case when v_lib then '' else '; y sin ninguna en el libro, dice que si alguna espera se ve con el código' end
+             || ' | en llano: sí';
+    v_obt := pg_temp.c16_nom_dice(n)
+             || format(' || con el código: %s por postear; no están en el libro (los meses y lo que se debe, %s); %s; su acción rápida, %s | la próxima: %s'
+                       ' | SIN EL CÓDIGO: por postear, %s; %s; su acción rápida %s%s | en llano: %s',
+                       case when (n -> 'por_postear' ->> 'n')::int - (n0 -> 'por_postear' ->> 'n')::int = 2 then 'dos más'
+                            else format('%s más', (n -> 'por_postear' ->> 'n')::int - (n0 -> 'por_postear' ->> 'n')::int) end,
+                       case when n -> 'meses' = n0 -> 'meses' and n -> 'debe' = n0 -> 'debe' then 'igual' else 'cambian' end,
+                       case when (x ->> 'alarma')::boolean and x -> 'ir' ->> 'sub' = 'nominas' and x -> 'ir' ->> 'pagina' = 'nomina'
+                            then 'lo pide atender, con alarma (el día de pago de una ya llegó), en Nómina → Nóminas'
+                            else 'no lo pide así: ' || coalesce(x::text, 'nada') end,
+                       case when (a ->> 'n')::int = pg_temp.c16_nom_esperan() and (a ->> 'alarma')::boolean
+                                 and (a ->> 'n')::int - (select (q ->> 'n')::int from jsonb_array_elements(pg_temp.c16_tc('acciones') -> 'lista') q
+                                                          where q ->> 'clave' = 'nomina') = 2
+                            then 'dos más y con alarma' else coalesce(a::text, 'no está') end,
+                       case when n -> 'proxima' ->> 'corrida' = cb::text and n -> 'proxima' ->> 'estado' = 'importada'
+                                 and jsonb_typeof(n -> 'proxima' -> 'por_pagar') = 'null' and n -> 'proxima' ->> 'dia_pago' = (v_hoy + 1)::text
+                              then format('la de mañana, importada (%s personas, costo %s, sin lo que le queda por pagar)',
+                                          n -> 'proxima' ->> 'personas', pg_temp.c16_mj(n -> 'proxima' -> 'costo'))
+                            when n -> 'proxima' ->> 'corrida' is distinct from cb::text then 'otra que la nómina ya tenía antes (la de arriba)'
+                            else 'la de mañana, pero ' || (n ->> 'proxima') end,
+                       case when n1 ? 'por_postear' and jsonb_typeof(n1 -> 'por_postear') = 'null' then 'no se sabe (ni un cero)'
+                            else coalesce(n1 ->> 'por_postear', 'sin la clave') end,
+                       case when not exists (select 1 from jsonb_array_elements(n1 -> 'atender') q where q ->> 'clave' = 'por_postear')
+                                 and exists (select 1 from jsonb_array_elements(n1 -> 'atender') q where q ->> 'clave' = 'codigo')
+                            then 'no lo pide atender (pide entrar con el código)' else 'lo pide atender: ' || (n1 ->> 'atender') end,
+                       case when a1 ->> 'detalle' like '%por postear se ven con el código del teléfono%' then 'dice que se ven con el código'
+                            else 'dice: ' || coalesce(a1 ->> 'detalle', 'nada') end,
+                       case when v_lib then ''
+                            when (n1 ->> 'sin_nominas')::boolean and n1 ->> 'texto' like '%se ve con el código del teléfono%'
+                              then '; y sin ninguna en el libro, dice que si alguna espera se ve con el código'
+                            else '; y sin ninguna en el libro, dice: ' || coalesce(n1 ->> 'texto', 'nada') end,
+                       coalesce(pg_temp.c16_llano(jsonb_build_array(n, n1, a, a1)), 'sí'));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when sqlstate 'MXT01' then v_obt := 'omitida: ' || sqlerrm;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.c16_ser('editor');
+  insert into _pruebas values (56, 'UNA NÓMINA IMPORTADA SIN POSTEAR (dos de prueba: una con día de pago hoy, otra mañana): no están en el libro (los meses y lo que se debe no cambian); con el código la tarjeta dice cuántas esperan y de qué días, lo pide atender con alarma (el día de pago de una ya llegó) y la acción rápida las cuenta; la de mañana es «la próxima» (importada: sus totales, sin lo que le queda por pagar) si la nómina no tenía otra antes; SIN EL CÓDIGO, «no se sabe» (nulo), nunca «cero esperan», y la tarjeta y la acción lo dicen',
+    coalesce(v_esp, 'con el código, cuántas esperan; sin él, «no se sabe»'), v_obt, case when v_obt like 'omitida:%' then null else coalesce(v_obt = v_esp, false) end);
+end $$;
+
+-- 57. LA PROYECCIÓN DE LA CAJA CON LA NÓMINA (y lo que la tarjeta dice de
+--     cuándo sale lo que se debe), paso a paso contra la cuenta hecha aquí:
+--     (1) una nómina ya posteada con día de pago DESPUÉS de hoy: lo que dejó
+--     por pagar sale ESE día (en su mes), y lo que ya se debía, hoy; (2)
+--     Gusto cobra su neto por adelantado y el cargo se casa: no se resta
+--     otra vez (lo que sale baja en eso, y el saldo al final de la
+--     proyección no cambia); (3) otra con día de pago hoy: se debe hoy; (4)
+--     se paga de más (queda a favor): no sale nada, y lo dice. En los
+--     cuatro, lo que sale suma lo que se debe; la deuda de la nómina ya no
+--     va en «no incluye»; y con la proyección de un solo mes, lo de un día
+--     de pago de después va en «no incluye».
+do $$
+declare
+  v_obt text; v_esp text; v_hoy date := pg_temp.c16_hoy(); v_d date := pg_temp.c16('pago_despues')::date; v_banco text := pg_temp.c16('banco');
+  v_hay_b boolean := pg_temp.c16('hay_banco') = 'true'; ca uuid; cb uuid; v_mov uuid; v_nom text; v_p numeric;
+  e1 text; e2 text; e3 text; e4 text; o1 text; o2 text; o3 text; o4 text; v_suma text := 'sí'; n jsonb; cj jsonb; c1 jsonb; v_proy boolean;
+  pe1 text; pe2 text; pe3 text; pe4 text; po1 text; po2 text; po3 text; po4 text; v_fin1 date; v_s2 jsonb; v_s3 jsonb; v_deuda text := 'ya no va en «no incluye»';
+  v_m0 date := date_trunc('month', pg_temp.c16_hoy())::date;
+begin
+  if pg_temp.c16_nom_omitir(57, 'la proyección de la caja con la nómina', 'lo de una nómina posteada sale su día de pago; lo ya cobrado no se resta otra vez') then return; end if;
+  if v_d is null then
+    insert into _pruebas values (57, 'LA PROYECCIÓN DE LA CAJA CON LA NÓMINA', 'un día de pago después de hoy dentro de un mes abierto',
+      'omitida: hoy es el último día de su mes y el mes que sigue no está abierto: no hay dónde postear una nómina con día de pago después de hoy', null);
+    return;
+  end if;
+  begin
+    cj := pg_temp.c16_j('select public.fn_tablero_caja(12, 3)');
+    v_proy := not (cj ->> 'sin_apertura')::boolean;
+    v_fin1 := (v_m0 + interval '1 month')::date - 1;
+    perform pg_temp.c16_nom_sembrar();
+    -- (1) una nómina ya posteada con día de pago después de hoy
+    cb := pg_temp.c16_nom('dos', v_hoy - 3, v_hoy - 1, v_d);
+    e1 := pg_temp.c16_nom_pagos_txt(); n := pg_temp.c16_nom_tarjeta(); o1 := pg_temp.c16_nom_sale_de(n);
+    if pg_temp.c16_nom_suma(n) <> 'sí' then v_suma := 'no (1)'; end if;
+    if v_proy then
+      cj := pg_temp.c16_j('select public.fn_tablero_caja(12, 3)'); c1 := pg_temp.c16_j('select public.fn_tablero_caja(12, 1)');
+      if c1 -> 'proyeccion' is null or c1 -> 'proyeccion' = 'null'::jsonb then
+        -- (hoy es fin de mes y este mes no tiene nada más con fecha: con un solo mes no hay proyección, ni su lista)
+        pe1 := pg_temp.c16_nom_por_mes(3) || '; con un solo mes, no hay proyección';
+        po1 := pg_temp.c16_nom_por_mes_de(cj) || '; con un solo mes, no hay proyección';
+      else
+        pe1 := pg_temp.c16_nom_por_mes(3) || '; con un solo mes, después de él: '
+               || coalesce((select pg_temp.c16_m(sum(p.monto)) from pg_temp.c16_nom_pagos() p where p.fecha > v_fin1 having sum(p.monto) > 0), 'nada');
+        po1 := pg_temp.c16_nom_por_mes_de(cj) || '; con un solo mes, después de él: '
+               || coalesce((select pg_temp.c16_mj(q -> 'monto') from jsonb_array_elements(c1 -> 'proyeccion' -> 'no_incluye') q
+                             where q ->> 'clave' = 'nomina_despues'), 'nada');
+      end if;
+      v_s2 := cj -> 'proyeccion' -> 'meses' -> -1 -> 'saldo';
+      if exists (select 1 from jsonb_array_elements(cj -> 'proyeccion' -> 'no_incluye') q where q ->> 'clave' = 'deuda' and q ->> 'linea' = 'nomina_por_pagar') then
+        v_deuda := 'sigue en «no incluye»';
+      end if;
+    end if;
+    -- (2) Gusto cobra su neto (2,729.48) antes del día de pago, y el cargo se casa con ella
+    if v_hay_b then
+      v_mov := pg_temp.c16_nom_cargo('zz-c16-prueba-adelantado', v_hoy, 2729.48, 'GUSTO DES:NET ID:ZZ00000003');
+      perform pg_temp.c16_nom_casar(v_mov, jsonb_build_array(jsonb_build_object('corrida', cb, 'cuenta', '2210', 'monto', '2729.48')));
+      e2 := pg_temp.c16_nom_pagos_txt(); n := pg_temp.c16_nom_tarjeta(); o2 := pg_temp.c16_nom_sale_de(n);
+      if pg_temp.c16_nom_suma(n) <> 'sí' then v_suma := 'no (2)'; end if;
+      if v_proy then
+        cj := pg_temp.c16_j('select public.fn_tablero_caja(12, 3)');
+        v_s3 := cj -> 'proyeccion' -> 'meses' -> -1 -> 'saldo';
+        pe2 := pg_temp.c16_nom_por_mes(3) || ', y el saldo al final de la proyección no cambia';
+        po2 := pg_temp.c16_nom_por_mes_de(cj) || case when v_s3 = v_s2 then ', y el saldo al final de la proyección no cambia'
+                                                     else format(', y el saldo al final de la proyección cambia (%s → %s)', v_s2, v_s3) end;
+      end if;
+    else
+      e2 := 'no se prueba (el banco no está en esta base)'; o2 := e2; pe2 := e2; po2 := e2;
+    end if;
+    -- (3) otra nómina, con día de pago hoy: lo suyo se debe hoy
+    ca := pg_temp.c16_nom('tres', v_hoy - 12, v_hoy - 4, v_hoy);
+    e3 := pg_temp.c16_nom_pagos_txt(); n := pg_temp.c16_nom_tarjeta(); o3 := pg_temp.c16_nom_sale_de(n);
+    if pg_temp.c16_nom_suma(n) <> 'sí' then v_suma := 'no (3)'; end if;
+    if v_proy then
+      cj := pg_temp.c16_j('select public.fn_tablero_caja(12, 3)');
+      pe3 := pg_temp.c16_nom_por_mes(3); po3 := pg_temp.c16_nom_por_mes_de(cj);
+    end if;
+    -- (4) se paga de más: lo que se debe, más 100.00, sale del banco hoy (a mano): queda a favor
+    v_p := (pg_temp.c16_nom_debe() ->> 'monto')::numeric;
+    select m.cuenta into v_nom from v_estados_mapeo m
+     where m.estado = 'balance' and m.linea = 'nomina_por_pagar'
+       and m.cuenta <> all (array(select jsonb_array_elements_text(pg_temp.c16_nom_debe() -> 'reem'))) order by m.cuenta limit 1;
+    perform pg_temp.c16_postear(v_hoy, 'la nómina pagada de más', jsonb_build_array(
+              jsonb_build_object('cuenta', v_nom, 'monto', (v_p + 100)::text), jsonb_build_object('cuenta', v_banco, 'monto', (-(v_p + 100))::text)));
+    e4 := 'nada (a favor 100.00, y lo dice)';
+    n := pg_temp.c16_nom_tarjeta();
+    o4 := pg_temp.c16_nom_sale_de(n) || format(' (a favor %s, y %s)', pg_temp.c16_m(-(n -> 'debe' ->> 'monto')::numeric),
+                                               case when n -> 'debe' ->> 'texto' like '%a favor%' then 'lo dice' else 'no lo dice' end);
+    if pg_temp.c16_nom_suma(n) <> 'sí' then v_suma := 'no (4)'; end if;
+    if v_proy then
+      cj := pg_temp.c16_j('select public.fn_tablero_caja(12, 3)');
+      pe4 := pg_temp.c16_nom_por_mes(3) || '; a favor 100.00 en «no incluye»';
+      po4 := case when cj -> 'proyeccion' is null or cj -> 'proyeccion' = 'null'::jsonb then 'sin proyección: ' || coalesce(cj ->> 'sin_proyeccion', '?')
+                  else pg_temp.c16_nom_por_mes_de(cj) || '; a favor '
+                       || coalesce((select pg_temp.c16_mj(q -> 'monto') from jsonb_array_elements(cj -> 'proyeccion' -> 'no_incluye') q
+                                     where q ->> 'clave' = 'nomina_a_favor'), 'nada') || ' en «no incluye»' end;
+      -- (sin nada más con fecha en la base, sin la nómina no queda nada que proyectar: entonces no hay proyección, y lo dice)
+      if (cj -> 'proyeccion' is null or cj -> 'proyeccion' = 'null'::jsonb) and cj ->> 'sin_proyeccion' like '%ni de la nómina%' then
+        po4 := pe4;
+      end if;
+    end if;
+    v_esp := format('(1) una nómina posteada con día de pago después de hoy (%s): sale %s | (2) Gusto ya cobró su neto y está casado: sale %s | '
+                    '(3) otra con día de pago hoy: sale %s | (4) pagada de más: sale %s | lo que sale suma lo que se debe, y sus cuentas también: sí',
+                    v_d, e1, e2, e3, e4)
+             || case when v_proy
+                     then format(' || en la proyección, lo que sale por la nómina cada mes: (1) %s | (2) %s | (3) %s | (4) %s | la deuda de la nómina '
+                                 'ya no va en «no incluye»', pe1, pe2, pe3, pe4)
+                     else ' || en la proyección: no la hay (la apertura todavía no está en el libro)' end;
+    v_obt := format('(1) una nómina posteada con día de pago después de hoy (%s): sale %s | (2) Gusto ya cobró su neto y está casado: sale %s | '
+                    '(3) otra con día de pago hoy: sale %s | (4) pagada de más: sale %s | lo que sale suma lo que se debe, y sus cuentas también: %s',
+                    v_d, o1, o2, o3, o4, v_suma)
+             || case when v_proy
+                     then format(' || en la proyección, lo que sale por la nómina cada mes: (1) %s | (2) %s | (3) %s | (4) %s | la deuda de la nómina '
+                                 '%s', po1, po2, po3, po4, v_deuda)
+                     else ' || en la proyección: no la hay (la apertura todavía no está en el libro)' end;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when sqlstate 'MXT01' then v_obt := 'omitida: ' || sqlerrm;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.c16_ser('editor');
+  insert into _pruebas values (57, 'LA PROYECCIÓN DE LA CAJA CON LA NÓMINA, y lo que la tarjeta dice de cuándo sale lo que se debe, paso a paso contra la cuenta hecha aquí: una nómina ya posteada con día de pago DESPUÉS de hoy sale ese día (en su mes) y lo que ya se debía, hoy; Gusto cobra su neto por adelantado y se casa: NO SE RESTA OTRA VEZ (el saldo al final de la proyección no cambia); otra con día de pago hoy se debe hoy; pagada de más, no sale nada (a favor, y lo dice); lo que sale suma siempre lo que se debe; la deuda de la nómina ya no va en «no incluye», y con un solo mes de proyección lo de un día de pago de después sí',
+    coalesce(v_esp, 'lo de una nómina posteada sale su día de pago; lo ya cobrado no se resta otra vez'), v_obt, case when v_obt like 'omitida:%' then null else coalesce(v_obt = v_esp, false) end);
+end $$;
+
+-- 58. SIN LA NÓMINA DE c15 (en una base que no la tiene; o, si la tiene,
+--     escondiendo su vista de las nóminas dentro de un bloque que se
+--     deshace): todo como antes. La tarjeta dice que la nómina no está
+--     pegada (sin error), su acción rápida no está disponible, las demás
+--     tarjetas contestan lo mismo, y la proyección no resta la nómina: lo
+--     que el libro dice que se debe de ella va en «no incluye», con su
+--     monto, y la línea a la vista dice que no cuenta la nómina.
+do $$
+declare
+  v_obt text; v_esp text; t jsonb; t0 jsonb := pg_temp.c16('t')::jsonb; a jsonb; p jsonb; v_c15 boolean := pg_temp.c16_hay_c15(); v_nom numeric; v_otras int;
+begin
+  if pg_temp.c16_omitir(58, 'sin la nómina de c15', 'todo como antes') then return; end if;
+  begin
+    if v_c15 then
+      execute 'alter view public.v_nomina_corridas rename to v_nomina_corridas_c16_fuera';
+    end if;
+    t := pg_temp.c16_t();
+    select x into a from jsonb_array_elements(t -> 'acciones' -> 'lista') x where x ->> 'clave' = 'nomina';
+    p := nullif(t -> 'caja' -> 'proyeccion', 'null'::jsonb);
+    v_nom := -pg_temp.c16_libro(array(select m.cuenta from v_estados_mapeo m where m.estado = 'balance' and m.linea = 'nomina_por_pagar'), date 'infinity');
+    -- (las otras tarjetas —todas menos la nómina, las acciones y la caja—, iguales que con ella; los bancos, por sus totales)
+    select count(*) into v_otras from jsonb_array_elements_text(t0 -> 'tarjetas') k
+     where k not in ('nomina', 'acciones', 'caja')
+       and case when k = 'bancos' then (t -> k -> 'totales') is not distinct from (t0 -> k -> 'totales')
+                else (t -> k) - 'ms' is not distinct from (t0 -> k) - 'ms' end;
+    v_esp := 'las capas: la nómina (c15) no está | su tarjeta: dice que la nómina no está pegada, sin error | su acción rápida: no disponible (c15) | '
+             || 'las otras 13 tarjetas: como con ella | la caja: '
+             || case when p is null then 'sin proyección en esta base (como antes)'
+                     else format('la proyección no resta la nómina (ningún mes la trae), lo que se debe de ella va en «no incluye» (%s) y la línea a la '
+                                 'vista dice que no cuenta la nómina', case when v_nom <> 0 then pg_temp.c16_m(v_nom) else 'nada' end) end
+             || ' | en llano: sí';
+    v_obt := format('las capas: %s | su tarjeta: %s | su acción rápida: %s | las otras 13 tarjetas: %s | la caja: %s | en llano: %s',
+                    case when (t -> 'capas' ->> 'c15')::boolean is false then 'la nómina (c15) no está' else 'dicen que c15 está' end,
+                    case when (t -> 'nomina' ->> 'ok')::boolean is false and t -> 'nomina' ->> 'falta' = 'c15' and t -> 'nomina' ->> 'codigo' is null
+                              and t -> 'nomina' ->> 'motivo' like '%no está pegada%' then 'dice que la nómina no está pegada, sin error'
+                         else coalesce(left(t ->> 'nomina', 300), 'no está') end,
+                    case when (a ->> 'disponible')::boolean is false and a ->> 'falta' = 'c15' then 'no disponible (c15)' else coalesce(a::text, 'no está') end,
+                    case when v_otras = 13 then 'como con ella' else format('%s iguales', v_otras) end,
+                    case when p is null then case when v_c15 and t0 -> 'caja' -> 'proyeccion' is not null and t0 -> 'caja' -> 'proyeccion' <> 'null'::jsonb
+                                                       and t -> 'caja' ->> 'sin_proyeccion' not like '%ni de impuestos en esos meses%'
+                                                  then 'sin proyección: ' || coalesce(t -> 'caja' ->> 'sin_proyeccion', '?')
+                                                  else 'sin proyección en esta base (como antes)' end
+                         else format('la proyección %s, lo que se debe de ella va en «no incluye» (%s) y la línea a la vista %s',
+                                     case when not exists (select 1 from jsonb_array_elements(p -> 'meses') m where jsonb_typeof(m -> 'nomina') <> 'null')
+                                               and jsonb_typeof(p -> 'nomina_a_la_vista') = 'null'
+                                               and not exists (select 1 from jsonb_array_elements(p -> 'no_incluye') q where q ->> 'clave' like 'nomina%')
+                                          then 'no resta la nómina (ningún mes la trae)' else 'trae la nómina' end,
+                                     coalesce((select pg_temp.c16_mj(q -> 'monto') from jsonb_array_elements(p -> 'no_incluye') q
+                                                where q ->> 'clave' = 'deuda' and q ->> 'linea' = 'nomina_por_pagar'), 'nada'),
+                                     case when p ->> 'aviso' like '%No cuenta la nómina, la renta%' then 'dice que no cuenta la nómina' else 'dice otra cosa' end) end,
+                    coalesce(pg_temp.c16_llano(jsonb_build_array(t -> 'nomina', a, t -> 'caja')), 'sí'));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.c16_ser('editor');
+  insert into _pruebas values (58, 'SIN LA NÓMINA DE c15 (en una base que no la tiene; si la tiene, con su vista de las nóminas escondida dentro de un bloque que se deshace): todo como antes. La tarjeta dice que la nómina no está pegada (sin error), su acción rápida no está disponible, las otras tarjetas contestan lo mismo, y la proyección de la caja no resta la nómina: lo que el libro dice que se debe de ella va en «no incluye» con su monto, y la línea a la vista dice que no cuenta la nómina',
+    v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 59. EL EQUIPO Y LOS DE FUERA, CON UNA NÓMINA EN LA BASE: alguien del equipo
+--     con su propia sesión y su código (aquí, una de las personas de la
+--     nómina de prueba) recibe 42501 en la tarjeta de la nómina, en cada una
+--     de sus piezas y en el tablero pidiendo solo la nómina; anon y
+--     service_role, igual (ni les entra la llamada). El dueño, sí.
+do $$
+declare
+  v_obt text; v_esp text; v_hoy date := pg_temp.c16_hoy(); c uuid; v_eq text; v_an text; v_sr text; v_du text;
+  c_llamadas constant text[] := array['select public.fn_tablero_nomina()', 'select public.fn_tablero_nomina_estado()',
+    'select public.fn_tablero_nomina_debe()', 'select count(*) from public.fn_tablero_nomina_pagos()', 'select public.fn_tablero_nomina_tapada()',
+    'select public.fn_tablero(''{"tarjetas": ["nomina"]}'')', 'select public.fn_tablero(''{"tarjetas": ["acciones", "caja", "gastos"]}'')'];
+begin
+  if pg_temp.c16_nom_omitir(59, 'el equipo y los de fuera, con una nómina en la base', '42501') then return; end if;
+  v_esp := format('una persona de la nómina, con su sesión y su código, en las %1$s llamadas: 42501 | anon: 42501 | service_role: 42501 | '
+                  'el dueño sin el código: ok | el dueño con el código: ok', cardinality(c_llamadas));
+  begin
+    perform pg_temp.c16_nom_sembrar();
+    c := pg_temp.c16_nom('tres', v_hoy - 12, v_hoy - 4, v_hoy);
+    select coalesce(nullif(string_agg(distinct pg_temp.c16_estado(x, 'n1'), ','), ''), '?') into v_eq from unnest(c_llamadas) x;
+    select coalesce(nullif(string_agg(distinct pg_temp.c16_estado(x, 'anon'), ','), ''), '?') into v_an from unnest(c_llamadas) x;
+    select coalesce(nullif(string_agg(distinct pg_temp.c16_estado(x, 'service_role'), ','), ''), '?') into v_sr from unnest(c_llamadas) x;
+    select coalesce(nullif(string_agg(distinct pg_temp.c16_estado(x, 'dueno_aal1'), ','), ''), '?') into v_du from unnest(c_llamadas) x;
+    v_obt := format('una persona de la nómina, con su sesión y su código, en las %s llamadas: %s | anon: %s | service_role: %s | '
+                    'el dueño sin el código: %s | el dueño con el código: %s', cardinality(c_llamadas), v_eq, v_an, v_sr, v_du,
+                    (select coalesce(nullif(string_agg(distinct pg_temp.c16_estado(x, 'dueno'), ','), ''), '?') from unnest(c_llamadas) x));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when sqlstate 'MXT01' then v_obt := 'omitida: ' || sqlerrm;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.c16_ser('editor');
+  insert into _pruebas values (59, 'EL EQUIPO Y LOS DE FUERA, CON UNA NÓMINA EN LA BASE: una persona de esa misma nómina, con su propia sesión y su código del teléfono, recibe 42501 en la tarjeta de la nómina, en cada una de sus piezas y en el tablero (pidiendo la nómina, o las acciones, la caja y los gastos); anon y service_role, igual; el dueño entra, con el código y sin él',
+    v_esp, v_obt, case when v_obt like 'omitida:%' then null else coalesce(v_obt = v_esp, false) end);
+end $$;
+
+-- 60. LA NÓMINA, EN LLANO Y SIN NADIE: con una nómina posteada, otra
+--     importada y un cargo de Gusto esperando, ningún texto de la portada
+--     (con el código y sin él) dice un nombre de la base, un código, una
+--     fecha AAAA-MM-DD ni jerga (lo mismo que mira la 35), y la portada no
+--     nombra a ninguna persona de la nómina, ni con el código.
+do $$
+declare
+  v_obt text; v_esp text; v_hoy date := pg_temp.c16_hoy(); c uuid; t2 jsonb; t1 jsonb; v_mal text;
+  v_hay_b boolean := pg_temp.c16('hay_banco') = 'true';
+begin
+  if pg_temp.c16_nom_omitir(60, 'la nómina, en llano y sin nadie', 'ningún texto con jerga ni con el nombre de nadie') then return; end if;
+  v_esp := 'con el código: en llano, y sin el nombre de nadie | sin el código: en llano, y sin el nombre de nadie | lo que pide atender, cada cosa con '
+           || 'su enlace a una página: sí';
+  begin
+    perform pg_temp.c16_nom_sembrar();
+    c := pg_temp.c16_nom('tres', v_hoy - 12, v_hoy - 4, v_hoy);
+    perform pg_temp.c16_nom('una', v_hoy - 3, v_hoy - 1, v_hoy, false);
+    if v_hay_b then
+      perform pg_temp.c16_nom_cargo('zz-c16-prueba-llano', v_hoy, 151.22, 'GUSTO DES:TAX ID:ZZ00000004');
+    end if;
+    t2 := pg_temp.c16_t();
+    t1 := pg_temp.c16_j($q$select public.fn_tablero('{"tope_ms": 0}'::jsonb)$q$, 'dueno_aal1');
+    select string_agg(format('%s (%s)', x ->> 'clave', coalesce(x ->> 'ir', 'sin enlace')), ', ') into v_mal
+      from (select jsonb_array_elements(t2 -> 'nomina' -> 'atender') as x union all select jsonb_array_elements(t1 -> 'nomina' -> 'atender')) q
+     where coalesce(x -> 'ir' ->> 'pagina', '') not in ('nomina', 'conexiones') or coalesce(x ->> 'texto', '') = ''
+        or (x -> 'ir' ->> 'pagina' = 'nomina' and coalesce(x -> 'ir' ->> 'sub', '') not in ('nominas', 'cargos', 'ajustes'));
+    v_obt := format('con el código: %s, y %s | sin el código: %s, y %s | lo que pide atender, cada cosa con su enlace a una página: %s',
+                    coalesce('NO: ' || pg_temp.c16_llano(t2), 'en llano'),
+                    case when t2::text like '%ZZ C16 Prueba%' then 'NOMBRA a una persona de la nómina' else 'sin el nombre de nadie' end,
+                    coalesce('NO: ' || pg_temp.c16_llano(t1), 'en llano'),
+                    case when t1::text like '%ZZ C16 Prueba%' then 'NOMBRA a una persona de la nómina' else 'sin el nombre de nadie' end,
+                    case when jsonb_array_length(t2 -> 'nomina' -> 'atender') > 0 and jsonb_array_length(t1 -> 'nomina' -> 'atender') > 0 and v_mal is null
+                         then 'sí' else 'no: ' || coalesce(v_mal, 'no pide nada') end);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when sqlstate 'MXT01' then v_obt := 'omitida: ' || sqlerrm;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.c16_ser('editor');
+  insert into _pruebas values (60, 'LA NÓMINA, EN LLANO Y SIN NADIE: con una nómina posteada, otra importada sin postear y un cargo de Gusto esperando, ningún texto de la portada (con el código y sin él) dice un nombre de la base, un código, una fecha AAAA-MM-DD ni jerga (lo que mira la 35); la portada no nombra a ninguna persona de la nómina, ni con el código; y lo que pide atender lleva cada cosa a su página',
+    v_esp, v_obt, case when v_obt like 'omitida:%' then null else coalesce(v_obt = v_esp, false) end);
+end $$;
+
+-- 61. SI LO DE LA NÓMINA NO SE DEJA LEER (a la API se le quita el permiso de
+--     leer los archivos de la nómina, dentro de un bloque que se deshace):
+--     la tarjeta de la nómina dice que no se pudo leer, con su código
+--     (42501); su acción rápida dice que no se pudo leer (sin número), las
+--     demás acciones siguen como siempre y las otras tarjetas contestan.
+do $$
+declare
+  v_obt text; v_esp text; t jsonb; t0 jsonb := pg_temp.c16('t')::jsonb; a jsonb;
+begin
+  if pg_temp.c16_nom_omitir(61, 'si lo de la nómina no se deja leer', 'su tarjeta lo dice y las demás siguen', false) then return; end if;
+  v_esp := 'la tarjeta de la nómina: no se pudo leer, con 42501 | su acción rápida: dice que no se pudo leer, sin número | las demás acciones: '
+           || 'las 6, como siempre | las otras 15 tarjetas: contestan o dicen qué capa falta';
+  begin
+    execute 'revoke select on public.nomina_archivos from authenticated';
+    t := pg_temp.c16_t();
+    select x into a from jsonb_array_elements(t -> 'acciones' -> 'lista') x where x ->> 'clave' = 'nomina';
+    v_obt := format('la tarjeta de la nómina: %s | su acción rápida: %s | las demás acciones: %s | las otras 15 tarjetas: %s',
+                    case when (t -> 'nomina' ->> 'ok')::boolean is false and t -> 'nomina' ->> 'motivo' like 'Esta tarjeta no se pudo leer%'
+                              and t -> 'nomina' ->> 'codigo' = '42501' then 'no se pudo leer, con 42501' else left(t ->> 'nomina', 300) end,
+                    case when (a ->> 'disponible')::boolean and a ->> 'detalle' like '%no se pudo leer%' and jsonb_typeof(a -> 'n') = 'null'
+                         then 'dice que no se pudo leer, sin número' else coalesce(a::text, 'no está') end,
+                    case when (select count(*) from jsonb_array_elements(t -> 'acciones' -> 'lista') x
+                                where x ->> 'clave' <> 'nomina'
+                                  and x in (select y from jsonb_array_elements(t0 -> 'acciones' -> 'lista') y)) = 6
+                              and jsonb_array_length(t -> 'acciones' -> 'lista') = 7 then 'las 6, como siempre'
+                         else 'otras: ' || left(t -> 'acciones' ->> 'lista', 300) end,
+                    case when (select count(*) from jsonb_array_elements_text(t -> 'tarjetas') k
+                                where k <> 'nomina' and ((t -> k ->> 'ok')::boolean or t -> k ->> 'falta' is not null)) = 15
+                         then 'contestan o dicen qué capa falta'
+                         else 'fallan: ' || coalesce((select string_agg(k, ', ') from jsonb_array_elements_text(t -> 'tarjetas') k
+                                                      where k <> 'nomina' and not ((t -> k ->> 'ok')::boolean or t -> k ->> 'falta' is not null)), '?') end);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.c16_ser('editor');
+  insert into _pruebas values (61, 'SI LO DE LA NÓMINA NO SE DEJA LEER (a la API se le quita el permiso de leer los archivos de la nómina, dentro de un bloque que se deshace): la tarjeta de la nómina dice que no se pudo leer, con su código (42501); su acción rápida dice que no se pudo leer, sin número; las demás acciones siguen como siempre y las otras tarjetas contestan',
+    v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- =====================================================================
+-- LOS ARREGLOS DE LA VERIFICACIÓN DE LA FASE 11c (14-nov, marca 2026111403;
+-- de la 62 a la 65). Cada una falla con el c16 de antes y pasa con el de
+-- hoy. En su bloque que se deshace (MXT00).
+-- =====================================================================
+-- 62. LO QUE GUSTO YA COBRÓ SE LE QUITA A LA NÓMINA QUE PAGÓ (no a lo más
+--     viejo de la cuenta). Por el camino de verdad (c15: importar, postear,
+--     casar): la nómina A, con día de pago HOY, cuyo neto se pagó con un
+--     cheque de papel que nadie ha cobrado (sus impuestos sí: casados); y la
+--     nómina B, con día de pago MAÑANA, ya posteada. (1) Gusto cobra hoy el
+--     neto de B y se casa: lo que A dejó sin cobrar (2,011.52, en la misma
+--     cuenta que el neto de B) sale HOY, y a B le queda lo demás (859.06) su
+--     día de pago. Antes, el neto cobrado de B «pagaba» el cheque viejo de A
+--     y la portada decía que hoy no salía nada de eso y que mañana salía
+--     todo: en la tarjeta, y en el mes de la proyección de la caja. (2) Se
+--     cobra por fin el cheque de A (un cargo que NO es de Gusto, casado «por
+--     fuera de Gusto» con su nota): hoy baja en eso; lo de B, igual. (3) El
+--     neto de B se des-casa en la Bandeja (su asiento se reversa): lo de B
+--     vuelve a deberse entero su día. En cada paso, lo que c16 dice (del
+--     libro) es lo que la nómina sabe de cada una (c16_nom_pagos: sus
+--     partes); y sin el código del teléfono dice lo mismo.
+do $$
+declare
+  v_obt text; v_esp text; v_hoy date := pg_temp.c16_hoy(); v_d date := pg_temp.c16('pago_despues')::date;
+  ca uuid; cb uuid; v_nb text; m_tax uuid; m_net uuid; m_chk uuid; n0 jsonb; n jsonb; n1 jsonb; v_h0 numeric;
+  e1 text; e2 text; e3 text; o1 text; o2 text; o3 text; x1 text; x2 text; x3 text; v_sin text; v_suma text := 'sí';
+begin
+  if pg_temp.c16_nom_omitir(62, 'lo que Gusto ya cobró se le quita a la nómina que pagó', 'lo viejo sale hoy; lo de la que viene, su día de pago', true, true) then return; end if;
+  if v_d is null then
+    insert into _pruebas values (62, 'LO QUE GUSTO YA COBRÓ SE LE QUITA A LA NÓMINA QUE PAGÓ', 'un día de pago después de hoy dentro de un mes abierto',
+      'omitida: hoy es el último día de su mes y el mes que sigue no está abierto: no hay dónde postear una nómina con día de pago después de hoy', null);
+    return;
+  end if;
+  begin
+    n0 := pg_temp.c16_nom_tarjeta();
+    v_h0 := coalesce((n0 -> 'debe' ->> 'a_hoy')::numeric, 0);
+    perform pg_temp.c16_nom_sembrar();
+    -- la nómina A (día de pago hoy): sus impuestos, cobrados por Gusto y casados; su neto (un cheque de papel), sin cobrar
+    ca := pg_temp.c16_nom('una', v_hoy - 12, v_hoy - 4, v_hoy);
+    m_tax := pg_temp.c16_nom_cargo('zz-c16-prueba-62-tax', v_hoy, 727.12, 'GUSTO DES:TAX ID:ZZ00000004');
+    perform pg_temp.c16_nom_casar(m_tax, jsonb_build_array(jsonb_build_object('corrida', ca, 'cuenta', '2220', 'monto', '645.66'),
+                                                           jsonb_build_object('corrida', ca, 'cuenta', '2225', 'monto', '14.81'),
+                                                           jsonb_build_object('corrida', ca, 'cuenta', '2230', 'monto', '66.65')));
+    -- la nómina B (día de pago mañana), ya posteada; (1) Gusto cobra hoy su neto, y se casa con ella
+    cb := pg_temp.c16_nom('dos', v_hoy - 3, v_hoy - 1, v_d);
+    select k.asiento_numero into v_nb from nomina_corridas k where k.id = cb;
+    m_net := pg_temp.c16_nom_cargo('zz-c16-prueba-62-net', v_hoy, 2729.48, 'GUSTO DES:NET ID:ZZ00000005');
+    perform pg_temp.c16_nom_casar(m_net, jsonb_build_array(jsonb_build_object('corrida', cb, 'cuenta', '2210', 'monto', '2729.48')));
+    e1 := pg_temp.c16_nom_pagos_txt(); n := pg_temp.c16_nom_tarjeta(); o1 := pg_temp.c16_nom_sale_de(n);
+    if pg_temp.c16_nom_suma(n) <> 'sí' then v_suma := 'no (1)'; end if;
+    x1 := format('hoy %s más que antes de la prueba; a la de mañana le quedan %s',
+                 pg_temp.c16_m((n -> 'debe' ->> 'a_hoy')::numeric - v_h0),
+                 coalesce((select pg_temp.c16_mj(q -> 'monto') from jsonb_array_elements(n -> 'debe' -> 'pagos') q where q ->> 'asiento' = v_nb), 'nada'));
+    n1 := pg_temp.c16_nom_tarjeta('dueno_aal1');
+    v_sin := case when n1 -> 'debe' -> 'pagos' = n -> 'debe' -> 'pagos' and n1 -> 'debe' -> 'a_hoy' = n -> 'debe' -> 'a_hoy' then 'lo mismo' else 'otra cosa' end;
+    -- (2) el cheque de papel de A se cobra: un cargo que no es de Gusto, casado «por fuera de Gusto» con su nota
+    m_chk := pg_temp.c16_nom_cargo('zz-c16-prueba-62-chk', v_hoy, 2011.52, 'CHECK 1041 ZZ');
+    perform pg_temp.c16_ser('dueno');
+    perform fn_nomina_cargo_casar(m_chk, jsonb_build_array(jsonb_build_object('corrida', ca, 'cuenta', '2210', 'monto', '2011.52')),
+                                  'C16 PRUEBA: el cheque de papel de la nómina');
+    perform set_config('mx_nomina.escribe', '', true);
+    perform pg_temp.c16_ser('editor');
+    e2 := pg_temp.c16_nom_pagos_txt(); n := pg_temp.c16_nom_tarjeta(); o2 := pg_temp.c16_nom_sale_de(n);
+    if pg_temp.c16_nom_suma(n) <> 'sí' then v_suma := 'no (2)'; end if;
+    x2 := format('hoy %s más que antes de la prueba; a la de mañana le quedan %s',
+                 pg_temp.c16_m((n -> 'debe' ->> 'a_hoy')::numeric - v_h0),
+                 coalesce((select pg_temp.c16_mj(q -> 'monto') from jsonb_array_elements(n -> 'debe' -> 'pagos') q where q ->> 'asiento' = v_nb), 'nada'));
+    -- (3) el neto de B se des-casa en la Bandeja del banco (su asiento se reversa)
+    perform pg_temp.c16_ser('dueno');
+    perform fn_banco_descasar(m_net, 'C16 PRUEBA: se des-casa en la Bandeja');
+    perform pg_temp.c16_ser('editor');
+    e3 := pg_temp.c16_nom_pagos_txt(); n := pg_temp.c16_nom_tarjeta(); o3 := pg_temp.c16_nom_sale_de(n);
+    if pg_temp.c16_nom_suma(n) <> 'sí' then v_suma := 'no (3)'; end if;
+    x3 := format('hoy %s más que antes de la prueba; a la de mañana le quedan %s',
+                 pg_temp.c16_m((n -> 'debe' ->> 'a_hoy')::numeric - v_h0),
+                 coalesce((select pg_temp.c16_mj(q -> 'monto') from jsonb_array_elements(n -> 'debe' -> 'pagos') q where q ->> 'asiento' = v_nb), 'nada'));
+    v_esp := format('(1) el cheque de papel de la nómina de hoy sin cobrar, y el neto de la de mañana (%s) ya cobrado por Gusto y casado: sale %s '
+                    '[hoy 2011.52 más que antes de la prueba; a la de mañana le quedan 859.06] | sin el código del teléfono: lo mismo | '
+                    '(2) cobrado el cheque (casado «por fuera de Gusto»): sale %s [hoy 0.00 más que antes de la prueba; a la de mañana le quedan '
+                    '859.06] | (3) des-casado en la Bandeja el neto de la de mañana: sale %s [hoy 0.00 más que antes de la prueba; a la de mañana '
+                    'le quedan 3588.54] | lo que sale suma lo que se debe: sí', v_d, e1, e2, e3);
+    v_obt := format('(1) el cheque de papel de la nómina de hoy sin cobrar, y el neto de la de mañana (%s) ya cobrado por Gusto y casado: sale %s '
+                    '[%s] | sin el código del teléfono: %s | (2) cobrado el cheque (casado «por fuera de Gusto»): sale %s [%s] | (3) des-casado '
+                    'en la Bandeja el neto de la de mañana: sale %s [%s] | lo que sale suma lo que se debe: %s', v_d, o1, x1, v_sin, o2, x2, o3, x3, v_suma);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when sqlstate 'MXT01' then v_obt := 'omitida: ' || sqlerrm;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.c16_ser('editor');
+  insert into _pruebas values (62, 'LO QUE GUSTO YA COBRÓ SE LE QUITA A LA NÓMINA QUE PAGÓ, no a lo más viejo de la cuenta (por el camino de la nómina: importar, postear y casar): con el cheque de papel de la nómina de hoy sin cobrar y el neto de la de mañana ya cobrado por Gusto y casado, lo viejo sale HOY y a la de mañana le queda lo demás su día de pago (antes: hoy nada, y mañana todo); cobrado el cheque («por fuera de Gusto»), hoy baja en eso; des-casado el neto en la Bandeja, vuelve a deberse su día; en cada paso lo que dice la portada —del libro, con y sin el código del teléfono— es lo que la nómina sabe de cada una',
+    coalesce(v_esp, 'lo viejo sale hoy; lo de la que viene, su día de pago'), v_obt, case when v_obt like 'omitida:%' then null else coalesce(v_obt = v_esp, false) end);
+end $$;
+
+-- 63. LO QUE NO ES DE LA NÓMINA DE GUSTO NO VA EN LO QUE SE DEBE DE ELLA. El
+--     renglón «nómina por pagar» del Balance trae cuentas que ninguna nómina
+--     paga: las vacaciones devengadas (2215), un devengo que el CPA postea a
+--     mano. Con 400.00 devengados ahí (a mano, dentro del bloque): lo que se
+--     debe de la nómina NO cambia, ni cuándo sale, ni lo que la proyección
+--     resta cada mes; van APARTE en la tarjeta («otras», con su texto), lo
+--     que dice el Balance sube 400.00, y la proyección los sigue listando en
+--     lo que no incluye (sin fecha de pago). Antes: «se deben de la nómina»,
+--     «Gusto lo cobra», y 400.00 menos de caja este mes.
+do $$
+declare
+  v_obt text; v_esp text; v_hoy date := pg_temp.c16_hoy(); v_cta text; n0 jsonb; n jsonb; c0 jsonb; c jsonb; d jsonb; v_proy boolean;
+begin
+  if pg_temp.c16_nom_omitir(63, 'lo que no es de la nómina de Gusto no va en lo que se debe de ella', 'las vacaciones devengadas, aparte', false) then return; end if;
+  if pg_temp.c16('mes') is null then
+    insert into _pruebas values (63, 'LO QUE NO ES DE LA NÓMINA DE GUSTO NO VA EN LO QUE SE DEBE DE ELLA', 'el mes de hoy, abierto',
+      'omitida: el mes de hoy no está abierto: no hay dónde postear el devengo de prueba', null);
+    return;
+  end if;
+  -- (una cuenta del renglón que la nómina no usa: ni en su mapeo de columnas, ni en un journal suyo, ni la de reembolsos)
+  select m.cuenta into v_cta
+    from v_estados_mapeo m
+   where m.estado = 'balance' and m.linea = 'nomina_por_pagar'
+     and m.cuenta <> all (array(select jsonb_array_elements_text(pg_temp.c16_nom_debe() -> 'nom')))
+     and m.cuenta <> all (array(select jsonb_array_elements_text(pg_temp.c16_nom_debe() -> 'reem')))
+   order by m.cuenta limit 1;
+  if v_cta is null then
+    insert into _pruebas values (63, 'LO QUE NO ES DE LA NÓMINA DE GUSTO NO VA EN LO QUE SE DEBE DE ELLA', 'una cuenta de «nómina por pagar» que la nómina no use',
+      'omitida: en esta base todas las cuentas del renglón «nómina por pagar» las usa la nómina (su mapeo de columnas): no hay ninguna aparte', null);
+    return;
+  end if;
+  begin
+    n0 := pg_temp.c16_nom_tarjeta();
+    c0 := pg_temp.c16_j('select public.fn_tablero_caja(12, 3)');
+    v_proy := c0 -> 'proyeccion' is not null and c0 -> 'proyeccion' <> 'null'::jsonb;
+    perform pg_temp.c16_postear(v_hoy, 'unas vacaciones devengadas', jsonb_build_array(
+              jsonb_build_object('cuenta', '6100', 'monto', '400.00'), jsonb_build_object('cuenta', v_cta, 'monto', '-400.00')));
+    n := pg_temp.c16_nom_tarjeta();
+    c := pg_temp.c16_j('select public.fn_tablero_caja(12, 3)');
+    select x into d from jsonb_array_elements(c -> 'proyeccion' -> 'no_incluye') x where x ->> 'clave' = 'deuda' and x ->> 'linea' = 'nomina_por_pagar';
+    v_esp := 'con 400.00 devengados a mano en una cuenta de «nómina por pagar» que la nómina no usa: lo que se debe de la nómina, igual; cuándo '
+             || 'sale, igual; va aparte, 400.00 más, con su cuenta y dicho en llano; lo que dice el Balance, 400.00 más; sus cifras cuadran: sí | '
+             || case when v_proy then 'la proyección de la caja: lo que sale por la nómina cada mes, igual; en lo que no incluye, 400.00 más, con su '
+                                      'cuenta y sin las de la nómina'
+                     else 'la proyección de la caja: no la hay en esta base (sin la apertura en el libro, o sin nada con fecha)' end;
+    v_obt := format('con 400.00 devengados a mano en una cuenta de «nómina por pagar» que la nómina no usa: lo que se debe de la nómina, %s; cuándo '
+                    'sale, %s; va aparte, %s más, %s; lo que dice el Balance, %s más; sus cifras cuadran: %s | %s',
+                    case when n -> 'debe' -> 'monto' = n0 -> 'debe' -> 'monto' and n -> 'debe' -> 'cuentas' = n0 -> 'debe' -> 'cuentas' then 'igual'
+                         else format('otro (%s → %s)', n0 -> 'debe' ->> 'monto', n -> 'debe' ->> 'monto') end,
+                    case when n -> 'debe' -> 'pagos' = n0 -> 'debe' -> 'pagos' and n -> 'debe' -> 'a_hoy' = n0 -> 'debe' -> 'a_hoy' then 'igual' else 'otro' end,
+                    pg_temp.c16_m(coalesce((nullif(n -> 'debe' -> 'otras', 'null'::jsonb) ->> 'monto')::numeric, 0)
+                                  - coalesce((nullif(n0 -> 'debe' -> 'otras', 'null'::jsonb) ->> 'monto')::numeric, 0)),
+                    case when exists (select 1 from jsonb_array_elements(n -> 'debe' -> 'otras' -> 'cuentas') q where q ->> 'cuenta' = v_cta)
+                              and n -> 'debe' -> 'otras' ->> 'texto' like '%' || v_cta || '%'
+                              and n -> 'debe' -> 'otras' ->> 'texto' like '%no va en lo que se debe de la nómina%'
+                              and pg_temp.c16_llano(n -> 'debe' -> 'otras') is null
+                         then 'con su cuenta y dicho en llano' else 'sin decirlo bien: ' || coalesce(n -> 'debe' ->> 'otras', 'nada') end,
+                    pg_temp.c16_m((n -> 'debe' ->> 'libro')::numeric - (n0 -> 'debe' ->> 'libro')::numeric),
+                    pg_temp.c16_nom_suma(n),
+                    case when not v_proy then 'la proyección de la caja: no la hay en esta base (sin la apertura en el libro, o sin nada con fecha)'
+                         else format('la proyección de la caja: lo que sale por la nómina cada mes, %s; en lo que no incluye, %s más, %s',
+                                     case when pg_temp.c16_nom_por_mes_de(c) = pg_temp.c16_nom_por_mes_de(c0) then 'igual'
+                                          else format('otro (%s → %s)', pg_temp.c16_nom_por_mes_de(c0), pg_temp.c16_nom_por_mes_de(c)) end,
+                                     pg_temp.c16_m(coalesce((d ->> 'monto')::numeric, 0)
+                                                   - coalesce((select (x ->> 'monto')::numeric from jsonb_array_elements(c0 -> 'proyeccion' -> 'no_incluye') x
+                                                                where x ->> 'clave' = 'deuda' and x ->> 'linea' = 'nomina_por_pagar'), 0)),
+                                     case when d -> 'cuentas' ? v_cta
+                                               and not exists (select 1 from jsonb_array_elements_text(d -> 'cuentas') q
+                                                                where q = any (array(select jsonb_array_elements_text(pg_temp.c16_nom_debe() -> 'nom'))))
+                                          then 'con su cuenta y sin las de la nómina' else 'con otras cuentas: ' || coalesce(d ->> 'cuentas', 'ninguna') end) end);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.c16_ser('editor');
+  insert into _pruebas values (63, 'LO QUE NO ES DE LA NÓMINA DE GUSTO NO VA EN LO QUE SE DEBE DE ELLA: el renglón «nómina por pagar» del Balance trae cuentas que ninguna nómina paga (las vacaciones devengadas, un devengo del CPA a mano). Con 400.00 devengados ahí, lo que se debe de la nómina no cambia, ni cuándo sale, ni lo que la proyección resta cada mes; van aparte en la tarjeta, dichos en llano, el Balance sube en eso, y la proyección los sigue listando en lo que no incluye (antes: «se deben de la nómina, Gusto lo cobra», y 400.00 menos de caja este mes)',
+    coalesce(v_esp, 'las vacaciones devengadas, aparte'), v_obt, coalesce(v_obt = v_esp, false));
+end $$;
+
+-- 64. LO LIGERO: LA PORTADA NO ARMA LA PROPUESTA DE NINGÚN CARGO DE GUSTO NI
+--     CORRE LOS AVISOS DE LA NÓMINA. Con un cargo de Gusto esperando en la
+--     Bandeja, y la propuesta de los cargos de la nómina (c15) rota a
+--     propósito dentro del bloque (una función que solo da un error): la
+--     tarjeta, su acción rápida y el tablero entero contestan igual que
+--     antes de romperla (ya no la llaman: leen de c15 los que esperan, sin
+--     su propuesta, y el control solo con sus cuadres), y «control» trae los
+--     cuadres en rojo y los que no se pueden comprobar, sin los avisos. Con
+--     un c15 anterior a estos arreglos (sin sus dos lecturas ligeras) sale
+--     «omitida»: c16 lee entonces lo de antes, que sí la arma.
+do $$
+declare
+  v_obt text; v_esp text; v_hoy date := pg_temp.c16_hoy(); v_mov uuid; n0 jsonb; n jsonb; a0 jsonb; a jsonb; t jsonb;
+begin
+  if pg_temp.c16_nom_omitir(64, 'la portada no arma la propuesta de ningún cargo de Gusto', 'lee lo ligero de la nómina', true, true) then return; end if;
+  if to_regprocedure('public.fn_nomina_cargos_esperan()') is null or to_regprocedure('public.fn_nomina_control_filas(boolean)') is null then
+    insert into _pruebas values (64, 'LO LIGERO: LA PORTADA NO ARMA LA PROPUESTA DE NINGÚN CARGO DE GUSTO', 'la nómina (c15) con sus dos lecturas ligeras',
+      'omitida: la nómina (c15) de esta base es anterior a los arreglos del 14-nov (no trae sus dos lecturas ligeras): la portada lee entonces su lista entera de cargos y su control entero, como antes. Vuelve a pegar c15-nomina.sql', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c16_nom_sembrar();
+    perform pg_temp.c16_nom('tres', v_hoy - 12, v_hoy - 4, v_hoy);
+    v_mov := pg_temp.c16_nom_cargo('zz-c16-prueba-64-net', v_hoy, 4725.09, 'GUSTO DES:NET ID:ZZ00000006');
+    n0 := pg_temp.c16_nom_tarjeta();
+    select x into a0 from jsonb_array_elements(pg_temp.c16_j('select public.fn_tablero_acciones()') -> 'lista') x where x ->> 'clave' = 'nomina';
+    -- la propuesta de un cargo, rota a propósito (se deshace con la prueba)
+    perform pg_temp.c16_ser('editor');
+    execute $f$create or replace function public.fn_nomina_cargo_propuesta(p_movimiento uuid) returns jsonb
+            language plpgsql stable set search_path = public, pg_temp
+            as $b$ begin raise exception using errcode = 'MXT64', message = 'c16-pruebas: aquí no se arma la propuesta de un cargo'; end $b$
+            $f$;
+    n := pg_temp.c16_nom_tarjeta();
+    select x into a from jsonb_array_elements(pg_temp.c16_j('select public.fn_tablero_acciones()') -> 'lista') x where x ->> 'clave' = 'nomina';
+    t := pg_temp.c16_t();
+    v_esp := 'con un cargo de Gusto esperando y la propuesta de los cargos rota: la lista entera de la nómina falla (MXT64) | la tarjeta contesta, '
+             || 'con sus cargos (uno o más) y sus cuadres, igual que antes de romperla | su acción rápida, igual | el tablero entero: 16 tarjetas '
+             || 'contestan o dicen qué capa falta, y la de la nómina contesta | «control» trae los cuadres en rojo y los que no se pueden '
+             || 'comprobar, sin los avisos';
+    v_obt := format('con un cargo de Gusto esperando y la propuesta de los cargos rota: la lista entera de la nómina %s | la tarjeta %s | su acción '
+                    'rápida, %s | el tablero entero: %s tarjetas contestan o dicen qué capa falta, y la de la nómina %s | «control» trae %s',
+                    case pg_temp.c16_estado('select count(*) from public.fn_nomina_cargos()')
+                      when 'MXT64' then 'falla (MXT64)' when 'ok' then 'contesta (no la arma: la prueba no prueba nada)'
+                      else 'falla con otro error' end,
+                    case when (n ->> 'ok')::boolean and (n -> 'cargos' ->> 'n')::int >= 1 and n -> 'cargos' = n0 -> 'cargos' and n -> 'control' = n0 -> 'control'
+                         then 'contesta, con sus cargos (uno o más) y sus cuadres, igual que antes de romperla'
+                         else 'no contesta igual: ' || left(coalesce(n ->> 'motivo', n -> 'cargos' #>> '{}', '?') || ' ' || coalesce(n ->> 'error', ''), 200) end,
+                    case when a is not distinct from a0 and (a ->> 'n')::int >= 1 then 'igual' else 'otra: ' || left(coalesce(a ->> 'detalle', '?'), 200) end,
+                    (select count(*) from jsonb_array_elements_text(t -> 'tarjetas') k where (t -> k ->> 'ok')::boolean or t -> k ->> 'falta' is not null),
+                    case when (t -> 'nomina' ->> 'ok')::boolean then 'contesta' else 'no contesta: ' || left(coalesce(t -> 'nomina' ->> 'error', '?'), 200) end,
+                    case when n -> 'control' ? 'cuadres_rojos' and n -> 'control' ? 'sin_comprobar' and not n -> 'control' ? 'avisos'
+                         then 'los cuadres en rojo y los que no se pueden comprobar, sin los avisos'
+                         else coalesce((select string_agg(k, ', ' order by k) from jsonb_object_keys(n -> 'control') k), 'nada') end);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when sqlstate 'MXT01' then v_obt := 'omitida: ' || sqlerrm;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.c16_ser('editor');
+  insert into _pruebas values (64, 'LO LIGERO: LA PORTADA NO ARMA LA PROPUESTA DE NINGÚN CARGO DE GUSTO NI CORRE LOS AVISOS DE LA NÓMINA: con un cargo de Gusto esperando en la Bandeja y la propuesta de los cargos de la nómina rota a propósito (dentro del bloque), la tarjeta de la nómina, su acción rápida y el tablero entero contestan igual que antes de romperla (leen de la nómina los que esperan, sin su propuesta, y el control solo con sus cuadres); y «control» trae los cuadres en rojo y los que no se pueden comprobar, sin los avisos',
+    coalesce(v_esp, 'lee lo ligero de la nómina'), v_obt, case when v_obt like 'omitida:%' then null else coalesce(v_obt = v_esp, false) end);
+end $$;
+
+-- 65. EN GASTOS, LO QUE SE TAPA SIN EL CÓDIGO SE DICE UNA VEZ. Con el
+--     criterio «codigo» (la otra palabra de fn_tablero_nomina_criterio,
+--     dentro del bloque), una nómina de Gusto en el libro y sin el código
+--     del teléfono, la tarjeta de gastos deja fuera las cuentas de la nómina
+--     y lo dice en «tapado» (con su botón); su «nota» ya no repite la misma
+--     frase (antes salía dos veces en la pantalla). Con el criterio de
+--     fábrica, ni «tapado» ni esa frase.
+do $$
+declare
+  v_obt text; v_esp text; v_hoy date := pg_temp.c16_hoy(); g0 jsonb; g jsonb; v_veces int;
+begin
+  if pg_temp.c16_nom_omitir(65, 'en gastos, lo que se tapa sin el código se dice una vez', 'en «tapado», y no otra vez en la nota') then return; end if;
+  begin
+    perform pg_temp.c16_nom_sembrar();
+    perform pg_temp.c16_nom('una', v_hoy - 12, v_hoy - 4, v_hoy);
+    g0 := pg_temp.c16_j('select public.fn_tablero_gastos()', 'dueno_aal1');
+    execute $f$create or replace function public.fn_tablero_nomina_criterio() returns text
+              language sql stable set search_path = public, pg_temp as $b$ select 'codigo'::text $b$ $f$;
+    g := pg_temp.c16_j('select public.fn_tablero_gastos()', 'dueno_aal1');
+    -- (cuántas veces dice la tarjeta que sin el código no va lo de la nómina: en «tapado» y en su nota)
+    v_veces := (select count(*) from regexp_matches(coalesce(g -> 'tapado' ->> 'texto', '') || ' ¦ ' || coalesce(g ->> 'nota', ''),
+                                                     'Sin el código del teléfono', 'g'));
+    v_esp := 'criterio de fábrica, sin el código: ni «tapado» ni esa frase en la nota | criterio «codigo», sin el código: «tapado» lo dice, con sus '
+             || 'cuentas y su botón a Conexiones; la frase sale 1 vez (en «tapado»: la nota no la repite); en llano: sí';
+    v_obt := format('criterio de fábrica, sin el código: %s | criterio «codigo», sin el código: %s; la frase sale %s %s (%s); en llano: %s',
+                    case when (g0 -> 'tapado' is null or jsonb_typeof(g0 -> 'tapado') = 'null') and coalesce(g0 ->> 'nota', '') not like '%Sin el código del teléfono%'
+                         then 'ni «tapado» ni esa frase en la nota' else 'trae «tapado» o la frase' end,
+                    case when g -> 'tapado' ->> 'texto' like 'Sin el código del teléfono%' and jsonb_array_length(g -> 'tapado' -> 'cuentas') > 0
+                              and g -> 'tapado' -> 'ir' ->> 'pagina' = 'conexiones'
+                         then '«tapado» lo dice, con sus cuentas y su botón a Conexiones' else '«tapado» no lo dice bien: ' || coalesce(g ->> 'tapado', 'nada') end,
+                    v_veces, case when v_veces = 1 then 'vez' else 'veces' end,
+                    case when coalesce(g ->> 'nota', '') like '%Sin el código del teléfono%' then 'la nota la repite' else 'en «tapado»: la nota no la repite' end,
+                    coalesce(pg_temp.c16_llano(g), 'sí'));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when sqlstate 'MXT01' then v_obt := 'omitida: ' || sqlerrm;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.c16_ser('editor');
+  insert into _pruebas values (65, 'EN GASTOS, LO QUE SE TAPA SIN EL CÓDIGO SE DICE UNA VEZ: con el criterio «codigo», una nómina de Gusto en el libro y sin el código del teléfono, la tarjeta de gastos deja fuera las cuentas de la nómina y lo dice en «tapado» (con su botón a Conexiones); su nota ya no repite la misma frase. Con el criterio de fábrica, ni «tapado» ni esa frase',
+    coalesce(v_esp, 'en «tapado», y no otra vez en la nota'), v_obt, case when v_obt like 'omitida:%' then null else coalesce(v_obt = v_esp, false) end);
+end $$;
+
 -- 44. LAS DEMÁS CAPAS, COMO SIN c16: los controles de c2, c3, c4, c6, c8,
---     c10, c11, c12, c14 y lo que detiene el cierre de c9 están como estaban
+--     c10, c11, c12, c14, c15 y lo que detiene el cierre de c9 están como estaban
 --     sin c16 (lo que ya estaba en rojo sin c16 se dice y no cuenta), después
 --     de todas las pruebas.
 do $$
@@ -3053,7 +4932,7 @@ begin
                                                      else pg_temp.c16_nuevos(string_to_array(v_antes, '; '), v_ahora) end;
   exception when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (44, 'LAS DEMÁS CAPAS, COMO SIN c16: los controles de c2, c3, c4, c6, c8, c10, c11, c12 y c14 y lo que detiene el cierre de c9 están como estaban sin c16, después de todas las pruebas (lo que ya estaba en rojo sin c16 se dice y no cuenta)',
+  insert into _pruebas values (44, 'LAS DEMÁS CAPAS, COMO SIN c16: los controles de c2, c3, c4, c6, c8, c10, c11, c12, c14 y c15 y lo que detiene el cierre de c9 están como estaban sin c16, después de todas las pruebas (lo que ya estaba en rojo sin c16 se dice y no cuenta)',
     v_esp, v_obt || case when coalesce(v_antes, '') not in ('', '¿?') and v_antes not like '¿?%'
                          then ' (ya en rojo sin c16, con los datos de esta base: ' || left(v_antes, 600) || ')' else '' end,
     v_obt = v_esp);
@@ -3074,10 +4953,13 @@ begin
                     case when pg_get_functiondef('public.fn_fecha_miami(timestamptz)'::regprocedure) = pg_temp.c16('reloj_def') then 'el de verdad' else 'fingido' end,
                     case when exists (select 1 from proyectos where id like 'c16-prueba-%')
                               or exists (select 1 from facturas where num like 'C16-PRUEBA-%')
-                              or exists (select 1 from asientos where descripcion like 'C16 PRUEBA%') then 'quedó algo' else 'nada' end);
+                              or exists (select 1 from asientos where descripcion like 'C16 PRUEBA%')
+                              -- (14-nov, Fase 11c) ni las personas de la nómina de prueba ni sus cargos de Gusto
+                              or exists (select 1 from perfiles where nombre like 'ZZ C16 Prueba%')
+                              or pg_temp.c16_quedo_de_la_nomina() then 'quedó algo' else 'nada' end);
   exception when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (45, 'NADA QUEDA: al terminar, la huella es la del principio (las mismas filas en cada tabla que el tablero lee o que las pruebas siembran, las mismas funciones), el reloj es el de verdad y no queda ninguna obra, factura ni asiento de prueba',
+  insert into _pruebas values (45, 'NADA QUEDA: al terminar, la huella es la del principio (las mismas filas en cada tabla que el tablero lee o que las pruebas siembran —también las de la nómina—, las mismas funciones), el reloj es el de verdad y no queda ninguna obra, factura, asiento, persona, nómina ni cargo de prueba',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 

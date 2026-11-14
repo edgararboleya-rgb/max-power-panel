@@ -192,7 +192,7 @@ create or replace function vol_banco.qfx(p_cuenta text, p_desde date, p_hasta da
 language sql stable as $f$
   select concat_ws(E'\r\n', 'OFXHEADER:100', 'DATA:OFXSGML', 'VERSION:102', '', '<OFX>',
     case when p_cuenta = '1010'
-         then '<BANKMSGSRSV1><STMTTRNRS><TRNUID>1<STMTRS><CURDEF>USD<BANKACCTFROM><BANKID>267084131<ACCTID>000000004392<ACCTTYPE>CHECKING</BANKACCTFROM>'
+         then '<BANKMSGSRSV1><STMTTRNRS><TRNUID>1<STMTRS><CURDEF>USD<BANKACCTFROM><BANKID>ZZ0000001<ACCTID>000000004392<ACCTTYPE>CHECKING</BANKACCTFROM>'
          else '<CREDITCARDMSGSRSV1><CCSTMTTRNRS><TRNUID>1<CCSTMTRS><CURDEF>USD<CCACCTFROM><ACCTID>3727000000' || right(p_cuenta, 4) || '</CCACCTFROM>' end,
     '<BANKTRANLIST><DTSTART>' || to_char(p_desde, 'YYYYMMDD') || '<DTEND>' || to_char(p_hasta, 'YYYYMMDD'),
     (select string_agg(concat('<STMTTRN><TRNTYPE>', m.tipo, '<DTPOSTED>', to_char(m.fecha, 'YYYYMMDD'), '120000[0:GMT]<TRNAMT>', m.monto,

@@ -170,6 +170,7 @@ lista única desde el estado del 12-nov (`docs/conta/PEGAR-13NOV.md`).
   con el código; «Importar» apagado si ya está todo.
 
 ### ▶ Lo que quedó abierto de la 11b
+(Las dos primeras se cerraron el 14-nov: «La Fase 11c», abajo.)
 - **El corte de los Zelle en c3**: c3 no aparta del devengo las horas que un
   jornal pagó dentro del mes. Con un mes devengado, aplicar un Zelle de ese
   mes pone en rojo el «devengo» de c3. Hoy la salida es reversar el devengo
@@ -192,7 +193,81 @@ lista única desde el estado del 12-nov (`docs/conta/PEGAR-13NOV.md`).
 - La IA contable (c8) no sabe de la nómina: aprobar su propuesta para un
   cargo de Gusto se salta la página de Nómina (el aviso 62 de c15 lo dice).
 - `c6-banco-parte1.sql` quedó a 3,805 bytes del tope del partidor: el
-  próximo cambio en las secciones 0 a 4 de c6 puede mover el corte.
+  próximo cambio en las secciones 0 a 4 de c6 puede mover el corte. (Tras la
+  11c: a 2,115 bytes; el corte sigue en la sección 5.)
+
+## La Fase 11c (14-nov)
+Cierra lo que la 11b dejó abierto de los Zelle y de «GUSTO», y lleva la
+nómina a la portada. Probada en los tres órdenes de pegado (sin c15, el de
+producción sobre la v305 y desde cero) y en la lista única desde el estado
+del 12-nov (`docs/conta/PEGAR-13NOV.md`, con el camino de quien ya pegó la
+v305).
+- **c3 · el devengo** (marca 2026111401; 136 pruebas): el devengo estándar
+  aparta también las horas que pagó un jornal dentro del mes y se pone al
+  día solo. Aplicar un Zelle de un mes devengado ya no deja el «devengo» en
+  rojo. No toca ningún asiento.
+- **c6 · «GUSTO» como palabra entera** (marca 2026111401; 169 pruebas): un
+  solo sitio dice si un movimiento nombra la nómina,
+  `fn_banco_dice_nomina(descripción, memo)`, para los débitos y los
+  depósitos: «GUSTO», no «AUGUSTO». El patrón de fábrica gana ZENPAYROLL (si
+  Edgar lo había ajustado, no se toca y el pegado lo dice). **Un Zelle nunca
+  es de nómina**, diga lo que diga su nota («con gusto, gracias», «payroll
+  semana 3»): lo escribe una persona, y Gusto no paga por Zelle. Sale como
+  un Zelle a una persona y, si es un jornal, entra por Costo por obra sin
+  motivo.
+- **c10 · Costo por obra** (v4: dos textos; 64 pruebas): sus avisos dicen lo
+  que hace el c3 nuevo. Va con c3.
+- **c15 · la nómina** (68 funciones, 70 pruebas; pide el c6 del 14-nov): sus
+  cinco puertas de los cargos de Gusto preguntan al banco
+  (`fn_banco_dice_nomina`), así que el banco y la nómina dicen lo mismo de
+  cada movimiento. Dos lecturas ligeras para la portada:
+  `fn_nomina_cargos_esperan()` (los movimientos de Gusto que esperan, sin
+  armar su propuesta) y `fn_nomina_control_filas(solo cuadres)`.
+- **c16 · la nómina en el tablero** (marca 2026111403; 65 pruebas): en
+  `fases/tablero-c16.md`.
+- **c9** no cambia.
+
+### ▶ Lo que queda de la 11c
+- **Decide Edgar:** qué enseña la portada de la nómina sin el código del
+  teléfono. De fábrica, «libro» (lo que Estados ya enseña sin el código).
+  Con «codigo», sin el código no se escribe ningún dinero de la nómina y la
+  tarjeta de gastos esconde ENTERAS las cuentas de la nómina (también lo
+  que tengan que no sea de Gusto). Se cambia en
+  `fn_tablero_nomina_criterio()` y se vuelve a pegar c16.
+- La palabra «gusto» o «payroll», entera, en la descripción o en la nota de
+  un movimiento que NO es un Zelle sigue saliendo «de nómina»: un cheque
+  con «payroll» en su nota, un ACH a una persona, o una compra con la
+  tarjeta o la débito en un comercio que se llame «… Gusto …» («El Buen
+  Gusto», «Al Gusto») cuyo ticket no esté en el libro (con su ticket, casa
+  con él antes). Ya pasaba en la v305. Sale en Nómina → Cargos de Gusto y
+  lo cuenta la fila 180 del cierre hasta que se resuelve. La salida:
+  clasificarlo en la Bandeja con su motivo escrito (probado: sale de los
+  cargos de Gusto). Gusto nunca cobra a una tarjeta de crédito: si
+  molesta, se puede dejar fuera la cuenta de tarjeta, pero cambia la firma
+  de `fn_banco_dice_nomina` (c6 y c15 a la vez).
+- **El devengo y una nómina ANULADA.** Con un jornal, el devengo que se
+  quedó sin horas vuelve solo. Con la nómina, no: si una nómina paga
+  dentro del mes todo lo que el devengo llevaba, c15 lo deshace; y si esa
+  nómina se anula y no se vuelve a subir, el devengo no vuelve y ningún
+  control lo dice (probado el 14-nov: c3, c10, c15 y el cierre, en verde;
+  y la guarda del cierre deja cerrar el mes así). Hay que devengar otra
+  vez: `select fn_horas_devengar('AAAA-MM');`. Es poco probable (pide
+  devengar el mes ANTES de la nómina que paga todo, y anularla para
+  siempre). La causa es de c3: el control «devengo» y la guarda del cierre
+  solo miran los devengos VIVOS, y el que el puente deshizo por quedarse
+  sin horas (papel «no_aplica: sin_horas») ya no lo es. Lo mismo pasa si
+  después se aprueban más horas de ese mes. El arreglo más corto va en c3
+  (probado el 14-nov en el banco, sin publicar: con él lo dicen el control,
+  la fila 131 del cierre y el propio cierre, y las pruebas de c3, c9, c10,
+  c15 y c16 siguen igual): que los dos miren también el mes abierto que se
+  devengó alguna vez, sin devengo vivo, con ese papel y con horas otra vez
+  por devengar. O en c15 (`fn_nomina_anular`), que lo vuelva a poner.
+- Cuándo sale de la caja lo que se debe de la nómina se lee de la nota que
+  c15 escribe en el asiento de cada cargo casado («…la nómina del <día de
+  pago>»). Si c15 cambia ese texto, la prueba 62 de c16 sale en rojo.
+- La primera vez que se pega el c3 del 14-nov crea un trigger sobre los
+  asientos: es el único archivo que espera si la app está abierta (por eso
+  PEGAR dice que se cierre).
 
 ## ▶ Pendientes
 - **Edgar, antes del 4-ene**: bajar de Gusto un «Payroll journal» en CSV

@@ -1,5 +1,5 @@
 -- =====================================================================
--- C6 · EL BANCO — c6-banco.sql, PARTE 2 DE 2 (marca 2026111301).
+-- C6 · EL BANCO — c6-banco.sql, PARTE 2 DE 2 (marca 2026111401).
 -- GENERADA por pruebas/conta/partir-c6.py desde docs/conta/c6-banco.sql:
 -- no se edita a mano. Es lo mismo que el archivo entero, en dos pegados,
 -- para cuando el SQL Editor de Supabase no deja pegarlo de una vez. La
@@ -15,7 +15,7 @@
 set local lock_timeout = '500ms';
 
 -- LA GUARDA de la parte 2: la parte 1 de ESTA versión tiene que estar
--- pegada (su fn_banco_version() dice 2026111301). Si no, para aquí y no toca
+-- pegada (su fn_banco_version() dice 2026111401). Si no, para aquí y no toca
 -- nada (MX000).
 do $$
 declare
@@ -24,11 +24,11 @@ begin
   if to_regprocedure('public.fn_banco_version()') is not null then
     execute 'select public.fn_banco_version()' into v_ver;
   end if;
-  if v_ver is distinct from 2026111301 then
+  if v_ver is distinct from 2026111401 then
     raise exception using
       errcode = 'MX000',
       message = format('c6-banco (parte 2 de 2) NO se aplicó, no se tocó nada: antes va la parte 1 de esta misma versión '
-                       '(marca 2026111301), y la base tiene %s. Pega c6-banco-parte1.sql y después esta; o el archivo '
+                       '(marca 2026111401), y la base tiene %s. Pega c6-banco-parte1.sql y después esta; o el archivo '
                        'entero, c6-banco.sql.',
                        case when v_ver is null then 'el banco sin pegar' else 'el banco de la marca ' || v_ver end);
   end if;
@@ -6778,7 +6778,10 @@ declare
                             'v_conciliacion_partidas', 'v_prestamos', 'v_prepagados'];
   -- lo que conta.js llama (el resto, sin grant a la API). (13-nov-2026, Fase
   -- 11b: y, al final, fn_banco_papel_nomina(), que no la llama conta.js sino
-  -- v_papel_fases —security_invoker: la ejecuta quien lee la vista—: 9.1.)
+  -- v_papel_fases —security_invoker: la ejecuta quien lee la vista—: 9.1.
+  -- 14-nov-2026, Fase 11c: y fn_banco_dice_nomina(text,text), que la llama
+  -- la nómina —c15, con los permisos de quien llama—: ¿el movimiento nombra
+  -- la nómina como palabra entera? Un solo sitio para el banco y la nómina.)
   v_app     text[] := array['fn_banco_importar_ofx(text,text,text)', 'fn_banco_importar_filas(jsonb)', 'fn_banco_casar(uuid)',
                             'fn_banco_casar_todo(text,date)', 'fn_banco_casar_con(uuid,jsonb,text)',
                             'fn_banco_cobrar(uuid,jsonb,text)', 'fn_banco_pagar_proveedor(uuid,uuid,jsonb)',
@@ -6788,7 +6791,7 @@ declare
                             'fn_conciliacion_partida(uuid,text,text)', 'fn_conciliacion_confirmar(uuid)',
                             'fn_conciliacion_reabrir(uuid,text)', 'fn_conciliacion_apertura(text,text,jsonb,text)',
                             'fn_prestamo_cuota(uuid,uuid,date,text,text,text,text)', 'fn_prepagados_amortizar(text)',
-                            'fn_banco_control(text,text[])', 'fn_banco_papel_nomina()'];
+                            'fn_banco_control(text,text[])', 'fn_banco_papel_nomina()', 'fn_banco_dice_nomina(text,text)'];
   v_hoy     boolean := p_periodo = 'hoy';
   v_pp      periodos;
   v_pid     text;
@@ -8768,6 +8771,7 @@ comment on function public.fn_banco_nomina(uuid, jsonb, text)       is 'c6: el j
 comment on function public.fn_banco_descriptor(text, text, text, text) is 'c6: cambia lo que se reconoce en la descripción de un movimiento (SQL Editor).';
 comment on function public.fn_banco_cuenta_personal(text, text, boolean, text) is 'c6: da de alta una cuenta personal de Edgar por sus 4 últimos, o la da de baja con su motivo (SQL Editor). Solo con ella el dinero de o a esa cuenta va al patrimonio del accionista sin motivo.';
 comment on function public.fn_banco_version()                       is 'c6: la marca de esta versión del banco (AAAAMMDDNN).';
+comment on function public.fn_banco_dice_nomina(text, text)         is 'c6: ¿el movimiento nombra la nómina (Gusto)? Recibe su descripción y su memo (desc_norm y memo de movimientos_banco), los junta y los normaliza como la Bandeja (R6), y busca el descriptor «nomina» como PALABRA ENTERA («GUSTO», no «AUGUSTO»). Un Zelle, nunca (lo que dice lo escribe una persona: «con gusto, gracias»). El único sitio que lo decide: el débito y el depósito de R6 (la Bandeja) y la nómina (c15: sus cargos de Gusto), con el mismo texto. Solo lee el patrón de ese descriptor, con los permisos de quien llama (no es SECURITY DEFINER): al dueño, sí o no; al equipo, siempre false; anon y service_role no la ejecutan.';
 comment on function public.fn_banco_papel_nomina()                  is 'c6: el papel de los asientos de la nómina de Gusto (c15: orígenes nomina_corridas y nomina_burden) para v_papel_fases, con sus cuatro columnas. Lee v_nomina_papel de c15 si está (sin c15, nada), con los permisos de quien mira: con el código del teléfono (o desde el SQL Editor), el papel de c15 tal cual; sin él, de cada asiento de la nómina dice que su papel es su nómina y que se ve con el código, sin cifras ni nombres. No es SECURITY DEFINER. La llama la vista, no conta.js.';
 
 
@@ -8808,14 +8812,14 @@ select 'c6 · ' || x.que as control, x.ok, to_jsonb(x.detalle) as detalle
                    and v.relname in ('v_papel_fases', 'v_banco_movimientos', 'v_banco_bandeja', 'v_banco_saldos', 'v_conciliacion',
                                      'v_conciliacion_partidas', 'v_prestamos', 'v_prepagados')),
      '8 vistas, todas security_invoker, solo SELECT para authenticated'),
-    ('funciones de la app', (select count(*) = 22 from pg_proc p
+    ('funciones de la app', (select count(*) = 23 from pg_proc p
                               where p.pronamespace = 'public'::regnamespace
                                 and has_function_privilege('authenticated', p.oid, 'execute')
                                 and not has_function_privilege('anon', p.oid, 'execute')
                                 and (p.proname like 'fn\_banco\_%' or p.proname like 'fn\_conciliacion\_%' or p.proname = 'fn_conciliar'
                                      or p.proname like 'fn\_prestamo\_%' or p.proname like 'fn\_prepagado%')),
-     '21 funciones que llama conta.js y fn_banco_papel_nomina, la que lee la vista de los papeles (anon ninguna); el resto, '
-     || 'sin grant a la API'),
+     '21 funciones que llama conta.js y fn_banco_papel_nomina, la que lee la vista de los papeles, y fn_banco_dice_nomina, la '
+     || 'que comparten el banco y la nómina (anon ninguna); el resto, sin grant a la API'),
     ('en el reparto de c2', not exists (select 1 from pg_proc p
                                           where p.pronamespace = 'public'::regnamespace and p.prosecdef
                                             and has_function_privilege('authenticated', p.oid, 'execute')
@@ -8827,6 +8831,17 @@ select 'c6 · ' || x.que as control, x.ok, to_jsonb(x.detalle) as detalle
                                                               where pp.oid = to_regprocedure('public.fn_verificar_cadena()'))) = 0),
      'las SECURITY DEFINER que llama la app están en el reparto de c2 (c_fn_app_fases): su control permisos las conoce')
   ) as x(que, ok, detalle)
+union all
+-- (14-nov-2026, Fase 11c) SOLO si el patrón de «nomina» no es el de fábrica
+-- (Edgar lo ajustó con fn_banco_descriptor): no se tocó, y aquí se dice.
+select 'c6 · el descriptor de la nómina', true,
+       to_jsonb(format('OJO: el patrón del descriptor «nomina» de esta base no es el de fábrica (se ajustó con fn_banco_descriptor): no '
+                       'se tocó. El tuyo es %s; el de fábrica de hoy, %s. Desde esta versión casa como PALABRA ENTERA, en los débitos '
+                       'y en los depósitos («GUSTO», no «AUGUSTO»): lo que contara con casar dentro de otra palabra hay que escribirlo '
+                       'entero (el de fábrica ganó ZENPAYROLL, el nombre viejo de Gusto, por eso). Para ponerlo: select '
+                       'fn_banco_descriptor(''nomina'', ''el patrón'');', d.patron, '(GUSTO|ZENPAYROLL|PAYROLL|\mADP\M|PAYCHEX)'))
+  from public.banco_descriptores d
+ where d.clave = 'nomina' and d.patron <> '(GUSTO|ZENPAYROLL|PAYROLL|\mADP\M|PAYCHEX)'
 union all
 select 'banco · ' || c.vista, c.ok,
        to_jsonb(coalesce(c.detalle, case when c.filas is null then 'bien' else format('%s filas', c.filas) end))

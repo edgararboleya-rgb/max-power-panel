@@ -3,7 +3,8 @@
 Nada de aquí es de nadie: los nombres son inventados («ZZ…»), los montos
 también (cuadran al centavo entre sí) y no hay ningún Seguro Social, cuenta
 de banco, dirección, correo ni teléfono. Sirven para probar a mano la
-pantalla de Contabilidad → Nómina y los usa `pruebas/conta/c15-concurrencia.sh`.
+pantalla de Contabilidad → Nómina y los usan `pruebas/conta/c15-concurrencia.sh`
+y `pruebas/conta/c6-gusto.sh`.
 
 | archivo | qué es |
 |---|---|
@@ -13,6 +14,7 @@ pantalla de Contabilidad → Nómina y los usa `pruebas/conta/c15-concurrencia.s
 | `zz-payroll-journal-correccion.csv` | Una corrección de Gusto que DEVUELVE: una nómina fuera de ciclo del mismo día de pago con los importes en negativo (a una persona se le había pagado 100.00 de más: bruto −100.00, retenido −17.65, neto −82.35, patronal −10.95), con su columna de horas en cero. Entra como el mismo asiento al revés y lo que deja queda «a favor» en cada cuenta. Lo usa `c15-concurrencia.sh` (escena 9). |
 | `zz-payroll-journal-total-en-el-nombre.csv` | Otra forma del archivo: las columnas de lo patronal van delante, hay títulos sueltos de una o dos celdas entre las filas, y la fila de totales lleva su rótulo («Totals») en la columna del nombre. Dos personas, bruto 3,408.00; la fila de totales es un control, no una persona. |
 | `zz-horas-para-gusto.csv` | Cómo sale el CSV de «las horas para Gusto» (lo arma la base; aquí, de muestra). |
+| `zz-cargos-de-gusto-en-el-banco.csv` | No es un archivo de Gusto: es LA TABLA de cómo escribe el banco un cargo de nómina (14-nov, Fase 11c: «GUSTO» como palabra entera). 29 descripciones de movimientos del banco, con su NAME y su MEMO: 18 que SÍ son de nómina (Gusto con su concepto —NET, TAX, FEE, REM, CSD—, con «DES:» e «ID:», como el «ORIG CO NAME:GUSTO» de Chase con lo demás en el MEMO, pegado a otro texto por un guion, una barra, un punto o un asterisco, en minúsculas; solo en el MEMO —con una coma, con un guion bajo, y detrás de un NAME que termina en letras: el NAME y el MEMO son textos aparte—; ZENPAYROLL, el nombre de Gusto hasta 2015; PAYROLL, ADP y PAYCHEX) y 11 que NO (AUGUSTO, AUGUSTOS, DEGUSTOS, GUSTOSO, AGOSTO, PAYROLLS, un AUGUSTO solo en el MEMO, y tres Zelle —uno con la nota «con gusto, gracias», otro con la nota «payroll semana 3» y otro a alguien de nombre Gusto: un Zelle nunca es de nómina—), cada una con su porqué. `c6-gusto.sh` mete cada una como débito y como depósito y mira que la Bandeja y la nómina digan lo que dice su columna `es_de_nomina`, también de lo recién llegado, antes del primer «Casar». |
 
 Los rótulos de las columnas son los del motor de informes de Gusto tal como
 se averiguaron sin tener todavía un archivo real: se confirman con el primer

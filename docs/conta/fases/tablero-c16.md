@@ -85,20 +85,52 @@ con su prueba de antes y después:
 - la deuda de la nómina en negativo entre el cargo de Gusto y el día de
   pago.
 
+## La nómina en el tablero (14-nov, Fase 11c)
+
+Lo que el 13-nov quedó abierto. `c16-tablero.sql` pasa a la marca
+2026111403: 66 funciones (ninguna SECURITY DEFINER, sin tablas ni vistas) y
+65 pruebas.
+
+- **La tarjeta «Nómina»** (la 16): la última nómina y la próxima, lo que se
+  debe de ella según el libro y cuándo sale de la caja, los cargos de Gusto
+  que esperan, las nóminas por postear, lo que costó cada mes y la bolsa del
+  burden. **La acción rápida «Nómina»**, con su número. Lo suyo en «Qué
+  atender».
+- **La proyección de la caja** resta lo que el libro dice que se debe de la
+  nómina: lo de una nómina ya posteada, su día de pago; lo demás, hoy.
+- **El código del teléfono.** Lo de cada nómina (sus totales, cuántas
+  personas, las por postear) solo llega con el código; sin él la tarjeta
+  dice «con el código del teléfono», nunca un cero. Qué más se ve sin el
+  código lo decide un solo sitio, `fn_tablero_nomina_criterio()`: «libro»
+  (de fábrica) o «codigo».
+- **Sin c15**, todo como antes: la tarjeta dice que la nómina no está
+  pegada y su acción sale apagada. Con la app nueva y el c16 de antes, la
+  tarjeta dice qué pegar.
+- **Lo que arregló la verificación** (cada cosa con su prueba de antes y
+  después):
+  - Cuándo sale lo que se debe: lo que Gusto ya cobró se le quita a la
+    nómina que pagó, no a lo más viejo de la cuenta. Con un cheque de papel
+    sin cobrar de una nómina anterior, la portada mandaba esa deuda al día
+    de pago de la siguiente.
+  - Las vacaciones devengadas (2215) y lo demás del renglón «nómina por
+    pagar» que ninguna nómina paga no cuentan en lo que se debe de la
+    nómina ni salen de la caja hoy: van aparte, dichas.
+  - La portada ya no arma la propuesta de cada cargo de Gusto para
+    contarlos: lee dos lecturas ligeras de c15.
+  - Gastos, con el criterio «codigo», dice una sola vez que las cuentas de
+    la nómina van tapadas, y que van enteras.
+  - La prueba 10 daba un rojo falso el último día de un mes de 30 que sigue
+    a uno de 31.
+- **La pantalla** (`js/conta.js`): la tarjeta, la acción, «Qué atender», la
+  columna «Nómina» de la proyección y lo que va aparte, con las palabras de
+  la base. Las bases simuladas (`pantalla-f16.json`, `-f12.json` y
+  `-f15.json`) se sacaron otra vez del banco con las capas de hoy.
+
 ## ▶ Lo que queda
 
-- **La nómina en el tablero.** Ninguna tarjeta cuenta mal la nómina: la
-  revisión final lo comprobó sobre g15a con una nómina posteada, y todas la
-  leen del libro. Pero faltan tres cosas:
-  - una tarjeta y una acción rápida de Nómina (lo que en QuickBooks es
-    «Payroll»: la última nómina, lo que queda por pagar y los cargos de
-    Gusto que esperan);
-  - que c16 lea c15: `fn_tablero_capas()` no tiene la clave c15, y una
-    nómina importada sin postear no sale en «Qué atender»;
-  - restar de la proyección una nómina ya posteada con día de pago futuro.
-    Para eso c15 tendría que decir qué día cobra Gusto cada cosa.
-
-  La 11b ya terminó (13-nov): se puede hacer ya.
+- **La nómina sin el código del teléfono: «libro» o «codigo».** Lo decide
+  Edgar. Con «codigo», la tarjeta de gastos esconde enteras las cuentas de
+  la nómina (también lo que tengan que no sea de Gusto).
 - **Para decidir** (están en la cabecera de c16, y ninguna frena nada):
   - Los términos de las facturas de QuickBooks: se toman de Facturas →
     Ajustes.

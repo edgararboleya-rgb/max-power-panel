@@ -215,6 +215,45 @@
 -- prepagados con cómo estaría con una póliza en 1410, no con el verde de
 -- «sin prepagados registrados» (pg_temp.c6_1410_suelto).
 --
+-- LA FASE 11c (14-nov-2026; piden la marca 2026111401): «GUSTO» COMO
+-- PALABRA ENTERA TAMBIÉN EN LOS DÉBITOS, la 168 y la 169. La 168, LA TABLA:
+-- 18 descripciones como las escribe el banco que SÍ son de nómina (Gusto
+-- con su concepto —NET, TAX, FEE, REM, CSD—, con «DES:» e «ID:», como el
+-- «ORIG CO NAME:» de Chase con su memo, pegado a otro texto por un guion,
+-- una barra, un punto o un asterisco, solo en el memo —en minúsculas, con
+-- una coma, con un guion bajo, y detrás de un NAME que termina en letras—;
+-- ZENPAYROLL, el nombre viejo de Gusto; PAYROLL, ADP y PAYCHEX) y 11 que NO
+-- (AUGUSTO, AUGUSTOS, DEGUSTOS, GUSTOSO, AGOSTO, PAYROLLS —otra palabra—,
+-- un AUGUSTO solo en el memo y —los arreglos de la verificación de la
+-- fase— TRES ZELLE: uno con la nota «con gusto, gracias», otro con la nota
+-- «payroll semana 3» y otro a alguien de nombre Gusto: un Zelle nunca es
+-- de nómina, diga lo que diga), cada una como débito y como depósito en el
+-- banco de prueba: las 18 salen con el motivo «nomina» (R6) con los dos
+-- signos y ninguna de las 11; la función que lo decide
+-- (fn_banco_dice_nomina, con la descripción y el memo de cada movimiento:
+-- como la llama la nómina, c15) dice de cada uno lo mismo que la Bandeja —el
+-- mismo texto: también el memo, normalizado y aparte del NAME—; y
+-- el Zelle a un Augusto sale por lo que es, con sus botones. La 169, el
+-- descriptor y quién pregunta: un patrón que no vale como palabra entera
+-- no entra (la guarda); uno ajustado por Edgar manda, y casa como palabra
+-- entera; la función la ejecuta solo authenticated, no es SECURITY DEFINER,
+-- al dueño le contesta y al equipo le dice false, anon y service_role no la
+-- ejecutan; las protecciones del banco la conocen (y con un permiso de más
+-- salen en rojo); y el patrón de esta base es el de su último cambio en el
+-- historial (el pegado lo puso al día con su rastro; en el nombre de la
+-- prueba, si es el de fábrica o uno ajustado). Las dos fallan con el c6
+-- anterior (2026111301): 7 de las 8 salían de nómina en el débito, y la
+-- función no estaba. Los descriptores de las pruebas (c6_montar) llevan el
+-- patrón de fábrica de hoy: por eso el depósito de ZENPAYROLL, que con el
+-- patrón de antes no salía, aquí sale también con el c6 anterior. Eso, el
+-- paso desde el patrón de antes (con su rastro, una vez), el ajustado que
+-- no se toca y lo que el pegado dice entonces, y lo pendiente que cambia de
+-- propuesta, en pruebas/conta/c6-gusto.sh (lo que un pegado hace no se
+-- puede probar desde aquí). De paso (el repositorio es público: ni un
+-- identificador de verdad, tampoco los públicos), el número de ruta del
+-- banco de los QFX de prueba y el ID de empresa del cargo de una tarjeta
+-- pasan a inventados («ZZ…»): ninguna prueba los miraba.
+--
 -- LA RONDA 4d (3-oct; piden la marca 2026100303): de la 154 a la 161. La
 -- 154 es EL CONTROL (el cuadre 59 de fn_banco_control, «el otro lado de
 -- cada casado», su fila en fn_banco_verificar y el freno de
@@ -265,10 +304,10 @@ begin
   -- (Estas pruebas son las de ESTA versión del banco: con una c6-banco.sql
   -- anterior pegada, sus pruebas nuevas saldrían en rojo por lo que falta,
   -- no por un fallo del libro.)
-  if public.fn_banco_version() < 2026111301 then
+  if public.fn_banco_version() < 2026111401 then
     raise exception using
       errcode = 'MX000',
-      message = format('c6-pruebas NO se corrió: la c6-banco.sql pegada es anterior (marca %s; estas pruebas piden 2026111301 o '
+      message = format('c6-pruebas NO se corrió: la c6-banco.sql pegada es anterior (marca %s; estas pruebas piden 2026111401 o '
                        'más). Vuelve a pegar la c6-banco.sql de esta entrega (entera, o sus dos partes).', public.fn_banco_version());
   end if;
 end $$;
@@ -475,7 +514,7 @@ begin
   end loop;
   -- Los descriptores como vienen en c6-banco.sql (1.13).
   for r in select * from (values
-      ('nomina',          '(GUSTO|PAYROLL|\mADP\M|PAYCHEX)'),
+      ('nomina',          '(GUSTO|ZENPAYROLL|PAYROLL|\mADP\M|PAYCHEX)'),
       ('cargo_banco',     '(SERVICE (FEE|CHARGE)|MONTHLY (SERVICE |MAINTENANCE )?FEE|MAINTENANCE FEE|WIRE (TRANSFER )?FEE|'
                           || 'OVERDRAFT|INSUFFICIENT FUNDS|\mNSF\M|ATM FEE|FOREIGN TRANSACTION FEE|ANNUAL (MEMBERSHIP )?FEE|'
                           || 'LATE (PAYMENT )?FEE|RETURNED PAYMENT FEE|STOP PAYMENT FEE|RETURN(ED)? (DEPOSITED )?ITEM (FEE|CHARGE)|'
@@ -564,7 +603,7 @@ as $$
       || '<LANGUAGE>ENG<FI><ORG>B1<FID>10898</FI><INTU.BID>10898</SONRS></SIGNONMSGSRSV1>',
     case when p_tipo = 'banco'
          then '<BANKMSGSRSV1><STMTTRNRS><TRNUID>1<STATUS><CODE>0<SEVERITY>INFO</STATUS><STMTRS><CURDEF>USD'
-              || '<BANKACCTFROM><BANKID>267084131<ACCTID>' || p_acctid || '<ACCTTYPE>CHECKING</BANKACCTFROM>'
+              || '<BANKACCTFROM><BANKID>ZZ0000001<ACCTID>' || p_acctid || '<ACCTTYPE>CHECKING</BANKACCTFROM>'
          else '<CREDITCARDMSGSRSV1><CCSTMTTRNRS><TRNUID>1<STATUS><CODE>0<SEVERITY>INFO</STATUS><CCSTMTRS><CURDEF>USD'
               || '<CCACCTFROM><ACCTID>' || p_acctid || '</CCACCTFROM>' end,
     '<BANKTRANLIST>',
@@ -602,7 +641,7 @@ as $$
       || '</DTSERVER><LANGUAGE>ENG</LANGUAGE></SONRS></SIGNONMSGSRSV1>',
     case when p_tipo = 'banco'
          then '  <BANKMSGSRSV1><STMTTRNRS><TRNUID>1</TRNUID><STATUS><CODE>0</CODE><SEVERITY>INFO</SEVERITY></STATUS><STMTRS>'
-              || '<CURDEF>USD</CURDEF><BANKACCTFROM><BANKID>267084131</BANKID><ACCTID>' || p_acctid
+              || '<CURDEF>USD</CURDEF><BANKACCTFROM><BANKID>ZZ0000001</BANKID><ACCTID>' || p_acctid
               || '</ACCTID><ACCTTYPE>SAVINGS</ACCTTYPE></BANKACCTFROM>'
          else '  <CREDITCARDMSGSRSV1><CCSTMTTRNRS><TRNUID>1</TRNUID><STATUS><CODE>0</CODE><SEVERITY>INFO</SEVERITY></STATUS>'
               || '<CCSTMTRS><CURDEF>USD</CURDEF><CCACCTFROM><ACCTID>' || p_acctid || '</ACCTID></CCACCTFROM>' end,
@@ -8105,7 +8144,7 @@ declare
   v_cab text := concat_ws(E'\r\n', 'OFXHEADER:100', 'DATA:OFXSGML', 'VERSION:102', 'SECURITY:NONE', 'ENCODING:USASCII', 'CHARSET:1252',
                           'COMPRESSION:NONE', 'OLDFILEUID:NONE', 'NEWFILEUID:NONE', '');
   v_ini text := '<OFX><BANKMSGSRSV1><STMTTRNRS><TRNUID>1<STATUS><CODE>0<SEVERITY>INFO</STATUS><STMTRS><CURDEF>USD'
-                || '<BANKACCTFROM><BANKID>267084131<ACCTID>000000001097<ACCTTYPE>SAVINGS</BANKACCTFROM><BANKTRANLIST>';
+                || '<BANKACCTFROM><BANKID>ZZ0000001<ACCTID>000000001097<ACCTTYPE>SAVINGS</BANKACCTFROM><BANKTRANLIST>';
   v_fin text := '</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>';
   v_x   text;
   d     date := nullif(current_setting('mx6.desde', true), '')::date;
@@ -8148,7 +8187,7 @@ begin
               '<?OFX OFXHEADER="200" VERSION="220" SECURITY="NONE" OLDFILEUID="NONE" NEWFILEUID="NONE"?>',
               '<!-- c6-pruebas: un comentario <STMTTRN> que no es un movimiento -->',
               '<OFX><BANKMSGSRSV1><STMTTRNRS><TRNUID>1</TRNUID><STATUS><CODE>0</CODE><SEVERITY>INFO</SEVERITY></STATUS><STMTRS>',
-              '<CURDEF>USD</CURDEF><BANKACCTFROM><BANKID>267084131</BANKID><ACCTID>000000001097</ACCTID><ACCTTYPE>SAVINGS</ACCTTYPE>'
+              '<CURDEF>USD</CURDEF><BANKACCTFROM><BANKID>ZZ0000001</BANKID><ACCTID>000000001097</ACCTID><ACCTTYPE>SAVINGS</ACCTTYPE>'
                 || '</BANKACCTFROM>',
               '<BANKTRANLIST><DTSTART>' || to_char(d + 20, 'YYYYMMDD') || '</DTSTART><DTEND>' || to_char(d + 25, 'YYYYMMDD') || '</DTEND>',
               '<STMTTRN><TRNTYPE>DEBIT</TRNTYPE><DTPOSTED>' || to_char(d + 22, 'YYYYMMDD') || '</DTPOSTED><TRNAMT>-210.00</TRNAMT>'
@@ -9814,7 +9853,7 @@ begin
               jsonb_build_object('tipo', 'DEP', 'fecha', d + 5, 'monto', '700.00', 'id', 'C6KE2', 'nombre', 'REMOTE ONLINE DEPOSIT #5'),
               jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 6, 'monto', '-1500.00', 'id', 'C6KE3', 'nombre', 'AMEX EPAYMENT ACH PMT 7776'),
               jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 7, 'monto', '-640.00', 'id', 'C6KE4',
-                                 'nombre', 'CHASE CREDIT CRD AUTOPAY PPD ID: 4760039224'),
+                                 'nombre', 'CHASE CREDIT CRD AUTOPAY PPD ID: ZZ00000001'),
               jsonb_build_object('tipo', 'CHECK', 'fecha', d + 8, 'monto', '-2000.00', 'id', 'C6KE5', 'nombre', 'CHECK 1234',
                                  'cheque', '1234'),
               jsonb_build_object('tipo', 'XFER', 'fecha', d + 9, 'monto', '3200.00', 'id', 'C6KE6',
@@ -10219,7 +10258,7 @@ begin
     perform fn_banco_importar_ofx(pg_temp.c6_qfx('banco', '000000001098', d, d + 9, null, jsonb_build_array(
               jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 2, 'monto', '-1500.00', 'id', 'C6KI2', 'nombre', 'AMEX EPAYMENT ACH PMT 7776'),
               jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 3, 'monto', '-640.00', 'id', 'C6KI3',
-                                 'nombre', 'CHASE CREDIT CRD AUTOPAY PPD ID: 4760039224'),
+                                 'nombre', 'CHASE CREDIT CRD AUTOPAY PPD ID: ZZ00000001'),
               jsonb_build_object('tipo', 'CHECK', 'fecha', d + 5, 'monto', '-2000.00', 'id', 'C6KI4', 'nombre', 'CHECK 1234',
                                  'cheque', '1234'))),
             '1098', 'c6-pruebas-4d-lee-b.qfx');
@@ -11366,6 +11405,307 @@ begin
   end;
   insert into _pruebas values (167, 'una devolución de Gusto (un depósito que dice nómina) va a la nómina, no al cobro de un cliente', v_esp,
                                coalesce(v_obt, '-'), case when v_obt like 'omitida%' then null else coalesce(v_obt = v_esp, false) end);
+end $$;
+
+-- 168. «GUSTO» COMO PALABRA ENTERA, TAMBIÉN EN LOS DÉBITOS (14-nov, Fase
+--      11c). En un débito, R6 buscaba el descriptor «nomina» en cualquier
+--      parte de la descripción, también DENTRO de otra palabra: el Zelle a
+--      alguien que se llame Augusto salía «Débito de nómina (Gusto)», sin
+--      botones, y la fila 180 del cierre se quedaba en rojo. Ahora lo
+--      decide un solo sitio para el débito y para el depósito
+--      (fn_banco_dice_nomina: el descriptor como palabra entera). LA TABLA
+--      (todo inventado): 18 descripciones como las escribe el banco que SÍ
+--      son de nómina y 11 que NO, cada una como débito y como depósito en el
+--      banco de prueba (58 movimientos). Las 18 salen con el motivo
+--      «nomina» (R6) con los dos signos, y ninguna de las 11 (ni su texto
+--      dice nómina); la función —llamada como la llama la nómina (c15): con
+--      la descripción y el memo del movimiento— dice de cada uno lo mismo
+--      que la Bandeja; y el Zelle a un Augusto sale por lo que es (un cargo
+--      sin ticket, R10: «Un Zelle a una persona…») y se clasifica como
+--      cualquier otro (antes, MX008: «Es un débito de nómina»). Ningún
+--      cargo de Gusto se pierde: «GUSTO»
+--      con su concepto, con «DES:» e «ID:», como lo escribe Chase («ORIG CO
+--      NAME:GUSTO» y lo demás en el memo), pegado por un guion, una barra,
+--      un punto o un asterisco, solo en el memo, en minúsculas, y
+--      «ZENPAYROLL» (el nombre viejo de Gusto, que el patrón de fábrica
+--      gana: con palabra entera PAYROLL ya no casa dentro). EL MISMO TEXTO
+--      (S15, S17 y S18): la función mira lo que mira la Bandeja, el NAME y
+--      el MEMO normalizados; si no normalizara el memo («GUSTO_TAX»: el
+--      guion bajo es un espacio) o lo pegara al NAME («…ZZAU» + «GUSTO…»),
+--      diría otra cosa que la Bandeja y aquí se vería. UN ZELLE, NUNCA (N09,
+--      N10 y N11, los arreglos de la verificación de la fase): la palabra
+--      entera dejaba pasar el español —un Zelle con la nota «con gusto,
+--      gracias» salía de nómina, con los dos signos— y la nota «payroll…»
+--      de un Zelle a un ayudante; lo que dice un Zelle lo escribe una
+--      persona, y Gusto no cobra ni devuelve por Zelle. Con el c6 anterior
+--      dice lo que pasaba: en el débito salían de nómina 10 de las 11 (el
+--      depósito de ZENPAYROLL, que con el patrón de antes no salía, se ve
+--      en c6-gusto.sh: aquí la prueba pone el patrón de hoy).
+do $$
+declare
+  v_obt  text;
+  v_esp  text := 'debitos: de_nomina=18/18 otras=0/11 | depositos: de_nomina=18/18 otras=0/11 | la_funcion_dice_lo_mismo=58/58 | '
+                 'augusto=sin_ticket:R10:un_zelle_a_una_persona clasificar=casado:clasificado';
+  v_nom  text := '«GUSTO» como palabra entera, también en los débitos: lo que es de nómina sale de nómina (con los dos signos) y el '
+                 'Zelle a un Augusto, no';
+  -- (k: su clave; si: ¿es de nómina?; n: NAME; m: MEMO)
+  v_t    jsonb := jsonb_build_array(
+    jsonb_build_object('k', 'S01', 'si', true,  'n', 'GUSTO DES:NET 123456 ID:ZZ6SEMK1 INDN:ZZ C6 PRUEBAS CO ID:ZZ00000001 CCD'),
+    jsonb_build_object('k', 'S02', 'si', true,  'n', 'GUSTO TAX 654321'),
+    jsonb_build_object('k', 'S03', 'si', true,  'n', 'GUSTO FEE 112233'),
+    jsonb_build_object('k', 'S04', 'si', true,  'n', 'GUSTO REM 445577'),
+    jsonb_build_object('k', 'S05', 'si', true,  'n', 'GUSTO CSD 445588'),
+    jsonb_build_object('k', 'S06', 'si', true,  'n', 'ZENPAYROLL FEE'),
+    jsonb_build_object('k', 'S07', 'si', true,  'n', 'ZENPAYROLL DES:NET 778899 ID:ZZ6SEMK1'),
+    jsonb_build_object('k', 'S08', 'si', true,  'n', 'GUSTO-NET'),
+    jsonb_build_object('k', 'S09', 'si', true,  'n', 'GUSTO/TAX 778812'),
+    jsonb_build_object('k', 'S10', 'si', true,  'n', 'ACH DEBIT GUSTO PAYROLL'),
+    jsonb_build_object('k', 'S11', 'si', true,  'n', 'PAYROLL ZZ'),
+    jsonb_build_object('k', 'S12', 'si', true,  'n', 'ADP WAGE PAY'),
+    jsonb_build_object('k', 'S13', 'si', true,  'n', 'PAYCHEX-TPS'),
+    jsonb_build_object('k', 'S14', 'si', true,  'n', 'ORIG CO NAME:GUSTO',
+                       'm', 'ORIG ID:ZZ00000001 DESC DATE:270104 CO ENTRY DESCR:NET 123456SEC:CCD TRACE#:000000000000000 EED:270104 '
+                            'IND ID:ZZ6SEMK1 IND NAME:ZZ C6 PRUEBAS'),
+    jsonb_build_object('k', 'S15', 'si', true,  'n', 'ZZ ACH DEBIT 5531', 'm', 'Gusto, Inc. TAX 991122'),
+    jsonb_build_object('k', 'S16', 'si', true,  'n', 'Gusto.com*FEE 7781'),
+    jsonb_build_object('k', 'S17', 'si', true,  'n', 'ZZ ACH DEBIT 5533', 'm', 'GUSTO_TAX 991133'),
+    jsonb_build_object('k', 'S18', 'si', true,  'n', 'ZZ ACH DEBIT ZZAU', 'm', 'GUSTO NET 991144'),
+    jsonb_build_object('k', 'N01', 'si', false, 'n', 'ZELLE PAYMENT TO AUGUSTO ZZ LOPEZ'),
+    jsonb_build_object('k', 'N02', 'si', false, 'n', 'ZELLE TO AUGUSTO ZZ'),
+    jsonb_build_object('k', 'N03', 'si', false, 'n', 'DEGUSTOS ZZ CAFE'),
+    jsonb_build_object('k', 'N04', 'si', false, 'n', 'AGOSTO ZZ'),
+    jsonb_build_object('k', 'N05', 'si', false, 'n', 'ZZ PAYROLLS INC'),
+    jsonb_build_object('k', 'N06', 'si', false, 'n', 'AUGUSTOS ZZ GRILL'),
+    jsonb_build_object('k', 'N07', 'si', false, 'n', 'ZZ GUSTOSO MARKET'),
+    jsonb_build_object('k', 'N08', 'si', false, 'n', 'ZZ ACH DEBIT 5532', 'm', 'PAGO A AUGUSTO ZZ'),
+    -- (un Zelle nunca es de nómina: su nota la escribe una persona)
+    jsonb_build_object('k', 'N09', 'si', false, 'n', 'ZELLE PAYMENT TO ZZ PINTOR 8899', 'm', 'con gusto, gracias'),
+    jsonb_build_object('k', 'N10', 'si', false, 'n', 'ZELLE PAYMENT TO ZZ AYUDANTE 7712', 'm', 'payroll semana 3'),
+    jsonb_build_object('k', 'N11', 'si', false, 'n', 'ZELLE PAYMENT TO GUSTO ZZ PEREZ 5521'));
+  v_movs jsonb;
+  v_fn   boolean := to_regprocedure('public.fn_banco_dice_nomina(text,text)') is not null;
+  v_a    bigint; v_b bigint; v_c bigint; v_e bigint; v_f bigint; v_g bigint; v_h bigint; v_i bigint;
+  v_mal  text;
+  v_igual text := 'sin la función';
+  v_p    jsonb;
+  v_x    text;
+  d      date := nullif(current_setting('mx6.desde', true), '')::date;
+begin
+  if d is null then
+    insert into _pruebas values (168, v_nom, v_esp, 'omitida: falta mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c6_montar();
+    -- (sin el aviso de la apertura sin conciliar: con él todos los botones
+    -- piden su motivo y no se vería lo que esta prueba mira)
+    perform pg_temp.c6_sin_aviso();
+    -- (los débitos, cada uno con su monto; y los depósitos, con otros)
+    select jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
+             'tipo', 'DEBIT', 'fecha', d + 9, 'monto', (-(310.37 + 7 * x.o))::numeric(12,2)::text, 'id', 'C6GPD-' || (x.t->>'k'),
+             'nombre', x.t->>'n', 'memo', x.t->>'m')) order by x.o)
+      into v_movs from jsonb_array_elements(v_t) with ordinality as x(t, o);
+    perform fn_banco_importar_ofx(pg_temp.c6_qfx('banco', '000000001098', d, d + 14, null, v_movs), '1098',
+                                  'c6-pruebas-gusto-palabra-debitos.qfx');
+    select jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
+             'tipo', 'CREDIT', 'fecha', d + 10, 'monto', (51.17 + 3 * x.o)::numeric(12,2)::text, 'id', 'C6GPC-' || (x.t->>'k'),
+             'nombre', x.t->>'n', 'memo', x.t->>'m')) order by x.o)
+      into v_movs from jsonb_array_elements(v_t) with ordinality as x(t, o);
+    perform fn_banco_importar_ofx(pg_temp.c6_qfx('banco', '000000001098', d, d + 14, null, v_movs), '1098',
+                                  'c6-pruebas-gusto-palabra-depositos.qfx');
+    perform fn_banco_casar_todo('1098');
+    select count(*) filter (where t.si and x.monto < 0 and x.propuesta->>'motivo' = 'nomina' and x.propuesta->>'regla' = 'R6'),
+           count(*) filter (where t.si and x.monto < 0),
+           count(*) filter (where not t.si and x.monto < 0 and x.propuesta->>'motivo' is not distinct from 'nomina'),
+           count(*) filter (where not t.si and x.monto < 0),
+           count(*) filter (where t.si and x.monto > 0 and x.propuesta->>'motivo' = 'nomina' and x.propuesta->>'regla' = 'R6'),
+           count(*) filter (where t.si and x.monto > 0),
+           count(*) filter (where not t.si and x.monto > 0
+                              and (x.propuesta->>'motivo' is not distinct from 'nomina' or x.propuesta->>'texto' like '%dice nómina%')),
+           count(*) filter (where not t.si and x.monto > 0),
+           -- (lo que no sale como debe, por su nombre: es lo que se lee si falla)
+           nullif(concat_ws('; ',
+             'son de nómina y no salen: ' || string_agg(case when x.monto < 0 then 'débito «' else 'depósito «' end || t.n || '» ('
+                                                         || coalesce(x.propuesta->>'motivo', 'sin propuesta') || ')', ', ' order by x.monto, t.k)
+                                              filter (where t.si and x.propuesta->>'motivo' is distinct from 'nomina'),
+             'salen de nómina y no lo son: ' || string_agg(case when x.monto < 0 then 'débito «' else 'depósito «' end || t.n || '»', ', '
+                                                            order by x.monto, t.k)
+                                                 filter (where not t.si and (x.propuesta->>'motivo' is not distinct from 'nomina'
+                                                                             or (x.monto > 0 and x.propuesta->>'texto' like '%dice nómina%')))), '')
+      into v_a, v_b, v_c, v_e, v_f, v_g, v_h, v_i, v_mal
+      from jsonb_to_recordset(v_t) as t(k text, si boolean, n text, m text)
+      join movimientos_banco x on x.cuenta = '1098' and x.id_externo in ('C6GPD-' || t.k, 'C6GPC-' || t.k);
+    -- (la función, llamada como la llama la nómina —con la descripción y el memo del movimiento: ella arma el texto que mira
+    -- la Bandeja, NAME y MEMO normalizados—, contra lo que la Bandeja propuso)
+    if v_fn then
+      execute $q$select count(*) filter (where public.fn_banco_dice_nomina(x.desc_norm, x.memo)
+                                              = (x.propuesta->>'motivo' is not distinct from 'nomina')) || '/' || count(*)
+                    from public.movimientos_banco x where x.cuenta = '1098' and x.id_externo like 'C6GP_-%'$q$ into v_igual;
+    end if;
+    -- (el Zelle a un Augusto: un cargo sin ticket, y se clasifica sin que lo frene la nómina)
+    select x.propuesta into v_p from movimientos_banco x where x.id = pg_temp.c6_mov('1098', 'C6GPD-N01');
+    begin
+      perform fn_banco_clasificar(pg_temp.c6_mov('1098', 'C6GPD-N01'), '[{"cuenta": "6130"}]'::jsonb, null);
+      v_x := pg_temp.c6_est('1098', 'C6GPD-N01');
+    exception when others then
+      v_x := sqlstate || ':' || case when sqlerrm like 'Es un débito de nómina%' then 'es_un_debito_de_nomina' else left(sqlerrm, 100) end;
+    end;
+    v_obt := format('debitos: de_nomina=%s/%s otras=%s/%s | depositos: de_nomina=%s/%s otras=%s/%s | la_funcion_dice_lo_mismo=%s | '
+                    'augusto=%s:%s:%s clasificar=%s', v_a, v_b, v_c, v_e, v_f, v_g, v_h, v_i, v_igual, coalesce(v_p->>'motivo', '-'),
+                    coalesce(v_p->>'regla', '-'),
+                    case when v_p->>'texto' like 'Sin ticket ni asiento que lo explique%Un Zelle a una persona%' then 'un_zelle_a_una_persona'
+                         when v_p->>'texto' like 'Débito de nómina (Gusto)%' then 'debito_de_nomina_gusto'
+                         else left(v_p->>'texto', 80) end, v_x)
+             || coalesce(' (' || v_mal || ')', '');
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when sqlstate 'MXT01' then v_obt := 'omitida: la apertura está cerrada y sin su asiento';
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 200);
+  end;
+  insert into _pruebas values (168, v_nom, v_esp, coalesce(v_obt, '-'),
+                               case when v_obt like 'omitida%' then null else coalesce(v_obt = v_esp, false) end);
+end $$;
+
+-- 169. EL DESCRIPTOR DE LA NÓMINA Y QUIÉN PREGUNTA (14-nov, Fase 11c).
+--      (1) LA GUARDA: el patrón de «nomina» se usa como palabra entera
+--      (entre '\m(' y ')\M'); uno que solo vale suelto («(?i)…») rompería
+--      cada «Casar», y ya no entra (22023, y lo dice). (2) EL AJUSTADO
+--      MANDA: con un patrón de Edgar («ZZNOM|ZZPAGA», sin paréntesis), el
+--      débito que lo nombra entero sale «nomina» (R6); el que lo lleva
+--      dentro de otra palabra, no; y «GUSTO», que ese patrón ya no trae,
+--      tampoco. (3) QUIÉN PREGUNTA: fn_banco_dice_nomina la ejecuta solo
+--      authenticated (la llama la nómina, c15, con los permisos de quien
+--      llama) y no es SECURITY DEFINER; al dueño por la API le contesta; a
+--      otro usuario (no ve el descriptor: la policy del dueño) le dice
+--      false; anon y service_role no la ejecutan (42501). (4) LAS
+--      PROTECCIONES DEL BANCO la conocen: en verde con ella, y con un
+--      permiso de más (anon) en rojo, nombrándola. (5) EL RASTRO: el patrón
+--      de esta base (el de verdad, antes de montar la prueba) es el de su
+--      último cambio en banco_historial: el pegado lo puso al día por su
+--      guarda, no por fuera. En el nombre de la prueba, si es el de fábrica
+--      de hoy o uno ajustado (que el pegado no toca).
+do $$
+declare
+  v_obt  text;
+  v_esp  text := 'guarda=22023:como_palabra_entera | ajustado=nomina:R6 dentro_de_otra=sin_ticket fuera_del_patron=sin_ticket | '
+                 'api=authenticated definer=f dueno=t otro=f anon=42501 servicio=42501 | protecciones=t con_anon=f:la_nombra | '
+                 'rastro=al_dia';
+  v_nom  text := 'el descriptor de la nómina se usa como palabra entera (la guarda lo prueba así, y el ajustado manda), y la función '
+                 'que lo decide la ejecuta solo authenticated, sin permisos de más';
+  v_real text;
+  v_ras  text;
+  v_x    text;
+  v_y    text;
+  v_api  text;
+  v_d    text; v_o text; v_an text; v_sr text;
+  v_b    boolean;
+  v_det  text;
+  d      date := nullif(current_setting('mx6.desde', true), '')::date;
+  c_fab  constant text := '(GUSTO|ZENPAYROLL|PAYROLL|\mADP\M|PAYCHEX)';
+begin
+  -- (el patrón de verdad de esta base, y su rastro: antes de montar nada)
+  select dd.patron,
+         case when (select h.despues->>'patron' from banco_historial h
+                     where h.tabla = 'banco_descriptores' and h.clave = 'nomina' order by h.cambiado_el desc limit 1)
+                   is not distinct from dd.patron then 'al_dia' else 'SIN_RASTRO' end
+    into v_real, v_ras from banco_descriptores dd where dd.clave = 'nomina';
+  v_nom := v_nom || case when v_real = c_fab then ' (en esta base, el patrón de fábrica de hoy)'
+                         when v_real = '(GUSTO|PAYROLL|\mADP\M|PAYCHEX)' then ' (en esta base, EL DE FÁBRICA DE ANTES: falta pegar el c6 de hoy)'
+                         else ' (en esta base, un patrón ajustado: ' || coalesce(left(v_real, 80), 'ninguno') || ')' end;
+  if d is null then
+    insert into _pruebas values (169, v_nom, v_esp, 'omitida: falta mes abierto', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.c6_montar();
+    perform pg_temp.c6_sin_aviso();
+    -- (1) la guarda
+    begin
+      perform fn_banco_descriptor('nomina', '(?i)zznomina');
+      v_x := 'entró';
+    exception when others then
+      v_x := sqlstate || ':' || case when sqlerrm like 'El patrón de «nomina» no es una expresión regular válida como palabra entera%'
+                                     then 'como_palabra_entera' else left(sqlerrm, 100) end;
+    end;
+    v_obt := 'guarda=' || v_x;
+    -- (2) el ajustado manda, como palabra entera
+    perform fn_banco_descriptor('nomina', 'ZZNOM|ZZPAGA');
+    perform fn_banco_importar_ofx(pg_temp.c6_qfx('banco', '000000001098', d, d + 14, null, jsonb_build_array(
+              jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 9, 'monto', '-411.37', 'id', 'C6GA1', 'nombre', 'ZZPAGA 7781'),
+              jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 9, 'monto', '-412.37', 'id', 'C6GA2', 'nombre', 'XZZPAGAX 7782'),
+              jsonb_build_object('tipo', 'DEBIT', 'fecha', d + 9, 'monto', '-413.37', 'id', 'C6GA3', 'nombre', 'GUSTO NET 7783'))),
+            '1098', 'c6-pruebas-gusto-ajustado.qfx');
+    perform fn_banco_casar_todo('1098');
+    v_obt := v_obt || format(' | ajustado=%s:%s dentro_de_otra=%s fuera_del_patron=%s',
+                             (select m.propuesta->>'motivo' from movimientos_banco m where m.id = pg_temp.c6_mov('1098', 'C6GA1')),
+                             (select m.propuesta->>'regla' from movimientos_banco m where m.id = pg_temp.c6_mov('1098', 'C6GA1')),
+                             (select m.propuesta->>'motivo' from movimientos_banco m where m.id = pg_temp.c6_mov('1098', 'C6GA2')),
+                             (select m.propuesta->>'motivo' from movimientos_banco m where m.id = pg_temp.c6_mov('1098', 'C6GA3')));
+    -- (3) quién pregunta (con el patrón ajustado puesto: «ZZPAGA 1» lo nombra)
+    select format('api=%s definer=%s',
+                  (select string_agg(g, ',' order by g) from unnest(array['anon', 'authenticated', 'service_role']) g
+                    where has_function_privilege(g, f.oid, 'execute')),
+                  case when f.prosecdef then 't' else 'f' end)
+      into v_api from pg_proc f where f.oid = to_regprocedure('public.fn_banco_dice_nomina(text,text)');
+    if v_api is null then
+      v_obt := v_obt || ' | falta fn_banco_dice_nomina (el c6 anterior: cada regla llevaba su expresión)';
+    else
+      perform pg_temp.c6_como('dueno');
+      begin
+        execute 'select public.fn_banco_dice_nomina(''ZZPAGA 1'', null)' into v_b;
+        v_d := case when v_b then 't' else 'f' end;
+      exception when others then v_d := sqlstate;
+      end;
+      -- (otro usuario de la app, que no es el dueño: no ve el descriptor)
+      execute 'reset role';
+      perform set_config('request.jwt.claims', json_build_object('sub', gen_random_uuid(), 'role', 'authenticated')::text, true);
+      execute 'set local role authenticated';
+      begin
+        execute 'select public.fn_banco_dice_nomina(''ZZPAGA 1'', null)' into v_b;
+        v_o := case when v_b then 't' else 'f' end;
+      exception when others then v_o := sqlstate;
+      end;
+      execute 'reset role';
+      perform pg_temp.c6_como('anon');
+      begin
+        execute 'select public.fn_banco_dice_nomina(''ZZPAGA 1'', null)' into v_b;
+        v_an := case when v_b then 't' else 'f' end;
+      exception when others then v_an := sqlstate;
+      end;
+      execute 'reset role';
+      perform set_config('request.jwt.claims', json_build_object('role', 'service_role')::text, true);
+      execute 'set local role service_role';
+      begin
+        execute 'select public.fn_banco_dice_nomina(''ZZPAGA 1'', null)' into v_b;
+        v_sr := case when v_b then 't' else 'f' end;
+      exception when others then v_sr := sqlstate;
+      end;
+      execute 'reset role';
+      perform pg_temp.c6_como(null);
+      v_obt := v_obt || format(' | %s dueno=%s otro=%s anon=%s servicio=%s', v_api, v_d, v_o, v_an, v_sr);
+      -- (4) las protecciones del banco la conocen; con un permiso de más, la nombran
+      select case when bool_and(k.ok) then 't' else 'f' end into v_x
+        from fn_banco_control('hoy', array['v_banco_saldos']) k where k.vista = 'cuadre: protecciones del banco';
+      execute 'grant execute on function public.fn_banco_dice_nomina(text, text) to anon';
+      select case when bool_and(k.ok) then 't' else 'f' end, string_agg(k.detalle, ' ') into v_y, v_det
+        from fn_banco_control('hoy', array['v_banco_saldos']) k where k.vista = 'cuadre: protecciones del banco';
+      execute 'revoke execute on function public.fn_banco_dice_nomina(text, text) from anon';
+      v_obt := v_obt || format(' | protecciones=%s con_anon=%s:%s', v_x, v_y,
+                               case when v_det like '%anon ejecuta fn_banco_dice_nomina(text,text)%' then 'la_nombra' else 'no la nombra' end);
+    end if;
+    v_obt := v_obt || ' | rastro=' || coalesce(v_ras, 'sin descriptor');
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when sqlstate 'MXT01' then v_obt := 'omitida: la apertura está cerrada y sin su asiento';
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 200);
+  end;
+  -- (si la prueba se cortó a medias siendo otro: volver a ser el editor)
+  execute 'reset role';
+  perform pg_temp.c6_como(null);
+  insert into _pruebas values (169, v_nom, v_esp, coalesce(v_obt, '-'),
+                               case when v_obt like 'omitida%' then null else coalesce(v_obt = v_esp, false) end);
 end $$;
 
 -- 61. NO DEJA RASTRO: todo lo de arriba se deshizo. El libro, los papeles,

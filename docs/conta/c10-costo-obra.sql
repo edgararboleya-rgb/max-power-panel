@@ -6,7 +6,10 @@
 -- de pegarlo en producción: al final de esta cabecera, «LO QUE CAMBIÓ EN LA
 -- v2»); v3 del 13-nov-2026 (la Fase 11b: las horas que ya pagó una nómina
 -- tienen pago real y no van, además, a estándar: «LO QUE CAMBIÓ EN LA v3»,
--- al final de esta cabecera). Se pega en el SQL Editor DESPUÉS de c1, c2,
+-- al final de esta cabecera); v4 del 14-nov-2026 (la Fase 11c: el devengo
+-- estándar de c3 ya aparta las horas que pagó un jornal y se pone al día
+-- solo; aquí cambian dos textos: «LO QUE CAMBIÓ EN LA v4», al final de esta
+-- cabecera). Se pega en el SQL Editor DESPUÉS de c1, c2,
 -- c3, c4 y c6 (c7, s1, p1, c8 y c9 pueden faltar: lo que no está no se
 -- mira, y se dice; la nómina, c15, se pega DESPUÉS de este archivo y es
 -- opcional: si está, se le pregunta al vuelo qué horas pagó). Idempotente:
@@ -347,11 +350,16 @@
 --     y el pago real. El control 50 y el aviso devengo_estandar miran eso (la
 --     misma hora, y la fecha del asiento del jornal contra el fin de mes del
 --     devengo); lo que ya no tiene arreglo —un mes cerrado— se dice y no
---     deja el cuadre en rojo. c3 todavía no aparta del devengo las horas ya
---     pagadas con jornales (está sellado): por eso, en un mes cuyos jornales
---     ya entraron, el devengo cuenta de más y hay que retirarlo antes de
---     cerrar. En v_margen_obra el devengo no cuenta como real: se anula solo
---     con su reverso del día 1.
+--     deja el cuadre en rojo. (v4, 14-nov-2026) El c3 de la Fase 11c YA
+--     APARTA del devengo las horas que un jornal pagó dentro del mes, y pone
+--     el devengo al día solo cuando un jornal de ese mes se reparte, se
+--     deshace o se des-casa (su trigger sobre asientos): con él, el aviso
+--     dice eso mismo y el control 50 —que sigue vigilando: no debería
+--     volver a encenderse— manda a devengar otra vez. Con un c3 de antes
+--     (no aparta nada), lo de siempre: en un mes cuyos jornales ya entraron
+--     el devengo cuenta de más y hay que retirarlo antes de cerrar. En
+--     v_margen_obra el devengo no cuenta como real: se anula solo con su
+--     reverso del día 1.
 --   · LA FECHA DEL ASIENTO ES LA DEL PAGO (la que trae el banco; con su mes
 --     cerrado, el primer día del mes abierto: la regla de c6 para todo). El
 --     libro de 2026 va, en esto, por lo pagado, como QuickBooks: la semana
@@ -605,6 +613,35 @@
 --     (fn_jornal_persona, activa = false). Una hora en un reparto aplicado
 --     que además pagó una nómina no la nombra ningún control: se avisa
 --     antes de aceptar el reparto, no después.
+--
+-- LO QUE CAMBIÓ EN LA v4 (14-nov-2026, la Fase 11c: el corte de los jornales
+-- en el devengo de c3; DOS TEXTOS, nada más: ninguna tabla, columna, función
+-- ni regla nueva, y ningún dato se toca al volver a pegar):
+--   · POR QUÉ. Hasta el 13-nov c3 no apartaba del devengo estándar las horas
+--     que pagó un jornal: con el mes devengado, repartir un Zelle de ese mes
+--     las dejaba dos veces, y la única salida era retirar el devengo. Lo
+--     decían el aviso devengo_estandar de la propuesta («saldría dos veces…
+--     hay que retirarlo») y el control 50. El c3 de la Fase 11c (su marca,
+--     2026111401) las aparta y pone el devengo al día solo, al confirmar el
+--     «Así es», el «Deshacer» o el des-casado: esos dos textos mandaban a
+--     hacer algo que ya no hace falta.
+--   · QUÉ CAMBIA, y solo si ese c3 está (se mira su trigger sobre asientos,
+--     trg_puente_asientos_jornal, encendido; con un c3 de antes, los textos
+--     de siempre): (1) el aviso devengo_estandar de fn_jornal_propuesta dice
+--     que, al aceptar, el devengo de ese mes se pone al día solo y deja
+--     fuera esas horas: es un aviso, no hay nada que hacer; el código y sus
+--     claves (codigo, corto, horas, texto) son los mismos. (2) El control 50
+--     de v_jornal_control mira lo mismo que antes; si se enciende, su «qué
+--     hacer» es volver a devengar el mes (select fn_horas_devengar('AAAA-
+--     MM');), que deja fuera esas horas, en vez de retirar el devengo.
+--   · c3 NO NECESITA NADA DE AQUÍ: lee jornal_repartos y jornal_reparto_horas
+--     directamente (qué reporte de horas cubre cada reparto aplicado y cuál
+--     es su asiento; ni un importe), solo si están. El orden de pegado no
+--     cambia (c3 antes, c10 después) y cada uno vale con el otro de antes.
+--   · Sus pruebas: la 20 (el aviso, con los dos textos), la 39 y la 55 de
+--     c10-pruebas.sql (el control 50 y el cierre: ahora devengan ANTES de
+--     repartir —con el c3 nuevo, devengar después ya no cuenta esas horas—,
+--     y valen con los dos c3).
 -- =====================================================================
 -- (Lo primero, como en c4 y c6: el pegado espera un candado como mucho
 -- medio segundo. Con la app leyendo o repartiendo, para con 55P03 («lock
@@ -2168,12 +2205,21 @@ begin
              and h.id = any (v_ids)
            group by a.origen_id, a.numero) q;
   if v_x is not null then
+    -- (v4, 14-nov-2026) Con el c3 de la Fase 11c (su trigger sobre asientos, encendido) el devengo se pone al día solo al
+    -- confirmar este reparto: se dice eso. Con un c3 de antes, el texto de siempre.
     v_avisos := v_avisos || jsonb_build_object('codigo', 'devengo_estandar', 'corto', 'Horas ya en el devengo estándar del mes',
       'horas', v_h2, 'texto',
-      format('%s h de este reparto ya están en el devengo estándar de %s, y este pago entra al libro el %s, dentro de ese mes: su '
-             'mano de obra saldría dos veces ahí (el devengo en 5000 y el pago real). El devengo estándar es solo para lo trabajado '
-             'y todavía no pagado: hay que retirarlo de ese mes antes de cerrarlo (avisa).', fn_jornal_h(v_h2), v_x,
-             fn_jornal_dia(v_fa, true)));
+      case when exists (select 1 from pg_trigger t
+                         where t.tgrelid = 'public.asientos'::regclass and t.tgname = 'trg_puente_asientos_jornal'
+                           and not t.tgisinternal and t.tgenabled in ('O', 'A'))
+           then format('%s h de este reparto ya están en el devengo estándar de %s, y este pago entra al libro el %s, dentro de ese '
+                       'mes. Al aceptar, ese devengo se pone al día solo: deja fuera estas horas (su costo real entra con este '
+                       'pago) y nada sale dos veces. No hay que hacer nada: es solo un aviso.', fn_jornal_h(v_h2), v_x,
+                       fn_jornal_dia(v_fa, true))
+           else format('%s h de este reparto ya están en el devengo estándar de %s, y este pago entra al libro el %s, dentro de ese '
+                       'mes: su mano de obra saldría dos veces ahí (el devengo en 5000 y el pago real). El devengo estándar es solo '
+                       'para lo trabajado y todavía no pagado: hay que retirarlo de ese mes antes de cerrarlo (avisa).',
+                       fn_jornal_h(v_h2), v_x, fn_jornal_dia(v_fa, true)) end);
   end if;
   -- (v3, la Fase 11b) HORAS DE ESTE REPARTO QUE YA PAGÓ UNA NÓMINA. Desde
   -- enero de 2027 la gente de obra cobra por nómina (c15) y su costo entra
@@ -4030,9 +4076,16 @@ select z.orden, z.cuadre, z.nivel, z.ok, z.detalle
                 then 'Ninguna hora está a la vez en el devengo estándar de un mes abierto y en un jornal que entró al libro ese mes.'
                      || coalesce(' (Ya cerrado, sin arreglo: ' || t.cerrados || ': ese mes quedó con esa mano de obra dos veces y el '
                                  'siguiente con ella de menos, por el reverso del devengo.)', '')
+                -- (v4, 14-nov-2026) con el c3 de la Fase 11c (su trigger sobre asientos, encendido) volver a devengar el mes deja
+                --     fuera esas horas: se dice eso; con un c3 de antes, lo de siempre (retirar el devengo).
                 else left(t.d, 1500) || ' → esa mano de obra sale dos veces en ese mes (el devengo en 5000 y el pago real) y de menos en el '
-                     'siguiente, cuando el devengo se deshace solo. El devengo estándar es solo para lo trabajado y todavía no pagado: hay '
-                     'que retirarlo de ese mes antes de cerrarlo (avisa).' end
+                     'siguiente, cuando el devengo se deshace solo. El devengo estándar es solo para lo trabajado y todavía no pagado: '
+                     || case when exists (select 1 from pg_catalog.pg_trigger g
+                                           where g.tgrelid = 'public.asientos'::regclass and g.tgname = 'trg_puente_asientos_jornal'
+                                             and not g.tgisinternal and g.tgenabled in ('O', 'A'))
+                             then 'vuelve a devengar ese mes (select fn_horas_devengar(''AAAA-MM''); con su mes) y esas horas quedan fuera; '
+                                  'si sigue igual, avisa.'
+                             else 'hay que retirarlo de ese mes antes de cerrarlo (avisa).' end end
       from (select count(*) filter (where y.abierto) as n,
                    string_agg(y.que, '; ' order by y.mes) filter (where y.abierto) as d,
                    string_agg(y.que, '; ' order by y.mes) filter (where not y.abierto) as cerrados

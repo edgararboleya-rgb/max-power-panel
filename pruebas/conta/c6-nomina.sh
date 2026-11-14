@@ -312,7 +312,8 @@ for s in c4 c6; do
 done
 revisa "c4-pruebas.sql: 113 filas, ninguna falla; la 25 («toda cifra baja a su asiento y a su papel»), en verde con la nómina" "113|0|ok" \
   "$(sed -n 's/^PRUEBAS total=\([0-9]*\) .* fallan=\([0-9]*\) .*/\1|\2/p' "$TMP/p7-c4.out")|$(sed -n 's/^LA 25 \([a-zA-Z]*\) .*/\1/p' "$TMP/p7-c4.out")"
-revisa "c6-pruebas.sql: 167 filas, ninguna falla; la 164 y la 165 miran también los asientos de la nómina de verdad" "167|0|ok ok|sí" \
+# (14-nov, Fase 11c: 169 filas, con la 168 y la 169 de «GUSTO» como palabra entera)
+revisa "c6-pruebas.sql: 169 filas, ninguna falla; la 164 y la 165 miran también los asientos de la nómina de verdad" "169|0|ok ok|sí" \
   "$(sed -n 's/^PRUEBAS total=\([0-9]*\) .* fallan=\([0-9]*\) .*/\1|\2/p' "$TMP/p7-c6.out")|$(sed -n 's/^LA 16[45] \([a-zA-Z]*\) .*/\1/p' "$TMP/p7-c6.out" | tr '\n' ' ' | sed 's/ $//')|$(grep -q '^LA 164 ok .*(con c15: 6 asiento(s) de nómina de verdad en el libro, 6 con su corrida)' "$TMP/p7-c6.out" && echo sí || echo no)"
 revisa "las pruebas no dejaron nada: los asientos de la nómina y sus papeles, los mismos" "6|6" \
   "$(ed -c "select count(*) || '|' || count(*) filter (where p.papel_existe) from v_asiento_papel p where p.origen_tabla in ('nomina_corridas', 'nomina_burden')")"
@@ -397,8 +398,9 @@ SQL
 T0="$(tablas)"
 pegar "$DOCS/c6-banco.sql" > "$TMP/9a.out" 2>&1; revisa "entra" "0" "$?"
 pegar "$DOCS/c6-banco.sql" > "$TMP/9b.out" 2>&1; revisa "y otra vez" "0" "$?"
-revisa "su resumen: 7 filas, todas en true; «funciones de la app» cuenta las 21 de conta.js y la de los papeles" "7|0|1" \
-  "$(grep -cE '^ *(c6|banco) · .*\| t +\|' "$TMP/9b.out")|$(grep -cE '^ *(c6|banco) · .*\| f +\|' "$TMP/9b.out")|$(grep -cE 'c6 · funciones de la app +\| t +\| "21 funciones que llama conta.js y fn_banco_papel_nomina' "$TMP/9b.out")"
+# (14-nov, Fase 11c: y fn_banco_dice_nomina, la que comparten el banco y la nómina: 23 con la API)
+revisa "su resumen: 7 filas, todas en true; «funciones de la app» cuenta las 21 de conta.js, la de los papeles y la que dice si un texto nombra la nómina" "7|0|1" \
+  "$(grep -cE '^ *(c6|banco) · .*\| t +\|' "$TMP/9b.out")|$(grep -cE '^ *(c6|banco) · .*\| f +\|' "$TMP/9b.out")|$(grep -cE 'c6 · funciones de la app +\| t +\| "21 funciones que llama conta.js y fn_banco_papel_nomina, la que lee la vista de los papeles, y fn_banco_dice_nomina' "$TMP/9b.out")"
 revisa "las huellas selladas son las de hoy, y las protecciones del banco en verde" "0|t" \
   "$(ed -c "select count(*) from (select h.tipo, h.objeto, h.md5 from fn_banco_huellas() h except select a.tipo, a.objeto, a.md5 from fn_banco_huellas_calcular() a) x")|$(protecciones)"
 revisa "ninguna tabla cambió al volver a pegarlo (ni un dato)" "igual" "$([ "$(tablas)" = "$T0" ] && echo igual || echo CAMBIÓ)"

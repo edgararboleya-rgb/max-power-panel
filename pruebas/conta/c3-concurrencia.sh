@@ -41,12 +41,14 @@
 #      confirmó y la ve: una en el libro y la otra pendiente
 #      (duplicado). (Antes miraban las dos antes de que la otra confirmara
 #      y entraban las dos: la deuda doble.)
-#  10. (13-nov-2026, la Fase 11b) UNA NÓMINA POSTEA MIENTRAS EDGAR DEVENGA
-#      SU MES, la nómina primero: el devengo espera su turno (el candado de
-#      la cadena) y entra con las horas que vio ANTES de que la nómina
-#      confirmara, también la que ella pagó. No queda callado: el control
-#      devengo lo dice (cuenta 8 h que la nómina ya pagó: están dos veces) y
-#      devengar otra vez lo pone al día (solo la hora que nadie pagó).
+#  10. (13-nov-2026, la Fase 11b; 14-nov, la 11c) UNA NÓMINA POSTEA MIENTRAS
+#      EDGAR DEVENGA SU MES, la nómina primero: el devengo espera su turno
+#      (el candado de la cadena) ANTES de mirar las horas, y entra ya sin la
+#      que ella pagó: solo la hora que nadie pagó, el control en verde, y
+#      devengar otra vez no hace nada. (Hasta el 13-nov pedía el candado al
+#      postear: entraba con las horas que había visto ANTES de que la nómina
+#      confirmara —también la que ella pagó—, el control devengo lo decía y
+#      había que devengar otra vez.)
 #  11. Lo mismo, el devengo primero: la nómina espera, ve el devengo y lo
 #      pone al día en su misma transacción (lo que hace c15 al postear):
 #      queda solo la hora que nadie pagó, y el control en verde. Nadie se
@@ -56,7 +58,8 @@
 #      sin dinero —fn_nomina_horas_con_pago, la que c3 lee— es una función
 #      de este script que lee de una tabla lo que cada «nómina» paga: se ve
 #      al confirmar, como el lote de c15. Con una nómina de verdad:
-#      c3-nomina.sh.)
+#      c3-nomina.sh. Y UN JORNAL a la vez que el devengo, con Zelle de
+#      verdad y en los dos órdenes: la escena 11 de c3-jornal.sh.)
 # Y comprueba: fn_verificar_cadena y los controles de los puentes en true
 # (también partidas: ninguna factura en negativo ni anulada con cobro).
 #
@@ -305,9 +308,9 @@ sleep 0.5
 ed -c "begin; $APP select fn_horas_devengar('2026-11')->>'accion'; commit;" > "$TMP/10b.out" 2>&1 &
 wait
 revisa "las dos confirmaron sin error" "0" "$(cat "$TMP/10a.out" "$TMP/10b.out" | grep -ci error)"
-revisa "el devengo esperó a la nómina y entró con lo que vio antes (las dos horas): el control lo dice, con las 8 h que ella pagó" "posteado/360.00/f/8" \
+revisa "el devengo esperó a la nómina ANTES de mirar las horas, y entró ya sin la que ella pagó: solo la que nadie pagó (4 h × 30), y el control en verde" "posteado/120.00/t" \
   "$(tail -n 1 "$TMP/10b.out")/$(dev_linea 2026-11)/$(dev_control 2026-11)"
-revisa "devengar otra vez lo pone al día: solo la hora que nadie pagó (4 h × 30), y el control en verde" "sustituido/120.00/t" \
+revisa "devengar otra vez no hace nada: ya estaba al día" "sin_cambios/120.00/t" \
   "$(ed -c "begin; $APP select fn_horas_devengar('2026-11')->>'accion'; commit;" 2>&1 | tail -n 1)/$(dev_linea 2026-11)/$(dev_control 2026-11)"
 
 echo "== 11. Lo mismo, el devengo primero: la nómina espera, lo ve y lo pone al día"
