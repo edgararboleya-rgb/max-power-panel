@@ -354,8 +354,9 @@ nomina() {
 echo
 echo "== 1. Diciembre devengado, y llega un Zelle de ese mes (el Z1, del 14-dic)"
 reloj 2026-12-31
-revisa "c3 es el de la Fase 11c, lee los jornales, y la nómina no está" "2026111401|ok|no_esta" \
-  "$(ed -c "select (select substring(p.prosrc from '([0-9]{10})') from pg_proc p where p.oid = 'public.fn_puente_version()'::regprocedure) || '|' || (pl->'corte'->'jornales'->>'lectura') || '|' || (pl->'corte'->>'marca') from (select fn_puente_devengo_plan('2026-12') as pl) x")"
+# (la marca, «al menos»: una mayor —la 2026111402 de la segunda vuelta del 14-nov— sigue valiendo, como en c3-nomina.sh)
+revisa "c3 es el de la Fase 11c o posterior (su marca: 2026111401 o más), lee los jornales, y la nómina no está" "al_dia|ok|no_esta" \
+  "$(ed -c "select (select case when substring(p.prosrc from '([0-9]{10})')::bigint >= 2026111401 then 'al_dia' else substring(p.prosrc from '([0-9]{10})') end from pg_proc p where p.oid = 'public.fn_puente_version()'::regprocedure) || '|' || (pl->'corte'->'jornales'->>'lectura') || '|' || (pl->'corte'->>'marca') from (select fn_puente_devengo_plan('2026-12') as pl) x")"
 revisa "devengar diciembre (el dueño, sin el código del teléfono): todas sus horas aprobadas con obra y con costo" \
   "posteado|a 720.00 · b CO #1 120.00 = 840.00" "$(devengar 2026-12 aal1)|$(devengo 2026-12)"
 D0="$(numero 2026-12)"

@@ -138,6 +138,48 @@
 -- un devengo que se deshizo sin sustituto (pg_temp.c3_dev_accion): antes
 -- esperaban «posteado» y salían en rojo sin que nada estuviera roto.
 --
+-- EL DEVENGO QUE EL PUENTE DESHIZO Y VUELVE A TENER QUÉ DEVENGAR (14-nov-2026,
+-- la segunda vuelta de la Fase 11c; piden el c3 de la marca 2026111402: con
+-- el de antes, las tres FALLAN). Un mes que Edgar devengó, cuyo devengo
+-- deshizo el propio puente (no quedaba nada que devengar, o convivía con un
+-- journal de nómina que no decía qué pagó) y que después vuelve a tener horas
+-- aprobadas y sin pagar: antes nadie lo decía y el mes se cerraba sin ese
+-- costo; ahora lo dice el control devengo (y con él la fila «puentes:
+-- devengo» del cierre), el mes no se cierra (MX008) y select
+-- fn_horas_devengar('AAAA-MM'); lo deja otra vez en verde.
+--   · La 137, LAS HORAS APROBADAS DESPUÉS, con una nómina DE PRUEBA que paga
+--     dentro del mes todo lo que el devengo llevaba (como de la 121 a la
+--     125: vale con c15 y sin ella, con c10 y sin él); y LO QUE NO SALTA: el
+--     mes que nunca se devengó, el devengo retirado a mano y el que sigue
+--     sin nada que devengar. Si c9 está, mira también la fila del cierre
+--     (130 + el lugar de «devengo» entre los controles de los puentes en
+--     rojo: la 131 si es el único); sin c9, lo dice («sin_c9»).
+--   · La 138, LA NÓMINA ANULADA, con la nómina DE VERDAD de c15 por sus
+--     puertas (importar su archivo, enlazar a la persona, postear y anular,
+--     como el dueño con el código del teléfono): c15 deshace el devengo al
+--     postear y NO lo vuelve a poner al anular. Sin c15 sale «omitida» y lo
+--     dice; también si c15 no deja montar su nómina de prueba en esta base
+--     (un mapeo cambiado, una nómina del mismo día), con lo que dijo; o si
+--     el mes de las pruebas tiene otras horas de verdad por devengar (con
+--     ellas el devengo no se queda sin horas), como la 136.
+--   · La 139, LOS OTROS DOS CAMINOS y la marca: el journal de nómina que no
+--     decía qué pagó (el del proveedor anterior) y que después se reversa; y
+--     los repartos de los jornales que no se dejan leer con el devengo
+--     deshecho (no se supone nada: se dice y no se cierra), con el corte de
+--     prueba de la 133. Vale con c10 y sin él.
+-- Las tres usan a la persona de prueba («Zzjorn C3 PRUEBA»: ninguna hora de
+-- nadie de verdad se aprueba ni se toca); si el mes trae horas de verdad por
+-- devengar, la 137 y la 139 las dan por pagadas con su nómina de prueba
+-- (pg_temp.c3_paga_todo), para que el devengo de la prueba se quede sin
+-- horas en cualquier base. Cada una va en VARIOS TRAMOS CORTOS, cada tramo
+-- su subtransacción, que monta lo suyo, mira una o dos cosas y se deshace
+-- (así, con el libro lleno, ninguna tiene el libro tomado más de unos
+-- segundos: ver «LOS TRAMOS CORTOS», con sus ayudantes). Todos ponen el tope
+-- de MEDIO SEGUNDO antes de pedir nada, como la 131; los que CIERRAN MESES
+-- toman además los cajones de los recibos y periodos en exclusiva (si la app
+-- los tiene, la prueba sale «omitida» en vez de esperarla). Ninguna apaga un
+-- trigger.
+--
 -- LOS PUENTES SON DIFERIDOS: corren al confirmar la transacción. Una
 -- prueba que nunca confirma los pone en «immediate» (set constraints
 -- trg_puente_…_despues immediate) para verlos correr al terminar cada
@@ -613,7 +655,11 @@ revoke execute on function pg_temp.c3_sin_mes_devengo(text) from public, anon, a
 --   · c3_ctl_devengo(mes): el control devengo mirando solo ESE mes: 't' si
 --     no nombra su devengo; si lo nombra, 'f' y por qué (/convive,
 --     /pagadas:Nh, /en_el_cerrado:Nh, /desfasado; y, desde el 14-nov,
---     /jornal:Nh, /pagadas:Nh+jornal:Nh y /sin_leer).
+--     /jornal:Nh, /pagadas:Nh+jornal:Nh y /sin_leer). Y, desde la segunda
+--     vuelta del 14-nov, el devengo que el puente deshizo y que vuelve a
+--     tener qué devengar: /deshecho:Nh:IMPORTE (y /journal si se deshizo por
+--     un journal que no decía qué pagó), o /deshecho/sin_leer si los
+--     repartos de los jornales no se dejan leer.
 --   · c3_sin_candado(): el motivo de «omitida» cuando no se consiguió un
 --     candado en medio segundo.
 -- ---------------------------------------------------------------------
@@ -765,7 +811,12 @@ stable
 set search_path = public, pg_temp
 as $$
   select coalesce(
-    (select 'f' || case when f.v like '%se quedó en el mes cerrado%'
+    (select 'f' || case when f.v like '%se deshizo porque%' and f.v like '%no se puede comprobar si ese mes%' then '/deshecho/sin_leer'
+                        when f.v like '%se deshizo porque%'
+                        then '/deshecho:' || coalesce(substring(f.v from 'tiene ([0-9.]+) h aprobadas y sin pagar'), '?') || 'h:'
+                             || coalesce(substring(f.v from '\(([0-9.]+) a estándar\)'), '?')
+                             || case when f.v like '%convivía con un journal de nómina%' then '/journal' else '' end
+                        when f.v like '%se quedó en el mes cerrado%'
                         then '/en_el_cerrado' || coalesce(':' || substring(f.v from 'había pagado ([0-9.]+) h') || 'h', '')
                         when f.v like '%convive con el journal de nómina%' then '/convive'
                         when f.v like '%no se puede comprobar%' then '/sin_leer'
@@ -780,7 +831,7 @@ as $$
                         else '/otro' end
        from fn_puentes_verificar() c
        cross join lateral jsonb_array_elements_text(coalesce(c.detalle->'fallan', '[]'::jsonb)) f(v)
-      where c.control = 'devengo' and f.v like 'el devengo de ' || p_mes || ' (%'
+      where c.control = 'devengo' and f.v like 'el devengo de ' || p_mes || ' %'
       limit 1), 't')
 $$;
 revoke execute on function pg_temp.c3_ctl_devengo(text) from public, anon, authenticated, service_role;
@@ -1064,6 +1115,274 @@ as $$
                       where a.origen_tabla = 'horas_devengo' and a.origen_id = p_mes and a.camino = 'puente')
 $$;
 revoke execute on function pg_temp.c3_dev_dormido(text) from public, anon, authenticated, service_role;
+
+-- EL DEVENGO QUE EL PUENTE DESHIZO Y VUELVE A TENER QUÉ DEVENGAR (14-nov-2026,
+-- la segunda vuelta de la Fase 11c: las pruebas 137 a 139).
+--   · c3_paga_todo(mes, corrida, fecha, co): la nómina DE PRUEBA (su journal,
+--     c3_nomina, y la marca sin dinero de prueba, c3_marca) paga, con fecha
+--     de ese día, TODO lo que el devengo del mes llevaría hoy: las horas de
+--     la prueba y, si el mes trae horas de verdad por devengar, esas también.
+--     Así el devengo de la prueba se queda sin horas en cualquier base (con
+--     datos de verdad la 136 sale «omitida»; estas no). Todo se deshace con
+--     la prueba.
+--   · c3_dev_papel(mes): el papel del devengo de ese mes en el puente
+--     (estado:código), o sin_papel.
+--   · c3_cierre_devengo(mes): la fila del cierre (c9, fn_cierre_revisar) que
+--     cuenta el control devengo de los puentes: su nivel y si va en su fila
+--     (130 + el lugar de «devengo» entre los controles de los puentes en
+--     rojo, por orden alfabético: la 131 si es el único), o 't' si no hay
+--     ninguna en rojo. Sin c9 (se pega después y es opcional), 'sin_c9'.
+--   · c3_cerrar_prueba(mes): intenta cerrar hasta ese mes (c3_cerrar_hasta)
+--     DENTRO de una subtransacción que se deshace siempre, y dice qué pasó:
+--     'cerrado', o el código del error; si es la guarda del devengo que el
+--     puente deshizo, con /dice_como (manda a devengar ese mes) o
+--     /dice_que_pegar (los repartos de los jornales no se dejan leer), y
+--     /journal si se deshizo por un journal que no decía qué pagó. Quien la
+--     llama tiene ya periodos en exclusiva (MXT09 si no).
+create or replace function pg_temp.c3_paga_todo(p_mes text, p_corrida uuid, p_fecha date, p_co text) returns void
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  perform pg_temp.c3_nomina(p_corrida, p_fecha, current_setting('mx3.obra'), p_co, 250.00);
+  perform pg_temp.c3_marca(
+    (select coalesce(jsonb_agg(jsonb_build_object('horas_id', (e->>'horas_id')::bigint, 'corrida_id', p_corrida, 'dia_pago', p_fecha)),
+                     '[]'::jsonb)
+       from jsonb_array_elements(coalesce(fn_puente_devengo_plan(p_mes)->'documento'->'horas', '[]'::jsonb)) e));
+end $$;
+revoke execute on function pg_temp.c3_paga_todo(text, uuid, date, text) from public, anon, authenticated, service_role;
+
+create or replace function pg_temp.c3_dev_papel(p_mes text) returns text
+language sql stable
+set search_path = public, pg_temp
+as $$
+  select coalesce((select d.estado || ':' || coalesce(d.codigo, '-') from puente_documentos d
+                    where d.tabla = 'horas_devengo' and d.documento_id = p_mes), 'sin_papel')
+$$;
+revoke execute on function pg_temp.c3_dev_papel(text) from public, anon, authenticated, service_role;
+
+create or replace function pg_temp.c3_cierre_devengo(p_mes text) returns text
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_j jsonb;
+  v   text;
+begin
+  if to_regprocedure('public.fn_cierre_revisar(text)') is null then
+    return 'sin_c9';
+  end if;
+  -- (UNA sola revisión del cierre, y su lugar se cuenta en sus propias filas: con el libro lleno la revisión tarda
+  -- segundos, y el tramo que la pide tiene el libro tomado mientras)
+  execute 'select coalesce(jsonb_agg(jsonb_build_object(''orden'', r.orden, ''control'', r.control, ''nivel'', r.nivel)), ''[]''::jsonb) '
+       ||   'from public.fn_cierre_revisar($1) r where r.control like ''puentes: %'' and not r.ok'
+     into v_j using p_mes;
+  select (e->>'nivel') || case when (e->>'orden')::int = 130 + (select count(*) from jsonb_array_elements(v_j) x
+                                                                where substr(x->>'control', 10) <= 'devengo')
+                               then '/en_su_fila' else '/fila_' || (e->>'orden') end
+    into v
+    from jsonb_array_elements(v_j) e
+   where e->>'control' = 'puentes: devengo';
+  return coalesce(v, 't');
+end $$;
+revoke execute on function pg_temp.c3_cierre_devengo(text) from public, anon, authenticated, service_role;
+
+create or replace function pg_temp.c3_cerrar_prueba(p_mes text) returns text
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v text;
+begin
+  begin
+    perform pg_temp.c3_cerrar_hasta(p_mes);
+    select p.estado into v from periodos p where p.periodo = p_mes;
+    raise exception using errcode = 'MXT01';
+  exception
+    when sqlstate 'MXT01' then null;
+    when sqlstate 'MXT09' then raise;
+    when sqlstate '55P03' then raise;
+    when others then
+      v := sqlstate
+           || case when sqlerrm like '%' || p_mes || ' no se cierra así%se deshizo porque%'
+                   then case when sqlerrm like '%no se puede comprobar%c10-costo-obra.sql%fn_horas_devengar(''' || p_mes || ''')%'
+                             then '/dice_que_pegar'
+                             when sqlerrm like '%Devéngalo antes: select fn_horas_devengar(''' || p_mes || ''')%' then '/dice_como'
+                             else '/no_dice_como' end
+                        || case when sqlerrm like '%convivía con un journal de nómina%' then '/journal' else '' end
+                   else ': ' || left(sqlerrm, 80) end;
+  end;
+  return v;
+end $$;
+revoke execute on function pg_temp.c3_cerrar_prueba(text) from public, anon, authenticated, service_role;
+
+-- LOS TRAMOS CORTOS de la 137, la 138 y la 139. Con el libro lleno (10.000
+-- asientos) cada lectura del control de los puentes y cada cierre de un mes
+-- tardan lo suyo, y una prueba que postea tiene el libro tomado (la cadena
+-- de c2) hasta que su subtransacción se deshace. Para que ninguna subida de
+-- la app espere más de unos segundos (pruebas/conta/README.md: ninguna
+-- subtransacción de estas pruebas tiene el libro más de unos 5 s;
+-- pruebas/conta/c4-volumen.sh lo mide con cuatro teléfonos subiendo
+-- tickets), cada una de estas tres va en VARIOS TRAMOS, cada uno su
+-- subtransacción (monta lo suyo, mira una o dos cosas y se deshace: suelta
+-- sus candados), y no en uno largo.
+--   · c3_dv_abrir(cierra): lo primero de cada tramo: el tope de MEDIO
+--     SEGUNDO para cualquier espera (antes de pedir nada), la persona de
+--     prueba y, si el tramo cierra meses, los cajones de los recibos y
+--     periodos en exclusiva (en ese orden, el de la app; ver la cabecera).
+--   · c3_devengar_dueno(mes): fn_horas_devengar como el dueño por la API,
+--     sin el código del teléfono (aal1); devuelve lo que contesta.
+--   · c3_dv_deshecho(mes, desde, corrida, co, id): deja el mes con su devengo
+--     DESHECHO por falta de horas, como cuando una nómina paga dentro del
+--     mes todo lo que llevaba: una hora de la persona de prueba (8 h × 30,
+--     el día 12), el mes devengado, la nómina de prueba que lo paga todo
+--     (c3_paga_todo, el día 14) y el devengo puesto al día (lo que hace c15
+--     al postear): devuelve «reversado/no_aplica:sin_horas».
+--   · c3_nomina_real(desde): LA NÓMINA DE VERDAD (c15) de la persona de
+--     prueba, por sus puertas y como el dueño con el código del teléfono: su
+--     archivo de Gusto (sintético: una persona, 8 h, bruto 240.00, cuadra al
+--     centavo; período del día 1 al 14 y día de pago el 20 del mes de las
+--     pruebas), importado, la persona enlazada y confirmada, la propuesta y
+--     posteado lo visto. Devuelve {corrida, postear: lo que contestó}. Lo
+--     que c15 no deje (un mapeo cambiado, otra nómina de ese día…), MXT23
+--     con lo que dijo: la prueba sale «omitida».
+--   · c3_nomina_real_anular(corrida): la anula (fn_nomina_anular), igual.
+create or replace function pg_temp.c3_dv_abrir(p_cierra boolean default false) returns void
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  perform set_config('lock_timeout', '500ms', true);
+  if p_cierra then
+    perform pg_temp.c3_candados_recibos();
+    lock table public.periodos in exclusive mode;   -- antes que el de la cadena (ver la cabecera)
+  end if;
+  perform pg_temp.c3_jpersona();
+end $$;
+revoke execute on function pg_temp.c3_dv_abrir(boolean) from public, anon, authenticated, service_role;
+
+create or replace function pg_temp.c3_devengar_dueno(p_mes text) returns jsonb
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  r jsonb;
+begin
+  execute 'reset role';
+  perform set_config('request.jwt.claims',
+                     json_build_object('sub', current_setting('mx3.dueno'), 'role', 'authenticated', 'aal', 'aal1')::text, true);
+  execute 'set local role authenticated';
+  begin
+    r := fn_horas_devengar(p_mes);
+  exception when others then
+    execute 'reset role';
+    raise;
+  end;
+  execute 'reset role';
+  return r;
+end $$;
+revoke execute on function pg_temp.c3_devengar_dueno(text) from public, anon, authenticated, service_role;
+
+create or replace function pg_temp.c3_dv_deshecho(p_mes text, p_desde date, p_corrida uuid, p_co text, p_id bigint) returns text
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v text;
+begin
+  perform pg_temp.c3_jhora(p_id, p_desde + 11, 8.0, p_co);
+  perform fn_horas_devengar(p_mes);
+  perform pg_temp.c3_paga_todo(p_mes, p_corrida, p_desde + 13, p_co);
+  v := fn_horas_devengar(p_mes)->>'accion';
+  return v || '/' || pg_temp.c3_dev_papel(p_mes);
+end $$;
+revoke execute on function pg_temp.c3_dv_deshecho(text, date, uuid, text, bigint) from public, anon, authenticated, service_role;
+
+create or replace function pg_temp.c3_nomina_real(p_desde date) returns jsonb
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_dueno uuid := current_setting('mx3.dueno')::uuid;
+  v_p     uuid := '00000000-0000-4000-a000-0000000c3a01';
+  v_csv   text;
+  v_arch  jsonb;
+  v_r     jsonb;
+  v_k     uuid;
+  v_prop  jsonb;
+begin
+  begin
+    v_csv := 'Employee first name,Employee last name,Pay period start,Pay period end,Check date,Payroll type,Payment method,Regular hours,'
+          || 'Regular earnings,Gross earnings,Employee federal income tax,Employee social security tax,Employee medicare tax,Employee taxes,'
+          || 'Net pay,Check amount,Employer social security tax,Employer medicare tax,Employer FUTA tax,Employer SUTA tax,Employer taxes'
+          || E'\n'
+          || format('Zzjorn,C3 PRUEBA,%s,%s,%s,Regular,Direct Deposit,8.00,240.00,240.00,10.00,14.88,3.48,28.36,211.64,211.64,14.88,3.48,1.44,'
+                    '6.48,26.28', to_char(p_desde, 'MM/DD/YYYY'), to_char(p_desde + 13, 'MM/DD/YYYY'), to_char(p_desde + 19, 'MM/DD/YYYY'));
+    v_arch := jsonb_build_object('nombre', 'zz-c3-pruebas-nomina.csv', 'sha256', encode(sha256(convert_to(v_csv, 'UTF8')), 'hex'),
+                                 'bytes', octet_length(v_csv),
+                                 'filas', (select jsonb_agg(to_jsonb(string_to_array(t.l, ',')) order by t.n)
+                                             from unnest(string_to_array(v_csv, E'\n')) with ordinality as t(l, n)));
+    execute 'reset role';
+    perform set_config('request.jwt.claims', json_build_object('sub', v_dueno, 'role', 'authenticated', 'aal', 'aal2')::text, true);
+    perform set_config('request.jwt.claim.sub', v_dueno::text, true);
+    execute 'set local role authenticated';
+    execute 'select public.fn_nomina_importar($1, ''{}''::jsonb)' into v_r using v_arch;
+    select (q->>'corrida')::uuid into v_k from jsonb_array_elements(v_r->'corridas') q where q->>'resultado' = 'nueva' limit 1;
+    if v_k is null then
+      raise exception using errcode = 'MXT23', message = format('al importarla dijo: %s', left(coalesce(v_r->>'mensaje', v_r::text), 200));
+    end if;
+    execute 'select public.fn_nomina_persona(jsonb_build_object(''id'', (select np.id from public.nomina_personas np '
+         || 'where np.clave = public.fn_nomina_clave(''Zzjorn C3 PRUEBA'')), ''usuario_id'', $1, ''clase'', ''campo'', ''confirmar'', true))'
+      using v_p;
+    execute 'select public.fn_nomina_propuesta($1)' into v_prop using v_k;
+    if not coalesce((v_prop->>'puede_postear')::boolean, false) then
+      raise exception using errcode = 'MXT23',
+        message = format('no la deja postear: %s',
+                         left(coalesce((select string_agg(q->>'codigo', ', ') from jsonb_array_elements(v_prop->'frenos') q), 'sin frenos'), 200));
+    end if;
+    execute 'select public.fn_nomina_postear($1, $2)' into v_r using v_k, v_prop->>'visto';
+    execute 'reset role';
+  exception
+    when sqlstate 'MXT23' then
+      execute 'reset role';
+      raise;
+    when sqlstate '55P03' then
+      execute 'reset role';
+      raise;
+    when others then
+      execute 'reset role';
+      raise exception using errcode = 'MXT23', message = format('%s: %s', sqlstate, left(sqlerrm, 220));
+  end;
+  return jsonb_build_object('corrida', v_k, 'postear', v_r);
+end $$;
+revoke execute on function pg_temp.c3_nomina_real(date) from public, anon, authenticated, service_role;
+
+create or replace function pg_temp.c3_nomina_real_anular(p_corrida uuid) returns jsonb
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_r jsonb;
+begin
+  begin
+    execute 'reset role';
+    perform set_config('request.jwt.claims',
+                       json_build_object('sub', current_setting('mx3.dueno'), 'role', 'authenticated', 'aal', 'aal2')::text, true);
+    execute 'set local role authenticated';
+    execute 'select public.fn_nomina_anular($1, ''c3-pruebas: la nómina de prueba se anula y no se vuelve a subir (se deshace)'')'
+       into v_r using p_corrida;
+    execute 'reset role';
+  exception
+    when sqlstate '55P03' then
+      execute 'reset role';
+      raise;
+    when others then
+      execute 'reset role';
+      raise exception using errcode = 'MXT23', message = format('al anularla: %s: %s', sqlstate, left(sqlerrm, 220));
+  end;
+  return v_r;
+end $$;
+revoke execute on function pg_temp.c3_nomina_real_anular(uuid) from public, anon, authenticated, service_role;
 
 -- EL CORTE DE PRUEBA (la 133; 14-nov-2026, el arreglo de la Fase 11c). Para
 -- ver qué hace c3 cuando los repartos de los jornales NO SE DEJAN LEER sin
@@ -9939,6 +10258,466 @@ begin
     when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
   end;
   insert into _pruebas values (136, v_nom, v_esp, coalesce(v_obt, 'no devengó'),
+                               case when v_obt like 'omitida:%' then null else coalesce(v_obt = v_esp, false) end);
+end $$;
+
+-- =====================================================================
+-- LA SEGUNDA VUELTA DE LA FASE 11c (14-nov-2026): EL DEVENGO QUE EL PUENTE
+-- DESHIZO Y QUE VUELVE A TENER QUÉ DEVENGAR. De la 137 a la 139 (ver la
+-- cabecera). Con el c3 de antes (marca 2026111401) las tres FALLAN: el
+-- control no lo decía y el mes se cerraba. Cada una va en TRAMOS CORTOS,
+-- cada tramo su subtransacción (ver «LOS TRAMOS CORTOS», arriba): ninguno
+-- tiene el libro tomado más de lo que tardan dos lecturas del control o
+-- dos cierres. (Van antes de la 118, que tiene que ser la última.)
+-- =====================================================================
+
+-- 137. LAS HORAS APROBADAS DESPUÉS. (a) El mes devengado con una hora (8 h ×
+--      30 = 240.00). Una nómina (de prueba) paga dentro del mes TODO lo que
+--      el devengo llevaba: al ponerlo al día (lo que hace c15 al postear), SE
+--      DESHACE (su papel: «no_aplica: sin_horas»). Después se aprueba OTRO
+--      reporte de ese mes (4 h × 30 = 120.00), que nadie paga: el control
+--      devengo lo dice (el devengo se deshizo y hoy el mes tiene 4 h
+--      aprobadas y sin pagar, 120.00 a estándar, y ningún devengo); select
+--      fn_horas_devengar(mes); lo vuelve a poner (sustituido, 120.00) y el
+--      control queda en verde. (b) En ese estado, la fila del cierre que lo
+--      cuenta («puentes: devengo»: 130 + su lugar entre los controles de los
+--      puentes en rojo, la 131 si es el único) detiene; sin c9, se dice. (c)
+--      Y el mes NO SE CIERRA (MX008, y dice cómo); devengado otra vez, se
+--      cierra. LO QUE NO SALTA: (d) el devengo deshecho que sigue SIN nada
+--      que devengar (el control no lo nombra y el mes se cierra); (e) el mes
+--      que NUNCA se devengó, con horas aprobadas y sin pagar (tampoco: un
+--      mes que Edgar no devengó no se devenga solo, y se cierra); y (f) el
+--      devengo RETIRADO A MANO (su reverso puesto por dentro, en el SQL
+--      Editor), con horas aprobadas y sin pagar (tampoco: fue a propósito).
+--      (Con el c3 de antes: aprobada_despues=t, cierre=t y cerrar=cerrado.)
+do $$
+declare
+  v_dueno  uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_obra   text := nullif(current_setting('mx3.obra', true), '');
+  v_desde  date := nullif(current_setting('mx3.desde_dev', true), '')::date;
+  v_mes    text := nullif(current_setting('mx3.mes_dev', true), '');
+  v_mo     text := fn_puente_cuenta_de('mano_obra');
+  v_k      uuid := '00000000-0000-4000-a000-00000c300137';
+  v_c9     boolean := to_regprocedure('public.fn_cierre_revisar(text)') is not null;
+  v_nunca  text;
+  v_dn     date;
+  v_r1     jsonb;
+  v_l1     text;
+  v_a      text;
+  v_b      text;
+  v_c      text;
+  v_d      text := 'sin_c9';
+  v_e      text;
+  v_f      text;
+  v_g      text;
+  v_h      text := 'no_hay_mes';
+  v_i      text;
+  v_j      text;
+  v_obt    text;
+  v_esp    text;
+  v_nom    text := 'el devengo que se deshizo por quedarse sin horas y vuelve a tenerlas (se aprueban después): el control lo dice, el cierre lo cuenta y el mes no se cierra hasta devengarlo otra vez; el que sigue sin horas, el mes que nunca se devengó y el devengo retirado a mano no saltan';
+begin
+  -- (el primer mes abierto, desde el del devengo, que NUNCA se devengó: hoy, el mismo)
+  if v_desde is not null then
+    select p.periodo, p.desde into v_nunca, v_dn
+      from periodos p
+     where p.tipo = 'mes' and p.estado = 'abierto' and p.desde >= v_desde
+       and not exists (select 1 from asientos a where a.origen_tabla = 'horas_devengo' and a.origen_id = p.periodo)
+     order by p.desde limit 1;
+  end if;
+  v_esp := format('devengo=%s/240.00 lo_paga_todo=reversado/no_aplica:sin_horas aprobada_despues=f/deshecho:4h:120.00 '
+                  'devengar=sustituido/120.00/t | cierre=%s | cerrar=MX008/dice_como devengado=cerrado | sin_nada_que_devengar=t/cerrado '
+                  '| nunca_devengado=%s | retirado_a_mano=contabilizado:-/t/cerrado | ya_cerrado=cerrado/t',
+                  pg_temp.c3_dev_accion(v_mes), case when v_c9 then 'detiene/en_su_fila' else 'sin_c9' end,
+                  case when v_nunca is not null then 't/cerrado' else 'no_hay_mes' end);
+  if v_dueno is null or v_obra is null or v_desde is null or v_mes is null then
+    insert into _pruebas values (137, v_nom, v_esp, pg_temp.c3_sin_mes_devengo('falta dueño, obra o mes abierto'), null);
+    return;
+  end if;
+  begin
+    -- a) Lo dice, y devengar lo resuelve.
+    begin
+      perform pg_temp.c3_dv_abrir();
+      perform pg_temp.c3_jhora(-3511371, v_desde + 11, 8.0, 'C3-D37');
+      v_r1 := pg_temp.c3_devengar_dueno(v_mes);
+      select l.monto::text into v_l1 from asiento_lineas l
+       where l.asiento_id = pg_temp.c3_vivo('horas_devengo', v_mes) and l.cuenta = v_mo and l.proyecto_id = v_obra and l.co = 'C3-D37';
+      -- La nómina (de prueba) paga dentro del mes todo lo que el devengo llevaba: al ponerlo al día, se deshace.
+      -- (Cada cosa en su sentencia: lo que se lee después ve lo que dejó la anterior.)
+      perform pg_temp.c3_paga_todo(v_mes, v_k, v_desde + 13, 'C3-D37');
+      v_a := fn_horas_devengar(v_mes)->>'accion';
+      v_a := v_a || '/' || pg_temp.c3_dev_papel(v_mes);
+      -- Se aprueba DESPUÉS otro reporte de ese mes, que nadie paga.
+      perform pg_temp.c3_jhora(-3511372, v_desde + 19, 4.0, 'C3-D37');
+      v_b := pg_temp.c3_ctl_devengo(v_mes);
+      -- Lo que lo resuelve: devengar otra vez (el dueño, sin el código del teléfono).
+      v_c := pg_temp.c3_devengar_dueno(v_mes)->>'accion';
+      v_c := v_c || '/' || coalesce((select l.monto::text from asiento_lineas l
+                                      where l.asiento_id = pg_temp.c3_vivo('horas_devengo', v_mes) and l.cuenta = v_mo
+                                        and l.proyecto_id = v_obra and l.co = 'C3-D37'), '-')
+                 || '/' || pg_temp.c3_ctl_devengo(v_mes);
+      raise exception using errcode = 'MXT00';
+    exception
+      when sqlstate 'MXT00' then null;
+    end;
+    -- b) La fila del cierre que lo cuenta (c9, si está).
+    if v_c9 then
+      begin
+        perform pg_temp.c3_dv_abrir();
+        perform pg_temp.c3_dv_deshecho(v_mes, v_desde, v_k, 'C3-D37', -3511371);
+        perform pg_temp.c3_jhora(-3511372, v_desde + 19, 4.0, 'C3-D37');
+        v_d := pg_temp.c3_cierre_devengo(v_mes);
+        raise exception using errcode = 'MXT00';
+      exception
+        when sqlstate 'MXT00' then null;
+      end;
+    end if;
+    -- c) El mes no se cierra así; devengado otra vez, sí.
+    begin
+      perform pg_temp.c3_dv_abrir(true);
+      perform pg_temp.c3_dv_deshecho(v_mes, v_desde, v_k, 'C3-D37', -3511371);
+      perform pg_temp.c3_jhora(-3511372, v_desde + 19, 4.0, 'C3-D37');
+      v_e := pg_temp.c3_cerrar_prueba(v_mes);
+      perform fn_horas_devengar(v_mes);
+      v_f := pg_temp.c3_cerrar_prueba(v_mes);
+      raise exception using errcode = 'MXT00';
+    exception
+      when sqlstate 'MXT00' then null;
+    end;
+    -- d) Deshecho y SIN nada nuevo que devengar: no salta, y se cierra.
+    begin
+      perform pg_temp.c3_dv_abrir(true);
+      perform pg_temp.c3_dv_deshecho(v_mes, v_desde, v_k, 'C3-D37', -3511371);
+      v_g := pg_temp.c3_ctl_devengo(v_mes) || '/' || pg_temp.c3_cerrar_prueba(v_mes);
+      raise exception using errcode = 'MXT00';
+    exception
+      when sqlstate 'MXT00' then null;
+    end;
+    -- e) El mes que NUNCA se devengó, con horas aprobadas y sin pagar: no salta, y se cierra.
+    if v_nunca is not null then
+      begin
+        perform pg_temp.c3_dv_abrir(true);
+        -- (si ese mes no es el del devengo, para llegar a él hay que cerrar antes el del devengo, que sí se devengó de
+        -- verdad: se pone al día aquí, por si lo pide —no es lo que se mira—, y se deshace con lo demás)
+        if v_nunca <> v_mes then
+          begin
+            perform fn_horas_devengar(v_mes);
+          exception
+            when sqlstate '55P03' then raise;
+            when others then null;
+          end;
+        end if;
+        perform pg_temp.c3_jhora(-3511373, v_dn + 11, 6.0, 'C3-D37');
+        v_h := pg_temp.c3_ctl_devengo(v_nunca) || '/' || pg_temp.c3_cerrar_prueba(v_nunca);
+        raise exception using errcode = 'MXT00';
+      exception
+        when sqlstate 'MXT00' then null;
+      end;
+    end if;
+    -- f) El devengo retirado A MANO (su reverso puesto por dentro, como en el SQL Editor), y otra hora aprobada después:
+    -- tampoco salta (su papel no dice que lo deshizo el puente), y se cierra.
+    begin
+      perform pg_temp.c3_dv_abrir(true);
+      perform pg_temp.c3_jhora(-3511374, v_desde + 11, 8.0, 'C3-D37');
+      perform fn_horas_devengar(v_mes);
+      perform fn_reversar_interno(pg_temp.c3_vivo('horas_devengo', v_mes), 'c3-pruebas: el devengo se retira a mano (se deshace)',
+                                  'reverso', jsonb_build_object('funcion', 'c3-pruebas'));
+      perform pg_temp.c3_jhora(-3511375, v_desde + 19, 4.0, 'C3-D37');
+      v_i := case when pg_temp.c3_vivo('horas_devengo', v_mes) is null then pg_temp.c3_dev_papel(v_mes) else 'SIGUE_VIVO' end
+             || '/' || pg_temp.c3_ctl_devengo(v_mes) || '/' || pg_temp.c3_cerrar_prueba(v_mes);
+      raise exception using errcode = 'MXT00';
+    exception
+      when sqlstate 'MXT00' then null;
+    end;
+    -- g) El mes YA CERRADO con su devengo deshecho, al que se le aprueba una hora después: tampoco salta (cerrado ya no se
+    -- devenga: un rojo ahí no tendría arreglo, y el control de los puentes detiene el cierre de cualquier mes).
+    begin
+      perform pg_temp.c3_dv_abrir(true);
+      perform pg_temp.c3_dv_deshecho(v_mes, v_desde, v_k, 'C3-D37', -3511371);
+      perform pg_temp.c3_cerrar_hasta(v_mes);
+      perform pg_temp.c3_jhora(-3511376, v_desde + 19, 4.0, 'C3-D37');
+      v_j := (select p.estado from periodos p where p.periodo = v_mes) || '/' || pg_temp.c3_ctl_devengo(v_mes);
+      raise exception using errcode = 'MXT00';
+    exception
+      when sqlstate 'MXT00' then null;
+    end;
+    v_obt := format('devengo=%s/%s lo_paga_todo=%s aprobada_despues=%s devengar=%s | cierre=%s | cerrar=%s devengado=%s '
+                    '| sin_nada_que_devengar=%s | nunca_devengado=%s | retirado_a_mano=%s | ya_cerrado=%s',
+                    v_r1->>'accion', coalesce(v_l1, '-'), v_a, v_b, v_c, v_d, v_e, v_f, v_g, v_h, v_i, v_j);
+  exception
+    when sqlstate 'MXT21' then v_obt := 'omitida: ' || sqlerrm;
+    when sqlstate 'MXT22' then v_obt := 'omitida: ' || sqlerrm;
+    when sqlstate '55P03' then v_obt := pg_temp.c3_sin_candado();
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (137, v_nom, v_esp, coalesce(v_obt, '-'),
+                               case when v_obt like 'omitida:%' then null else coalesce(v_obt = v_esp, false) end);
+end $$;
+
+-- 138. LA NÓMINA ANULADA, CON LA NÓMINA DE VERDAD (c15). (a) El mes devengado
+--      con una hora de la persona de prueba (8 h × 30 = 240.00). Su nómina de
+--      Gusto, de prueba pero por las puertas de verdad de c15 —el dueño con
+--      el código del teléfono: importar su archivo (una persona, el período
+--      de sus horas, día de pago dentro del mes), enlazarla y confirmarla, la
+--      propuesta y postear lo visto—, paga esa hora dentro del mes: c15 pone
+--      el devengo al día al postear y, como no queda nada sin pagar, LO
+--      DESHACE (y lo dice). Esa nómina se ANULA y no se vuelve a subir: sus
+--      horas vuelven a estar aprobadas y sin pagar, y c15 no vuelve a poner
+--      el devengo (solo mira el vivo; no dice nada). Ahora lo dice el control
+--      devengo (8 h, 240.00 a estándar); select fn_horas_devengar(mes); lo
+--      vuelve a poner (sustituido, 240.00) y el control queda en verde. (b)
+--      Y con la nómina anulada el mes NO SE CIERRA (MX008, y dice cómo);
+--      devengado otra vez, se cierra. (Con el c3 de antes: anulada=…/t y
+--      cerrar=cerrado.) Sin c15, «omitida»: sin la nómina de la app no hay
+--      nómina que anular. Si c15 no deja montar la nómina de prueba en esta
+--      base, también, con lo que dijo; y si el mes tiene otras horas de
+--      verdad por devengar (o su devengo), como la 136.
+do $$
+declare
+  v_dueno  uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_obra   text := nullif(current_setting('mx3.obra', true), '');
+  v_desde  date := nullif(current_setting('mx3.desde_dev', true), '')::date;
+  v_mes    text := nullif(current_setting('mx3.mes_dev', true), '');
+  v_mo     text := fn_puente_cuenta_de('mano_obra');
+  v_hasta  date;
+  v_n      jsonb;
+  v_r      jsonb;
+  v_r1     jsonb;
+  v_l1     text;
+  v_a      text;
+  v_b      text;
+  v_c      text;
+  v_d      text;
+  v_e      text;
+  v_obt    text;
+  v_esp    text;
+  v_nom    text := 'la nómina de verdad (c15) que pagó todo lo que el devengo llevaba se anula y no se vuelve a subir: el control lo dice y el mes no se cierra hasta devengarlo otra vez';
+begin
+  v_esp := format('devengo=%s/240.00 nomina_posteada=lo_deshace/lo_dice/no_aplica:sin_horas anulada=no_lo_vuelve_a_poner/f/deshecho:8h:240.00 '
+                  'devengar=sustituido/240.00/t | cerrar=MX008/dice_como devengado=cerrado',
+                  pg_temp.c3_dev_accion(v_mes));
+  if v_dueno is null or v_obra is null or v_desde is null or v_mes is null then
+    insert into _pruebas values (138, v_nom, v_esp, pg_temp.c3_sin_mes_devengo('falta dueño, obra o mes abierto'), null);
+    return;
+  end if;
+  if to_regprocedure('public.fn_nomina_importar(jsonb,jsonb)') is null or to_regprocedure('public.fn_nomina_persona(jsonb)') is null
+     or to_regprocedure('public.fn_nomina_propuesta(uuid)') is null or to_regprocedure('public.fn_nomina_postear(uuid,text)') is null
+     or to_regprocedure('public.fn_nomina_anular(uuid,text)') is null or to_regprocedure('public.fn_nomina_clave(text)') is null
+     or to_regclass('public.nomina_personas') is null then
+    insert into _pruebas values (138, v_nom, v_esp,
+      'omitida: la nómina (c15-nomina.sql) no está en esta base: sin ella no hay una nómina de verdad que postear y anular (lo de c3 '
+      || 'lo miran la 137 y la 139, con una nómina de prueba)', null);
+    return;
+  end if;
+  if to_regprocedure('public.fn_nomina_horas_con_pago()') is null then
+    insert into _pruebas values (138, v_nom, v_esp,
+      'omitida: la nómina de esta base (c15-nomina.sql) es de antes del 13-nov: todavía no dice qué horas pagó cada nómina, y con un '
+      || 'journal suyo en el mes c3 no devenga (pega el c15 de hoy; lo de c3 lo miran la 137 y la 139, con una nómina de prueba)', null);
+    return;
+  end if;
+  if pg_temp.c3_vivo('horas_devengo', v_mes) is not null
+     or coalesce((fn_puente_devengo_plan(v_mes)->>'total')::numeric, 0) <> 0 then
+    insert into _pruebas values (138, v_nom, v_esp,
+      format('omitida: %s ya tiene horas de verdad por devengar (o su devengo): con ellas la nómina de prueba no deja el devengo sin '
+             'horas, que es lo que aquí se mira (lo corre el banco, y la 137 con una nómina de prueba)', v_mes), null);
+    return;
+  end if;
+  select p.hasta into v_hasta from periodos p where p.periodo = v_mes;
+  begin
+    -- a) c15 lo deshace al postear y no lo vuelve a poner al anular: el control lo dice, y devengar lo resuelve.
+    begin
+      perform pg_temp.c3_dv_abrir();
+      -- (hoy, el último día del mes de las pruebas: el día de pago de la nómina de prueba ya pasó, sea el día que sea de verdad)
+      perform pg_temp.c3_fingir_hoy(v_hasta);
+      perform pg_temp.c3_jhora(-3511381, v_desde + 1, 8.0, 'C3-D38');
+      v_r1 := pg_temp.c3_devengar_dueno(v_mes);
+      select l.monto::text into v_l1 from asiento_lineas l
+       where l.asiento_id = pg_temp.c3_vivo('horas_devengo', v_mes) and l.cuenta = v_mo and l.proyecto_id = v_obra and l.co = 'C3-D38';
+      v_n := pg_temp.c3_nomina_real(v_desde);
+      v_a := case when pg_temp.c3_vivo('horas_devengo', v_mes) is null then 'lo_deshace' else 'NO_LO_DESHACE' end
+             || case when v_n->'postear'->>'devengo' like '%se deshizo aquí mismo%' then '/lo_dice' else '/no_lo_dice' end
+             || '/' || pg_temp.c3_dev_papel(v_mes);
+      -- Se ANULA (y no se vuelve a subir): c15 no vuelve a poner el devengo.
+      v_r := pg_temp.c3_nomina_real_anular((v_n->>'corrida')::uuid);
+      v_b := case when not coalesce((v_r->>'anulada')::boolean, false) then 'NO_SE_ANULO'
+                  when pg_temp.c3_vivo('horas_devengo', v_mes) is null and v_r->>'devengo' is null then 'no_lo_vuelve_a_poner'
+                  else 'LO_VUELVE_A_PONER' end
+             || '/' || pg_temp.c3_ctl_devengo(v_mes);
+      -- Lo que lo resuelve: devengar otra vez (el dueño, sin el código del teléfono).
+      v_c := pg_temp.c3_devengar_dueno(v_mes)->>'accion';
+      v_c := v_c || '/' || coalesce((select l.monto::text from asiento_lineas l
+                                      where l.asiento_id = pg_temp.c3_vivo('horas_devengo', v_mes) and l.cuenta = v_mo
+                                        and l.proyecto_id = v_obra and l.co = 'C3-D38'), '-')
+                 || '/' || pg_temp.c3_ctl_devengo(v_mes);
+      raise exception using errcode = 'MXT00';
+    exception
+      when sqlstate 'MXT00' then null;
+    end;
+    -- b) Con la nómina anulada el mes no se cierra; devengado otra vez, sí.
+    begin
+      perform pg_temp.c3_dv_abrir(true);
+      perform pg_temp.c3_fingir_hoy(v_hasta);
+      perform pg_temp.c3_jhora(-3511381, v_desde + 1, 8.0, 'C3-D38');
+      perform fn_horas_devengar(v_mes);
+      v_n := pg_temp.c3_nomina_real(v_desde);
+      perform pg_temp.c3_nomina_real_anular((v_n->>'corrida')::uuid);
+      v_d := pg_temp.c3_cerrar_prueba(v_mes);
+      perform fn_horas_devengar(v_mes);
+      v_e := pg_temp.c3_cerrar_prueba(v_mes);
+      raise exception using errcode = 'MXT00';
+    exception
+      when sqlstate 'MXT00' then null;
+    end;
+    v_obt := format('devengo=%s/%s nomina_posteada=%s anulada=%s devengar=%s | cerrar=%s devengado=%s',
+                    v_r1->>'accion', coalesce(v_l1, '-'), v_a, v_b, v_c, v_d, v_e);
+  exception
+    when sqlstate 'MXT21' then v_obt := 'omitida: ' || sqlerrm;
+    when sqlstate 'MXT23' then v_obt := 'omitida: la nómina (c15) no dejó montar su nómina de prueba en esta base (' || sqlerrm || ')';
+    when sqlstate '55P03' then v_obt := pg_temp.c3_sin_candado();
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (138, v_nom, v_esp, coalesce(v_obt, '-'),
+                               case when v_obt like 'omitida:%' then null else coalesce(v_obt = v_esp, false) end);
+end $$;
+
+-- 139. LOS OTROS DOS CAMINOS, Y LA MARCA. EL JOURNAL QUE NO DECÍA QUÉ PAGÓ:
+--      (a) el mes devengado con una hora (240.00) y un journal de nómina del
+--      proveedor anterior en el mes (no dice qué horas pagó): devengar lo
+--      DESHACE (su papel: «no_aplica: nomina_en_el_mes»; lo mira la 74) y,
+--      mientras ese journal siga, el control no lo nombra (un mes así no se
+--      devenga). Ese journal SE REVERSA (se des-casa en la Bandeja): la hora
+--      vuelve a ser devengable, y antes nadie lo decía; ahora el control lo
+--      dice (se deshizo porque convivía con un journal…, 8 h, 240.00). (b) Y
+--      el mes NO SE CIERRA (MX008, y dice cómo); devengar lo vuelve a poner
+--      (sustituido, 240.00).
+--      LOS REPARTOS DE LOS JORNALES QUE NO SE DEJAN LEER, CON EL DEVENGO
+--      DESHECHO (por falta de horas: una nómina de prueba lo pagó todo; el
+--      corte de prueba de la 133): (c) sin horas nuevas, nada que decir; con
+--      una hora aprobada después, NO SE SUPONE NADA: el control dice que no
+--      se puede comprobar (y qué pegar); (d) y el mes NO SE CIERRA (MX008, y
+--      dice qué pegar); en cuanto se dejan leer, el control dice lo de
+--      siempre (devengar otra vez: 4 h, 120.00).
+--      Y LA MARCA de versión de c3 es la de esta vuelta (2026111402 o más).
+--      (Con el c3 de antes: reversado=t, con_una_hora=t, leidos=t, los dos
+--      cierres «cerrado» y marca=f.) Vale con c10 y sin él, con c15 y sin
+--      ella.
+do $$
+declare
+  v_dueno  uuid := nullif(current_setting('mx3.dueno', true), '')::uuid;
+  v_obra   text := nullif(current_setting('mx3.obra', true), '');
+  v_desde  date := nullif(current_setting('mx3.desde_dev', true), '')::date;
+  v_mes    text := nullif(current_setting('mx3.mes_dev', true), '');
+  v_mo     text := fn_puente_cuenta_de('mano_obra');
+  v_k      uuid := '00000000-0000-4000-a000-00000c300139';
+  v_k2     uuid := '00000000-0000-4000-a000-00000c30013a';
+  v_k3     uuid := '00000000-0000-4000-a000-00000c30013b';
+  v_n      int;
+  v_j      uuid;
+  v_r1     jsonb;
+  v_a      text;
+  v_b      text;
+  v_c      text;
+  v_d      text;
+  v_e      text;
+  v_f      text;
+  v_g      text;
+  v_h      text;
+  v_i      text;
+  v_obt    text;
+  v_esp    text;
+  v_nom    text := 'el devengo deshecho por un journal que no decía qué pagó vuelve a ser rojo cuando ese journal se reversa; con el devengo deshecho y los repartos de los jornales sin poder leerse no se supone nada; y la marca de versión de c3';
+begin
+  v_esp := format('journal: devengo=%s deshacer=reversado/no_aplica:nomina_en_el_mes/t reversado=f/deshecho:8h:240.00/journal '
+                  '| cerrar=MX008/dice_como/journal devengar=sustituido/240.00 | sin_leer: deshecho=reversado/no_aplica:sin_horas '
+                  'sin_horas_nuevas=t con_una_hora=f/deshecho/sin_leer | cerrar=MX008/dice_que_pegar leidos=f/deshecho:4h:120.00 | marca=t',
+                  pg_temp.c3_dev_accion(v_mes));
+  if v_dueno is null or v_obra is null or v_desde is null or v_mes is null then
+    insert into _pruebas values (139, v_nom, v_esp, pg_temp.c3_sin_mes_devengo('falta dueño, obra o mes abierto'), null);
+    return;
+  end if;
+  begin
+    -- Cuatro tramos; cada uno monta lo suyo. (En todos: si el mes trae horas de verdad por devengar, una nómina de
+    -- prueba las da antes por pagadas, y lo que sigue mide solo lo suyo.)
+    for v_n in 1 .. 4 loop
+      begin
+        perform pg_temp.c3_dv_abrir(v_n in (2, 4));
+        if coalesce((fn_puente_devengo_plan(v_mes)->>'total')::numeric, 0) <> 0 then
+          perform pg_temp.c3_paga_todo(v_mes, v_k2, v_desde + 12, 'C3-D39');
+        end if;
+        if v_n in (1, 2) then
+          -- El journal que no decía qué pagó (el del proveedor anterior, registrado a mano, como lo deja fn_banco_nomina
+          -- de c6): el devengo que convive con él se deshace; y después ese journal se reversa.
+          perform pg_temp.c3_jhora(-3511391, v_desde + 11, 8.0, 'C3-D39');
+          if v_n = 1 then
+            v_r1 := pg_temp.c3_devengar_dueno(v_mes);
+          else
+            perform fn_horas_devengar(v_mes);
+          end if;
+          v_j := (fn_postear_interno(jsonb_build_object(
+                    'camino', 'puente', 'fecha', to_char(v_desde + 14, 'YYYY-MM-DD'), 'origen_tabla', 'nomina_proveedor',
+                    'origen_id', 'c3-pruebas-139', 'descripcion', 'c3-pruebas: nómina de la semana (journal del proveedor, se deshace)',
+                    'lineas', jsonb_build_array(jsonb_build_object('cuenta', v_mo, 'monto', '240.00', 'proyecto_id', v_obra, 'co', 'C3-D39'),
+                                                jsonb_build_object('cuenta', current_setting('mx3.banco'), 'monto', '-240.00'))))->>'id')::uuid;
+          v_i := fn_horas_devengar(v_mes)->>'accion';
+          if v_n = 1 then
+            -- a) Mientras el journal siga, el control no lo nombra; reversado (como al des-casarlo en la Bandeja), sí.
+            v_a := v_i || '/' || pg_temp.c3_dev_papel(v_mes) || '/' || pg_temp.c3_ctl_devengo(v_mes);
+            perform fn_reversar_interno(v_j, 'c3-pruebas: el journal del proveedor estaba mal (se deshace)', 'reverso',
+                                        jsonb_build_object('funcion', 'c3-pruebas'));
+            v_b := pg_temp.c3_ctl_devengo(v_mes);
+          else
+            -- b) Con el journal reversado el mes no se cierra; devengar lo vuelve a poner.
+            perform fn_reversar_interno(v_j, 'c3-pruebas: el journal del proveedor estaba mal (se deshace)', 'reverso',
+                                        jsonb_build_object('funcion', 'c3-pruebas'));
+            v_c := pg_temp.c3_cerrar_prueba(v_mes);
+            v_d := pg_temp.c3_devengar_dueno(v_mes)->>'accion';
+            v_d := v_d || '/' || coalesce((select l.monto::text from asiento_lineas l
+                                            where l.asiento_id = pg_temp.c3_vivo('horas_devengo', v_mes) and l.cuenta = v_mo
+                                              and l.proyecto_id = v_obra and l.co = 'C3-D39'), '-');
+          end if;
+        else
+          -- Los repartos de los jornales, sin poder leerse (el corte de prueba), con el devengo deshecho por falta de horas.
+          v_i := pg_temp.c3_dv_deshecho(v_mes, v_desde, v_k, 'C3-D39', -3511392);
+          perform pg_temp.c3_corte_de_prueba();
+          perform set_config('mx3.jornales_sin_leer', 'si', true);
+          -- (Si el mes trae horas de verdad que pagó un JORNAL de verdad —un Zelle repartido dentro del mes—, con los
+          -- repartos sin poder leerse c3 ya no sabe que están pagadas y las cuenta entre «las aprobadas que ninguna
+          -- nómina pagó»: la nómina de prueba las da también por pagadas, y lo que sigue mide solo las horas de la prueba.)
+          if jsonb_array_length(coalesce(fn_puente_devengo_plan(v_mes)->'documento'->'horas', '[]'::jsonb)) > 0 then
+            perform pg_temp.c3_paga_todo(v_mes, v_k3, v_desde + 12, 'C3-D39');
+          end if;
+          if v_n = 3 then
+            -- c) Sin horas nuevas, nada que decir; con una hora aprobada después, no se puede comprobar.
+            v_e := v_i;
+            v_f := pg_temp.c3_ctl_devengo(v_mes);
+            perform pg_temp.c3_jhora(-3511393, v_desde + 19, 4.0, 'C3-D39');
+            v_g := pg_temp.c3_ctl_devengo(v_mes);
+          else
+            -- d) Así el mes no se cierra; en cuanto se dejan leer, el control dice lo de siempre.
+            perform pg_temp.c3_jhora(-3511393, v_desde + 19, 4.0, 'C3-D39');
+            v_h := pg_temp.c3_cerrar_prueba(v_mes);
+            perform set_config('mx3.jornales_sin_leer', 'no', true);
+            v_h := v_h || ' leidos=' || pg_temp.c3_ctl_devengo(v_mes);
+          end if;
+          perform set_config('mx3.jornales_sin_leer', 'no', true);
+        end if;
+        raise exception using errcode = 'MXT00';
+      exception
+        when sqlstate 'MXT00' then null;
+      end;
+    end loop;
+    v_obt := format('journal: devengo=%s deshacer=%s reversado=%s | cerrar=%s devengar=%s | sin_leer: deshecho=%s sin_horas_nuevas=%s '
+                    'con_una_hora=%s | cerrar=%s | marca=%s',
+                    v_r1->>'accion', v_a, v_b, v_c, v_d, v_e, v_f, v_g, v_h,
+                    coalesce((select case when substring(p.prosrc from '([0-9]{10})')::bigint >= 2026111402 then 't' else 'f' end
+                                from pg_proc p where p.oid = to_regprocedure('public.fn_puente_version()')), 'f'));
+  exception
+    when sqlstate 'MXT21' then v_obt := 'omitida: ' || sqlerrm;
+    when sqlstate 'MXT22' then v_obt := 'omitida: ' || sqlerrm;
+    when sqlstate '55P03' then v_obt := pg_temp.c3_sin_candado();
+    when others then v_obt := sqlstate || ' ' || left(sqlerrm, 90);
+  end;
+  insert into _pruebas values (139, v_nom, v_esp, coalesce(v_obt, '-'),
                                case when v_obt like 'omitida:%' then null else coalesce(v_obt = v_esp, false) end);
 end $$;
 

@@ -197,7 +197,10 @@
 --     fn_horas_devengar). Con la NÓMINA sigue como en la Fase 11b: si una
 --     nómina paga todo lo que el devengo llevaba, c15 lo deshace, y anular
 --     esa nómina no lo vuelve a poner (c15 solo mira el devengo vivo): se
---     devenga otra vez. El pago a una persona resuelto FUERA del jornal
+--     devenga otra vez. (Desde la segunda vuelta de este día, abajo, ninguna
+--     de las dos cosas queda callada: el control devengo lo dice, con la
+--     orden que lo resuelve, y el mes no se cierra así.) El pago a una
+--     persona resuelto FUERA del jornal
 --     (clasificado a mano en la Bandeja) no dice qué horas pagó: sus horas
 --     siguen en el devengo (c10 lo avisa con su control 70).
 --   · ▶ DECISIONES DEL CPA (aquí no se inventan; hoy va como se dice):
@@ -236,6 +239,81 @@
 --     sin horas y vuelve, y el trigger en «immediate», la 13; y la nómina a
 --     la vez que el devengo, las escenas 10 y 11 de
 --     pruebas/conta/c3-concurrencia.sh (en la 10 el devengo ya entra al día).
+--
+-- CAMBIO DEL 14-nov-2026, SEGUNDA VUELTA (la revisión final de la Fase 11c):
+-- EL DEVENGO QUE EL PUENTE DESHIZO Y QUE HOY VUELVE A TENER QUÉ DEVENGAR YA
+-- NO QUEDA CALLADO. Mínimo, y sin tocar un asiento ni un dato: cambian el
+-- control «devengo» y la guarda del cierre; ninguna función, tabla ni
+-- trigger nuevos; el trigger de los jornales hace lo mismo que antes (solo
+-- se corrigen sus comentarios). Volver a pegar este archivo no mueve nada.
+--   · QUÉ PASABA. El control «devengo» y la guarda del cierre solo miraban
+--     los devengos VIVOS. Un mes que Edgar devengó y cuyo devengo deshizo el
+--     propio puente (su papel queda «no_aplica»: porque una nómina o un
+--     jornal pagaron dentro del mes todo lo que llevaba, o se quedó sin
+--     horas aprobadas —sin_horas—; o porque convivía con un journal de
+--     nómina que no decía qué horas pagó —nomina_en_el_mes—) ya no tiene
+--     asiento vivo. Si después ese mes volvía a tener horas aprobadas y sin
+--     pagar, nadie lo decía: c3, c10, c15 y el cierre en verde, y el mes se
+--     podía CERRAR sin ese costo. Los caminos, probados en el banco:
+--       1. se aprueba más tarde otro reporte de horas de ese mes (a mano: no
+--          pasa por ningún trigger);
+--       2. la nómina que lo pagó todo se ANULA y no se vuelve a subir (c15
+--          solo pone al día el devengo VIVO del mes de su journal);
+--       3. el journal que no decía qué pagó se reversa (se des-casa en la
+--          Bandeja), o la nómina vuelve a decirlo (c15 pegada otra vez);
+--       4. el trigger de los jornales no pudo (un candado, el libro): su
+--          comentario decía «queda dicho en el control devengo», y para
+--          este estado no era cierto.
+--     Con un jornal que se deshace o se des-casa el devengo ya volvía solo
+--     (el trigger: la primera vuelta de este día).
+--   · QUÉ CAMBIA. (1) EL CONTROL «devengo» mira además cada mes ABIERTO,
+--     devengado alguna vez, SIN devengo vivo y con ese papel: si el plan de
+--     hoy es postear, lo dice en rojo, con cuántas horas, cuánto a estándar
+--     y la orden que lo resuelve: select fn_horas_devengar('AAAA-MM'); (lo
+--     vuelve a poner, como sustituto del que se deshizo). Con él sale la
+--     fila «puentes: devengo» del cierre (c9: 130 + su lugar entre los
+--     controles en rojo: la 131 si es el único), que detiene. (2) LA GUARDA
+--     DEL CIERRE (fn_puente_periodos_devengo) no deja cerrar un mes así
+--     (MX008, con la misma orden): cerrado ya no se devenga. Vale para
+--     fn_cerrar_periodo y para el SQL Editor. (3) Si en ese estado los
+--     repartos de los jornales NO SE DEJAN LEER y el mes tiene horas
+--     aprobadas que ninguna nómina pagó, tampoco se supone nada: no se
+--     puede comprobar, se dice y el mes no se cierra así (lo mismo que ya
+--     pasaba con un devengo vivo).
+--   · LO QUE NO SALTA (ni rojo ni freno): el mes que Edgar NUNCA devengó (el
+--     devengo es opcional y lo pide él: un mes así no se devenga solo); el
+--     devengo retirado a mano (su reverso puesto por dentro desde el SQL
+--     Editor: no deja ese papel; fue a propósito); el mes cuyo devengo se
+--     deshizo y que hoy sigue sin nada que devengar; el que hoy tiene un
+--     journal de nómina que no dice qué pagó (un mes así no se devenga); y
+--     un mes CERRADO (no se toca: ya no se puede devengar).
+--   · POR QUÉ SOLO AQUÍ, Y NO TAMBIÉN EN c15 (que fn_nomina_anular volviera
+--     a poner el devengo). La red hace falta de todos modos: unas horas
+--     aprobadas a mano no pasan por c15 ni por ningún trigger, y «aprobar
+--     horas a mano no devenga» no cambia. Con la red, la nómina anulada
+--     queda dicha por la misma regla, sin tocar c15 (ni su marca, ni sus
+--     pruebas, ni lo que c16 lee de ella). Y una nómina se anula casi
+--     siempre para volver a subirla corregida: puesto solo, el devengo
+--     entraría al anular y saldría otra vez al postear la buena (dos
+--     asientos de más cada vez). Devengar otra vez lo decide Edgar, con una
+--     orden; lo que ya no puede pasar es que nadie se lo diga ni que el mes
+--     se cierre así.
+--   · CUÁNTO CUESTA. Nada mientras no haya meses así (en producción, el
+--     14-nov, ninguno: no hay ningún devengo): una búsqueda por índice por
+--     cada mes abierto. Por cada mes así, un plan (lo mismo que cuesta un
+--     devengo vivo). Medido en el banco el 14-nov, con seis meses abiertos
+--     de 1.500 reportes aprobados cada uno, fn_puentes_verificar entero y
+--     como lo pide la app (medianas de cinco lecturas; antes → ahora): sin
+--     ningún devengo, 35 → 39 ms; los seis deshechos y sin nada que
+--     devengar, 45 → 78 ms; los seis deshechos y otra vez por devengar (lo
+--     que antes callaba), 49 → 215 ms, lo mismo que con seis devengos vivos
+--     (unos 200 ms). El tope de la API es de 8 s. La guarda, al cerrar un
+--     mes así, un plan más (unos 40 ms).
+--   · La marca de versión sube a 2026111402. Sus pruebas: de la 137 a la 139
+--     de c3-pruebas.sql (la 137, las horas aprobadas después, el control, la
+--     fila del cierre, el cierre y lo que no salta; la 138, la nómina
+--     anulada con la nómina DE VERDAD de c15, si está; la 139, el journal
+--     que no decía qué pagó, los repartos que no se dejan leer y la marca).
 --
 -- =====================================================================
 -- EL CONTRATO DE LOS PUENTES (lo siguen todos)
@@ -511,7 +589,13 @@
 --     que se deshizo por quedarse sin horas, vuelve). LA REGLA: solo se
 --     devenga lo trabajado, aprobado y no pagado al cierre del mes; lo
 --     pagado por cualquier camino dentro del mes sale del devengo de ese
---     mes.
+--     mes. Y EL MES QUE EDGAR DEVENGÓ NO SE QUEDA SIN SU DEVENGO EN SILENCIO
+--     (14-nov-2026, segunda vuelta): si el puente lo deshizo (no quedaba
+--     nada que devengar, o convivía con un journal que no decía qué pagó) y
+--     hoy el mes vuelve a tener horas aprobadas y sin pagar —se aprobaron
+--     después, la nómina que las pagó se anuló—, el control devengo lo dice
+--     y el mes no se cierra hasta devengarlo otra vez (fn_horas_devengar).
+--     El mes que Edgar nunca devengó no se devenga solo ni sale en rojo.
 -- 17. LA NOTA DE CRÉDITO SALDA LA FACTURA COMO ESTÁ HOY: lo que su partida
 --     debe en cada cuenta de cobrar (1110 y 1120, con su obra, también
 --     después de reclasificar la retención) y el espejo de su ingreso. Si
@@ -6813,7 +6897,9 @@ grant  execute on function public.fn_horas_aprobar(uuid, date, date, jsonb) to a
 -- El control devengo de fn_puentes_verificar compara cada devengo vivo con
 -- las horas aprobadas y sin pagar de hoy; dice si cuenta horas que una
 -- nómina o un jornal ya pagaron, y lo marca si convive con un journal que no
--- dice qué pagó.
+-- dice qué pagó. Y (14-nov-2026, segunda vuelta) dice también el mes abierto
+-- cuyo devengo deshizo el puente y que hoy vuelve a tener horas aprobadas y
+-- sin pagar: se devenga otra vez.
 
 -- EL CORTE DE LA NÓMINA (13-nov-2026, la Fase 11b). De unos reportes de
 -- horas (sus ids), cuáles tienen ya su PAGO REAL EN EL LIBRO con fecha hasta
@@ -7347,6 +7433,20 @@ grant  execute on function public.fn_horas_devengar(text) to authenticated;
 -- tendría que decir para siempre. Vale para fn_cerrar_periodo y para el SQL
 -- Editor (es un trigger de periodos, no de la función). Lee lo mismo que
 -- fn_horas_devengar.
+-- (14-nov-2026, segunda vuelta) Y UN MES TAMPOCO SE CIERRA SIN EL DEVENGO
+-- QUE EL PUENTE LE DESHIZO, SI HOY VUELVE A TENER QUÉ DEVENGAR. Antes, sin
+-- devengo vivo, esta guarda no miraba nada: el mes que Edgar devengó, cuyo
+-- devengo se deshizo (su papel quedó «no_aplica»: no quedaba nada que
+-- devengar, o convivía con un journal de nómina que no decía qué pagó) y
+-- que después volvió a tener horas aprobadas y sin pagar (se aprobaron más
+-- tarde; la nómina que las pagó se anuló y no se volvió a subir) se cerraba
+-- sin ese costo, y cerrado ya no se devenga. Ahora, MX008 con la orden que
+-- lo resuelve. Lo mismo que dice el control devengo (los mismos meses: con
+-- un devengo alguna vez, sin devengo vivo y con ese papel). Y si entonces
+-- los repartos de los jornales no se dejan leer y el mes tiene horas
+-- aprobadas que ninguna nómina pagó, no se supone nada: tampoco se cierra.
+-- El mes que Edgar nunca devengó, el devengo retirado a mano y el que sigue
+-- sin nada que devengar se cierran como siempre.
 create or replace function public.fn_puente_periodos_devengo()
 returns trigger
 language plpgsql
@@ -7355,6 +7455,8 @@ as $$
 declare
   v_vivo asientos;
   v_plan jsonb;
+  v_cod  text;
+  v_por  text;
 begin
   -- (La condición va aquí y no en el WHEN del trigger: un trigger que nombra
   -- columnas impide el ALTER TABLE … TYPE de esas columnas, y c2 lo usa
@@ -7364,6 +7466,37 @@ begin
   end if;
   v_vivo := fn_puente_vivo('horas_devengo', new.periodo);
   if v_vivo.id is null then
+    -- (14-nov-2026, segunda vuelta) Sin devengo vivo: ¿lo deshizo el puente
+    -- (su papel, «no_aplica») después de que Edgar devengara el mes? Entonces
+    -- el mes no se cierra si hoy vuelve a tener qué devengar. Ver arriba.
+    select d.codigo into v_cod
+      from puente_documentos d
+     where d.tabla = 'horas_devengo' and d.documento_id = new.periodo and d.estado = 'no_aplica';
+    if found and exists (select 1 from asientos a
+                          where a.origen_tabla = 'horas_devengo' and a.origen_id = new.periodo
+                            and a.camino not in ('reverso', 'reverso_automatico')) then
+      v_plan := fn_puente_devengo_plan(new.periodo);
+      v_por  := case v_cod when 'sin_horas' then 'no quedaba nada que devengar'
+                           when 'nomina_en_el_mes' then 'convivía con un journal de nómina que no decía qué horas pagó'
+                           else format('ya no se contabilizaba (%s)', coalesce(v_cod, 'sin código')) end;
+      if v_plan->>'accion' = 'postear' then
+        raise exception using errcode = 'MX008',
+          message = format('El mes %s no se cierra así: su devengo estándar se deshizo porque %s, y el mes tiene %s h aprobadas '
+                           'y sin pagar al terminar el mes (%s a estándar) y ningún devengo; cerrado ya no se devenga. Devéngalo antes: select '
+                           'fn_horas_devengar(%L); y ciérralo después.', new.periodo, v_por,
+                           (select trim_scale(coalesce(sum((e->>'horas')::numeric), 0))
+                              from jsonb_array_elements(v_plan->'documento'->'horas') e),
+                           v_plan->>'total', new.periodo);
+      end if;
+      if v_plan->>'codigo' = 'jornales_sin_leer' and jsonb_array_length(v_plan->'documento'->'horas') > 0 then
+        raise exception using errcode = 'MX008',
+          message = format('El mes %s no se cierra así: su devengo estándar se deshizo porque %s, y hoy no se puede comprobar si '
+                           'vuelve a tener horas por devengar: no se pudo leer qué horas pagaron ya los jornales (%s), y cerrado '
+                           'ya no se devenga. Vuelve a pegar c10-costo-obra.sql y c3-puentes.sql, devéngalo si hace falta (select '
+                           'fn_horas_devengar(%L);) y ciérralo después.',
+                           new.periodo, v_por, coalesce(v_plan->'corte'->'jornales'->>'error', 'sin detalle'), new.periodo);
+      end if;
+    end if;
     return new;
   end if;
   v_plan := fn_puente_devengo_plan(new.periodo);
@@ -7437,17 +7570,29 @@ create or replace trigger trg_puente_periodos_devengo
 --     haber horas sin pagar y el devengo VUELVE solo, como sustituto del que
 --     se deshizo. Antes (la primera vuelta de esta fase) solo se miraba el
 --     devengo vivo: el mes se quedaba sin su devengo, con horas aprobadas y
---     sin pagar, y nada lo decía (el control solo compara devengos vivos).
---     Solo vuelve el que deshizo el propio puente por falta de horas: uno
---     retirado a mano (su reverso puesto por dentro, desde el SQL Editor;
---     desde la app c2 no deja reversar el asiento de un puente) no deja ese
---     papel y no vuelve solo; y el que se deshizo por un journal de nómina
---     que no dice qué pagó, tampoco (fn_horas_devengar se niega).
+--     sin pagar, y nada lo decía (el control solo comparaba devengos vivos).
+--     Por sí solo vuelve únicamente el que deshizo el propio puente por
+--     falta de horas: uno retirado a mano (su reverso puesto por dentro,
+--     desde el SQL Editor; desde la app c2 no deja reversar el asiento de
+--     un puente) no deja ese papel y no vuelve solo; y el que se deshizo por
+--     un journal de nómina que no dice qué pagó, tampoco (fn_horas_devengar
+--     se niega).
+--     Aquí solo se pone al día por un JORNAL: lo que deja horas sin pagar
+--     por otro camino (unas horas aprobadas a mano más tarde, una nómina
+--     anulada, el journal que no decía qué pagó ya reversado) no pasa por
+--     este trigger. Para eso está la red (14-nov-2026, segunda vuelta): el
+--     control devengo dice el mes abierto cuyo devengo deshizo el puente y
+--     que hoy vuelve a tener qué devengar, y el cierre no lo deja cerrar.
 --   · NO TUMBA EL PAGO. Si el devengo no se puede poner al día (el libro lo
---     rechaza, una cuenta inactiva…), el jornal entra igual y queda dicho
---     donde se mira: el control devengo en rojo, con cuántas horas, qué
---     asiento las pagó y qué hacer (select fn_horas_devengar('AAAA-MM');), y
---     el mes no se cierra así.
+--     rechaza, una cuenta inactiva, un candado ocupado…), el jornal entra
+--     igual y queda dicho donde se mira, en el control devengo, en rojo y
+--     con qué hacer (select fn_horas_devengar('AAAA-MM');), y el mes no se
+--     cierra así: si el devengo vivo se quedó contando horas que el jornal
+--     pagó, cuántas y qué asiento las pagó; y si el que no pudo volver es
+--     el que se había deshecho (un «Deshacer» o un des-casado que deja
+--     horas sin pagar), que el mes tiene horas aprobadas y sin pagar y
+--     ningún devengo. (Esto último, desde la segunda vuelta del 14-nov-2026:
+--     antes el control solo miraba los devengos vivos, y ese mes no salía.)
 --   · SIN PERMISOS DE MÁS (no es SECURITY DEFINER, a diferencia de los
 --     puentes de los papeles: no hace falta). Corre con la sesión que
 --     confirma, y un jornal solo lo aplica, lo deshace o lo des-casa el
@@ -7542,7 +7687,12 @@ begin
         begin
           perform public.fn_horas_devengar(v_mes);
         exception when others then
-          null;   -- (queda dicho en el control devengo, con qué hacer)
+          -- (Queda dicho en el control devengo, con qué hacer: el devengo
+          -- vivo que no se puso al día y, desde la segunda vuelta del
+          -- 14-nov-2026, el que se había deshecho y no pudo volver —antes
+          -- ese no salía: el control solo miraba los vivos—. Si es que no
+          -- hay nada que devengar —MX008—, no hay nada que decir.)
+          null;
         end;
       end loop;
     end if;
@@ -8050,7 +8200,12 @@ grant  execute on function public.fn_puentes_antes_del_corte(text, bigint, text)
 --                fn_horas_devengar lo pone al día o lo deshace); los
 --                repartos de los jornales, si están, se dejan leer; y
 --                ningún mes CERRADO con ese doble dentro sin el asiento
---                que lo corrige (que lo nombra en su motivo)
+--                que lo corrige (que lo nombra en su motivo). Y ningún mes
+--                ABIERTO cuyo devengo deshizo el puente (no quedaba nada
+--                que devengar, o convivía con un journal que no decía qué
+--                pagó) tiene hoy horas aprobadas y sin pagar y ningún
+--                devengo (14-nov-2026, segunda vuelta: se devenga otra
+--                vez). El mes que Edgar nunca devengó no cuenta
 --   duplicados   ningún recibo dos veces en el libro: la misma foto en la
 --                misma obra o por el mismo total (un ticket repartido entre
 --                obras no cuenta), o el
@@ -8600,6 +8755,65 @@ begin
                                         select i.v, 'j'
                                           from jsonb_array_elements_text(coalesce(v.plan->'corte'->'jornales'->'ids', '[]'::jsonb)) i(v)) k
                                     on k.id = d.id) db) x;
+  -- (14-nov-2026, la segunda vuelta de la Fase 11c) EL DEVENGO QUE EL PUENTE
+  -- DESHIZO Y QUE HOY VUELVE A TENER QUÉ DEVENGAR. Lo de arriba solo mira los
+  -- devengos VIVOS. Un mes abierto que Edgar devengó y cuyo devengo deshizo
+  -- el propio puente ya no tiene asiento vivo; su papel dice por qué:
+  -- «no_aplica: sin_horas» (una nómina o un jornal pagaron dentro del mes
+  -- todo lo que llevaba, o se quedó sin horas aprobadas) o «no_aplica:
+  -- nomina_en_el_mes» (convivía con un journal de nómina que no decía qué
+  -- horas pagó). Si después ese mes vuelve a tener horas aprobadas y sin
+  -- pagar —se aprobó más tarde otro reporte; la nómina que lo pagó todo se
+  -- anuló y no se volvió a subir; el journal que no decía qué pagó se
+  -- reversó; o el trigger de los jornales no pudo—, nadie lo decía y el mes
+  -- se cerraba sin ese costo. Con un jornal que se deshace vuelve solo (el
+  -- trigger); esto es la red para lo demás: se dice, con cuántas horas,
+  -- cuánto a estándar y la orden que lo resuelve (fn_horas_devengar lo
+  -- vuelve a poner, como sustituto del que se deshizo).
+  --   · QUÉ MESES: abiertos, con un devengo alguna vez (un asiento suyo que
+  --     no es un reverso), sin devengo vivo y con ese papel. El mes que
+  --     Edgar NUNCA devengó no tiene nada de eso: no sale (el devengo es
+  --     opcional y lo pide él). El retirado a mano (su reverso puesto por
+  --     dentro) no deja ese papel: tampoco (fue a propósito). Un mes CERRADO
+  --     no se toca (ya no se puede devengar).
+  --   · QUÉ SE DICE: si el plan de hoy es postear, que se devengue otra vez.
+  --     Si los repartos de los jornales no se dejan leer y el mes tiene
+  --     horas aprobadas que ninguna nómina pagó, que no se puede comprobar
+  --     (no se supone nada; como con un devengo vivo). Si hoy sigue sin nada
+  --     que devengar, o el mes tiene un journal de nómina que no dice qué
+  --     pagó (un mes así no se devenga), nada.
+  --   · EL PLAN SE CALCULA UNA VEZ POR MES («offset 0»: la subconsulta no se
+  --     funde con lo de fuera), y solo de esos meses, que son pocos (los
+  --     demás meses abiertos cuestan una búsqueda por índice). La guarda del
+  --     cierre (fn_puente_periodos_devengo) mira lo mismo.
+  select v_malos || coalesce(jsonb_agg(
+           case when s.plan->>'accion' = 'postear'
+                then format('el devengo de %s se deshizo porque %s, y ese mes tiene %s h aprobadas y sin pagar al terminar el mes (%s a '
+                            'estándar) y ningún devengo: select fn_horas_devengar(''%s''); lo vuelve a poner. El mes no se '
+                            'cierra así.', s.periodo, s.por,
+                            (select trim_scale(coalesce(sum((e->>'horas')::numeric), 0))
+                               from jsonb_array_elements(s.plan->'documento'->'horas') e),
+                            s.plan->>'total', s.periodo)
+                else format('el devengo de %s se deshizo porque %s, y hoy no se puede comprobar si ese mes vuelve a tener horas '
+                            'por devengar: no se pudo leer qué horas pagaron ya los jornales, los pagos repartidos por horas (%s). '
+                            'Vuelve a pegar c10-costo-obra.sql y c3-puentes.sql; si sigue igual, avisa. El mes no se cierra así.',
+                            s.periodo, s.por, coalesce(s.plan->'corte'->'jornales'->>'error', 'sin detalle')) end
+           order by s.periodo), '[]'::jsonb)
+    into v_malos
+    from (select p.periodo, fn_puente_devengo_plan(p.periodo) as plan,
+                 case d.codigo when 'sin_horas' then 'no quedaba nada que devengar'
+                               when 'nomina_en_el_mes' then 'convivía con un journal de nómina que no decía qué horas pagó'
+                               else format('ya no se contabilizaba (%s)', coalesce(d.codigo, 'sin código')) end as por
+            from periodos p
+            join puente_documentos d on d.tabla = 'horas_devengo' and d.documento_id = p.periodo and d.estado = 'no_aplica'
+           where p.tipo = 'mes' and p.estado = 'abierto'
+             and (fn_puente_vivo('horas_devengo', p.periodo)).id is null
+             and exists (select 1 from asientos a
+                          where a.origen_tabla = 'horas_devengo' and a.origen_id = p.periodo
+                            and a.camino not in ('reverso', 'reverso_automatico'))
+           offset 0) s
+   where s.plan->>'accion' = 'postear'
+      or (s.plan->>'codigo' = 'jornales_sin_leer' and jsonb_array_length(s.plan->'documento'->'horas') > 0);
   control := 'devengo';
   ok      := jsonb_array_length(v_malos) = 0;
   detalle := jsonb_build_object('fallan', v_malos, 'cerrados_con_horas_cambiadas', v_mas);
@@ -8872,12 +9086,16 @@ comment on function public.fn_externo_anular(bigint, text)    is 'Anula un traba
 -- pone al día solo al repartir, deshacer o des-casar un jornal. c10 puede
 -- mirarla para saber qué decir antes de repartir un pago en un mes
 -- devengado.)
+-- (2026111402, la segunda vuelta del 14-nov: el control devengo y la guarda
+-- del cierre dicen también el mes abierto cuyo devengo deshizo el puente y
+-- que hoy vuelve a tener horas aprobadas y sin pagar. Quien pide «al menos
+-- 2026111401» sigue servido.)
 create or replace function public.fn_puente_version()
 returns bigint
 language sql
 immutable
 set search_path = public, pg_temp
-as $$ select 2026111401::bigint $$;
+as $$ select 2026111402::bigint $$;
 revoke execute on function public.fn_puente_version() from public, anon, authenticated, service_role;
 
 
