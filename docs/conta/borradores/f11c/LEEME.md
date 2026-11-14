@@ -39,8 +39,10 @@ esperando.
   - `c16-tablero-prototipo-opus.sql` (marca 2026111401);
   - `f16-semilla-nomina-prototipo-opus.sql`;
   - la pantalla (la tarjeta de Nómina, la acción rápida, «Qué atender» y
-    la proyección), que solo está en la copia de trabajo, no en el parche.
-    Su informe está en `informe-pantalla.json`.
+    la proyección), que sí va en el parche: `js/conta.js`, `css/conta.css`,
+    `pruebas/conta/pantalla.js` y `f16-capturar.js`. Las bases simuladas
+    (`pantalla-f12/f15/f16.json`) no van en el parche: se vuelven a
+    capturar. Su informe está en `informe-pantalla.json`.
 
   La base de c16 toca la seguridad de la nómina, así que la tiene que
   hacer o revisar Fable antes de nada.
