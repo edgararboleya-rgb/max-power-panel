@@ -1,4 +1,4 @@
-# Lo que hay que pegar (13-nov, noche · v305)
+# Lo que hay que pegar (14-nov · v306)
 
 **Una sola lista con todo lo pendiente.** Sustituye a la del 12-nov y a la
 primera versión de esta. Trae la cédula (c13), los subs y el 1099 (c14), la
