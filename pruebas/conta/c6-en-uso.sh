@@ -154,9 +154,11 @@ for s in c3 c6; do
     "$(sed -n 's/^PRUEBAS .* fallan=\([0-9]*\) .*/\1/p' "$TMP/$s-nov.out")"
 done
 # Las del devengo, omitidas por el tope de fecha (el primer mes sin journal
-# es diciembre, y su último día pasa del tope de c2); las de amortizar
-# octubre, omitidas por noviembre ya amortizado.
-revisa "c3-pruebas: las del devengo salen «omitida» por el tope de fecha" "28,57,67,74,77,99,120,121,122,123,124,125" \
+# es diciembre, y su último día pasa del tope de c2; desde el 14-nov-2026,
+# la Fase 11c, también las del corte de los jornales —de la 127 a la 133— y
+# la 135, que devengan ese mismo mes); las de amortizar octubre, omitidas
+# por noviembre ya amortizado.
+revisa "c3-pruebas: las del devengo salen «omitida» por el tope de fecha" "28,57,67,74,77,99,120,121,122,123,124,125,127,128,129,130,131,132,133,135" \
   "$(grep -E '^[0-9]+\|omitida\|.*tope de fecha' "$TMP/c3-nov.out" | cut -d'|' -f1 | paste -sd, -)"
 revisa "c6-pruebas: las que amortizan octubre salen «omitida» (noviembre ya amortizado)" "22,46,88" \
   "$(grep -E '^[0-9]+\|omitida\|.*ya está amortizado' "$TMP/c6-nov.out" | cut -d'|' -f1 | paste -sd, -)"

@@ -1,11 +1,11 @@
 -- =====================================================================
 -- c15-pruebas.sql — LA NÓMINA se prueba a sí misma (c15-nomina.sql).
--- 13-nov-2026.
+-- 13-nov-2026 (14-nov: la Fase 11c, la 67 y la 68).
 --
 -- CÓMO SE CORRE. En el SQL Editor de Supabase: DESPUÉS de c15-nomina.sql (y,
 -- si el c9-cierre.sql que tienes nombra las filas 180 a 183 en su cabecera,
 -- después de volver a pegarlo), pegar este archivo entero → Run. Sale la
--- tabla _pruebas: 66 filas, todas con ok = true (las que salen «omitida»
+-- tabla _pruebas: 68 filas, todas con ok = true (las que salen «omitida»
 -- dicen por qué y no son un fallo; una fila 99 solo sale si algo de este
 -- archivo falló). Si el editor se cansa antes del final, la corrida sigue en
 -- el servidor y se lee después en pruebas.c15_resultado (ver el final).
@@ -19,8 +19,9 @@
 -- asientos, ni las obras, las personas y las horas de prueba, ni un
 -- movimiento del banco, ni la revisión del cierre que c9 guarda, ni el
 -- reloj); la 51 lo comprueba, y la 52 otra vez al final de todo. (La 53 a
--- la 66, las de la revisión de la Fase 11b, van ANTES de la 50: el número
--- dice cuándo se escribió, no dónde corre.)
+-- la 66, las de la revisión de la Fase 11b, y la 67 y la 68, las de la
+-- Fase 11c, van ANTES de la 50: el número dice cuándo se escribió, no dónde
+-- corre.)
 --
 -- VALEN CON DATOS REALES, SIN SUPONER NADA DE PRODUCCIÓN. Lo que siembran es
 -- suyo y se deshace:
@@ -223,6 +224,23 @@
 -- columna que el mapeo no conoce ahora además descuadra el costo total del
 -- patrón, sus archivos de prueba traen lo patronal, y la 180 no trae
 -- importes).
+-- LA FASE 11c (14-nov: «GUSTO» como palabra entera, también en los cargos;
+-- las dos fallan con el c15 de antes y pasan con el de hoy; piden el c6 del
+-- 14-nov, con fn_banco_dice_nomina):
+-- 67 LA TABLA: las descripciones que SÍ son de Gusto (con su concepto, con
+--    «DES:» e «ID:», como «ORIG CO NAME:» de Chase, pegadas por un guion o
+--    una barra; ZENPAYROLL, PAYROLL, ADP, PAYCHEX; y dos devoluciones) y
+--    las que NO (AUGUSTO, AUGUSTOS, DEGUSTOS, AGOSTO, PAYROLLS; y el Zelle
+--    de un cliente Augusto), recién llegadas del banco —sin su propuesta,
+--    cuando decide esta capa— y después de su «Casar»: salen en los cargos
+--    de Gusto las que son y ninguna de las que no; la nómina dice de cada
+--    cargo lo mismo que la Bandeja; y el aviso 35 y la fila 180 del cierre
+--    cuentan solo las de Gusto;
+-- 68 EL ZELLE A UN AUGUSTO en las demás puertas: ni se le ofrece «es la
+--    cuota mensual» ni se deja decir sin nota; sale entre los candidatos
+--    «por fuera de Gusto» (el neto de quien cobró fuera); no se casa sin su
+--    nota y, con ella, queda «por fuera de Gusto»; y sin la función del
+--    banco (un c6 anterior) la capa no se pega y dice qué volver a pegar.
 -- Y el cierre de la suite:
 -- 50 con una nómina posteada, sus cargos casados, la cuota, un bono anulado,
 --    una declaración y un lote, NINGÚN control de c2, c3, c4, c6, c8, c9,
@@ -5243,6 +5261,195 @@ begin
     when others then v_obt := coalesce(v_obt || ' | ', '') || 'error ' || sqlstate || ': ' || sqlerrm;
   end;
   insert into _pruebas values (66, 'una devolución de Gusto es la que el banco toma por tal: el depósito que nombra a Gusto como palabra entera (GUSTO REFUND) sale en los cargos de Gusto de la nómina, y el Zelle de un cliente que se llama Augusto (el descriptor dentro de otra palabra) no; el aviso de los cargos sin casar y la fila 180 del cierre —que detiene— cuentan solo el de Gusto',
+    v_esp, v_obt, v_obt is not distinct from v_esp);
+end $$;
+
+-- =====================================================================
+-- LA FASE 11c (14-nov): «GUSTO» COMO PALABRA ENTERA, TAMBIÉN EN LOS CARGOS.
+-- En un débito la capa buscaba el descriptor de nómina de c6 en cualquier
+-- parte de la descripción (también dentro de otra palabra: «AUGUSTO»); ahora
+-- pregunta al banco, fn_banco_dice_nomina (el descriptor como palabra
+-- entera), en sus cinco funciones. La 67 y la 68 van aquí, antes del cierre
+-- de la suite: la 51 y la 52 comprueban que tampoco estas dejan nada.
+-- =====================================================================
+-- 67. LA TABLA. Diez cargos que SÍ son de Gusto como los escribe el banco
+--     (con su concepto —NET, TAX, REM, CSD, FEE—, con «DES:» e «ID:», como
+--     el «ORIG CO NAME:» de Chase, pegados a otro texto por un guion o una
+--     barra; ZENPAYROLL —el nombre viejo de Gusto—, PAYROLL, ADP y
+--     PAYCHEX) y seis que NO (AUGUSTO, AUGUSTOS, DEGUSTOS, AGOSTO y
+--     PAYROLLS: el descriptor dentro de otra palabra, u otra palabra); y
+--     tres depósitos (dos devoluciones de Gusto y el Zelle de un cliente
+--     que se llama Augusto). Todo inventado. (1) RECIÉN LLEGADOS DEL BANCO,
+--     sin su propuesta todavía —es cuando decide esta capa—: en los cargos
+--     de Gusto de la nómina salen los que son y ninguno de los que no
+--     (antes salían cinco de los seis). (2) DESPUÉS DEL «CASAR» DEL BANCO:
+--     lo mismo, y de cada cargo la nómina dice lo que la Bandeja (motivo
+--     «nomina» = en la lista). (3) El aviso de los cargos sin casar y la
+--     fila 180 del cierre —que detiene— cuentan solo los de Gusto.
+do $$
+declare
+  v_obt text; v_m text := pg_temp.c15('mes'); v_antes int; v_despues int; v_35 text; r record;
+  v_a int; v_b int; v_c int; v_d int; v_e int; v_f int; v_n int; v_mal text;
+  v_nom text := '«GUSTO» como palabra entera, también en los cargos: la tabla de los que son de Gusto y los que no';
+  v_esp text := 'recién llegados del banco, sin su propuesta todavía (19 de 19): en los cargos de Gusto salen 12 de los 12 que son y 0 de los 7 '
+                'que no | después del «Casar» del banco: 12 de 12 y 0 de 7 | de cada cargo, la nómina dice lo que la Bandeja: 16 de 16 | el '
+                'aviso 35 nombra uno de Gusto: sí, y el Zelle a un Augusto: no | la fila 180 del cierre cuenta 12 más (solo los de Gusto)';
+  -- (k: su clave; si: ¿es de Gusto?; x: lo que sale del banco —en negativo, un depósito—; n: como lo escribe el banco)
+  v_t   jsonb := jsonb_build_array(
+    jsonb_build_object('k', 's01', 'si', true,  'x', '711.37', 'n', 'GUSTO DES:NET 123456 ID:ZZ6SEMK1 INDN:C15 PRUEBA CO ID:ZZ00000001 CCD'),
+    jsonb_build_object('k', 's02', 'si', true,  'x', '712.37', 'n', 'GUSTO TAX 654321 C15 PRUEBA'),
+    jsonb_build_object('k', 's03', 'si', true,  'x', '713.37', 'n', 'ZENPAYROLL FEE C15 PRUEBA'),
+    jsonb_build_object('k', 's04', 'si', true,  'x', '714.37', 'n', 'GUSTO-NET C15 PRUEBA'),
+    jsonb_build_object('k', 's05', 'si', true,  'x', '715.37', 'n', 'GUSTO/REM 7c15t67 C15 PRUEBA'),
+    jsonb_build_object('k', 's06', 'si', true,  'x', '716.37', 'n', 'ACH DEBIT GUSTO PAYROLL C15 PRUEBA'),
+    jsonb_build_object('k', 's07', 'si', true,  'x', '717.37', 'n', 'PAYROLL ZZ C15 PRUEBA'),
+    jsonb_build_object('k', 's08', 'si', true,  'x', '718.37', 'n', 'ADP WAGE PAY C15 PRUEBA'),
+    jsonb_build_object('k', 's09', 'si', true,  'x', '719.37', 'n', 'PAYCHEX-TPS C15 PRUEBA'),
+    jsonb_build_object('k', 's10', 'si', true,  'x', '720.37', 'n', 'ORIG CO NAME:GUSTO ORIG ID:ZZ00000001 CO ENTRY DESCR:CSD 123456SEC:CCD IND NAME:C15 PRUEBA'),
+    jsonb_build_object('k', 'n01', 'si', false, 'x', '721.37', 'n', 'ZELLE PAYMENT TO AUGUSTO ZZ C15 PRUEBA'),
+    jsonb_build_object('k', 'n02', 'si', false, 'x', '722.37', 'n', 'DEGUSTOS ZZ C15 PRUEBA'),
+    jsonb_build_object('k', 'n03', 'si', false, 'x', '723.37', 'n', 'AGOSTO ZZ C15 PRUEBA'),
+    jsonb_build_object('k', 'n04', 'si', false, 'x', '724.37', 'n', 'ZZ PAYROLLS C15 PRUEBA'),
+    jsonb_build_object('k', 'n05', 'si', false, 'x', '725.37', 'n', 'ZELLE TO AUGUSTO ZZ C15 PRUEBA 0725'),
+    jsonb_build_object('k', 'n06', 'si', false, 'x', '726.37', 'n', 'AUGUSTOS ZZ C15 PRUEBA'),
+    jsonb_build_object('k', 's11', 'si', true,  'x', '-27.37', 'n', 'GUSTO REFUND 7c15t67 C15 PRUEBA'),
+    jsonb_build_object('k', 's12', 'si', true,  'x', '-28.37', 'n', 'ZENPAYROLL REFUND 7c15t67 C15 PRUEBA'),
+    jsonb_build_object('k', 'n07', 'si', false, 'x', '-311.37', 'n', 'ZELLE PAYMENT FROM AUGUSTO ZZ C15 PRUEBA 0311'));
+begin
+  if pg_temp.c15_omitir(67, v_nom, v_esp, true) then return; end if;
+  begin
+    select coalesce(substring(k.detalle from '^([0-9]+) cargo')::int, 0) into v_antes from fn_nomina_cierre(v_m) k where k.orden = 180;
+    -- (del banco, como los trae Plaid, en un solo lote; SIN «Casar»: la Bandeja todavía no los ha propuesto)
+    perform pg_temp.c15_ser('dueno');
+    perform fn_banco_importar_filas(jsonb_build_object(
+      'origen', 'plaid', 'cuenta', pg_temp.c15('banco'), 'nombre', 'Plaid · c15-pruebas · t67',
+      'filas', (select jsonb_agg(jsonb_build_object('id', 'c15-t67-' || (x.t->>'k'), 'fecha', pg_temp.c15_d(15)::text, 'plaid_monto', x.t->>'x',
+                                                    'descripcion', x.t->>'n',
+                                                    'tipo', case when (x.t->>'x')::numeric >= 0 then 'DEBIT' else 'CREDIT' end,
+                                                    'pendiente', false) order by x.o)
+                  from jsonb_array_elements(v_t) with ordinality as x(t, o))));
+    perform pg_temp.c15_ser('editor');
+    select count(*) filter (where m.estado = 'pendiente' and m.estado_motivo is null), count(*),
+           count(*) filter (where t.si and g.movimiento_id is not null), count(*) filter (where t.si),
+           count(*) filter (where not t.si and g.movimiento_id is not null), count(*) filter (where not t.si),
+           string_agg('«' || t.n || '»', ', ' order by t.k) filter (where t.si is distinct from (g.movimiento_id is not null))
+      into v_n, v_a, v_b, v_c, v_d, v_e, v_mal
+      from jsonb_to_recordset(v_t) as t(k text, si boolean, x text, n text)
+      join movimientos_banco m on m.id_externo = 'c15-t67-' || t.k
+      left join fn_nomina_cargos() g on g.movimiento_id = m.id and g.estado = 'pendiente';
+    v_obt := format('recién llegados del banco, sin su propuesta todavía (%s de %s): en los cargos de Gusto salen %s de los %s que son y %s de los %s que no%s',
+                    v_n, v_a, v_b, v_c, v_d, v_e, coalesce(' (no salen como deben: ' || v_mal || ')', ''));
+    -- (y el «Casar» del banco, uno por uno: su propuesta)
+    perform pg_temp.c15_ser('dueno');
+    for r in select m.id from movimientos_banco m where m.id_externo like 'c15-t67-%' order by m.id_externo loop
+      perform fn_banco_casar(r.id);
+    end loop;
+    perform pg_temp.c15_ser('editor');
+    select count(*) filter (where t.si and g.movimiento_id is not null), count(*) filter (where t.si),
+           count(*) filter (where not t.si and g.movimiento_id is not null), count(*) filter (where not t.si),
+           count(*) filter (where m.monto < 0 and (m.estado_motivo is not distinct from 'nomina') = (g.movimiento_id is not null)),
+           count(*) filter (where m.monto < 0),
+           string_agg('«' || t.n || '» (la Bandeja: ' || coalesce(m.estado_motivo, 'sin propuesta') || ')', ', ' order by t.k)
+             filter (where t.si is distinct from (g.movimiento_id is not null))
+      into v_b, v_c, v_d, v_e, v_f, v_n, v_mal
+      from jsonb_to_recordset(v_t) as t(k text, si boolean, x text, n text)
+      join movimientos_banco m on m.id_externo = 'c15-t67-' || t.k
+      left join fn_nomina_cargos() g on g.movimiento_id = m.id and g.estado = 'pendiente';
+    v_obt := v_obt || format(' | después del «Casar» del banco: %s de %s y %s de %s%s | de cada cargo, la nómina dice lo que la Bandeja: %s de %s',
+                             v_b, v_c, v_d, v_e, coalesce(' (no salen como deben: ' || v_mal || ')', ''), v_f, v_n);
+    v_35 := pg_temp.c15_ctl_det(35);
+    v_obt := v_obt || format(' | el aviso 35 nombra uno de Gusto: %s, y el Zelle a un Augusto: %s',
+                             case when pg_temp.c15_nombra(v_35, '%ZENPAYROLL FEE C15 PRUEBA%') then 'sí' else 'no' end,
+                             case when v_35 like '%AUGUSTO ZZ C15 PRUEBA%' then 'sí' else 'no' end);
+    select coalesce(substring(k.detalle from '^([0-9]+) cargo')::int, 0) into v_despues from fn_nomina_cierre(v_m) k where k.orden = 180;
+    v_obt := v_obt || format(' | la fila 180 del cierre cuenta %s más (solo los de Gusto)', v_despues - v_antes);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := coalesce(v_obt || ' | ', '') || 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (67, '«GUSTO» como palabra entera, también en los cargos (la Fase 11c): de diez cargos que son de Gusto como los escribe el banco (con su concepto, con «DES:» e «ID:», como «ORIG CO NAME:» de Chase, pegados por un guion o una barra; ZENPAYROLL, PAYROLL, ADP, PAYCHEX), seis que no lo son (AUGUSTO, AUGUSTOS, DEGUSTOS, AGOSTO, PAYROLLS) y tres depósitos (dos devoluciones de Gusto y el Zelle de un cliente Augusto), en los cargos de Gusto de la nómina salen los que son y ninguno de los que no, recién llegados del banco y después de su «Casar»; de cada cargo la nómina dice lo mismo que la Bandeja; y el aviso de los cargos sin casar y la fila 180 del cierre —que detiene— cuentan solo los de Gusto',
+    v_esp, v_obt, v_obt is not distinct from v_esp);
+end $$;
+
+-- 68. EL ZELLE A UN AUGUSTO, EN LAS DEMÁS PUERTAS. Con el neto de una persona
+--     pagado por fuera de Gusto (en el journal, «Check») y un Zelle a
+--     alguien que se llama Augusto por ese importe, y otro por 49.00: (1) no
+--     son cargos de Gusto; (2) al de 49.00 ya no se le ofrece «es la cuota
+--     mensual», ni se deja decir sin nota (antes entraba como la cuota de
+--     Gusto, a su gasto); (3) el del neto sale entre los candidatos «por
+--     fuera de Gusto» (antes no: «lo nombraba el banco»); (4) no se casa sin
+--     su nota (antes sí, como si fuera de Gusto) y, con ella, queda «por
+--     fuera de Gusto»; (5) la fila 180 del cierre no los cuenta; y (6) sin
+--     la función del banco que lo decide (un c6 anterior al 14-nov) la capa
+--     no se pega: su precondición dice qué volver a pegar.
+do $$
+declare
+  v_obt text; v_c uuid; r jsonb; m1 uuid; m2 uuid; v_p jsonb; a1 text; v_m text := pg_temp.c15('mes'); v_antes int; v_despues int; v_x text;
+  v_nom text := 'el Zelle a un Augusto no es un cargo de Gusto en ninguna puerta de la nómina';
+  v_esp text := 'el Zelle a un Augusto, en los cargos de Gusto: 0 | se le ofrece «es la cuota mensual»: no | decir que es la cuota, sin nota: MX008, '
+                'porque el banco no lo nombra como de Gusto: sí | candidatos por fuera de Gusto: cheque 1193.07 | casarlo sin su nota: no se casó '
+                '(22023); con su nota: 1010 -1193.07 · 2210 1193.07 (por fuera de Gusto: sí) | la fila 180 del cierre los cuenta: 0 | sin la '
+                'función del banco (un c6 anterior), la capa no se pega y dice qué volver a pegar: sí';
+begin
+  if pg_temp.c15_omitir(68, v_nom, v_esp, true) then return; end if;
+  begin
+    select coalesce(substring(k.detalle from '^([0-9]+) cargo')::int, 0) into v_antes from fn_nomina_cierre(v_m) k where k.orden = 180;
+    perform pg_temp.c15_sembrar();
+    v_c := pg_temp.c15_importar(replace(pg_temp.c15_journal(), 'Regular,Direct Deposit,72.50', 'Regular,Check,72.50'));
+    perform pg_temp.c15_enlazar();
+    -- (todavía sin postear: ninguna nómina cercana tiene nada por pagar)
+    m1 := pg_temp.c15_cargo('c15-t68-neto', pg_temp.c15_d(21), 1193.07, 'ZELLE PAYMENT TO AUGUSTO ZZ C15 PRUEBA 0721');
+    m2 := pg_temp.c15_cargo('c15-t68-otro', pg_temp.c15_d(22), 49.00, 'ZELLE PAYMENT TO AUGUSTO ZZ C15 PRUEBA 0049');
+    perform pg_temp.c15_ser('dueno');
+    r := fn_nomina_cargo_propuesta(m2);
+    perform pg_temp.c15_ser('editor');
+    v_obt := format('el Zelle a un Augusto, en los cargos de Gusto: %s | se le ofrece «es la cuota mensual»: %s',
+                    (select count(*) from fn_nomina_cargos() g where g.movimiento_id in (m1, m2)),
+                    case when (r->>'cuota')::boolean then 'sí' else 'no' end);
+    v_x := pg_temp.c15_dice(format('select public.fn_nomina_cargo_cuota(%L)', m2));
+    v_obt := v_obt || format(' | decir que es la cuota, sin nota: %s, porque el banco no lo nombra como de Gusto: %s',
+                             case when v_x = 'ok' then 'entró como la cuota de Gusto' else left(v_x, 5) end,
+                             case when v_x like '%no parece la cuota mensual de Gusto%el banco no lo nombra como de Gusto%' then 'sí' else 'no' end);
+    r := pg_temp.c15_postear(v_c);
+    perform pg_temp.c15_ser('dueno');
+    begin
+      -- (los de SU nómina: con los datos reales, otra de verdad puede tener el mismo importe por pagar y salir de candidata también)
+      execute 'select string_agg(g.clase || '' '' || g.monto, '' · '' order by g.clase) from public.fn_nomina_cargos_fuera() g '
+              || 'where g.movimiento_id = $1 and g.corrida_id = $2' into a1 using m1, v_c;
+      execute 'select g.partes from public.fn_nomina_cargos_fuera() g where g.movimiento_id = $1 and g.corrida_id = $2' into v_p using m1, v_c;
+    exception when others then
+      a1 := 'no hay cómo (' || sqlstate || ')';
+    end;
+    perform pg_temp.c15_ser('editor');
+    v_obt := v_obt || format(' | candidatos por fuera de Gusto: %s', coalesce(a1, 'ninguno'));
+    v_p := coalesce(v_p, jsonb_build_array(jsonb_build_object('corrida', v_c, 'cuenta', '2210', 'monto', '1193.07')));
+    v_x := pg_temp.c15_casa_dice(m1, v_p);
+    if v_x not like 'no se casó%' then   -- (la capa de antes lo casaba sin nota, como de Gusto: se dice, y se deshace para seguir)
+      v_x := 'se casó como de Gusto (' || coalesce((select g.clase from nomina_pagos g where g.movimiento_id = m1 and g.estado = 'aplicado'), '?') || ')';
+      perform pg_temp.c15_ser('dueno');
+      perform fn_nomina_cargo_deshacer((select g.id from nomina_pagos g where g.movimiento_id = m1 and g.estado = 'aplicado'), 'C15 PRUEBA: no era de Gusto');
+      perform pg_temp.c15_ser('editor');
+    end if;
+    v_obt := v_obt || format(' | casarlo sin su nota: %s; con su nota: %s', v_x,
+                             pg_temp.c15_casa_dice(m1, v_p, 'C15 PRUEBA: el neto de ZZ, pagado por Zelle'));
+    v_obt := v_obt || format(' (por fuera de Gusto: %s)', coalesce((select case when g.clase = 'fuera' then 'sí' else 'no (' || g.clase || ')' end
+                                                                     from nomina_pagos g where g.movimiento_id = m1 and g.estado = 'aplicado'), 'sin pago'));
+    select coalesce(substring(k.detalle from '^([0-9]+) cargo')::int, 0) into v_despues from fn_nomina_cierre(v_m) k where k.orden = 180;
+    v_obt := v_obt || format(' | la fila 180 del cierre los cuenta: %s', v_despues - v_antes);
+    -- (un c6 anterior al 14-nov: sin la función que dice si un movimiento nombra a Gusto —o sin poder ejecutarla—, esta capa no se pega)
+    if to_regprocedure('public.fn_banco_dice_nomina(text)') is not null then
+      execute 'revoke execute on function public.fn_banco_dice_nomina(text) from authenticated';
+    end if;
+    v_obt := v_obt || ' | sin la función del banco (un c6 anterior), la capa no se pega y dice qué volver a pegar: '
+             || case when fn_nomina_precondiciones() like 'el c6-banco.sql pegado es anterior al 14-nov-2026%vuelve a pegar c6-banco.sql%' then 'sí'
+                     else 'no (' || coalesce(left(fn_nomina_precondiciones(), 80), 'no pide nada') || ')' end;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := coalesce(v_obt || ' | ', '') || 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  insert into _pruebas values (68, 'el Zelle a alguien que se llama Augusto no es un cargo de Gusto en ninguna puerta de la nómina (la Fase 11c): no sale entre los cargos de Gusto, no se le ofrece «es la cuota mensual» ni se deja decir sin nota (MX008: el banco no lo nombra como de Gusto), sale entre los candidatos «por fuera de Gusto» cuando da al centavo el neto de quien cobró fuera, no se casa sin su nota y con ella queda «por fuera de Gusto», y la fila 180 del cierre no lo cuenta; y sin la función del banco que lo decide (un c6 anterior al 14-nov) la capa no se pega y dice qué volver a pegar',
     v_esp, v_obt, v_obt is not distinct from v_esp);
 end $$;
 

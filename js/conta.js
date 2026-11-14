@@ -215,7 +215,7 @@
     // el período de los resultados, la vista de la caja (saldo | mov), el año de las ventas (nulo: el de hoy), las tarjetas que se están releyendo, si «Personalizar» está
     // abierto, los tooltips y las cruces de lo dibujado, y lo de quien mira (Privacidad y las tarjetas que esconde: nulo = lo que diga
     // su navegador; se pone al tocarlo, por si el navegador no deja guardar)
-    tab: { d: null, serie: 0, periodo: "mes", cajaVista: "saldo", ventasAnio: null, leyendo: new Set(), personalizar: false, tips: [], cruz: {}, priv: null, ocultas: null, pintado: null }
+    tab: { d: null, serie: 0, periodo: "mes", cajaVista: "saldo", ventasAnio: null, leyendo: new Set(), personalizar: false, tips: [], cruz: {}, priv: null, ocultas: null, pintado: null, sinNomina: false }
   };
   // Las páginas, en el orden del menú. TITULOS va en el membrete de la app y en el lateral; PESTANAS, corto, en las pestañas del teléfono
   // (fase 8) «Cierre del mes» va después de los estados: es lo último del mes, con lo de arriba ya hecho
@@ -498,6 +498,8 @@
       S.tab.d = null; S.tab.leyendo = new Set();
       const sigue = tbJuntar(tb.d);
       sigue.forEach(k => S.tab.leyendo.add(k));
+      // ((11c) lo de la nómina que pide algo a Edgar: lo que manda la base en su tarjeta, cada cosa a su apartado de la página Nómina)
+      for (const a of atenderNominaTb(S.tab.d.nomina)) atender.push(a);
       // (la línea de arriba cuenta lo que espera en la Bandeja como las tarjetas: con la tarjeta de bancos, de ella; la página dice una sola cifra)
       const bt = S.tab.d.bancos, prt = bt && bt.ok === true && bt.totales && bt.totales.por_revisar;
       const subTb = prt ? `${plural((bt.cuentas || []).length, "cuenta", "cuentas")} · ${nOk(prt.n) ? `<b>${plural(prt.n, "movimiento espera", "movimientos esperan")}</b> en la bandeja` : "la bandeja está al día"} · hoy, ${fechaLarga(S.tab.d.hoy || hoyMiami())}` : sub;
@@ -562,6 +564,9 @@
     for (const a of atenderJornal(jornal)) atender.push(a);
     return atender;
   }
+  // (11c) «Qué atender» de la nómina: lo que la base pone en la tarjeta (nomina.atender), con sus palabras y su apartado
+  const atenderNominaTb = n => n && n.ok === true ? (n.atender || []).filter(a => a && a.texto && a.ir && PESTANAS[a.ir.pagina])
+    .map(a => ({ txt: a.texto, ir: a.ir.pagina, sub: a.ir.sub || null, clave: `nomina-${a.clave || "x"}` })) : [];
   // El mes en curso para la portada: v_cortes dice qué período es, fn_estados_control lo controla y v_resultados trae las secciones.
   // Devuelve { corte, ingresos, gastos, resultado } o { vacio } en llano, o { err } si el control no cuadra (sin señal, se lanza).
   async function leerMes() {
@@ -650,6 +655,28 @@
   //    salen en «Qué atender»).
   //  · La tabla gemela apilada (tarjeta angosta) deja partir sus celdas: la
   //    de «Variación» de los resultados se salía de la tarjeta en el teléfono.
+  // Y EL 14-NOV (Fase 11c): EL TABLERO APRENDE LA NÓMINA (c15; la base, c16
+  // marca 2026111401):
+  //  · La tarjeta «Nómina» (la última del tablero, como «Payroll» en
+  //    QuickBooks): la última nómina y la próxima ya posteada; lo que costó
+  //    la nómina de Gusto cada mes (columnas de una sola serie, desde el
+  //    primer mes con una nómina de Gusto); lo que se debe de ella, los
+  //    cargos de Gusto por casar y las nóminas por postear; con su tabla
+  //    «Ver los números». Lo de cada nómina (sus totales, cuántas personas,
+  //    las que esperan por postear) solo lo manda la base con el código del
+  //    teléfono: sin él, la tarjeta lo dice con sus palabras y lleva a
+  //    Conexiones y seguridad; nunca pinta un cero donde la base no dio un
+  //    número. Sin c15, lo que diga la base (su capa no está).
+  //  · La acción rápida «Nómina» con su contador (lo manda la base).
+  //  · «Qué atender» lleva lo de la nómina que pide algo (lo que la base
+  //    pone en nomina.atender, con su apartado de la página Nómina); por eso
+  //    la tarjeta de la nómina se pide siempre, aunque esté escondida.
+  //  · La proyección de la caja resta lo que se debe de la nómina (la base):
+  //    su tooltip y su tabla dicen cuánto es de la nómina.
+  //  · CON EL c16 DE ANTES (marca menor que 2026111401: la app publicada antes
+  //    de volver a pegar c16): la tarjeta de la nómina dice qué pegar, y la
+  //    nómina no se pide (la base de antes no la conoce: 22023); si se pidió
+  //    sin saberlo, se pide otra vez sin ella.
   // LAS GRÁFICAS (la guía de gráficas al pie de la letra): SVG en línea,
   // dibujadas al ancho de su caja (y otra vez si el ancho cambia); la forma
   // según el trabajo del dato: barras horizontales en una sola base para
@@ -682,13 +709,16 @@
   // ============================================================
   const TB_TITULO = { cobros: "Embudo de cobro", bancos: "Bancos y tarjetas", resultados: "Resultados", gastos: "Gastos", caja: "Flujo de caja",
     facturas: "Facturas", ventas: "Ventas", por_cobrar: "Por cobrar", por_pagar: "Por pagar", conexiones: "Conexiones", cobros_en_linea: "Cobros en línea",
-    use_tax: "Use tax (DR-15)", prestamos: "Préstamos", obras: "Obras" };
+    use_tax: "Use tax (DR-15)", prestamos: "Préstamos", obras: "Obras", nomina: "Nómina" };
   // el orden de la portada: el de fn_tablero (sin «acciones», que va arriba en su fila)
   const TB_ORDEN = Object.keys(TB_TITULO);
   // las tarjetas anchas (dos columnas desde el iPad, como el embudo y el flujo de caja de QuickBooks)
   const TB_ANCHAS = ["cobros", "caja"];
   const TB_PERIODOS = [["mes", "Este mes"], ["mes_pasado", "Mes pasado"], ["anio", "Este año"], ["anio_pasado", "Año pasado"]];
   const TB_PRIV = "mxp.tablero.privado", TB_OCULTAS = "mxp.tablero.ocultas";
+  // (11c) la marca de c16 desde la que la base trae la tarjeta de la nómina; con una de antes, la nómina no se pide (la base no la conoce)
+  const TB_NOMINA_DESDE = 2026111401;
+  const tbSinNomina = () => !!S.tab.sinNomina || (!!S.tab.d && S.tab.d.version != null && Number(S.tab.d.version) < TB_NOMINA_DESDE);
   const TAPADO = "$•••";
   // lo que recuerda el navegador de quien mira (si no hay almacenamiento, lo de esta visita)
   const tbLeer = (k, def) => { try { const v = localStorage.getItem(k); return v == null ? def : v; } catch { return def; } };
@@ -730,7 +760,10 @@
   function tbPedido(solo) {
     const p = {};
     const vis = tbVisibles();
-    const pedidas = solo || (vis.length === TB_ORDEN.length ? null : ["acciones", ...vis]);
+    // ((11c) la de la nómina, aunque esté escondida: lo que pide algo de ella va en «Qué atender»; con el c16 de antes, nunca: no la conoce)
+    const sinNom = tbSinNomina();
+    const base = solo || (vis.length === TB_ORDEN.length ? null : ["acciones", ...vis, ...(vis.includes("nomina") ? [] : ["nomina"])]);
+    const pedidas = base && sinNom ? base.filter(k => k !== "nomina") : base;
     if (pedidas) p.tarjetas = pedidas;
     if (S.tab.periodo !== "mes" && (!pedidas || pedidas.includes("resultados"))) p.resultados = { periodo: S.tab.periodo };
     if (S.tab.ventasAnio != null && (!pedidas || pedidas.includes("ventas"))) p.ventas = { anio: S.tab.ventasAnio };
@@ -739,7 +772,16 @@
   // c16 no está en la base: PostgREST no encuentra la función (404, PGRST202) o Postgres no la conoce (42883)
   const faltaC16 = err => !!err && !esFalloDeRed(err) && (err.status === 404 || ["PGRST202", "42883"].includes(String(err.codigo || "")));
   async function leerTablero(p) {
-    const d = await DB._rpc("fn_tablero", { p });
+    let d;
+    try { d = await DB._rpc("fn_tablero", { p }); }
+    catch (err) {
+      // (11c) la base con el c16 de antes no conoce la tarjeta de la nómina (22023): se pide otra vez sin ella, y ya no se pide
+      if (String(err.codigo || "") === "22023" && Array.isArray(p && p.tarjetas) && p.tarjetas.includes("nomina") && /nomina/.test(String(err.message || ""))) {
+        S.tab.sinNomina = true;
+        const q = { ...p, tarjetas: p.tarjetas.filter(k => k !== "nomina") };
+        d = await DB._rpc("fn_tablero", { p: q });
+      } else throw err;
+    }
     if (!d || typeof d !== "object" || d.ok !== true) { const e = new Error("El tablero no devolvió lo que se esperaba (sin «ok»)."); e.codigo = "TABLERO"; throw e; }
     return d;
   }
@@ -748,6 +790,9 @@
     const viejo = S.tab.d || {};
     const nuevo = { ...viejo, ok: true, hoy: d.hoy, generado_el: d.generado_el, version: d.version, libro: d.libro || viejo.libro, capas: d.capas || viejo.capas };
     for (const k of ["acciones", ...TB_ORDEN]) if (d[k] !== undefined) nuevo[k] = d[k];
+    // (11c) con el c16 de antes, la tarjeta de la nómina dice qué pegar (no hay ninguna cifra que enseñar)
+    if (d.version != null && Number(d.version) < TB_NOMINA_DESDE && d.nomina === undefined)
+      nuevo.nomina = { ok: false, tarjeta: "nomina", falta: "c16 del 14-nov", motivo: "Para ver aquí la nómina, vuelve a pegar docs/conta/c16-tablero.sql (el del 14-nov): el que tiene la base todavía no la trae." };
     S.tab.d = nuevo;
     return Array.isArray(d.sigue) ? d.sigue.filter(k => k === "acciones" || TB_TITULO[k]) : [];
   }
@@ -783,7 +828,7 @@
   function atenderHTML(atender, priv) {
     const t = s => esc(priv ? tapar(s) : s);
     return `<section class="ct-card ct-atender${atender.length ? "" : " ok"}" id="ct-atender"><h2>Qué atender</h2>
-        ${atender.length ? `<ul class="ct-atn-lista">${atender.map(a => `<li class="ct-atn"><div class="ct-atn-txt">${t(a.txt)}${a.det ? `<small>${t(a.det)}</small>` : ""}</div><button type="button" class="accion secundaria chica" data-ir="${a.ir}"${a.sub ? ` data-ir-sub="${esc(a.sub)}"` : ""}>${esc(PESTANAS[a.ir])}</button></li>`).join("")}</ul>`
+        ${atender.length ? `<ul class="ct-atn-lista">${atender.map(a => `<li class="ct-atn"${a.clave ? ` data-atn="${esc(a.clave)}"` : ""}><div class="ct-atn-txt">${t(a.txt)}${a.det ? `<small>${t(a.det)}</small>` : ""}</div><button type="button" class="accion secundaria chica" data-ir="${a.ir}"${a.sub ? ` data-ir-sub="${esc(a.sub)}"` : ""}>${esc(PESTANAS[a.ir])}</button></li>`).join("")}</ul>`
           : `<p class="ct-nota">Nada urgente: lo que espera en la bandeja no pasa de 30 días, las cuentas no tienen alarmas y las conexiones están bien.</p>`}
       </section>`;
   }
@@ -870,7 +915,7 @@
   }
 
   // ---------- los enlaces de interés: cada tarjeta lleva a su página (el «ir» que dice la base) ----------
-  const SUB_TXT = () => ({ estados: SUBS, cierre: SUBS_CIE, obras: SUBS_OB, wip: SUBS_WIP, facturas: SUBS_FAC, cedula: SUBS_CED });
+  const SUB_TXT = () => ({ estados: SUBS, cierre: SUBS_CIE, obras: SUBS_OB, wip: SUBS_WIP, facturas: SUBS_FAC, cedula: SUBS_CED, nomina: SUBS_NOM });
   function irTxt(x) {
     if (!x || !TITULOS[x.pagina]) return "";
     const subs = SUB_TXT()[x.pagina] || {};
@@ -909,7 +954,7 @@
   }
 
   // ---------- la fila de acciones rápidas (las «Create actions» de QuickBooks, con lo que espera en cada una) ----------
-  const ICO_ACC = { factura: ICONOS.facturas, bandeja: ICONOS.bandeja, conciliar: ICONOS.conciliar, pago: ICONOS.cobros, cierre: ICONOS.cierre, estados: ICONOS.estados };
+  const ICO_ACC = { factura: ICONOS.facturas, bandeja: ICONOS.bandeja, conciliar: ICONOS.conciliar, pago: ICONOS.cobros, nomina: ICONOS.nomina, cierre: ICONOS.cierre, estados: ICONOS.estados };
   function tbAccionesHTML(a) {
     if (!a) return "";
     if (a.ok !== true) return `<nav class="ct-tb-acc" aria-label="Acciones rápidas"><span class="ct-tb-acc-t">Acciones rápidas</span>${S.tab.leyendo.has("acciones") ? `<span class="ct-tb-nota">Leyendo…</span>` : `<span class="ct-tb-nota">${tx(a.motivo || "No se pudieron leer.")}</span> <button type="button" class="ct-tb-ir" data-tb-reintentar="acciones">Reintentar</button>`}</nav>`;
@@ -960,7 +1005,8 @@
   // «Ver los números»: la tabla con lo mismo que la gráfica (el gemelo accesible)
   // (en una tarjeta angosta —el teléfono, las tres columnas de la computadora— cada fila se apila: el nombre arriba y sus cifras debajo,
   // cada una con su etiqueta, en 2 o 3 columnas: la tabla nunca se sale de la tarjeta)
-  const tablaSola = (cab, filas) => { const n = cab.length - 1, cols = n <= 3 ? n : n === 4 ? 2 : 3; return `<div class="ct-tabla-env"><table class="ct-tabla angosta" style="--tb-cols:${Math.max(1, cols)}"><thead><tr>${cab.map((c, i) => `<th${i ? ' class="r"' : ""}>${c}</th>`).join("")}</tr></thead>
+  // ((11c) op.apilada: apilada también en una tarjeta ancha —la proyección de la caja con la columna de la nómina no cabe a lo ancho—)
+  const tablaSola = (cab, filas, op = {}) => { const n = cab.length - 1, cols = n <= 3 ? n : n === 4 ? 2 : 3; return `<div class="ct-tabla-env"><table class="ct-tabla angosta${op.apilada ? " apilada" : ""}" style="--tb-cols:${Math.max(1, cols)}"><thead><tr>${cab.map((c, i) => `<th${i ? ' class="r"' : ""}>${c}</th>`).join("")}</tr></thead>
       <tbody>${filas.map(f => `<tr${f.clase ? ` class="${f.clase}"` : ""}>${f.celdas.map((c, i) => `<td${i ? ` class="r ct-num" data-col="${esc(String(cab[i]).replace(/<[^>]*>/g, ""))}"` : ""}>${c}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`; };
   const tablaTb = (cab, filas, op = {}) => `<details class="ct-tb-tabla"${op.id ? ` data-tabla="${op.id}"` : ""}><summary>${op.titulo || "Ver los números"}</summary>${tablaSola(cab, filas)}${op.mas || ""}</details>`;
   // la leyenda (con dos o más series): la marca como en la gráfica (cuadro para barras, raya para líneas) y el texto en tinta
@@ -1104,6 +1150,8 @@
     // libro no hay saldo de verdad: solo lo que entró y salió, dicho (ni alarma de sobregiro, ni proyección, ni línea de saldo)
     caja(d) {
       const pj = d.proyeccion || null, h = d.hoy || {};
+      // ((11c) con c15, la base manda en cada mes de la proyección lo que se debe de la nómina: su columna)
+      const conNom = !!pj && (pj.meses || []).some(m => m.nomina != null);
       const sinAp = !!(d.sin_apertura || h.sin_apertura);
       const vista = sinAp || S.tab.cajaVista === "mov" ? "mov" : "saldo";
       const ctl = sinAp ? "" : `<div class="ct-chips ct-tb-chips" role="group" aria-label="Qué ver"><button type="button" class="ct-chip chica" data-tb-caja="saldo" aria-pressed="${vista === "saldo"}">Saldo de caja</button><button type="button" class="ct-chip chica" data-tb-caja="mov" aria-pressed="${vista === "mov"}">Entradas y salidas</button></div>`;
@@ -1133,7 +1181,7 @@
         ${tablaTb(["Mes", "Al empezar", "Entradas", "Salidas", "Al terminar"], [
           ...(d.apertura && d.apertura.en_el_libro && d.apertura.saldo != null ? [{ celdas: [`Apertura (${esc(fechaLarga(d.apertura.fecha))})`, "—", "—", "—", tm(d.apertura.saldo)] }] : []),
           ...meses.map(m => ({ celdas: [`${esc(m.etiqueta)}${m.en_curso ? " (hasta hoy)" : ""}`, sinAp ? "—" : conta(m, "inicial"), conta(m, "entradas"), conta(m, "salidas"), sinAp ? "—" : conta(m, "final")] }))
-        ], { id: "real", mas: `${sinAp ? `<p class="ct-tb-nota chica">Sin la apertura, «al empezar» y «al terminar» no serían lo que había en el banco: no se escriben.</p>` : ""}${meses.filter(m => m.en_curso && m.despues_de_hoy && m.despues_de_hoy.texto).map(m => `<p class="ct-tb-nota chica" data-tb-caja-despues>${tx(m.despues_de_hoy.texto)}</p>`).join("")}${pj ? `<p class="ct-tb-nota ct-tb-tabla-t">La proyección (solo lo que ya tiene fecha; no es la caja que habrá):</p><p class="ct-tb-nota chica">Entra: lo por cobrar; sale: lo por pagar; con fecha: lo que el libro ya tiene con fecha de después de hoy.</p>${tablaSola(["Mes", "Entra", "Sale", "Cuotas", "Use tax", "Con fecha", "Saldo"], (pj.meses || []).map(m => ({ celdas: [`${esc(m.etiqueta)}${nOk(m.cobrar_vencido) || nOk(m.pagar_vencido) || nOk(m.cuotas_atrasadas) ? ` <small class="ct-tb-gris">con lo ya vencido</small>` : ""}`, tm(m.cobrar), tm(m.pagar), tm(m.cuotas), tm(m.impuestos), tm(m.libro), tm(m.saldo)] })))}` : ""}${fuenteTb(d)}` })}`,
+        ], { id: "real", mas: `${sinAp ? `<p class="ct-tb-nota chica">Sin la apertura, «al empezar» y «al terminar» no serían lo que había en el banco: no se escriben.</p>` : ""}${meses.filter(m => m.en_curso && m.despues_de_hoy && m.despues_de_hoy.texto).map(m => `<p class="ct-tb-nota chica" data-tb-caja-despues>${tx(m.despues_de_hoy.texto)}</p>`).join("")}${pj ? `<p class="ct-tb-nota ct-tb-tabla-t">La proyección (solo lo que ya tiene fecha; no es la caja que habrá):</p><p class="ct-tb-nota chica">Entra: lo por cobrar; sale: lo por pagar;${conNom ? " nómina: lo que se debe de ella, el día de pago de su nómina;" : ""} con fecha: lo que el libro ya tiene con fecha de después de hoy.</p>${tablaSola(["Mes", "Entra", "Sale", "Cuotas", "Use tax", ...(conNom ? ["Nómina"] : []), "Con fecha", "Saldo"], (pj.meses || []).map(m => ({ celdas: [`${esc(m.etiqueta)}${nOk(m.cobrar_vencido) || nOk(m.pagar_vencido) || nOk(m.cuotas_atrasadas) ? ` <small class="ct-tb-gris">con lo ya vencido</small>` : ""}`, tm(m.cobrar), tm(m.pagar), tm(m.cuotas), tm(m.impuestos), ...(conNom ? [tm(m.nomina)] : []), tm(m.libro), tm(m.saldo)] })), { apilada: conNom })}` : ""}${fuenteTb(d)}` })}`,
         { cuando: "Mes a mes", ctl }];
     },
     // FACTURAS: no pagadas (vencidas / por vencer) y cobradas en N días (depositadas / no); las partes y su porcentaje, de la base
@@ -1255,8 +1303,48 @@
           ${tablaTb(["Obra", "Ingreso", "Costo", "Margen", "%"], obras.map(o => ({ celdas: [`${esc(o.obra)}${o.cliente ? ` <small class="ct-tb-gris">${esc(o.cliente)}</small>` : ""}`, tm(o.ingreso), tm(o.costo), tm(o.margen), pctTb(o.margen_pct)] })).concat([{ clase: "ct-total", celdas: [`Todas (${esc(ct.n)})`, tm(ct.ingreso), tm(ct.costo), tm(ct.margen), pctTb(ct.margen_pct)] }]), { mas: fuenteTb(d) })}</div>`
         : `<p class="ct-aviso">${ICO_TB.nada}<span>Costo por obra: ${tx(c.motivo || "no está en esta base")}${c.falta ? ` <span class="ct-tb-gris">(falta ${esc(c.falta)})</span>` : ""}</span></p>`;
       return [wipHTML + costoHTML, { cuando: "Lo que dice el libro", pie: `${irBtn(c.ir || d.ir, "Ver en Costo por obra")}${w.ok === true ? irBtn(w.ir, "Ver el WIP") : ""}` }];
+    },
+    // (11c) LA NÓMINA (c15), como «Payroll» en QuickBooks: la última nómina y la próxima ya posteada; lo que se debe de ella, los cargos
+    // de Gusto por casar y las nóminas por postear; lo que costó cada mes (columnas de una serie) y su tabla. Lo de cada nómina solo
+    // llega con el código del teléfono: sin él, la base lo dice («con el código del teléfono») y aquí se pinta eso, nunca un cero
+    nomina(d) {
+      const ul = d.ultima, px = d.proxima, cg = d.cargos || {}, db = d.debe || {}, pp = d.por_postear, bo = d.bolsa || {};
+      const ms = nomMeses(d);
+      // (una nómina: con el código, su costo para la empresa y su desglose; sin él, su día y lo que dice la base)
+      const desglose = x => `sueldo ${tm(x.bruto)} · lo del patrón ${tm(x.patron)} · neto ${tm(x.neto)} · impuestos ${tm(x.impuestos)}${nOk(x.deducciones) ? ` · deducciones ${tm(x.deducciones)}` : ""}${nOk(x.reembolsos) ? ` · reembolsos ${tm(x.reembolsos)}` : ""}`;
+      const figUl = !ul ? "" : ul.con_codigo
+        ? `${cifra(`Última nómina · ${esc(ul.etiqueta)}`, tm(ul.costo), pillTb(esc(plural(ul.personas, "persona", "personas")), ""))}
+           <p class="ct-tb-nota" data-tb-nom-ultima>${esc(ul.tipo_texto || ul.tipo || "")}${ul.periodo ? ` · ${esc(ul.periodo)}` : ""} · lo que costó a la empresa (sueldo y lo del patrón): ${desglose(ul)}${nOk(ul.por_pagar) ? ` · <b>queda por pagar ${tm(ul.por_pagar)}</b>` : ""}${nOk(ul.a_favor) ? ` · a favor ${tm(ul.a_favor)}` : ""}.</p>`
+        : `<div class="ct-tb-fig" data-tb-nom-ultima><span class="ct-tb-et">Última nómina</span><span class="ct-tb-nom-dia">${esc(ul.etiqueta)}</span></div>`;
+      const linPx = px ? `<p class="ct-tb-nota" data-tb-nom-proxima>Próxima: <b>${esc(px.etiqueta)}</b> (ya en el libro)${px.con_codigo ? ` · ${tm(px.costo)} · ${esc(plural(px.personas, "persona", "personas"))}${nOk(px.por_pagar) ? ` · por pagar ${tm(px.por_pagar)}` : ""}` : ""}.</p>`
+        : d.siguiente && d.siguiente.texto && (ul || px) ? `<p class="ct-tb-nota" data-tb-nom-siguiente>${tx(d.siguiente.texto)}</p>` : "";
+      // (sin el código: lo que dice la base, con su botón a Conexiones y seguridad)
+      const codigo = d.codigo ? `<p class="ct-tb-revisar" data-tb-nom-codigo>${ICO_TB.alerta}<span>${tx(d.codigo.texto)} ${irBtn(d.codigo.ir, "Conexiones y seguridad", "ct-tb-link")}</span></p>` : "";
+      // (lo que se debe, los cargos por casar y las nóminas por postear: tres cifras con sus palabras)
+      const st = (k, et, v, sub) => `<div class="ct-tb-st" data-st="${k}"><span class="ct-tb-et">${et}</span><span class="ct-tb-st-v">${v}</span><small>${sub}</small></div>`;
+      const sts = `<div class="ct-tb-sts">${st("debe", "Se debe de la nómina", tm(db.monto), nOk(db.despues) ? `${tm(db.despues)} con fecha de después de hoy` : "según el libro")}
+        ${st("cargos", "Cargos de Gusto por casar", tm(cg.monto), nOk(cg.n) ? `${esc(plural(cg.n, "cargo", "cargos"))}${cg.mas_viejo ? ` · el más viejo, del ${esc(diaTb(cg.mas_viejo))}` : ""}` : "ninguno espera")}
+        ${st("por_postear", "Nóminas por postear", pp ? esc(pp.n) : `<span class="ct-tb-gris">—</span>`, pp ? (nOk(pp.n) ? "importadas, sin postear" : "ninguna espera") : "con el código del teléfono")}</div>`;
+      const ult = ms[ms.length - 1];
+      const grafica = ms.length >= 2 ? `<p class="ct-tb-et ct-tb-nom-t">Lo que costó la nómina cada mes (sueldo y lo del patrón)</p>${grafCaja("nom", "Lo que costó la nómina de Gusto cada mes", 160)}`
+        : ms.length === 1 ? `<p class="ct-tb-nota" data-tb-nom-un-mes>Por ahora hay nóminas de Gusto en un solo mes (${esc(ult.etiqueta)}${ult.en_curso ? ", hasta hoy" : ""}): costó ${tm(ult.costo)}. Con el segundo mes sale la gráfica.</p>` : "";
+      const filaUna = (x, et) => x && x.con_codigo ? [{ celdas: [`${et} · ${esc(x.etiqueta)} <small class="ct-tb-gris">${esc(plural(x.personas, "persona", "personas"))} · asiento ${esc(x.asiento)}</small>`, tm(x.costo), tm(x.bruto), tm(x.patron), tm(x.neto), tm(x.impuestos), tm(x.por_pagar)] }] : [];
+      const tablaUnas = ul && ul.con_codigo || px && px.con_codigo ? `<p class="ct-tb-nota ct-tb-tabla-t">La última y la próxima:</p>${tablaSola(["Nómina", "Costo", "Sueldo", "Lo del patrón", "Neto", "Impuestos", "Por pagar"], [...filaUna(ul, "Última"), ...filaUna(px, "Próxima")])}` : "";
+      const tablaDebe = `<p class="ct-tb-nota ct-tb-tabla-t">Lo que se debe de la nómina, por cuenta (del libro):</p>${tablaSola(["Cuenta", "Se debe"], (db.cuentas || []).map(c => ({ celdas: [`${esc(c.cuenta)} <small class="ct-tb-gris">${esc(c.nombre || "")}</small>`, tm(c.monto)] })).concat([{ clase: "ct-total", celdas: ["Total", tm(db.monto)] }]))}`;
+      return [`${codigo}
+        ${d.sin_nominas && d.texto ? `<p class="ct-tb-nota" data-tb-nom-vacia>${tx(d.texto)}</p>` : ""}
+        ${figUl}${linPx}
+        ${sts}
+        ${grafica}
+        ${nOk(db.monto) < 0 && db.texto ? `<p class="ct-tb-nota">${tx(db.texto)}</p>` : ""}
+        ${nOk(bo.monto) && bo.texto ? `<p class="ct-tb-nota" data-tb-nom-bolsa>${tx(bo.texto)}</p>` : ""}
+        ${tablaTb(["Mes", "Costo", "Sueldo", "Lo del patrón", "Nóminas"], ms.map(m => ({ celdas: [`${esc(m.etiqueta)}${m.en_curso ? " (hasta hoy)" : ""}`, tm(m.costo), tm(m.sueldos), tm(m.patron), esc(m.nominas)] })),
+          { mas: `${ms.length ? "" : `<p class="ct-tb-nota chica">Todavía no hay meses con una nómina de Gusto.</p>`}${tablaUnas}${tablaDebe}${fuenteTb(d)}` })}`,
+        { cuando: "Al día de hoy", pie: `${irBtn(d.ir, "Ver en Nómina")}${nOk(cg.n) ? irBtn(cg.ir, `Casar los cargos de Gusto (${esc(cg.n)})`) : ""}${pp && nOk(pp.n) ? irBtn(pp.ir, `Postear (${esc(pp.n)})`) : ""}` }];
     }
   };
+  // (11c) los meses de la tarjeta de la nómina: desde el primero con una nómina de Gusto (los de antes, sin ninguna, no se pintan en cero)
+  const nomMeses = d => { const ms = (d && d.meses) || [], i = ms.findIndex(m => nOk(m.nominas) > 0); return i < 0 ? [] : ms.slice(i); };
   // LA ANTIGÜEDAD (por cobrar y por pagar): el total, lo vencido y los cinco tramos por vencimiento (barras en una rampa de azul:
   // claro lo que no ha vencido, más oscuro lo más viejo), lo de aparte y las más vencidas
   function tbAntiguedad(d, que) {
@@ -1455,7 +1543,7 @@
         if (s.tipo === "proyeccion") {
           const m = mesPj(s.mes);
           proy.push({ t: s.fecha, v: s.saldo, corto: corto(s.fecha), proy: true, etiqueta: `${s.etiqueta} (proyección)`,
-            filas: [["Saldo proyectado", tm(s.saldo)], ...(m ? [["Entra (por cobrar)", tm(m.cobrar)], ["Sale (por pagar)", tm(m.pagar)], ["Cuotas", tm(m.cuotas)], ["Use tax", tm(m.impuestos)], ...(nOk(m.libro) !== 0 ? [["Ya en el libro, con fecha", tm(m.libro)]] : [])] : [])] });
+            filas: [["Saldo proyectado", tm(s.saldo)], ...(m ? [["Entra (por cobrar)", tm(m.cobrar)], ["Sale (por pagar)", tm(m.pagar)], ["Cuotas", tm(m.cuotas)], ["Use tax", tm(m.impuestos)], ...(nOk(m.nomina) ? [["Nómina (lo que se debe)", tm(m.nomina)]] : []), ...(nOk(m.libro) !== 0 ? [["Ya en el libro, con fecha", tm(m.libro)]] : [])] : [])] });
         } else {
           const m = s.tipo === "cierre" ? mes(s.mes) : s.tipo === "hoy" ? ms.find(x => x.en_curso) : null;
           reales.push({ t: s.fecha, v: s.saldo, hoy: s.tipo === "hoy", corto: s.tipo === "hoy" ? "hoy" : s.tipo === "apertura" ? "apertura" : corto(s.fecha),
@@ -1489,6 +1577,15 @@
     prestamo(caja, d, i) {
       const p = (d.lista || [])[i]; if (!p) return;
       caja.innerHTML = svgMedidor(caja.clientWidth, p.pagado_pct, tip(`${pctTb(p.pagado_pct)} pagado`, `${p.prestamista}: se debe ${tm(p.saldo)} de ${tm(p.principal)}`));
+    },
+    // (11c) lo que costó la nómina de Gusto cada mes: columnas de una sola serie (el título la nombra: sin leyenda); el tooltip con el sueldo,
+    // lo del patrón y cuántas nóminas; la cifra escrita solo en el mes de más costo y en el último
+    nom(caja, d) {
+      const ms = nomMeses(d); if (ms.length < 2) return;
+      caja.innerHTML = svgColumnas(caja.clientWidth, 160, ms.map(m => m.corto + (m.en_curso ? "*" : "")), [{ clase: "serie1", valores: ms.map(m => m.costo),
+        tips: ms.map(m => tip(tm(m.costo), `Nómina de ${m.etiqueta}${m.en_curso ? " (hasta hoy)" : ""}`, [["Sueldo", tm(m.sueldos)], ["Lo del patrón", tm(m.patron)], ["Nóminas", String(nOk(m.nominas))]])) }],
+        { rotular: i => i === ms.length - 1 || nOk(ms[i].costo) === Math.max(...ms.map(m => nOk(m.costo))) });
+      if (ms.some(m => m.en_curso)) caja.insertAdjacentHTML("beforeend", `<p class="ct-tb-nota chica">* el mes en curso, hasta hoy.</p>`);
     }
   };
   // dibujar las gráficas que haya dentro de «c» (al ancho que tienen ahora)

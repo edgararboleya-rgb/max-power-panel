@@ -10,7 +10,16 @@
 -- c3 de la Fase 11b es lo normal: salían «omitida»), y la 59 ya no falla
 -- cuando el mes de sus horas está devengado (fallaba los primeros días de
 -- cada mes, con el anterior devengado y sin cerrar: aprobar una hora de un
--- mes devengado deja viejo su devengo, y eso lo dice c3, no es de c10). (Lo que
+-- mes devengado deja viejo su devengo, y eso lo dice c3, no es de c10).
+-- 14-nov-2026 (la Fase 11c, v4 de la capa: dos textos): el c3 de esa fase
+-- aparta del devengo las horas que pagó un jornal y lo pone al día solo. La
+-- 20 mira el texto del aviso que toca según el c3 de la base (con el nuevo,
+-- «se pone al día solo»; con el de antes, «saldría dos veces»); la 39 y la
+-- 55 DEVENGAN ANTES DE REPARTIR (con el c3 nuevo, devengar después ya no
+-- cuenta esas horas: salían «omitida», o en rojo con más horas aprobadas en
+-- el mes), y la 55 cierra el mes con la guarda del cierre de c3 apagada un
+-- instante dentro de la prueba (ese c3 ya no deja cerrar un mes así). Las
+-- tres valen con los dos c3. (Lo que
 -- esta suite no puede ver con sus pocas horas —que el costo por obra
 -- aguanta años de horas, y de horas pagadas por nómina, dentro del tope de
 -- la API— lo mira el banco: pruebas/conta/c10-volumen.sh.)
@@ -659,6 +668,18 @@ end $$;
 -- aparte chocaba con él (23505) y las dos pruebas salían «omitida» en
 -- cuanto hubiera una nómina y un devengo en el mes. Si c3 es el de antes y
 -- no deja (MX008), lo pone la prueba, como hasta ahora.
+-- (14-nov, la Fase 11c) ¿ESTÁ EL c3 QUE APARTA LAS HORAS DE LOS JORNALES Y
+-- PONE EL DEVENGO AL DÍA SOLO? Se mira lo mismo que mira c10: su trigger
+-- diferido sobre asientos, encendido. Con él, el aviso devengo_estandar y el
+-- control 50 dicen otra cosa (la 20 y la 39), y devengar un mes DESPUÉS de
+-- repartir un jornal suyo ya no cuenta esas horas: la 39 y la 55 devengan
+-- ANTES de repartir (el devengo solo se pone al día al confirmar, y una
+-- prueba nunca confirma), y valen con los dos c3.
+create or replace function pg_temp.c10_c3_aparta() returns boolean language sql as $$
+  select exists (select 1 from pg_trigger t
+                  where t.tgrelid = 'public.asientos'::regclass and t.tgname = 'trg_puente_asientos_jornal'
+                    and not t.tgisinternal and t.tgenabled in ('O', 'A'))
+$$;
 create or replace function pg_temp.c10_mes_con_nomina(p_mes text) returns boolean language sql as $$
   select exists (select 1 from asientos a join periodos p on p.periodo = p_mes
                   where coalesce(a.origen_tabla, '') like 'nomina%' and a.fecha_contable between p.desde and p.hasta
@@ -714,10 +735,12 @@ end $$;
 -- los primeros días de cada mes, con el anterior devengado y sin cerrar.
 -- Ahora, si alguno de los meses de sus horas de prueba tiene su devengo
 -- vivo, ese rojo de c3 (y su fila del cierre) no se cuenta, y se dice.
--- (No se pone al día el devengo dentro de la prueba: c3 todavía no aparta
--- del devengo las horas que un jornal pagó DENTRO de ese mes, y al
--- devengarlas otra vez saltaría el cuadre 50 de c10, que es justo lo que
--- ese cuadre vigila. Ver la cabecera de c10-costo-obra.sql.)
+-- (No se pone al día el devengo dentro de la prueba. 14-nov, la Fase 11c:
+-- el c3 de esa fase aparta del devengo las horas que un jornal pagó DENTRO
+-- del mes y lo pone al día solo, pero AL CONFIRMAR la transacción del
+-- reparto —un trigger diferido—, y una prueba nunca confirma: dentro de
+-- ella el devengo sigue «de ayer», como con el c3 de antes. Ver la cabecera
+-- de c10-costo-obra.sql, «LO QUE CAMBIÓ EN LA v4».)
 -- Los meses abiertos de las horas de prueba con su devengo vivo ('' si
 -- ninguno). Como el SQL Editor.
 create or replace function pg_temp.c10_devengo_vivo() returns text language sql as $$
@@ -1850,7 +1873,9 @@ end $$;
 
 -- 20. Los avisos (d): un posible duplicado sin decidir (el banco trajo el
 --     mismo pago con otro número: no deja hasta que Edgar diga), y un mes
---     con devengo estándar de horas (c3: avisa de que saldría dos veces).
+--     con devengo estándar de horas (c3: avisa de que saldría dos veces; con
+--     el c3 de la Fase 11c, 14-nov, avisa de que al aceptar el devengo se
+--     pone al día solo y nada sale dos veces: lo que de verdad pasa).
 --     (En un mes con nómina el devengo lo pone la prueba, como lo deja c3:
 --     arriba, «EL DEVENGO DE LAS PRUEBAS 20 Y 39».)
 do $$
@@ -1893,8 +1918,14 @@ begin
     end;
     if v_no is null then
       v_j := pg_temp.c10_propuesta(m3, v_dia, v_dia);
+      -- (con el c3 que lo pone al día solo, el aviso dice eso y no manda a retirar nada; con el de antes, «saldría dos veces»)
       d := format('%s [%s]', case when pg_temp.c10_aviso(v_j, 'devengo_estandar') like '%' || v_mes || ' (asiento ' || (v_dev->>'asiento') || ')%'
-                                       and pg_temp.c10_aviso(v_j, 'devengo_estandar') like '%saldría dos veces%' then 'avisa, con el mes y su asiento' else 'no lo dice bien' end,
+                                       and case when pg_temp.c10_c3_aparta()
+                                                then pg_temp.c10_aviso(v_j, 'devengo_estandar') like '%se pone al día solo%'
+                                                     and pg_temp.c10_aviso(v_j, 'devengo_estandar') like '%nada sale dos veces%'
+                                                     and pg_temp.c10_aviso(v_j, 'devengo_estandar') not like '%retirarlo%'
+                                                else pg_temp.c10_aviso(v_j, 'devengo_estandar') like '%saldría dos veces%' end
+                                  then 'avisa, con el mes y su asiento' else 'no lo dice bien: ' || coalesce(pg_temp.c10_aviso(v_j, 'devengo_estandar'), '(sin aviso)') end,
                   pg_temp.c10_avisos(v_j));
       v_obt := format('el parecido: %s | el primero: %s | dicho «no es el mismo»: %s | con el devengo estándar de ese mes: %s', a, b, c, d);
     else
@@ -2880,12 +2911,22 @@ end $$;
 --     doble —el pago que entra al mes siguiente— lo prueba la 54.) (En un
 --     mes con nómina el devengo lo pone la prueba, como lo deja c3: «EL
 --     DEVENGO DE LAS PRUEBAS 20 Y 39».)
+--     (14-nov, la Fase 11c) PRIMERO EL DEVENGO, DESPUÉS EL JORNAL. Antes iba
+--     al revés (el jornal y luego devengar); con el c3 de la Fase 11c,
+--     devengar después de repartir ya no cuenta esas horas —no hay doble que
+--     mirar— y la prueba salía «omitida» o, con más horas aprobadas en el
+--     mes, en rojo. El doble que este control vigila queda así: el mes ya
+--     devengado con la hora, y su jornal repartido después sin que el
+--     devengo se ponga al día (c3 lo hace al confirmar; una prueba no
+--     confirma: como si no hubiera podido). Vale con los dos c3. Y el «qué
+--     hacer» es el del c3 de la base: volver a devengar, o retirarlo.
 do $$
 declare
   v_obt text; v_mov uuid; v_r jsonb; v_mes text; v_dia date; v_dev jsonb; v_no text; a text; b text; c text; d text; v_n1 int; v_h1 numeric; v_n2 int; v_h2 numeric;
-  v_esp text := 'con el jornal: verde | con el devengo estándar del mismo mes: rojo (nombra el mes, su devengo, las horas y el jornal), y dice '
-                'qué hacer | en la obra, el devengo no cuenta como real: jornales 200.00, nómina 0.00 | deshecho el jornal: el de la prueba '
-                'ya no cuenta';
+  v_n0 int; v_h0 numeric;
+  v_esp text := 'con el devengo estándar del mes, antes del jornal: nada de la prueba cuenta | con el jornal de ese mismo mes: rojo (nombra el '
+                'mes, su devengo, las horas y el jornal), y dice qué hacer | en la obra, el devengo no cuenta como real: jornales 200.00, '
+                'nómina 0.00 | deshecho el jornal: el de la prueba ya no cuenta';
 begin
   if pg_temp.c10_omitir(39, 'el control 50 del jornal', v_esp) then return; end if;
   if pg_temp.c10_omitir_rojo(39, 'el control 50 del jornal', v_esp, 'jornal', array[50]) then return; end if;
@@ -2897,19 +2938,33 @@ begin
     perform pg_temp.c10_hora(1, 'p1', v_dia, 'c10-prueba-a', 8);
     v_mov := pg_temp.c10_cargo('c10-t39', pg_temp.c10_d(), 200.00, 'Zelle payment to C10 PRUEBA ZZANA 9039');
     perform pg_temp.c10_alta('p1');
-    v_r := pg_temp.c10_aplicar(v_mov, v_dia, v_dia);
-    a := pg_temp.c10_jc(50);
+    -- (el devengo, con la hora ya aprobada, ANTES del jornal)
     begin
+      perform pg_temp.c10_ser('dueno');
+      perform fn_horas_aprobar(pg_temp.c10('p1')::uuid, v_dia, v_dia, '{"ids": [-1010000001]}'::jsonb);
+      perform pg_temp.c10_ser('editor');
       v_dev := pg_temp.c10_devengar(v_mes, array[-1010000001]::bigint[]);
-    exception when others then v_no := sqlstate || ': ' || sqlerrm;
+    exception when others then
+      v_no := sqlstate || ': ' || sqlerrm;
+      perform pg_temp.c10_ser('editor');
     end;
     if v_no is null then
+      -- (con un c3 de antes, el devengo de la prueba se lleva también las horas que pagaron los jornales de verdad de ese mes:
+      --  lo que ya chocaba antes del jornal de la prueba no es de aquí; se cuenta la diferencia)
+      a := pg_temp.c10_jc(50);
+      v_h0 := coalesce(substring(a from v_mes || ': el devengo [^ ]+ cuenta ([0-9.]+) h')::numeric, 0);
+      v_n0 := coalesce(substring(a from v_mes || ': el devengo [^ ]+ cuenta [0-9.]+ h \([0-9]+ reporte\(s\)\) que ya tienen su pago real en ese mes, en ([0-9]+) jornal')::int, 0);
+      v_r := pg_temp.c10_aplicar(v_mov, v_dia, v_dia);
       b := pg_temp.c10_jc(50);
       -- (cuántas horas y cuántos jornales dice que chocan con el devengo de ese mes)
       v_h1 := substring(b from v_mes || ': el devengo [^ ]+ cuenta ([0-9.]+) h')::numeric;
       v_n1 := substring(b from v_mes || ': el devengo [^ ]+ cuenta [0-9.]+ h \([0-9]+ reporte\(s\)\) que ya tienen su pago real en ese mes, en ([0-9]+) jornal')::int;
+      a := case when a = 'verde' or (v_n1 = v_n0 + 1 and v_h1 = v_h0 + 8) then 'nada de la prueba cuenta' else a end;
       b := case when b like 'rojo: %' || v_mes || ': el devengo ' || (v_dev->>'asiento') || ' cuenta % h (% reporte(s)) que ya tienen su pago real en ese mes, en % jornal(es)%'
-                                   || '→ esa mano de obra sale dos veces en ese mes%hay que retirarlo de ese mes antes de cerrarlo%'
+                                   || '→ esa mano de obra sale dos veces en ese mes%'
+                                   || case when pg_temp.c10_c3_aparta() then 'vuelve a devengar ese mes (select fn_horas_devengar(%esas horas quedan fuera%'
+                                           else 'hay que retirarlo de ese mes antes de cerrarlo%' end
+                     and v_n1 = v_n0 + 1 and v_h1 = v_h0 + 8
                 then 'rojo (nombra el mes, su devengo, las horas y el jornal), y dice qué hacer' else b end;
       perform pg_temp.c10_ser('dueno');
       select format('jornales %s, nómina %s', o.mano_obra_jornales, o.mano_obra_nomina) into c from v_margen_obra o where o.proyecto_id = 'c10-prueba-a';
@@ -2919,13 +2974,13 @@ begin
       v_h2 := coalesce(substring(d from v_mes || ': el devengo [^ ]+ cuenta ([0-9.]+) h')::numeric, 0);
       v_n2 := coalesce(substring(d from v_mes || ': el devengo [^ ]+ cuenta [0-9.]+ h \([0-9]+ reporte\(s\)\) que ya tienen su pago real en ese mes, en ([0-9]+) jornal')::int, 0);
       d := case when d = 'verde' or (v_n2 = v_n1 - 1 and v_h2 = v_h1 - 8) then 'el de la prueba ya no cuenta' else d end;
-      v_obt := format('con el jornal: %s | con el devengo estándar del mismo mes: %s | en la obra, el devengo no cuenta como real: %s | deshecho '
-                      'el jornal: %s', a, b, c, d);
+      v_obt := format('con el devengo estándar del mes, antes del jornal: %s | con el jornal de ese mismo mes: %s | en la obra, el devengo no '
+                      'cuenta como real: %s | deshecho el jornal: %s', a, b, c, d);
     else
-      v_obt := format('omitida: %s (%s); con el jornal: %s',
+      v_obt := format('omitida: %s (%s)',
                       case when pg_temp.c10_mes_con_nomina(v_mes)
                            then format('%s tiene nómina y el libro no dejó poner el devengo de la prueba', v_mes)
-                           else format('c3 no dejó devengar %s', v_mes) end, left(v_no, 300), a);
+                           else format('c3 no dejó devengar %s', v_mes) end, left(v_no, 300));
     end if;
     raise exception using errcode = 'MXT00';
   exception
@@ -4018,6 +4073,13 @@ end $$;
 --     de c9 mirándolo sería un «detiene» sin salida). Cierra, dentro de la
 --     prueba, la apertura y el mes abierto más viejo que ya terminó, como la
 --     27; si el libro real no deja, sale «omitida» con lo que dijo c2.
+--     (14-nov, la Fase 11c) PRIMERO EL DEVENGO, DESPUÉS EL JORNAL, como la
+--     39 y por lo mismo. Y con el c3 de la Fase 11c UN MES YA NO SE CIERRA
+--     ASÍ (su guarda del cierre lo para, MX008: lo prueba la 131 de c3):
+--     lo que aquí se mira es lo que dice c10 de un mes que SE CERRÓ con el
+--     doble dentro (antes de esa fase), así que la prueba cierra con esa
+--     guarda de c3 apagada un instante, dentro de su transacción (se
+--     deshace con ella; periodos ya está tomada en exclusiva).
 do $$
 declare
   v_obt text; v_mov uuid; v_r jsonb; v_mes periodos; v_ap periodos; v_dev jsonb; v_no text; a text; b text;
@@ -4038,11 +4100,19 @@ begin
       perform pg_temp.c10_hora(1, 'p1', v_mes.hasta - 2, 'c10-prueba-a', 8);
       v_mov := pg_temp.c10_cargo('c10-t55', v_mes.hasta, 200.00, 'Zelle payment to C10 PRUEBA ZZANA 9055');
       perform pg_temp.c10_alta('p1');
-      v_r := pg_temp.c10_aplicar(v_mov, v_mes.hasta - 2, v_mes.hasta - 2);
+      -- (el devengo, con la hora ya aprobada, ANTES del jornal)
       begin
+        perform pg_temp.c10_ser('dueno');
+        perform fn_horas_aprobar(pg_temp.c10('p1')::uuid, v_mes.hasta - 2, v_mes.hasta - 2, '{"ids": [-1010000001]}'::jsonb);
+        perform pg_temp.c10_ser('editor');
         v_dev := fn_horas_devengar(v_mes.periodo);
-      exception when others then v_no := format('c3 no dejó devengar %s (%s: %s)', v_mes.periodo, sqlstate, left(sqlerrm, 300));
+      exception when others then
+        v_no := format('c3 no dejó devengar %s (%s: %s)', v_mes.periodo, sqlstate, left(sqlerrm, 300));
+        perform pg_temp.c10_ser('editor');
       end;
+      if v_no is null then
+        v_r := pg_temp.c10_aplicar(v_mov, v_mes.hasta - 2, v_mes.hasta - 2);
+      end if;
     end if;
     if v_no is null then
       a := pg_temp.c10_jc(50);
@@ -4060,6 +4130,12 @@ begin
                                           jsonb_build_object('cuenta', '3100', 'monto', '-1000.00'))));
           end if;
           perform fn_cerrar_periodo(v_ap.periodo);
+        end if;
+        -- (la guarda del cierre del c3 de la Fase 11c no deja cerrar un mes con el doble dentro: aquí se mira el que ya se cerró así)
+        if pg_temp.c10_c3_aparta()
+           and exists (select 1 from pg_trigger t where t.tgrelid = 'public.periodos'::regclass
+                          and t.tgname = 'trg_puente_periodos_devengo' and not t.tgisinternal) then
+          execute 'alter table public.periodos disable trigger trg_puente_periodos_devengo';
         end if;
         perform fn_cerrar_periodo(v_mes.periodo);
       exception when others then

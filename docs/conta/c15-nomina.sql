@@ -4,11 +4,13 @@
 -- obras por las horas aprobadas, con su burden real; y los cargos de Gusto
 -- del banco se casan con lo que cada nómina dejó por pagar) · c15, la
 -- Fase 11.
--- 13-nov-2026. Se pega en el SQL Editor DESPUÉS de c1, c2, c3, c4, c6 y c10
--- (y de c7, s1, p1, c8, c9, c11, c12, c13 y c14 si se usan: la cadena de
--- siempre). Idempotente: se puede volver a pegar entero (no pisa la
--- configuración, ni el mapeo de columnas que Edgar haya cambiado, ni una
--- persona, ni una corrida). Después se pega c15-pruebas.sql.
+-- 13-nov-2026 (y 14-nov: la Fase 11c, abajo). Se pega en el SQL Editor
+-- DESPUÉS de c1, c2, c3, c4, c6 (el del 14-nov-2026 o posterior: su marca,
+-- 2026111401) y c10 (y de c7, s1, p1, c8, c9, c11, c12, c13 y c14 si se
+-- usan: la cadena de siempre). Idempotente: se puede volver a pegar entero
+-- (no pisa la configuración, ni el mapeo de columnas que Edgar haya
+-- cambiado, ni una persona, ni una corrida). Después se pega
+-- c15-pruebas.sql.
 --
 -- Qué hace. Gusto calcula la nómina, retiene, deposita y presenta el 941, el
 -- 940, el RT-6 y los W-2; la app NO calcula nada de eso. Lo que la app hace
@@ -38,6 +40,46 @@
 -- todo va por NOMBRE (nunca por posición), se amplía desde la pantalla, y
 -- una columna con cifras que el mapeo no conozca FRENA la corrida en vez de
 -- perderse. Se confirma con el primer archivo real.
+--
+-- LO QUE CAMBIÓ EL 14-NOV (Fase 11c): «GUSTO» COMO PALABRA ENTERA, TAMBIÉN
+-- EN LOS CARGOS. Lo dejó abierto la revisión final de la 11b. En un DÉBITO
+-- esta capa (como el banco, c6) buscaba el descriptor de nómina en
+-- cualquier parte de la descripción, también DENTRO de otra palabra: un
+-- «ZELLE PAYMENT TO AUGUSTO ZZ LOPEZ» salía en Nómina → Cargos de Gusto; el
+-- aviso 35 y la fila 180 del cierre —que detiene— lo contaban como un
+-- cargo de Gusto sin casar; se le ofrecía «es la cuota mensual»; se dejaba
+-- casar como de Gusto sin su nota; y no salía entre los candidatos «por
+-- fuera de Gusto» (el neto que alguien cobró por Zelle). Ahora, en un
+-- débito como ya en un depósito, «¿el banco lo nombra como de Gusto?» es
+-- UNA pregunta con UNA respuesta, la del banco: fn_banco_dice_nomina(texto),
+-- de c6 (su marca 2026111401): el descriptor como PALABRA ENTERA («GUSTO»,
+-- no «AUGUSTO»; y «ZENPAYROLL», el nombre viejo de Gusto, que el patrón de
+-- fábrica de c6 gana ese mismo día). La llaman las cinco funciones que lo
+-- preguntaban, cada una con su propia expresión (por eso el banco y la
+-- nómina se habían separado): fn_nomina_cargos (los pendientes),
+-- fn_nomina_cargo_propuesta (si ofrece «es la cuota»), fn_nomina_cargo_casar
+-- (si pide la nota: lo que no es de Gusto queda «por fuera de Gusto»),
+-- fn_nomina_cargo_cuota (su freno) y fn_nomina_cargos_fuera (los
+-- candidatos).
+--   · LO QUE NO CAMBIA: qué texto mira cada una (la descripción del banco,
+--     como antes); que el motivo «nomina» de la Bandeja manda (lo que el
+--     banco propone como de nómina sale aquí); y ni un dato: ninguna tabla,
+--     ningún pago casado, ninguna cuota ni su clase («nomina», «cuota»,
+--     «fuera») se tocan. Las mismas 66 funciones, 15 tablas y 7 vistas:
+--     ninguna función nueva y ninguna SECURITY DEFINER más. Quién ve qué,
+--     igual: lo de cada persona, con el código del teléfono.
+--   · LO QUE PIDE: el c6-banco.sql del 14-nov (o posterior), pegado ANTES.
+--     Sin fn_banco_dice_nomina este archivo para con MX000 y no toca nada
+--     (dice que se vuelva a pegar c6). Esa función no es SECURITY DEFINER,
+--     no escribe y lee solo el patrón del descriptor de nómina, con los
+--     permisos de quien llama: contesta sí o no sobre el texto que se le
+--     pasa. No abre nada de la nómina ni del banco.
+--   · SUS PRUEBAS: la 67 (las descripciones que SÍ son de Gusto y las que
+--     NO, recién llegadas del banco y después de su «Casar»: la nómina dice
+--     lo mismo que la Bandeja, una por una) y la 68 (el Zelle a un Augusto:
+--     ni cargo de Gusto, ni cuota, ni se casa sin su nota; con ella, «por
+--     fuera de Gusto»; y sale entre los candidatos) de c15-pruebas.sql (68
+--     filas).
 --
 -- LO QUE CAMBIÓ EL 13-NOV, SEGUNDA VEZ (Fase 11b: los arreglos de la
 -- revisión contra el dinero y la seguridad, y de la verificación desde
@@ -480,6 +522,7 @@
 -- su contrato permite: fn_postear_interno y fn_reversar_interno desde su
 -- puente, fn_postear —la puerta del dueño— para repartir la bolsa,
 -- fn_horas_devengar, fn_banco_clasificar, fn_banco_descasar,
+-- fn_banco_dice_nomina —14-nov, Fase 11c: solo lee—,
 -- fn_jornal_repartir_ids); ni perfiles, horas, proyectos o costos_equipo,
 -- que son de la app (los lee; sin llaves foráneas hacia ellos). No guarda
 -- el archivo. No manda nada a Gusto.
@@ -556,6 +599,14 @@ begin
   if cardinality(v_falta) > 0 then
     return format('c15 se pega después de c1, c2, c3, c4, c6 y c10 (y de c7, s1, p1, c8, c9, c11, c12, c13 y c14 si se usan), con las '
                   'tablas de la app: falta %s.', array_to_string(v_falta, ', '));
+  end if;
+  -- (14-nov-2026, Fase 11c) El c6 de esa fase: su función que dice si un texto nombra la nómina como palabra entera (la
+  -- llaman los cargos de Gusto de esta capa, con los permisos de quien llama).
+  if to_regprocedure('public.fn_banco_dice_nomina(text)') is null
+     or not has_function_privilege('authenticated', to_regprocedure('public.fn_banco_dice_nomina(text)'), 'execute') then
+    return 'el c6-banco.sql pegado es anterior al 14-nov-2026 (le falta fn_banco_dice_nomina, la que dice si un movimiento nombra a '
+           'Gusto como palabra entera; su marca es 2026111401): vuelve a pegar c6-banco.sql (entero, o sus dos partes) y después '
+           'este archivo.';
   end if;
   -- La versión de c2 que va con esta capa (la del tiempo en producción).
   execute 'select public.fn_libro_version()' into v_v;
@@ -649,7 +700,7 @@ begin
   return null;
 end $$;
 revoke execute on function public.fn_nomina_precondiciones() from public, anon, authenticated, service_role;
-comment on function public.fn_nomina_precondiciones() is 'c15: lo que falta para pegar c15-nomina.sql (nulo = nada): c1, c2 (marca 2026100201), c3, c6 y c10, las tablas y columnas del libro, del banco y de la app que lee, las cuentas de la nómina en el plan y en las cuentas del puente, Supabase Auth, el SQL Editor, un dueño activo, nada ajeno con nombre de c15 y nada ajeno sobre sus vistas.';
+comment on function public.fn_nomina_precondiciones() is 'c15: lo que falta para pegar c15-nomina.sql (nulo = nada): c1, c2 (marca 2026100201), c3, c6 (el del 14-nov-2026: con fn_banco_dice_nomina) y c10, las tablas y columnas del libro, del banco y de la app que lee, las cuentas de la nómina en el plan y en las cuentas del puente, Supabase Auth, el SQL Editor, un dueño activo, nada ajeno con nombre de c15 y nada ajeno sobre sus vistas.';
 
 do $$
 declare
@@ -5324,12 +5375,10 @@ begin
     raise exception using errcode = '22023', message = 'No existe ese movimiento del banco.';
   end if;
   select * into cfg from nomina_config where id = 1;
-  -- (¿el banco lo nombra como de Gusto? Por su motivo en la Bandeja o por el descriptor de nómina de c6; en un DEPÓSITO, el
-  -- descriptor como PALABRA ENTERA, que es la regla de c6 para la devolución de Gusto: «GUSTO», no «AUGUSTO»)
-  v_gusto := m.estado_motivo is not distinct from 'nomina'
-             or coalesce(coalesce(m.desc_norm, m.descripcion, '')
-                         ~* (select case when m.monto > 0 then '\m(' || d.patron || ')\M' else d.patron end
-                               from banco_descriptores d where d.clave = 'nomina'), false);
+  -- (¿el banco lo nombra como de Gusto? Por su motivo en la Bandeja o por el descriptor de nómina de c6 como PALABRA ENTERA:
+  -- «GUSTO», no «AUGUSTO». 14-nov, Fase 11c: también en un DÉBITO, y lo decide el banco —fn_banco_dice_nomina—, no una
+  -- expresión de aquí: antes el Zelle a alguien que se llame Augusto pasaba por un cargo de Gusto, y se le ofrecía la cuota)
+  v_gusto := m.estado_motivo is not distinct from 'nomina' or fn_banco_dice_nomina(coalesce(m.desc_norm, m.descripcion, ''));
   -- (su pago vivo DE VERDAD: aplicado y con el movimiento todavía casado con su asiento)
   select g.* into v_pago from nomina_pagos g
    where g.movimiento_id = m.id and g.estado = 'aplicado' and m.asiento_id = g.asiento_id and m.estado in ('casado', 'en_transito');
@@ -5498,29 +5547,33 @@ comment on function public.fn_nomina_cargo_propuesta(uuid) is 'c15: la propuesta
 -- se DES-CASÓ en la Bandeja del banco sale como «descasado» (su movimiento
 -- vuelve a salir, además, entre los pendientes): se deshace aquí, o se casa
 -- otra vez y se apunta solo.
+-- (14-nov, Fase 11c) UN PENDIENTE ES DE GUSTO SI EL BANCO LO DICE: porque la
+-- Bandeja lo propone con el motivo «nomina», o porque su descripción nombra
+-- la nómina como PALABRA ENTERA (fn_banco_dice_nomina, de c6: «GUSTO», no
+-- «AUGUSTO»). Un cargo, mientras la Bandeja todavía no lo ha propuesto
+-- (recién llegado del banco); una devolución —un depósito—, siempre. Antes,
+-- en un cargo bastaba con que el descriptor apareciera DENTRO de otra
+-- palabra: el Zelle a alguien que se llame Augusto salía aquí, y el aviso 35
+-- y la fila 180 del cierre lo contaban como un cargo de Gusto sin casar.
 create or replace function public.fn_nomina_cargos()
 returns table (movimiento_id uuid, fecha date, monto numeric(14,2), descripcion text, cuenta text, estado text, clase_probable text,
                pago_id uuid, asiento_id uuid, asiento text, corridas text, texto text, opciones int)
 language sql stable
 set search_path = public, pg_temp
 as $$
-  with pat as materialized (select (select d.patron from public.banco_descriptores d where d.clave = 'nomina') as nomina),
-       pend as (
+  with pend as (
          select m.id, m.fecha, (-m.monto)::numeric(14,2) as monto, m.descripcion, m.cuenta,
                 public.fn_nomina_cargo_propuesta(m.id) as p
-           from public.movimientos_banco m cross join pat
+           from public.movimientos_banco m
           where m.estado = 'pendiente' and m.monto <> 0
-            and (   (m.monto < 0 and (m.estado_motivo = 'nomina'
-                                      or (m.estado_motivo is null and pat.nomina is not null
-                                          and coalesce(m.desc_norm, m.descripcion, '') ~* pat.nomina)))
-                 -- (13-nov, la revisión final de la Fase 11b) UNA DEVOLUCIÓN DE GUSTO ES LA QUE EL BANCO TOMA POR TAL: el depósito
-                 -- que la Bandeja (c6, desde su marca 2026111301) propone con el motivo «nomina», o el que nombra a Gusto como
-                 -- PALABRA ENTERA (la regla de c6: «GUSTO», no «AUGUSTO»). Antes bastaba con que el descriptor apareciera DENTRO
-                 -- de otra palabra: el Zelle de un cliente que se llame Augusto salía aquí como una devolución de Gusto, y el
-                 -- aviso 35 y la fila 180 del cierre (que detiene) lo contaban como «un cargo de Gusto sin casar».
-                 or (m.monto > 0 and (m.estado_motivo = 'nomina'
-                                      or (pat.nomina is not null
-                                          and coalesce(m.desc_norm, m.descripcion, '') ~* ('\m(' || pat.nomina || ')\M'))))))
+            -- (13-nov, la revisión final de la Fase 11b) UNA DEVOLUCIÓN DE GUSTO ES LA QUE EL BANCO TOMA POR TAL: el depósito
+            -- que la Bandeja (c6, desde su marca 2026111301) propone con el motivo «nomina», o el que nombra a Gusto como
+            -- PALABRA ENTERA (la regla de c6: «GUSTO», no «AUGUSTO»). (14-nov, Fase 11c) Y UN CARGO, IGUAL: el que la Bandeja
+            -- propone con el motivo «nomina», o —si todavía no lo ha propuesto— el que nombra a Gusto como palabra entera. Lo
+            -- decide el banco (fn_banco_dice_nomina), para los dos signos.
+            and (m.estado_motivo = 'nomina'
+                 or ((m.monto > 0 or m.estado_motivo is null)
+                     and public.fn_banco_dice_nomina(coalesce(m.desc_norm, m.descripcion, '')))))
   select pend.id, pend.fecha, pend.monto, pend.descripcion, pend.cuenta, 'pendiente'::text, pend.p->>'clase_probable', null::uuid, null::uuid,
          null::text, null::text, pend.p->>'texto', jsonb_array_length(pend.p->'opciones')
     from pend
@@ -5546,7 +5599,7 @@ as $$
 $$;
 revoke execute on function public.fn_nomina_cargos() from public, anon, service_role;
 grant  execute on function public.fn_nomina_cargos() to authenticated;
-comment on function public.fn_nomina_cargos() is 'c15: los movimientos de Gusto en el banco: los PENDIENTES en la Bandeja (los cargos que el banco dejó esperando el journal de la nómina y las devoluciones de Gusto —un depósito que la Bandeja propone como de nómina, o con su nombre como palabra entera («GUSTO», no «AUGUSTO»): monto en negativo—), con lo que sugiere su descripción, su propuesta en una línea y cuántas opciones tiene; y los ya resueltos desde la nómina (casado: con qué nóminas y qué cuentas pagó, también los pagados por fuera de Gusto; cuota: la mensual de Gusto; descasado: se casó aquí y después se des-casó en la Bandeja del banco: se deshace aquí), con su asiento. Solo lectura. A quien no es el dueño, nada.';
+comment on function public.fn_nomina_cargos() is 'c15: los movimientos de Gusto en el banco: los PENDIENTES en la Bandeja (los cargos que el banco dejó esperando el journal de la nómina —los que la Bandeja propone como de nómina o, recién llegados, los que nombran a Gusto como palabra entera («GUSTO», no «AUGUSTO»: lo dice fn_banco_dice_nomina, de c6)— y las devoluciones de Gusto —un depósito que la Bandeja propone como de nómina, o con su nombre como palabra entera: monto en negativo—), con lo que sugiere su descripción, su propuesta en una línea y cuántas opciones tiene; y los ya resueltos desde la nómina (casado: con qué nóminas y qué cuentas pagó, también los pagados por fuera de Gusto; cuota: la mensual de Gusto; descasado: se casó aquí y después se des-casó en la Bandeja del banco: se deshace aquí), con su asiento. Solo lectura. A quien no es el dueño, nada.';
 
 -- LO QUE PUEDE SER UN PAGO «POR FUERA DE GUSTO»: un cargo del banco que NO
 -- es de Gusto y que da, al centavo, algo que una nómina posteada dejó por
@@ -5557,6 +5610,9 @@ comment on function public.fn_nomina_cargos() is 'c15: los movimientos de Gusto 
 -- detiene el cierre; la pantalla los enseña como sugerencia y Edgar los casa
 -- —con su nota— por la misma puerta. Cualquier otro cargo del banco se puede
 -- casar igual desde la nómina, diciendo sus partes y su nota.
+-- (14-nov, Fase 11c: «no es de Gusto» lo dice el banco, por palabra entera
+-- —fn_banco_dice_nomina—: el Zelle a alguien que se llame Augusto, con el
+-- que se pagó el neto de una persona, ya sale entre los candidatos.)
 create or replace function public.fn_nomina_cargos_fuera()
 returns table (movimiento_id uuid, fecha date, monto numeric(14,2), descripcion text, corrida_id uuid, dia_pago date, clase text,
                partes jsonb, texto text)
@@ -5564,7 +5620,6 @@ language sql stable
 set search_path = public, pg_temp
 as $$
   with cfg as materialized (select c.cargo_dias_antes as antes from public.nomina_config c where c.id = 1),
-       pat as materialized (select (select d.patron from public.banco_descriptores d where d.clave = 'nomina') as nomina),
        pend as (select p.corrida_id, p.dia_pago, p.cuenta, p.clase, p.pendiente from public.fn_nomina_pendiente() p where p.pendiente > 0),
        cand as (
          select pe.corrida_id, pe.dia_pago, pe.cuenta, 'cheque'::text as clase,
@@ -5586,11 +5641,11 @@ as $$
                        'Si lo es, cásalo como pagado por fuera de Gusto, con su nota.',
                        public.fn_nomina_dia(c.dia_pago), c.cuenta, public.fn_nomina_usd(c.monto)) end
     from public.movimientos_banco m
-    cross join cfg cross join pat
+    cross join cfg
     join cand c on c.monto = -m.monto and m.fecha between c.dia_pago - cfg.antes and c.dia_pago + 92
    where m.estado = 'pendiente' and m.monto < 0
      and not (m.estado_motivo is not distinct from 'nomina'
-              or (pat.nomina is not null and coalesce(m.desc_norm, m.descripcion, '') ~* pat.nomina))
+              or public.fn_banco_dice_nomina(coalesce(m.desc_norm, m.descripcion, '')))
      and (select public.fn_nomina_ve_personas())
    order by m.fecha, m.id, c.dia_pago
 $$;
@@ -5699,11 +5754,9 @@ begin
                      else 'Ese movimiento ya está resuelto en la Bandeja del banco: si se resolvió mal, des-cásalo allí y vuelve aquí.' end;
   end if;
   v_sig := case when m.monto < 0 then 1 else -1 end;   -- (un cargo paga: +; una devolución baja lo que quedó a favor: −)
-  -- (en un DEPÓSITO, el descriptor como PALABRA ENTERA: la regla de c6 para la devolución de Gusto; «AUGUSTO» no es Gusto)
-  v_gusto := m.estado_motivo is not distinct from 'nomina'
-             or coalesce(coalesce(m.desc_norm, m.descripcion, '')
-                         ~* (select case when m.monto > 0 then '\m(' || d.patron || ')\M' else d.patron end
-                               from banco_descriptores d where d.clave = 'nomina'), false);
+  -- (el descriptor de nómina de c6 como PALABRA ENTERA —«AUGUSTO» no es Gusto—: en una devolución y, desde el 14-nov, Fase
+  -- 11c, también en un cargo; lo decide el banco, fn_banco_dice_nomina. Lo que no es de Gusto pide su nota y queda «fuera»)
+  v_gusto := m.estado_motivo is not distinct from 'nomina' or fn_banco_dice_nomina(coalesce(m.desc_norm, m.descripcion, ''));
   if not v_gusto and coalesce(length(v_nota), 0) < 3 then
     raise exception using errcode = '22023',
       message = case when m.monto > 0
@@ -5893,8 +5946,9 @@ begin
   -- ¿Parece la cuota? Lo dice su propia propuesta (qué sugiere su descripción, y si casa con lo que alguna nómina dejó por pagar)
   v_prop := fn_nomina_cargo_propuesta(m.id);
   v_no := concat_ws('; ',
+            -- (14-nov, Fase 11c: como palabra entera, lo dice el banco; «AUGUSTO» no es Gusto)
             case when not (m.estado_motivo is not distinct from 'nomina'
-                           or coalesce(coalesce(m.desc_norm, m.descripcion, '') ~* (select d.patron from banco_descriptores d where d.clave = 'nomina'), false))
+                           or fn_banco_dice_nomina(coalesce(m.desc_norm, m.descripcion, '')))
                  then 'el banco no lo nombra como de Gusto' end,
             case v_prop->>'clase_probable' when 'neto' then 'su descripción dice que es el neto de una nómina'
                                            when 'impuestos' then 'su descripción dice que son los impuestos de una nómina'

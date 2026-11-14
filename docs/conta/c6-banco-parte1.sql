@@ -1,5 +1,5 @@
 -- =====================================================================
--- C6 · EL BANCO — c6-banco.sql, PARTE 1 DE 2 (marca 2026111301).
+-- C6 · EL BANCO — c6-banco.sql, PARTE 1 DE 2 (marca 2026111401).
 -- GENERADA por pruebas/conta/partir-c6.py desde docs/conta/c6-banco.sql:
 -- no se edita a mano. Es lo mismo que el archivo entero, en dos pegados,
 -- para cuando el SQL Editor de Supabase no deja pegarlo de una vez. La
@@ -214,7 +214,7 @@ returns bigint
 language sql
 immutable
 set search_path = public, pg_temp
-as $$ select 2026111301::bigint $$;
+as $$ select 2026111401::bigint $$;
 revoke execute on function public.fn_banco_version() from public, anon, authenticated, service_role;
 -- =====================================================================
 -- 1 · LAS TABLAS
@@ -1435,9 +1435,13 @@ begin
     if v_marca = 'descriptor:' || new.clave then
       begin
         perform '' ~* new.patron;
+        if new.clave = 'nomina' then  -- (Fase 11c: se usa como palabra entera)
+          perform '' ~* ('\m(' || new.patron || ')\M');
+        end if;
       exception when others then
         raise exception using errcode = '22023',
-          message = format('El patrón de «%s» no es una expresión regular válida (%s): %s', new.clave, new.patron, sqlerrm);
+          message = format('El patrón de «%s» no es una expresión regular válida%s (%s): %s', new.clave,
+                           case new.clave when 'nomina' then ' como palabra entera (va entre \m( y )\M)' else '' end, new.patron, sqlerrm);
       end;
       new.cambiado_por := auth.uid();
       new.cambiado_rol := fn_rol_llamante();
@@ -1638,7 +1642,8 @@ end $$;
 -- como lo sembró una versión anterior (nadie lo tocó) se pone al día.
 --   nomina           la nómina (Gusto; ADP o Paychex del proveedor viejo
 --                    hasta el 31-dic): no se clasifica a mano; la de Gusto
---                    se casa desde su página (c15; 13-nov-2026, Fase 11b)
+--                    se casa desde su página (c15; 13-nov-2026, Fase 11b).
+--                    Casa como PALABRA ENTERA (Fase 11c: por eso ZENPAYROLL)
 --   cargo_banco      un cargo del banco o de la tarjeta → 6130 (fijo si
 --                    además el tipo es FEE o SRVCHG y el signo es de cargo).
 --                    También la COMISIÓN de un cheque devuelto («RETURNED
@@ -1670,10 +1675,10 @@ declare
   r record;
 begin
   for r in select * from (values
-      ('nomina',          '(GUSTO|PAYROLL|\mADP\M|PAYCHEX)',
+      ('nomina',          '(GUSTO|ZENPAYROLL|PAYROLL|\mADP\M|PAYCHEX)',
        'Débito de nómina (Gusto): se casa desde Contabilidad → Nómina → Cargos de Gusto, con lo que su nómina dejó por pagar. '
        || 'Un depósito de Gusto (una devolución), igual, contra lo que quedó a favor. La nómina del proveedor anterior, con su '
-       || 'journal (fn_banco_nomina).', null),
+       || 'journal (fn_banco_nomina).', '(GUSTO|PAYROLL|\mADP\M|PAYCHEX)'),
       ('cargo_banco',     '(SERVICE (FEE|CHARGE)|MONTHLY (SERVICE |MAINTENANCE )?FEE|MAINTENANCE FEE|WIRE (TRANSFER )?FEE|'
                           || 'OVERDRAFT|INSUFFICIENT FUNDS|\mNSF\M|ATM FEE|FOREIGN TRANSACTION FEE|ANNUAL (MEMBERSHIP )?FEE|'
                           || 'LATE (PAYMENT )?FEE|RETURNED PAYMENT FEE|STOP PAYMENT FEE|RETURN(ED)? (DEPOSITED )?ITEM (FEE|CHARGE)|'
@@ -2233,6 +2238,22 @@ stable
 set search_path = public, pg_temp
 as $$ select coalesce((select coalesce(p_desc, '') ~* d.patron from banco_descriptores d where d.clave = p_clave), false) $$;
 revoke execute on function public.fn_banco_dice(text, text) from public, anon, authenticated, service_role;
+
+-- (Fase 11c) ¿Nombra el texto la nómina? El descriptor «nomina» como PALABRA
+-- ENTERA («GUSTO», no «AUGUSTO»): el único sitio que lo decide, para R6 y
+-- para c15 (por eso authenticated la ejecuta; al equipo le dice false).
+create or replace function public.fn_banco_dice_nomina(p_texto text)
+returns boolean
+language plpgsql
+stable
+set search_path = public, pg_temp
+as $$
+begin
+  return coalesce((select coalesce(p_texto, '') ~* ('\m(' || d.patron || ')\M')
+                     from banco_descriptores d where d.clave = 'nomina'), false);
+end $$;
+revoke execute on function public.fn_banco_dice_nomina(text) from public, anon, authenticated, service_role;
+grant  execute on function public.fn_banco_dice_nomina(text) to authenticated;
 
 -- (Ronda 4) LOS 4 ÚLTIMOS DE LA OTRA CUENTA que nombra una transferencia
 -- («ONLINE TRANSFER TO CHK ...7781», «TO SAV XXXXXX1097», «FROM ACCT
@@ -6863,7 +6884,8 @@ begin
   -- 2. La nómina: no se clasifica a mano. (13-nov-2026, Fase 11b: decía
   -- «espera el journal (f11) y casa solo». El journal de Gusto, c15, no
   -- lleva línea del banco: su cargo se casa desde la página de la nómina.)
-  if m.monto < 0 and coalesce(v_txt ~* (k->'pat'->>'nomina'), false) then
+  -- (Fase 11c: como PALABRA ENTERA, igual que el depósito: «AUGUSTO» no es Gusto)
+  if m.monto < 0 and fn_banco_dice_nomina(v_txt) then
     return jsonb_build_object(
       'motivo', 'nomina', 'regla', 'R6',
       'texto', 'Débito de nómina (Gusto): se casa desde Contabilidad → Nómina → Cargos de Gusto, con lo que su nómina dejó por '
@@ -8091,7 +8113,7 @@ begin
     -- «AUGUSTO») y que nada más explica sale con el motivo «nomina» (R6),
     -- como el débito, y sus botones (las facturas abiertas, si las hay) piden
     -- su motivo. Si otra cosa lo explica, sigue como estaba y el texto avisa.
-    v_dice_nom := coalesce(v_txt ~* ('\m(' || (k->'pat'->>'nomina') || ')\M'), false);
+    v_dice_nom := fn_banco_dice_nomina(v_txt);
     v_nom_dep := v_dice_nom and not v_personal and v_cobros is null and v_grupos is null and not v_desconocida
                  and v_otro_cobro is null and v_devol is null and v_reemb is null and not (v_fact is not null and v_exacta)
                  and not v_nombrado and v_tr is null;
@@ -9999,6 +10021,6 @@ grant  execute on function public.fn_banco_casar_todo(text, date) to authenticat
 
 
 -- (Fin de la parte 1 de 2.)
-select 'c6 · parte 1 de 2' as control, public.fn_banco_version() = 2026111301 as ok,
-       to_jsonb('Pegada la parte 1 de c6-banco.sql (marca 2026111301). Ahora pega c6-banco-parte2.sql: hasta entonces el banco '
+select 'c6 · parte 1 de 2' as control, public.fn_banco_version() = 2026111401 as ok,
+       to_jsonb('Pegada la parte 1 de c6-banco.sql (marca 2026111401). Ahora pega c6-banco-parte2.sql: hasta entonces el banco '
                 'está a medias y su control lo dice en rojo.'::text) as detalle;
