@@ -57,6 +57,31 @@
 -- anterior, que ya terminó (la rutina no registra un pago cuya semana no ha
 -- terminado). Lo de verdad a la vez (dos sesiones llamando a la rutina en el
 -- mismo instante) lo corre el banco: pruebas/conta/c10-concurrencia.sh.
+-- 15-nov-2026, DESPUÉS DE LA PRIMERA CORRIDA EN PRODUCCIÓN (la capa no
+-- cambia; la 72, y de paso la 69, la 71 y la 79): UNA SENTENCIA, UN SOLO
+-- USUARIO. En producción la 72 salió en rojo —«preguntan de quién son () y
+-- la rutina LOS TOCÓ»— y en el banco de pruebas en verde. ERA LA PRUEBA, no
+-- la capa: los dos cheques seguían pendientes y preguntando (lo decían los
+-- tramos siguientes de esa misma fila). Ese tramo era UNA sentencia que
+-- cambiaba de usuario a mitad: pg_temp.c10_solo deja la sesión como el SQL
+-- Editor al terminar, y lo que se leía después contaba con que un «(select
+-- pg_temp.c10_ser('dueno')) s» puesto en su FROM corriera ANTES que la
+-- vista. Ese orden lo elige el plan, no quien escribe la sentencia. Con
+-- volumen en movimientos_banco y el random_page_cost de fábrica de Supabase
+-- (1.1; el banco de pruebas corre con 4) la base lee primero el movimiento
+-- por su llave: la policy del banco —(select es_dueno()), que se evalúa una
+-- vez, con la primera fila— se evalúa sin sesión, no pasa ninguna fila, el
+-- «s» ya no llega a correr y lo que se lee después tampoco se ve. Ahora cada
+-- lectura va en SU sentencia, con el usuario puesto ANTES (perform
+-- pg_temp.c10_ser) y sin cambiarlo a mitad: en la 72 (sus tramos b y e) y en
+-- los otros tres sitios con el mismo «s» (la 69, que también cambiaba con el
+-- plan —con otro orden su tarjeta se calculaba sin sesión—, la 71 y la 79).
+-- Miran lo mismo que miraban; y el tramo de la 72, si sale en rojo, dice qué
+-- vio (lo que devolvió la rutina, lo que ve el dueño y lo que hay en las
+-- tablas). Por la API no pasa: el usuario se fija antes de la sentencia y
+-- nada de la capa lo cambia dentro de ella. En el banco se ve con una base
+-- con volumen en movimientos_banco y PGOPTIONS='-c random_page_cost=1.1'
+-- delante del psql de abajo.
 --
 -- CÓMO SE CORRE. En el SQL Editor de Supabase: DESPUÉS de c10-costo-obra.sql,
 -- pegar este archivo entero → Run. Sale la tabla _pruebas: 82 filas, todas
@@ -359,6 +384,15 @@ $$;
 
 -- Ser: el SQL Editor (editor: sin rol ni sesión), el dueño o una persona de
 -- prueba por la API (authenticated, en aal2), anon o service_role.
+-- UNA SENTENCIA, UN SOLO USUARIO. Para leer como el dueño (una vista de la
+-- capa, una tabla con policy) se llama ANTES, en su propia sentencia
+-- (perform pg_temp.c10_ser('dueno')), y esa lectura no lleva dentro nada que
+-- cambie de usuario: ni un c10_ser en su FROM, ni un ayudante que vuelve al
+-- SQL Editor al terminar (c10_solo, c10_rutina, c10_dice…: su resultado se
+-- guarda antes en una variable). La sentencia se queda con las policies de
+-- quien era al planearla, y cada «(select es_dueno())» se evalúa una sola
+-- vez, cuando hace falta la primera fila: qué corre antes lo elige el plan
+-- (cabecera, «15-nov-2026, después de la primera corrida en producción»).
 create or replace function pg_temp.c10_ser(quien text) returns void language plpgsql as $$
 begin
   execute 'reset role';
@@ -5700,7 +5734,7 @@ end $$;
 do $$
 declare
   v_obt text; v_r jsonb; v_j jsonb; mA uuid; mC uuid; a text; b text; c text; d text; e text; f text; g text; v_n0 int; v_t0 timestamptz;
-  v_t1 timestamptz; v_fa date; v_mes text; v_no text;
+  v_t1 timestamptz; v_fa date; v_mes text; v_no text; v_tj text;
   v_nom text := 'CADA AVISO QUE LO FRENA (la cuadrilla sola): LO QUE PUEDE CASAR CON OTRA COSA DEL LIBRO y lo demás que solo sabe el banco. '
                 'La rutina postea por c6 SIN motivo: lo que c6 frena no entra, nada queda a medias y queda apuntado lo que dijo; no se '
                 'insiste con lo mismo (sí pasadas 20 horas o si las horas cambian); con el «Así es» de Edgar y su motivo, entra a mano. Un '
@@ -5779,12 +5813,16 @@ begin
       mC := pg_temp.c10_cargo('c10-t69-2', pg_temp.c10_ds(), 240.00, 'CHECK 9692 C10 PRUEBA');
       select count(*) into v_n0 from asientos;
       v_r := pg_temp.c10_dice(jsonb_build_object('movimiento_id', mC, 'usuario_id', pg_temp.c10('p2')));
+      -- (una sentencia, un solo usuario: su tarjeta, como el dueño; lo que hay en las tablas, como el SQL Editor)
+      perform pg_temp.c10_ser('dueno');
+      v_tj := (select split_part(q.persona, ' ', 1) || ' [' || (select string_agg(t.f->>'codigo', ',') from jsonb_array_elements(q.solo_frenos) t(f)) || ']'
+                 from v_jornal_pendientes q where q.movimiento_id = mC and q.por = 'edgar' and q.cheque = '9692');
+      perform pg_temp.c10_ser('editor');
       a := format('Edgar dice de quién es y %s, queda como la tarjeta de %s y %s',
                   case when not (v_r->>'registrado')::boolean
                             and v_r->>'nota' like 'Anotado: este pago es de Zzbeto C10 PRUEBA. No entró solo: Puede ser esto del libro:%un cheque tarda en cobrarse%dilo en el motivo.'
                        then 'no entra: lo dice («puede ser esto del libro»)' else 'MAL: ' || left(v_r::text, 300) end,
-                  (select split_part(q.persona, ' ', 1) || ' [' || (select string_agg(t.f->>'codigo', ',') from jsonb_array_elements(q.solo_frenos) t(f)) || ']'
-                     from (select pg_temp.c10_ser('dueno')) s, v_jornal_pendientes q where q.movimiento_id = mC and q.por = 'edgar' and q.cheque = '9692'),
+                  v_tj,
                   case when (select count(*) from asientos) = v_n0 and (select m.estado from movimientos_banco m where m.id = mC) = 'pendiente'
                             and not exists (select 1 from horas h where h.id = -1010000002 and h.aprobado_el is not null)
                             and not exists (select 1 from jornal_repartos r where r.movimiento_id = mC)
@@ -5930,7 +5968,7 @@ end $$;
 --     borra.
 do $$
 declare
-  v_obt text; v_r jsonb; v_d jsonb; mA uuid; mB uuid; rA uuid; a text; b text; c text; d text; e text; f text; g text; v_n0 int;
+  v_obt text; v_r jsonb; v_d jsonb; mA uuid; mB uuid; rA uuid; a text; b text; c text; d text; e text; f text; g text; v_n0 int; v_s text;
   v_nom text := 'EL DESHACER QUE NO VUELVE (la cuadrilla sola): lo que Edgar deshizo NO vuelve a entrar solo («Edgar dijo que no», con cuándo y '
                 'su motivo), por más que la rutina corra; tampoco lo que soltó des-casándolo en la Bandeja; vuelve a entrar solo si él lo '
                 'pide (queda escrito, y se intenta en el momento), y deshecho otra vez, otra vez no vuelve; o lo acepta a mano con su «Así es»';
@@ -5954,13 +5992,15 @@ begin
     -- (a) Edgar deshace el de Zzana
     select r.id into rA from jornal_repartos r where r.movimiento_id = mA and r.estado = 'aplicado';
     v_d := pg_temp.c10_deshacer(rA, 'c10-pruebas: no era de esta semana');
+    -- (una sentencia, un solo usuario: primero lo que dice la lista de pendientes; después, como el dueño, su porqué)
+    v_s := pg_temp.c10_solo(mA);
     perform pg_temp.c10_ser('dueno');
     select format('Edgar deshace el de Zzana y %s: %s, %s',
                   case when v_d->>'nota' like '%Este pago ya no vuelve a entrar solo: si lo quieres repartido, acéptalo tú en la Bandeja.' then 'la nota lo avisa' else 'la nota NO lo avisa' end,
-                  pg_temp.c10_solo(mA),
+                  v_s,
                   case when q.solo_por_que like 'Lo deshiciste el % («c10-pruebas: no era de esta semana»): no vuelve a entrar solo.%' then 'con cuándo y su motivo' else 'dice: ' || coalesce(q.solo_por_que, '(nada)') end)
       into b
-      from (select pg_temp.c10_ser('dueno')) s, v_jornal_pendientes q where q.movimiento_id = mA;
+      from v_jornal_pendientes q where q.movimiento_id = mA;
     perform pg_temp.c10_ser('editor');
     -- (b) la rutina, tres veces
     select count(*) into v_n0 from asientos;
@@ -6020,6 +6060,7 @@ end $$;
 do $$
 declare
   v_obt text; v_r jsonb; mC1 uuid; mC2 uuid; a text; b text; c text; d text; e text; f text; g text; h text; v_as uuid; v_pat text;
+  v_s1 text; v_s2 text; v_ch text; v_np bigint; v_tb text; v_t text;
   v_nom text := 'EL CHEQUE (la cuadrilla sola): llega sin nombre, la base no lo adivina y la Bandeja pregunta de quién es; Edgar elige a la '
                 'persona y en esa misma llamada se reparte por sus horas y se registra solo (5200 por obra, con ella como tercero; el asiento '
                 'dice «cheque N · registrado solo»); queda escrito de quién era y quién lo dijo; el patrón de la persona no cambia; si algo '
@@ -6056,13 +6097,32 @@ begin
     insert into jornal_personas (usuario_id, patron, activa, nota) values (pg_temp.c10('p3')::uuid, '\mSIN-PATRON\M', false, 'c10-pruebas: no cobra por horas (se deshace)');
     perform set_config('mx_jornal.escribe', '', true);
     select j.patron into v_pat from jornal_personas j where j.usuario_id = pg_temp.c10('p2')::uuid;
-    -- (b) nadie los reconoce; preguntan; la rutina no los toca
+    -- (b) nadie los reconoce; preguntan; la rutina no los toca.
+    --     UNA SENTENCIA, UN SOLO USUARIO (cabecera, «15-nov-2026, después de la
+    --     primera corrida en producción»): cada lectura va en SU sentencia, con
+    --     el usuario puesto antes y sin cambiarlo a mitad. Como el dueño por la
+    --     API: lo que dice su lista de pendientes de cada cheque, los cheques
+    --     que le preguntan y los dos movimientos, que ve pendientes. Y como el
+    --     SQL Editor, sin policy de por medio: lo que hay en las tablas.
+    v_s1 := pg_temp.c10_solo(mC1);
+    v_s2 := pg_temp.c10_solo(mC2);
     perform pg_temp.c10_ser('dueno');
+    v_ch := (select string_agg(q.cheque, ', ' order by q.cheque) from v_jornal_cheques q where q.movimiento_id in (mC1, mC2));
+    v_np := (select count(*) from movimientos_banco m where m.id in (mC1, mC2) and m.estado = 'pendiente');
+    perform pg_temp.c10_ser('editor');
+    v_tb := format('%s pendientes, %s repartos, %s con algo dicho o apuntado',
+                   (select count(*) from movimientos_banco m where m.id in (mC1, mC2) and m.estado = 'pendiente'),
+                   (select count(*) from jornal_repartos r where r.movimiento_id in (mC1, mC2)),
+                   (select count(*) from jornal_pagos g2 where g2.movimiento_id in (mC1, mC2)));
     b := format('dos cheques: %s, preguntan de quién son (%s) y %s',
-                case when pg_temp.c10_solo(mC1) = 'no reconocido' and pg_temp.c10_solo(mC2) = 'no reconocido' then 'nadie los reconoce' else 'ALGUIEN los reconoce' end,
-                (select string_agg(q.cheque, ', ' order by q.cheque) from (select pg_temp.c10_ser('dueno')) s, v_jornal_cheques q where q.movimiento_id in (mC1, mC2)),
-                case when pg_temp.c10_registrados(v_r, array[mC1, mC2]) = '0' and (select count(*) from movimientos_banco m where m.id in (mC1, mC2) and m.estado = 'pendiente') = 2
-                     then 'la rutina no los toca' else 'la rutina LOS TOCÓ' end);
+                case when v_s1 = 'no reconocido' and v_s2 = 'no reconocido' then 'nadie los reconoce' else 'ALGUIEN los reconoce' end,
+                v_ch,
+                case when pg_temp.c10_registrados(v_r, array[mC1, mC2]) = '0' and v_np = 2
+                          and v_tb = '2 pendientes, 0 repartos, 0 con algo dicho o apuntado'
+                     then 'la rutina no los toca'
+                     -- (en rojo dice qué vio: lo que la rutina devolvió, lo que ve el dueño y lo que hay en las tablas)
+                     else format('la rutina LOS TOCÓ (registró %s; el dueño ve %s de 2 pendientes; en las tablas: %s)',
+                                 pg_temp.c10_registrados(v_r, array[mC1, mC2]), v_np, v_tb) end);
     -- (c) «es de Zzbeto»
     v_r := pg_temp.c10_dice(jsonb_build_object('movimiento_id', mC1, 'usuario_id', pg_temp.c10('p2')));
     select r.asiento_id into v_as from jornal_repartos r where r.movimiento_id = mC1 and r.estado = 'aplicado';
@@ -6091,12 +6151,16 @@ begin
     end;
     -- (e) «es de Zzcaro», que no está dada de alta (y no tiene tarifa): no entra, y queda como su tarjeta
     v_r := pg_temp.c10_dice(jsonb_build_object('movimiento_id', mC2, 'usuario_id', pg_temp.c10('p3')));
+    -- (una sentencia, un solo usuario: primero lo que dice la lista de pendientes; después, como el dueño, su tarjeta)
+    v_s2 := pg_temp.c10_solo(mC2);
     perform pg_temp.c10_ser('dueno');
+    v_t := (select format('%s, por %s, cheque %s', v_s2, q.por, q.cheque)
+              from v_jornal_pendientes q where q.movimiento_id = mC2 and q.persona = 'Zzcaro C10 PRUEBA');
+    perform pg_temp.c10_ser('editor');
     e := format('%s; queda como su tarjeta: %s',
                 case when not (v_r->>'registrado')::boolean and v_r->>'estado' = 'pregunta'
                           and v_r->>'nota' like 'Anotado: este pago es de Zzcaro C10 PRUEBA. No entró solo: %no tiene tarifa en Costos del equipo%' then 'no entra y lo dice' else 'MAL: ' || left(v_r::text, 300) end,
-                (select format('%s, por %s, cheque %s', pg_temp.c10_solo(mC2), q.por, q.cheque)
-                   from (select pg_temp.c10_ser('dueno')) s, v_jornal_pendientes q where q.movimiento_id = mC2 and q.persona = 'Zzcaro C10 PRUEBA'));
+                v_t);
     -- (f) quitado lo dicho: vuelve a preguntar
     v_r := pg_temp.c10_dice(jsonb_build_object('movimiento_id', mC2, 'quitar', true));
     perform pg_temp.c10_ser('dueno');
@@ -6759,6 +6823,7 @@ end $$;
 do $$
 declare
   v_obt text; v_r jsonb; v_u jsonb; mA uuid; mC uuid; a text; b text; c text; d text; e text; f text; g text; v_ult jsonb; rp jornal_repartos;
+  v_s text;
   v_nom text := 'LO APAGADO (la cuadrilla sola): el ajuste que apaga lo automático (de fábrica, encendido) deja escrito quién y cuándo; '
                 'apagado, la rutina y la tarea sin pantalla no hacen nada, el pago reconocido espera con ese porqué y la respuesta de un '
                 'cheque se anota sin registrarlo; el «Así es» a mano sigue como siempre; el control lo dice; encendido otra vez, lo que '
@@ -6809,12 +6874,15 @@ begin
     d := case when v_u = '{"encendido": false}'::jsonb and (select c2.solo_ultimo from jornal_config c2 where c2.id = 1) is not distinct from v_ult
               then 'apagada, y no apunta nada' else 'HIZO algo: ' || left(v_u::text, 200) end;
     -- (d) el pago reconocido, y el cheque
+    --     (una sentencia, un solo usuario: primero lo que dice la lista de pendientes; después, como el dueño, su porqué)
+    v_s := pg_temp.c10_solo(mA);
     perform pg_temp.c10_ser('dueno');
-    select format('%s, %s', pg_temp.c10_solo(mA),
+    select format('%s, %s', v_s,
                   case when q.solo_por_que like 'El registro automático de los pagos a la cuadrilla está apagado (Costo por obra → Ajustes): este pago espera tu «Así es».'
                        then 'con su porqué' else 'dice: ' || coalesce(q.solo_por_que, '(nada)') end)
       into e
-      from (select pg_temp.c10_ser('dueno')) s, v_jornal_pendientes q where q.movimiento_id = mA;
+      from v_jornal_pendientes q where q.movimiento_id = mA;
+    perform pg_temp.c10_ser('editor');
     v_r := pg_temp.c10_dice(jsonb_build_object('movimiento_id', mC, 'usuario_id', pg_temp.c10('p2')));
     f := format('%s, y queda como su tarjeta: %s',
                 case when not (v_r->>'registrado')::boolean and v_r->>'estado' = 'no'
