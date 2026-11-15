@@ -1,5 +1,21 @@
 # Lo que hay que pegar (15-nov)
 
+## 15-nov por la noche: vuelve a pegar solo `c10-pruebas`
+
+La prueba 72 (el cheque) salió en rojo en la base de verdad: «preguntan de
+quién son () y la rutina LOS TOCÓ». **Era la prueba, no la función**: leía
+como el dueño y como el SQL Editor dentro de una misma consulta, y con la
+configuración de Supabase (que hace que la base busque por la llave antes)
+la leía sin sesión. Los dos cheques de prueba seguían pendientes y sin
+tocar. Ahora cada lectura va con un solo usuario (la 69, la 71 y la 79 se
+arreglaron igual). La capa `c10-costo-obra.sql` no cambia: no hay que
+pegarla otra vez.
+
+| # | Archivo | Filas que salen |
+|---|---|---|
+| 1 | `docs/conta/c10-pruebas.sql` | **82**, todas en `true` (u «omitida» con su porqué) |
+
+
 ## 15-nov: la cuadrilla sola
 
 Lo decidiste tú: «Necesitamos algo más práctico para categorizar los gastos.
