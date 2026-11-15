@@ -9,6 +9,9 @@
 -- al final de esta cabecera); v4 del 14-nov-2026 (la Fase 11c: el devengo
 -- estándar de c3 ya aparta las horas que pagó un jornal y se pone al día
 -- solo; aquí cambian dos textos: «LO QUE CAMBIÓ EN LA v4», al final de esta
+-- cabecera); v5 del 15-nov-2026 (LA CUADRILLA, SOLA: los Zelle a la cuadrilla
+-- entran solos al libro, repartidos por sus horas, y un cheque pregunta de
+-- quién es; lo decidió Edgar: «LO QUE CAMBIÓ EN LA v5», al final de esta
 -- cabecera). Se pega en el SQL Editor DESPUÉS de c1, c2,
 -- c3, c4 y c6 (c7, s1, p1, c8 y c9 pueden faltar: lo que no está no se
 -- mira, y se dice; la nómina, c15, se pega DESPUÉS de este archivo y es
@@ -501,10 +504,15 @@
 --      repartos, y la prueba 61 sale «omitida» diciéndolo.
 --   3. SQL Editor → pegar docs/conta/c10-pruebas.sql → sus filas, todas en
 --      true (las «omitida» dicen por qué; no es un fallo).
---   4. En la app: Contabilidad → Bandeja. En el Zelle de un ayudante,
---      «Es mano de obra: repartir por sus horas» lo da de alta (una vez por
---      persona); desde entonces sus pagos salen con la semana, las obras y
---      lo que le toca a cada una, y «Así es» los mete al libro.
+--   4. En la app: Contabilidad. (v5) Al abrirla, la base reconoce sola
+--      a cada persona de la cuadrilla con horas (su nombre en la descripción
+--      del banco) y registra sola sus Zelle, repartidos por sus horas; lo
+--      que entró sale en «Registrado solo», con su «Deshacer». Un cheque
+--      pregunta en la Bandeja de quién es. Lo que no entra solo se queda en
+--      la Bandeja con una sola pregunta, y su «Así es». (Antes de la v5:
+--      en el Zelle de un ayudante, «Es mano de obra: repartir por sus horas»
+--      lo daba de alta, y «Así es» metía cada pago al libro. Sigue ahí para
+--      los casos raros: un nombre que la base no reconoce sola.)
 --   Para fijar el burden estándar: select fn_jornal_config('{"burden_estandar_pct": 0}');
 --   (0 si a los ayudantes de 2026 no se les carga nada encima de su tarifa).
 --   La cuenta de lo sin obra: select fn_jornal_config('{"cuenta_sin_obra": "…"}');
@@ -518,8 +526,16 @@
 --                      p_solo_aprobadas boolean)                                          el núcleo (f11)
 --   fn_margen_obra(p_proyecto text)                                                       el detalle de una obra
 --   fn_jornal_ia(p_movimiento uuid)       solo lee: lo de la IA (c8) que un pago repartido deja abierto
+--   (v5) fn_jornal_solo(p jsonb)          LA RUTINA QUE REGISTRA SOLA: al abrir Contabilidad y después de
+--                                         importar o casar el banco; devuelve lo que registró, lo que espera y
+--                                         si quedan (completo = false: se vuelve a llamar)
+--   (v5) fn_jornal_pago(p jsonb)          lo que Edgar dice de un pago: de quién es un cheque (y se registra
+--                                         en la misma llamada), «no es de la cuadrilla», quitar lo dicho, o
+--                                         que un pago que deshizo vuelva a entrar solo
+--   (v5) fn_jornal_version()              la marca de esta versión (2026111501): si la base ya registra sola
 -- Y lee: v_jornal_pendientes, v_jornal_repartos, v_jornal_personas,
--- v_jornal_control, v_margen_obra, v_margen_control, jornal_config.
+-- v_jornal_control, v_margen_obra, v_margen_control, jornal_config y (v5)
+-- v_jornal_cheques.
 -- Montos en dólares, numeric(14,2); horas, numeric tal cual se reportan.
 --
 -- LO QUE CAMBIÓ EN LA v2 (10-nov-2026; nada renombrado: columnas, claves y
@@ -642,6 +658,172 @@
 --     c10-pruebas.sql (el control 50 y el cierre: ahora devengan ANTES de
 --     repartir —con el c3 nuevo, devengar después ya no cuenta esas horas—,
 --     y valen con los dos c3).
+--
+-- LO QUE CAMBIÓ EN LA v5 (15-nov-2026: LA CUADRILLA, SOLA. Nada renombrado:
+-- una tabla, una vista, nueve funciones, columnas y claves de más; ningún
+-- dato se toca al volver a pegar: la configuración, las personas y los
+-- repartos quedan como están, y lo automático nace ENCENDIDO):
+--   · LO QUE DECIDIÓ EDGAR: «Necesitamos algo más práctico para categorizar
+--     los gastos. No tendría que tocar ningún botón de repartir horas ni
+--     nada, sino que eso lo hiciera automático. Lo más simple que podamos,
+--     pero funcional y efectivo». Los Zelle a la cuadrilla: «sí, que lo haga
+--     sola». Los cheques (llegan como «CHECK 1043», sin nombre): «que me
+--     pregunte». NO ES SALARIO: sueldo es solo la nómina de Gusto (c15);
+--     esto es mano de obra de la cuadrilla (5200) por obra, como hasta
+--     ahora. Esta capa sigue sin tocar 5000, 5001, 6000 ni 6005.
+--   · ES UNA REGLA DE LA BASE, NO LA IA. La IA (c8) sigue sin postear
+--     nunca. Lo que entra solo es EXACTAMENTE lo que entraría con el «Así
+--     es» de Edgar: el mismo cálculo (fn_jornal_calcular), la misma huella,
+--     la misma puerta (fn_jornal_aplicar → c3 aprueba las horas → c6 postea,
+--     SIN motivo: sus frenos valen enteros). Nada de aquí es SECURITY
+--     DEFINER; todo corre como el dueño (con su sesión, o en su nombre
+--     dentro de la tarea de madrugada: abajo).
+--   · DAR DE ALTA SOLA A LA CUADRILLA (fn_jornal_cuadrilla, y jornal_personas.
+--     alta = 'sola'). Cada perfil activo que no es el dueño, con horas en 90
+--     días y que no está en jornal_personas, se da de alta con el patrón de
+--     su nombre: su nombre del perfil como palabra(s) entera(s) en la
+--     descripción del banco (fn_jornal_nombre_patron). NO ADIVINA, Y LO DICE
+--     (v_jornal_personas.sola_por_que, y el pegado): si ya cobra por nómina,
+--     si el nombre tiene menos de cuatro letras o es demasiado común, si
+--     casa con el nombre de otro perfil o con el patrón de alguien activo, o
+--     si el banco ya escribe ese nombre en pagos a dos destinatarios
+--     (fn_jornal_nombre_dudas). «Esta persona no cobra por horas»:
+--     fn_jornal_persona({usuario_id, activa: false}) la deja de baja y ya no
+--     vuelve; y si Edgar corrige el patrón, pasa a ser suyo (alta 'edgar').
+--   · REGISTRAR SOLO (fn_jornal_solo). Para cada cargo pendiente reconocido
+--     arma la propuesta con la semana que toca y, si NADA pide decidir, la
+--     aplica. QUÉ FRENA (fn_jornal_frenos; la lista es de lo que NO frena:
+--     un aviso nuevo de la propuesta frena también): todo aviso de la
+--     propuesta menos el corte de mes, el de año, el devengo estándar
+--     cuando c3 lo pone al día solo y —la revisión del 15-nov— LA OBRA
+--     TERMINADA, NO APROBADA O SIN APROBAR (las obras se terminan después
+--     del trabajo: las horas dicen en qué obra se hizo, y su parte va a esa
+--     obra igual; el aviso queda como nota en el reparto) —es decir, frenan:
+--     sin horas en el período, horas ya cubiertas o que se pisan, horas
+--     tardías, posible duplicado, el mes cerrado, la tarifa lejos de la suya
+--     o sin tarifa, horas que ya pagó una nómina, un período posterior al
+--     pago, HORAS CON FECHA POSTERIOR AL DÍA EN QUE SU OBRA SE TERMINÓ (¿una
+--     vuelta de garantía o la obra equivocada?: no se sabe), una cuenta que
+--     no sirve, CO parecidos, un cargo que no parece un pago a una persona,
+--     un reparto suelto—; lo que no se puede aplicar; la persona que ya
+--     cobra por nómina; un nombre que
+--     ya no distingue; la semana anterior sin pago cuando el pago pagaría la
+--     semana en curso; y LO QUE PUEDE CASAR CON OTRA COSA DEL LIBRO, que lo
+--     decide c6 al postear: si lo frena, no entra, nada queda a medias, y
+--     queda apuntado lo que dijo (jornal_pagos.intento_*): no se insiste con
+--     lo mismo (se reintenta si las horas cambian o, si no, una vez al día).
+--     LA SEMANA QUE PAGA SIN TERMINAR no pregunta: espera, y entra sola el
+--     lunes con todas sus horas. Lo que no entra se queda en la Bandeja con
+--     UNA frase clara (v_jornal_pendientes: solo, solo_por_que, solo_frenos,
+--     solo_entra_el), y su «Así es» de siempre.
+--   · QUIÉN Y POR QUÉ, ESCRITO. El reparto guarda origen ('solo' | 'mano'),
+--     por ('patron' | 'edgar': cómo se supo de quién es) y la regla ({regla:
+--     'la cuadrilla, sola', corrio: pantalla | banco | cheque | rutina,
+--     elegida, elegida_por, elegida_el, en_nombre_de}); cada línea del
+--     asiento dice «registrado solo (la regla de Edgar)»; las horas quedan
+--     aprobadas a nombre del dueño, por c3.
+--   · UN DESHECHO POR EDGAR NO VUELVE A ENTRAR SOLO. No hay una lista aparte
+--     que se pueda olvidar: sale de la historia del pago, que no se borra
+--     (su reparto deshecho, o su casado deshecho en el banco). «Edgar dijo
+--     que no» hasta que él lo acepte a mano o pida que vuelva a entrar solo
+--     (fn_jornal_pago {solo: true}: jornal_pagos.solo_pedido_el, posterior a
+--     lo deshecho); deshecho otra vez, otra vez no vuelve.
+--   · LOS CHEQUES (fn_jornal_pago, v_jornal_cheques, fn_jornal_cheque). La
+--     Bandeja pregunta «¿de quién es este cheque?»; al elegir a la persona
+--     queda escrito (jornal_pagos: usuario_id, dicho_por, dicho_el) y EN LA
+--     MISMA LLAMADA se reparte y se registra solo, con las mismas reglas; si
+--     algo pide decidir, lo dice y queda como la tarjeta de esa persona. El
+--     patrón de la persona NO cambia por un cheque. «No es de la cuadrilla»
+--     (también el «No es mano de obra» de un Zelle reconocido): no se
+--     pregunta ni se reconoce más, y el aviso de «un pago de la cuadrilla
+--     resuelto por fuera» (el 70) no lo cuenta. De quién era queda en el
+--     libro (el tercero de cada línea): el 1099 (c14) y Costo por obra lo
+--     leen de ahí, como siempre.
+--   · CUÁNDO CORRE. Con la pantalla: al abrir Contabilidad y después de
+--     importar o casar el banco (también «Sincronizar» con Plaid). Sin
+--     pantalla: fn_jornal_solo_programado, que pg_cron dispara a las 11:12
+--     UTC (después de lo que Plaid trae sola a las 11:00, antes del contador
+--     de la IA de las 11:25 y de la ronda del cierre de las 11:45) y a las
+--     20:50 UTC; corre en nombre del dueño SOLO dentro de su transacción
+--     (el mecanismo de c7 y c8, copiado), deja cómo terminó en
+--     jornal_config.solo_ultimo y nunca falla hacia fuera. c9 NO SE TOCA:
+--     su revisión ya lleva los avisos de este control a su fila 171, y el
+--     aviso nuevo (el 85: «ningún pago a la cuadrilla espera en la Bandeja
+--     con su semana ya terminada») sale por ahí.
+--   · IDEMPOTENTE Y CON DOS TELÉFONOS A LA VEZ: una corrida a la vez (un
+--     candado de la transacción; la segunda contesta «ocupado» y no hace
+--     nada), los candados de todas las personas antes de tocar el banco, y
+--     cada pago por fn_jornal_aplicar (un pago, un reparto vivo). No se
+--     cuelga de la API: tiene presupuesto de tiempo (3 s) y dice cuántos
+--     quedan.
+--   · LA IA (c8). La propuesta de la IA para un pago a la cuadrilla lleva
+--     UNA obra: no vale. c10 sigue sin escribir en c8: con la pantalla, la
+--     rutina y fn_jornal_pago devuelven las que los pagos registrados dejan
+--     abiertas (propuestas_ia) y la pantalla las cierra por la función de
+--     borde; sin pantalla, la tarea las cierra por la puerta de c8
+--     (fn_contador_rechazar la pendiente, fn_contador_caducar la aprobada
+--     sin asiento vivo), con su porqué. La de un pago que todavía espera una
+--     respuesta NO se toca (cerrada, la IA volvería a proponer —y a gastar—
+--     en su próxima vuelta): la pantalla no la enseña.
+--   · APAGARLO: fn_jornal_config({solo: false}) (Costo por obra → Ajustes).
+--     Apagado, nada entra solo (ni se da de alta a nadie) y todo lo demás
+--     sigue como en la v4: el pago se reconoce y el «Así es» lo reparte.
+--   · LO NUEVO, por su nombre. Tabla: jornal_pagos (lo que Edgar dijo de un
+--     pago, y el último intento que no entró). Columnas: jornal_config.solo,
+--     solo_por, solo_el, solo_ultimo; jornal_personas.alta; jornal_repartos.
+--     origen, por, regla. Vista: v_jornal_cheques. Columnas de más, al
+--     final: v_jornal_pendientes (por, cheque, solo, solo_por_que,
+--     solo_frenos, solo_entra_el), v_jornal_repartos (origen, por, regla,
+--     cheque), v_jornal_personas (alta, sola, patron_nombre, sola_por_que).
+--     Funciones: fn_jornal_version, fn_jornal_cheque, fn_jornal_nombre_patron,
+--     fn_jornal_nombre_dudas, fn_jornal_cuadrilla, fn_jornal_frenos,
+--     fn_jornal_solo, fn_jornal_pago y fn_jornal_solo_programado (esta, sin
+--     API). Claves de más: la propuesta trae persona.por, persona.alta y
+--     movimiento.cheque (y no_cuadrilla si Edgar lo dijo); aplicar devuelve
+--     origen y por. Un control más: el 85 (un aviso). El pegado, una fila
+--     más («la cuadrilla, sola»): diez.
+--   · LO QUE NO SE ARREGLA AQUÍ. (1) La rutina de la IA (c8) sigue
+--     proponiendo por dentro para un pago a la cuadrilla que espera una
+--     respuesta: quitarlo pide tocar los candidatos de c8 y su conteo, y c8
+--     no se toca aquí. La tarea de las 11:12 corre antes que la IA, así que
+--     lo que entra solo no llega a gastar. (2) Al reconocer sola a una
+--     persona, los pagos SUYOS de antes que Edgar clasificó a mano en la
+--     Bandeja salen en el aviso de «resueltos por fuera» (el 70), como le
+--     pasaba ya a cualquiera dado de alta: es verdad (sus horas de esas
+--     semanas están a estándar), y se arregla des-casando y dejando que
+--     entren solos, o no se arregla y se queda como un aviso.
+--   · LA REVISIÓN DE LA v5 (15-nov-2026, antes de pegarla: nada renombrado,
+--     ninguna tabla, vista ni función de más; la marca no cambia):
+--     (1) LA OBRA TERMINADA, NO APROBADA O SIN APROBAR YA NO FRENA el
+--     registro solo (se decidió con la Bandeja de verdad delante). Las
+--     obras se terminan DESPUÉS del trabajo: casi todo pago de una semana ya
+--     pasada trae ese aviso, y frenando no entraba solo casi ninguno. No
+--     pide adivinar nada: las horas dicen en qué obra se hizo el trabajo, y
+--     su parte va a esa obra igual. El aviso queda como NOTA: en lo que
+--     devuelve la rutina (registrados[].avisos) y en el reparto
+--     (jornal_repartos.avisos: «Registrado solo» lo enseña). La tarifa
+--     lejos, la semana anterior sin pago y todo lo demás siguen frenando.
+--     (2) UN AVISO NUEVO DE LA PROPUESTA, horas_tras_terminada: horas con
+--     fecha POSTERIOR al día en que su obra se dio por terminada
+--     (proyectos.completado_el, si la base lo trae). La app no deja
+--     reportar horas en una obra terminada: es una vuelta de garantía (su
+--     parte va a esa obra) o un reporte en la obra equivocada, y eso no se
+--     sabe sin Edgar. Como todo aviso nuevo, frena el registro solo; el
+--     «Así es» no. No avisa una obra reabierta (en ejecución, aunque
+--     conserve su día de término) ni una terminada sin ese día.
+--     (3) LA RUTINA AVANZA SIEMPRE: cuando corta por reloj devuelve «sigue»
+--     (el último pago que miró) y la llamada siguiente lo manda en
+--     «despues_de». Antes cada llamada volvía a empezar por el pago más
+--     viejo: con bastantes pagos esperando una respuesta se le iba el
+--     presupuesto en los mismos, los nuevos no entraban nunca desde la
+--     pantalla, y esta repetía la llamada hasta su tope.
+--     (4) EN NOMBRE DE ALGUIEN: fn_jornal_solo y fn_jornal_pago, desde el
+--     SQL Editor sin sesión, 42501 (antes registraban sin decir quién: el
+--     reparto, el asiento y la aprobación de las horas, sin autor). Sin
+--     pantalla se usa fn_jornal_solo_programado, que fija al dueño.
+--   · Sus pruebas: c10-pruebas.sql, de la 65 a la 82 (la 80 y la 81, las de
+--     la revisión); a la vez de verdad, pruebas/conta/c10-concurrencia.sh;
+--     con miles de horas, pruebas/conta/c10-volumen.sh.
 -- =====================================================================
 -- (Lo primero, como en c4 y c6: el pegado espera un candado como mucho
 -- medio segundo. Con la app leyendo o repartiendo, para con 55P03 («lock
@@ -665,9 +847,9 @@ declare
   v_x     text;
   v_v     bigint;
   c_tablas constant text[] := array['jornal_config', 'jornal_personas', 'jornal_repartos', 'jornal_reparto_lineas',
-                                    'jornal_reparto_horas'];
+                                    'jornal_reparto_horas', 'jornal_pagos'];
   c_vistas constant text[] := array['v_jornal_pendientes', 'v_jornal_repartos', 'v_jornal_personas', 'v_jornal_control',
-                                    'v_margen_obra', 'v_margen_control'];
+                                    'v_jornal_cheques', 'v_margen_obra', 'v_margen_control'];
   c_fn     constant text[] := array['fn_jornal_exigir_dueno', 'fn_jornal_ve', 'fn_jornal_precondiciones', 'fn_jornal_guarda',
                                     'fn_jornal_usd', 'fn_jornal_h', 'fn_jornal_dia', 'fn_jornal_rango', 'fn_jornal_mes', 'fn_jornal_texto',
                                     'fn_jornal_limpio', 'fn_jornal_patron_mal', 'fn_jornal_destinatario', 'fn_jornal_patron_sugerido',
@@ -677,7 +859,11 @@ declare
                                     'fn_jornal_opciones', 'fn_jornal_calcular', 'fn_jornal_propuesta', 'fn_jornal_aplicar',
                                     'fn_jornal_deshacer', 'fn_jornal_config', 'fn_jornal_persona', 'fn_jornal_pegado',
                                     'fn_margen_libro_desde', 'fn_margen_horas_nomina', 'fn_margen_lineas', 'fn_margen_horas',
-                                    'fn_margen_estimado', 'fn_margen_obras', 'fn_margen_bajar', 'fn_margen_obra', 'fn_margen_control'];
+                                    'fn_margen_estimado', 'fn_margen_obras', 'fn_margen_bajar', 'fn_margen_obra', 'fn_margen_control',
+                                    -- (v5, 15-nov-2026: la cuadrilla, sola)
+                                    'fn_jornal_version', 'fn_jornal_cheque', 'fn_jornal_nombre_patron', 'fn_jornal_nombre_dudas',
+                                    'fn_jornal_cuadrilla', 'fn_jornal_frenos', 'fn_jornal_solo', 'fn_jornal_pago',
+                                    'fn_jornal_solo_programado'];
 begin
   foreach v_x in array array['es_dueno()', 'fn_desde_editor()', 'fn_fecha_miami(timestamptz)', 'fn_verificar_cadena()',
                              'fn_libro_version()', 'fn_horas_aprobar(uuid,date,date,jsonb)',
@@ -735,7 +921,7 @@ begin
   -- Una tabla con el nombre de las de c10 que no sea de c10: se para antes de
   -- tocar nada (la lección de c8 con ia_propuestas).
   foreach v_x in array array['jornal_config:burden_estandar_pct', 'jornal_personas:patron', 'jornal_repartos:regla_periodo',
-                             'jornal_reparto_lineas:reparto_id', 'jornal_reparto_horas:horas_id'] loop
+                             'jornal_reparto_lineas:reparto_id', 'jornal_reparto_horas:horas_id', 'jornal_pagos:no_cuadrilla'] loop
     if to_regclass('public.' || split_part(v_x, ':', 1)) is not null
        and not exists (select 1 from information_schema.columns
                         where table_schema = 'public' and table_name = split_part(v_x, ':', 1) and column_name = split_part(v_x, ':', 2)) then
@@ -780,7 +966,7 @@ begin
   return null;
 end $$;
 revoke execute on function public.fn_jornal_precondiciones() from public, anon, authenticated, service_role;
-comment on function public.fn_jornal_precondiciones() is 'c10: lo que falta para pegar c10-costo-obra.sql (nulo = nada): c1, c2 (marca 2026100201), c3, c4 y c6, las tablas y columnas de la app que lee, la 5200, el SQL Editor, un dueño activo, nada ajeno con nombre de c10 y nada ajeno sobre sus vistas.';
+comment on function public.fn_jornal_precondiciones() is 'c10: lo que falta para pegar c10-costo-obra.sql (nulo = nada): c1, c2 (marca 2026100201), c3, c4 y c6, las tablas y columnas de la app que lee, la 5200, el SQL Editor, un dueño activo, nada ajeno con nombre de c10 (sus seis tablas, sus siete vistas y sus funciones) y nada ajeno sobre sus vistas.';
 
 do $$
 declare
@@ -850,7 +1036,7 @@ create table if not exists public.jornal_config (
   constraint jornal_config_burden check (burden_estandar_pct is null or burden_estandar_pct between 0 and 100),
   constraint jornal_config_aviso  check (aviso_tarifa_pct between 0 and 500)
 );
-comment on table public.jornal_config is 'c10: la configuración del jornal y del costo por obra (una fila): la cuenta de las líneas con obra (cuenta_defecto, 5200), la de las horas sin obra (cuenta_sin_obra; vacía hasta que Edgar la fije), el burden estándar en % (burden_estandar_pct: UNA tasa para el costo estándar de las horas sin pago real; vacío hasta que Edgar lo fije, 0 si no aplica) y cuánto puede alejarse la tarifa que sale de un pago de la de costos_equipo antes de avisar (aviso_tarifa_pct, 25). Se cambia con fn_jornal_config.';
+comment on table public.jornal_config is 'c10: la configuración del jornal y del costo por obra (una fila): la cuenta de las líneas con obra (cuenta_defecto, 5200), la de las horas sin obra (cuenta_sin_obra; vacía hasta que Edgar la fije), el burden estándar en % (burden_estandar_pct: UNA tasa para el costo estándar de las horas sin pago real; vacío hasta que Edgar lo fije, 0 si no aplica), cuánto puede alejarse la tarifa que sale de un pago de la de costos_equipo antes de avisar (aviso_tarifa_pct, 25) y, desde el 15-nov-2026, si los pagos a la cuadrilla se registran solos (solo: encendido de fábrica, como eligió Edgar; solo_por y solo_el: quién lo cambió la última vez y cuándo; solo_ultimo: cómo terminó la última corrida sin pantalla). Se cambia con fn_jornal_config.';
 
 -- Las personas cuyo pago se reparte por sus horas: «el Zelle a esta persona
 -- es su jornal». patron: una expresión regular (sin distinguir mayúsculas)
@@ -957,6 +1143,83 @@ create index if not exists jornal_reparto_horas_hora_idx on public.jornal_repart
 comment on table public.jornal_reparto_horas is 'c10: el detalle de cada reparto por reporte de horas (horas.id, sin llave foránea: es de la app), como estaba al repartir (fecha, obra, CO, fase, horas), su grupo (n) y su parte del pago. La suma por reparto es su monto, al centavo. Es el «reporte de horas aprobado» al que llega cada dólar de mano de obra, y lo que dice qué horas tienen pago real. No se edita ni se borra.';
 
 
+-- (v5, 15-nov-2026: LA CUADRILLA, SOLA) Lo que crece en las tablas de antes,
+-- con «add column if not exists» (volver a pegar no toca ni una fila: cada
+-- columna nace con su valor de fábrica):
+--   · jornal_config.solo: lo automático, ENCENDIDO de fábrica (lo eligió
+--     Edgar el 15-nov-2026: «que lo haga sola»). Con él apagado nada entra
+--     solo y todo sigue como en la v4 (cada pago espera su «Así es»).
+--     solo_por y solo_el: quién lo encendió o lo apagó la última vez, y
+--     cuándo (vacíos: de fábrica). solo_ultimo: cómo terminó la última
+--     corrida sin pantalla (la tarea de madrugada), para decirlo si falló.
+--   · jornal_personas.alta: quién dio de alta a la persona: «edgar» (como
+--     siempre) o «sola» (la base, por su nombre en la app).
+--   · jornal_repartos.origen: cómo entró el reparto al libro: «mano» (el
+--     «Así es» de Edgar) o «solo» (la regla que Edgar eligió, sin su toque);
+--     por: cómo se supo de quién era el pago: «patron» (el nombre en la
+--     descripción del banco) o «edgar» (lo dijo él: un cheque no trae
+--     nombre); regla: en un reparto que entró solo, qué regla, desde dónde
+--     corrió, quién la eligió y en nombre de quién se registró.
+alter table public.jornal_config
+  add column if not exists solo         boolean not null default true,
+  add column if not exists solo_por     uuid,
+  add column if not exists solo_el      timestamptz,
+  add column if not exists solo_ultimo  jsonb;
+alter table public.jornal_personas
+  add column if not exists alta         text not null default 'edgar';
+alter table public.jornal_repartos
+  add column if not exists origen       text not null default 'mano',
+  add column if not exists por          text not null default 'patron',
+  add column if not exists regla        jsonb;
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conrelid = 'public.jornal_personas'::regclass and conname = 'jornal_personas_alta') then
+    alter table public.jornal_personas add constraint jornal_personas_alta check (alta in ('edgar', 'sola'));
+  end if;
+  if not exists (select 1 from pg_constraint where conrelid = 'public.jornal_repartos'::regclass and conname = 'jornal_repartos_origen') then
+    alter table public.jornal_repartos add constraint jornal_repartos_origen
+      check (origen in ('mano', 'solo') and por in ('patron', 'edgar') and (regla is null or jsonb_typeof(regla) = 'object'));
+  end if;
+  if not exists (select 1 from pg_constraint where conrelid = 'public.jornal_config'::regclass and conname = 'jornal_config_solo') then
+    alter table public.jornal_config add constraint jornal_config_solo check (solo_ultimo is null or jsonb_typeof(solo_ultimo) = 'object');
+  end if;
+end $$;
+comment on column public.jornal_personas.alta is 'Quién dio de alta a la persona: edgar (él, con su patrón) o sola (la base, por su nombre en la app: la cuadrilla, sola). Si Edgar cambia el patrón, pasa a edgar.';
+comment on column public.jornal_repartos.origen is 'Cómo entró el reparto al libro: mano (el «Así es» de Edgar) o solo (se registró solo, por la regla que Edgar eligió: jornal_config.solo).';
+comment on column public.jornal_repartos.por is 'Cómo se supo de quién era el pago: patron (el nombre de la persona en la descripción del banco) o edgar (lo dijo él: un cheque no trae nombre; jornal_pagos).';
+comment on column public.jornal_repartos.regla is 'En un reparto que entró solo: la regla (la cuadrilla, sola), desde dónde corrió (la pantalla, el banco, un cheque, la tarea de madrugada), quién la eligió y cuándo, y en nombre de quién se registró.';
+
+-- LO QUE EDGAR DIJO DE UN PAGO DEL BANCO, antes de repartirlo (v5): de quién
+-- es (un cheque llega como «CHECK 1043», sin nombre: la Bandeja pregunta
+-- «¿de quién es este cheque?» y él elige a la persona; el patrón de esa
+-- persona NO cambia por eso), que NO es de la cuadrilla (no se pregunta más,
+-- y no se reconoce aunque el banco escriba el nombre de alguien), y que un
+-- pago que él deshizo vuelva a entrar solo (solo_pedido_el). Y, de la rutina
+-- que registra sola, el último intento que NO entró porque el banco (c6),
+-- las horas (c3) o el libro (c2) lo frenaron: cuándo, con qué código, lo que
+-- dijeron y la huella de lo que se intentó (para no insistir con lo mismo y
+-- para decirlo en la Bandeja). Una fila por movimiento, y solo de los que
+-- tienen algo dicho: no se borra; «quitar lo dicho» la deja en blanco.
+create table if not exists public.jornal_pagos (
+  movimiento_id    uuid        primary key references public.movimientos_banco (id),
+  usuario_id       uuid        references public.perfiles (id),
+  no_cuadrilla     boolean     not null default false,
+  dicho_por        uuid,
+  dicho_el         timestamptz,
+  solo_pedido_el   timestamptz,
+  solo_pedido_por  uuid,
+  intento_el       timestamptz,
+  intento_codigo   text,
+  intento_texto    text,
+  intento_visto    text,
+  creado_el        timestamptz not null default now(),
+  actualizado_el   timestamptz not null default now(),
+  constraint jornal_pagos_dicho check (not (no_cuadrilla and usuario_id is not null))
+);
+create index if not exists jornal_pagos_usuario_idx on public.jornal_pagos (usuario_id) where usuario_id is not null;
+comment on table public.jornal_pagos is 'c10: lo que Edgar dijo de un pago del banco antes de repartirlo, una fila por movimiento: de quién es (usuario_id: un cheque no trae nombre y la Bandeja lo pregunta; el patrón de la persona no cambia por eso), que no es de la cuadrilla (no_cuadrilla), quién lo dijo y cuándo, y cuándo pidió que un pago que deshizo vuelva a entrar solo (solo_pedido_el). Y el último intento de registrarlo solo que no entró (intento_el, intento_codigo, intento_texto, intento_visto: lo frenó el banco, las horas o el libro). Se escribe con fn_jornal_pago y con la rutina que registra sola (fn_jornal_solo); no se borra.';
+
+
 -- ---------------------------------------------------------------------
 -- 2. La guarda de las tablas de c10 (la de c6 y c9, en su forma): solo se
 --    escriben con la marca de la transacción (mx_jornal.escribe = el nombre
@@ -993,6 +1256,7 @@ begin
                          when 'jornal_personas' then 'esa persona tiene pagos repartidos; se da de baja (fn_jornal_persona con activa = false) y queda.'
                          when 'jornal_repartos' then 'un reparto se deshace con su motivo (fn_jornal_deshacer) y queda.'
                          when 'jornal_config' then 'es la configuración (una fila); se cambia con fn_jornal_config.'
+                         when 'jornal_pagos' then 'es lo que Edgar dijo de un pago; lo dicho se quita con fn_jornal_pago y la fila queda.'
                          else 'es el detalle de un reparto.' end);
   end if;
   if v_marca <> tg_table_name then
@@ -1002,6 +1266,7 @@ begin
                          when 'jornal_config' then 'fn_jornal_config'
                          when 'jornal_personas' then 'fn_jornal_persona'
                          when 'jornal_repartos' then 'fn_jornal_aplicar y fn_jornal_deshacer'
+                         when 'jornal_pagos' then 'fn_jornal_pago y fn_jornal_solo'
                          else 'fn_jornal_aplicar' end);
   end if;
   if tg_op = 'UPDATE' then
@@ -1018,18 +1283,21 @@ begin
       raise exception using errcode = 'MX003', message = format('%s no se edita: es el detalle de un reparto.', tg_table_name);
     elsif tg_table_name = 'jornal_personas' and (to_jsonb(new)->>'usuario_id') is distinct from (to_jsonb(old)->>'usuario_id') then
       raise exception using errcode = 'MX003', message = 'Una persona dada de alta no cambia de perfil: se da de baja y se da de alta la otra.';
+    elsif tg_table_name = 'jornal_pagos' and (to_jsonb(new)->>'movimiento_id') is distinct from (to_jsonb(old)->>'movimiento_id') then
+      raise exception using errcode = 'MX003', message = 'Lo dicho de un pago no cambia de movimiento.';
     end if;
   end if;
   return new;
 end $$;
 revoke execute on function public.fn_jornal_guarda() from public, anon, authenticated, service_role;
-comment on function public.fn_jornal_guarda() is 'c10: la guarda de las tablas de c10: se escriben solo con la marca de la transacción (mx_jornal.escribe) que ponen sus funciones; un reparto solo pasa a deshecho (una vez), su detalle no se edita, y nada se borra (una persona sin repartos se va con su perfil).';
+comment on function public.fn_jornal_guarda() is 'c10: la guarda de las tablas de c10: se escriben solo con la marca de la transacción (mx_jornal.escribe) que ponen sus funciones; un reparto solo pasa a deshecho (una vez), su detalle no se edita, lo dicho de un pago no cambia de movimiento, y nada se borra (una persona sin repartos se va con su perfil).';
 
 do $$
 declare
   t text;
 begin
-  foreach t in array array['jornal_config', 'jornal_personas', 'jornal_repartos', 'jornal_reparto_lineas', 'jornal_reparto_horas'] loop
+  foreach t in array array['jornal_config', 'jornal_personas', 'jornal_repartos', 'jornal_reparto_lineas', 'jornal_reparto_horas',
+                           'jornal_pagos'] loop
     execute format('create or replace trigger trg_%s_guarda before insert or update or delete on public.%I '
                    'for each row execute function public.fn_jornal_guarda()', t, t);
     execute format('create or replace trigger trg_%s_sin_truncate before truncate on public.%I '
@@ -1049,7 +1317,8 @@ declare
   t text;
   p record;
 begin
-  foreach t in array array['jornal_config', 'jornal_personas', 'jornal_repartos', 'jornal_reparto_lineas', 'jornal_reparto_horas'] loop
+  foreach t in array array['jornal_config', 'jornal_personas', 'jornal_repartos', 'jornal_reparto_lineas', 'jornal_reparto_horas',
+                           'jornal_pagos'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('revoke all on public.%I from public, anon, authenticated, service_role', t);
     for p in select pl.policyname from pg_policies pl where pl.schemaname = 'public' and pl.tablename = t loop
@@ -1059,12 +1328,12 @@ begin
     execute format('grant select on public.%I to authenticated', t);
   end loop;
   -- Lo que escriben las funciones de la pantalla (como el dueño).
-  foreach t in array array['jornal_config', 'jornal_personas', 'jornal_repartos'] loop
+  foreach t in array array['jornal_config', 'jornal_personas', 'jornal_repartos', 'jornal_pagos'] loop
     execute format('create policy %I on public.%I for update to authenticated using ((select es_dueno())) with check ((select es_dueno()))',
                    t || '_dueno_edita', t);
     execute format('grant update on public.%I to authenticated', t);
   end loop;
-  foreach t in array array['jornal_personas', 'jornal_repartos', 'jornal_reparto_lineas', 'jornal_reparto_horas'] loop
+  foreach t in array array['jornal_personas', 'jornal_repartos', 'jornal_reparto_lineas', 'jornal_reparto_horas', 'jornal_pagos'] loop
     execute format('create policy %I on public.%I for insert to authenticated with check ((select es_dueno()))',
                    t || '_dueno_anade', t);
     execute format('grant insert on public.%I to authenticated', t);
@@ -1092,7 +1361,7 @@ end $$;
 -- Las vistas de c10 se borran aquí y se rehacen al final (en este mismo
 -- pegado): así una función que cambie puede volver a crearse.
 drop view if exists public.v_jornal_pendientes, public.v_jornal_repartos, public.v_jornal_personas, public.v_jornal_control,
-                    public.v_margen_obra, public.v_margen_control;
+                    public.v_jornal_cheques, public.v_margen_obra, public.v_margen_control;
 
 -- Dólares como se leen: $1,234.56 (negativo con su signo).
 create or replace function public.fn_jornal_usd(p numeric) returns text
@@ -1293,6 +1562,54 @@ $$;
 revoke execute on function public.fn_jornal_patron_sugerido(uuid) from public, anon, service_role;
 grant  execute on function public.fn_jornal_patron_sugerido(uuid) to authenticated;
 comment on function public.fn_jornal_patron_sugerido(uuid) is 'c10: el patrón que se propone para dar de alta a una persona desde un movimiento del banco: el nombre de su descripción, sin «ZELLE PAYMENT TO» ni el código de confirmación, entre límites de palabra. Nulo si no queda un nombre. Lee el movimiento con la policy de quien llama.';
+
+-- (v5, 15-nov-2026: la cuadrilla, sola) LA MARCA DE ESTA VERSIÓN DE c10
+-- (AAAAMMDDNN). Hasta la v4 c10 no llevaba marca: quien necesitaba saber si
+-- estaba miraba sus tablas o sus funciones (c3, c9, c13, c15 y c16 lo siguen
+-- haciendo así). La pantalla la lee para saber si la base ya registra sola.
+create or replace function public.fn_jornal_version() returns bigint
+language sql immutable
+set search_path = public, pg_temp
+as $$ select 2026111501::bigint $$;
+revoke execute on function public.fn_jornal_version() from public, anon, service_role;
+grant  execute on function public.fn_jornal_version() to authenticated;
+comment on function public.fn_jornal_version() is 'c10: la marca de esta versión del jornal y el costo por obra (AAAAMMDDNN; 2026111501: la cuadrilla, sola). La pantalla la mira para saber si la base ya registra sola los pagos a la cuadrilla.';
+
+-- ¿ES UN CHEQUE? El número del cheque de un movimiento (texto), vacío si es
+-- un cheque sin número que se deje leer, y nulo si no es un cheque. Lo dice
+-- el banco de tres formas: su tipo (CHECK), su número (CHECKNUM) o su
+-- descripción («CHECK 1043», «CHK #1043»); «TO CHK ...7781» no es un cheque:
+-- es la cuenta de cheques que nombra una transferencia. La regla de c6
+-- (fn_banco_cheque_num), escrita aquí: la app no ejecuta sus funciones
+-- internas. Un cheque llega sin nombre: la Bandeja pregunta de quién es.
+create or replace function public.fn_jornal_cheque(p_tipo text, p_cheque text, p_desc_norm text) returns text
+language sql immutable
+set search_path = public, pg_temp
+as $$
+  select coalesce(nullif(ltrim(btrim(coalesce(p_cheque, '')), '0'), ''),
+                  substring(regexp_replace(coalesce(p_desc_norm, ''), '(^| )(TO|FROM) (CHK|CK) ', ' ', 'g')
+                            from '(?:^| )(?:CHECK|CHK|CHEQUE|CK)(?: NO)? ?#? ?0*([1-9][0-9]{0,9})(?: |$)'),
+                  case when upper(btrim(coalesce(p_tipo, ''))) = 'CHECK' then '' end)
+$$;
+revoke execute on function public.fn_jornal_cheque(text, text, text) from public, anon, service_role;
+grant  execute on function public.fn_jornal_cheque(text, text, text) to authenticated;
+comment on function public.fn_jornal_cheque(text, text, text) is 'c10: el número del cheque de un movimiento del banco (por su número, o el de su descripción: «CHECK 1043»), vacío si el banco dice que es un cheque y no trae número, y nulo si no es un cheque. La regla de c6, escrita aquí.';
+
+-- EL PATRÓN QUE SALE DEL NOMBRE DE UN PERFIL: su nombre como lo escribiría
+-- el banco (en mayúsculas, sin acentos, solo letras y dígitos), entre
+-- límites de palabra. «Zzana Prueba» → «\mZZANA PRUEBA\M». Nulo si no queda
+-- nada. Con él la base reconoce sola los pagos de la cuadrilla (v5).
+create or replace function public.fn_jornal_nombre_patron(p_nombre text) returns text
+language sql immutable
+set search_path = public, pg_temp
+as $$
+  select case when x.n <> '' then '\m' || x.n || '\M' end
+    from (select btrim(regexp_replace(upper(translate(coalesce(p_nombre, ''), 'áéíóúüñÁÉÍÓÚÜÑ', 'aeiouunAEIOUUN')),
+                                      '[^[:alnum:]]+', ' ', 'g')) as n) x
+$$;
+revoke execute on function public.fn_jornal_nombre_patron(text) from public, anon, service_role;
+grant  execute on function public.fn_jornal_nombre_patron(text) to authenticated;
+comment on function public.fn_jornal_nombre_patron(text) is 'c10: el patrón que sale del nombre de un perfil: el nombre como lo escribiría el banco (mayúsculas, sin acentos, solo letras y dígitos) entre límites de palabra. Nulo si no queda nada.';
 
 -- ¿Sirve esta cuenta? p_uso 'obra' (las líneas con obra del jornal) o
 -- 'sin_obra' (las horas sin obra). Nulo = sí; si no, el porqué en llano.
@@ -1644,7 +1961,9 @@ as $$
            join jp j on x.t ~* j.patron
           where (select count(*) from jp) > 0
             and m.estado = 'casado' and m.monto < 0 and m.fecha >= lb.d
-            and not exists (select 1 from public.jornal_repartos r where r.movimiento_id = m.id and r.estado = 'aplicado'))
+            and not exists (select 1 from public.jornal_repartos r where r.movimiento_id = m.id and r.estado = 'aplicado')
+            -- (v5) el pago del que Edgar dijo «no es de la cuadrilla» no es un jornal resuelto por fuera: lo dijo él
+            and not exists (select 1 from public.jornal_pagos g where g.movimiento_id = m.id and g.no_cuadrilla))
   select mv.id, mv.fecha, mv.monto, mv.descripcion, mv.como, a.numero, mv.usuario_id, pf.nombre, mv.lunes - 7, mv.lunes + 6,
          h.proyecto_id, pr.nombre, sum(h.horas)
     from mv
@@ -1830,13 +2149,17 @@ declare
   v_h3       numeric;
   v_m3       numeric;
   v_nom      bigint[];
+  v_dicho    jornal_pagos;
+  v_por      text := 'patron';
 begin
   select * into m from movimientos_banco where id = p_movimiento;
   if not found then
     return jsonb_build_object('reconocido', false, 'por_que', 'No existe ese movimiento del banco.');
   end if;
+  -- (v5: «cheque», solo si el banco dice que lo es: su número, o vacío si no lo trae)
   v_mov := jsonb_build_object('id', m.id, 'fecha', m.fecha, 'monto', abs(m.monto), 'cuenta', m.cuenta,
-                              'descripcion', m.descripcion, 'estado', m.estado);
+                              'descripcion', m.descripcion, 'estado', m.estado)
+           || jsonb_strip_nulls(jsonb_build_object('cheque', fn_jornal_cheque(m.tipo_banco, m.cheque, m.desc_norm)));
   if m.monto >= 0 then
     return jsonb_build_object('reconocido', false, 'movimiento', v_mov,
                               'por_que', 'Es un abono (dinero que entra): un jornal es un pago que sale.');
@@ -1855,13 +2178,30 @@ begin
                                   'se des-casa allí, con su motivo.', coalesce(m.casado_regla, m.estado_motivo, m.estado)) end));
   end if;
 
-  -- ¿De quién es? El patrón de UNA persona activa contra lo que dice el banco.
+  -- ¿De quién es? (v5) PRIMERO, LO QUE EDGAR DIJO DE ESTE PAGO (jornal_pagos):
+  -- «no es de la cuadrilla» (no se reconoce aunque el banco escriba el nombre
+  -- de alguien, y no se vuelve a preguntar) o «es de esta persona» (un cheque
+  -- llega sin nombre: manda lo que él dijo, y el patrón de la persona no
+  -- cambia). Si no dijo nada, como siempre: el patrón de UNA persona activa
+  -- contra lo que dice el banco.
   v_txt := fn_jornal_texto(m.desc_norm, m.memo);
-  select count(*), string_agg(coalesce(p.nombre, '(sin nombre)'), ' y ' order by p.nombre, x.usuario_id)
-    into v_n, v_nombres
-    from jornal_personas x
-    left join perfiles p on p.id = x.usuario_id
-   where x.activa and v_txt ~* x.patron;
+  select * into v_dicho from jornal_pagos x where x.movimiento_id = m.id;
+  if coalesce(v_dicho.no_cuadrilla, false) then
+    return jsonb_build_object(
+      'reconocido', false, 'movimiento', v_mov, 'no_cuadrilla', true,
+      'por_que', format('Dijiste que este pago no es de la cuadrilla%s: se clasifica en la Bandeja como siempre. Si sí lo es, quita lo '
+                        'dicho y vuelve a mirar.', coalesce(' (el ' || fn_jornal_dia(fn_fecha_miami(v_dicho.dicho_el), true) || ')', '')));
+  end if;
+  if v_dicho.usuario_id is not null then
+    v_por := 'edgar';
+    v_n := 1;
+  else
+    select count(*), string_agg(coalesce(p.nombre, '(sin nombre)'), ' y ' order by p.nombre, x.usuario_id)
+      into v_n, v_nombres
+      from jornal_personas x
+      left join perfiles p on p.id = x.usuario_id
+     where x.activa and v_txt ~* x.patron;
+  end if;
   if v_n = 0 then
     return jsonb_strip_nulls(jsonb_build_object(
       'reconocido', false, 'movimiento', v_mov,
@@ -1883,7 +2223,16 @@ begin
       'por_que', format('El banco lo describe de una forma que casa con %s personas dadas de alta (%s): afina el patrón de una de '
                         'ellas para que no se pisen.', v_n, v_nombres));
   end if;
-  select x.* into jp from jornal_personas x where x.activa and v_txt ~* x.patron;
+  if v_por = 'edgar' then
+    -- (lo dijo Edgar: la persona puede no estar dada de alta —cobra solo con
+    -- cheque—; entonces va a la cuenta de fábrica y no tiene patrón)
+    select x.* into jp from jornal_personas x where x.usuario_id = v_dicho.usuario_id;
+    if not found then
+      jp.usuario_id := v_dicho.usuario_id;
+    end if;
+  else
+    select x.* into jp from jornal_personas x where x.activa and v_txt ~* x.patron;
+  end if;
   select * into pf from perfiles where id = jp.usuario_id;
   select ce.costo_hora into v_tarifa from costos_equipo ce where ce.usuario_id = jp.usuario_id;
   select * into cfg from jornal_config where id = 1;
@@ -2099,6 +2448,35 @@ begin
     v_avisos := v_avisos || jsonb_build_object('codigo', 'obra_sin_aprobar', 'corto', 'Hay una obra sin aprobar', 'texto',
       format('Hay horas en una obra que todavía no está aprobada: %s. Su parte va a esa obra.', v_y));
   end if;
+  -- (v5, la revisión del 15-nov-2026) HORAS DESPUÉS DE TERMINADA LA OBRA:
+  -- reportes que entran en este reparto, en una obra que HOY está terminada,
+  -- con fecha POSTERIOR al día en que se dio por terminada (proyectos.
+  -- completado_el: lo apunta la app al terminarla, para el año de garantía;
+  -- se lee de la fila entera, como en el margen: una base sin esa columna no
+  -- da este aviso). Los dos avisos de arriba no piden nada —las obras se
+  -- terminan DESPUÉS del trabajo, y las horas dicen dónde se hizo—; esto
+  -- sí: la app no deja reportar horas en una obra terminada, así que puede
+  -- ser una vuelta de garantía (su parte va a esa obra) o un reporte en la
+  -- obra equivocada, y eso no se puede saber sin Edgar. No frena el «Así
+  -- es»; el registro solo, sí (fn_jornal_frenos: todo aviso frena menos los
+  -- de su lista). Una obra reabierta (en ejecución, aunque conserve su día
+  -- de término) está abierta: no avisa. Sin día de término no se sabe si las
+  -- horas son de antes o de después: tampoco.
+  select count(*), coalesce(sum(h.horas), 0),
+         left(string_agg(format('%s h del %s en %s (terminada el %s)', fn_jornal_h(h.horas), fn_jornal_dia(h.fecha), pr.nombre,
+                                fn_jornal_dia(t.el, true)), '; ' order by h.fecha, h.id), 600)
+    into v_n, v_h2, v_x
+    from horas h
+    join proyectos pr on pr.id = h.proyecto_id and pr.estado = 'completado'
+    cross join lateral (select case when to_jsonb(pr)->>'completado_el' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+                                    then left(to_jsonb(pr)->>'completado_el', 10)::date end as el) t
+   where h.id = any (v_ids) and h.fecha > t.el;
+  if v_n > 0 then
+    v_avisos := v_avisos || jsonb_build_object('codigo', 'horas_tras_terminada', 'corto', 'Horas después de terminada la obra',
+      'horas', v_h2, 'reportes', v_n, 'texto',
+      format('Hay horas con fecha posterior al día en que su obra se dio por terminada: %s. Si fue una vuelta de garantía, su parte '
+             'va a esa obra: acéptalo con «Así es». Si se apuntaron en la obra equivocada, corrígela en Horas y vuelve a mirar.', v_x));
+  end if;
   -- Dos CO de la misma obra que solo se distinguen por las mayúsculas, los
   -- espacios o un signo («co #1» y «CO #1»): el CO es texto libre (hasta que
   -- f10 les dé su lista) y salen como dos líneas. Se dice; no se adivina cuál
@@ -2295,8 +2673,10 @@ begin
     'reconocido', true,
     'movimiento', v_mov || jsonb_build_object('periodo', v_mes.periodo, 'mes_cerrado', coalesce(v_mes.estado = 'cerrado', false),
                                               'fecha_asiento', v_fa),
+    -- (v5: «por», cómo se supo de quién es —patron: su nombre en la descripción del banco; edgar: lo dijo él—, y «alta»,
+    -- quién dio de alta a la persona —edgar o sola—)
     'persona', jsonb_build_object('usuario_id', jp.usuario_id, 'nombre', pf.nombre, 'rol', pf.rol, 'tarifa', v_tarifa,
-                                  'cuenta', v_cuenta, 'patron', jp.patron),
+                                  'cuenta', v_cuenta, 'patron', jp.patron, 'por', v_por, 'alta', jp.alta),
     'periodo', jsonb_build_object('desde', v_desde, 'hasta', v_hasta, 'regla', v_regla, 'texto', fn_jornal_rango(v_desde, v_hasta),
                                   'por_defecto', jsonb_build_object('desde', v_def.desde, 'hasta', v_def.hasta, 'regla', v_def.regla),
                                   'opciones', v_ops),
@@ -2317,8 +2697,13 @@ comment on function public.fn_jornal_calcular(uuid, date, date, jsonb) is 'c10: 
 -- pendiente sin persona— patron_sugerido y candidatos}. Si lo es:
 --   movimiento   {id, fecha, monto (lo pagado, en positivo), cuenta,
 --                 descripcion, estado, periodo, mes_cerrado, fecha_asiento
---                 (el día con que entrará al libro)}
---   persona      {usuario_id, nombre, rol, tarifa (costos_equipo), cuenta, patron}
+--                 (el día con que entrará al libro), y (v5) cheque (su
+--                 número, o '' si no lo trae) cuando es un cheque}
+--   persona      {usuario_id, nombre, rol, tarifa (costos_equipo), cuenta,
+--                 patron, y (v5) por (patron: se reconoció por su nombre en
+--                 la descripción del banco | edgar: lo dijo él, un cheque)
+--                 y alta (edgar | sola: quién la dio de alta; nulo si no
+--                 está dada de alta y el pago es suyo porque Edgar lo dijo)}
 --   periodo      {desde, hasta, regla (semana_anterior | semana_en_curso |
 --                 a_mano), texto, por_defecto {desde, hasta, regla},
 --                 opciones [{regla, desde, hasta, por_defecto, horas,
@@ -2336,6 +2721,8 @@ comment on function public.fn_jornal_calcular(uuid, date, date, jsonb) is 'c10: 
 --                reportes, desde, hasta: las fechas que las cogerían),
 --                se_pisa (+repartos [ids]), sin_tarifa, tarifa_lejos,
 --                no_parece_pago, obra_terminada, obra_sin_aprobar,
+--                horas_tras_terminada (+horas, reportes: las que entran con
+--                fecha posterior al día en que su obra se dio por terminada),
 --                co_parecidos, falta_cuenta_sin_obra, cuenta_mal,
 --                posible_duplicado, mes_cerrado, otro_anio u otro_mes
 --                (+horas, monto, fecha_asiento), devengo_estandar (+horas),
@@ -2379,6 +2766,369 @@ end $$;
 revoke execute on function public.fn_jornal_propuesta(uuid, date, date, jsonb) from public, anon, service_role;
 grant  execute on function public.fn_jornal_propuesta(uuid, date, date, jsonb) to authenticated;
 comment on function public.fn_jornal_propuesta(uuid, date, date, jsonb) is 'c10: la propuesta de reparto de un pago (SOLO LEE): si el movimiento es el pago de una persona dada de alta, la persona y su tarifa, el período (el de la regla del día del pago, o las fechas que se pidan) con las dos semanas para elegir, las horas, las líneas por obra y CO, lo sin obra, el detalle por reporte, lo ya cubierto por otro pago, la tarifa que sale, los avisos en llano, si se puede aplicar y por qué no, «visto» (la huella que hay que devolver a fn_jornal_aplicar), «aprueba» (los reportes que el «Así es» aprobará) y lo de la IA (c8) que el pago tiene abierto (propuesta_ia, propuestas_ia). Si no lo es, {reconocido: false, por_que}. Solo el dueño.';
+
+
+-- ---------------------------------------------------------------------
+-- 6b. LA CUADRILLA, SOLA (v5, 15-nov-2026), lo que solo lee: a quién puede
+--     dar de alta la base por su nombre, y qué frena el registro solo de un
+--     pago. Lo decidió Edgar: «No tendría que tocar ningún botón de repartir
+--     horas ni nada, sino que eso lo hiciera automático. Lo más simple que
+--     podamos, pero funcional y efectivo».
+--       · LOS ZELLE A LA CUADRILLA («sí, que lo haga sola») entran solos al
+--         libro como mano de obra (la cuenta del jornal, 5200), repartidos
+--         entre las obras por las horas que esa persona reportó en el
+--         período que paga; esas horas quedan aprobadas al pagarlas. Edgar
+--         lo ve en una lista de «registrado solo» y lo deshace si algo está
+--         mal. No toca nada.
+--       · LOS CHEQUES («que me pregunte») llegan como «CHECK 1043», sin
+--         nombre: un toque en la Bandeja, «¿de quién es este cheque?»; elige
+--         a la persona y se reparte y se registra solo, con las mismas
+--         reglas. O dice «no es de la cuadrilla».
+--       · NO ES SALARIO. La regla de la S-corp y del CPA no cambia: sueldo
+--         es solo lo de la nómina de Gusto (c15, desde enero). Lo pagado por
+--         Zelle o por cheque es mano de obra de la cuadrilla (5200) por
+--         obra. Esta capa sigue sin tocar 5000, 5001, 6000 ni 6005.
+--     ES UNA REGLA DE LA BASE, NO LA IA: nada de aquí adivina. La IA (c8)
+--     sigue sin postear nunca. Lo que entra solo es lo mismo que entraría
+--     con el «Así es» de Edgar (el mismo cálculo, la misma huella, la misma
+--     puerta del banco: fn_jornal_aplicar), y solo cuando NADA pide decidir.
+-- ---------------------------------------------------------------------
+-- ¿EL NOMBRE DE UNA PERSONA DEJA DUDAS EN LO QUE EL BANCO YA TRAJO? El
+-- apellido que el banco escribe DETRÁS de ese nombre en sus pagos (la
+-- palabra que sigue): si aparecen dos distintos («ZZANA PRUEBA» y «ZZANA
+-- OTRA»), son pagos a dos personas y no se sabe cuál es la de la cuadrilla.
+-- Nulo = sin dudas; si no, la frase que lo dice. p_historia: todo lo que el
+-- banco trajo (para dar de alta sola a alguien), o solo lo que espera en la
+-- Bandeja y lo ya repartido a esa persona (para registrar un pago suyo: lo
+-- que cuesta poco mirar en cada pago). Un código de confirmación (lleva
+-- dígitos) o una palabra del banco («FOR», «CONF»…) no cuentan.
+create or replace function public.fn_jornal_nombre_dudas(p_usuario uuid, p_nombre text, p_historia boolean default false)
+returns text
+language sql stable
+set search_path = public, pg_temp
+as $$
+  with n as (select substring(public.fn_jornal_nombre_patron(p_nombre) from '^\\m(.*)\\M$') as n),
+       mv as (
+         select public.fn_jornal_texto(m.desc_norm, m.memo) as t
+           from public.movimientos_banco m
+          where m.monto < 0 and (coalesce(p_historia, false) or m.estado = 'pendiente')
+         union all
+         select public.fn_jornal_texto(m.desc_norm, m.memo)
+           from public.jornal_repartos r
+           join public.movimientos_banco m on m.id = r.movimiento_id
+          where not coalesce(p_historia, false) and r.usuario_id = p_usuario and r.estado = 'aplicado'),
+       w as (
+         select distinct substring(mv.t from '\m' || n.n || ' ([[:alpha:]]{2,})\M') as w
+           from mv cross join n
+          where n.n is not null and mv.t ~ ('\m' || n.n || '\M'))
+  select case when count(*) >= 2
+              then format('el banco escribe «%s» en pagos a %s destinatarios distintos (%s)', (select n.n from n), count(*),
+                          left(string_agg((select n.n from n) || ' ' || w.w, ', ' order by w.w), 300)) end
+    from w
+   where w.w is not null
+     and w.w not in ('FOR', 'CONF', 'REF', 'PARA', 'POR', 'ID', 'PMT', 'PAYMENT', 'MEMO', 'WEB', 'ON', 'FROM', 'TO')
+     and (select public.fn_jornal_ve())
+$$;
+revoke execute on function public.fn_jornal_nombre_dudas(uuid, text, boolean) from public, anon, service_role;
+grant  execute on function public.fn_jornal_nombre_dudas(uuid, text, boolean) to authenticated;
+comment on function public.fn_jornal_nombre_dudas(uuid, text, boolean) is 'c10: si el nombre de una persona deja dudas en lo que el banco ya trajo (nulo = no): los apellidos distintos que el banco escribe detrás de ese nombre en sus pagos; con dos o más, la frase que lo dice. Mira toda la historia (p_historia) o solo lo que espera en la Bandeja y lo ya repartido a esa persona. Solo lectura; a quien no es el dueño, nada.';
+
+-- LA CUADRILLA QUE LA BASE PUEDE DAR DE ALTA SOLA (v5). Cada perfil activo
+-- que no es el dueño, con horas en los últimos 90 días y que todavía NO está
+-- en jornal_personas (ni de alta ni de baja: «esta persona no cobra por
+-- horas» la deja de baja y ya no vuelve aquí), con el patrón que sale de su
+-- nombre (su nombre como palabra entera en la descripción del banco) y si
+-- con él se puede dar de alta sola. NO ADIVINA, Y LO DICE (por_que):
+--   · ya cobra por nómina (una nómina le pagó horas en 90 días);
+--   · su nombre es demasiado corto (menos de cuatro letras) o demasiado
+--     común (casaría con lo que el banco escribe en cualquier pago);
+--   · casa con dos personas: con el nombre de otro perfil (el del dueño
+--     también) o con el patrón de alguien que ya cobra por horas;
+--   · el banco ya escribe ese nombre en pagos a dos destinatarios distintos
+--     (fn_jornal_nombre_dudas, con toda la historia).
+-- A quien sale con sola = false se le da de alta como siempre: en Costo por
+-- obra → Personas (con cómo lo escribe el banco) o desde un pago suyo en la
+-- Bandeja. Solo lectura; a quien no es el dueño, nada.
+create or replace function public.fn_jornal_cuadrilla()
+returns table (usuario_id uuid, nombre text, patron text, sola boolean, por_que text)
+language plpgsql stable
+set search_path = public, pg_temp
+as $$
+#variable_conflict use_column
+declare
+  r      record;
+  v_hoy  date := fn_fecha_miami(now());
+  v_n    text;
+  v_x    text;
+  v_pat  text;
+  v_nom  bigint[];
+begin
+  if not fn_jornal_ve() then
+    return;
+  end if;
+  select coalesce(array_agg(n.horas_id), '{}') into v_nom from fn_margen_horas_nomina() n;
+  for r in
+    select p.id, p.nombre,
+           exists (select 1 from horas h where h.usuario_id = p.id and h.fecha >= v_hoy - 90 and h.id = any (v_nom)) as por_nomina
+      from perfiles p
+     where p.rol <> 'dueno' and coalesce(p.activo, true)
+       and not exists (select 1 from jornal_personas j where j.usuario_id = p.id)
+       and exists (select 1 from horas h where h.usuario_id = p.id and h.horas > 0 and h.fecha >= v_hoy - 90)
+     order by p.nombre, p.id
+  loop
+    -- (el patrón de ESTA persona va en v_pat: dentro de una consulta, «patron» a secas sería la columna de jornal_personas
+    -- —esta función resuelve los nombres dudosos como columnas—, no lo que se devuelve)
+    v_pat := fn_jornal_nombre_patron(r.nombre);
+    usuario_id := r.id;
+    nombre := r.nombre;
+    patron := v_pat;
+    v_n := substring(v_pat from '^\\m(.*)\\M$');
+    por_que := null;
+    if r.por_nomina then
+      por_que := 'ya cobra por nómina (una nómina le pagó horas en los últimos 90 días): no cobra por Zelle';
+    elsif v_n is null or length(regexp_replace(v_n, '[^[:alnum:]]', '', 'g')) < 4 then
+      por_que := format('su nombre en la app («%s») es demasiado corto para reconocer sus pagos sin dudas',
+                        coalesce(nullif(btrim(r.nombre), ''), 'vacío'));
+    elsif fn_jornal_patron_mal(v_pat) is not null then
+      por_que := format('su nombre en la app («%s») es demasiado común: casaría con pagos que no son suyos', btrim(r.nombre));
+    else
+      select string_agg(coalesce(o.nombre, '?'), ' y ' order by o.nombre, o.id) into v_x
+        from perfiles o
+       where o.id <> r.id and substring(fn_jornal_nombre_patron(o.nombre) from '^\\m(.*)\\M$') ~ v_pat;
+      if v_x is not null then
+        por_que := format('su nombre («%s») casa también con el de %s: no se sabe de cuál de los dos es un pago', v_n, v_x);
+      else
+        select string_agg(coalesce(o.nombre, '?'), ' y ' order by o.nombre, j.usuario_id) into v_x
+          from jornal_personas j
+          left join perfiles o on o.id = j.usuario_id
+         where j.activa and (v_n ~* j.patron or lower(btrim(j.patron)) = lower(v_pat));
+        if v_x is not null then
+          por_que := format('su nombre («%s») casa también con el patrón de %s, que ya cobra por horas', v_n, v_x);
+        else
+          v_x := fn_jornal_nombre_dudas(r.id, r.nombre, true);
+          if v_x is not null then
+            por_que := v_x || ': no se sabe cuál es';
+          end if;
+        end if;
+      end if;
+    end if;
+    sola := por_que is null;
+    return next;
+  end loop;
+end $$;
+revoke execute on function public.fn_jornal_cuadrilla() from public, anon, service_role;
+grant  execute on function public.fn_jornal_cuadrilla() to authenticated;
+comment on function public.fn_jornal_cuadrilla() is 'c10: la cuadrilla que la base puede dar de alta sola: cada perfil activo que no es el dueño, con horas en 90 días y sin estar en jornal_personas, con el patrón que sale de su nombre (su nombre como palabra entera en la descripción del banco) y si se puede dar de alta sola; si no, por qué (ya cobra por nómina, el nombre es demasiado corto o demasiado común, casa con otra persona, o el banco lo escribe en pagos a dos destinatarios). No adivina: lo dice. Solo lectura; a quien no es el dueño, nada.';
+
+-- LO QUE FRENA EL REGISTRO SOLO DE UN PAGO (v5). Dado un pago reconocido y
+-- su cálculo con la semana que toca (p_j: lo que devuelve fn_jornal_calcular
+-- SIN fechas), dice si entraría solo ahora y, si no, por qué, en llano:
+--   estado   entra | espera (entrará solo, sin Edgar) | pregunta (pide una
+--            respuesta de Edgar) | no (Edgar dijo que no, o lo automático
+--            está apagado) | ninguno (no es un pago reconocido)
+--   por_que  una sola frase clara: lo primero que lo frena (y cuántas cosas más)
+--   frenos   [{codigo, clase (no | pregunta | espera), corto, texto}], todos
+--   entra_el el día en que entrará solo, si espera
+--   reintenta verdadero si lo único que lo frena es un intento que no entró
+--            hace más de 20 horas (la rutina lo vuelve a intentar)
+-- ENTRA SOLO lo que se puede aplicar SIN NINGÚN AVISO QUE PIDA DECIDIR. Los
+-- únicos avisos del cálculo que no piden nada son los del calendario
+-- (otro_mes, otro_anio: el costo queda en el mes del pago, como siempre), el
+-- del devengo estándar cuando el c3 de la base lo pone al día solo (Fase
+-- 11c) y —la revisión del 15-nov-2026— los de LA OBRA TERMINADA, NO
+-- APROBADA O SIN APROBAR (obra_terminada, obra_sin_aprobar): las obras se
+-- terminan DESPUÉS del trabajo, así que casi todo pago de una semana ya
+-- pasada los trae; no piden adivinar nada (las horas dicen en qué obra se
+-- hizo el trabajo, y su parte va a esa obra igual) y quedan como nota en el
+-- reparto (jornal_repartos.avisos: «Registrado solo» los enseña). TODO LO
+-- DEMÁS FRENA, y un aviso nuevo que se añada mañana frena también (la lista
+-- es de lo que NO frena, no de lo que frena):
+--   · sin horas en el período, horas ya cubiertas por otro pago (o que se
+--     pisan, o cubiertas y sin aprobar), horas tardías de una semana ya
+--     repartida, posible duplicado, el mes del pago cerrado, la tarifa que
+--     sale lejos de la suya (o sin tarifa con que comparar), horas que ya
+--     pagó una nómina, un período posterior al pago, HORAS CON FECHA
+--     POSTERIOR AL DÍA EN QUE SU OBRA SE DIO POR TERMINADA (horas_tras_
+--     terminada: una vuelta de garantía o un reporte en la obra equivocada;
+--     no se puede saber sin Edgar), una cuenta que no sirve o la de lo sin
+--     obra sin fijar, CO que parecen el mismo, un cargo que no parece un
+--     pago a una persona, un reparto anterior sin cerrar;
+--   · LO QUE PUEDE CASAR CON OTRA COSA DEL LIBRO: eso lo sabe el banco (c6)
+--     al postear, y la rutina le pregunta SIN motivo, como siempre: si c6 lo
+--     frena, no entra, y aquí queda lo que dijo (el último intento);
+--   · lo que el cálculo no mira y un «Así es» sin Edgar delante sí debe
+--     mirar: LA PERSONA QUE YA COBRA POR NÓMINA (una nómina le pagó horas en
+--     90 días: el pago puede ser un bono o un reembolso), UN NOMBRE QUE YA
+--     NO DISTINGUE (a quien la base dio de alta sola, cuando el banco
+--     escribe su nombre con dos apellidos distintos), LA SEMANA ANTERIOR
+--     SIN PAGO (el pago, por su día, pagaría la semana en curso, y la
+--     anterior tiene horas suyas sin pago: ¿de cuál es?);
+--   · LA SEMANA QUE PAGA TODAVÍA NO TERMINA: no es una pregunta; espera, y
+--     entra solo el lunes, con todas sus horas (repartido antes, las horas
+--     del resto de la semana llegarían tarde a un reparto ya hecho);
+--   · EDGAR DIJO QUE NO: un pago que él deshizo (su reparto deshecho, con su
+--     motivo) o des-casó en la Bandeja no vuelve a entrar solo, hasta que lo
+--     acepte a mano o pida que vuelva a entrar solo (jornal_pagos.
+--     solo_pedido_el, posterior a lo deshecho);
+--   · lo automático APAGADO (jornal_config.solo = false).
+-- SOLO LEE, con la policy de quien llama; a quien no es el dueño, «ninguno».
+create or replace function public.fn_jornal_frenos(p_movimiento uuid, p_j jsonb)
+returns jsonb
+language plpgsql stable
+set search_path = public, pg_temp
+as $$
+declare
+  cfg      jornal_config;
+  v_dicho  jornal_pagos;
+  v_f      jsonb := '[]'::jsonb;
+  v_u      uuid;
+  v_nombre text;
+  v_hoy    date := fn_fecha_miami(now());
+  v_desde  date;
+  v_hasta  date;
+  v_a      jsonb;
+  v_x      text;
+  v_h      numeric;
+  v_d      timestamptz;
+  v_d1     date;
+  v_d2     date;
+  v_aparta boolean;
+  v_estado text;
+  v_n      int;
+  v_re     boolean := false;
+begin
+  if p_j is null or not coalesce((p_j->>'reconocido')::boolean, false) or not fn_jornal_ve() then
+    return jsonb_build_object('estado', 'ninguno', 'frenos', '[]'::jsonb);
+  end if;
+  select * into cfg from jornal_config where id = 1;
+  select * into v_dicho from jornal_pagos x where x.movimiento_id = p_movimiento;
+  v_u      := (p_j->'persona'->>'usuario_id')::uuid;
+  v_nombre := coalesce(p_j->'persona'->>'nombre', 'esa persona');
+  v_desde  := (p_j->'periodo'->>'desde')::date;
+  v_hasta  := (p_j->'periodo'->>'hasta')::date;
+
+  -- Lo automático, apagado.
+  if not coalesce(cfg.solo, false) then
+    v_f := v_f || jsonb_build_object('codigo', 'apagado', 'clase', 'no', 'corto', 'Lo automático está apagado', 'texto',
+      'El registro automático de los pagos a la cuadrilla está apagado (Costo por obra → Ajustes): este pago espera tu «Así es».');
+  end if;
+
+  -- EDGAR DIJO QUE NO: lo deshizo (el reparto deshecho, con su motivo) o lo
+  -- des-casó en la Bandeja, y no ha pedido después que vuelva a entrar solo.
+  select max(x.el), (array_agg(x.motivo order by x.el desc))[1]
+    into v_d, v_x
+    from (select r.deshecho_el as el, r.deshecho_motivo as motivo
+            from jornal_repartos r where r.movimiento_id = p_movimiento and r.estado = 'deshecho'
+          union all
+          select c.deshecho_el, c.deshecho_motivo
+            from banco_casados c where c.movimiento_id = p_movimiento and c.deshecho_el is not null) x;
+  if v_d is not null and v_d > coalesce(v_dicho.solo_pedido_el, '-infinity'::timestamptz) then
+    v_f := v_f || jsonb_build_object('codigo', 'edgar_dijo_no', 'clase', 'no', 'corto', 'Edgar dijo que no', 'texto',
+      format('Lo deshiciste el %s («%s»): no vuelve a entrar solo. Si ya está bien, acéptalo tú con «Así es», o di que vuelva a '
+             'entrar solo.', fn_jornal_dia(fn_fecha_miami(v_d), true), left(coalesce(nullif(btrim(v_x), ''), 'sin motivo'), 160)));
+  end if;
+
+  -- Lo que no deja aplicar, y cada aviso del cálculo que pide decidir (todos,
+  -- menos los del calendario, el del devengo que se pone al día solo y los de
+  -- la obra terminada, no aprobada o sin aprobar: su parte va a esa obra igual).
+  v_aparta := exists (select 1 from pg_trigger t
+                       where t.tgrelid = 'public.asientos'::regclass and t.tgname = 'trg_puente_asientos_jornal'
+                         and not t.tgisinternal and t.tgenabled in ('O', 'A'));
+  if not coalesce((p_j->>'puede_aplicar')::boolean, false)
+     and not exists (select 1 from jsonb_array_elements(p_j->'avisos') a where a->>'texto' = p_j->>'por_que') then
+    v_f := v_f || jsonb_build_object('codigo', 'no_se_puede', 'clase', 'pregunta', 'corto', 'No se puede repartir todavía', 'texto',
+      coalesce(p_j->>'por_que', 'Este pago no se puede repartir todavía.'));
+  end if;
+  for v_a in select a.x from jsonb_array_elements(p_j->'avisos') with ordinality as a(x, o) order by a.o loop
+    continue when v_a->>'codigo' in ('otro_mes', 'otro_anio', 'obra_terminada', 'obra_sin_aprobar')
+                  or (v_a->>'codigo' = 'devengo_estandar' and v_aparta);
+    v_f := v_f || jsonb_build_object('codigo', v_a->>'codigo', 'clase', 'pregunta', 'corto', v_a->>'corto', 'texto', v_a->>'texto');
+  end loop;
+
+  -- LA PERSONA QUE YA COBRA POR NÓMINA: una nómina le pagó horas en los
+  -- últimos 90 días. (Si alguna hora de ESTE reparto la pagó una nómina, ya lo
+  -- dijo el cálculo: pagadas_por_nomina.)
+  if not exists (select 1 from jsonb_array_elements(p_j->'avisos') a where a->>'codigo' = 'pagadas_por_nomina') then
+    select coalesce(sum(h.horas), 0) into v_h
+      from horas h
+     where h.usuario_id = v_u and h.fecha >= v_hoy - 90 and h.horas > 0
+       and (h.id in (select n.horas_id from fn_margen_horas_nomina() n)) is true;
+    if v_h > 0 then
+      v_f := v_f || jsonb_build_object('codigo', 'cobra_por_nomina', 'clase', 'pregunta', 'corto', 'Ya cobra por nómina', 'texto',
+        format('%s ya cobra por nómina (%s h de los últimos 90 días las pagó su nómina): este pago no se registra solo. Si es por '
+               'horas que su nómina no paga, acéptalo tú con «Así es»; si es otra cosa (un bono, un reembolso), di que no es de la '
+               'cuadrilla y clasifícalo como siempre.', v_nombre, fn_jornal_h(v_h)));
+    end if;
+  end if;
+
+  -- UN NOMBRE QUE YA NO DISTINGUE: a quien la base dio de alta sola por su
+  -- nombre, cuando el banco lo escribe con dos apellidos distintos.
+  if p_j->'persona'->>'por' = 'patron' and p_j->'persona'->>'alta' = 'sola' then
+    v_x := fn_jornal_nombre_dudas(v_u, substring(p_j->'persona'->>'patron' from '^\\m(.*)\\M$'), false);
+    if v_x is not null then
+      v_f := v_f || jsonb_build_object('codigo', 'nombre_ambiguo', 'clase', 'pregunta', 'corto', 'Su nombre casa con dos personas', 'texto',
+        format('A %s la base la reconoce sola por su nombre, y %s: mira que este pago sea suyo. Para que no vuelva a dudar, pon en '
+               'Costo por obra → Personas su nombre completo, como lo escribe el banco.', v_nombre, v_x));
+    end if;
+  end if;
+
+  -- LA SEMANA ANTERIOR SIN PAGO: el pago, por su día, paga la semana en
+  -- curso, y la anterior tiene horas suyas sin pago. ¿De cuál es?
+  if p_j->'periodo'->>'regla' = 'semana_en_curso' then
+    select (o.x->>'horas_sin_pago')::numeric, (o.x->>'desde')::date, (o.x->>'hasta')::date
+      into v_h, v_d1, v_d2
+      from jsonb_array_elements(p_j->'periodo'->'opciones') as o(x)
+     where o.x->>'regla' = 'semana_anterior';
+    if coalesce(v_h, 0) > 0 then
+      v_f := v_f || jsonb_build_object('codigo', 'semana_anterior_sin_pago', 'clase', 'pregunta', 'corto', 'La semana anterior está sin pago',
+        'texto',
+        format('La semana anterior (%s) tiene %s h de %s sin pago, y este pago, por su día, pagaría la suya (%s): ¿de cuál de las dos '
+               'es? Elige la semana en la tarjeta y acéptalo con «Así es».', fn_jornal_rango(v_d1, v_d2), fn_jornal_h(v_h), v_nombre,
+               fn_jornal_rango(v_desde, v_hasta)));
+    end if;
+  end if;
+
+  -- EL ÚLTIMO INTENTO QUE NO ENTRÓ (lo frenó el banco, las horas o el libro),
+  -- si lo que se intentó es lo mismo de hoy (la misma huella).
+  if v_dicho.intento_el is not null and v_dicho.intento_visto is not distinct from p_j->>'visto' then
+    v_re := v_dicho.intento_el < now() - interval '20 hours';
+    v_f := v_f || jsonb_build_object('codigo', 'no_entro', 'clase', 'pregunta', 'corto', 'No entró solo', 'texto',
+      case when coalesce(v_dicho.intento_codigo, '') ~ '^(MX[0-9]+|22023|42501)$'
+           then 'No entró solo: ' || coalesce(v_dicho.intento_texto, 'el banco no lo dejó pasar.')
+           else format('No entró solo: la base contestó con un error que no es de sus reglas (%s). Avisa.',
+                       coalesce(v_dicho.intento_codigo, '?')) end);
+  end if;
+
+  -- LA SEMANA QUE PAGA TODAVÍA NO TERMINA: espera, y entra solo el lunes.
+  if v_hasta >= v_hoy then
+    v_f := v_f || jsonb_build_object('codigo', 'semana_sin_terminar', 'clase', 'espera', 'corto', 'Su semana no ha terminado',
+      'entra_el', v_hasta + 1, 'texto',
+      format('Paga la semana %s, que termina el %s: entra solo el %s, con todas sus horas. Si quieres registrarlo ya, acéptalo tú '
+             'con «Así es».', fn_jornal_rango(v_desde, v_hasta), fn_jornal_dia(v_hasta), fn_jornal_dia(v_hasta + 1)));
+  end if;
+
+  select case when bool_or(f.x->>'clase' = 'no') then 'no'
+              when bool_or(f.x->>'clase' = 'pregunta') then 'pregunta'
+              when bool_or(f.x->>'clase' = 'espera') then 'espera' end,
+         count(*)
+    into v_estado, v_n
+    from jsonb_array_elements(v_f) as f(x);
+  v_estado := coalesce(v_estado, 'entra');
+  select f.x->>'texto' into v_x
+    from jsonb_array_elements(v_f) with ordinality as f(x, o)
+   where f.x->>'clase' = v_estado
+   order by f.o
+   limit 1;
+  return jsonb_strip_nulls(jsonb_build_object(
+    'estado', v_estado,
+    'por_que', case when v_n > 1 then format('%s (Y %s cosa(s) más: míralas en la tarjeta.)', v_x, v_n - 1) else v_x end,
+    'entra_el', case when v_estado = 'espera' then v_hasta + 1 end,
+    'reintenta', case when v_re and v_n = 1 then true end))
+    || jsonb_build_object('frenos', v_f);
+end $$;
+revoke execute on function public.fn_jornal_frenos(uuid, jsonb) from public, anon, service_role;
+grant  execute on function public.fn_jornal_frenos(uuid, jsonb) to authenticated;
+comment on function public.fn_jornal_frenos(uuid, jsonb) is 'c10: lo que frena el registro solo de un pago reconocido, dado su cálculo con la semana que toca: estado (entra, espera —entrará solo—, pregunta —pide una respuesta de Edgar—, no —Edgar dijo que no, o lo automático está apagado—, ninguno), por_que (una frase clara), frenos [{codigo, clase, corto, texto}], entra_el y reintenta. Entra solo lo que se puede aplicar sin ningún aviso que pida decidir (todos los avisos del cálculo frenan menos otro_mes, otro_anio, el del devengo que se pone al día solo y los de la obra terminada, no aprobada o sin aprobar —obra_terminada, obra_sin_aprobar: su parte va a esa obra igual—), sin que la persona cobre ya por nómina, sin dudas con su nombre, sin la semana anterior sin pago, con la semana que paga ya terminada, sin un intento reciente que el banco frenó y sin que Edgar lo deshiciera antes. Solo lee; a quien no es el dueño, ninguno.';
 
 
 -- ---------------------------------------------------------------------
@@ -2432,6 +3182,13 @@ declare
   v_memo    text;
   v_sin     jsonb;
   v_cta_sin text;
+  -- (v5) ¿lo registra la regla, sin el toque de Edgar? La rutina que registra
+  -- sola (fn_jornal_solo) lo dice con una marca de la transacción, como la de
+  -- la guarda: desde dónde corrió («pantalla», «banco», «cheque», «rutina»).
+  -- Sin la marca, como siempre: es el «Así es» de Edgar.
+  v_solo    text := nullif(btrim(coalesce(current_setting('mx_jornal.solo', true), '')), '');
+  v_chq     text;
+  v_cfg     jornal_config;
 begin
   perform fn_jornal_exigir_dueno();
   v_op := fn_jornal_opciones(p_opciones);
@@ -2505,8 +3262,14 @@ begin
   -- le llegó ni un centavo no lleva línea.
   v_sin := case when jsonb_typeof(v_j->'sin_obra') = 'object' then v_j->'sin_obra' end;
   v_cta_sin := v_sin->>'cuenta';
+  -- (v5) EL RASTRO, EN EL PROPIO ASIENTO: si el pago es un cheque (y cuál) y si
+  -- se registró solo, por la regla que eligió Edgar. Un «Así es» de un Zelle
+  -- lleva el texto de siempre.
+  v_chq := v_j->'movimiento'->>'cheque';
   v_memo := format('Jornal de %s · %s', v_nombre, case when p_desde = p_hasta then fn_jornal_dia(p_desde, true)
-                                                       else fn_jornal_dia(p_desde) || ' a ' || fn_jornal_dia(p_hasta, true) end);
+                                                       else fn_jornal_dia(p_desde) || ' a ' || fn_jornal_dia(p_hasta, true) end)
+            || case when v_chq is not null then ' · cheque' || coalesce(' ' || nullif(v_chq, ''), '') else '' end
+            || case when v_solo is not null then ' · registrado solo (la regla de Edgar)' else '' end;
   select jsonb_agg(z.l order by z.n)
     into v_lineas
     from (select (x->>'n')::int as n,
@@ -2587,12 +3350,23 @@ begin
 
   -- EL REPARTO, sus partes y su detalle (con la marca de la guarda).
   perform set_config('mx_jornal.escribe', 'jornal_repartos', true);
+  -- (v5) Con cómo entró (origen: a mano o solo), cómo se supo de quién era
+  -- (por: el patrón, o lo dijo Edgar: un cheque) y, si entró solo, la regla:
+  -- cuál, desde dónde corrió, quién la eligió y en nombre de quién se registró.
+  select * into v_cfg from jornal_config where id = 1;
   insert into jornal_repartos (id, movimiento_id, usuario_id, desde, hasta, regla_periodo, monto, horas, tarifa_sale, tarifa_equipo,
-                               cuenta, cuenta_sin_obra, asiento_id, huella, avisos, opciones, horas_aprobadas, creado_por)
+                               cuenta, cuenta_sin_obra, asiento_id, huella, avisos, opciones, horas_aprobadas, creado_por,
+                               origen, por, regla)
   values (v_id, p_movimiento, v_u, p_desde, p_hasta, v_j->'periodo'->>'regla', (v_j->'movimiento'->>'monto')::numeric,
           (v_j->>'horas')::numeric, (v_j->>'tarifa_sale')::numeric, (v_j->>'tarifa_equipo')::numeric,
           v_j->'persona'->>'cuenta', case when v_sin is not null then v_cta_sin end, v_as.id, v_j->>'visto', v_j->'avisos', v_op,
-          to_jsonb(v_ids), auth.uid());
+          to_jsonb(v_ids), auth.uid(),
+          case when v_solo is not null then 'solo' else 'mano' end, coalesce(v_j->'persona'->>'por', 'patron'),
+          case when v_solo is not null
+               then jsonb_strip_nulls(jsonb_build_object(
+                      'regla', 'la cuadrilla, sola', 'corrio', v_solo,
+                      'elegida', case when v_cfg.solo_por is null then 'de fábrica: la eligió Edgar el 15-nov-2026' else 'la encendió Edgar' end,
+                      'elegida_por', v_cfg.solo_por, 'elegida_el', v_cfg.solo_el, 'en_nombre_de', auth.uid())) end);
   perform set_config('mx_jornal.escribe', 'jornal_reparto_lineas', true);
   insert into jornal_reparto_lineas (reparto_id, n, orden, proyecto_id, co, cuenta, horas, monto)
   select v_id, y.n, case when y.monto > 0 then (row_number() over (partition by (y.monto > 0) order by y.n))::int + 1 end,
@@ -2613,6 +3387,7 @@ begin
 
   return jsonb_build_object(
     'reparto_id', v_id, 'movimiento_id', p_movimiento, 'estado', 'aplicado',
+    'origen', case when v_solo is not null then 'solo' else 'mano' end, 'por', coalesce(v_j->'persona'->>'por', 'patron'),
     'persona', v_j->'persona', 'desde', p_desde, 'hasta', p_hasta, 'regla_periodo', v_j->'periodo'->>'regla',
     'monto', (v_j->'movimiento'->>'monto')::numeric, 'horas', (v_j->>'horas')::numeric, 'tarifa_sale', (v_j->>'tarifa_sale')::numeric,
     'asiento', jsonb_build_object('id', v_as.id, 'numero', v_as.numero, 'fecha_contable', v_as.fecha_contable, 'periodo', v_as.periodo),
@@ -2626,7 +3401,8 @@ begin
     'propuesta_ia', v_j->'propuesta_ia', 'propuestas_ia', v_j->'propuestas_ia',
     -- (las obras a las que les llegó dinero: un grupo al que no le toca ni un
     -- centavo no lleva línea, y no se cuenta)
-    'nota', format('Repartido: %s de %s (%s, %s h) entre %s obra(s)%s; asiento %s del %s.%s%s',
+    'nota', format('%s: %s de %s (%s, %s h) entre %s obra(s)%s; asiento %s del %s.%s%s',
+                   case when v_solo is not null then 'Registrado solo' else 'Repartido' end,
                    fn_jornal_usd((v_j->'movimiento'->>'monto')::numeric), v_nombre, v_j->'periodo'->>'texto',
                    fn_jornal_h((v_j->>'horas')::numeric),
                    (select count(distinct x->>'proyecto_id') from jsonb_array_elements(v_j->'lineas') x where (x->>'monto')::numeric > 0),
@@ -2725,11 +3501,15 @@ begin
                    case when v_aprob > 0
                         then format('Sus %s reporte(s) de horas siguen aprobados: se aprobó lo que viste, y lo que se deshace es el '
                                     'reparto del pago.', v_aprob)
-                        else '' end));
+                        else '' end)
+            -- (v5) LO QUE EDGAR DESHACE NO VUELVE A ENTRAR SOLO: el reparto deshecho, con su motivo, es la marca («Edgar dijo que
+            -- no»); la rutina que registra sola lo respeta hasta que él lo acepte a mano o pida que vuelva a entrar solo.
+            || case when v_mov.estado = 'pendiente' and (select c.solo from jornal_config c where c.id = 1)
+                    then ' Este pago ya no vuelve a entrar solo: si lo quieres repartido, acéptalo tú en la Bandeja.' else '' end);
 end $$;
 revoke execute on function public.fn_jornal_deshacer(uuid, text) from public, anon, service_role;
 grant  execute on function public.fn_jornal_deshacer(uuid, text) to authenticated;
-comment on function public.fn_jornal_deshacer(uuid, text) is 'c10: deshace un reparto con su motivo por el camino de c6 (fn_banco_descasar: el asiento se reversa y el movimiento vuelve a la Bandeja); el reparto queda marcado deshecho (quién, cuándo, por qué, su reverso) y no se borra. Si el movimiento ya se había des-casado por fuera, solo marca el reparto. La aprobación de las horas se queda. MX008 si ya estaba deshecho; los errores de c6 salen tal cual. Solo el dueño.';
+comment on function public.fn_jornal_deshacer(uuid, text) is 'c10: deshace un reparto con su motivo por el camino de c6 (fn_banco_descasar: el asiento se reversa y el movimiento vuelve a la Bandeja); el reparto queda marcado deshecho (quién, cuándo, por qué, su reverso) y no se borra. Si el movimiento ya se había des-casado por fuera, solo marca el reparto. La aprobación de las horas se queda. Lo deshecho no vuelve a entrar solo (el reparto deshecho es la marca). MX008 si ya estaba deshecho; los errores de c6 salen tal cual. Solo el dueño.';
 
 -- LA CONFIGURACIÓN: {cuenta_defecto?, cuenta_sin_obra? (o null para
 -- quitarla), burden_estandar_pct? (0 a 100, o null), aviso_tarifa_pct? (0 a
@@ -2750,11 +3530,15 @@ begin
     raise exception using errcode = '22023', message = 'La configuración llega como un objeto JSON.';
   end if;
   select string_agg(k, ', ' order by k) into v_sobra
-    from jsonb_object_keys(p) k where k not in ('cuenta_defecto', 'cuenta_sin_obra', 'burden_estandar_pct', 'aviso_tarifa_pct');
+    from jsonb_object_keys(p) k where k not in ('cuenta_defecto', 'cuenta_sin_obra', 'burden_estandar_pct', 'aviso_tarifa_pct', 'solo');
   if v_sobra is not null then
     raise exception using errcode = '22023',
-      message = format('Clave desconocida en la configuración: %s. Las que hay: cuenta_defecto, cuenta_sin_obra, burden_estandar_pct y '
-                       'aviso_tarifa_pct.', v_sobra);
+      message = format('Clave desconocida en la configuración: %s. Las que hay: cuenta_defecto, cuenta_sin_obra, burden_estandar_pct, '
+                       'aviso_tarifa_pct y solo.', v_sobra);
+  end if;
+  -- (v5) lo automático: true (los pagos a la cuadrilla se registran solos) o false (cada uno espera el «Así es»)
+  if p ? 'solo' and jsonb_typeof(p->'solo') <> 'boolean' then
+    raise exception using errcode = '22023', message = 'solo es true (los pagos a la cuadrilla se registran solos) o false (cada uno espera tu «Así es»).';
   end if;
   if p ? 'cuenta_defecto' then
     v_x := fn_jornal_cuenta_mal(nullif(btrim(p->>'cuenta_defecto'), ''), 'obra');
@@ -2796,6 +3580,10 @@ begin
          cuenta_sin_obra     = case when p ? 'cuenta_sin_obra' then nullif(btrim(p->>'cuenta_sin_obra'), '') else cuenta_sin_obra end,
          burden_estandar_pct = case when p ? 'burden_estandar_pct' then v_bur else burden_estandar_pct end,
          aviso_tarifa_pct    = case when p ? 'aviso_tarifa_pct' then v_av else aviso_tarifa_pct end,
+         -- (v5: quién encendió o apagó lo automático, y cuándo, solo si de verdad cambia)
+         solo                = case when p ? 'solo' then (p->>'solo')::boolean else solo end,
+         solo_por            = case when p ? 'solo' and (p->>'solo')::boolean is distinct from solo then auth.uid() else solo_por end,
+         solo_el             = case when p ? 'solo' and (p->>'solo')::boolean is distinct from solo then now() else solo_el end,
          actualizado         = now(),
          actualizado_por     = auth.uid()
    where id = 1
@@ -2805,7 +3593,7 @@ begin
 end $$;
 revoke execute on function public.fn_jornal_config(jsonb) from public, anon, service_role;
 grant  execute on function public.fn_jornal_config(jsonb) to authenticated;
-comment on function public.fn_jornal_config(jsonb) is 'c10: cambia la configuración del jornal ({cuenta_defecto?, cuenta_sin_obra? (o null), burden_estandar_pct? (0–100 o null), aviso_tarifa_pct? (0–500)}) y la devuelve. MX004 si una cuenta no sirve, MX005 si un % está mal. Solo el dueño.';
+comment on function public.fn_jornal_config(jsonb) is 'c10: cambia la configuración del jornal ({cuenta_defecto?, cuenta_sin_obra? (o null), burden_estandar_pct? (0–100 o null), aviso_tarifa_pct? (0–500), solo? (true o false: si los pagos a la cuadrilla se registran solos; queda quién lo cambió y cuándo)}) y la devuelve. MX004 si una cuenta no sirve, MX005 si un % está mal. Solo el dueño.';
 
 -- UNA PERSONA: alta, cambio o baja lógica. p: {usuario_id, patron?,
 -- movimiento_id? (si no se dice el patrón, el que sale de ese movimiento:
@@ -2834,6 +3622,7 @@ declare
   v_nd     int;
   v_dtxt   text;
   v_av     text[] := '{}';
+  v_sin    boolean := false;
 begin
   perform fn_jornal_exigir_dueno();
   if p is null or jsonb_typeof(p) <> 'object' then
@@ -2883,9 +3672,20 @@ begin
     end if;
   end if;
   v_patron := coalesce(v_patron, v_ex.patron);
-  v_x := fn_jornal_patron_mal(v_patron);
-  if v_x is not null then
-    raise exception using errcode = '22023', message = format('El patrón no vale: %s.', v_x);
+  -- (v5) «ESTA PERSONA NO COBRA POR HORAS», dicho de alguien que todavía no
+  -- está dado de alta (activa = false, sin patrón ni movimiento): queda de
+  -- baja desde ya —y la base ya no lo da de alta sola—, con el patrón que
+  -- sale de su nombre guardado por si un día vuelve (un patrón solo cuenta en
+  -- una persona activa; al volver a darlo de alta se valida como siempre).
+  if v_patron is null and v_ex.usuario_id is null and p ? 'activa' and not (p->>'activa')::boolean then
+    v_patron := coalesce(fn_jornal_nombre_patron(v_pf.nombre), '\mSIN-PATRON\M');
+    v_sin := true;
+  end if;
+  if not v_sin then
+    v_x := fn_jornal_patron_mal(v_patron);
+    if v_x is not null then
+      raise exception using errcode = '22023', message = format('El patrón no vale: %s.', v_x);
+    end if;
   end if;
   v_activa := coalesce((p->>'activa')::boolean, v_ex.activa, true);
   v_cuenta := case when p ? 'cuenta' then nullif(btrim(p->>'cuenta'), '') else v_ex.cuenta end;
@@ -2907,8 +3707,10 @@ begin
       values (v_u, v_patron, v_cuenta, v_activa, nullif(btrim(p->>'nota'), ''), auth.uid(), auth.uid())
       returning * into v_fila;
     else
+      -- (v5: si Edgar cambia el patrón de alguien que la base dio de alta sola, pasa a ser suyo)
       update jornal_personas
          set patron = v_patron, cuenta = v_cuenta, activa = v_activa,
+             alta = case when v_patron is distinct from patron then 'edgar' else alta end,
              nota = case when p ? 'nota' then nullif(btrim(p->>'nota'), '') else nota end,
              actualizado_el = now(), actualizado_por = auth.uid()
        where usuario_id = v_u
@@ -2962,7 +3764,617 @@ begin
 end $$;
 revoke execute on function public.fn_jornal_persona(jsonb) from public, anon, service_role;
 grant  execute on function public.fn_jornal_persona(jsonb) to authenticated;
-comment on function public.fn_jornal_persona(jsonb) is 'c10: da de alta, cambia o da de baja (activa = false) a una persona cuyo pago se reparte por sus horas: {usuario_id, patron? (o movimiento_id: sale de su descripción), cuenta?, activa?, nota?}. El patrón se valida (22023), la cuenta también (MX004), el dueño no (MX008), y dos personas no comparten patrón (MX008). Devuelve la fila, su nombre, cuántos pagos pendientes reconoce y sus avisos (el patrón no lleva su nombre de pila; casa con pagos a varios destinatarios). Solo el dueño.';
+comment on function public.fn_jornal_persona(jsonb) is 'c10: da de alta, cambia o da de baja (activa = false) a una persona cuyo pago se reparte por sus horas: {usuario_id, patron? (o movimiento_id: sale de su descripción), cuenta?, activa?, nota?}. El patrón se valida (22023), la cuenta también (MX004), el dueño no (MX008), y dos personas no comparten patrón (MX008). De alguien sin dar de alta, activa = false sin patrón dice «no cobra por horas»: queda de baja y la base ya no lo da de alta sola. Devuelve la fila, su nombre, cuántos pagos pendientes reconoce y sus avisos (el patrón no lleva su nombre de pila; casa con pagos a varios destinatarios). Solo el dueño.';
+
+
+-- ---------------------------------------------------------------------
+-- 7b. LA CUADRILLA, SOLA (v5, 15-nov-2026), lo que escribe: la rutina que
+--     registra sola (fn_jornal_solo), lo que Edgar dice de un pago
+--     (fn_jornal_pago: de quién es un cheque, «no es de la cuadrilla») y la
+--     tarea de madrugada (fn_jornal_solo_programado). Todo SECURITY INVOKER.
+-- ---------------------------------------------------------------------
+-- LA RUTINA QUE REGISTRA SOLA. Para cada cargo pendiente de la Bandeja
+-- reconocido como el pago de una persona de la cuadrilla (por su patrón, o
+-- porque Edgar dijo de quién es: un cheque), del más viejo al más nuevo:
+--   1. arma la propuesta con la semana que toca (fn_jornal_calcular, la misma
+--      cuenta que la tarjeta de la Bandeja);
+--   2. mira qué lo frena (fn_jornal_frenos). Si NADA pide decidir, lo aplica
+--      por la misma puerta que el «Así es» (fn_jornal_aplicar, con la huella
+--      de lo que acaba de calcular y SIN motivo: los frenos del banco valen
+--      enteros): las horas quedan aprobadas por c3, el asiento lo pone c6, y
+--      el reparto queda escrito con origen «solo» y su regla (cuál, desde
+--      dónde corrió, quién la eligió y en nombre de quién);
+--   3. si el banco, las horas o el libro lo frenan al postear (lo que puede
+--      casar con otra cosa del libro, un ticket que espera, una conciliación
+--      confirmada…), NO entra: nada queda a medias, se apunta lo que dijeron
+--      (jornal_pagos: el último intento) y el pago espera en la Bandeja con
+--      ese porqué. No se insiste con lo mismo: se vuelve a intentar si las
+--      horas cambian o, si no, una vez al día.
+-- Antes, DA DE ALTA SOLA a quien puede (fn_jornal_cuadrilla: su nombre como
+-- palabra entera en la descripción del banco, sin dudas); a quien no, no, y
+-- lo dice su fila de v_jornal_personas.
+-- CUÁNDO CORRE: la pantalla la llama al abrir Contabilidad y después de
+-- importar o casar el banco (también tras «Sincronizar» con Plaid); y sin
+-- pantalla, la tarea de madrugada (fn_jornal_solo_programado, más abajo),
+-- después de lo que Plaid trae sola cada día.
+-- IDEMPOTENTE Y SEGURA CON DOS TELÉFONOS A LA VEZ: una sola corrida a la vez
+-- (un candado de la transacción; la segunda no espera: contesta «ocupado» y
+-- no hace nada), y cada pago entra por fn_jornal_aplicar, que ya toma el
+-- candado de la persona, el del banco y la fila del movimiento: un pago, un
+-- reparto vivo (su índice único). Correrla otra vez no hace nada: lo
+-- registrado ya no está pendiente, y lo que espera sigue esperando.
+-- UN DESHECHO POR EDGAR NO VUELVE A ENTRAR SOLO (fn_jornal_frenos: «Edgar
+-- dijo que no»). Y con lo automático apagado (jornal_config.solo = false)
+-- no hace nada.
+-- NO SE CUELGA DE LA API: no empieza un pago más pasado su presupuesto de
+-- tiempo (3 s de fábrica; el tope de la API son 8) y devuelve cuántos quedan
+-- (completo = false): la pantalla la vuelve a llamar.
+-- Y AVANZA SIEMPRE (la revisión del 15-nov-2026): cuando corta por reloj
+-- devuelve también «sigue», el último pago que miró, y la llamada siguiente
+-- lo manda en «despues_de» para seguir DESPUÉS de él. Sin eso cada llamada
+-- volvía a empezar por el pago más viejo: con muchos pagos esperando una
+-- respuesta de Edgar (cada uno cuesta su cálculo, aunque no entre) se le
+-- iba el presupuesto en los mismos, los más nuevos no se miraban nunca —no
+-- entraban solos— y la pantalla repetía la llamada hasta su tope.
+-- EN NOMBRE DE ALGUIEN: registra con la sesión del dueño (la app) o, sin
+-- pantalla, en su nombre (fn_jornal_solo_programado). Desde el SQL Editor
+-- sin nadie en cuyo nombre registrar no corre (42501): el reparto, el
+-- asiento y la aprobación de las horas quedarían sin decir quién.
+-- p: {movimiento_id? (solo ese pago), segundos? (0 a 120), corrio?
+-- (pantalla | banco | cheque | rutina: desde dónde se llama; queda en la
+-- regla del reparto), despues_de? (el «sigue» de la llamada anterior)}.
+-- Devuelve {encendido, corrio, ocupado, altas
+-- [{usuario_id, nombre, patron}], registrados [{movimiento_id, reparto_id,
+-- fecha, monto, descripcion, usuario_id, persona, por, cheque, desde, hasta,
+-- periodo_texto, horas, obras, lineas, sin_obra, asiento, avisos (los que no
+-- frenan y el pago traía: quedan como nota en el reparto), nota}],
+-- no_entraron [{movimiento_id, fecha, monto, persona, estado, por_que}],
+-- esperan, preguntan, dijo_no (los tres, de lo que miró ESTA llamada),
+-- quedan, completo, sigue (si cortó por reloj: el último pago que miró),
+-- propuestas_ia (lo de la IA que los pagos registrados dejan abierto: la
+-- pantalla lo cierra), nota}. Solo el dueño.
+create or replace function public.fn_jornal_solo(p jsonb default '{}'::jsonb) returns jsonb
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  cfg       jornal_config;
+  v_sobra   text;
+  v_mov     uuid;
+  v_seg     numeric := 3;
+  v_corrio  text := 'pantalla';
+  v_t0      timestamptz := clock_timestamp();
+  v_altas   jsonb := '[]'::jsonb;
+  v_reg     jsonb := '[]'::jsonb;
+  v_no      jsonb := '[]'::jsonb;
+  v_ia      jsonb := '[]'::jsonb;
+  v_esp     int := 0;
+  v_preg    int := 0;
+  v_dno     int := 0;
+  v_quedan  int := 0;
+  v_k       int;
+  r         record;
+  c         record;
+  v_j       jsonb;
+  v_f       jsonb;
+  v_res     jsonb;
+  v_cod     text;
+  v_msg     text;
+  v_total   numeric := 0;
+  v_nota    text;
+  v_desp    uuid;
+  v_df      date;
+  v_sigue   uuid;
+begin
+  perform fn_jornal_exigir_dueno();
+  -- (en nombre de alguien: la sesión del dueño, o el dueño que fija la tarea sin pantalla. El SQL Editor a secas no: el reparto,
+  -- el asiento y la aprobación de las horas quedarían sin decir quién)
+  if auth.uid() is null then
+    raise exception using errcode = '42501',
+      message = 'La rutina que registra sola corre en nombre del dueño (cada reparto dice quién): la llama la app con su sesión; '
+                'sin pantalla, select fn_jornal_solo_programado();';
+  end if;
+  if p is null or jsonb_typeof(p) = 'null' then
+    p := '{}'::jsonb;
+  end if;
+  if jsonb_typeof(p) <> 'object' then
+    raise exception using errcode = '22023',
+      message = 'Lo que se pide llega como un objeto JSON: {} (todo lo pendiente) o {"movimiento_id": "…"} (solo ese pago).';
+  end if;
+  select string_agg(k, ', ' order by k) into v_sobra
+    from jsonb_object_keys(p) k where k not in ('movimiento_id', 'segundos', 'corrio', 'despues_de');
+  if v_sobra is not null then
+    raise exception using errcode = '22023',
+      message = format('Clave desconocida: %s. Las que hay: movimiento_id, segundos, corrio y despues_de.', v_sobra);
+  end if;
+  if p ? 'movimiento_id' and jsonb_typeof(p->'movimiento_id') <> 'null' then
+    begin
+      v_mov := (p->>'movimiento_id')::uuid;
+    exception when invalid_text_representation then
+      raise exception using errcode = '22023', message = 'movimiento_id es el id (uuid) de un movimiento del banco.';
+    end;
+  end if;
+  if p ? 'segundos' and jsonb_typeof(p->'segundos') <> 'null' then
+    begin
+      v_seg := (p->>'segundos')::numeric;
+    exception when others then
+      v_seg := null;
+    end;
+    if v_seg is null or v_seg < 0 or v_seg > 120 then
+      raise exception using errcode = '22023', message = 'segundos es el tiempo que puede tardar, de 0 a 120 (de fábrica, 3).';
+    end if;
+  end if;
+  if p ? 'corrio' and jsonb_typeof(p->'corrio') <> 'null' then
+    v_corrio := p->>'corrio';
+    if v_corrio not in ('pantalla', 'banco', 'cheque', 'rutina') then
+      raise exception using errcode = '22023', message = 'corrio dice desde dónde se llama: pantalla, banco, cheque o rutina.';
+    end if;
+  end if;
+  -- (despues_de: por dónde seguir, lo que la llamada anterior devolvió en «sigue». Con un solo pago no aplica; y si ese
+  -- movimiento ya no existe, se empieza por el principio)
+  if v_mov is null and p ? 'despues_de' and jsonb_typeof(p->'despues_de') <> 'null' then
+    begin
+      v_desp := (p->>'despues_de')::uuid;
+    exception when invalid_text_representation then
+      raise exception using errcode = '22023',
+        message = 'despues_de es el id (uuid) del último pago que miró la llamada anterior: lo que devolvió en «sigue».';
+    end;
+    select m.fecha into v_df from movimientos_banco m where m.id = v_desp;
+    if not found then
+      v_desp := null;
+    end if;
+  end if;
+
+  select * into cfg from jornal_config where id = 1;
+  if not coalesce(cfg.solo, false) then
+    return jsonb_build_object('encendido', false, 'corrio', false, 'ocupado', false, 'altas', '[]'::jsonb, 'registrados', '[]'::jsonb,
+                              'no_entraron', '[]'::jsonb, 'esperan', 0, 'preguntan', 0, 'dijo_no', 0, 'quedan', 0, 'completo', true,
+                              'propuestas_ia', '[]'::jsonb,
+                              'nota', 'El registro automático de los pagos a la cuadrilla está apagado: cada pago espera tu «Así es».');
+  end if;
+
+  -- UNA CORRIDA A LA VEZ. La pasada entera no espera a otra (dos teléfonos
+  -- abriendo Contabilidad a la vez: el segundo contesta «ocupado» y no hace
+  -- nada); la de un solo pago (Edgar acaba de decir de quién es un cheque)
+  -- espera a que la otra termine: es cuestión de un momento.
+  if v_mov is null then
+    if not pg_try_advisory_xact_lock(820261115, hashtext('jornal:solo')) then
+      return jsonb_build_object('encendido', true, 'corrio', false, 'ocupado', true, 'altas', '[]'::jsonb, 'registrados', '[]'::jsonb,
+                                'no_entraron', '[]'::jsonb, 'esperan', 0, 'preguntan', 0, 'dijo_no', 0, 'quedan', 0, 'completo', true,
+                                'propuestas_ia', '[]'::jsonb, 'nota', null);
+    end if;
+  else
+    perform pg_advisory_xact_lock(820261115, hashtext('jornal:solo'));
+  end if;
+
+  -- 1. DAR DE ALTA SOLA a quien se puede (solo en la pasada entera, y al
+  --    empezarla: no al seguirla): su nombre como palabra entera en la
+  --    descripción del banco, sin dudas.
+  if v_mov is null and v_desp is null then
+    for r in select q.usuario_id, q.nombre, q.patron from fn_jornal_cuadrilla() q where q.sola order by q.usuario_id loop
+      perform pg_advisory_xact_lock(820261109, hashtext('jornal:' || r.usuario_id::text));
+      begin
+        perform set_config('mx_jornal.escribe', 'jornal_personas', true);
+        insert into jornal_personas (usuario_id, patron, activa, alta, nota, creado_por, actualizado_por)
+        values (r.usuario_id, r.patron, true, 'sola',
+                'Dada de alta sola, por su nombre en la app (la cuadrilla, sola). Si no cobra por horas, dala de baja.',
+                auth.uid(), auth.uid())
+        on conflict (usuario_id) do nothing;
+        get diagnostics v_k = row_count;
+        perform set_config('mx_jornal.escribe', '', true);
+        if v_k > 0 then
+          v_altas := v_altas || jsonb_build_object('usuario_id', r.usuario_id, 'nombre', r.nombre, 'patron', r.patron);
+        end if;
+      exception when unique_violation then
+        -- (ese patrón ya es el de otra persona activa: no se da de alta sola)
+        perform set_config('mx_jornal.escribe', '', true);
+      end;
+    end loop;
+  end if;
+
+  -- 2. Los candados de las personas, TODOS y en orden, antes de tocar el banco:
+  --    un «Así es», un «Deshacer» o un alta de otra pestaña esperan a que esta
+  --    corrida termine, y nadie se queda esperando en círculo.
+  for r in
+    select x.u
+      from (select j.usuario_id as u from jornal_personas j where j.activa
+            union
+            select gp.usuario_id
+              from jornal_pagos gp join movimientos_banco mm on mm.id = gp.movimiento_id
+             where gp.usuario_id is not null and mm.estado = 'pendiente') x
+     order by x.u
+  loop
+    perform pg_advisory_xact_lock(820261109, hashtext('jornal:' || r.u::text));
+  end loop;
+
+  -- 3. Cada cargo pendiente reconocido, del más viejo al más nuevo.
+  for c in
+    select m.id, m.fecha, (-m.monto)::numeric(14,2) as monto, m.descripcion
+      from movimientos_banco m
+     where m.estado = 'pendiente' and m.monto < 0
+       and (v_mov is null or m.id = v_mov)
+       -- (al seguir una pasada: solo lo que va DESPUÉS del último pago que miró la llamada anterior, en este mismo orden)
+       and (v_desp is null or (m.fecha, m.id) > (v_df, v_desp))
+       and not exists (select 1 from jornal_pagos gp where gp.movimiento_id = m.id and gp.no_cuadrilla)
+       and (exists (select 1 from jornal_pagos gp where gp.movimiento_id = m.id and gp.usuario_id is not null)
+            or exists (select 1 from jornal_personas jp where jp.activa and fn_jornal_texto(m.desc_norm, m.memo) ~* jp.patron))
+     order by m.fecha, m.id
+  loop
+    -- (pasado el presupuesto no se empieza otro: quedan para la llamada siguiente, que sigue después del último que se miró)
+    if v_mov is null and clock_timestamp() - v_t0 > make_interval(secs => v_seg::double precision) then
+      v_quedan := v_quedan + 1;
+      continue;
+    end if;
+    v_sigue := c.id;
+    v_j := fn_jornal_calcular(c.id, null, null, '{}'::jsonb);
+    -- (casa con dos personas, o Edgar lo acaba de resolver: sale como un movimiento normal)
+    continue when not coalesce((v_j->>'reconocido')::boolean, false);
+    v_f := fn_jornal_frenos(c.id, v_j);
+    if v_f->>'estado' = 'entra' or coalesce((v_f->>'reintenta')::boolean, false) then
+      begin
+        perform set_config('mx_jornal.solo', v_corrio, true);
+        v_res := fn_jornal_aplicar(c.id, (v_j->'periodo'->>'desde')::date, (v_j->'periodo'->>'hasta')::date, v_j->>'visto', '{}'::jsonb);
+        perform set_config('mx_jornal.solo', '', true);
+        -- (si antes lo había frenado el banco, ya no: se borra aquel intento)
+        perform set_config('mx_jornal.escribe', 'jornal_pagos', true);
+        update jornal_pagos
+           set intento_el = null, intento_codigo = null, intento_texto = null, intento_visto = null, actualizado_el = now()
+         where movimiento_id = c.id and intento_el is not null;
+        perform set_config('mx_jornal.escribe', '', true);
+        v_total := v_total + c.monto;
+        v_reg := v_reg || jsonb_build_object(
+          'movimiento_id', c.id, 'reparto_id', v_res->>'reparto_id', 'fecha', c.fecha, 'monto', c.monto, 'descripcion', c.descripcion,
+          'usuario_id', v_j->'persona'->>'usuario_id', 'persona', v_j->'persona'->>'nombre', 'por', v_j->'persona'->>'por',
+          'cheque', v_j->'movimiento'->'cheque', 'desde', v_j->'periodo'->>'desde', 'hasta', v_j->'periodo'->>'hasta',
+          'periodo_texto', v_j->'periodo'->>'texto', 'horas', v_j->'horas', 'obras', v_j->'obras', 'lineas', v_j->'lineas',
+          -- (avisos: los que no frenan y este pago traía —una obra terminada o sin aprobar, el corte de mes—: su nota)
+          'sin_obra', v_j->'sin_obra', 'asiento', v_res->'asiento', 'avisos', coalesce(v_res->'avisos', '[]'::jsonb),
+          'nota', v_res->>'nota');
+        v_ia := v_ia || coalesce(v_res->'propuestas_ia', '[]'::jsonb);
+      exception when others then
+        -- NO ENTRÓ: lo frenó el banco (c6: lo que puede casar con otra cosa del
+        -- libro…), las horas (c3) o el libro (c2). Nada quedó a medias (el
+        -- bloque entero se deshace). Se apunta lo que dijeron, y espera.
+        get stacked diagnostics v_cod = returned_sqlstate, v_msg = message_text;
+        perform set_config('mx_jornal.solo', '', true);
+        perform set_config('mx_jornal.escribe', '', true);
+        -- (lo pasajero no se apunta: las horas cambiaron en ese instante —MX011—
+        -- o un candado estaba ocupado; la corrida siguiente lo vuelve a mirar)
+        if v_cod not in ('MX011', '55P03', '40P01', '40001') then
+          perform set_config('mx_jornal.escribe', 'jornal_pagos', true);
+          insert into jornal_pagos (movimiento_id, intento_el, intento_codigo, intento_texto, intento_visto)
+          values (c.id, clock_timestamp(), v_cod, left(v_msg, 1500), v_j->>'visto')
+          on conflict (movimiento_id) do update
+            set intento_el = excluded.intento_el, intento_codigo = excluded.intento_codigo, intento_texto = excluded.intento_texto,
+                intento_visto = excluded.intento_visto, actualizado_el = now();
+          perform set_config('mx_jornal.escribe', '', true);
+        end if;
+        v_preg := v_preg + 1;
+        v_no := v_no || jsonb_build_object(
+          'movimiento_id', c.id, 'fecha', c.fecha, 'monto', c.monto, 'persona', v_j->'persona'->>'nombre', 'estado', 'pregunta',
+          'por_que', case when v_cod ~ '^(MX[0-9]+|22023|42501)$' then 'No entró solo: ' || v_msg
+                          else format('No entró solo: la base contestó con un error que no es de sus reglas (%s). Avisa.', v_cod) end);
+      end;
+    else
+      if v_f->>'estado' = 'espera' then v_esp := v_esp + 1;
+      elsif v_f->>'estado' = 'no' then v_dno := v_dno + 1;
+      else v_preg := v_preg + 1;
+      end if;
+      v_no := v_no || jsonb_build_object(
+        'movimiento_id', c.id, 'fecha', c.fecha, 'monto', c.monto, 'persona', v_j->'persona'->>'nombre', 'estado', v_f->>'estado',
+        'por_que', v_f->>'por_que');
+    end if;
+  end loop;
+
+  v_nota := nullif(concat_ws(' ',
+    case when jsonb_array_length(v_reg) > 0
+         then format('Registrado solo: %s pago(s) a la cuadrilla por %s (%s).', jsonb_array_length(v_reg), fn_jornal_usd(v_total),
+                     (select left(string_agg(format('%s %s', x->>'persona', fn_jornal_usd((x->>'monto')::numeric)), '; '), 300)
+                        from jsonb_array_elements(v_reg) x)) end,
+    case when v_preg + v_dno > 0
+         then format('%s pago(s) a la cuadrilla esperan tu respuesta en la Bandeja.', v_preg + v_dno) end,
+    case when jsonb_array_length(v_altas) > 0
+         then format('Desde ahora la base reconoce sola, por su nombre, los pagos de %s.',
+                     (select string_agg(x->>'nombre', ', ') from jsonb_array_elements(v_altas) x)) end), '');
+  return jsonb_build_object(
+    'encendido', true, 'corrio', true, 'ocupado', false, 'altas', v_altas, 'registrados', v_reg, 'no_entraron', v_no,
+    'esperan', v_esp, 'preguntan', v_preg, 'dijo_no', v_dno, 'quedan', v_quedan, 'completo', v_quedan = 0,
+    -- (si cortó por reloj: el último pago que miró —o por donde venía, si no llegó a mirar ninguno—, para seguir después de él)
+    'sigue', case when v_quedan > 0 then coalesce(v_sigue, v_desp) end,
+    'propuestas_ia', v_ia, 'nota', v_nota);
+end $$;
+revoke execute on function public.fn_jornal_solo(jsonb) from public, anon, service_role;
+grant  execute on function public.fn_jornal_solo(jsonb) to authenticated;
+comment on function public.fn_jornal_solo(jsonb) is 'c10: LA RUTINA QUE REGISTRA SOLA los pagos a la cuadrilla (una regla de la base, no la IA). Da de alta sola a quien puede (su nombre como palabra entera en la descripción del banco, sin dudas) y, para cada cargo pendiente reconocido, arma la propuesta con la semana que toca y, si nada pide decidir (fn_jornal_frenos), la aplica por la puerta del «Así es» (fn_jornal_aplicar, sin motivo: los frenos del banco valen), con origen «solo» y su regla escritos en el reparto; si el banco, las horas o el libro lo frenan, no entra y queda apuntado por qué. Una corrida a la vez (la segunda contesta ocupado), idempotente, con presupuesto de tiempo (quedan, completo; si corta, «sigue» dice por dónde y la llamada siguiente lo manda en despues_de: avanza siempre). Con lo automático apagado no hace nada; lo que Edgar deshizo no vuelve a entrar solo. p: {movimiento_id?, segundos?, corrio?, despues_de?}. Solo el dueño, con su sesión (o en su nombre, la tarea sin pantalla): 42501 sin nadie en cuyo nombre registrar.';
+
+-- LO QUE EDGAR DICE DE UN PAGO DEL BANCO (un cargo pendiente). UNA cosa por
+-- llamada:
+--   {movimiento_id, usuario_id}            ES DE ESTA PERSONA. La pregunta de
+--     la Bandeja en un cheque («¿de quién es este cheque?»: llega sin
+--     nombre). Queda escrito de quién es, quién lo dijo y cuándo; el patrón
+--     de la persona NO cambia (un cheque no enseña cómo escribe el banco su
+--     nombre). Y EN LA MISMA LLAMADA se reparte por sus horas y se registra
+--     solo, con las mismas reglas que un Zelle (fn_jornal_solo para ese
+--     pago); si algo pide decidir, no entra y lo dice (estado, por_que,
+--     frenos): la Bandeja lo pinta como la tarjeta de mano de obra de esa
+--     persona, con su «Así es».
+--   {movimiento_id, no_cuadrilla: true}    NO ES DE LA CUADRILLA. No se
+--     pregunta más, y no se reconoce aunque el banco escriba el nombre de
+--     alguien de la cuadrilla (el «No es mano de obra» de la tarjeta): se
+--     clasifica en la Bandeja como siempre.
+--   {movimiento_id, quitar: true}          Quita lo dicho (vuelve a
+--     preguntarse o a reconocerse por su patrón).
+--   {movimiento_id, solo: true}            QUE VUELVA A ENTRAR SOLO un pago
+--     que Edgar deshizo antes (levanta el «Edgar dijo que no»), y se intenta
+--     en la misma llamada.
+-- Devuelve {movimiento_id, dicho (es_de | no_cuadrilla | quitado | solo),
+-- usuario_id, persona, registrado, reparto (el de fn_jornal_solo, si entró),
+-- reconocido, estado, por_que, frenos, propuestas_ia, nota}. MX008 si el
+-- movimiento no es un cargo pendiente o la persona es el dueño. Solo el dueño.
+create or replace function public.fn_jornal_pago(p jsonb) returns jsonb
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_sobra text;
+  v_mov   uuid;
+  v_u     uuid;
+  v_que   text;
+  v_n     int;
+  m       movimientos_banco;
+  v_pf    perfiles;
+  v_res   jsonb;
+  v_j     jsonb;
+  v_f     jsonb;
+  v_reg   boolean;
+  v_nota  text;
+begin
+  perform fn_jornal_exigir_dueno();
+  -- (lo dice alguien: queda escrito quién. El SQL Editor a secas, sin sesión, no)
+  if auth.uid() is null then
+    raise exception using errcode = '42501',
+      message = 'Lo que se dice de un pago lo dice el dueño con su sesión, desde la app: queda escrito quién lo dijo.';
+  end if;
+  if p is null or jsonb_typeof(p) <> 'object' then
+    raise exception using errcode = '22023',
+      message = 'Lo dicho de un pago llega como un objeto JSON: {"movimiento_id": "…", "usuario_id": "…"} (o no_cuadrilla, quitar, solo).';
+  end if;
+  select string_agg(k, ', ' order by k) into v_sobra
+    from jsonb_object_keys(p) k where k not in ('movimiento_id', 'usuario_id', 'no_cuadrilla', 'quitar', 'solo');
+  if v_sobra is not null then
+    raise exception using errcode = '22023',
+      message = format('Clave desconocida: %s. Las que hay: movimiento_id, usuario_id, no_cuadrilla, quitar y solo.', v_sobra);
+  end if;
+  begin
+    v_mov := (p->>'movimiento_id')::uuid;
+    v_u   := (p->>'usuario_id')::uuid;
+  exception when invalid_text_representation then
+    raise exception using errcode = '22023', message = 'movimiento_id y usuario_id son ids (uuid): el del movimiento del banco y el del perfil.';
+  end;
+  if v_mov is null then
+    raise exception using errcode = '22023', message = 'Di de qué movimiento del banco (movimiento_id).';
+  end if;
+  if (p ? 'no_cuadrilla' and jsonb_typeof(p->'no_cuadrilla') not in ('boolean', 'null'))
+     or (p ? 'quitar' and jsonb_typeof(p->'quitar') not in ('boolean', 'null'))
+     or (p ? 'solo' and jsonb_typeof(p->'solo') not in ('boolean', 'null')) then
+    raise exception using errcode = '22023', message = 'no_cuadrilla, quitar y solo son true (o no van).';
+  end if;
+  v_n := (v_u is not null)::int + coalesce((p->>'no_cuadrilla')::boolean, false)::int + coalesce((p->>'quitar')::boolean, false)::int
+         + coalesce((p->>'solo')::boolean, false)::int;
+  if v_n <> 1 then
+    raise exception using errcode = '22023',
+      message = 'Di UNA cosa de este pago: de quién es (usuario_id), que no es de la cuadrilla (no_cuadrilla), que se quite lo dicho '
+                '(quitar) o que vuelva a entrar solo (solo).';
+  end if;
+  v_que := case when v_u is not null then 'es_de' when coalesce((p->>'no_cuadrilla')::boolean, false) then 'no_cuadrilla'
+                when coalesce((p->>'quitar')::boolean, false) then 'quitado' else 'solo' end;
+
+  -- (el candado de la rutina que registra sola, ANTES de escribir: lo dicho y
+  -- una corrida entera no se cruzan)
+  perform pg_advisory_xact_lock(820261115, hashtext('jornal:solo'));
+  select * into m from movimientos_banco where id = v_mov;
+  if not found then
+    raise exception using errcode = '22023', message = 'No existe ese movimiento del banco.';
+  end if;
+  if m.monto >= 0 then
+    raise exception using errcode = 'MX008', message = 'Es un abono (dinero que entra): un pago a la cuadrilla es un cargo.';
+  end if;
+  if m.estado <> 'pendiente' then
+    raise exception using errcode = 'MX008',
+      message = format('Ese movimiento ya está resuelto en el banco (%s): no está en la Bandeja. Si estaba mal, primero se des-casa '
+                       'allí, con su motivo.', coalesce(m.casado_regla, m.estado_motivo, m.estado));
+  end if;
+  if v_u is not null then
+    select * into v_pf from perfiles where id = v_u;
+    if not found then
+      raise exception using errcode = '22023', message = 'No existe ese perfil en la app.';
+    end if;
+    if v_pf.rol = 'dueno' then
+      raise exception using errcode = 'MX008',
+        message = format('%s es el dueño: no cobra un jornal. Lo que saca de la empresa es una distribución (3200) y se clasifica en '
+                         'la Bandeja como siempre.', v_pf.nombre);
+    end if;
+  end if;
+
+  perform set_config('mx_jornal.escribe', 'jornal_pagos', true);
+  if v_que = 'es_de' then
+    insert into jornal_pagos (movimiento_id, usuario_id, no_cuadrilla, dicho_por, dicho_el)
+    values (v_mov, v_u, false, auth.uid(), now())
+    on conflict (movimiento_id) do update
+      set usuario_id = excluded.usuario_id, no_cuadrilla = false, dicho_por = excluded.dicho_por, dicho_el = excluded.dicho_el,
+          intento_el = null, intento_codigo = null, intento_texto = null, intento_visto = null, actualizado_el = now();
+  elsif v_que = 'no_cuadrilla' then
+    insert into jornal_pagos (movimiento_id, usuario_id, no_cuadrilla, dicho_por, dicho_el)
+    values (v_mov, null, true, auth.uid(), now())
+    on conflict (movimiento_id) do update
+      set usuario_id = null, no_cuadrilla = true, dicho_por = excluded.dicho_por, dicho_el = excluded.dicho_el,
+          intento_el = null, intento_codigo = null, intento_texto = null, intento_visto = null, actualizado_el = now();
+  elsif v_que = 'quitado' then
+    update jornal_pagos
+       set usuario_id = null, no_cuadrilla = false, dicho_por = auth.uid(), dicho_el = now(),
+           intento_el = null, intento_codigo = null, intento_texto = null, intento_visto = null, actualizado_el = now()
+     where movimiento_id = v_mov;
+  else
+    insert into jornal_pagos (movimiento_id, solo_pedido_el, solo_pedido_por)
+    values (v_mov, clock_timestamp(), auth.uid())
+    on conflict (movimiento_id) do update
+      set solo_pedido_el = excluded.solo_pedido_el, solo_pedido_por = excluded.solo_pedido_por,
+          intento_el = null, intento_codigo = null, intento_texto = null, intento_visto = null, actualizado_el = now();
+  end if;
+  perform set_config('mx_jornal.escribe', '', true);
+
+  -- «Es de…» y «que vuelva a entrar solo»: se intenta ya, con las mismas
+  -- reglas que cualquier pago (si lo automático está apagado, no).
+  if v_que in ('es_de', 'solo') then
+    v_res := fn_jornal_solo(jsonb_build_object('movimiento_id', v_mov, 'corrio', case v_que when 'es_de' then 'cheque' else 'pantalla' end));
+  end if;
+  v_reg := coalesce(jsonb_array_length(v_res->'registrados'), 0) > 0;
+  -- Cómo queda el pago, para que la pantalla lo pinte sin otra vuelta.
+  select * into m from movimientos_banco where id = v_mov;
+  if m.estado = 'pendiente' then
+    v_j := fn_jornal_calcular(v_mov, null, null, '{}'::jsonb);
+    v_f := fn_jornal_frenos(v_mov, v_j);
+  end if;
+  v_nota := case
+    when v_reg then v_res->'registrados'->0->>'nota'
+    when v_que = 'es_de' then format('Anotado: este pago es de %s. No entró solo: %s', v_pf.nombre,
+                                     regexp_replace(coalesce(v_f->>'por_que', v_j->>'por_que', 'míralo en su tarjeta.'), '^No entró solo: ', ''))
+    when v_que = 'no_cuadrilla' then 'Anotado: este pago no es de la cuadrilla. Se queda en la Bandeja para clasificarlo como siempre.'
+    when v_que = 'quitado' then 'Quitado lo que habías dicho de este pago.'
+    else format('Anotado: puede volver a entrar solo. Ahora no entró: %s',
+                regexp_replace(coalesce(v_f->>'por_que', v_j->>'por_que', 'míralo en su tarjeta.'), '^No entró solo: ', '')) end;
+  return jsonb_build_object(
+    'movimiento_id', v_mov, 'dicho', v_que,
+    'usuario_id', coalesce(v_u::text, v_j->'persona'->>'usuario_id', v_res->'registrados'->0->>'usuario_id'),
+    'persona', coalesce(v_pf.nombre, v_j->'persona'->>'nombre', v_res->'registrados'->0->>'persona'),
+    'registrado', v_reg, 'reparto', v_res->'registrados'->0,
+    'reconocido', coalesce((v_j->>'reconocido')::boolean, false), 'estado', coalesce(v_f->>'estado', case when v_reg then 'registrado' end),
+    'por_que', coalesce(v_f->>'por_que', v_j->>'por_que'), 'frenos', coalesce(v_f->'frenos', '[]'::jsonb),
+    'propuestas_ia', coalesce(v_res->'propuestas_ia', '[]'::jsonb), 'nota', v_nota);
+end $$;
+revoke execute on function public.fn_jornal_pago(jsonb) from public, anon, service_role;
+grant  execute on function public.fn_jornal_pago(jsonb) to authenticated;
+comment on function public.fn_jornal_pago(jsonb) is 'c10: lo que Edgar dice de un cargo pendiente del banco, una cosa por llamada: {movimiento_id, usuario_id} es de esta persona (la pregunta de un cheque: queda escrito de quién es y el patrón de la persona no cambia; en la misma llamada se reparte por sus horas y se registra solo con las mismas reglas, o dice qué pide decidir), {no_cuadrilla: true} no es de la cuadrilla (no se pregunta ni se reconoce más), {quitar: true} quita lo dicho, {solo: true} que un pago que deshizo vuelva a entrar solo. Devuelve cómo quedó (registrado, reparto, estado, por_que, frenos, propuestas_ia, nota). MX008 si no es un cargo pendiente o la persona es el dueño. Solo el dueño, con su sesión (42501 desde el SQL Editor sin ella: queda escrito quién lo dijo).';
+
+-- LA TAREA DE MADRUGADA (y de la tarde): la rutina que registra sola, SIN
+-- PANTALLA. La dispara pg_cron (como el dueño de la base, igual que la
+-- sincronización de Plaid de c7, el contador de c8 y la ronda de c9); por la
+-- API no existe. Corre fn_jornal_solo EN NOMBRE DEL DUEÑO: fija auth.uid() al
+-- dueño que encendió lo automático (jornal_config.solo_por; si no lo hay —de
+-- fábrica—, el dueño activo más antiguo) SOLO dentro de esta transacción, y
+-- comprueba que siga siendo el dueño; después lo deja como estaba (el
+-- mecanismo de c7 y c8, copiado: no se comparte nada con ellas). Así cada
+-- reparto dice quién: Edgar, por la regla que eligió (jornal_repartos.regla:
+-- corrio «rutina», en_nombre_de).
+-- Y CIERRA LO DE LA IA (c8, si está): la propuesta de la IA para un pago que
+-- se registró (lleva UNA obra, y el pago se repartió entre varias) ya no se
+-- puede aprobar; con la pantalla la cierra ella por la función de borde, y
+-- aquí, sin pantalla, se cierra por la puerta de c8 (fn_contador_rechazar la
+-- pendiente, fn_contador_caducar la aprobada cuyo asiento ya no vive), con
+-- su porqué. c10 sigue sin escribir en las tablas de c8.
+-- NUNCA FALLA HACIA FUERA (pg_cron no dejaría rastro): lo que pase queda en
+-- jornal_config.solo_ultimo (cuándo, cuántos registró, cuántos esperan una
+-- respuesta, cuántas propuestas de la IA cerró y, si falló, el error), y el
+-- control del jornal (el 85) lo dice. Un presupuesto de 20 s por corrida: lo
+-- que no dé tiempo entra en la siguiente, o al abrir Contabilidad.
+create or replace function public.fn_jornal_solo_programado() returns jsonb
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  cfg       jornal_config;
+  v_dueno   uuid;
+  v_claims  text;
+  v_sub     text;
+  v_res     jsonb;
+  v_cerr    int := 0;
+  v_err     text;
+  v_ult     jsonb;
+  i         record;
+  c_motivo  constant text := 'Es mano de obra de la cuadrilla: se registró sola, repartida por sus horas (la cuadrilla, sola)';
+begin
+  if not fn_desde_editor() then
+    raise exception using errcode = '42501',
+      message = 'La tarea que registra sola la dispara pg_cron (o el SQL Editor); la app llama a fn_jornal_solo.';
+  end if;
+  select * into cfg from jornal_config where id = 1;
+  if not coalesce(cfg.solo, false) then
+    return jsonb_build_object('encendido', false);
+  end if;
+  begin
+    select p.id into v_dueno
+      from perfiles p
+     where p.rol = 'dueno' and coalesce(p.activo, true)
+     order by (p.id is not distinct from cfg.solo_por) desc, p.creado, p.id
+     limit 1;
+    if v_dueno is null then
+      raise exception using errcode = '42501', message = 'no hay un dueño activo en cuyo nombre registrar los pagos a la cuadrilla';
+    end if;
+    -- en nombre del dueño, solo dentro de esta transacción
+    v_claims := current_setting('request.jwt.claims', true);
+    v_sub    := current_setting('request.jwt.claim.sub', true);
+    perform set_config('request.jwt.claims', jsonb_build_object('sub', v_dueno, 'role', 'authenticated', 'jornal_solo', true)::text, true);
+    perform set_config('request.jwt.claim.sub', v_dueno::text, true);
+    if not es_dueno() then
+      raise exception using errcode = '42501', message = 'el dueño en cuyo nombre se registra ya no es el dueño';
+    end if;
+    v_res := fn_jornal_solo(jsonb_build_object('segundos', 20, 'corrio', 'rutina'));
+    -- lo de la IA (c8, si está) que los pagos ya repartidos dejan abierto, por la puerta de c8
+    if to_regprocedure('public.fn_contador_rechazar(uuid,uuid,text)') is not null
+       and to_regprocedure('public.fn_contador_caducar(uuid,uuid,text)') is not null then
+      for i in select x.propuesta_id, x.clase from fn_jornal_ia(null) x loop
+        begin
+          if i.clase = 'pendiente' then
+            execute 'select public.fn_contador_rechazar($1, $2, $3)' using i.propuesta_id, v_dueno, c_motivo;
+          else
+            execute 'select public.fn_contador_caducar($1, $2, $3)' using i.propuesta_id, v_dueno, c_motivo;
+          end if;
+          v_cerr := v_cerr + 1;
+        exception when others then
+          -- (sigue abierta: el control del jornal, el 80, la enseña, y la pantalla la cierra al abrir la Bandeja)
+          null;
+        end;
+      end loop;
+    end if;
+    perform set_config('request.jwt.claims', coalesce(v_claims, ''), true);
+    perform set_config('request.jwt.claim.sub', coalesce(v_sub, ''), true);
+  exception when others then
+    -- (todo lo de este bloque se deshace, también el «en nombre del dueño»)
+    v_err := sqlstate || ': ' || sqlerrm;
+    v_res := null;
+    v_cerr := 0;
+  end;
+  v_ult := jsonb_strip_nulls(jsonb_build_object(
+    'el', clock_timestamp(), 'registrados', coalesce(jsonb_array_length(v_res->'registrados'), 0),
+    'monto', (select coalesce(sum((x->>'monto')::numeric), 0) from jsonb_array_elements(coalesce(v_res->'registrados', '[]'::jsonb)) x),
+    'altas', coalesce(jsonb_array_length(v_res->'altas'), 0), 'preguntan', coalesce((v_res->>'preguntan')::int, 0),
+    'dijo_no', coalesce((v_res->>'dijo_no')::int, 0), 'esperan', coalesce((v_res->>'esperan')::int, 0),
+    'quedan', coalesce((v_res->>'quedan')::int, 0), 'ocupado', coalesce((v_res->>'ocupado')::boolean, false),
+    'ia_cerradas', v_cerr, 'error', left(v_err, 600)));
+  perform set_config('mx_jornal.escribe', 'jornal_config', true);
+  update jornal_config set solo_ultimo = v_ult where id = 1;
+  perform set_config('mx_jornal.escribe', '', true);
+  return v_ult || jsonb_build_object('encendido', true);
+end $$;
+revoke execute on function public.fn_jornal_solo_programado() from public, anon, authenticated, service_role;
+comment on function public.fn_jornal_solo_programado() is 'c10: la tarea de madrugada y de la tarde (pg_cron, o el SQL Editor; sin API): corre la rutina que registra sola (fn_jornal_solo, 20 s) en nombre del dueño que encendió lo automático (o el dueño activo más antiguo), solo dentro de su transacción; cierra por la puerta de c8 (fn_contador_rechazar, fn_contador_caducar) lo de la IA que los pagos ya repartidos dejan abierto; y deja cómo terminó en jornal_config.solo_ultimo (también si falló: nunca falla hacia fuera). Con lo automático apagado no hace nada.';
+
+-- Las dos tareas, solo donde hay pg_cron (producción; el banco de pruebas no
+-- lo tiene): a las 11:12 UTC (en Miami, 6:12 de la mañana en invierno y 7:12
+-- en verano: DESPUÉS de la sincronización de Plaid de las 11:00, que trae lo
+-- del banco sola cada día, y ANTES del contador de la IA de las 11:25 —así la
+-- IA no gasta en proponer para un pago que ya entró solo— y de la ronda de c9
+-- de las 11:45, que ya lee el control de esta capa en sus filas 170 y 171:
+-- c9 no se toca) y a las 20:50 UTC (lo que Edgar importó en el día, antes del
+-- contador de la tarde de las 21:00). Se vuelven a programar en cada pegado.
+do $$
+begin
+  if exists (select 1 from pg_namespace where nspname = 'cron') then
+    perform cron.unschedule(j.jobid) from cron.job j where j.jobname in ('mxp-jornal-solo-manana', 'mxp-jornal-solo-tarde');
+    perform cron.schedule('mxp-jornal-solo-manana', '12 11 * * *', 'select public.fn_jornal_solo_programado()');
+    perform cron.schedule('mxp-jornal-solo-tarde', '50 20 * * *', 'select public.fn_jornal_solo_programado()');
+  end if;
+end $$;
 
 
 -- ---------------------------------------------------------------------
@@ -3792,20 +5204,57 @@ select m.id                                         as movimiento_id,
        c.j->'avisos'                                as avisos,
        c.j->'lineas'                                as lineas,
        c.j->>'visto'                                as visto,
-       (c.j->>'propuesta_ia')::uuid                 as propuesta_ia
+       (c.j->>'propuesta_ia')::uuid                 as propuesta_ia,
+       -- (v5, al final: cómo se supo de quién es —patron o edgar—, el cheque si lo es, y si entra solo: entra, espera,
+       -- pregunta o no, con su porqué en una frase y todo lo que lo frena)
+       c.j->'persona'->>'por'                       as por,
+       c.j->'movimiento'->>'cheque'                 as cheque,
+       s.f->>'estado'                               as solo,
+       s.f->>'por_que'                              as solo_por_que,
+       s.f->'frenos'                                as solo_frenos,
+       (s.f->>'entra_el')::date                     as solo_entra_el
   from (select mm.id, mm.cuenta, mm.fecha, mm.monto, mm.descripcion
           from public.movimientos_banco mm
          where mm.estado = 'pendiente' and mm.monto < 0
-           and exists (select 1 from public.jornal_personas jp
-                        where jp.activa and public.fn_jornal_texto(mm.desc_norm, mm.memo) ~* jp.patron)
+           -- (v5) lo que Edgar dijo que no es de la cuadrilla, no; lo que dijo de quién es (un cheque), sí; y lo de siempre:
+           -- el patrón de una persona activa
+           and not exists (select 1 from public.jornal_pagos gp where gp.movimiento_id = mm.id and gp.no_cuadrilla)
+           and (exists (select 1 from public.jornal_pagos gp where gp.movimiento_id = mm.id and gp.usuario_id is not null)
+                or exists (select 1 from public.jornal_personas jp
+                            where jp.activa and public.fn_jornal_texto(mm.desc_norm, mm.memo) ~* jp.patron))
         offset 0) m
   -- («offset 0»: el cálculo se hace UNA vez por pago; sin él, el planificador
   -- lo repetiría en cada columna que lo lee)
   cross join lateral (select public.fn_jornal_calcular(m.id, null, null, '{}'::jsonb) as j offset 0) c
+  cross join lateral (select public.fn_jornal_frenos(m.id, c.j) as f offset 0) s
  where (c.j->>'reconocido')::boolean;
 revoke all on public.v_jornal_pendientes from public, anon, authenticated, service_role;
 grant select on public.v_jornal_pendientes to authenticated;
-comment on view public.v_jornal_pendientes is 'c10: los movimientos pendientes de la Bandeja reconocidos como el pago de una persona dada de alta: el movimiento (fecha, monto en positivo, descripción), la persona y su tarifa, el período por defecto (desde, hasta, regla, texto), las horas, los reportes y el nº de obras que entran, las horas sin obra, la tarifa que sale, si se puede aplicar (y por qué no), los avisos (aviso: sus etiquetas cortas; avisos: enteros), las líneas, la huella (visto) y la propuesta pendiente de la IA si la hay. Es fn_jornal_propuesta sin fechas, fila por fila.';
+comment on view public.v_jornal_pendientes is 'c10: los movimientos pendientes de la Bandeja reconocidos como el pago de una persona de la cuadrilla (por su patrón, o porque Edgar dijo de quién es: un cheque): el movimiento (fecha, monto en positivo, descripción), la persona y su tarifa, el período por defecto (desde, hasta, regla, texto), las horas, los reportes y el nº de obras que entran, las horas sin obra, la tarifa que sale, si se puede aplicar (y por qué no), los avisos (aviso: sus etiquetas cortas; avisos: enteros), las líneas, la huella (visto), la propuesta pendiente de la IA si la hay y, desde el 15-nov-2026, cómo se supo de quién es (por: patron o edgar), el cheque si lo es, y si entra solo (solo: entra, espera, pregunta o no; solo_por_que: en una frase; solo_frenos: todo lo que lo frena; solo_entra_el: el día en que entrará, si espera). Es fn_jornal_propuesta sin fechas, fila por fila.';
+
+-- LOS CHEQUES QUE ESPERAN SU PREGUNTA (v5): los cargos pendientes que el
+-- banco dice que son un cheque (llegan como «CHECK 1043», sin nombre), de
+-- los que Edgar todavía no ha dicho nada y que ningún patrón reconoce. La
+-- Bandeja pregunta en cada uno «¿de quién es este cheque?», con la cuadrilla
+-- en botones y «no es de la cuadrilla» (fn_jornal_pago).
+create view public.v_jornal_cheques with (security_invoker = true) as
+select m.id                                         as movimiento_id,
+       m.cuenta,
+       m.fecha,
+       (-m.monto)::numeric(14,2)                    as monto,
+       m.descripcion,
+       public.fn_jornal_cheque(m.tipo_banco, m.cheque, m.desc_norm) as cheque
+  from public.movimientos_banco m
+ where m.estado = 'pendiente' and m.monto < 0
+   and public.fn_jornal_cheque(m.tipo_banco, m.cheque, m.desc_norm) is not null
+   and not exists (select 1 from public.jornal_pagos gp
+                    where gp.movimiento_id = m.id and (gp.usuario_id is not null or gp.no_cuadrilla))
+   and not exists (select 1 from public.jornal_personas jp
+                    where jp.activa and public.fn_jornal_texto(m.desc_norm, m.memo) ~* jp.patron)
+   and (select public.fn_jornal_ve());
+revoke all on public.v_jornal_cheques from public, anon, authenticated, service_role;
+grant select on public.v_jornal_cheques to authenticated;
+comment on view public.v_jornal_cheques is 'c10: los cheques que esperan su pregunta en la Bandeja («¿de quién es este cheque?»): los cargos pendientes que el banco dice que son un cheque (su número, o vacío si no lo trae), de los que Edgar todavía no ha dicho de quién son ni que no son de la cuadrilla, y que ningún patrón reconoce. Se contesta con fn_jornal_pago.';
 
 -- EL HISTORIAL DE REPARTOS, con el nombre, el movimiento, el asiento y, si
 -- se deshizo, quién, cuándo, por qué y su reverso.
@@ -3851,7 +5300,13 @@ select r.id                         as reparto_id,
        pd.nombre                    as deshecho_por_nombre,
        r.deshecho_motivo,
        r.reverso_id,
-       rv.numero                    as reverso
+       rv.numero                    as reverso,
+       -- (v5, al final) cómo entró (mano: el «Así es»; solo: la regla), cómo se supo de quién era (patron; edgar: lo dijo
+       -- él, un cheque), la regla con que entró solo, y el cheque si lo es
+       r.origen,
+       r.por,
+       r.regla,
+       public.fn_jornal_cheque(m.tipo_banco, m.cheque, m.desc_norm) as cheque
   from public.jornal_repartos r
   join public.movimientos_banco m on m.id = r.movimiento_id
   left join public.perfiles pf on pf.id = r.usuario_id
@@ -3861,7 +5316,7 @@ select r.id                         as reparto_id,
   left join public.perfiles pd on pd.id = r.deshecho_por;
 revoke all on public.v_jornal_repartos from public, anon, authenticated, service_role;
 grant select on public.v_jornal_repartos to authenticated;
-comment on view public.v_jornal_repartos is 'c10: el historial de repartos (aplicados y deshechos): el pago (movimiento, fecha, cuenta del banco, descripción), la persona, el período y su regla, el monto, las horas, la tarifa que salió y la de costos_equipo, las cuentas, el nº de obras y las líneas (con su obra, su CO y el orden de su línea en el asiento), el asiento y si sigue vivo, los avisos y las opciones con que se aplicó, cuántos reportes aprobó, quién y cuándo; y, deshecho, quién, cuándo, por qué y su reverso.';
+comment on view public.v_jornal_repartos is 'c10: el historial de repartos (aplicados y deshechos): el pago (movimiento, fecha, cuenta del banco, descripción), la persona, el período y su regla, el monto, las horas, la tarifa que salió y la de costos_equipo, las cuentas, el nº de obras y las líneas (con su obra, su CO y el orden de su línea en el asiento), el asiento y si sigue vivo, los avisos y las opciones con que se aplicó, cuántos reportes aprobó, quién y cuándo; deshecho, quién, cuándo, por qué y su reverso; y, desde el 15-nov-2026, cómo entró (origen: mano o solo), cómo se supo de quién era (por: patron o edgar), la regla con que entró solo y el cheque si lo es. Lo «registrado solo» de la pantalla son los de origen solo.';
 
 -- LAS PERSONAS: las dadas de alta (con su patrón, su cuenta, su tarifa,
 -- cuántos pagos suyos esperan y cuántos se repartieron) y, sin dar de alta
@@ -3891,9 +5346,16 @@ select p.id                                         as usuario_id,
        coalesce(hh.sin_pago, 0)                     as horas_sin_pago,
        -- (v3, al final: una columna más) las de los últimos 90 días que pagó una
        -- nómina: quien las tiene ya cobra por nómina, no por Zelle
-       coalesce(hh.nomina_90, 0)                    as horas_nomina_90_dias
+       coalesce(hh.nomina_90, 0)                    as horas_nomina_90_dias,
+       -- (v5, al final) quién la dio de alta (edgar o sola) y, de quien todavía no lo está, si la base puede darla de alta
+       -- sola por su nombre (sola), con qué patrón (patron_nombre) y, si no puede, por qué (sola_por_que)
+       jp.alta,
+       q.sola,
+       q.patron                                     as patron_nombre,
+       q.por_que                                    as sola_por_que
   from public.perfiles p
   left join public.jornal_personas jp on jp.usuario_id = p.id
+  left join public.fn_jornal_cuadrilla() q on q.usuario_id = p.id
   left join public.costos_equipo ce on ce.usuario_id = p.id
   left join lateral (select count(*)::int as n, sum(-mm.monto) as monto
                        from public.movimientos_banco mm
@@ -3918,7 +5380,7 @@ select p.id                                         as usuario_id,
    and (select public.fn_jornal_ve());
 revoke all on public.v_jornal_personas from public, anon, authenticated, service_role;
 grant select on public.v_jornal_personas to authenticated;
-comment on view public.v_jornal_personas is 'c10: las personas del jornal: las dadas de alta (registrada: su patrón, su cuenta, si está activa, su tarifa de costos_equipo, cuántos pagos suyos esperan en la Bandeja y por cuánto, cuántos repartos y cuánto repartido, el último) y, con registrada = false, los perfiles activos que no son el dueño con horas en los últimos 90 días (a quién falta dar de alta); horas_sin_pago: sus horas desde que empieza el libro sin pago real (ni un pago repartido por horas ni una nómina que las pagara); horas_nomina_90_dias: las de los últimos 90 días que pagó una nómina (quien las tiene ya cobra por nómina: no hace falta darlo de alta aquí).';
+comment on view public.v_jornal_personas is 'c10: las personas del jornal: las dadas de alta (registrada: su patrón, su cuenta, si está activa, su tarifa de costos_equipo, cuántos pagos suyos esperan en la Bandeja y por cuánto, cuántos repartos y cuánto repartido, el último) y, con registrada = false, los perfiles activos que no son el dueño con horas en los últimos 90 días (a quién falta dar de alta); horas_sin_pago: sus horas desde que empieza el libro sin pago real (ni un pago repartido por horas ni una nómina que las pagara); horas_nomina_90_dias: las de los últimos 90 días que pagó una nómina (quien las tiene ya cobra por nómina: no hace falta darlo de alta aquí); y, desde el 15-nov-2026, alta (quién la dio de alta: edgar o sola), sola (de quien no está dado de alta: si la base puede darlo de alta sola por su nombre), patron_nombre (con qué patrón) y sola_por_que (si no puede, por qué: no adivina y lo dice).';
 
 -- EL CONTROL DEL JORNAL (orden, cuadre, nivel, ok, detalle, en llano). Un
 -- «cuadre» en rojo es algo roto que hay que arreglar; un «aviso», algo que
@@ -3944,7 +5406,10 @@ with rep as (
                             'fn_jornal_fuera', 'fn_jornal_ia', 'fn_jornal_opciones', 'fn_jornal_calcular',
                             'fn_jornal_propuesta', 'fn_jornal_aplicar', 'fn_jornal_deshacer', 'fn_jornal_config', 'fn_jornal_persona',
                             'fn_jornal_pegado', 'fn_margen_libro_desde', 'fn_margen_horas_nomina', 'fn_margen_lineas', 'fn_margen_horas',
-                            'fn_margen_estimado', 'fn_margen_obras', 'fn_margen_bajar', 'fn_margen_obra', 'fn_margen_control'))
+                            'fn_margen_estimado', 'fn_margen_obras', 'fn_margen_bajar', 'fn_margen_obra', 'fn_margen_control',
+                            -- (v5: la cuadrilla, sola)
+                            'fn_jornal_version', 'fn_jornal_cheque', 'fn_jornal_nombre_patron', 'fn_jornal_nombre_dudas',
+                            'fn_jornal_cuadrilla', 'fn_jornal_frenos', 'fn_jornal_solo', 'fn_jornal_pago', 'fn_jornal_solo_programado'))
 select z.orden, z.cuadre, z.nivel, z.ok, z.detalle
   from (
     -- 10: cada reparto aplicado (con su asiento vivo) ES las líneas de su asiento
@@ -4178,6 +5643,46 @@ select z.orden, z.cuadre, z.nivel, z.ok, z.detalle
               from public.fn_jornal_ia(null) i
               join viv v on v.movimiento_id = i.movimiento_id) t
     union all
+    -- 85 (un aviso; v5, 15-nov-2026: la cuadrilla, sola): ningún pago a la cuadrilla sigue en la Bandeja con la semana que paga
+    --     ya terminada. Lo que la base reconoce como un pago a la cuadrilla (por el patrón de la persona, o porque Edgar dijo de
+    --     quién es: un cheque) entra solo en cuanto termina su semana, si nada pide decidir. El que sigue ahí después NO entró
+    --     solo: pide una respuesta de Edgar (su tarjeta de la Bandeja dice cuál, en una frase), Edgar lo deshizo antes, o lo
+    --     automático está apagado. Se mira sin calcular cada reparto (cuesta poco: lo leen el cierre y la ronda de cada noche).
+    --     Y dice cómo terminó la última corrida sin pantalla (la tarea de madrugada), en rojo si falló.
+    select 85, 'jornal: ningún pago a la cuadrilla espera en la Bandeja con su semana ya terminada', 'aviso', t.n = 0 and t.err is null,
+           case when t.n = 0 and t.err is null
+                then format('La cuadrilla, sola (%s): ningún pago a la cuadrilla espera en la Bandeja con la semana que paga ya terminada.%s',
+                            case when t.solo then 'encendida' else 'APAGADA: cada pago espera el «Así es» de Edgar' end,
+                            case when t.ult_el is not null
+                                 then format(' La última corrida sin pantalla, el %s: registró %s y %s quedaron esperando una respuesta.',
+                                             public.fn_jornal_dia(public.fn_fecha_miami(t.ult_el), true), t.ult_reg, t.ult_preg)
+                                 else '' end)
+                else concat_ws(' ',
+                       case when t.n > 0
+                            then format('%s pago(s) a la cuadrilla por %s (el más viejo, del %s) siguen en la Bandeja con la semana que pagan ya '
+                                        'terminada: %s → abre la Bandeja: cada uno dice ahí, en una frase, qué le falta; contéstalo, o '
+                                        'acéptalo con «Así es».', t.n, public.fn_jornal_usd(t.monto), public.fn_jornal_dia(t.viejo, true),
+                                        case when t.solo then 'no entraron solos (algo pide tu respuesta, o los deshiciste antes).'
+                                             else 'el registro automático está apagado (Costo por obra → Ajustes).' end) end,
+                       case when t.err is not null
+                            then format('La última corrida sin pantalla (el %s) falló: %s → avisa; mientras, los pagos entran solos al '
+                                        'abrir Contabilidad.', public.fn_jornal_dia(public.fn_fecha_miami(t.ult_el), true), left(t.err, 300)) end) end
+      from (select count(*) as n, coalesce(sum(q.monto), 0) as monto, min(q.fecha) as viejo,
+                   coalesce((select c.solo from public.jornal_config c where c.id = 1), false) as solo,
+                   (select c.solo_ultimo->>'error' from public.jornal_config c where c.id = 1) as err,
+                   (select (c.solo_ultimo->>'el')::timestamptz from public.jornal_config c where c.id = 1) as ult_el,
+                   (select coalesce((c.solo_ultimo->>'registrados')::int, 0) from public.jornal_config c where c.id = 1) as ult_reg,
+                   (select coalesce((c.solo_ultimo->>'preguntan')::int, 0) + coalesce((c.solo_ultimo->>'dijo_no')::int, 0)
+                      from public.jornal_config c where c.id = 1) as ult_preg
+              from (select mm.fecha, -mm.monto as monto
+                      from public.movimientos_banco mm
+                     where mm.estado = 'pendiente' and mm.monto < 0
+                       and not exists (select 1 from public.jornal_pagos gp where gp.movimiento_id = mm.id and gp.no_cuadrilla)
+                       and (exists (select 1 from public.jornal_pagos gp where gp.movimiento_id = mm.id and gp.usuario_id is not null)
+                            or exists (select 1 from public.jornal_personas jp
+                                        where jp.activa and public.fn_jornal_texto(mm.desc_norm, mm.memo) ~* jp.patron))
+                       and (select pr.hasta from public.fn_jornal_periodo(mm.fecha) pr) < (select public.fn_fecha_miami(now()))) q) t
+    union all
     -- 90: las protecciones de la capa (como el 63 de c8, por nombre exacto)
     select 90, 'jornal: protecciones de la capa', 'cuadre', t.n = 0,
            case when t.n = 0 then 'Ninguna función de c10 es SECURITY DEFINER ni la ejecutan anon o service_role; las tablas con RLS y su guarda; las vistas security_invoker.'
@@ -4191,13 +5696,14 @@ select z.orden, z.cuadre, z.nivel, z.ok, z.detalle
                     union all
                     select c10.nombre || ' la puede ejecutar authenticated'
                       from c10
-                     where c10.nombre in ('fn_jornal_precondiciones', 'fn_jornal_guarda', 'fn_jornal_pegado')
+                     where c10.nombre in ('fn_jornal_precondiciones', 'fn_jornal_guarda', 'fn_jornal_pegado', 'fn_jornal_solo_programado')
                        and has_function_privilege('authenticated', c10.oid, 'execute')
                     union all
                     select c.relname || case when not c.relrowsecurity then ' sin RLS' else ' sin su policy de lectura del dueño' end
                       from pg_catalog.pg_class c
                      where c.relnamespace = 'public'::regnamespace and c.relkind = 'r'
-                       and c.relname in ('jornal_config', 'jornal_personas', 'jornal_repartos', 'jornal_reparto_lineas', 'jornal_reparto_horas')
+                       and c.relname in ('jornal_config', 'jornal_personas', 'jornal_repartos', 'jornal_reparto_lineas', 'jornal_reparto_horas',
+                                         'jornal_pagos')
                        and (not c.relrowsecurity
                             or not exists (select 1 from pg_catalog.pg_policy pl
                                             where pl.polrelid = c.oid and pl.polname = c.relname || '_dueno' and pl.polcmd = 'r'))
@@ -4208,22 +5714,23 @@ select z.orden, z.cuadre, z.nivel, z.ok, z.detalle
                       cross join (values ('SELECT'), ('INSERT'), ('UPDATE'), ('DELETE'), ('TRUNCATE')) q(q)
                      where c.relnamespace = 'public'::regnamespace and c.relkind in ('r', 'v')
                        and c.relname in ('jornal_config', 'jornal_personas', 'jornal_repartos', 'jornal_reparto_lineas', 'jornal_reparto_horas',
-                                         'v_jornal_pendientes', 'v_jornal_repartos', 'v_jornal_personas', 'v_jornal_control', 'v_margen_obra',
-                                         'v_margen_control')
+                                         'jornal_pagos', 'v_jornal_pendientes', 'v_jornal_repartos', 'v_jornal_personas', 'v_jornal_control',
+                                         'v_jornal_cheques', 'v_margen_obra', 'v_margen_control')
                        and has_table_privilege(g.r, c.oid, q.q)
                     union all
                     select format('authenticated puede %s en %s', q.q, c.relname)
                       from pg_catalog.pg_class c
                       cross join (values ('DELETE'), ('TRUNCATE')) q(q)
                      where c.relnamespace = 'public'::regnamespace and c.relkind = 'r'
-                       and c.relname in ('jornal_config', 'jornal_personas', 'jornal_repartos', 'jornal_reparto_lineas', 'jornal_reparto_horas')
+                       and c.relname in ('jornal_config', 'jornal_personas', 'jornal_repartos', 'jornal_reparto_lineas', 'jornal_reparto_horas',
+                                         'jornal_pagos')
                        and has_table_privilege('authenticated', c.oid, q.q)
                     union all
                     select c.relname || ' sin security_invoker'
                       from pg_catalog.pg_class c
                      where c.relnamespace = 'public'::regnamespace and c.relkind = 'v'
-                       and c.relname in ('v_jornal_pendientes', 'v_jornal_repartos', 'v_jornal_personas', 'v_jornal_control', 'v_margen_obra',
-                                         'v_margen_control')
+                       and c.relname in ('v_jornal_pendientes', 'v_jornal_repartos', 'v_jornal_personas', 'v_jornal_control', 'v_jornal_cheques',
+                                         'v_margen_obra', 'v_margen_control')
                        and not coalesce((select o.option_value::boolean from pg_options_to_table(c.reloptions) o
                                           where o.option_name = 'security_invoker'), false)
                     union all
@@ -4232,7 +5739,7 @@ select z.orden, z.cuadre, z.nivel, z.ok, z.detalle
                                        else 'tiene otra función' end)
                       from (select t.t, 'trg_' || t.t || s.s as tg
                               from (values ('jornal_config'), ('jornal_personas'), ('jornal_repartos'), ('jornal_reparto_lineas'),
-                                           ('jornal_reparto_horas')) t(t)
+                                           ('jornal_reparto_horas'), ('jornal_pagos')) t(t)
                               cross join (values ('_guarda'), ('_sin_truncate')) s(s)) x
                       left join pg_catalog.pg_trigger tg on tg.tgrelid = to_regclass('public.' || x.t) and tg.tgname = x.tg
                      where tg.oid is null or tg.tgenabled not in ('O', 'A')
@@ -4241,7 +5748,7 @@ select z.orden, z.cuadre, z.nivel, z.ok, z.detalle
  where (select public.fn_jornal_ve());
 revoke all on public.v_jornal_control from public, anon, authenticated, service_role;
 grant select on public.v_jornal_control to authenticated;
-comment on view public.v_jornal_control is 'c10: el control del jornal (orden, cuadre, nivel, ok, detalle en llano): 10 cada reparto aplicado es las líneas de su asiento vivo, al centavo y obra por obra, y su detalle por reporte suma cada parte; 20 ningún reparto aplicado con su asiento reversado por fuera o su pago suelto; 25 ninguno deshecho con su asiento vivo; 30 las horas de cada reparto aplicado siguen como se repartieron y aprobadas; 35 (aviso) ninguna hora de una semana ya repartida se quedó fuera de su reparto; 40 ninguna hora en dos repartos vivos sin que Edgar lo aceptara; 50 ninguna hora a la vez en el devengo estándar de un mes y en un jornal pagado ese mes; 60 (aviso) las personas se reconocen sin dudas y sus cuentas sirven; 70 (aviso) ningún pago de una persona dada de alta resuelto fuera del jornal con horas suyas sin pago; 80 (aviso) ninguna propuesta de la IA abierta en un pago ya repartido; 90 las protecciones de la capa. nivel: cuadre (algo roto) o aviso.';
+comment on view public.v_jornal_control is 'c10: el control del jornal (orden, cuadre, nivel, ok, detalle en llano): 10 cada reparto aplicado es las líneas de su asiento vivo, al centavo y obra por obra, y su detalle por reporte suma cada parte; 20 ningún reparto aplicado con su asiento reversado por fuera o su pago suelto; 25 ninguno deshecho con su asiento vivo; 30 las horas de cada reparto aplicado siguen como se repartieron y aprobadas; 35 (aviso) ninguna hora de una semana ya repartida se quedó fuera de su reparto; 40 ninguna hora en dos repartos vivos sin que Edgar lo aceptara; 50 ninguna hora a la vez en el devengo estándar de un mes y en un jornal pagado ese mes; 60 (aviso) las personas se reconocen sin dudas y sus cuentas sirven; 70 (aviso) ningún pago de una persona dada de alta resuelto fuera del jornal con horas suyas sin pago; 80 (aviso) ninguna propuesta de la IA abierta en un pago ya repartido; 85 (aviso; la cuadrilla, sola) ningún pago a la cuadrilla sigue en la Bandeja con la semana que paga ya terminada (no entró solo: espera una respuesta de Edgar), y cómo terminó la última corrida sin pantalla; 90 las protecciones de la capa. nivel: cuadre (algo roto) o aviso.';
 
 -- EL COSTO POR OBRA: una fila por obra (fn_margen_obras; sus columnas, allí).
 create view public.v_margen_obra with (security_invoker = true) as
@@ -4464,6 +5971,8 @@ declare
   v_txt   text;
   v_falta text[] := '{}';
   v_r     record;
+  v_s     record;
+  v_cron  text;
 begin
   if not fn_desde_editor() then
     raise exception using errcode = '42501', message = 'Esto se mira desde el SQL Editor.';
@@ -4474,28 +5983,75 @@ begin
                              c.cuenta_defecto, coalesce(c.cuenta_sin_obra, 'SIN FIJAR'),
                              coalesce(trim_scale(c.burden_estandar_pct)::text || ' %', 'SIN FIJAR'), trim_scale(c.aviso_tarifa_pct));
   return query select 'tablas'::text,
-                      format('jornal_config, jornal_personas (%s), jornal_repartos (%s aplicados, %s deshechos), jornal_reparto_lineas (%s), '
-                             'jornal_reparto_horas (%s)',
+                      format('jornal_config, jornal_personas (%s), jornal_repartos (%s aplicados —%s de ellos entraron solos—, %s deshechos), '
+                             'jornal_reparto_lineas (%s), jornal_reparto_horas (%s), jornal_pagos (%s)',
                              (select count(*) from jornal_personas),
                              (select count(*) from jornal_repartos r where r.estado = 'aplicado'),
+                             (select count(*) from jornal_repartos r where r.estado = 'aplicado' and r.origen = 'solo'),
                              (select count(*) from jornal_repartos r where r.estado = 'deshecho'),
-                             (select count(*) from jornal_reparto_lineas), (select count(*) from jornal_reparto_horas));
-  return query select 'vistas'::text, 'v_jornal_pendientes, v_jornal_repartos, v_jornal_personas, v_jornal_control, v_margen_obra, v_margen_control'::text;
+                             (select count(*) from jornal_reparto_lineas), (select count(*) from jornal_reparto_horas),
+                             (select count(*) from jornal_pagos));
+  return query select 'vistas'::text, 'v_jornal_pendientes, v_jornal_repartos, v_jornal_personas, v_jornal_control, v_jornal_cheques, v_margen_obra, v_margen_control'::text;
   return query select 'personas dadas de alta'::text,
                       coalesce((select string_agg(format('%s («%s» → %s%s)', v.nombre, v.patron, v.cuenta, case when v.activa then '' else ', de baja' end),
                                                   ' · ' order by v.nombre)
                                   from v_jornal_personas v where v.registrada),
-                               'ninguna todavía: sin persona dada de alta, ningún pago se reconoce solo');
+                               case when c.solo
+                                    then 'ninguna todavía: al abrir Contabilidad la base da de alta sola a quien puede (abajo, «la cuadrilla, sola»)'
+                                    else 'ninguna todavía: sin persona dada de alta, ningún pago se reconoce solo' end);
   select count(*), coalesce(sum(v.monto), 0), count(*) filter (where v.puede_aplicar) into v_n, v_m, v_p from v_jornal_pendientes v;
   return query select 'pagos reconocidos hoy'::text,
                       case when v_n = 0 then 'ninguno en la Bandeja'
                            else format('%s pago(s) en la Bandeja por %s; %s se pueden repartir ya', v_n, fn_jornal_usd(v_m), v_p) end;
+  -- (v5, 15-nov-2026) LA CUADRILLA, SOLA: si está encendida, a quién reconoce la base sola por su nombre y a quién no (con su
+  -- porqué), cuántos de los pagos de hoy entrarían solos, cuántos esperan a que termine su semana y cuántos piden una
+  -- respuesta, los cheques que esperan su pregunta, y la tarea de madrugada. El pegado NO registra nada: lo hace la rutina,
+  -- al abrir Contabilidad o de madrugada.
+  select count(*) filter (where v.solo = 'entra') as entran, count(*) filter (where v.solo = 'espera') as esperan,
+         count(*) filter (where v.solo in ('pregunta', 'no')) as preguntan
+    into v_s
+    from v_jornal_pendientes v;
+  -- (la tarea sin pantalla, como la tiene pg_cron de verdad: cron.job solo existe donde hay pg_cron, por eso va con execute)
+  if exists (select 1 from pg_namespace where nspname = 'cron') then
+    begin
+      execute $q$ select string_agg(j.jobname || ' (' || j.schedule || ')', ' y ' order by j.jobname)
+                    from cron.job j where j.jobname in ('mxp-jornal-solo-manana', 'mxp-jornal-solo-tarde') $q$ into v_cron;
+      v_cron := case when v_cron is null then 'la tarea sin pantalla NO está programada: vuelve a pegar este archivo'
+                     else 'la tarea sin pantalla (pg_cron, hora UTC: después de Plaid, antes de la IA y de la ronda): ' || v_cron end;
+    exception when others then
+      v_cron := format('la tarea sin pantalla: no se pudo leer pg_cron (%s)', sqlstate);
+    end;
+  else
+    v_cron := 'sin pg_cron en esta base: entra solo al abrir Contabilidad';
+  end if;
+  return query select 'la cuadrilla, sola'::text,
+                      concat_ws(' · ',
+                        format('marca %s', fn_jornal_version()),
+                        case when c.solo then 'ENCENDIDA' || case when c.solo_por is null then ' (de fábrica, como eligió Edgar el 15-nov-2026)' else '' end
+                             else 'APAGADA: cada pago espera el «Así es» (se enciende en Costo por obra → Ajustes, o con '
+                                  'select fn_jornal_config(''{"solo": true}'');)' end,
+                        -- (cada uno de estos tres, solo si hay alguien: sin nadie, el texto entero queda nulo y no sale)
+                        'la base reconocerá solas, por su nombre: '
+                          || (select string_agg(q.nombre, ', ' order by q.nombre) from fn_jornal_cuadrilla() q where q.sola),
+                        'NO puede reconocer solas (no adivina): '
+                          || (select string_agg(format('%s (%s)', q.nombre, q.por_que), '; ' order by q.nombre)
+                                from fn_jornal_cuadrilla() q where not q.sola),
+                        'dadas de alta solas: '
+                          || (select string_agg(v.nombre, ', ' order by v.nombre) from v_jornal_personas v where v.registrada and v.alta = 'sola'),
+                        case when v_n > 0
+                             then format('de los %s pago(s) de hoy: %s entrarían solos, %s esperan a que termine su semana y %s piden una respuesta',
+                                         v_n, v_s.entran, v_s.esperan, v_s.preguntan) end,
+                        format('%s cheque(s) esperan su pregunta en la Bandeja', (select count(*) from v_jornal_cheques)),
+                        v_cron);
   -- (v3) A quien una nómina le pagó horas en los últimos 90 días no se le pide
   -- darse de alta: ya cobra por nómina, no por Zelle.
+  -- (v5) Y a quien la base puede dar de alta sola por su nombre (con lo automático encendido), tampoco: lo hace la rutina.
   select string_agg(v.nombre, ', ' order by v.nombre) into v_txt
-    from v_jornal_personas v where not v.registrada and v.horas_nomina_90_dias = 0;
+    from v_jornal_personas v
+   where not v.registrada and v.horas_nomina_90_dias = 0 and not (c.solo and coalesce(v.sola, false));
   if v_txt is not null then
-    v_falta := v_falta || format('dar de alta a quien cobra por sus horas (con horas en los últimos 90 días y sin dar de alta: %s)', v_txt);
+    v_falta := v_falta || format('dar de alta a quien cobra por sus horas (con horas en los últimos 90 días y sin dar de alta%s: %s)',
+                                 case when c.solo then ', y la base no puede hacerlo sola' else '' end, v_txt);
   end if;
   if c.cuenta_sin_obra is null then
     select coalesce(sum(h.horas), 0) into v_m
@@ -4546,11 +6102,12 @@ begin
                            then 'PRIMERO vuelve a pegar docs/conta/c9-cierre.sql: el cierre de esta base todavía no mira los repartos de '
                                 'mano de obra (sus filas 170 y 171). Después, '
                            else '' end ||
-                      'pega docs/conta/c10-pruebas.sql; en la app, Contabilidad → Bandeja: en el Zelle de un ayudante, «Es mano de obra: repartir '
-                      'por sus horas» lo da de alta, y desde entonces sus pagos salen con su semana, sus obras y lo que le toca a cada una; '
-                      '«Así es» los mete al libro (y aprueba esas horas). El costo por obra, en cada obra (estimado contra real).'::text;
+                      'pega docs/conta/c10-pruebas.sql; en la app, al abrir Contabilidad los Zelle a la cuadrilla entran solos al libro, '
+                      'repartidos por sus horas (salen en «Registrado solo», con «Deshacer»); un cheque pregunta en la Bandeja «¿de quién '
+                      'es este cheque?»; y lo que no entra solo dice allí por qué, con su «Así es». El costo por obra, en cada obra '
+                      '(estimado contra real).'::text;
 end $$;
 revoke execute on function public.fn_jornal_pegado() from public, anon, authenticated, service_role;
-comment on function public.fn_jornal_pegado() is 'c10: lo que enseña el final del pegado: la configuración, las tablas y las vistas, las personas dadas de alta, cuántos pagos reconoce hoy, qué falta (personas con horas sin dar de alta —no las que ya cobran por nómina—, la cuenta de lo sin obra, el burden estándar; y volver a pegar la nómina, si la de la base es la de antes del 13-nov), el costo por obra en una línea, el control y el paso siguiente.';
+comment on function public.fn_jornal_pegado() is 'c10: lo que enseña el final del pegado (10 filas): la configuración, las tablas y las vistas, las personas dadas de alta, cuántos pagos reconoce hoy, la cuadrilla sola (su marca, si está encendida, a quién reconoce la base sola por su nombre y a quién no, cuántos pagos entrarían solos, los cheques que esperan su pregunta y la tarea sin pantalla), qué falta (personas con horas que la base no puede dar de alta sola —no las que ya cobran por nómina—, la cuenta de lo sin obra, el burden estándar; y volver a pegar la nómina, si la de la base es la de antes del 13-nov), el costo por obra en una línea, el control y el paso siguiente.';
 
 select * from public.fn_jornal_pegado();

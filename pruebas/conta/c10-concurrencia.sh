@@ -31,9 +31,25 @@
 #      costo por obra, el pegado medio segundo después): el pegado se rinde
 #      con 55P03 («lock timeout») en menos de 3 s, o entra; nadie muere por
 #      40P01; sin nadie leyendo, entra.
+#   7. LA CUADRILLA, SOLA (c10 v5, 15-nov-2026), DESDE DOS TELÉFONOS A LA VEZ:
+#      a) la rutina que registra sola llamada desde dos sesiones en el mismo
+#         instante: una corre (da de alta sola a las dos personas y registra
+#         sus cuatro pagos); la otra NO ESPERA: contesta «ocupado» y no hace
+#         nada. Cada pago, un reparto, un asiento; cada persona, una fila. Y
+#         otra vez, nada.
+#      b) el «Así es» de Edgar y la rutina, a la vez, sobre el mismo pago: la
+#         rutina espera el candado de la persona y, cuando le toca, el pago ya
+#         está repartido: no lo toca (un reparto, a mano). Y al revés: la
+#         rutina primero; el «Así es», cuando le toca, MX008 (un reparto, solo).
+#      c) un cheque, «es de…» desde dos teléfonos a la vez con dos personas
+#         distintas: uno lo registra; el otro espera y recibe MX008 (ya está
+#         resuelto). El cheque es de quien dijo el primero.
+#      Antes, de lo que las partes 1 a 5 dejaron en la Bandeja se dice «no es
+#      de la cuadrilla» (así la pasada entera de la rutina solo ve lo suyo).
 # Y comprueba: ningún cuadre de v_jornal_control en rojo y, de sus avisos,
 # solo el 35 con las horas que llegaron tarde en la parte 3 (una por semana
-# que entró); v_margen_control sin rojos, y fn_verificar_cadena en verde.
+# que entró) —el 85, «ningún pago a la cuadrilla espera en la Bandeja», en
+# verde—; v_margen_control sin rojos, y fn_verificar_cadena en verde.
 #
 # Cada sesión va como la app por PostgREST: el dueño (o el ayudante), con el
 # rol authenticated, los ajustes de ese rol y el tope de la API (8 s).
@@ -221,6 +237,107 @@ revisa "el pegado se rinde (55P03) o entra, en menos de 3 s" "1" "$( { [ "$como"
 revisa "nadie muere por un bloqueo mortal (40P01), y la lectura termina" "0|0" "$(cat "$TMP"/6p.out "$TMP"/6l.out | grep -c '40P01\|deadlock')|$(grep -c 'ERROR' "$TMP/6l.out")"
 PGPASSWORD=editor_sql psql -X -q -1 -v ON_ERROR_STOP=1 -h "${PGHOST:-127.0.0.1}" -p "${PGPORT:-5432}" -U editor_sql -d "$BD" -f "$DOCS/c10-costo-obra.sql" > "$TMP/6p2.out" 2>&1
 revisa "sin nadie leyendo, entra" "0" "$?"
+
+echo
+echo "== 7. La cuadrilla, sola (v5), desde dos teléfonos a la vez"
+# Lo que las partes 1 a 5 dejaron en la Bandeja reconocido como un pago a la cuadrilla (el que perdió en la 2, el deshecho de la 4,
+# los que pararon con MX011 en la 3, los que nadie tocó): «no es de la cuadrilla». Así la pasada entera de la rutina ve solo lo de esta parte.
+ed -v ON_ERROR_STOP=1 -c "begin; $(app "$DUENO") select count(fn_jornal_pago(jsonb_build_object('movimiento_id', q.movimiento_id, 'no_cuadrilla', true))) from v_jornal_pendientes q; commit;" > "$TMP/7n.out" 2>&1
+revisa "lo que quedó de las partes de antes: dicho «no es de la cuadrilla», y ya no se reconoce" "0|0" "$(grep -c ERROR "$TMP/7n.out")|$(ed -c "begin; $(app "$DUENO") select count(*) from v_jornal_pendientes; commit;" | tail -n 1)"
+# Dos personas nuevas que nadie da de alta (la base las reconoce por su nombre), con sus horas de cuatro semanas (dos reportes
+# por semana: 8 y 5.5 h, a 25 la hora) y sus pagos de los lunes (337.50 cada uno), con su nombre como lo tiene la app.
+# LAS FECHAS VAN CON EL DÍA EN QUE SE CORRE (las cuatro semanas completas anteriores a esta): la base da de alta sola a quien
+# tiene horas en los últimos 90 días, y la rutina solo registra un pago cuya semana ya terminó.
+cat > "$TMP/montar7.sql" <<'SQL'
+insert into auth.users (id, email) values
+  ('00000000-0000-4000-a000-0000000cc004', 'c10-conc-4@c10-pruebas.invalid'),
+  ('00000000-0000-4000-a000-0000000cc005', 'c10-conc-5@c10-pruebas.invalid');
+insert into perfiles (id, nombre, rol, activo) values
+  ('00000000-0000-4000-a000-0000000cc004', 'Zzdora C10 CONCURRENCIA', 'campo', true),
+  ('00000000-0000-4000-a000-0000000cc005', 'Zzelio C10 CONCURRENCIA', 'campo', true);
+insert into costos_equipo (usuario_id, costo_hora) values ('00000000-0000-4000-a000-0000000cc004', 25), ('00000000-0000-4000-a000-0000000cc005', 25);
+-- semanas 1 y 2 de las dos; la 3 de las dos, para la parte b; y la 4 (la que acaba de terminar) de Zzdora, para el cheque (2.5 y 1.5 h)
+insert into horas (fecha, usuario_id, proyecto_id, horas, notas)
+select date_trunc('week', fn_fecha_miami(now()))::date - 28 + 7 * (w - 1) + d, u, (array['c10-conc-a', 'c10-conc-b'])[1 + d], case when w = 4 then 2.5 - d else 8 - d * 2.5 end, 'c10-concurrencia: la cuadrilla sola'
+  from generate_series(1, 4) w cross join generate_series(0, 1) d
+  cross join (values ('00000000-0000-4000-a000-0000000cc004'::uuid), ('00000000-0000-4000-a000-0000000cc005'::uuid)) p(u)
+ where w < 4 or u = '00000000-0000-4000-a000-0000000cc004';
+select set_config('request.jwt.claims', json_build_object('sub', (select id from perfiles where rol = 'dueno' order by creado limit 1), 'role', 'authenticated')::text, false);
+select fn_banco_importar_filas(jsonb_build_object('origen', 'plaid', 'cuenta', '1010', 'nombre', 'Plaid · c10-concurrencia · 7',
+  'filas', (select jsonb_agg(jsonb_build_object('id', 'c10-conc-7-' || p.k || w, 'fecha', (date_trunc('week', fn_fecha_miami(now()))::date - 21 + 7 * (w - 1))::text, 'plaid_monto', '337.50',
+                                                'descripcion', 'Zelle payment to ' || p.n || ' C10 CONCURRENCIA ' || (8000 + w), 'tipo', 'DEBIT', 'pendiente', false))
+              from generate_series(1, 2) w cross join (values ('d', 'ZZDORA'), ('e', 'ZZELIO')) p(k, n))));
+select count(fn_banco_casar(m.id)) from movimientos_banco m where m.id_externo like 'c10-conc-7-%';
+select set_config('request.jwt.claims', '', false);
+SQL
+ed -v ON_ERROR_STOP=1 -f "$TMP/montar7.sql" > "$TMP/7m.out" 2>&1 || { tail -n 5 "$TMP/7m.out"; echo "FALLÓ montar la parte 7" >&2; exit 2; }
+P4='00000000-0000-4000-a000-0000000cc004'; P5='00000000-0000-4000-a000-0000000cc005'
+mov7() { ed -c "select id from movimientos_banco where id_externo = 'c10-conc-7-$1'"; }
+# el lunes de la semana <n> de esta parte (la 1 empieza cuatro lunes antes del de esta semana), y el lunes de esta semana
+lunes7() { ed -c "select (date_trunc('week', fn_fecha_miami(now()))::date - 28 + 7 * ($1 - 1))::text"; }
+ESTE_LUNES="$(ed -c "select date_trunc('week', fn_fecha_miami(now()))::date::text")"
+# rutina <salida> [pausa con sus candados tomados]: la pasada entera, como la app al abrir Contabilidad
+rutina() {
+  ed -v ON_ERROR_STOP=1 -c "begin; $(app "$DUENO") select 'RESULTADO ' || format('ocupado=%s registrados=%s altas=%s', r->>'ocupado', jsonb_array_length(r->'registrados'), (select count(*) from jsonb_array_elements(r->'altas') a where a->>'usuario_id' in ('$P4', '$P5'))) from (select fn_jornal_solo('{}'::jsonb) r) x; select pg_sleep(${2:-0}); commit;" > "$1" 2>&1
+}
+echo "   a) la rutina, desde dos teléfonos en el mismo instante"
+rutina "$TMP/7a1.out" 0.8 &
+sleep 0.25
+t0=$(date +%s.%N)
+rutina "$TMP/7a2.out" 0
+t1=$(date +%s.%N)
+wait
+revisa "una corre: da de alta sola a las dos y registra los cuatro pagos" "1" "$(cat "$TMP"/7a1.out "$TMP"/7a2.out | grep -c 'RESULTADO ocupado=false registrados=4 altas=2')"
+revisa "la otra no espera: contesta «ocupado» y no hace nada (en menos de medio segundo)" "1|1" \
+  "$(cat "$TMP"/7a1.out "$TMP"/7a2.out | grep -c 'RESULTADO ocupado=true registrados=0 altas=0')|$([ "$(echo "$t1 - $t0 < 0.5" | bc)" = "1" ] && echo 1 || echo 0)"
+revisa "cuatro repartos que entraron solos, cuatro asientos, los cuatro pagos casados; dos personas dadas de alta solas (una fila cada una)" "4|4|4|2" \
+  "$(ed -c "select format('%s|%s|%s|%s', (select count(*) from jornal_repartos r join movimientos_banco m on m.id = r.movimiento_id where m.id_externo like 'c10-conc-7-%' and r.estado = 'aplicado' and r.origen = 'solo' and r.regla->>'corrio' = 'pantalla'),
+                          (select count(distinct r.asiento_id) from jornal_repartos r join movimientos_banco m on m.id = r.movimiento_id where m.id_externo like 'c10-conc-7-%'),
+                          (select count(*) from movimientos_banco m where m.id_externo like 'c10-conc-7-%' and m.estado = 'casado'),
+                          (select count(*) from jornal_personas j where j.usuario_id in ('$P4', '$P5') and j.alta = 'sola' and j.activa))")"
+rutina "$TMP/7a3.out" 0
+revisa "otra vez: nada" "1" "$(grep -c 'RESULTADO ocupado=false registrados=0 altas=0' "$TMP/7a3.out")"
+
+echo "   b) el «Así es» de Edgar y la rutina, a la vez, sobre el mismo pago"
+ed -v ON_ERROR_STOP=1 -c "select set_config('request.jwt.claims', '{\"sub\":\"$DUENO\",\"role\":\"authenticated\"}', false); select fn_banco_importar_filas(jsonb_build_object('origen', 'plaid', 'cuenta', '1010', 'nombre', 'Plaid · c10-concurrencia · 7b', 'filas', jsonb_build_array(jsonb_build_object('id', 'c10-conc-7-d3', 'fecha', '$(lunes7 4)', 'plaid_monto', '337.50', 'descripcion', 'Zelle payment to ZZDORA C10 CONCURRENCIA 8003', 'tipo', 'DEBIT', 'pendiente', false), jsonb_build_object('id', 'c10-conc-7-e3', 'fecha', '$(lunes7 4)', 'plaid_monto', '337.50', 'descripcion', 'Zelle payment to ZZELIO C10 CONCURRENCIA 8003', 'tipo', 'DEBIT', 'pendiente', false)))); select count(fn_banco_casar(m.id)) from movimientos_banco m where m.id_externo in ('c10-conc-7-d3', 'c10-conc-7-e3');" > "$TMP/7bm.out" 2>&1
+MD3="$(mov7 d3)"; ME3="$(mov7 e3)"; L3="$(lunes7 3)"
+# (el «Así es» primero, con sus candados medio segundo; la rutina llega en medio y espera el de la persona)
+VD3="$(ed -c "begin; $(app "$DUENO") select fn_jornal_propuesta('$MD3')->>'visto'; commit;" | tail -n 1)"
+aplicar "$TMP/7b1.out" "$MD3" "$L3" "$VD3" 0.6 &
+sleep 0.2
+# (el de Zzelio se aparta un momento de esta pasada: «no es de la cuadrilla», y después se quita)
+ed -c "begin; $(app "$DUENO") select fn_jornal_pago(jsonb_build_object('movimiento_id', '$ME3', 'no_cuadrilla', true)); commit;" > /dev/null 2>&1
+rutina "$TMP/7b2.out" 0
+wait
+revisa "«Así es» primero: entra a mano; la rutina, cuando le toca, no lo toca" "1|1|1|mano" \
+  "$(grep -c 'RESULTADO aplicado' "$TMP/7b1.out")|$(grep -c 'RESULTADO ocupado=false registrados=0' "$TMP/7b2.out")|$(ed -c "select format('%s|%s', count(*), min(origen)) from jornal_repartos where movimiento_id = '$MD3'")"
+ed -c "begin; $(app "$DUENO") select fn_jornal_pago(jsonb_build_object('movimiento_id', '$ME3', 'quitar', true)); commit;" > /dev/null 2>&1
+# (al revés: la rutina primero, con sus candados medio segundo; el «Así es», con la huella que Edgar había visto, llega en medio)
+VE3="$(ed -c "begin; $(app "$DUENO") select fn_jornal_propuesta('$ME3')->>'visto'; commit;" | tail -n 1)"
+rutina "$TMP/7b3.out" 0.6 &
+sleep 0.2
+aplicar "$TMP/7b4.out" "$ME3" "$L3" "$VE3" 0
+wait
+revisa "la rutina primero: lo registra sola; el «Así es», cuando le toca, MX008 (ya está repartido)" "1|1|1|solo" \
+  "$(grep -c 'RESULTADO ocupado=false registrados=1' "$TMP/7b3.out")|$(grep -c 'MX008: Este pago ya está repartido' "$TMP/7b4.out")|$(ed -c "select format('%s|%s', count(*), min(origen)) from jornal_repartos where movimiento_id = '$ME3'")"
+
+echo "   c) un cheque, «es de…» desde dos teléfonos a la vez, con dos personas distintas"
+ed -v ON_ERROR_STOP=1 -c "select set_config('request.jwt.claims', '{\"sub\":\"$DUENO\",\"role\":\"authenticated\"}', false); select fn_banco_importar_filas(jsonb_build_object('origen', 'plaid', 'cuenta', '1010', 'nombre', 'Plaid · c10-concurrencia · 7c', 'filas', jsonb_build_array(jsonb_build_object('id', 'c10-conc-7-chq', 'fecha', '$ESTE_LUNES', 'plaid_monto', '100.00', 'descripcion', 'CHECK 8201', 'tipo', 'CHECK', 'pendiente', false)))); select count(fn_banco_casar(m.id)) from movimientos_banco m where m.id_externo = 'c10-conc-7-chq';" > "$TMP/7cm.out" 2>&1
+MCH="$(mov7 chq)"
+revisa "el cheque pregunta de quién es" "1" "$(ed -c "begin; $(app "$DUENO") select count(*) from v_jornal_cheques where movimiento_id = '$MCH'; commit;" | tail -n 1)"
+# dice <salida> <persona> [pausa]: «es de…» (la base lo reparte y lo registra en la misma llamada)
+dice() {
+  ed -v ON_ERROR_STOP=1 -c "begin; $(app "$DUENO") select 'RESULTADO registrado=' || (fn_jornal_pago(jsonb_build_object('movimiento_id', '$MCH', 'usuario_id', '$2'))->>'registrado'); select pg_sleep(${3:-0}); commit;" > "$1" 2>&1
+}
+dice "$TMP/7c1.out" "$P4" 0.6 &
+sleep 0.2
+dice "$TMP/7c2.out" "$P5" 0
+wait
+revisa "uno lo registra; el otro espera y recibe MX008 (ya está resuelto)" "1|1" "$(grep -c 'RESULTADO registrado=true' "$TMP/7c1.out")|$(grep -c 'MX008: Ese movimiento ya está resuelto' "$TMP/7c2.out")"
+revisa "un reparto, de quien dijo el primero, escrito que lo dijo Edgar; el cheque, casado" "1|$P4|edgar|$P4|casado" \
+  "$(ed -c "select format('%s|%s|%s|%s|%s', (select count(*) from jornal_repartos where movimiento_id = '$MCH'), (select usuario_id from jornal_repartos where movimiento_id = '$MCH'),
+                          (select por from jornal_repartos where movimiento_id = '$MCH'), (select usuario_id from jornal_pagos where movimiento_id = '$MCH'), (select estado from movimientos_banco where id = '$MCH'))")"
+revisa "nadie murió por un bloqueo mortal (40P01) ni por el tope de la API" "0" "$(cat "$TMP"/7*.out | grep -c '40P01\|deadlock\|57014')"
 
 echo
 echo "== Al final"

@@ -791,6 +791,41 @@ body[data-vista="conta"] .fab { display: none; }
 #conta-raiz .ct-aviso.ct-jr-info { background: var(--mp-sky-1); border-color: var(--mp-line); color: var(--mp-ink-2); }
 #conta-raiz .ct-jr-aprueba, #conta-raiz .ct-jr-iaprop { margin: .4rem 0 0; overflow-wrap: anywhere; }
 #conta-raiz .ct-jr-avisos .ct-jr-link { padding-top: .1rem; }
+/* (la cuadrilla, sola: c10 v5, 15-nov) Lo que la base registró sola, el cheque que pregunta de quién es y por qué un pago no
+   entró solo. En el teléfono todo va en una columna; los botones de la cuadrilla, de 44 px, envuelven. */
+#conta-raiz .ct-jr-solo { margin: .45rem 0 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-jr-chqde { margin: .35rem 0 0; }
+#conta-raiz .ct-jr-dicho { color: var(--mp-ink-2); }
+#conta-raiz .ct-chq { margin: .5rem 0 .3rem; padding: .65rem .75rem .7rem; border-radius: 12px; border: 1px solid var(--cu-light); background: var(--mp-card); min-width: 0; }
+#conta-raiz .ct-chq-arriba { margin: 0; }
+#conta-raiz .ct-chq-lista { display: grid; gap: .5rem; margin-top: .55rem; }
+#conta-raiz .ct-chq-q { margin: 0 0 .5rem; font-size: .95rem; line-height: 1.4; overflow-wrap: anywhere; }
+#conta-raiz .ct-chq-btns { display: flex; flex-wrap: wrap; gap: .45rem; }
+#conta-raiz .ct-chq-btns .ct-chip { min-height: var(--tap, 44px); font-weight: 700; max-width: 100%; overflow-wrap: anywhere; }
+#conta-raiz .ct-chq-no { border-style: dashed; }
+#conta-raiz .ct-chq-res { margin-top: .45rem; }
+#conta-raiz .ct-chq-res:empty { display: none; }
+#conta-raiz .ct-chq-res .ct-aviso { margin: 0; }
+#conta-raiz .ct-jr-franja .ct-nota { margin: .4rem 0 0; }
+#conta-raiz .ct-jr-solos { margin-top: .65rem; padding-top: .55rem; border-top: 1px solid var(--mp-line); }
+#conta-raiz .ct-jr-solos > summary { cursor: pointer; font-size: .95rem; line-height: 1.45; min-height: 36px; padding: .25rem 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-jr-solos > summary:focus-visible { outline: 3px solid var(--mp-blue); outline-offset: 2px; }
+#conta-raiz .ct-solo-lista { display: grid; gap: .5rem; margin-top: .5rem; }
+#conta-raiz .ct-solo-it { padding: .6rem .7rem; border-radius: 12px; border: 1px solid var(--mp-line); background: var(--mp-card); min-width: 0; }
+#conta-raiz .ct-solo-it.nuevo { border-color: var(--cu); box-shadow: inset 3px 0 0 var(--cu); }
+#conta-raiz .ct-solo-cab { display: flex; justify-content: space-between; align-items: baseline; gap: .6rem; font-size: .98rem; }
+#conta-raiz .ct-solo-cab b { min-width: 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-solo-it .ct-sub { margin: .15rem 0 0; }
+#conta-raiz .ct-solo-obras { list-style: none; margin: .4rem 0 0; padding: 0; display: grid; gap: .15rem; font-size: .88rem; }
+#conta-raiz .ct-solo-obras li { display: flex; justify-content: space-between; gap: .6rem; }
+#conta-raiz .ct-solo-obras li > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-solo-obras small { color: var(--mp-ink-3); }
+#conta-raiz .ct-solo-it .ct-acciones { margin-top: .45rem; }
+#conta-raiz .ct-solo-aviso { margin: .35rem 0 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-solo-banco { margin: .15rem 0 0; font-size: .78rem; color: var(--mp-ink-3); overflow-wrap: anywhere; }
+#conta-raiz .ct-rep .ct-solo-banco { margin: -.3rem 0 .5rem; }
+#conta-raiz .ct-rep .ct-solo-aviso { margin: .4rem 0 .1rem; }
+#conta-raiz .ct-ob-solo-nota { margin: -.15rem 0 0; }
 
 /* ---- Costo por obra ---- */
 #conta-raiz .ct-ob-cuerpo { display: grid; gap: .8rem; min-width: 0; }

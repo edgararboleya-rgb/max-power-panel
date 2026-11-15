@@ -187,7 +187,14 @@
     // propuestas de la IA que un reparto dejó abiertas: las que dice la base, las que no se pudieron cerrar, si se están
     // cerrando, si falta el código del teléfono, el error al mirarlas y «no reintentar en esta pintada» (se acaba de intentar)
     jr: { instalado: false, pend: new Map(), no: new Set(), personas: null, cfg: null, control: null, err: null,
-      ia: { abiertas: [], mal: [], cerrando: false, sinCodigo: false, err: null }, saltarIA: false },
+      ia: { abiertas: [], mal: [], cerrando: false, sinCodigo: false, err: null }, saltarIA: false,
+      // (la cuadrilla, sola: c10 v5) v5: si la base registra sola (null: todavía no se sabe; false: es anterior a la v5); cuándo se
+      // llamó a su rutina por última vez desde aquí, la llamada en curso y lo que dijo la última; si faltó el código del teléfono; su
+      // error y el de leer lo suyo; los repartos que entraron solos en esta sesión (se resaltan); los cheques que preguntan de quién
+      // son; la cuadrilla para sus botones; los pagos de los que Edgar dijo «no es de la cuadrilla»; lo registrado solo de los
+      // últimos 14 días; y si esa lista está desplegada
+      solo: { v5: null, el: 0, promesa: null, ult: null, sinCodigo: false, err: null, errLeer: null, nuevos: new Set(), cheques: [], cuadrilla: [],
+        dicho: new Set(), regs: [], abierta: false } },
     // «Costo por obra»: qué apartado, qué obra abierta, lo que se baja a sus asientos, el buscador, el filtro y la serie
     obras: { sub: "obras", sel: null, bajar: null, q: "", filtro: "activas", serie: 0, piezas: [] },
     // (fase 10) «Facturas»: qué apartado, qué factura abierta, el 🧾 de un hito que manda app.js (pedido), los buscadores y filtros,
@@ -456,6 +463,10 @@
     const mia = ++S.tab.serie;
     cargando("Controlando con la base…");
     if (!navigator.onLine) return sinSenal(pintarResumen);
+    // (la cuadrilla, sola: c10 v5) al abrir Contabilidad: la base registra los pagos a la cuadrilla que nada frena ANTES de leer nada
+    // (así los saldos, el tablero y «Qué atender» ya los cuentan). No lanza; no se repite antes de 45 s; sin la v5, nada
+    await jornalSolo("pantalla");
+    if (S.pagina !== "resumen" || mia !== S.tab.serie) return;
     // (tablero, c16) el tablero (c16) se pide a la vez que lo de siempre; sin c16 en la base (404), la portada de siempre con su aviso
     const tableroP = leerTablero(tbPedido()).then(d => ({ d }), err => ({ err }));
     let lista, suaves, mes = null, stripeCtl = [], iaCtl = [], ronda = [], jornal = null, tb = null;
@@ -1880,6 +1891,8 @@
       S.importe = { archivo: file.name, r: r || {}, casar };
       S.hooks.avisar(`Archivo subido: ${Number((r || {}).filas_nuevas || 0)} nuevo(s) · ${casar.casados} casaron solos · ${casar.pendientes} en la bandeja`);
       S.bandeja = null;
+      // (v5) la cuadrilla, sola: lo que el archivo trajo y nada frena entra ya (su aviso dice cuántos; sin la v5, nada)
+      await jornalSolo("banco", true);
       await pintarBancos();
       // (7c) lo que entró y espera propuesta: la IA lo propone sola, sin esperar a la rutina de la tarde
       proponerTrasImportar();
@@ -2145,6 +2158,8 @@
       const r = await DB._funcion("plaid", cuerpo, 120000);
       S.hooks.avisar(exito(r));
       S.plaid = null; S.saldos = null; S.bandeja = null;
+      // (v5) la cuadrilla, sola: lo que trajo el banco y nada frena entra ya, antes de repintar
+      if (cuerpo.accion === "sincronizar") await jornalSolo("banco", true);
       await repintar();
       // (7c) lo que trajo el banco y espera propuesta: la IA lo propone sola, como después de subir un archivo
       if (cuerpo.accion === "sincronizar") proponerTrasImportar();
@@ -2770,6 +2785,9 @@
   async function pintarBandeja() {
     cargando();
     if (!navigator.onLine) return sinSenal(pintarBandeja);
+    // (v5) la cuadrilla, sola: la base registra los pagos que nada frena ANTES de leer la bandeja (no lanza; sin la v5, nada)
+    await jornalSolo("pantalla");
+    if (S.pagina !== "bandeja") return;
     let filas;
     try {
       const [b] = await Promise.all([
@@ -2827,6 +2845,8 @@
       try { const k = await casarTodo(null); S.hooks.avisar(`${k.casados} casaron solos · ${k.pendientes} siguen en la bandeja`); S.saldos = null; }
       catch (err) { S.hooks.avisar("No se pudo casar: " + err.message, true); }
       finally { S.ocupado = false; }
+      // (v5) después de casar, la rutina que registra sola corre otra vez sin esperar su turno, diciendo que viene del banco
+      await jornalSolo("banco", true);
       pintarBandeja();
     });
     // «Proponer ahora» y «Parar» (la franja: la cadena la repinta sola, sin repintar la página)
@@ -2912,6 +2932,10 @@
     // (fase 11) un cargo de Gusto: «Casar con la nómina» (si c15 está)
     wireNomBandeja(card, m);
     if (card.dataset.jr) { wireJornal(card, m); return; }
+    // (v5) el cheque que pregunta de quién es, y «Sí lo es» de un pago del que Edgar dijo «no es de la cuadrilla»
+    wireCheques(card);
+    const siEs = card.querySelector(".ct-jr-dicho [data-jr-quitar]");
+    if (siEs) siEs.addEventListener("click", () => decirPago(card.querySelector(".ct-jr-res"), { movimiento_id: m.movimiento_id, quitar: true }));
     wireRepartirLink(card, m);
     wireIA(card, m);
   }
@@ -2923,6 +2947,8 @@
   const claveIA = m => {
     // (fase 9) la tarjeta de la mano de obra no enseña la IA: la cadena nunca la repinta
     if (jrDe(m)) return "jr";
+    // (v5) el cheque que pregunta de quién es, tampoco
+    if (chqDe(m)) return "chq";
     const f = iaFilaDe(m), corre = S.cadena && S.cadena.activa ? ":c" : "";
     return !iaViva() ? "x" : f && f.estado === "pendiente" ? `${f.propuesta_id}:pendiente` : `${f ? `${f.propuesta_id}:${f.estado}` : "-"}${corre}`;
   };
@@ -2976,7 +3002,9 @@
     const id = esc(m.movimiento_id);
     // (fase 9) un pago a una persona que cobra por horas: la tarjeta de la mano de obra en lugar de las opciones de siempre
     const jr = jrDe(m);
-    return `<article class="ct-mov${m.alarma ? " alarma" : ""}${abierta ? " abierta" : ""}${jr ? " ct-mov-jr" : ""}" data-id="${id}" data-ia="${esc(claveIA(m))}"${jr ? ` data-jr="1"` : ""}>
+    // (v5) un cheque que pregunta de quién es (sin la propuesta de la IA mientras pregunta), y un pago del que Edgar dijo «no es de la cuadrilla»
+    const chq = jr ? null : chqDe(m), dichoNo = !jr && soloV5() && S.jr.solo.dicho.has(m.movimiento_id);
+    return `<article class="ct-mov${m.alarma ? " alarma" : ""}${abierta ? " abierta" : ""}${jr ? " ct-mov-jr" : ""}${chq ? " ct-mov-chq" : ""}" data-id="${id}" data-ia="${esc(claveIA(m))}"${jr ? ` data-jr="1"` : ""}>
       <button type="button" class="ct-mov-fila" aria-expanded="${abierta ? "true" : "false"}" aria-controls="ct-det-${id}">
         <span class="ct-f-main">
           <span class="ct-f-desc" title="${esc(m.descripcion || "")}"><b>${esc(m.descripcion || "(sin descripción)")}</b>${m.memo ? `<small>${esc(m.memo)}</small>` : ""}</span>
@@ -2986,16 +3014,16 @@
         <span class="ct-f-meta">
           <span class="ct-f-fecha ct-num">${fechaLarga(m.fecha)}</span>
           <span class="ct-f-cuenta">${esc(m.cuenta_nombre)}</span>
-          <span class="ct-f-motivo">${jr ? `${pill(`Mano de obra · ${jr.persona}`, "cu")}${jr.puede ? "" : pill(jr.corto || "Falta algo", "warn")}` : `${pill(motivoLlano(m.motivo), m.motivo === "posible_duplicado" || m.motivo === "quitada" ? "warn" : "")}${chipIA(m)}`}${m.alarma ? pill("más de 30 días", "bad") : ""}${m._esStripe ? pill("Stripe", "cu") : ""}</span>
+          <span class="ct-f-motivo">${jr ? `${pill(`Mano de obra · ${jr.persona}`, "cu")}${pillSolo(jr)}` : `${pill(motivoLlano(m.motivo), m.motivo === "posible_duplicado" || m.motivo === "quitada" ? "warn" : "")}${chq ? pill("¿De quién es?", "cu") : chipIA(m)}`}${m.alarma ? pill("más de 30 días", "bad") : ""}${m._esStripe ? pill("Stripe", "cu") : ""}</span>
         </span>
       </button>
       <div class="ct-mov-det" id="ct-det-${id}"${abierta ? "" : " hidden"}>
         <div class="ct-meta"><span>hace ${plural(m.dias, "día", "días")}</span>${m.cheque ? `<span>cheque ${esc(m.cheque)}</span>` : ""}${m.tipo_banco ? `<span>${esc(m.tipo_banco)}</span>` : ""}${m.origen ? `<span>entró por ${esc(m.origen)}</span>` : ""}${obra ? pill("obra: " + obra) : ""}</div>
-        ${jr ? jornalHTML(m, jr) : `<p class="ct-texto">${esc(m.texto)}</p>${nomBandejaHTML(m)}${repartirLinkHTML(m)}`}
+        ${jr ? jornalHTML(m, jr) : `${chq ? chequeHTML(chq, false) : ""}<p class="ct-texto">${esc(m.texto)}</p>${nomBandejaHTML(m)}${dichoNo ? `<p class="ct-jr-enlace ct-jr-dicho">Dijiste que no es de la cuadrilla: se clasifica como siempre. <button type="button" class="ct-jr-link" data-jr-quitar>Sí lo es</button></p><div class="ct-jr-res"></div>` : repartirLinkHTML(m)}`}
         ${jr ? "" : `${m._esStripe ? `<p class="ct-aviso warn ct-aviso-dep">Depósito de Stripe: casa solo con su depósito en «Cobros en línea» (cuando Stripe mande su detalle${(m._stripe || []).length ? ", o con «Es el depósito…» aquí abajo" : ""}). No lo clasifiques ni lo registres aquí: el dinero entraría dos veces. Si es de antes de instalar los cobros en línea, sácalo allí con «Ya está en el libro» y vuelve aquí.</p>` : ""}
         ${m._stripeFuera ? `<p class="ct-aviso ct-aviso-dep">Depósito de Stripe de fuera de la app (${esc(m._stripeFuera.fuera_motivo || "ya está en el libro")}): regístralo aquí como siempre.</p>` : ""}
         ${m.posible_duplicado_de ? `<p class="ct-aviso warn">Se parece al del ${fecha(m.duplicado_fecha)} «${esc(m.duplicado_descripcion)}»${m.duplicado_origen ? ` (entró por ${esc(m.duplicado_origen)})` : ""}.</p>` : ""}
-        ${iaBloqueHTML(m)}
+        ${chq ? "" : iaBloqueHTML(m)}
         <div class="ct-acciones">${nomBotonHTML(m)}${(m._stripe || []).map(q => `<button type="button" class="accion" data-stripe-po="${esc(q.po)}">Es el depósito de Stripe del ${fechaLarga(q.llegada)}: casarlo</button>`).join("")}${ops.map((o, i) => `<button type="button" class="accion${i || (m._stripe || []).length ? " secundaria" : ""}" data-op="${i}">${esc(o.texto)}</button>`).join("")}
           ${m._esStripe ? "" : `<button type="button" class="accion secundaria ct-otra" data-otra>Otra cosa…</button>`}</div>
         <div class="ct-form" hidden></div>
@@ -3212,6 +3240,47 @@
   //   · el alta de una persona devuelve sus avisos (el patrón no lleva su
   //     nombre, o casa con pagos a varios destinatarios): salen en el aviso
   //     de la app, en ámbar, sin los \m \M del patrón.
+  //
+  // LA CUADRILLA, SOLA (c10 v5, 15-nov-2026). Lo decidió Edgar: «No tendría
+  // que tocar ningún botón de repartir horas ni nada, sino que eso lo hiciera
+  // automático». Es una regla de la BASE (fn_jornal_solo), no de esta pantalla
+  // ni de la IA; aquí solo se la llama y se enseña lo que hizo:
+  //   · CUÁNDO SE LA LLAMA: al abrir Contabilidad (la portada), al pintar la
+  //     Bandeja y después de subir un archivo, de «Casar otra vez» o de
+  //     sincronizar con el banco. Pide el código del teléfono, como el «Así
+  //     es» (registrar toca el libro); sin él no se llama y lo hace la tarea
+  //     de madrugada de la base. Si la base corta por reloj (completo: false)
+  //     se la vuelve a llamar. Con una base anterior a la v5 (la función no
+  //     existe) se sabe una vez por sesión y todo sigue como antes.
+  //   · «REGISTRADO SOLO» (en la franja de la Bandeja): lo que entró solo en
+  //     los últimos 14 días, cada pago con la persona, su semana, cuánto a
+  //     cada obra y «Deshacer» (con su motivo). Lo deshecho vuelve a la
+  //     Bandeja y ya no entra solo: su tarjeta lo dice, con «Que vuelva a
+  //     entrar solo». Y SUS NOTAS (la revisión de la v5): los avisos que no
+  //     frenan y el pago traía —horas en una obra terminada, no aprobada o
+  //     sin aprobar (su parte va a esa obra igual), el corte de mes—, con el
+  //     texto de la base; también en Costo por obra → Repartos. Y CÓMO LO
+  //     ESCRIBIÓ EL BANCO («El banco: «Zelle payment to …»»): nadie vio su
+  //     tarjeta antes de que entrara, y un pago a otro con el mismo nombre se
+  //     tiene que poder ver ahí, donde se deshace.
+  //   · SI LA BASE CORTA POR RELOJ (completo: false) dice por dónde iba
+  //     («sigue») y la llamada siguiente se lo devuelve («despues_de»): no
+  //     vuelve a empezar por el pago más viejo.
+  //   · EL CHEQUE llega sin nombre: «¿De quién es este cheque?», con la
+  //     cuadrilla en botones y «No es de la cuadrilla» (fn_jornal_pago), arriba
+  //     de la Bandeja y en su fila. Al elegir a la persona la base lo reparte
+  //     y lo registra en esa misma llamada; si algo pide decidir, lo dice y el
+  //     cheque queda como la tarjeta de mano de obra de esa persona.
+  //   · LO QUE NO ENTRÓ SOLO: su tarjeta de siempre, con UNA frase arriba (la
+  //     de la base: qué pide, o qué día entra) y su «Así es».
+  //   · «No es mano de obra» queda escrito en la base (ya no solo en memoria).
+  //   · LA IA: en un pago a la cuadrilla (su tarjeta) y en un cheque que aún
+  //     pregunta no se enseña su propuesta, y la cadena no arranca por ellos.
+  //     Lo que la IA tenía para un pago que entró solo se cierra por su
+  //     función, como tras un «Así es».
+  //   · El enlace «Repartir por sus horas» de un Zelle sin reconocer queda
+  //     para los casos raros (el banco escribe el nombre de otra forma).
+  //   · APAGARLO: Costo por obra → Ajustes (de fábrica, encendido).
   // Nada de lo que se enseña lleva nombres de funciones, de tablas ni códigos
   // de error: los textos de la base ya vienen en llano, y un error que no es
   // de sus reglas se dice con una frase nuestra (mensajeJr).
@@ -3226,7 +3295,8 @@
   const AVISOS_FRENAN = ["sin_horas", "falta_cuenta_sin_obra", "cuenta_mal", "posible_duplicado", "reparto_suelto"];
   // los que no frenan pero piden mirar antes de aceptar (en ámbar), y los que son solo información (sin color)
   // (11b) «pagadas_por_nomina» (c10 v3): un Zelle a quien ya cobra por nómina, repartido por sus horas, las contaría otra vez; no frena
-  const AVISOS_MIRAR = ["tarifa_lejos", "horas_tardias", "cubiertas_sin_aprobar", "no_parece_pago", "co_parecidos", "se_pisa", "devengo_estandar", "periodo_futuro", "mes_cerrado", "pagadas_por_nomina"];
+  // (la revisión de la v5) «horas_tras_terminada»: horas con fecha posterior al día en que su obra se dio por terminada (¿garantía o la obra equivocada?)
+  const AVISOS_MIRAR = ["tarifa_lejos", "horas_tardias", "cubiertas_sin_aprobar", "no_parece_pago", "co_parecidos", "se_pisa", "devengo_estandar", "periodo_futuro", "mes_cerrado", "pagadas_por_nomina", "horas_tras_terminada"];
   const AVISOS_INFO = ["otro_mes", "otro_anio"];
   const claseAviso = c => AVISOS_FRENAN.includes(c) || AVISOS_MIRAR.includes(c) ? "warn" : AVISOS_INFO.includes(c) ? "ct-jr-info" : "";
   const nHoras = v => { const n = num(v); return n == null || Number.isNaN(n) ? "—" : n.toLocaleString("en-US", { maximumFractionDigits: 2 }); };
@@ -3266,7 +3336,13 @@
       // (v2) lo de la IA que el pago tiene abierto (la vista solo trae la pendiente) y cuántos reportes aprobará el «Así es»
       propuestasIA: iaDelPago(x),
       aprueba: !deVista && x.aprueba && x.aprueba.reportes != null ? num(x.aprueba.reportes) : null,
-      corto: (frena || avisos[0] || {}).corto || null, nota: null
+      corto: (frena || avisos[0] || {}).corto || null, nota: null,
+      // (v5) cómo se supo de quién es (patron: su nombre en la descripción del banco; edgar: lo dijo él) y, si es un cheque, su
+      // número ("" si no lo trae); y lo del registro solo, que solo trae la fila de la vista (con otras fechas a mano ya no aplica):
+      // entra | espera | pregunta | no, su porqué en una frase, lo que lo frena y el día en que entra
+      por: (deVista ? x.por : per0.por) || null,
+      cheque: (deVista ? x.cheque : mov.cheque) == null ? null : String(deVista ? x.cheque : mov.cheque),
+      solo: deVista && x.solo && soloV5() ? { estado: x.solo, porQue: x.solo_por_que || null, frenos: Array.isArray(x.solo_frenos) ? x.solo_frenos : [], entraEl: x.solo_entra_el || null } : null
     };
   }
   // lo de la IA que un pago tiene abierto, con qué hacer con cada una (la vista y una base anterior a la v2 solo dan la pendiente)
@@ -3296,6 +3372,8 @@
         leerIAAbiertas()
       ]);
       S.jr.instalado = true; S.jr.cfg = (cfg || [])[0] || null; S.jr.control = Array.isArray(ctl) ? ctl : [];
+      // (v5) la base es la de la cuadrilla sola si su configuración trae el ajuste; con una anterior, todo como antes
+      S.jr.solo.v5 = !!(S.jr.cfg && S.jr.cfg.solo !== undefined);
       // (las que no se pudieron cerrar en esta sesión siguen marcadas mientras la base las siga dando)
       const malAntes = new Set((S.jr.ia.mal || []).map(p => p.propuesta_id));
       S.jr.ia = { abiertas: ia.abiertas, mal: ia.abiertas.filter(p => malAntes.has(p.propuesta_id)), cerrando: false, sinCodigo: false, err: ia.err };
@@ -3303,11 +3381,40 @@
       // lo que Edgar pidió con otras fechas se queda mientras el pago siga esperando (su huella la vuelve a mirar la base al aplicar)
       for (const f of filas) { const prev = antes.get(f.movimiento_id); S.jr.pend.set(f.movimiento_id, prev && prev.mano ? prev : normalJr(f, true)); }
       for (const id of [...S.jr.no]) if (!S.jr.pend.has(id)) S.jr.no.delete(id);
+      await leerSoloBandeja();
     } catch (err) {
       if (esFalloDeRed(err)) throw err;
       S.jr.instalado = false; S.jr.pend = new Map(); S.jr.control = null;
       S.jr.ia = { abiertas: [], mal: [], cerrando: false, sinCodigo: false, err: null };
+      Object.assign(S.jr.solo, { cheques: [], cuadrilla: [], dicho: new Set(), regs: [], errLeer: null });
       if (!faltaC10(err)) S.jr.err = err;
+    }
+  }
+  // (v5) Lo de la cuadrilla sola que la Bandeja enseña: los cheques que preguntan de quién son, la cuadrilla (sus botones), los
+  // pagos de los que Edgar dijo «no es de la cuadrilla» y lo registrado solo de los últimos 14 días. Solo con la base v5 (su
+  // configuración trae el ajuste): con una anterior no se lee nada de esto. Si algo de ello no existe en la base, es que no es
+  // la v5 entera: como una anterior. Otro error que no es de red se dice en la franja
+  const SOLO_DIAS = 14;
+  async function leerSoloBandeja() {
+    const x = S.jr.solo;
+    Object.assign(x, { cheques: [], cuadrilla: [], dicho: new Set(), regs: [], errLeer: null });
+    if (!x.v5) return;
+    try {
+      const desde = new Date(Date.now() - SOLO_DIAS * 864e5).toISOString();
+      const [chq, pers, dicho, regs] = await Promise.all([
+        DB._leer("v_jornal_cheques?select=*&order=fecha.asc,movimiento_id.asc"),
+        DB._leer("v_jornal_personas?select=*&order=nombre.asc"),
+        DB._leer("jornal_pagos?select=movimiento_id&no_cuadrilla=is.true"),
+        DB._leer(`v_jornal_repartos?select=*&origen=eq.solo&estado=eq.aplicado&creado_el=gte.${encodeURIComponent(desde)}&order=creado_el.desc`)
+      ]);
+      x.cheques = Array.isArray(chq) ? chq : []; x.cuadrilla = Array.isArray(pers) ? pers : [];
+      x.dicho = new Set((dicho || []).map(d => d.movimiento_id)); x.regs = Array.isArray(regs) ? regs : [];
+      // (los resaltados de esta sesión que ya no están en la lista —se deshicieron— se olvidan)
+      for (const id of [...x.nuevos]) if (!x.regs.some(r => r.reparto_id === id)) x.nuevos.delete(id);
+    } catch (err) {
+      if (esFalloDeRed(err)) throw err;
+      if (faltaC10(err)) { x.v5 = false; return; }
+      x.errLeer = err;
     }
   }
   // La franja de la mano de obra, arriba de la bandeja: cuántos pagos esperan su reparto, sus cuadres en rojo, lo de la IA que
@@ -3317,13 +3424,28 @@
     if (!S.jr.instalado) return "";
     const suyos = (filas || []).filter(f => jrDe(f)), rojos = (S.jr.control || []).filter(f => f.nivel === "cuadre" && f.ok !== true);
     const ia = iaFranjaHTML();
-    if (!suyos.length && !rojos.length && !ia && !S.bj.soloJr) return "";
-    const total = suyos.reduce((s, f) => s + Math.abs(num(f.monto) || 0), 0);
+    // (v5) la cuadrilla, sola: de los pagos reconocidos, los que piden una respuesta, los que entran solos al terminar su semana y
+    // los que entran ya; los cheques que preguntan de quién son; y lo registrado solo. Con una base anterior, la franja de siempre
+    const v5 = soloV5(), x = S.jr.solo;
+    const est = f => { const j = jrDe(f); return j && j.solo && !j.mano ? j.solo.estado : null; };
+    const esperan = v5 ? suyos.filter(f => est(f) === "espera") : [], entran = v5 ? suyos.filter(f => est(f) === "entra") : [];
+    const piden = v5 ? suyos.filter(f => !["espera", "entra"].includes(est(f))) : suyos;
+    const chq = v5 ? (x.cheques || []).filter(c => (filas || []).some(f => f.movimiento_id === c.movimiento_id)) : [];
+    const solos = v5 ? solosHTML() : "", apagada = v5 && !!S.jr.cfg && S.jr.cfg.solo === false, malSolo = v5 ? (x.err || x.errLeer) : null;
+    if (!suyos.length && !rojos.length && !ia && !S.bj.soloJr && !chq.length && !solos && !apagada && !malSolo) return "";
+    const total = piden.reduce((s, f) => s + Math.abs(num(f.monto) || 0), 0), cuanto = l => fmt(l.reduce((s, f) => s + Math.abs(num(f.monto) || 0), 0));
     return `<section class="ct-card ct-jr-franja" id="ct-jr-franja">
-      <div class="ct-jr-franja-fila"><p>${suyos.length ? `<b>${plural(suyos.length, "pago de mano de obra espera", "pagos de mano de obra esperan")}</b> su reparto por horas · <span class="ct-num">${fmt(total)}</span>` : "Ningún pago de mano de obra espera su reparto."}</p>
+      <div class="ct-jr-franja-fila"><p>${v5 ? (piden.length ? `<b>${plural(piden.length, "pago a la cuadrilla espera", "pagos a la cuadrilla esperan")}</b> tu respuesta · <span class="ct-num">${fmt(total)}</span>` : "Ningún pago a la cuadrilla espera tu respuesta.")
+          : suyos.length ? `<b>${plural(suyos.length, "pago de mano de obra espera", "pagos de mano de obra esperan")}</b> su reparto por horas · <span class="ct-num">${fmt(total)}</span>` : "Ningún pago de mano de obra espera su reparto."}</p>
         ${suyos.length || S.bj.soloJr ? `<button type="button" class="accion secundaria chica" id="ct-jr-ver" aria-pressed="${S.bj.soloJr ? "true" : "false"}">${S.bj.soloJr ? "Ver todos" : "Ver solo esos"}</button>` : ""}</div>
+      ${apagada ? `<p class="ct-aviso warn ct-solo-apagada">El registro automático de los pagos a la cuadrilla está apagado: cada uno espera tu «Así es». <button type="button" class="ct-jr-link" data-ir="obras" data-ir-sub="obras">Encenderlo en Costo por obra</button></p>` : ""}
+      ${esperan.length ? `<p class="ct-nota ct-solo-esperan">${plural(esperan.length, "pago entra solo", "pagos entran solos")} cuando termine su semana (<span class="ct-num">${cuanto(esperan)}</span>): no hay que hacer nada.</p>` : ""}
+      ${entran.length && !apagada ? `<p class="ct-nota ct-solo-entran">${plural(entran.length, "pago está listo para entrar solo", "pagos están listos para entrar solos")} (<span class="ct-num">${cuanto(entran)}</span>)${x.sinCodigo ? ": desde aquí falta entrar con el código del teléfono (Conexiones y seguridad); si no, entran esta madrugada" : ": entran en la próxima pasada"}.</p>` : ""}
+      ${malSolo ? `<p class="ct-aviso warn ct-solo-mal">El registro automático de los pagos a la cuadrilla no contestó: ${esc(mensajeJr(malSolo))} No frena nada: cada pago tiene su «Así es», y se vuelve a intentar al abrir la Bandeja.</p>` : ""}
+      ${chq.length ? `<div class="ct-chq-lista">${chq.map(c => chequeHTML(c, true)).join("")}</div>` : ""}
       ${rojos.map(f => `<p class="ct-aviso bad">${esc(cap(String(f.cuadre || "").replace(/^jornal: /, "")))}: ${esc(f.detalle || "no cuadra")} <button type="button" class="ct-jr-link" data-ir="obras" data-ir-sub="repartos">Ver los repartos</button></p>`).join("")}
       ${ia}
+      ${solos}
     </section>`;
   }
   // Lo de la IA que quedó abierto en pagos ya repartidos: cerrándose, sin cerrar (con «Reintentar»), sin el código, o sin poder mirarlo
@@ -3347,6 +3469,9 @@
     const verJr = $("ct-jr-ver"); if (verJr) verJr.addEventListener("click", () => { S.bj.motivo = ""; S.bj.q = ""; S.filtroCuenta = null; S.bj.soloJr = !S.bj.soloJr; pintarBandeja(); });
     main().querySelectorAll("#ct-jr-franja [data-ir]").forEach(x => x.addEventListener("click", () => ir(x.dataset.ir, x.dataset.irSub ? { sub: x.dataset.irSub } : {})));
     const re = $("ct-jr-ia-reintentar"); if (re) re.addEventListener("click", () => cerrarIAAbiertas(true));
+    // (v5) los cheques que preguntan de quién son y «Deshacer» de lo registrado solo
+    const fr = $("ct-jr-franja"); if (!fr) return;
+    wireCheques(fr); wireSolos(fr);
   }
   function refrescarFranjaJr() {
     const env = $("ct-jr-franja-env"); if (!env || S.pagina !== "bandeja") return;
@@ -3388,6 +3513,203 @@
     refrescarFranjaJr();
   }
 
+  // ---------- LA CUADRILLA, SOLA (c10 v5): la rutina de la base, el cheque y «Registrado solo» ----------
+  const SOLO_CADA_MS = 45000;      // no se la vuelve a llamar antes (salvo tras un archivo, «Casar otra vez» o el banco: `forzar`)
+  const SOLO_RONDAS = 12;          // con muchos pagos atrasados la base corta por reloj (completo: false): se sigue, sin colgarse
+  // (la revisión de la v5) cuando corta, la base dice por dónde iba («sigue»: el último pago que miró) y la llamada siguiente se lo
+  // devuelve en «despues_de»: sigue DESPUÉS de él. Sin eso cada llamada volvía a empezar por el pago más viejo, y con muchos pagos
+  // esperando una respuesta se le iba el tiempo en los mismos: los nuevos no entraban nunca y la página esperaba las doce rondas
+  const soloV5 = () => S.jr.solo.v5 === true;
+  // LA RUTINA QUE REGISTRA SOLA. `corrio`: "pantalla" (al abrir Contabilidad o la Bandeja) o "banco" (tras un archivo, «Casar otra
+  // vez» o sincronizar). Devuelve lo que hizo, o null si no corrió (sin señal, sin el código del teléfono, base anterior a la v5,
+  // recién corrida). NUNCA lanza ni frena la página: lo que no entre ahora entra en la próxima pasada o en la tarea de madrugada.
+  // Dos llamadas a la vez comparten la misma (la portada y la Bandeja no la llaman dos veces)
+  function jornalSolo(corrio, forzar) {
+    const x = S.jr.solo;
+    if (x.v5 === false || !navigator.onLine) return Promise.resolve(null);
+    if (x.promesa) return x.promesa;
+    if (!forzar && x.el && Date.now() - x.el < SOLO_CADA_MS) return Promise.resolve(null);
+    x.promesa = (async () => {
+      const t = { registrados: [], altas: [], esperan: 0, preguntan: 0, dijoNo: 0, encendido: true, ia: [] };
+      try {
+        await leerMfa();
+        // registrar toca el libro: pide el código del teléfono, como el «Así es» (sin él lo hace la tarea de madrugada de la base)
+        if (!mfaActivo()) { x.sinCodigo = true; return null; }
+        x.sinCodigo = false;
+        let sigue = null;
+        for (let i = 0; i < SOLO_RONDAS; i++) {
+          const r = await DB._rpc("fn_jornal_solo", { p: { corrio: corrio === "banco" ? "banco" : "pantalla", ...(sigue ? { despues_de: sigue } : {}) } });
+          if (!r || typeof r !== "object" || typeof r.encendido !== "boolean") break;
+          x.v5 = true; t.encendido = r.encendido;
+          t.registrados.push(...(Array.isArray(r.registrados) ? r.registrados : []));
+          t.altas.push(...(Array.isArray(r.altas) ? r.altas : []));
+          t.ia.push(...(Array.isArray(r.propuestas_ia) ? r.propuestas_ia : []));
+          // (cada llamada cuenta lo que ella miró: se suman)
+          t.esperan += nOk(r.esperan); t.preguntan += nOk(r.preguntan); t.dijoNo += nOk(r.dijo_no);
+          if (r.completo !== false || r.ocupado) break;
+          sigue = typeof r.sigue === "string" && r.sigue ? r.sigue : null;
+        }
+        x.err = null;
+      } catch (err) {
+        // una base anterior a la v5 (o sin el costo por obra): la función no existe. Se sabe una vez, y todo sigue como antes
+        if (faltaC10(err)) { x.v5 = false; return null; }
+        if (!esFalloDeRed(err)) x.err = err;
+        // (falló a media pasada —la base cortó por reloj y la vuelta siguiente no contestó—: lo que ya entró está en el libro
+        // y se dice igual; lo demás queda para la próxima pasada)
+        if (!t.registrados.length) return null;
+      } finally { x.el = Date.now(); x.promesa = null; }
+      x.ult = t;
+      if (t.registrados.length) {
+        for (const r of t.registrados) if (r && r.reparto_id) x.nuevos.add(r.reparto_id);
+        S.saldos = null; x.abierta = true;
+        if (S.pagina !== "bandeja") S.bandeja = null;
+        S.hooks.avisar(`Registrado solo: ${plural(t.registrados.length, "pago a la cuadrilla", "pagos a la cuadrilla")} por ${fmt(t.registrados.reduce((s, r) => s + (num(r.monto) || 0), 0))} (${t.registrados.map(r => `${r.persona} ${fmt(r.monto)}`).join("; ")}). Está en la Bandeja, en «Registrado solo»: ahí se deshace.`);
+        // lo que la IA (c8) tenía para esos pagos se cierra por su función (la base de la mano de obra no escribe en la de la IA).
+        // Desde la Bandeja no hace falta: al pintarse cierra sola lo que la base le diga que sigue abierto
+        if (t.ia.length && S.pagina !== "bandeja") cerrarIA(t.ia).catch(() => {});
+      }
+      return t;
+    })();
+    return x.promesa;
+  }
+  // LO QUE EDGAR DICE DE UN PAGO (fn_jornal_pago), una cosa por llamada: de quién es un cheque ({usuario_id}: la base lo reparte y lo
+  // registra en esa misma llamada, o dice qué pide decidir), «no es de la cuadrilla» ({no_cuadrilla}), quitar lo dicho ({quitar}) o
+  // que un pago que deshizo vuelva a entrar solo ({solo}). `caja`: dónde se dice lo que pasa. Al salir, la Bandeja otra vez
+  async function decirPago(caja, p) {
+    if (S.ocupado) return;
+    const decir = (t, clase) => { if (caja) caja.innerHTML = `<p class="ct-aviso ${clase || "warn"} ct-error">${esc(t)}</p>`; else S.hooks.avisar(t, true); };
+    if (!navigator.onLine) return decir("Sin señal: no se hizo nada. Vuelve a intentarlo con señal.", "bad");
+    if ((p.usuario_id || p.solo) && !mfaActivo()) return decir("Registrar un pago toca el libro: primero activa el código del teléfono (Conexiones y seguridad) y entra con él.");
+    S.ocupado = true;
+    const cont = caja ? (caja.closest("[data-chq]") || caja.closest(".ct-mov") || caja) : null;
+    const apagados = cont ? [...cont.querySelectorAll("button")].filter(b => !b.disabled) : [];
+    apagados.forEach(b => { b.disabled = true; });
+    if (caja) caja.innerHTML = `<p class="ct-aviso ct-espera" role="status">${p.usuario_id ? "Repartiéndolo por sus horas y registrándolo…" : p.solo ? "Registrándolo…" : "Anotándolo…"}</p>`;
+    let r;
+    try { r = await DB._rpc("fn_jornal_pago", { p }); }
+    catch (err) {
+      S.ocupado = false; apagados.forEach(b => { b.disabled = false; });
+      return decir(esFalloDeRed(err) ? "Sin señal: no se hizo nada." : err.codigo === "MFA" || err.mfa ? "Falta el código del teléfono: sal y vuelve a entrar con él." : mensajeJr(err), esFalloDeRed(err) ? "bad" : "warn");
+    }
+    S.ocupado = false;
+    r = r || {};
+    if (r.registrado) { S.saldos = null; S.jr.solo.abierta = true; if (r.reparto && r.reparto.reparto_id) S.jr.solo.nuevos.add(r.reparto.reparto_id); }
+    // (en ámbar si se pidió registrar y no entró: su tarjeta dice por qué)
+    S.hooks.avisar(r.nota || "Anotado.", !r.registrado && !!(p.usuario_id || p.solo));
+    S.jr.no.delete(p.movimiento_id); S.jr.pend.delete(p.movimiento_id);
+    // si no entró, su tarjeta queda abierta para que se vea qué pide
+    S.bj.abierta = r.registrado || p.no_cuadrilla ? null : p.movimiento_id;
+    S.jr.solo.el = 0;
+    if (S.pagina === "bandeja") await pintarBandeja();
+  }
+  // la cuadrilla para los botones de un cheque: quien cobra por horas (dada de alta y activa) y quien tiene horas y aún no está dada
+  // de alta; no quien cobra por nómina ni quien está de baja («no cobra por horas»)
+  const cuadrillaChq = () => (S.jr.solo.cuadrilla || []).filter(p => (p.registrada ? p.activa : !(num(p.horas_nomina_90_dias) > 0)));
+  const chqDe = m => (soloV5() && m && (S.jr.solo.cheques || []).find(c => c.movimiento_id === m.movimiento_id)) || null;
+  // «¿DE QUIÉN ES ESTE CHEQUE?»: la cuadrilla en botones y «No es de la cuadrilla». `arriba`: en la franja, con su monto y su fecha
+  function chequeHTML(c, arriba) {
+    const gente = cuadrillaChq(), num4 = c.cheque ? ` ${esc(c.cheque)}` : "";
+    return `<div class="ct-chq${arriba ? " ct-chq-arriba" : ""}" data-chq="${esc(c.movimiento_id)}">
+      <p class="ct-chq-q"><b>${arriba ? `¿De quién es el cheque${num4} de <span class="ct-num">${fmt(c.monto)}</span> del ${fecha(c.fecha)}?` : "¿De quién es este cheque?"}</b>${arriba ? "" : ` <span class="ct-sub">El banco no trae el nombre: dilo y se reparte por sus horas.</span>`}</p>
+      <div class="ct-chq-btns" role="group" aria-label="De quién es el cheque${num4}">${gente.map(p => `<button type="button" class="ct-chip ct-chq-de" data-chq-de="${esc(p.usuario_id)}">${esc(p.nombre || "")}</button>`).join("")}<button type="button" class="ct-chip ct-chq-no" data-chq-no>No es de la cuadrilla</button></div>
+      ${gente.length ? "" : `<p class="ct-nota">Nadie de la cuadrilla tiene horas en los últimos 90 días.</p>`}
+      <div class="ct-chq-res"></div>
+    </div>`;
+  }
+  function wireCheques(cont) {
+    cont.querySelectorAll("[data-chq]").forEach(bl => {
+      const mov = bl.dataset.chq, caja = bl.querySelector(".ct-chq-res");
+      bl.querySelectorAll("[data-chq-de]").forEach(b => b.addEventListener("click", () => decirPago(caja, { movimiento_id: mov, usuario_id: b.dataset.chqDe })));
+      const no = bl.querySelector("[data-chq-no]"); if (no) no.addEventListener("click", () => decirPago(caja, { movimiento_id: mov, no_cuadrilla: true }));
+    });
+  }
+  // «REGISTRADO SOLO»: lo que entró solo en los últimos 14 días; cada pago con la persona, su semana, cuánto a cada obra y «Deshacer»
+  function solosHTML() {
+    const x = S.jr.solo, regs = x.regs || [];
+    if (!regs.length) return "";
+    const total = regs.reduce((s, r) => s + (num(r.monto) || 0), 0), nuevos = regs.filter(r => x.nuevos.has(r.reparto_id)).length;
+    return `<details class="ct-jr-solos" id="ct-jr-solos"${x.abierta || nuevos ? " open" : ""}>
+      <summary><b>Registrado solo</b> · ${plural(regs.length, "pago a la cuadrilla", "pagos a la cuadrilla")} en los últimos ${SOLO_DIAS} días · <span class="ct-num">${fmt(total)}</span>${nuevos ? ` ${pill(nuevos === 1 ? "1 nuevo" : `${nuevos} nuevos`, "ok")}` : ""}</summary>
+      <div class="ct-solo-lista">${regs.map(soloItHTML).join("")}</div>
+      <p class="ct-nota">Entraron solos al libro como mano de obra de la cuadrilla, repartidos por sus horas. Si alguno está mal, «Deshacer»: el pago vuelve a la Bandeja y ya no entra solo otra vez.</p>
+    </details>`;
+  }
+  // (la revisión de la v5) LAS NOTAS de un pago que entró solo: los avisos que no frenan y el pago traía —horas en una obra terminada, no
+  // aprobada o sin aprobar (su parte va a esa obra igual), el corte de mes o de año, el devengo que se pone al día solo—. Nadie vio su
+  // tarjeta antes de que entrara: quedan escritos en el reparto y aquí se enseñan, con el texto de la base
+  const notasRepHTML = r => (Array.isArray(r.avisos) ? r.avisos : []).filter(a => a && (a.texto || a.corto))
+    .map(a => `<p class="ct-nota ct-solo-aviso" data-aviso="${esc(a.codigo || "")}"><b>Nota.</b> ${esc(a.texto || a.corto)}</p>`).join("");
+  // (la revisión de la v5) CÓMO LO ESCRIBIÓ EL BANCO: un pago que la base reconoció sola por el nombre de la persona entró sin que nadie
+  // viera su tarjeta; aquí —donde se deshace— y en Repartos se enseña la descripción del banco tal cual, para que un pago a OTRO con el
+  // mismo nombre («ZZANA TILE LLC» no es Zzana) se vea de un vistazo. Un cheque no la lleva: de quién era lo dijo Edgar
+  const bancoRepHTML = r => (r.por !== "edgar" && r.descripcion ? `<p class="ct-solo-banco">El banco: «${esc(r.descripcion)}»</p>` : "");
+  function soloItHTML(r) {
+    const lineas = Array.isArray(r.lineas) ? r.lineas : [];
+    return `<article class="ct-solo-it${S.jr.solo.nuevos.has(r.reparto_id) ? " nuevo" : ""}" data-reparto="${esc(r.reparto_id)}">
+      <div class="ct-solo-cab"><b>${esc(r.persona || "")}</b><span class="ct-num">${fmt(r.monto)}</span></div>
+      <p class="ct-sub">${r.por === "edgar" ? `${r.cheque != null ? `Cheque${r.cheque ? ` ${esc(r.cheque)}` : ""}` : "Pago"} del ${fecha(r.fecha_pago)} (dijiste de quién era)` : `Pago del ${fecha(r.fecha_pago)}`} · ${esc(r.periodo_texto || rangoCorto(r.desde, r.hasta))} · ${horasTxt(r.horas)}${r.asiento_id ? ` · asiento ${asientoBtn(r.asiento_id, r.asiento)}` : ""}</p>
+      ${bancoRepHTML(r)}
+      <ul class="ct-solo-obras">${lineas.map(l => `<li><span>${esc(l.obra || l.proyecto_id || "Sin obra")}${l.co ? ` <small>${esc(l.co)}</small>` : ""}</span><span class="ct-num">${fmt(l.monto)}</span></li>`).join("")}</ul>
+      ${notasRepHTML(r)}
+      <div class="ct-acciones"><button type="button" class="accion secundaria chica" data-solo-deshacer>Deshacer</button></div>
+      <div class="ct-form" hidden></div>
+    </article>`;
+  }
+  function wireSolos(cont) {
+    const det = cont.querySelector("#ct-jr-solos"); if (!det) return;
+    det.addEventListener("toggle", () => { S.jr.solo.abierta = det.open; });
+    det.querySelectorAll(".ct-solo-it").forEach(card => {
+      const r = (S.jr.solo.regs || []).find(x => x.reparto_id === card.dataset.reparto); if (!r) return;
+      card.querySelectorAll(".ct-asiento-btn").forEach(b => b.addEventListener("click", () => ir("estados", { cuenta: null, asiento: b.dataset.asiento })));
+      card.querySelector("[data-solo-deshacer]").addEventListener("click", () => {
+        if (!mfaActivo()) { mostrarErrorForma(card, "Deshacer toca el libro: primero activa el código del teléfono (Conexiones y seguridad) y entra con él."); return; }
+        montarForma(card, formaHTML(`Deshacer el pago de ${esc(fmt(r.monto))} de ${esc(r.persona)} que entró solo: el asiento ${esc(r.asiento || "")} se reversa (no se borra) y el pago vuelve a la Bandeja. Ya no vuelve a entrar solo. Sus horas siguen aprobadas.`,
+          campoHTML("motivo", "Por qué (queda escrito)", "textarea", "required"), "Deshacer"), v => {
+          if (String(v.motivo || "").length < 3) { mostrarErrorForma(card, "Di por qué en unas palabras (al menos tres letras)."); return; }
+          deshacerSolo(card, r, v.motivo);
+        });
+      });
+    });
+  }
+  async function deshacerSolo(card, r, motivo) {
+    if (S.ocupado) return;
+    if (!navigator.onLine) { mostrarErrorForma(card, "Sin señal: no se hizo nada."); return; }
+    S.ocupado = true;
+    const apagados = [...card.querySelectorAll("button, textarea")].filter(b => !b.disabled);
+    apagados.forEach(b => { b.disabled = true; });
+    let x;
+    try { x = await DB._rpc("fn_jornal_deshacer", { p_reparto: r.reparto_id, p_motivo: motivo }); }
+    catch (err) {
+      S.ocupado = false; apagados.forEach(b => { b.disabled = false; });
+      mostrarErrorForma(card, esFalloDeRed(err) ? "Sin señal: no se deshizo. Vuelve a intentarlo con señal." : err.codigo === "MFA" || err.mfa ? "Falta el código del teléfono: sal y vuelve a entrar con él." : mensajeJr(err));
+      return;
+    }
+    S.ocupado = false; S.saldos = null;
+    S.hooks.avisar(x && x.nota ? x.nota : "Deshecho: el pago volvió a la Bandeja.");
+    // el pago vuelve a la Bandeja: su tarjeta queda abierta (dice que ya no entra solo)
+    S.bj.abierta = r.movimiento_id || null; S.jr.solo.abierta = true;
+    if (S.pagina === "bandeja") await pintarBandeja();
+  }
+  // (v5) la píldora de un pago a la cuadrilla en su fila: entra solo, espera a que termine su semana, o lo primero que pide.
+  // Sin lo del registro solo (una base anterior, o la tarjeta con otras fechas a mano), la de siempre
+  const pillSolo = jr => !jr.solo || jr.mano ? (jr.puede ? "" : pill(jr.corto || "Falta algo", "warn"))
+    : jr.solo.estado === "entra" ? pill("entra solo", "ok")
+    : jr.solo.estado === "espera" ? pill(jr.solo.entraEl ? `entra solo el ${fecha(jr.solo.entraEl)}` : "entra solo", "ok")
+    : pill((jr.solo.frenos[0] || {}).corto || jr.corto || "Pide tu respuesta", "warn");
+  // (v5) arriba de la tarjeta: de quién dijo Edgar que es (un cheque), y por qué no entró solo —UNA frase, la de la base— o qué día
+  // entra. Si lo que lo frena es uno de los avisos de abajo, aquí va en corto (su texto entero está en la lista, sin repetirlo)
+  function soloLineaHTML(jr) {
+    const de = jr.por === "edgar" ? `<p class="ct-nota ct-jr-chqde">${jr.cheque != null ? `Cheque${jr.cheque ? ` ${esc(jr.cheque)}` : ""}: dijiste` : "Dijiste"} que es de ${esc(jr.persona)}. <button type="button" class="ct-jr-link" data-jr-quitar>No es suyo</button></p>` : "";
+    const s = jr.solo;
+    if (!s || jr.mano) return de;
+    if (s.estado === "espera") return `${de}<p class="ct-aviso ct-jr-info ct-jr-solo" data-solo="espera">${esc(s.porQue || "Entra solo cuando termine su semana.")}</p>`;
+    if (s.estado === "entra") return `${de}<p class="ct-aviso ok ct-jr-solo" data-solo="entra">Nada pide decidir: entra solo${S.jr.solo.sinCodigo ? " esta madrugada, o en cuanto entres con el código del teléfono" : " en la próxima pasada"}. Si quieres, acéptalo ya con «Así es».</p>`;
+    const f0 = s.frenos.find(f => f.clase === s.estado) || s.frenos[0] || null, mas = s.frenos.length - 1;
+    const enLista = f0 && jr.avisos.some(a => a.codigo === f0.codigo);
+    const txt = enLista ? `${f0.corto || "Algo pide tu respuesta"}${mas > 0 ? ` (y ${mas === 1 ? "una cosa más" : `${mas} cosas más`})` : ""}: míralo abajo y, si está bien, «Así es».` : (s.porQue || "Algo pide tu respuesta: míralo abajo.");
+    return `${de}<p class="ct-aviso warn ct-jr-solo" data-solo="${esc(s.estado)}"><b>No entró solo.</b> ${esc(txt)}${s.frenos.some(f => f.codigo === "edgar_dijo_no") ? ` <button type="button" class="ct-jr-link" data-jr-solo-otra>Que vuelva a entrar solo</button>` : ""}</p>`;
+  }
+
   // ---------- la tarjeta ----------
   function jornalHTML(m, jr) {
     const sem = semanasDe(m.fecha);
@@ -3413,6 +3735,7 @@
     const sinCodigo = !mfaActivo();
     return `<div class="ct-jr" data-jr-bloque>
       <div class="ct-jr-cab"><h3>Mano de obra · ${esc(jr.persona)}</h3>${jr.tarifa != null ? `<span class="ct-sub">tarifa ${fmt(jr.tarifa)}/h</span>` : ""}</div>
+      ${soloLineaHTML(jr)}
       ${jr.nota ? `<p class="ct-aviso warn ct-jr-nota" role="status">${esc(jr.nota)}</p>` : ""}
       <p class="ct-jr-que">Pago de <b class="ct-num">${fmt(jr.monto)}</b> repartido por sus horas ${esc(jr.texto || rangoCorto(jr.desde, jr.hasta))}${num(jr.reportes) ? ` (${plural(jr.reportes, "reporte", "reportes")})` : ""}.</p>
       <div class="ct-chips ct-jr-pers" role="group" aria-label="Qué fechas paga">${chip("anterior", "Semana anterior", sem.anterior)}${chip("esta", "Esta semana", sem.esta)}${chip("otras", "Otras fechas", null)}</div>
@@ -3507,7 +3830,15 @@
       S.hooks.avisar(`La mano de obra sin obra va a ${cuenta} desde ahora`);
       recalcJr(card, m, jr.desde, jr.hasta, opc());
     });
-    bl.querySelector("[data-jr-no]").addEventListener("click", () => { S.jr.no.add(m.movimiento_id); reemplazarFila(m); });
+    // «No es mano de obra»: con la base v5 queda escrito allí (el pago no se reconoce más y se clasifica como siempre); con una
+    // anterior, en memoria, como antes
+    bl.querySelector("[data-jr-no]").addEventListener("click", () => {
+      if (soloV5()) return decirPago(resJr(card), { movimiento_id: m.movimiento_id, no_cuadrilla: true });
+      S.jr.no.add(m.movimiento_id); reemplazarFila(m);
+    });
+    // (v5) «No es suyo» (lo que Edgar dijo de un cheque se quita: vuelve a preguntar) y «Que vuelva a entrar solo» (lo que deshizo)
+    const qu = bl.querySelector("[data-jr-quitar]"); if (qu) qu.addEventListener("click", () => decirPago(resJr(card), { movimiento_id: m.movimiento_id, quitar: true }));
+    const so = bl.querySelector("[data-jr-solo-otra]"); if (so) so.addEventListener("click", () => decirPago(resJr(card), { movimiento_id: m.movimiento_id, solo: true }));
     bl.querySelectorAll("[data-ir]").forEach(b => b.addEventListener("click", () => ir(b.dataset.ir, b.dataset.irSub ? { sub: b.dataset.irSub } : {})));
     const asi = bl.querySelector("[data-jr-asi]");
     asi.addEventListener("click", () => {
@@ -3590,7 +3921,8 @@
     if (!pagoAPersona(m)) return "";
     // «No es mano de obra» se puede deshacer aquí mismo
     if (S.jr.no.has(m.movimiento_id) && S.jr.pend.has(m.movimiento_id)) return `<p class="ct-jr-enlace"><button type="button" class="ct-jr-link" data-jr-volver>Sí es mano de obra: repartir por sus horas</button></p>`;
-    return `<p class="ct-jr-enlace"><button type="button" class="ct-jr-link" data-jr-alta>Repartir por sus horas</button> <span class="ct-sub">si es lo que cobra alguien de la cuadrilla por sus horas</span></p>`;
+    // (v5) la base reconoce sola a la cuadrilla por su nombre: el enlace queda para cuando el banco lo escribe de otra forma
+    return `<p class="ct-jr-enlace"><button type="button" class="ct-jr-link" data-jr-alta>Repartir por sus horas</button> <span class="ct-sub">${soloV5() ? "solo si es de alguien de la cuadrilla y no se reconoció (el banco escribe su nombre de otra forma)" : "si es lo que cobra alguien de la cuadrilla por sus horas"}</span></p>`;
   }
   const patronLlano = p => String(p || "").replace(/\\[mMyb]/g, "").replace(/\s+/g, " ").trim();
   function wireRepartirLink(card, m) {
@@ -3642,12 +3974,14 @@
   // ---------- «Qué atender» del Resumen ----------
   async function leerJornalResumen() {
     try {
-      const [pend, jc, mc] = await Promise.all([
-        DB._leer("v_jornal_pendientes?select=movimiento_id,monto,persona"),
+      const [pend, jc, mc, chq] = await Promise.all([
+        DB._leer("v_jornal_pendientes?select=*"),
         DB._leer("v_jornal_control?select=*&order=orden.asc"),
-        DB._leer("v_margen_control?select=*&order=orden.asc")
+        DB._leer("v_margen_control?select=*&order=orden.asc"),
+        // (v5) los cheques que preguntan de quién son (con una base anterior la vista no existe: ninguno)
+        S.jr.solo.v5 === false ? [] : DB._leer("v_jornal_cheques?select=movimiento_id,monto").catch(e => { if (esFalloDeRed(e)) throw e; if (S.jr.solo.v5 === null && faltaC10(e)) S.jr.solo.v5 = false; return []; })
       ]);
-      return { pend: pend || [], jc: jc || [], mc: mc || [] };
+      return { pend: pend || [], jc: jc || [], mc: mc || [], chq: chq || [] };
     } catch (err) {
       if (esFalloDeRed(err)) throw err;
       return faltaC10(err) ? null : { err };
@@ -3657,10 +3991,19 @@
     if (!j) return [];
     if (j.err) return [{ txt: "La mano de obra y el costo por obra no contestaron: los pagos a la cuadrilla no se pueden repartir hasta que contesten.", det: mensajeJr(j.err), ir: "obras" }];
     const a = [];
-    if (j.pend.length) a.push({ txt: `${plural(j.pend.length, "pago de mano de obra espera", "pagos de mano de obra esperan")} su reparto por horas (${fmt(j.pend.reduce((s, f) => s + Math.abs(num(f.monto) || 0), 0))}): en la Bandeja, cada uno con su semana y sus obras.`, ir: "bandeja" });
+    // (v5) la cuadrilla, sola: la fila dice si el pago entra solo (ya, o al terminar su semana: no pide nada y no va aquí) o si
+    // pide una respuesta; y los cheques que preguntan de quién son. Con una base anterior (la fila no lo dice), lo de siempre
+    const v5 = S.jr.solo.v5 === true || (S.jr.solo.v5 === null && (j.pend.some(f => f.solo !== undefined) || (j.chq || []).length > 0)), tot = l => fmt(l.reduce((s, f) => s + Math.abs(num(f.monto) || 0), 0));
+    if (v5) {
+      const piden = j.pend.filter(f => !["espera", "entra"].includes(f.solo));
+      if (piden.length) a.push({ txt: `${plural(piden.length, "pago a la cuadrilla espera", "pagos a la cuadrilla esperan")} tu respuesta (${tot(piden)}): no ${piden.length === 1 ? "entró solo" : "entraron solos"}; en la Bandeja, cada uno dice qué le falta.`, ir: "bandeja" });
+      if ((j.chq || []).length) a.push({ txt: `${plural(j.chq.length, "cheque pregunta de quién es", "cheques preguntan de quién son")} (${tot(j.chq)}): un toque en la Bandeja.`, ir: "bandeja" });
+    } else if (j.pend.length) a.push({ txt: `${plural(j.pend.length, "pago de mano de obra espera", "pagos de mano de obra esperan")} su reparto por horas (${tot(j.pend)}): en la Bandeja, cada uno con su semana y sus obras.`, ir: "bandeja" });
     // (v2) el 80 —lo de la IA abierto en un pago ya repartido— se arregla abriendo la Bandeja, que lo cierra sola; el 70 —un pago de
     // alguien del jornal resuelto por otro camino— también empieza en la Bandeja; lo demás, en los repartos
-    for (const f of j.jc) if (f.ok !== true) a.push({ txt: `Mano de obra: ${String(f.cuadre || "").replace(/^jornal: /, "")}${f.nivel === "cuadre" ? " (no cuadra)" : ""}.`, det: f.detalle, ...(Number(f.orden) === 80 ? { ir: "bandeja" } : { ir: "obras", sub: "repartos" }) });
+    // (v5) el 85 —pagos a la cuadrilla que siguen en la Bandeja con su semana terminada— ya está dicho arriba (los que esperan
+    // tu respuesta); solo se repite si además dice que la última corrida sin pantalla falló
+    for (const f of j.jc) if (f.ok !== true && !(Number(f.orden) === 85 && !/falló/.test(String(f.detalle || "")))) a.push({ txt: `Mano de obra: ${String(f.cuadre || "").replace(/^jornal: /, "")}${f.nivel === "cuadre" ? " (no cuadra)" : ""}.`, det: f.detalle, ...([80, 85].includes(Number(f.orden)) ? { ir: "bandeja" } : { ir: "obras", sub: "repartos" }) });
     for (const f of j.mc) if (f.ok !== true) a.push({ txt: `Costo por obra: ${String(f.cuadre || "").replace(/^margen: /, "")}${f.nivel === "cuadre" ? " (no cuadra: la página no pinta cifras hasta que cuadre)" : ""}.`, det: f.detalle, ir: "obras", sub: "obras" });
     return a;
   }
@@ -4205,7 +4548,9 @@
   const dormir = ms => new Promise(r => setTimeout(r, ms));
   const enMarcha = err => !!err && (err.codigo === "MX008" || err.estado === 409) && /en marcha/i.test(String(err.message || ""));
   // los cargos que esperan propuesta según lo que pintó la bandeja (los de los motivos de la IA sin propuesta pendiente)
-  const candidatosIA = () => (S.bandeja || []).filter(m => !m._esStripe && MOTIVOS_IA.includes(m.motivo) && !iaPendiente(m));
+  // (v5) sin los pagos a la cuadrilla (su tarjeta no enseña la IA: su propuesta lleva UNA obra, y entran solos repartidos entre varias)
+  // ni los cheques que aún preguntan de quién son: por ellos la cadena no arranca
+  const candidatosIA = () => (S.bandeja || []).filter(m => !m._esStripe && MOTIVOS_IA.includes(m.motivo) && !iaPendiente(m) && !(soloV5() && (jrDe(m) || chqDe(m))));
   // los NUEVOS: ni rechazados por Edgar («No es eso»: lo dice él) ni los que ya esperaban cuando terminó la última cadena (si
   // esa corrió fuera de la Bandeja —tras un archivo o Plaid— no sabe cuáles eran: solo cuántos, y con los mismos no arranca)
   const nuevosIA = () => {
@@ -6437,10 +6782,14 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
           <span class="ct-sub">Lo que cuesta de más cada hora sobre la tarifa (impuestos, seguro, herramienta): con él se calcula la mano de obra estándar de las horas que aún no tienen pago. Si no aplica, pon 0.</span></label>
         <label class="ct-campo">Cuenta de la mano de obra sin obra${faltaC ? ` ${pill("falta", "warn")}` : ""}<select name="cuenta_sin_obra"><option value="">Sin decir todavía</option>${opcionesSinObra(cfg.cuenta_sin_obra || "")}</select>
           <span class="ct-sub">A dónde va lo que se paga por horas que no tienen obra (taller, compras, recados). Mientras el CPA no decida otra, 7900 Otros gastos.</span></label>
+        ${cfg.solo === undefined ? "" : `<label class="ct-casilla ct-ob-solo"><input type="checkbox" name="solo"${cfg.solo ? " checked" : ""}> Registrar solos los pagos a la cuadrilla</label>
+          <p class="ct-sub ct-ob-solo-nota">Encendido (de fábrica): los Zelle a la cuadrilla entran solos al libro, repartidos por sus horas, y un cheque pregunta de quién es; lo que entra sale en la Bandeja, en «Registrado solo», y se deshace allí. Apagado: cada pago espera tu «Así es» en la Bandeja.</p>`}
         <div class="ct-acciones"><button type="submit" class="accion${falta ? "" : " secundaria"}">Guardar</button></div>
       </form><div class="ct-form" hidden></div>`;
+    // (v5) si lo automático está apagado se dice en el resumen de los ajustes (encendido es lo de fábrica: no hace falta decirlo)
+    const solo = cfg.solo === undefined ? "" : cfg.solo ? " · la cuadrilla, sola" : " · la cuadrilla, sola: APAGADA";
     return falta ? `<section class="ct-card ct-ob-config falta" id="ct-ob-config"><h2>Lo que falta por configurar</h2>${campos}</section>`
-      : `<section class="ct-card ct-ob-config" id="ct-ob-config"><details><summary>Ajustes del costo: burden estándar ${pctTxt(cfg.burden_estandar_pct)} · lo sin obra a ${esc(cfg.cuenta_sin_obra)}</summary>${campos}</details></section>`;
+      : `<section class="ct-card ct-ob-config" id="ct-ob-config"><details><summary>Ajustes del costo: burden estándar ${pctTxt(cfg.burden_estandar_pct)} · lo sin obra a ${esc(cfg.cuenta_sin_obra)}${solo}</summary>${campos}</details></section>`;
   }
   function wireConfig(cfg) {
     const card = $("ct-ob-config"), form = $("ct-ob-config-form"); if (!form) return;
@@ -6452,8 +6801,15 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
       if (b !== (cfg.burden_estandar_pct == null ? null : num(cfg.burden_estandar_pct))) p.burden_estandar_pct = b;
       const c = form.cuenta_sin_obra.value || null;
       if (c !== (cfg.cuenta_sin_obra || null)) p.cuenta_sin_obra = c;
+      // (v5) encender o apagar el registro automático de los pagos a la cuadrilla
+      if (form.solo && form.solo.checked !== !!cfg.solo) p.solo = form.solo.checked;
       if (!Object.keys(p).length) { mostrarErrorForma(card, "No cambiaste nada."); return; }
-      accionOb(card, "fn_jornal_config", { p }, () => "Ajustes del costo guardados");
+      accionOb(card, "fn_jornal_config", { p }, () => {
+        if (p.solo === undefined) return "Ajustes del costo guardados";
+        // recién encendido, la próxima pasada (la Bandeja, la portada) no espera a su reloj: lo que nada frena entra enseguida
+        S.jr.solo.el = 0;
+        return p.solo ? "Encendido: los pagos a la cuadrilla entran solos al libro, repartidos por sus horas" : ["Apagado: cada pago a la cuadrilla espera tu «Así es» en la Bandeja", true];
+      });
     });
   }
 
@@ -6626,13 +6982,15 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
     const suelto = r.estado === "aplicado" && r.asiento_vivo === false;
     const lineas = Array.isArray(r.lineas) ? r.lineas : [];
     return `<article class="ct-card ct-rep${r.estado === "deshecho" ? " deshecho" : ""}${suelto ? " suelto" : ""}" data-reparto="${esc(r.reparto_id)}">
-      <div class="ct-cab"><h2>${esc(r.persona || "")} · <span class="ct-num">${fmt(r.monto)}</span></h2>${r.estado === "deshecho" ? pill("deshecho", "warn") : suelto ? pill("pago suelto", "bad") : pill("aplicado", "ok")}</div>
-      <p class="ct-nota">Pago del ${fechaLarga(r.fecha_pago)} · ${esc(r.periodo_texto || rangoCorto(r.desde, r.hasta))} · ${horasTxt(r.horas)}${r.tarifa_sale != null ? ` · sale a <span class="ct-num">${fmt(r.tarifa_sale)}</span>/h` : ""} · ${plural(num(r.obras) || 0, "obra", "obras")}${r.asiento_id ? ` · asiento ${asientoBtn(r.asiento_id, r.asiento)}` : ""}</p>
+      <div class="ct-cab"><h2>${esc(r.persona || "")} · <span class="ct-num">${fmt(r.monto)}</span></h2>${r.origen === "solo" ? pill("registrado solo", "cu") : ""}${r.estado === "deshecho" ? pill("deshecho", "warn") : suelto ? pill("pago suelto", "bad") : pill("aplicado", "ok")}</div>
+      <p class="ct-nota">${r.por === "edgar" && r.cheque != null ? `Cheque${r.cheque ? ` ${esc(r.cheque)}` : ""} (dijiste de quién era) · pago` : "Pago"} del ${fechaLarga(r.fecha_pago)} · ${esc(r.periodo_texto || rangoCorto(r.desde, r.hasta))} · ${horasTxt(r.horas)}${r.tarifa_sale != null ? ` · sale a <span class="ct-num">${fmt(r.tarifa_sale)}</span>/h` : ""} · ${plural(num(r.obras) || 0, "obra", "obras")}${r.asiento_id ? ` · asiento ${asientoBtn(r.asiento_id, r.asiento)}` : ""}</p>
+      ${r.origen === "solo" ? bancoRepHTML(r) : ""}
       ${suelto ? `<p class="ct-aviso bad">El pago se des-casó en la Bandeja y este reparto quedó sin su asiento: ciérralo con «Deshacer» (no toca el libro) y vuelve a repartirlo allí.</p>` : ""}
       ${r.estado === "deshecho" ? `<p class="ct-aviso warn">Deshecho el ${esc(fechaHora(r.deshecho_el))}${r.deshecho_por_nombre ? ` por ${esc(r.deshecho_por_nombre)}` : ""}: «${esc(r.deshecho_motivo || "")}»${r.reverso ? ` · reverso ${r.reverso_id ? asientoBtn(r.reverso_id, r.reverso) : esc(r.reverso)}` : ""}.</p>` : ""}
       ${lineas.length ? `<details class="ct-rep-det"><summary>Cómo se repartió (${plural(lineas.length, "línea", "líneas")})</summary>${tablaOb([{ t: "Obra" }, { t: "Horas", r: true }, { t: "Dólares", r: true }],
         lineas.map(l => ({ celdas: [`${esc(l.obra || (l.proyecto_id ? l.proyecto_id : "Sin obra"))}${l.co ? `<small>${esc(l.co)}</small>` : ""}<small>a ${esc(l.cuenta || "")}</small>`, horasTxt(l.horas), fmt(l.monto)] })))}</details>` : ""}
-      <p class="ct-sub">Repartido el ${esc(fechaHora(r.creado_el))}${r.creado_por_nombre ? ` por ${esc(r.creado_por_nombre)}` : ""}${num(r.horas_aprobadas) ? ` · ${plural(r.horas_aprobadas, "reporte de horas aprobado", "reportes de horas aprobados")}` : ""}</p>
+      ${r.origen === "solo" ? notasRepHTML(r) : ""}
+      <p class="ct-sub">${r.origen === "solo" ? `Registrado solo el ${esc(fechaHora(r.creado_el))}${r.creado_por_nombre ? `, en nombre de ${esc(r.creado_por_nombre)}` : ""}` : `Repartido el ${esc(fechaHora(r.creado_el))}${r.creado_por_nombre ? ` por ${esc(r.creado_por_nombre)}` : ""}`}${num(r.horas_aprobadas) ? ` · ${plural(r.horas_aprobadas, "reporte de horas aprobado", "reportes de horas aprobados")}` : ""}</p>
       ${r.estado === "aplicado" ? `<div class="ct-acciones"><button type="button" class="accion secundaria" data-deshacer>Deshacer</button></div>` : ""}
       <div class="ct-form" hidden></div>
     </article>`;
@@ -6640,17 +6998,25 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
 
   // ---------- Personas: quién cobra por horas ----------
   async function pintarObPersonas(mia) {
-    let filas;
+    let filas, cfg;
     try {
-      filas = await DB._leer("v_jornal_personas?select=*&order=registrada.desc,nombre.asc");
+      // (v5) con las personas, el ajuste: con lo automático apagado nadie se da de alta solo, y la tarjeta no lo promete. Si el
+      // ajuste no se pudo leer, la página sale igual (con el último que se leyó)
+      [filas, cfg] = await Promise.all([
+        DB._leer("v_jornal_personas?select=*&order=registrada.desc,nombre.asc"),
+        DB._leer("jornal_config?select=*").then(c => (c || [])[0] || null, () => null)
+      ]);
       if (!vivaOb(mia)) return;
     } catch (err) { if (!vivaOb(mia)) return; return errorOb(err, pintarObras); }
+    if (cfg) S.jr.cfg = cfg;
     const act = filas.filter(p => p.registrada && p.activa);
     // (11b) quien cobra por nómina (horas pagadas por una nómina en 90 días) no está «sin dar de alta»: no cobra por Zelle
     const sinAlta = filas.filter(p => !p.registrada && !porNomina(p)), conNom = filas.filter(p => !p.registrada && porNomina(p));
     subOb(`${plural(act.length, "persona cobra", "personas cobran")} por horas${conNom.length ? ` · ${plural(conNom.length, "cobra por nómina", "cobran por nómina")}` : ""}${sinAlta.length ? ` · ${plural(sinAlta.length, "con horas sin dar de alta", "con horas sin dar de alta")}` : ""}`);
+    // (v5) la ayuda dice lo que hace la base con lo automático encendido (da de alta sola) o apagado (nadie se da de alta solo)
+    const v5 = !!S.jr.cfg && S.jr.cfg.solo !== undefined, enc = v5 && S.jr.cfg.solo !== false;
     obCuerpo().innerHTML = filas.length ? `<div class="ct-ob-pers">${filas.map(personaHTML).join("")}</div>
-        ${ayudaHTML(`<p class="ct-nota">Dar de alta a alguien dice: «sus pagos por Zelle se reparten por sus horas». La base lo reconoce por cómo escribe el banco su nombre en la descripción (el patrón). Si el banco lo escribe distinto, cambia el patrón; si deja de cobrar así, dalo de baja (lo ya repartido se queda).</p>`, "¿Cómo funciona?")}`
+        ${ayudaHTML(`<p class="ct-nota">${enc ? "La base da de alta sola a quien tiene horas y un nombre que no deja dudas (su nombre de la app, como palabra entera en la descripción del banco), y desde entonces sus pagos entran solos, repartidos por sus horas. " : ""}Dar de alta a alguien dice: «sus pagos por Zelle se reparten por sus horas». La base lo reconoce por cómo escribe el banco su nombre en la descripción (el patrón). Si el banco lo escribe distinto, cambia el patrón; si deja de cobrar así, dalo de baja (lo ya repartido se queda).${v5 && !enc ? " El registro automático está apagado (Ajustes): nadie se da de alta solo y cada pago espera tu «Así es»." : ""}</p>`, "¿Cómo funciona?")}`
       : `<section class="ct-card ct-vacio">Nadie de la cuadrilla tiene horas en los últimos 90 días.</section>`;
     obCuerpo().querySelectorAll(".ct-per").forEach(card => {
       const p = filas.find(x => x.usuario_id === card.dataset.usuario);
@@ -6662,21 +7028,31 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
       const pat = card.querySelector("[data-per-patron]"); if (pat) pat.addEventListener("click", () => patron(`El patrón de ${esc(p.nombre)}`, "Guardar el patrón"));
       const baja = card.querySelector("[data-per-baja]"); if (baja) baja.addEventListener("click", () => accionOb(card, "fn_jornal_persona", { p: { usuario_id: p.usuario_id, activa: false } }, () => `${p.nombre}: dado de baja (lo ya repartido se queda)`));
       const vuelve = card.querySelector("[data-per-vuelve]"); if (vuelve) vuelve.addEventListener("click", () => accionOb(card, "fn_jornal_persona", { p: { usuario_id: p.usuario_id, activa: true } }, x => notaPersona(x, `${p.nombre}: otra vez cobra por horas`)));
+      // (v5) «No cobra por horas»: a quien la base daría de alta sola (o no puede) se le deja de baja; ya no se le pregunta
+      const nunca = card.querySelector("[data-per-nunca]"); if (nunca) nunca.addEventListener("click", () => accionOb(card, "fn_jornal_persona", { p: { usuario_id: p.usuario_id, activa: false } }, () => `${p.nombre}: no cobra por horas (sus pagos no se reparten ni entran solos)`));
     });
   }
   // (11b, c10 v3) horas de los últimos 90 días que pagó una nómina: esa persona cobra por nómina (una base de antes no trae la columna)
   const porNomina = p => num(p.horas_nomina_90_dias) > 0;
   function personaHTML(p) {
     const nom = porNomina(p);
-    const estado = !p.registrada ? (nom ? pill("cobra por nómina", "ok") : pill("sin dar de alta", "warn")) : p.activa ? pill("cobra por horas", "ok") : pill("de baja");
+    // (v5) la base la da de alta sola por su nombre (sola: true), o no puede y dice por qué (sola: false); una base anterior no lo trae.
+    // Con lo automático APAGADO nadie se da de alta solo: se dice, y «Dar de alta» vuelve a ser lo primero
+    const sola = !p.registrada && !nom ? p.sola : undefined;
+    const apagado = !!S.jr.cfg && S.jr.cfg.solo === false, laDaSola = sola === true && !apagado;
+    const estado = !p.registrada ? (nom ? pill("cobra por nómina", "ok") : laDaSola ? pill("la base la da de alta sola", "ok") : pill("sin dar de alta", "warn"))
+      : p.activa ? `${pill("cobra por horas", "ok")}${p.alta === "sola" ? pill("dada de alta sola") : ""}` : pill("de baja");
     return `<article class="ct-card ct-per" data-usuario="${esc(p.usuario_id)}">
       <div class="ct-cab"><h2>${esc(p.nombre || "")}</h2>${estado}</div>
       <p class="ct-nota">${p.registrada && p.patron ? `Se reconoce por «<b>${esc(patronLlano(p.patron))}</b>» · ` : ""}${p.tarifa != null ? `tarifa <span class="ct-num">${fmt(p.tarifa)}</span>/h` : "sin tarifa en Costos del equipo"}${p.cuenta ? ` · va a ${esc(p.cuenta)}` : ""}${num(p.horas_90_dias) ? ` · ${horasTxt(p.horas_90_dias)} en 90 días` : ""}${nom ? ` · ${horasTxt(p.horas_nomina_90_dias)} las pagó la nómina` : ""}${num(p.horas_sin_pago) ? ` · ${horasTxt(p.horas_sin_pago)} sin pago` : ""}</p>
       ${nom && !p.registrada ? `<p class="ct-sub ct-per-nom">Cobra por nómina (Gusto): sus horas las paga su nómina, no un Zelle. No hace falta darlo de alta aquí.</p>` : ""}
+      ${laDaSola ? `<p class="ct-sub ct-per-sola">La base reconoce sus pagos por su nombre${p.patron_nombre ? ` («${esc(patronLlano(p.patron_nombre))}» en la descripción del banco)` : ""}: se da de alta sola al abrir Contabilidad. Si no cobra por horas, dilo.</p>` : ""}
+      ${sola === true && apagado ? `<p class="ct-sub ct-per-sola">El registro automático está apagado (Ajustes): nadie se da de alta solo. Dala de alta tú${p.patron_nombre ? `; encendido, la base la reconocería por su nombre («${esc(patronLlano(p.patron_nombre))}» en la descripción del banco)` : ""}.</p>` : ""}
+      ${sola === false && p.sola_por_que ? `<p class="ct-aviso warn ct-per-sola">La base no puede reconocer sola sus pagos: ${esc(sinMarcas(p.sola_por_que))}. Dala de alta con cómo la escribe el banco; o, si no cobra por horas, dilo.</p>` : ""}
       ${nom && p.registrada && p.activa ? `<p class="ct-aviso warn ct-per-nom">Ya cobra por nómina (${horasTxt(p.horas_nomina_90_dias)} en 90 días) y sigue dado de alta para cobrar por Zelle: si ya no cobra así, dalo de baja, para que un pago suyo no se reparta otra vez por horas que pagó su nómina.</p>` : ""}
       ${p.registrada ? `<p class="ct-sub">${num(p.pagos_pendientes) ? `<b>${plural(p.pagos_pendientes, "pago espera", "pagos esperan")}</b> en la Bandeja (<span class="ct-num">${fmt(p.pagos_pendientes_monto)}</span>) · ` : ""}${plural(num(p.repartos) || 0, "pago repartido", "pagos repartidos")} · <span class="ct-num">${fmt(p.repartido)}</span>${p.ultimo_reparto ? ` · el último el ${esc(fechaHora(p.ultimo_reparto))}` : ""}</p>` : ""}
       ${p.nota ? `<p class="ct-nota">${esc(p.nota)}</p>` : ""}
-      <div class="ct-acciones">${!p.registrada ? (nom ? "" : `<button type="button" class="accion" data-per-alta>Dar de alta</button>`)
+      <div class="ct-acciones">${!p.registrada ? (nom ? "" : `<button type="button" class="accion${laDaSola ? " secundaria" : ""}" data-per-alta>Dar de alta</button>${sola === undefined ? "" : `<button type="button" class="accion secundaria" data-per-nunca>No cobra por horas</button>`}`)
         : p.activa ? `<button type="button" class="accion secundaria" data-per-patron>Cambiar el patrón</button><button type="button" class="accion secundaria" data-per-baja>Dar de baja</button>`
         : `<button type="button" class="accion secundaria" data-per-vuelve>Volver a dar de alta</button>`}</div>
       <div class="ct-form" hidden></div>
@@ -10757,6 +11133,9 @@ tr.n-seccion td,tr.n-total td,tr.n-linea td{font-weight:700}tr.n-cuenta td:first
       const vuelta = !!new URLSearchParams(location.search).get("oauth_state_id");
       ir(vuelta ? "conexiones" : PAGINAS[pagina] ? pagina : S.pagina);
       if (vuelta) reanudarLink();
+      // (la cuadrilla, sola: c10 v5) AL ABRIR CONTABILIDAD la base registra sola los pagos a la cuadrilla que nada frena. La portada y
+      // la Bandeja la llaman ellas, antes de leer; desde cualquier otra página, aquí, sin esperarla (su aviso dice lo que entró)
+      else if (!["resumen", "bandeja"].includes(S.pagina)) jornalSolo("pantalla");
     },
     // «←» de la app: true si la pantalla tenía algo que cerrar (la conciliación abierta, el asiento o el mayor de los estados)
     atras() {

@@ -272,6 +272,30 @@
    de la nómina en la tarjeta, gastos sin la nómina y con su botón, la caja
    sin la columna) y la tarjeta que llega tarde por el tope por reloj (lo suyo
    en «Qué atender», al llegar).
+   Y (15-nov) LA CUADRILLA, SOLA (c10 v5; lo decidió Edgar: los Zelle a la
+   cuadrilla entran solos y un cheque pregunta de quién es). La mentira de c10
+   tiene ahora dos bases: la de antes (estado.c10v5 = false: fn_jornal_solo y
+   fn_jornal_pago en 404, sin v_jornal_cheques ni jornal_pagos ni las columnas
+   de más) y la v5, con la forma de la capa (los frenos, lo que espera, lo
+   dicho de un cheque, lo deshecho que no vuelve, «ocupado», el corte por
+   reloj y lo apagado). Se comprueba: la rutina UNA vez por apertura, con la
+   sesión y el código del teléfono, ANTES de leer la portada; el aviso de lo
+   que entró; «Qué atender» con los pagos que esperan respuesta y los cheques
+   que preguntan; la Bandeja (la franja, «Registrado solo» con cuánto a cada
+   obra y «Deshacer», la frase de cada pago que no entró y la del que espera
+   al lunes, el Zelle que nadie reconoce con su enlace manual); lo de la IA
+   del pago que entró, cerrado por su función; el cheque («¿De quién es el
+   cheque 1043…?» con la cuadrilla en botones de 44 px, «es de…» en UNA
+   llamada, «No es de la cuadrilla», «Sí lo es», el que no entra y queda como
+   la tarjeta de esa persona, «No es suyo»); deshacer (el motivo, no vuelve a
+   entrar tras «Casar otra vez», «Que vuelva a entrar solo»); «No es mano de
+   obra» escrito en la base; Repartos y Personas (la marca «registrado solo»,
+   «dada de alta sola», a quién no puede reconocer y por qué, «No cobra por
+   horas»); el ajuste (apagar y encender, y la Bandeja apagada); completo:
+   false (la vuelve a llamar) y «ocupado» (no insiste); sin el código del
+   teléfono (no llama a nada que registre, y lo dice); 390, 820 y 1280 px sin
+   desplazamiento lateral; y con la base de antes de la v5, todo como antes
+   (una llamada por sesión a lo que no existe, y ninguna más).
    Los datos son inventados (la forma es la de las vistas de c4, c6 y p1).
    Uso: NODE_PATH=/opt/node22/lib/node_modules node pruebas/conta/pantalla.js
    (con --fotos guarda capturas en el temporal del sistema, o en FOTOS_DIR:
@@ -1249,7 +1273,13 @@ function jReset() {
     lj(J_AS.jornal, '2026-000004', '2026-11-02', 'Jornal de Zzana C10 PRUEBA', 4, '5200', 'Subcontratos', 38.11, 'c10-prueba-b')
   ];
 }
-const jPersonaDe = m => J.personas.find(p => p.registrada && p.activa && p.patron && new RegExp(p.patron.replace(/\\m|\\M/g, '\\b'), 'i').test(m.descripcion));
+const jPersonaDe = m => {
+  // (la cuadrilla, sola: c10 v5) primero lo que Edgar dijo de ese pago: «no es de la cuadrilla» (nadie), o de quién es (un cheque)
+  const dicho = estado.c10v5 && J.v5 ? J.v5.pagos.get(m.movimiento_id) : null;
+  if (dicho && dicho.no_cuadrilla) return undefined;
+  if (dicho && dicho.usuario_id) return J.personas.find(p => p.usuario_id === dicho.usuario_id);
+  return J.personas.find(p => p.registrada && p.activa && p.patron && new RegExp(p.patron.replace(/\\m|\\M/g, '\\b'), 'i').test(m.descripcion));
+};
 const jHorasCubiertas = () => new Set(J.repartos.filter(r => r.estado === 'aplicado').flatMap(r => r.horas_ids));
 const jAviso = (codigo, corto, texto, extra) => ({ codigo, corto, ...(extra || {}), texto });
 const jSuma = xs => xs.reduce((s, x) => s + x.horas, 0);
@@ -1520,6 +1550,167 @@ const jMargenA = () => {
 const jMargenOtra = o => ({ obra: { ...o }, avisos: o.avisos, conceptos: [jTotal(o)],
   por_cuenta: [], por_co: [], por_fase: [], por_cost_code: { hay: false, nota: 'Todavía no hay nada capturado con código en esta obra. Se compara por obra y por cuenta.', filas: [] }, cobertura: [], repartos: [] });
 const err10 = (code, message, hint, status) => ({ status: status || 400, error: { code, message, hint: hint || null, details: null } });
+// ---- LA CUADRILLA, SOLA (c10 v5, 15-nov-2026): lo que la base nueva trae, con su forma (docs/conta/c10-costo-obra.sql):
+// fn_jornal_solo (la rutina que registra sola) y fn_jornal_pago (lo que Edgar dice de un pago); v_jornal_cheques y jornal_pagos;
+// el ajuste (jornal_config.solo); y las columnas de más de v_jornal_pendientes (por, cheque, solo, solo_por_que, solo_frenos,
+// solo_entra_el), v_jornal_repartos (origen, por, regla, cheque), v_jornal_personas (alta, sola, patron_nombre, sola_por_que) y la
+// fila 85 de v_jornal_control. Lo que frena, como fn_jornal_frenos: todo aviso de la propuesta menos el corte de mes, el de año y
+// —la revisión de la v5— la obra terminada, no aprobada o sin aprobar (su parte va a esa obra igual: queda como nota en el reparto);
+// lo que Edgar deshizo no vuelve a entrar solo; apagado, nada entra. Y la rutina, cuando corta por reloj, dice por dónde iba («sigue»)
+// y sigue después con «despues_de». (Que la base lo haga bien lo prueba c10-pruebas.sql: aquí
+// se mira que la pantalla llame cuando debe y pinte lo que la base contesta.) Solo con estado.c10v5 y los datos de jResetV5.
+const J_CHQ = { uno: 'c1000000-0000-4000-8000-000000000011', dos: 'c1000000-0000-4000-8000-000000000012' };
+const J_ESP = 'c1000000-0000-4000-8000-000000000013'; // un Zelle a Zzbeto cuya semana no ha terminado: espera, y entra solo el lunes
+J_PER.zz = '00000000-0000-4000-a000-0000000c1004';     // «Zz»: con horas, y un nombre demasiado corto para que la base la reconozca sola
+J_PER.dora = '00000000-0000-4000-a000-0000000c1005';   // llega con lo automático apagado: la base la reconocería por su nombre, y no la da de alta
+function jResetV5() {
+  jReset();
+  const h = (id, u, fecha, p, co, fase, horas) => ({ id, u, fecha, p, co, fase, horas });
+  // Zzana: su semana del 26-oct, con sus 4 h en la obra F, YA TERMINADA (37 h en 6 obras: el Zelle del 2-nov sale a $25.41, dentro
+  // del 25 %: ENTRA SOLO —la obra terminada no frena: su parte va a esa obra igual— y lleva la nota), y la
+  // del 2-nov con 9.6 h (el cheque 1043 de $240.00 del lunes 9-nov las paga a $25.00; el Zelle de $520.00 de ese día sale a $54.17:
+  // la tarifa se aleja y PREGUNTA). Zzbeto: 2 h sin obra y la cuenta de lo sin obra sin fijar: PREGUNTA
+  // Zzbeto, además: 4 h el 10-nov y un Zelle de $96.00 del viernes 13 (su semana, del 9 al 15, «no ha terminado»: ESPERA)
+  J.horas = J.horas.concat([h(-1010000011, J_PER.ana, '2026-11-03', 'c10-prueba-a', null, 'rough', 8), h(-1010000012, J_PER.ana, '2026-11-04', 'c10-prueba-b', null, 'trim', 1.6),
+    h(-1020000011, J_PER.beto, '2026-11-10', 'c10-prueba-a', null, 'rough', 4), h(-1040000001, J_PER.zz, '2026-11-03', 'c10-prueba-b', null, null, 4)]);
+  const chq = (id, fecha, monto, n) => ({ ...jMov(id, fecha, monto, 'CHECK ' + n), cheque: n, tipo_banco: 'CHECK' });
+  J.movs.push(chq(J_CHQ.uno, '2026-11-09', -240.00, '1043'), chq(J_CHQ.dos, '2026-11-10', -75.00, '1044'), jMov(J_ESP, '2026-11-13', -96.00, 'Zelle payment to C10 PRUEBA ZZBETO 9005'));
+  J.personas.find(x => x.usuario_id === J_PER.ana).alta = 'edgar'; J.personas.find(x => x.usuario_id === J_PER.beto).alta = 'edgar';
+  J.personas.push({ usuario_id: J_PER.zz, nombre: 'Zz', rol: 'campo', perfil_activo: true, tarifa: 20, registrada: false, activa: false, patron: null, cuenta_propia: null, nota: null, creado_el: null });
+  // solo: el ajuste; pagos: lo que Edgar dijo de un pago; deshechos y pedidos (con un reloj: «que vuelva a entrar solo» vale si
+  // es posterior a lo deshecho); espera: los pagos cuya semana no ha terminado (aquí se dice a mano: no depende del día en que se
+  // corra); noCobra: «no cobra por horas»; corta: cuántos registra una llamada antes de cortar por reloj; ocupado: otra corrida a la vez
+  // noSola: a quién la base NO puede dar de alta sola, con su porqué (no adivina, y lo dice)
+  J.v5 = { solo: true, soloPor: null, pagos: new Map(), deshechos: new Map(), pedidos: new Map(), reloj: 0, espera: new Set([J_ESP]), entraEl: '2026-11-16', noCobra: new Set(), corta: null, ocupado: false,
+    noSola: new Map([[J_PER.zz, 'su nombre en la app («Zz») es demasiado corto para reconocer sus pagos sin dudas']]) };
+  J.ia = [{ propuesta_id: J_IA, movimiento_id: J_MOV.ana, estado: 'pendiente', sinAsiento: false, resumen: '5200 → C10 PRUEBA Obra A', asiento: null }];
+}
+const jV5 = () => estado.c10v5 && J.v5 ? J.v5 : null;
+const jEsCheque = m => m.tipo_banco === 'CHECK';
+// lo que frena el registro solo de un pago reconocido (la forma de fn_jornal_frenos)
+function jFrenos(mid, c) {
+  const v = J.v5, f = [];
+  if (!v.solo) f.push({ codigo: 'apagado', clase: 'no', corto: 'Lo automático está apagado', texto: 'El registro automático de los pagos a la cuadrilla está apagado (Costo por obra → Ajustes): este pago espera tu «Así es».' });
+  const d = v.deshechos.get(mid);
+  if (d && !((v.pedidos.get(mid) || 0) > d.el)) f.push({ codigo: 'edgar_dijo_no', clase: 'no', corto: 'Edgar dijo que no', texto: `Lo deshiciste el ${jDiaT(HOY, true)} («${d.motivo}»): no vuelve a entrar solo. Si ya está bien, acéptalo tú con «Así es», o di que vuelva a entrar solo.` });
+  if (!c.puede_aplicar && !c.avisos.some(a => a.texto === c.por_que)) f.push({ codigo: 'no_se_puede', clase: 'pregunta', corto: 'No se puede repartir todavía', texto: c.por_que });
+  for (const a of c.avisos) if (!['otro_mes', 'otro_anio', 'obra_terminada', 'obra_sin_aprobar'].includes(a.codigo)) f.push({ codigo: a.codigo, clase: 'pregunta', corto: a.corto, texto: a.texto });
+  if (v.espera.has(mid)) f.push({ codigo: 'semana_sin_terminar', clase: 'espera', corto: 'Su semana no ha terminado', entra_el: v.entraEl,
+    texto: `Paga la semana ${c.periodo.texto}, que termina el ${jDiaT(jDia(v.entraEl, -1))}: entra solo el ${jDiaT(v.entraEl)}, con todas sus horas. Si quieres registrarlo ya, acéptalo tú con «Así es».` });
+  const estado1 = f.some(x => x.clase === 'no') ? 'no' : f.some(x => x.clase === 'pregunta') ? 'pregunta' : f.some(x => x.clase === 'espera') ? 'espera' : 'entra';
+  const p = f.find(x => x.clase === estado1);
+  return { estado: estado1, por_que: p ? (f.length > 1 ? `${p.texto} (Y ${f.length - 1} cosa(s) más: míralas en la tarjeta.)` : p.texto) : null, entra_el: estado1 === 'espera' ? v.entraEl : null, frenos: f };
+}
+const jPor = mid => { const g = J.v5.pagos.get(mid); return g && g.usuario_id ? 'edgar' : 'patron'; };
+// las columnas de más de las vistas (al final, como en la base)
+const jPendientesV5 = filas => filas.map(f => { const m = J.movs.find(x => x.movimiento_id === f.movimiento_id), fr = jFrenos(f.movimiento_id, jCalc(f.movimiento_id));
+  return { ...f, por: jPor(f.movimiento_id), cheque: jEsCheque(m) ? (m.cheque || '') : null, solo: fr.estado, solo_por_que: fr.por_que, solo_frenos: fr.frenos, solo_entra_el: fr.entra_el }; });
+const jRepartosV5 = filas => filas.map(r => ({ ...r, origen: r.origen || 'mano', por: r.por || 'patron', regla: r.regla || null, cheque: r.cheque == null ? null : r.cheque }));
+const jPersonasV5 = filas => filas.map(f => { const p = J.personas.find(x => x.usuario_id === f.usuario_id), nombre = '\\m' + p.nombre.toUpperCase() + '\\M';
+  return { ...f, alta: p.registrada ? (p.alta || 'edgar') : null, sola: p.registrada ? null : !J.v5.noSola.has(p.usuario_id), patron_nombre: p.registrada ? null : nombre, sola_por_que: p.registrada ? null : (J.v5.noSola.get(p.usuario_id) || null) }; });
+const jChequesVista = () => J.movs.filter(m => !J.fuera.has(m.movimiento_id) && m.monto < 0 && jEsCheque(m) && !J.v5.pagos.has(m.movimiento_id))
+  .map(m => ({ movimiento_id: m.movimiento_id, cuenta: m.cuenta, fecha: m.fecha, monto: Math.abs(m.monto), descripcion: m.descripcion, cheque: m.cheque || '' }));
+const jPagosVista = () => [...J.v5.pagos].map(([movimiento_id, g]) => ({ movimiento_id, usuario_id: g.usuario_id || null, no_cuadrilla: !!g.no_cuadrilla, dicho_por: UID, dicho_el: '2026-11-15T12:00:00+00:00' }));
+// la fila 85 del control (un aviso): ningún pago a la cuadrilla sigue en la Bandeja con su semana ya terminada
+function jCtl85() {
+  const esp = jPendientes().filter(f => !J.v5.espera.has(f.movimiento_id)), tot = esp.reduce((s, f) => s + f.monto, 0);
+  return { orden: 85, cuadre: 'jornal: ningún pago a la cuadrilla espera en la Bandeja con su semana ya terminada', nivel: 'aviso', ok: !esp.length, detalle: esp.length
+    ? `${esp.length} pago(s) a la cuadrilla por ${usd(tot)} (el más viejo, del ${jDiaT(esp.map(f => f.fecha).sort()[0], true)}) siguen en la Bandeja con la semana que pagan ya terminada: ${J.v5.solo ? 'no entraron solos (algo pide tu respuesta, o los deshiciste antes).' : 'el registro automático está apagado (Costo por obra → Ajustes).'} → abre la Bandeja: cada uno dice ahí, en una frase, qué le falta; contéstalo, o acéptalo con «Así es».`
+    : `La cuadrilla, sola (${J.v5.solo ? 'encendida' : 'APAGADA: cada pago espera el «Así es» de Edgar'}): ningún pago a la cuadrilla espera en la Bandeja con la semana que paga ya terminada.` };
+}
+const C10V5_VISTAS = { v_jornal_cheques: jChequesVista, jornal_pagos: jPagosVista };
+const C10V5_FN = {
+  // LA RUTINA QUE REGISTRA SOLA: da de alta sola a quien puede, registra lo que nada frena (por la misma puerta que el «Así es») y
+  // devuelve lo que hizo. Apagada, no hace nada; con otra corrida a la vez, «ocupado»; si corta por reloj, completo: false y «sigue»
+  // (el último pago que miró): la llamada siguiente lo manda en «despues_de» y sigue DESPUÉS de él (no vuelve a empezar por el más viejo)
+  fn_jornal_solo: a => {
+    const p = a.p || {}, v = J.v5;
+    if (!v) return err10('PGRST202', 'Could not find the function public.fn_jornal_solo in the schema cache', null, 404);
+    const extra = Object.keys(p).filter(k => !['movimiento_id', 'segundos', 'corrio', 'despues_de'].includes(k));
+    if (extra.length) return err10('22023', `Clave desconocida: ${extra.join(', ')}. Las que hay: movimiento_id, segundos, corrio y despues_de.`);
+    if (p.corrio != null && !['pantalla', 'banco', 'cheque', 'rutina'].includes(p.corrio)) return err10('22023', 'corrio dice desde dónde se llama: pantalla, banco, cheque o rutina.');
+    const vacio = { altas: [], registrados: [], no_entraron: [], esperan: 0, preguntan: 0, dijo_no: 0, quedan: 0, completo: true, propuestas_ia: [] };
+    if (!v.solo) return { encendido: false, corrio: false, ocupado: false, ...vacio, nota: 'El registro automático de los pagos a la cuadrilla está apagado: cada pago espera tu «Así es».' };
+    if (v.ocupado && !p.movimiento_id) { v.ocupado = false; return { encendido: true, corrio: false, ocupado: true, ...vacio, nota: null }; }
+    // (fallaEn: la llamada número tal de la pasada entera no contesta —el tope de la API—: lo que entró antes ya está en el libro)
+    if (!p.movimiento_id) { v.pasadas = (v.pasadas || 0) + 1; if (v.fallaEn && v.pasadas === v.fallaEn) return err10('57014', 'canceling statement due to statement timeout', null, 500); }
+    const altas = [];
+    if (!p.movimiento_id && !p.despues_de) for (const per of J.personas.filter(x => !x.registrada && !v.noCobra.has(x.usuario_id) && !v.noSola.has(x.usuario_id))) {
+      Object.assign(per, { registrada: true, activa: true, alta: 'sola', patron: '\\m' + per.nombre.toUpperCase() + '\\M', creado_el: new Date().toISOString() });
+      altas.push({ usuario_id: per.usuario_id, nombre: per.nombre, patron: per.patron });
+    }
+    const reg = [], no = [], ia = []; let esp = 0, preg = 0, dno = 0, quedan = 0, sigue = null, corto = false;
+    let cands = J.movs.filter(m => !J.fuera.has(m.movimiento_id) && m.monto < 0 && (!p.movimiento_id || m.movimiento_id === p.movimiento_id) && jPersonaDe(m))
+      .sort((x, y) => x.fecha.localeCompare(y.fecha) || x.movimiento_id.localeCompare(y.movimiento_id));
+    // (despues_de: solo lo que va DESPUÉS de ese pago, en este mismo orden; si ese movimiento no existe, desde el principio)
+    const desp = !p.movimiento_id && p.despues_de ? J.movs.find(m => m.movimiento_id === p.despues_de) : null;
+    if (desp) cands = cands.filter(m => m.fecha.localeCompare(desp.fecha) > 0 || (m.fecha === desp.fecha && m.movimiento_id.localeCompare(desp.movimiento_id) > 0));
+    for (const m of cands) {
+      // (cortó por reloj: no mira ninguno más; quedan para la llamada siguiente)
+      if (corto) { quedan += 1; continue; }
+      const c = jCalc(m.movimiento_id), f = jFrenos(m.movimiento_id, c);
+      if (f.estado === 'entra' && !p.movimiento_id && v.corta != null && reg.length >= v.corta) { corto = true; quedan += 1; continue; }
+      sigue = m.movimiento_id;
+      if (f.estado === 'entra') {
+        const r = C10_FN.fn_jornal_aplicar({ p_movimiento: m.movimiento_id, p_desde: c.periodo.desde, p_hasta: c.periodo.hasta, p_visto: c.visto, p_opciones: {} });
+        const rep = J.repartos[J.repartos.length - 1], por = jPor(m.movimiento_id), cheque = jEsCheque(m) ? (m.cheque || '') : null;
+        Object.assign(rep, { origen: 'solo', por, cheque, regla: { regla: 'la cuadrilla, sola', corrio: p.corrio || 'pantalla', elegida: v.soloPor ? 'la encendió Edgar' : 'de fábrica: la eligió Edgar el 15-nov-2026', ...(v.soloPor ? { elegida_por: v.soloPor } : {}), en_nombre_de: UID } });
+        const nota = r.nota.replace(/^Repartido: /, 'Registrado solo: ');
+        reg.push({ movimiento_id: m.movimiento_id, reparto_id: rep.reparto_id, fecha: m.fecha, monto: Math.abs(m.monto), descripcion: m.descripcion, usuario_id: c.persona.usuario_id, persona: c.persona.nombre, por, cheque,
+          desde: c.periodo.desde, hasta: c.periodo.hasta, periodo_texto: c.periodo.texto, horas: c.horas, obras: c.obras, lineas: c.lineas, sin_obra: c.sin_obra, asiento: r.asiento, avisos: r.avisos || [], nota });
+        ia.push(...(r.propuestas_ia || []));
+      } else {
+        if (f.estado === 'espera') esp += 1; else if (f.estado === 'no') dno += 1; else preg += 1;
+        no.push({ movimiento_id: m.movimiento_id, fecha: m.fecha, monto: Math.abs(m.monto), persona: c.persona.nombre, estado: f.estado, por_que: f.por_que });
+      }
+    }
+    const total = reg.reduce((s, r) => s + r.monto, 0);
+    const nota = [reg.length ? `Registrado solo: ${reg.length} pago(s) a la cuadrilla por ${usd(total)} (${reg.map(r => `${r.persona} ${usd(r.monto)}`).join('; ')}).` : null,
+      preg + dno ? `${preg + dno} pago(s) a la cuadrilla esperan tu respuesta en la Bandeja.` : null,
+      altas.length ? `Desde ahora la base reconoce sola, por su nombre, los pagos de ${altas.map(x => x.nombre).join(', ')}.` : null].filter(Boolean).join(' ') || null;
+    return { encendido: true, corrio: true, ocupado: false, altas, registrados: reg, no_entraron: no, esperan: esp, preguntan: preg, dijo_no: dno, quedan, completo: quedan === 0,
+      sigue: quedan > 0 ? (sigue || (desp ? desp.movimiento_id : null)) : null, propuestas_ia: ia, nota };
+  },
+  // LO QUE EDGAR DICE DE UN PAGO, una cosa por llamada: es de esta persona (y se registra en la misma llamada, o dice qué pide),
+  // no es de la cuadrilla, quitar lo dicho, o que un pago que deshizo vuelva a entrar solo
+  fn_jornal_pago: a => {
+    const p = a.p || {}, v = J.v5;
+    if (!v) return err10('PGRST202', 'Could not find the function public.fn_jornal_pago in the schema cache', null, 404);
+    const extra = Object.keys(p).filter(k => !['movimiento_id', 'usuario_id', 'no_cuadrilla', 'quitar', 'solo'].includes(k));
+    if (extra.length) return err10('22023', `Clave desconocida: ${extra.join(', ')}. Las que hay: movimiento_id, usuario_id, no_cuadrilla, quitar y solo.`);
+    if (!p.movimiento_id) return err10('22023', 'Di de qué movimiento del banco (movimiento_id).');
+    if ((p.usuario_id ? 1 : 0) + (p.no_cuadrilla ? 1 : 0) + (p.quitar ? 1 : 0) + (p.solo ? 1 : 0) !== 1)
+      return err10('22023', 'Di UNA cosa de este pago: de quién es (usuario_id), que no es de la cuadrilla (no_cuadrilla), que se quite lo dicho (quitar) o que vuelva a entrar solo (solo).');
+    const m = J.movs.find(x => x.movimiento_id === p.movimiento_id);
+    if (!m) return err10('22023', 'No existe ese movimiento del banco.');
+    if (J.fuera.has(m.movimiento_id)) return err10('MX008', 'Ese movimiento ya está resuelto en el banco (casado): no está en la Bandeja. Si estaba mal, primero se des-casa allí, con su motivo.');
+    const per = p.usuario_id ? J.personas.find(x => x.usuario_id === p.usuario_id) : null;
+    if (p.usuario_id && !per) return err10('22023', 'No existe ese perfil en la app.');
+    const que = p.usuario_id ? 'es_de' : p.no_cuadrilla ? 'no_cuadrilla' : p.quitar ? 'quitado' : 'solo';
+    if (que === 'es_de') v.pagos.set(m.movimiento_id, { usuario_id: p.usuario_id, no_cuadrilla: false });
+    else if (que === 'no_cuadrilla') v.pagos.set(m.movimiento_id, { usuario_id: null, no_cuadrilla: true });
+    else if (que === 'quitado') v.pagos.delete(m.movimiento_id);
+    else v.pedidos.set(m.movimiento_id, ++v.reloj);
+    const res = que === 'es_de' || que === 'solo' ? C10V5_FN.fn_jornal_solo({ p: { movimiento_id: m.movimiento_id, corrio: que === 'es_de' ? 'cheque' : 'pantalla' } }) : null;
+    const reg = !!(res && res.registrados && res.registrados.length);
+    let c = null, f = null;
+    if (!J.fuera.has(m.movimiento_id)) { c = jCalc(m.movimiento_id); if (c.reconocido) f = jFrenos(m.movimiento_id, c); }
+    const pq = ((f && f.por_que) || (c && c.por_que) || 'míralo en su tarjeta.').replace(/^No entró solo: /, '');
+    const nota = reg ? res.registrados[0].nota : que === 'es_de' ? `Anotado: este pago es de ${per.nombre}. No entró solo: ${pq}`
+      : que === 'no_cuadrilla' ? 'Anotado: este pago no es de la cuadrilla. Se queda en la Bandeja para clasificarlo como siempre.'
+      : que === 'quitado' ? 'Quitado lo que habías dicho de este pago.' : `Anotado: puede volver a entrar solo. Ahora no entró: ${pq}`;
+    return { movimiento_id: m.movimiento_id, dicho: que, usuario_id: p.usuario_id || (c && c.reconocido ? c.persona.usuario_id : reg ? res.registrados[0].usuario_id : null),
+      persona: per ? per.nombre : c && c.reconocido ? c.persona.nombre : reg ? res.registrados[0].persona : null, registrado: reg, reparto: reg ? res.registrados[0] : null,
+      reconocido: !!(c && c.reconocido), estado: f ? f.estado : reg ? 'registrado' : null, por_que: (f && f.por_que) || (c && c.por_que) || null, frenos: f ? f.frenos : [],
+      propuestas_ia: res ? res.propuestas_ia : [], nota };
+  }
+};
+// lo que las vistas de siempre traen de más con la v5 (se aplica encima de lo que ya dan)
+const C10V5_MAS = {
+  v_jornal_pendientes: jPendientesV5, v_jornal_repartos: jRepartosV5, v_jornal_personas: jPersonasV5,
+  v_jornal_control: filas => filas.filter(f => f.orden < 85).concat([jCtl85()], filas.filter(f => f.orden > 85)),
+  jornal_config: filas => filas.map(c => ({ ...c, solo: J.v5.solo, solo_por: J.v5.soloPor, solo_el: J.v5.soloPor ? '2026-11-15T12:00:00+00:00' : null, solo_ultimo: null }))
+};
 const C10_VISTAS = { v_jornal_pendientes: jPendientes, v_jornal_repartos: jRepartosVista, v_jornal_personas: jPersonasVista, v_jornal_control: jCtl, v_margen_control: jCtlMargen,
   v_margen_obra: jObras, jornal_config: () => [J.config] };
 const C10_FN = {
@@ -1528,7 +1719,14 @@ const C10_FN = {
     if (!!a.p_desde !== !!a.p_hasta) return err10('22023', 'Las fechas a mano van las dos (desde y hasta), o ninguna: entonces va la semana que toca.');
     const extra = Object.keys(a.p_opciones || {}).filter(k => !['incluir_cubiertas', 'motivo'].includes(k));
     if (extra.length) return err10('22023', `Opción desconocida: ${extra.join(', ')}. Las que hay: incluir_cubiertas (true o false) y motivo (un texto).`);
-    return jCalc(a.p_movimiento, a.p_desde, a.p_hasta, a.p_opciones);
+    const res = jCalc(a.p_movimiento, a.p_desde, a.p_hasta, a.p_opciones);
+    // (c10 v5) cómo se supo de quién es (patron | edgar), quién dio de alta a la persona y, si es un cheque, su número
+    if (jV5() && res.reconocido) {
+      const m = J.movs.find(x => x.movimiento_id === a.p_movimiento), per = J.personas.find(x => x.usuario_id === res.persona.usuario_id);
+      Object.assign(res.persona, { por: jPor(a.p_movimiento), alta: per.registrada ? (per.alta || 'edgar') : null });
+      if (jEsCheque(m)) res.movimiento.cheque = m.cheque || '';
+    }
+    return res;
   },
   fn_jornal_aplicar: a => {
     if (!a.p_visto) return err10('22023', 'Falta «visto»: la huella de lo que viste (la trae fn_jornal_propuesta). Sin ella no se aprueba ni se postea nada.');
@@ -1560,8 +1758,10 @@ const C10_FN = {
     if (r.estado === 'deshecho') return err10('MX008', `Ese reparto ya estaba deshecho (el ${jDiaT(r.deshecho_el.slice(0, 10), true)}: ${r.deshecho_motivo}).`);
     J.seq += 1; J.fuera.delete(r.movimiento_id);
     Object.assign(r, { estado: 'deshecho', deshecho_el: new Date().toISOString(), deshecho_por: UID, deshecho_por_nombre: 'Edgar Prueba', deshecho_motivo: String(a.p_motivo).trim(), reverso_id: 'c1a00000-0000-4000-8000-0000000002' + String(J.seq).padStart(2, '0'), reverso: '2026-00000' + J.seq, asiento_vivo: false });
+    // (c10 v5) «Edgar dijo que no»: lo deshecho no vuelve a entrar solo hasta que él lo pida
+    if (jV5()) J.v5.deshechos.set(r.movimiento_id, { el: ++J.v5.reloj, motivo: String(a.p_motivo).trim() });
     return { reparto_id: r.reparto_id, estado: 'deshecho', movimiento_id: r.movimiento_id, movimiento_estado: 'pendiente', asiento: { id: r.asiento_id, numero: r.asiento }, reverso: { id: r.reverso_id, numero: r.reverso, fecha_contable: r.fecha_pago },
-      por_fuera: false, horas_siguen_aprobadas: r.horas_ids.length, nota: `Reparto deshecho: el asiento ${r.asiento} quedó reversado con el ${r.reverso} y el pago volvió a la Bandeja. Sus ${r.horas_ids.length} reporte(s) de horas siguen aprobados: se aprobó lo que viste, y lo que se deshace es el reparto del pago.` };
+      por_fuera: false, horas_siguen_aprobadas: r.horas_ids.length, nota: `Reparto deshecho: el asiento ${r.asiento} quedó reversado con el ${r.reverso} y el pago volvió a la Bandeja. Sus ${r.horas_ids.length} reporte(s) de horas siguen aprobados: se aprobó lo que viste, y lo que se deshace es el reparto del pago.${jV5() && J.v5.solo ? ' Este pago ya no vuelve a entrar solo: si lo quieres repartido, acéptalo tú en la Bandeja.' : ''}` };
   },
   fn_jornal_persona: a => {
     const p = a.p || {}, per = J.personas.find(x => x.usuario_id === p.usuario_id);
@@ -1591,12 +1791,15 @@ const C10_FN = {
     return { usuario_id: per.usuario_id, patron: per.patron, cuenta: null, activa: per.activa, nota: per.nota, creado_el: per.creado_el, nombre: per.nombre, nueva, pagos_pendientes: pend.length, ambiguos: amb, avisos, nota_alta: nota };
   },
   fn_jornal_config: a => {
-    const p = a.p || {}, extra = Object.keys(p).filter(k => !['cuenta_defecto', 'cuenta_sin_obra', 'burden_estandar_pct', 'aviso_tarifa_pct'].includes(k));
+    const p = { ...(a.p || {}) }, extra = Object.keys(p).filter(k => !['cuenta_defecto', 'cuenta_sin_obra', 'burden_estandar_pct', 'aviso_tarifa_pct'].concat(jV5() ? ['solo'] : []).includes(k));
     if (extra.length) return err10('22023', `Clave desconocida: ${extra.join(', ')}.`);
+    // (c10 v5) encender o apagar el registro automático: queda quién lo cambió
+    if (jV5() && p.solo !== undefined) { if (typeof p.solo !== 'boolean') return err10('22023', 'solo va en true o false.'); J.v5.solo = p.solo; J.v5.soloPor = UID; }
+    delete p.solo;
     if (p.cuenta_sin_obra && /^50|^600[05]$/.test(p.cuenta_sin_obra)) return err10('MX004', `La ${p.cuenta_sin_obra} no sirve para lo sin obra: la nómina y el sueldo entran solo por su journal.`);
     if (p.burden_estandar_pct != null && (p.burden_estandar_pct < 0 || p.burden_estandar_pct > 100)) return err10('22023', 'El burden estándar va de 0 a 100 (o nulo).');
     Object.assign(J.config, p, { actualizado: new Date().toISOString(), actualizado_por: UID });
-    return { ...J.config };
+    return { ...J.config, ...(jV5() ? { solo: J.v5.solo, solo_por: J.v5.soloPor, solo_el: J.v5.soloPor ? '2026-11-15T12:00:00+00:00' : null, solo_ultimo: null } : {}) };
   },
   fn_jornal_ia: a => jIA(a.p_movimiento || null),
   fn_margen_obra: a => {
@@ -2969,6 +3172,10 @@ const estado = { controlMal: false, controlFilas: null, fallar: false, casarRond
   c9: false,
   // (fase 9) c10 pegado o no: sin él, sus vistas y jornal_config contestan 404 (PGRST205) y sus funciones también (PGRST202)
   c10: false,
+  // (la cuadrilla, sola: c10 v5, 15-nov) la base con la v5 (registra sola los pagos a la cuadrilla y un cheque pregunta de quién
+  // es) o con la de antes: sin ella, fn_jornal_solo y fn_jornal_pago no existen (PGRST202), ni v_jornal_cheques ni jornal_pagos
+  // (PGRST205), y jornal_config no trae el ajuste. Las escenas de antes corren con la base de antes: la pantalla tiene que valer con las dos
+  c10v5: false,
   // (fase 10) c11 pegado o no (sin él, sus vistas y emision_config 404 y sus funciones también); la función de borde `facturas`
   // desplegada o no (sin ella, 404); y c11App: la obra de prueba con sus hitos también en la app (proyectos, hitos) para el 🧾
   // y c11EstadoFalla: v_emision_estado contesta 500 (un statement timeout) para ver que el 🧾 no adivina
@@ -3006,6 +3213,9 @@ function tabla(nombre, q) {
   if (C9_VISTAS[nombre]) filas = C9_VISTAS[nombre]();
   // (fase 9) las vistas de c10; con c10 la bandeja trae los cuatro Zelle de la cuadrilla (los repartidos salen) y el libro las líneas de la obra A
   if (C10_VISTAS[nombre]) filas = estado.c10 ? C10_VISTAS[nombre]() : [];
+  // (la cuadrilla, sola: c10 v5) lo que la v5 trae de más en esas vistas, y sus dos lecturas nuevas (los cheques, lo dicho de un pago)
+  if (estado.c10 && jV5() && C10V5_MAS[nombre]) filas = C10V5_MAS[nombre](filas);
+  if (C10V5_VISTAS[nombre]) filas = estado.c10 && jV5() ? C10V5_VISTAS[nombre]() : [];
   // (fase 10) las vistas de c11 y su configuración; con c11App, la obra A de las facturas y sus hitos también en la app
   if (C11_VISTAS[nombre]) filas = estado.c11 ? C11_VISTAS[nombre]() : [];
   // (fase 10) las vistas del WIP (c12) y su configuración: el equipo las ve vacías
@@ -3108,6 +3318,8 @@ function rpc(fn, a, auth) {
   // (fase 10) las funciones del WIP (c12): sin c12 pegado, PostgREST no las encuentra; al equipo, 42501
   if (W_FN[fn]) return !estado.c12 ? { status: 404, error: { code: 'PGRST202', message: `Could not find the function public.${fn} in the schema cache`, details: null, hint: null } }
     : estado.c12NoDueno ? { status: 403, error: { code: '42501', message: W_NO_DUENO, details: null, hint: null } } : W_FN[fn](a);
+  // (la cuadrilla, sola: c10 v5) sus funciones nuevas: con una base anterior a la v5 (o sin c10), PostgREST no las encuentra
+  if (C10V5_FN[fn]) return estado.c10 && estado.c10v5 ? C10V5_FN[fn](a) : { status: 404, error: { code: 'PGRST202', message: `Could not find the function public.${fn} in the schema cache`, details: null, hint: null } };
   // (fase 9) las funciones de c10: sin c10 pegado, PostgREST no las encuentra
   if (C10_FN[fn]) return estado.c10 ? C10_FN[fn](a) : { status: 404, error: { code: 'PGRST202', message: `Could not find the function public.${fn} in the schema cache`, details: null, hint: null } };
   if (estado.fallar && /^fn_banco_(casar_con|clasificar|transferencia|ignorar|duplicado)$/.test(fn)) return { error: { code: 'MX008', message: 'La base dijo que no (prueba)' } };
@@ -3327,6 +3539,12 @@ async function simular(ctx, rol) {
     }
     // (fase 9) c10 sin pegar: sus vistas y jornal_config no existen (la lectura se anota igual)
     if (!estado.c10 && /^\/rest\/v1\/(v_jornal_pendientes|v_jornal_repartos|v_jornal_personas|v_jornal_control|v_margen_obra|v_margen_control|jornal_config)$/.test(u.pathname)) {
+      const v = u.pathname.slice('/rest/v1/'.length);
+      lecturas.push(v + u.search);
+      return route.fulfill({ status: 404, headers: CORS, contentType: 'application/json', body: JSON.stringify({ code: 'PGRST205', message: `Could not find the table 'public.${v}' in the schema cache`, details: null, hint: null }) });
+    }
+    // (la cuadrilla, sola: c10 v5) con una base anterior a la v5 (o sin c10), la vista de los cheques y lo dicho de los pagos no existen
+    if (!(estado.c10 && estado.c10v5) && /^\/rest\/v1\/(v_jornal_cheques|jornal_pagos)$/.test(u.pathname)) {
       const v = u.pathname.slice('/rest/v1/'.length);
       lecturas.push(v + u.search);
       return route.fulfill({ status: 404, headers: CORS, contentType: 'application/json', body: JSON.stringify({ code: 'PGRST205', message: `Could not find the table 'public.${v}' in the schema cache`, details: null, hint: null }) });
@@ -5875,6 +6093,345 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
     ok('Sin c10 · «Costo por obra» dice en llano que falta c10-costo-obra.sql (con «Reintentar»)', /Falta el costo por obra en la base/.test(await texto(q, '#ct-ob-cuerpo .ct-rojo h2')) && /c10-costo-obra\.sql/.test(await texto(q, '#ct-ob-cuerpo .ct-rojo')) && (await q.locator('#ct-reintentar').count()) === 1);
     await cx.close();
     conCodigo(false);
+  }
+
+  // ---- LA CUADRILLA, SOLA (c10 v5, 15-nov-2026). Lo decidió Edgar: los Zelle a la cuadrilla entran solos al libro y un cheque
+  // pregunta de quién es. La pantalla llama a la rutina de la base (al abrir Contabilidad, antes de leer nada; tras «Casar otra
+  // vez») y enseña lo que hizo: «Registrado solo» con «Deshacer», el cheque con la cuadrilla en botones y «No es de la
+  // cuadrilla», lo que no entró con UNA frase arriba, lo deshecho que no vuelve («Que vuelva a entrar solo»), «No es mano de
+  // obra» escrito en la base, lo que espera a que termine su semana, el ajuste que lo apaga, las personas (dada de alta sola, la
+  // que la base no puede reconocer, «No cobra por horas»), los repartos, la base que corta por reloj o está ocupada, sin el
+  // código del teléfono, con la base de antes de la v5 (una llamada por sesión, y todo como antes), y los tres anchos ----
+  {
+    estado.c10 = true; estado.c10v5 = true; jResetV5();
+    const conCodigo = si => { estado.mfaFactores = si ? [{ id: 'f-1', friendly_name: 'Teléfono de Edgar', factor_type: 'totp', status: 'verified' }] : []; estado.sesionAal = si ? 'aal2' : undefined; };
+    const abrirCtx = async (w, codigo) => {
+      conCodigo(codigo);
+      const cx = await b.newContext({ viewport: { width: w, height: w < 700 ? 844 : 1000 }, deviceScaleFactor: w < 1024 ? 2 : 1, isMobile: w < 1024, hasTouch: w < 1024, serviceWorkers: 'block' });
+      await simular(cx, 'dueno');
+      const q = await cx.newPage(); q.on('pageerror', e => errs.push(`c10v5 ${w}: ` + String(e).slice(0, 160)));
+      await q.goto('http://localhost:8873/index.html'); await q.waitForSelector('#vista-app:not([hidden])', { timeout: 15000 }); await q.waitForTimeout(800);
+      await q.evaluate(() => document.querySelectorAll('dialog[open]').forEach(d => d.close()));
+      await q.locator('#btn-conta').evaluate(x => x.click()); await q.waitForSelector('#conta-raiz .ct-ficha', { timeout: 8000 }); await pintado(q);
+      return { cx, q };
+    };
+    const ve = async (q, k, op) => { await q.evaluate(([k, o]) => window.MXP_CONTA.ir(k, o || {}), [k, op || null]); await pintado(q); };
+    const ultima = (n0, fn) => desde(n0).filter(l => l.fn === fn).pop();
+    const solos = n0 => desde(n0).filter(l => l.fn === 'fn_jornal_solo');
+    const plano = async (q, sel) => (await texto(q, sel)).replace(/\s+/g, ' ').trim();
+    // (la rutina no se repite antes de 45 s: para volver a verla correr sin esperar, se le dice a la pantalla que ya pasó)
+    const yaPaso = q => q.evaluate(() => { window.MXP_CONTA._estado.jr.solo.el = 0; });
+
+    // ---- al abrir Contabilidad: la rutina, antes de leer nada ----
+    let n0 = llamadas.length;
+    const nAbrir = n0;
+    let { cx, q } = await abrirCtx(1280, true);
+    let s0 = solos(n0);
+    const tAbrir = await plano(q, '#toast');
+    ok('La cuadrilla, sola · al abrir Contabilidad la portada llama UNA vez a la rutina de la base (fn_jornal_solo con {corrio: "pantalla"}), con la sesión del dueño y su código',
+      s0.length === 1 && JSON.stringify(s0[0].args) === JSON.stringify({ p: { corrio: 'pantalla' } }) && xAal(s0[0].auth) === 'aal2', JSON.stringify(s0.map(l => l.args)));
+    ok('…y avisa de lo que entró solo, en llano: «Registrado solo: 1 pago a la cuadrilla por $940.00 (Zzana C10 PRUEBA $940.00). Está en la Bandeja, en «Registrado solo»: ahí se deshace.»',
+      tAbrir === 'Registrado solo: 1 pago a la cuadrilla por $940.00 (Zzana C10 PRUEBA $940.00). Está en la Bandeja, en «Registrado solo»: ahí se deshace.', tAbrir);
+    let atn = await q.locator('#ct-atender .ct-atn').allTextContents();
+    ok('…la portada se leyó DESPUÉS de la rutina: «Qué atender» ya no cuenta el pago que entró (2 pagos a la cuadrilla esperan tu respuesta · $1,120.00) y cada uno lleva su botón «Bandeja»',
+      atn.some(t => /^2 pagos a la cuadrilla esperan tu respuesta \(\$1,120\.00\): no entraron solos; en la Bandeja, cada uno dice qué le falta\./.test(t)) &&
+      (await q.locator('#ct-atender .ct-atn', { hasText: 'pagos a la cuadrilla esperan' }).locator('button[data-ir="bandeja"]').count()) === 1, atn.join(' | '));
+    ok('…«Qué atender» dice también los cheques que preguntan de quién son (2 · $315.00), y no repite el aviso de la base ni cuenta el pago que entra solo el lunes',
+      atn.some(t => /^2 cheques preguntan de quién son \(\$315\.00\): un toque en la Bandeja\./.test(t)) && !atn.some(t => /espera en la Bandeja con su semana ya terminada/.test(t)) && !atn.some(t => /\$96\.00/.test(t)), atn.join(' | '));
+    await foto(q, 'c10v5-0-portada');
+
+    // ---- la Bandeja: lo que entró, lo que pregunta, lo que espera y los cheques ----
+    n0 = llamadas.length;
+    await ve(q, 'bandeja');
+    const fr = () => plano(q, '#ct-jr-franja');
+    ok('Bandeja · no vuelve a llamar a la rutina (acaba de correr): una llamada por apertura, no por página', solos(n0).length === 0);
+    ok('Bandeja · la franja: «2 pagos a la cuadrilla esperan tu respuesta · $1,120.00», y «1 pago entra solo cuando termine su semana ($96.00): no hay que hacer nada»',
+      /^2 pagos a la cuadrilla esperan tu respuesta · \$1,120\.00/.test(await fr()) && /1 pago entra solo cuando termine su semana \(\$96\.00\): no hay que hacer nada\./.test(await plano(q, '.ct-solo-esperan')), await fr());
+    const itSolo = '#ct-jr-solos .ct-solo-it';
+    ok('Bandeja · «Registrado solo» sale desplegado con el pago que acaba de entrar: la persona, el monto, su semana, sus horas, su asiento y cuánto a cada obra (6 obras, 7 líneas: la A con su CO aparte), con «Deshacer» y la marca «1 nuevo»',
+      (await q.locator('#ct-jr-solos[open]').count()) === 1 && /^Registrado solo · 1 pago a la cuadrilla en los últimos 14 días · \$940\.00 1 nuevo$/.test(await plano(q, '#ct-jr-solos > summary')) &&
+      (await q.locator(itSolo).count()) === 1 && /^Zzana C10 PRUEBA\s*\$940\.00$/.test(await plano(q, itSolo + ' .ct-solo-cab')) &&
+      /^Pago del 2 nov · del 26 de octubre al 1 de noviembre de 2026 · 37 h · asiento 2026-000004$/.test(await plano(q, itSolo + ' .ct-sub')) &&
+      (await q.locator(itSolo + ' .ct-solo-obras li').count()) === 7 && (await q.locator(itSolo + ' .ct-solo-obras li', { hasText: 'CO #1' }).count()) === 1 && (await q.locator(itSolo + '.nuevo [data-solo-deshacer]').count()) === 1, await plano(q, itSolo));
+    const sumaObras = (await q.locator(itSolo + ' .ct-solo-obras li .ct-num').allTextContents()).reduce((s, t) => s + Math.round(Number(t.replace(/[$,]/g, '')) * 100), 0);
+    ok('…y lo de cada obra suma el pago, al centavo ($940.00)', sumaObras === 94000, String(sumaObras));
+    // (la revisión de la v5) la semana de ese pago tiene horas en una obra YA TERMINADA: no lo frenó (su parte va a esa obra igual), y queda dicho
+    ok('Bandeja · ese pago tenía horas en una obra ya terminada: entró solo igual, con su parte en esa obra, y «Registrado solo» lo dice como NOTA con el texto de la base (y la del corte de mes)',
+      (await q.locator(itSolo + ' .ct-solo-obras li', { hasText: 'C10 PRUEBA Obra F' }).count()) === 1 && (await q.locator(itSolo + ' .ct-solo-aviso').count()) === 2 &&
+      (await plano(q, itSolo + ' .ct-solo-aviso[data-aviso="obra_terminada"]')) === 'Nota. Hay horas en una obra que ya no está activa: C10 PRUEBA Obra F (terminada). Su parte va a esa obra igual: el trabajo se hizo ahí.' &&
+      /^Nota\. .* se trabajaron en octubre de 2026 /.test(await plano(q, itSolo + ' .ct-solo-aviso[data-aviso="otro_mes"]')), await plano(q, itSolo));
+    // (la revisión de la v5) nadie vio la tarjeta de ese pago antes de que entrara: «Registrado solo» enseña cómo lo escribió el banco
+    ok('Bandeja · «Registrado solo» enseña cómo escribió el banco ese pago («El banco: «Zelle payment to C10 PRUEBA ZZANA 9001»»): un pago a otro con el mismo nombre se ve ahí, donde se deshace',
+      (await plano(q, itSolo + ' .ct-solo-banco')) === 'El banco: «Zelle payment to C10 PRUEBA ZZANA 9001»', await plano(q, itSolo + ' .ct-solo-banco'));
+    ok('La IA · lo que la IA tenía para el pago que entró solo se cierra por su función («No es eso», con su motivo), como tras un «Así es»: una vez, y la Bandeja ya no la encuentra abierta',
+      desde(nAbrir).filter(l => l.fn === 'contador:rechazar' && l.args.propuesta === J_IA && l.args.motivo === 'Es mano de obra: se repartió por sus horas').length === 1 && (await q.locator('#ct-jr-ia').count()) === 0,
+      JSON.stringify(desde(nAbrir).filter(l => /^contador:/.test(l.fn)).map(l => l.args)));
+    const pills = async id => plano(q, `.ct-mov[data-id="${id}"] .ct-f-motivo`);
+    ok('Bandeja · cada pago que no entró lo dice en su fila, en corto: el de Zzbeto «Falta la cuenta de lo sin obra», el de Zzana «La tarifa que sale se aleja de la suya», y el que espera «entra solo el 16 nov»',
+      /^Mano de obra · Zzbeto C10 PRUEBA\s*Falta la cuenta de lo sin obra$/.test(await pills(J_MOV.beto)) && /^Mano de obra · Zzana C10 PRUEBA\s*La tarifa que sale se aleja de la suya$/.test(await pills(J_MOV.ana2)) &&
+      /^Mano de obra · Zzbeto C10 PRUEBA\s*entra solo el 16 nov$/.test(await pills(J_ESP)), [await pills(J_MOV.beto), await pills(J_MOV.ana2), await pills(J_ESP)].join(' | '));
+    let cB = await fila(q, J_MOV.beto);
+    ok('Bandeja · la tarjeta de lo que no entró: arriba UNA frase («No entró solo. Falta la cuenta de lo sin obra: míralo abajo y, si está bien, «Así es».»), y debajo la de siempre, con su «Así es»',
+      (await plano(q, `.ct-mov[data-id="${J_MOV.beto}"] .ct-jr-solo[data-solo="pregunta"]`)) === 'No entró solo. Falta la cuenta de lo sin obra: míralo abajo y, si está bien, «Así es».' &&
+      (await cB.locator('[data-aviso="falta_cuenta_sin_obra"]').count()) === 1 && (await cB.locator('[data-jr-asi]').count()) === 1 && (await cB.locator('[data-jr-solo-otra]').count()) === 0, await plano(q, `.ct-mov[data-id="${J_MOV.beto}"] .ct-jr-solo`));
+    let cE = await fila(q, J_ESP);
+    ok('Bandeja · la tarjeta de lo que espera lo dice con la frase de la base, sin ámbar: «Paga la semana del 9 al 15 de noviembre de 2026, que termina el 15-nov: entra solo el 16-nov, con todas sus horas…»',
+      /^Paga la semana del 9 al 15 de noviembre de 2026, que termina el 15-nov: entra solo el 16-nov, con todas sus horas\. Si quieres registrarlo ya, acéptalo tú con «Así es»\.$/.test(await plano(q, `.ct-mov[data-id="${J_ESP}"] .ct-jr-solo[data-solo="espera"]`)) &&
+      (await cE.locator('.ct-jr-solo.ct-jr-info').count()) === 1 && (await cE.locator('.ct-jr-solo.warn').count()) === 0 && !(await cE.locator('[data-jr-asi]').isDisabled()));
+    const cZ = await fila(q, J_MOV.carla);
+    ok('Bandeja · el Zelle que la base no reconoce (el banco escribe el nombre de otra forma) sale como un movimiento normal, con el enlace manual para ese caso raro',
+      (await cZ.locator('[data-jr-bloque]').count()) === 0 && /^Repartir por sus horas solo si es de alguien de la cuadrilla y no se reconoció \(el banco escribe su nombre de otra forma\)$/.test(await plano(q, `.ct-mov[data-id="${J_MOV.carla}"] .ct-jr-enlace`)), await plano(q, `.ct-mov[data-id="${J_MOV.carla}"] .ct-jr-enlace`));
+    await foto(q, 'c10v5-1-bandeja');
+
+    // ---- el cheque: «¿De quién es?» ----
+    const arriba = id => `#ct-jr-franja .ct-chq-arriba[data-chq="${id}"]`;
+    ok('Cheque · arriba de la Bandeja, una pregunta por cheque («¿De quién es el cheque 1043 de $240.00 del 9 nov?») con la cuadrilla en botones (quien cobra por horas y quien tiene horas sin dar de alta) y «No es de la cuadrilla»',
+      (await q.locator('#ct-jr-franja .ct-chq-arriba').count()) === 2 && (await plano(q, arriba(J_CHQ.uno) + ' .ct-chq-q')) === '¿De quién es el cheque 1043 de $240.00 del 9 nov?' &&
+      JSON.stringify(await q.locator(arriba(J_CHQ.uno) + ' .ct-chq-btns button').allTextContents()) === JSON.stringify(['Zz', 'Zzana C10 PRUEBA', 'Zzbeto C10 PRUEBA', 'Zzcarla C10 PRUEBA', 'No es de la cuadrilla']),
+      JSON.stringify(await q.locator(arriba(J_CHQ.uno) + ' .ct-chq-btns button').allTextContents()));
+    let cC = await fila(q, J_CHQ.dos);
+    ok('Cheque · su fila lo dice («¿De quién es?») y, desplegada, trae la misma pregunta; sus opciones de siempre siguen debajo («Otra cosa…»)',
+      /¿De quién es\?/.test(await pills(J_CHQ.dos)) && (await cC.locator('.ct-chq:not(.ct-chq-arriba) [data-chq-de]').count()) === 4 && (await cC.locator('.ct-chq [data-chq-no]').count()) === 1 &&
+      (await cC.locator('[data-otra]').count()) === 1 && (await cC.locator('[data-jr-bloque]').count()) === 0, await pills(J_CHQ.dos));
+    n0 = llamadas.length;
+    await q.locator(arriba(J_CHQ.uno) + ` [data-chq-de="${J_PER.ana}"]`).click(); await esperarLlamada(q, n0, 'fn_jornal_pago'); await q.waitForTimeout(200); await pintado(q);
+    let pg = ultima(n0, 'fn_jornal_pago');
+    ok('Cheque · un toque en la persona manda fn_jornal_pago({p: {movimiento_id, usuario_id}}): UNA llamada, y la base lo reparte y lo registra en ella', !!pg && JSON.stringify(pg.args) === JSON.stringify({ p: { movimiento_id: J_CHQ.uno, usuario_id: J_PER.ana } }) &&
+      desde(n0).filter(l => l.fn === 'fn_jornal_pago').length === 1 && !desde(n0).some(l => l.fn === 'fn_jornal_aplicar'), JSON.stringify(pg && pg.args));
+    ok('…el aviso es la nota de la base («Registrado solo: $240.00 de Zzana C10 PRUEBA (del 2 al 8 de noviembre de 2026, 9.6 h) entre 2 obra(s); asiento …»), sin ámbar',
+      /^Registrado solo: \$240\.00 de Zzana C10 PRUEBA \(del 2 al 8 de noviembre de 2026, 9\.6 h\) entre 2 obra\(s\); asiento 2026-00000\d del 9-nov-2026\./.test(await plano(q, '#toast')) && !/error/.test(await q.locator('#toast').getAttribute('class')), await plano(q, '#toast'));
+    ok('…el cheque sale de la Bandeja y entra en «Registrado solo» diciendo que era un cheque y que Edgar dijo de quién («Cheque 1043 del 9 nov (dijiste de quién era)»); queda 1 cheque por preguntar',
+      (await q.locator(`.ct-mov[data-id="${J_CHQ.uno}"]`).count()) === 0 && (await q.locator(itSolo).count()) === 2 && /^Cheque 1043 del 9 nov \(dijiste de quién era\) · del 2 al 8 de noviembre de 2026 · 9\.6 h · asiento/.test(await plano(q, itSolo + ' >> nth=0 >> .ct-sub')) &&
+      (await q.locator('#ct-jr-franja .ct-chq-arriba').count()) === 1, await plano(q, itSolo + ' >> nth=0'));
+    ok('…el cheque no lleva la línea del banco (de quién era lo dijo Edgar); el Zelle que entró solo, sí',
+      (await q.locator(itSolo + ' >> nth=0 >> .ct-solo-banco').count()) === 0 && (await q.locator(itSolo + ' .ct-solo-banco').count()) === 1, String(await q.locator(itSolo + ' .ct-solo-banco').count()));
+    await foto(q, 'c10v5-2-cheque-registrado');
+    // «No es de la cuadrilla», y «Sí lo es»
+    cC = await fila(q, J_CHQ.dos);
+    n0 = llamadas.length;
+    await cC.locator('.ct-chq [data-chq-no]').click(); await esperarLlamada(q, n0, 'fn_jornal_pago'); await q.waitForTimeout(200); await pintado(q);
+    pg = ultima(n0, 'fn_jornal_pago');
+    ok('Cheque · «No es de la cuadrilla» manda fn_jornal_pago({p: {movimiento_id, no_cuadrilla: true}}) y avisa con la nota de la base', !!pg && JSON.stringify(pg.args) === JSON.stringify({ p: { movimiento_id: J_CHQ.dos, no_cuadrilla: true } }) &&
+      (await plano(q, '#toast')) === 'Anotado: este pago no es de la cuadrilla. Se queda en la Bandeja para clasificarlo como siempre.', await plano(q, '#toast'));
+    cC = await fila(q, J_CHQ.dos);
+    ok('…deja de preguntar (ni arriba ni en su fila) y queda como un movimiento de siempre, diciendo lo que Edgar dijo, con «Sí lo es»',
+      (await q.locator('#ct-jr-franja .ct-chq-arriba').count()) === 0 && (await cC.locator('.ct-chq').count()) === 0 && !/¿De quién es\?/.test(await pills(J_CHQ.dos)) &&
+      /^Dijiste que no es de la cuadrilla: se clasifica como siempre\. Sí lo es$/.test(await plano(q, `.ct-mov[data-id="${J_CHQ.dos}"] .ct-jr-dicho`)) && (await cC.locator('[data-otra]').count()) === 1, await plano(q, `.ct-mov[data-id="${J_CHQ.dos}"] .ct-mov-det`));
+    n0 = llamadas.length;
+    await cC.locator('.ct-jr-dicho [data-jr-quitar]').click(); await esperarLlamada(q, n0, 'fn_jornal_pago'); await q.waitForTimeout(200); await pintado(q);
+    pg = ultima(n0, 'fn_jornal_pago');
+    ok('Cheque · «Sí lo es» quita lo dicho (fn_jornal_pago({p: {movimiento_id, quitar: true}})) y el cheque vuelve a preguntar', !!pg && JSON.stringify(pg.args) === JSON.stringify({ p: { movimiento_id: J_CHQ.dos, quitar: true } }) &&
+      (await q.locator('#ct-jr-franja .ct-chq-arriba').count()) === 1, JSON.stringify(pg && pg.args));
+    // un cheque que NO entra solo: queda como la tarjeta de esa persona, y dice qué pide
+    n0 = llamadas.length;
+    await q.locator(arriba(J_CHQ.dos) + ` [data-chq-de="${J_PER.beto}"]`).click(); await esperarLlamada(q, n0, 'fn_jornal_pago'); await q.waitForTimeout(200); await pintado(q);
+    const tNo = await plano(q, '#toast');
+    cC = q.locator(`.ct-mov[data-id="${J_CHQ.dos}"]`);
+    ok('Cheque · si algo pide decidir, NO entra y lo dice (en ámbar): «Anotado: este pago es de Zzbeto C10 PRUEBA. No entró solo: …», sin repetir «No entró solo»',
+      /^Anotado: este pago es de Zzbeto C10 PRUEBA\. No entró solo: Sale a \$3\.13 la hora y su tarifa en Costos del equipo es \$24\.00/.test(tNo) && !/No entró solo: No entró solo/.test(tNo) && /error/.test(await q.locator('#toast').getAttribute('class')), tNo);
+    ok('…y el cheque queda, desplegado, como la tarjeta «Mano de obra · Zzbeto C10 PRUEBA»: «Cheque 1044: dijiste que es de Zzbeto C10 PRUEBA. No es suyo», lo que pide en corto («…se aleja de la suya (y una cosa más)…») y su «Así es»',
+      (await cC.locator('.ct-mov-fila').getAttribute('aria-expanded')) === 'true' && /Mano de obra · Zzbeto C10 PRUEBA/.test(await cC.locator('.ct-jr-cab h3').textContent()) &&
+      (await plano(q, `.ct-mov[data-id="${J_CHQ.dos}"] .ct-jr-chqde`)) === 'Cheque 1044: dijiste que es de Zzbeto C10 PRUEBA. No es suyo' &&
+      (await plano(q, `.ct-mov[data-id="${J_CHQ.dos}"] .ct-jr-solo`)) === 'No entró solo. La tarifa que sale se aleja de la suya (y una cosa más): míralo abajo y, si está bien, «Así es».' && (await cC.locator('[data-jr-asi]').count()) === 1,
+      await plano(q, `.ct-mov[data-id="${J_CHQ.dos}"] .ct-jr-solo`));
+    await foto(q, 'c10v5-3-cheque-pregunta');
+    n0 = llamadas.length;
+    await cC.locator('.ct-jr-chqde [data-jr-quitar]').click(); await esperarLlamada(q, n0, 'fn_jornal_pago'); await q.waitForTimeout(200); await pintado(q);
+    ok('Cheque · «No es suyo» quita lo dicho y el cheque vuelve a preguntar de quién es', JSON.stringify((ultima(n0, 'fn_jornal_pago') || {}).args) === JSON.stringify({ p: { movimiento_id: J_CHQ.dos, quitar: true } }) &&
+      (await q.locator('#ct-jr-franja .ct-chq-arriba').count()) === 1 && (await q.locator(`.ct-mov[data-id="${J_CHQ.dos}"] [data-jr-bloque]`).count()) === 0);
+
+    // ---- «Deshacer» lo registrado solo: vuelve a la Bandeja y ya no entra solo ----
+    const itAna = `#ct-jr-solos .ct-solo-it:has-text("Pago del 2 nov")`;
+    await q.locator(itAna + ' [data-solo-deshacer]').click(); await q.waitForTimeout(150);
+    ok('Deshacer · «Deshacer» en «Registrado solo» pide el motivo y dice lo que pasa (el asiento se reversa, el pago vuelve a la Bandeja y ya no vuelve a entrar solo)',
+      (await q.locator(itAna + ' textarea[name="motivo"]').count()) === 1 && /el asiento 2026-000004 se reversa \(no se borra\) y el pago vuelve a la Bandeja\. Ya no vuelve a entrar solo\./.test(await plano(q, itAna + ' .ct-form-t')), await plano(q, itAna + ' .ct-form'));
+    n0 = llamadas.length;
+    await q.locator(itAna + ' textarea[name="motivo"]').fill('no era de esa semana');
+    await q.locator(itAna + ' .ct-form button[type="submit"]').click(); await esperarLlamada(q, n0, 'fn_jornal_deshacer'); await q.waitForTimeout(200); await pintado(q);
+    const dz = ultima(n0, 'fn_jornal_deshacer');
+    ok('Deshacer · manda fn_jornal_deshacer con el reparto y el motivo, y el aviso es la nota de la base («…Este pago ya no vuelve a entrar solo: si lo quieres repartido, acéptalo tú en la Bandeja.»)',
+      !!dz && /^c1c00000-/.test(dz.args.p_reparto) && dz.args.p_motivo === 'no era de esa semana' && /Este pago ya no vuelve a entrar solo: si lo quieres repartido, acéptalo tú en la Bandeja\.$/.test(await plano(q, '#toast')), await plano(q, '#toast'));
+    let cA = q.locator(`.ct-mov[data-id="${J_MOV.ana}"]`);
+    ok('Deshacer · el pago vuelve a la Bandeja, desplegado, y dice por qué no entra solo («No entró solo. Lo deshiciste el … («no era de esa semana»): no vuelve a entrar solo…») con «Que vuelva a entrar solo»; su fila, «Edgar dijo que no»',
+      (await cA.locator('.ct-mov-fila').getAttribute('aria-expanded')) === 'true' && /^No entró solo\. Lo deshiciste el \d+-[a-z]{3}-\d{4} \(«no era de esa semana»\): no vuelve a entrar solo\. Si ya está bien, acéptalo tú con «Así es», o di que vuelva a entrar solo\. Que vuelva a entrar solo$/.test(await plano(q, `.ct-mov[data-id="${J_MOV.ana}"] .ct-jr-solo[data-solo="no"]`)) &&
+      /Edgar dijo que no$/.test(await pills(J_MOV.ana)) && (await q.locator(itSolo).count()) === 1, await plano(q, `.ct-mov[data-id="${J_MOV.ana}"] .ct-jr-solo`));
+    await foto(q, 'c10v5-4-deshecho');
+    // «Casar otra vez»: la rutina corre otra vez (desde el banco) y NO lo vuelve a meter
+    n0 = llamadas.length;
+    await q.locator('#ct-casar').click(); await esperarLlamada(q, n0, 'fn_jornal_solo'); await q.waitForTimeout(250); await pintado(q);
+    s0 = solos(n0);
+    ok('Deshacer · después de «Casar otra vez» la rutina corre otra vez, diciendo que viene del banco ({corrio: "banco"}), y lo que Edgar deshizo NO vuelve a entrar: sigue en la Bandeja',
+      s0.length === 1 && JSON.stringify(s0[0].args) === JSON.stringify({ p: { corrio: 'banco' } }) && desde(n0).findIndex(l => l.fn === 'fn_banco_casar_todo') < desde(n0).findIndex(l => l.fn === 'fn_jornal_solo') &&
+      (await q.locator(`.ct-mov[data-id="${J_MOV.ana}"]`).count()) === 1 && (await q.locator(itSolo).count()) === 1, JSON.stringify(s0.map(l => l.args)));
+    // «Que vuelva a entrar solo»
+    cA = await fila(q, J_MOV.ana);
+    n0 = llamadas.length;
+    await cA.locator('[data-jr-solo-otra]').click(); await esperarLlamada(q, n0, 'fn_jornal_pago'); await q.waitForTimeout(200); await pintado(q);
+    pg = ultima(n0, 'fn_jornal_pago');
+    ok('Deshacer · «Que vuelva a entrar solo» manda fn_jornal_pago({p: {movimiento_id, solo: true}}) y el pago entra otra vez (sale de la Bandeja y vuelve a «Registrado solo»)', !!pg && JSON.stringify(pg.args) === JSON.stringify({ p: { movimiento_id: J_MOV.ana, solo: true } }) &&
+      /^Registrado solo: \$940\.00 de Zzana C10 PRUEBA/.test(await plano(q, '#toast')) && (await q.locator(`.ct-mov[data-id="${J_MOV.ana}"]`).count()) === 0 && (await q.locator(itSolo).count()) === 2, await plano(q, '#toast'));
+
+    // ---- «No es mano de obra» queda escrito en la base ----
+    cB = await fila(q, J_MOV.beto);
+    n0 = llamadas.length;
+    await cB.locator('[data-jr-no]').click(); await esperarLlamada(q, n0, 'fn_jornal_pago'); await q.waitForTimeout(200); await pintado(q);
+    pg = ultima(n0, 'fn_jornal_pago');
+    cB = await fila(q, J_MOV.beto);
+    ok('«No es mano de obra» · con la base nueva queda escrito en ella (fn_jornal_pago({p: {movimiento_id, no_cuadrilla: true}})): el pago sale como un movimiento de siempre, con «Sí lo es»',
+      !!pg && JSON.stringify(pg.args) === JSON.stringify({ p: { movimiento_id: J_MOV.beto, no_cuadrilla: true } }) && (await cB.locator('[data-jr-bloque]').count()) === 0 && (await cB.locator('.ct-jr-dicho [data-jr-quitar]').count()) === 1 &&
+      /^1 pago a la cuadrilla espera tu respuesta · \$520\.00/.test(await fr()), await fr());
+    n0 = llamadas.length;
+    await cB.locator('.ct-jr-dicho [data-jr-quitar]').click(); await esperarLlamada(q, n0, 'fn_jornal_pago'); await q.waitForTimeout(200); await pintado(q);
+    ok('…y «Sí lo es» lo devuelve a su tarjeta de mano de obra', (await q.locator(`.ct-mov[data-id="${J_MOV.beto}"][data-jr="1"]`).count()) === 1 && /^2 pagos a la cuadrilla esperan tu respuesta · \$1,120\.00/.test(await fr()), await fr());
+
+    // ---- los repartos y las personas ----
+    await ve(q, 'obras', { sub: 'repartos' });
+    const rep = t => `.ct-rep:has-text("${t}")`;
+    ok('Repartos · lo que entró solo lleva su marca («registrado solo») y dice «Registrado solo el …, en nombre de Edgar Prueba»; el cheque, además, «Cheque 1043 (dijiste de quién era)»; lo deshecho sigue en el historial',
+      (await q.locator('.ct-rep').count()) === 3 && (await q.locator('.ct-rep .ct-pill', { hasText: 'registrado solo' }).count()) === 3 && (await q.locator('.ct-rep.deshecho').count()) === 1 &&
+      /Cheque 1043 \(dijiste de quién era\) · pago del 9 nov 2026/.test(await plano(q, rep('$240.00') + ' .ct-nota')) && /^Registrado solo el .*, en nombre de Edgar Prueba/.test(await plano(q, rep('$240.00') + ' > .ct-sub')), await plano(q, rep('$240.00')));
+    ok('Repartos · el reparto que entró solo con horas en una obra terminada lleva esa nota (los dos del pago de $940.00: el deshecho y el que volvió a entrar); el del cheque, que no tenía, no',
+      (await q.locator('.ct-rep .ct-solo-aviso[data-aviso="obra_terminada"]').count()) === 2 && (await q.locator(rep('$240.00') + ' .ct-solo-aviso[data-aviso="obra_terminada"]').count()) === 0 &&
+      /^Nota\. Hay horas en una obra que ya no está activa: C10 PRUEBA Obra F \(terminada\)\. Su parte va a esa obra igual/.test(await plano(q, '.ct-rep:not(.deshecho) .ct-solo-aviso[data-aviso="obra_terminada"]')),
+      String(await q.locator('.ct-rep .ct-solo-aviso').count()));
+    ok('Repartos · lo que entró solo por el nombre de la persona enseña también cómo lo escribió el banco (los dos del pago de $940.00); el del cheque, no',
+      (await q.locator('.ct-rep .ct-solo-banco').count()) === 2 && (await q.locator(rep('$240.00') + ' .ct-solo-banco').count()) === 0 &&
+      (await plano(q, '.ct-rep:not(.deshecho) .ct-solo-banco')) === 'El banco: «Zelle payment to C10 PRUEBA ZZANA 9001»', await plano(q, '.ct-rep .ct-solo-banco'));
+    await foto(q, 'c10v5-5-repartos');
+    await ve(q, 'obras', { sub: 'personas' });
+    const per = u => `.ct-per[data-usuario="${u}"]`;
+    ok('Personas · a quien la base dio de alta sola lo dice («cobra por horas» y «dada de alta sola»), con el patrón que sale de su nombre', /cobra por horas\s*dada de alta sola/.test(await plano(q, per(J_PER.carla) + ' .ct-cab')) &&
+      /Se reconoce por «ZZCARLA C10 PRUEBA»/.test(await plano(q, per(J_PER.carla) + ' .ct-nota')) && !/dada de alta sola/.test(await plano(q, per(J_PER.ana) + ' .ct-cab')), await plano(q, per(J_PER.carla)));
+    ok('Personas · a quien la base no puede reconocer sola le dice por qué (su nombre es demasiado corto) y qué hacer, con «Dar de alta» y «No cobra por horas»',
+      /sin dar de alta/.test(await plano(q, per(J_PER.zz) + ' .ct-cab')) && /^La base no puede reconocer sola sus pagos: su nombre en la app \(«Zz»\) es demasiado corto para reconocer sus pagos sin dudas\. Dala de alta con cómo la escribe el banco; o, si no cobra por horas, dilo\.$/.test(await plano(q, per(J_PER.zz) + ' .ct-per-sola')) &&
+      (await q.locator(per(J_PER.zz) + ' [data-per-alta]').count()) === 1 && (await q.locator(per(J_PER.zz) + ' [data-per-nunca]').count()) === 1, await plano(q, per(J_PER.zz)));
+    n0 = llamadas.length;
+    await q.locator(per(J_PER.zz) + ' [data-per-nunca]').click(); await esperarLlamada(q, n0, 'fn_jornal_persona'); await pintado(q);
+    ok('Personas · «No cobra por horas» manda fn_jornal_persona({p: {usuario_id, activa: false}}) y la persona queda «de baja»', JSON.stringify((ultima(n0, 'fn_jornal_persona') || {}).args) === JSON.stringify({ p: { usuario_id: J_PER.zz, activa: false } }) &&
+      /de baja/.test(await plano(q, per(J_PER.zz) + ' .ct-cab')) && (await q.locator(per(J_PER.zz) + ' [data-per-nunca]').count()) === 0, await plano(q, per(J_PER.zz) + ' .ct-cab'));
+    await foto(q, 'c10v5-6-personas');
+
+    // ---- el ajuste: apagar lo automático (de fábrica, encendido) ----
+    await ve(q, 'obras', { sub: 'obras' });
+    ok('Ajustes · «Registrar solos los pagos a la cuadrilla» sale marcado (de fábrica, encendido), con lo que hace encendido y apagado', await q.locator('#ct-ob-config-form input[name="solo"]').isChecked() &&
+      /Encendido \(de fábrica\): los Zelle a la cuadrilla entran solos al libro, repartidos por sus horas, y un cheque pregunta de quién es/.test(await plano(q, '.ct-ob-solo-nota')), await plano(q, '.ct-ob-solo-nota'));
+    n0 = llamadas.length;
+    await q.locator('#ct-ob-config-form input[name="solo"]').uncheck(); await q.locator('#ct-ob-config-form button[type="submit"]').click(); await esperarLlamada(q, n0, 'fn_jornal_config'); await pintado(q);
+    ok('Ajustes · apagarlo manda fn_jornal_config({p: {solo: false}}) (solo eso) y avisa en llano', JSON.stringify((ultima(n0, 'fn_jornal_config') || {}).args) === JSON.stringify({ p: { solo: false } }) &&
+      (await plano(q, '#toast')) === 'Apagado: cada pago a la cuadrilla espera tu «Así es» en la Bandeja' && !(await q.locator('#ct-ob-config-form input[name="solo"]').isChecked()), await plano(q, '#toast'));
+    await yaPaso(q);
+    n0 = llamadas.length;
+    await ve(q, 'bandeja');
+    ok('Apagado · la Bandeja lo dice arriba, con el enlace para encenderlo, y cada pago lo dice en su fila («Lo automático está apagado»); la rutina contesta «apagada» y no entra nada',
+      /^El registro automático de los pagos a la cuadrilla está apagado: cada uno espera tu «Así es»\. Encenderlo en Costo por obra$/.test(await plano(q, '.ct-solo-apagada')) &&
+      /Lo automático está apagado$/.test(await pills(J_MOV.beto)) && solos(n0).length === 1 && (await q.locator(itSolo).count()) === 2, await plano(q, '.ct-solo-apagada'));
+    await foto(q, 'c10v5-7-apagado');
+    // apagado, nadie se da de alta solo: Personas no lo promete. Llega alguien nuevo con horas, a quien la base reconocería por su nombre
+    J.personas.push({ usuario_id: J_PER.dora, nombre: 'Zzdora C10 PRUEBA', rol: 'campo', perfil_activo: true, tarifa: 22, registrada: false, activa: false, patron: null, cuenta_propia: null, nota: null, creado_el: null });
+    await ve(q, 'obras', { sub: 'personas' });
+    ok('Apagado · Personas no promete lo que no pasa: a quien la base reconocería por su nombre le dice «sin dar de alta» y que el registro automático está apagado (nadie se da de alta solo), con «Dar de alta» de primero y «No cobra por horas»',
+      /sin dar de alta/.test(await plano(q, per(J_PER.dora) + ' .ct-cab')) && !/la base la da de alta sola/.test(await plano(q, per(J_PER.dora))) &&
+      /^El registro automático está apagado \(Ajustes\): nadie se da de alta solo\. Dala de alta tú; encendido, la base la reconocería por su nombre \(«ZZDORA C10 PRUEBA» en la descripción del banco\)\.$/.test(await plano(q, per(J_PER.dora) + ' .ct-per-sola')) &&
+      (await q.locator(per(J_PER.dora) + ' [data-per-alta]:not(.secundaria)').count()) === 1 && (await q.locator(per(J_PER.dora) + ' [data-per-nunca]').count()) === 1, await plano(q, per(J_PER.dora)));
+    await foto(q, 'c10v5-7b-apagado-personas');
+    await ve(q, 'obras', { sub: 'obras' });
+    n0 = llamadas.length;
+    await q.locator('#ct-ob-config-form input[name="solo"]').check(); await q.locator('#ct-ob-config-form button[type="submit"]').click(); await esperarLlamada(q, n0, 'fn_jornal_config'); await pintado(q);
+    ok('Ajustes · encenderlo otra vez manda fn_jornal_config({p: {solo: true}})', JSON.stringify((ultima(n0, 'fn_jornal_config') || {}).args) === JSON.stringify({ p: { solo: true } }) && /^Encendido: los pagos a la cuadrilla entran solos al libro/.test(await plano(q, '#toast')), await plano(q, '#toast'));
+    await ve(q, 'obras', { sub: 'personas' });
+    ok('Encendido otra vez · Personas dice de esa persona «la base la da de alta sola» (por su nombre, al abrir Contabilidad), con «Dar de alta» de segundo y «No cobra por horas»',
+      /la base la da de alta sola/.test(await plano(q, per(J_PER.dora) + ' .ct-cab')) && !/sin dar de alta/.test(await plano(q, per(J_PER.dora))) &&
+      /^La base reconoce sus pagos por su nombre \(«ZZDORA C10 PRUEBA» en la descripción del banco\): se da de alta sola al abrir Contabilidad\. Si no cobra por horas, dilo\.$/.test(await plano(q, per(J_PER.dora) + ' .ct-per-sola')) &&
+      (await q.locator(per(J_PER.dora) + ' [data-per-alta].secundaria').count()) === 1 && (await q.locator(per(J_PER.dora) + ' [data-per-nunca]').count()) === 1, await plano(q, per(J_PER.dora)));
+    n0 = llamadas.length;
+    await ve(q, 'bandeja');
+    ok('Encendido otra vez · la Bandeja llama a la rutina enseguida (el ajuste suelta su reloj): da de alta sola a quien llegó y ya no dice «apagado»',
+      solos(n0).length === 1 && (await q.locator('.ct-solo-apagada').count()) === 0 && J.personas.find(x => x.usuario_id === J_PER.dora).alta === 'sola', `${solos(n0).length} llamada(s)`);
+    await cx.close();
+
+    // ---- la base corta por reloj (completo: false): se la vuelve a llamar; y con otra corrida a la vez (ocupado), no insiste ----
+    jResetV5(); J.v5.corta = 1; J.v5.espera = new Set();
+    n0 = llamadas.length;
+    ({ cx, q } = await abrirCtx(1280, true));
+    s0 = solos(n0);
+    ok('La base corta por reloj · con dos pagos listos y la base cortando tras el primero (completo: false), la pantalla la vuelve a llamar hasta que termina (2 llamadas) y avisa de los dos juntos',
+      s0.length === 2 && /^Registrado solo: 2 pagos a la cuadrilla por \$1,036\.00 \(Zzana C10 PRUEBA \$940\.00; Zzbeto C10 PRUEBA \$96\.00\)\./.test(await plano(q, '#toast')), `${s0.length} · ${await plano(q, '#toast')}`);
+    // (la revisión de la v5) la segunda llamada NO vuelve a empezar por el pago más viejo: sigue después del último que la base miró
+    ok('La base corta por reloj · la segunda llamada sigue DESPUÉS del último pago que la base miró (manda su «sigue» en despues_de: {corrio: "pantalla", despues_de: …}); la primera va sin él',
+      s0.length === 2 && JSON.stringify(s0[0].args) === JSON.stringify({ p: { corrio: 'pantalla' } }) && JSON.stringify(s0[1].args) === JSON.stringify({ p: { corrio: 'pantalla', despues_de: J_MOV.ana2 } }),
+      JSON.stringify(s0.map(l => l.args)));
+    await cx.close();
+    jResetV5(); J.v5.ocupado = true;
+    n0 = llamadas.length;
+    ({ cx, q } = await abrirCtx(1280, true));
+    ok('Otra corrida a la vez · si la base contesta «ocupado» (el otro teléfono la está corriendo), la pantalla no insiste ni se pone en rojo: una llamada, y la portada sale',
+      solos(n0).length === 1 && (await q.locator('#conta-raiz .ct-rojo').count()) === 0 && (await q.locator('#ct-atender').count()) === 1);
+    await cx.close();
+
+    // ---- falla a media pasada: la base corta tras el primer pago y la llamada siguiente no contesta. Lo que entró se dice igual ----
+    jResetV5(); J.v5.corta = 1; J.v5.espera = new Set(); J.v5.fallaEn = 2;
+    n0 = llamadas.length;
+    ({ cx, q } = await abrirCtx(1280, true));
+    s0 = solos(n0);
+    { const tF = await plano(q, '#toast');
+      await ve(q, 'bandeja');
+      ok('Falla a media pasada · la base corta tras el primer pago y la llamada siguiente no contesta: lo que ya entró se dice igual («Registrado solo: 1 pago a la cuadrilla por $940.00…»), no se insiste (2 llamadas), y la Bandeja dice que el registro automático no contestó, sin rojos, con el otro pago «listo para entrar solo»',
+        s0.length === 2 && solos(n0).length === 2 && /^Registrado solo: 1 pago a la cuadrilla por \$940\.00 \(Zzana C10 PRUEBA \$940\.00\)\./.test(tF) && (await q.locator(itSolo).count()) === 1 &&
+        /^El registro automático de los pagos a la cuadrilla no contestó: .* No frena nada: cada pago tiene su «Así es», y se vuelve a intentar al abrir la Bandeja\.$/.test(await plano(q, '.ct-solo-mal')) &&
+        /^1 pago está listo para entrar solo \(\$96\.00\): entran en la próxima pasada\.$/.test(await plano(q, '.ct-solo-entran')) && (await q.locator('#conta-raiz .ct-rojo').count()) === 0,
+        `${s0.length} · ${tF.slice(0, 60)} · ${await q.locator('.ct-solo-mal').count()} · ${await q.locator('.ct-solo-entran').count() ? await plano(q, '.ct-solo-entran') : 'sin «listo»'}`); }
+    await cx.close();
+
+    // ---- sin el código del teléfono: no se llama a la rutina (registrar toca el libro), y se dice ----
+    jResetV5();
+    n0 = llamadas.length;
+    ({ cx, q } = await abrirCtx(1280, false));
+    await ve(q, 'bandeja');
+    ok('Sin el código del teléfono · la rutina NO se llama (registrar toca el libro) y la Bandeja dice que el pago está listo y qué falta («…falta entrar con el código del teléfono…; si no, entran esta madrugada»)',
+      solos(n0).length === 0 && /^1 pago está listo para entrar solo \(\$940\.00\): desde aquí falta entrar con el código del teléfono \(Conexiones y seguridad\); si no, entran esta madrugada\.$/.test(await plano(q, '.ct-solo-entran')) &&
+      /entra solo$/.test(await plano(q, `.ct-mov[data-id="${J_MOV.ana}"] .ct-f-motivo`)), await plano(q, '.ct-solo-entran'));
+    n0 = llamadas.length;
+    await q.locator(`#ct-jr-franja .ct-chq-arriba[data-chq="${J_CHQ.uno}"] [data-chq-de="${J_PER.ana}"]`).click(); await q.waitForTimeout(300);
+    ok('Sin el código · decir de quién es un cheque (lo registraría) tampoco: lo dice y no llama a la base', !desde(n0).some(l => l.fn === 'fn_jornal_pago') &&
+      /Registrar un pago toca el libro: primero activa el código del teléfono/.test(await plano(q, `#ct-jr-franja .ct-chq-arriba[data-chq="${J_CHQ.uno}"] .ct-chq-res`)), await plano(q, `#ct-jr-franja .ct-chq-arriba[data-chq="${J_CHQ.uno}"] .ct-chq-res`));
+    await cx.close();
+
+    // ---- el teléfono (390), el iPad (820) y la computadora (1280): sin desplazamiento lateral ----
+    for (const w of [390, 820, 1280]) {
+      jResetV5();
+      ({ cx, q } = await abrirCtx(w, true));
+      const mal = [];
+      const mide = async nombre => { const m = await q.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth, rojo: !!document.querySelector('#conta-raiz .ct-rojo') })); if (m.sw > m.iw + 1 || m.rojo) mal.push(`${nombre}: ${m.sw} > ${m.iw}${m.rojo ? ' (rojo)' : ''}`); await foto(q, `c10v5-${w}-${nombre}`); };
+      await ve(q, 'bandeja'); await mide('bandeja');
+      if (w === 390) {
+        const bt = await q.evaluate(() => [...document.querySelectorAll('#ct-jr-franja .ct-chq-btns button')].map(x => { const r = x.getBoundingClientRect(); return { alto: Math.round(r.height), der: Math.round(r.right) }; }));
+        ok('Teléfono · los botones de la cuadrilla de un cheque se tocan bien (44 px o más de alto) y caben en 390 px', bt.length === 10 && bt.every(x => x.alto >= 44 && x.der <= 390), JSON.stringify(bt));
+      }
+      await fila(q, J_MOV.beto); await q.waitForTimeout(150); await mide('bandeja-pregunta');
+      await fila(q, J_CHQ.dos); await q.waitForTimeout(150); await mide('bandeja-cheque');
+      await q.locator('#ct-jr-solos .ct-solo-it [data-solo-deshacer]').first().click(); await q.waitForTimeout(150); await mide('bandeja-deshacer');
+      await ve(q, 'obras', { sub: 'obras' }); await mide('obras-ajustes');
+      await ve(q, 'obras', { sub: 'repartos' }); await mide('repartos');
+      await ve(q, 'obras', { sub: 'personas' }); await mide('personas');
+      ok(`La cuadrilla, sola · ${w} px: la Bandeja con «Registrado solo», los cheques y lo que pregunta, los ajustes, los repartos y las personas, sin desplazamiento lateral ni rojos`, !mal.length, mal.join(' | '));
+      await cx.close();
+    }
+
+    // ---- con la base de ANTES de la v5: una llamada por sesión (no existe), y todo como antes ----
+    estado.c10v5 = false; jReset();
+    n0 = llamadas.length;
+    const nLec = lecturas.length;
+    ({ cx, q } = await abrirCtx(1280, true));
+    await ve(q, 'bandeja'); await ve(q, 'resumen'); await ve(q, 'bandeja');
+    ok('Base anterior a la v5 · la rutina no existe (404): la pantalla lo sabe a la primera y no vuelve a llamarla en toda la sesión (1 llamada tras abrir, ir a la Bandeja, volver a la portada y otra vez la Bandeja)', solos(n0).length === 1, String(solos(n0).length));
+    ok('Base anterior a la v5 · la Bandeja es la de antes: «3 pagos de mano de obra esperan su reparto por horas · $2,060.00», sin «Registrado solo», sin cheques que pregunten y sin leer lo que no existe',
+      /^3 pagos de mano de obra esperan su reparto por horas · \$2,060\.00/.test(await fr()) && (await q.locator('#ct-jr-solos, .ct-chq, .ct-jr-solo').count()) === 0 && (await q.locator('#conta-raiz .ct-rojo').count()) === 0 &&
+      !lecturas.slice(nLec).some(l => /^(v_jornal_cheques|jornal_pagos)/.test(l)), await fr());
+    const cV = await fila(q, J_MOV.ana);
+    await cV.locator('[data-jr-no]').click(); await q.waitForTimeout(200);
+    ok('Base anterior a la v5 · «No es mano de obra» sigue en memoria, como antes (sin llamar a la base)', !desde(n0).some(l => l.fn === 'fn_jornal_pago') && (await q.locator(`.ct-mov[data-id="${J_MOV.ana}"] [data-jr-volver]`).count()) === 1);
+    await cx.close();
+    estado.c10 = false; estado.c10v5 = false; conCodigo(false);
   }
 
   // ---- Las facturas (c11, fase 10): antes del corte (arriba lo dice, lo que falta, borradores para probar y «Emitir»
@@ -8445,8 +9002,11 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
         const pers = X10('v_jornal_personas'), nom = pers.filter(p => !p.registrada && p.horas_nomina_90_dias > 0), sin = pers.filter(p => !p.registrada && !(p.horas_nomina_90_dias > 0));
         const tarj = async p => txt(q.locator(`.ct-per[data-usuario="${p.usuario_id}"]`));
         const okNom = (await Promise.all(nom.map(async p => /cobra por nómina/.test(await tarj(p)) && !/sin dar de alta/.test(await tarj(p)) && !(await q.locator(`.ct-per[data-usuario="${p.usuario_id}"] [data-per-alta]`).count())))).every(Boolean);
-        const okSin = (await Promise.all(sin.map(async p => /sin dar de alta/.test(await tarj(p)) && (await q.locator(`.ct-per[data-usuario="${p.usuario_id}"] [data-per-alta]`).count()) === 1))).every(Boolean);
-        ok(`(11b) Costo por obra → Personas · ${nom.map(p => p.nombre).join(' y ')} «cobra(n) por nómina» (horas_nomina_90_dias de la base), sin «Dar de alta»; ${sin.map(p => p.nombre).join(' y ')}, «sin dar de alta» como siempre; y arriba lo cuenta`,
+        // (c10 v5, 15-nov) a quien aún no está dado de alta la base lo da de alta sola por su nombre (sola: true, con lo automático
+        // encendido: «la base la da de alta sola», y «Dar de alta» sigue ahí); si no puede (o con una base de antes), «sin dar de alta»
+        const okSin = (await Promise.all(sin.map(async p => { const t = await tarj(p);
+          return (p.sola === true ? /la base la da de alta sola/.test(t) && !/sin dar de alta/.test(t) : /sin dar de alta/.test(t)) && (await q.locator(`.ct-per[data-usuario="${p.usuario_id}"] [data-per-alta]`).count()) === 1; }))).every(Boolean);
+        ok(`(11b) Costo por obra → Personas · ${nom.map(p => p.nombre).join(' y ')} «cobra(n) por nómina» (horas_nomina_90_dias de la base), sin «Dar de alta»; ${sin.map(p => p.nombre).join(' y ')}, sin dar de alta todavía (con la v5 de c10, «la base la da de alta sola»; si no, «sin dar de alta» como siempre); y arriba lo cuenta`,
           nom.length === 2 && sin.length === 2 && okNom && okSin && new RegExp(`${nom.length} cobran por nómina · ${sin.length} con horas sin dar de alta`).test(await txt(q.locator('.ct-pag-sub'))), await txt(q.locator('.ct-pag-sub')));
       }
       ok(`(11b) Costo por obra con la nómina dentro · ${w} px: la obra A, la lista y Personas sin desplazamiento lateral ni rojos`, !mal.length, mal.join(' | '));
