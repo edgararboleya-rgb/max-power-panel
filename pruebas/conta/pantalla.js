@@ -4452,7 +4452,16 @@ async function escenaF19(b, errs) {
     n0 = llamadas.length;
     await g.locator('[data-bn-g-asi]').click(); await q.waitForTimeout(200);
     ok('…y «Así es para los 2» sin decir qué son no llama a nada («Elige antes qué son.»)', cuantas(n0, 'fn_bandeja_grupo') === 0 && /Elige antes qué son\./.test(await g.locator('.ct-bn-res').textContent()));
+    // (tercera vuelta) con un grupo ABIERTO en el que Edgar ya eligió algo, «Ver los 7 grupos» añade los que no se veían y no le
+    // toca lo elegido (los grupos ya no se repintan debajo de su dedo; y por eso mismo el botón, que los repintaba, no hacía nada)
+    await g.locator('[data-bn-g-cat]').selectOption({ label: 'Herramienta menor y uniformes' }); await q.waitForTimeout(150);
+    const gElegido = await g.locator('[data-bn-g-cat]').inputValue(), gAntes = await q.locator('[data-bn-grupo]').count();
     await q.locator('#ct-bn-g-todos').click(); await q.waitForTimeout(200);
+    ok('(tercera vuelta) «VER LOS 7 GRUPOS» CON UN GRUPO A MEDIO ELEGIR: salen los que faltaban (el de los depósitos, el último, con sus botones) y el botón se va; el grupo abierto sigue abierto y con la categoría que Edgar había elegido (antes, con un grupo tocado, el botón no hacía nada: los grupos no se repintan debajo del dedo, y el botón los repintaba todos)',
+      gAntes === 6 && (await q.locator('[data-bn-grupo]').count()) === 7 && (await q.locator('#ct-bn-g-todos').count()) === 0 && !!gElegido
+      && (await g.evaluate(el => el.open)) && (await g.locator('[data-bn-g-cat]').inputValue()) === gElegido && (await g.getAttribute('data-tocada')) === '1'
+      && (await q.locator('#ct-bn-grupos [data-bn-grupo]').last().getAttribute('data-bn-grupo')) === 'P:INTUIT' && (await q.locator('#ct-bn-grupos > .ct-acciones').count()) === 0,
+      `${gAntes} → ${await q.locator('[data-bn-grupo]').count()} grupos · elegido «${gElegido}» → «${await g.locator('[data-bn-g-cat]').inputValue()}» · botón ${await q.locator('#ct-bn-g-todos').count()}`);
     g = q.locator('[data-bn-grupo="P:INTUIT"]');
     await g.locator('summary').first().click(); await q.waitForTimeout(150);
     const depTxt = await plano(q, '[data-bn-grupo="P:INTUIT"]');
@@ -4894,12 +4903,15 @@ async function escenaF19(b, errs) {
         await hoja.waitForLoadState('domcontentloaded').catch(() => {});
         const hojaTxt = await hoja.evaluate(() => document.body ? document.body.innerText : '').catch(() => '');
         await hoja.close().catch(() => {});
-        ok('(tercera vuelta) LAS COMIDAS EN EL PAQUETE: la cuenta 6350 va en la línea 26 al 100 % de libros, y EN SU RENGLÓN dice que solo la mitad es deducible y a dónde va la otra («Booked at 100%; only 50% is deductible. Nondeductible half (…): Schedule M-1, line 5c.»); el aviso «MEALS: account 6350…» sale arriba con los demás, y la nota va también en el CSV del resumen por línea (columna «Note») y en la hoja de imprimir (antes la línea 26 llevaba las comidas enteras sin decir nada en su renglón: quien la tecleara deducía de más)',
+        // (el CSV, renglón a renglón: cuántas columnas trae cada uno, con sus comillas)
+        const columnasCsv = [...new Set(csvTax.replace(/^\uFEFF/, '').split(/\r?\n/).filter(Boolean).map(r => r.replace(/"(?:[^"]|"")*"/g, 'x').split(',').length))];
+        ok('(tercera vuelta) LAS COMIDAS EN EL PAQUETE: la cuenta 6350 va en la línea 26 al 100 % de libros, y EN SU RENGLÓN dice que solo la mitad es deducible y a dónde va la otra («Booked at 100%; only 50% is deductible. Nondeductible half (…): Schedule M-1, line 5c.»); el aviso «MEALS: account 6350…» sale arriba con los demás, y la nota va también en el CSV del resumen por línea (columna «Note», y todos sus renglones con las mismas siete columnas) y en la hoja de imprimir (antes la línea 26 llevaba las comidas enteras sin decir nada en su renglón: quien la tecleara deducía de más)',
           !!comida && comida.line === '26' && Number(comida.deductible) + Number(comida.nondeductible) === Number(comida.amount) && /only 50% is deductible/.test(comida.note)
           && (await fila.count()) === 1 && (await fila.locator('[data-fis-nota]').textContent()).trim() === comida.note
           && (await q.locator('.ct-fis-w li').allTextContents()).some(w => /^MEALS: account 6350/.test(w))
-          && /Form,Line,Description,Account,Account name,Amount,Note/.test(csvTax) && csvTax.includes(comida.note) && hojaTxt.includes(comida.note) && /MEALS: account 6350/.test(hojaTxt),
-          `${JSON.stringify(comida)} · ${(await fila.count()) ? (await fila.textContent()).replace(/\s+/g, ' ') : 'sin renglón'} · hoja: ${hojaTxt.length} letras`);
+          && /Form,Line,Description,Account,Account name,Amount,Note/.test(csvTax) && csvTax.includes(comida.note) && hojaTxt.includes(comida.note) && /MEALS: account 6350/.test(hojaTxt)
+          && columnasCsv.length === 1 && columnasCsv[0] === 7,
+          `${JSON.stringify(comida)} · ${(await fila.count()) ? (await fila.textContent()).replace(/\s+/g, ' ') : 'sin renglón'} · hoja: ${hojaTxt.length} letras · columnas del CSV: ${columnasCsv.join('/')}`);
       }
       n0 = llamadas.length;
       await q.locator('#ct-fis-confirmada').check(); await esperarLlamada(q, n0, 'fn_fiscal_forma'); await pintado(q); await q.waitForTimeout(200);

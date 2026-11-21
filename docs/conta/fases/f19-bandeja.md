@@ -409,7 +409,10 @@ Lo que encontró la segunda revisión y cómo quedó. Cada cosa tiene su prueba.
   (mientras la IA piensa se contestan las demás); lo que espera, se dice; con
   la IA apagada no dice «llegó a su tope»; un grupo que no entra entero sigue,
   con lo que se quedó escrito dentro y pidiendo la obra en vez de «la del
-  día»; lo de una obra no ofrece «entra solo» en «Lo que recuerdo»; la nota
+  día»; «Ver los N grupos» añade los que no se veían sin tocar el grupo en el
+  que Edgar ya está eligiendo (los grupos no se repintan debajo de su dedo, y
+  ese botón los repintaba: con un grupo a medio elegir no hacía nada); lo de
+  una obra no ofrece «entra solo» en «Lo que recuerdo»; la nota
   del recibo sale solo en un comercio; los botones del banco de «Más opciones»
   ya no traen códigos de cuenta; el aviso de abajo, en el teléfono, sale a
   todo el ancho, no se come los toques y dura lo que tarda en leerse.
@@ -437,7 +440,7 @@ Lo que encontró la segunda revisión y cómo quedó. Cada cosa tiene su prueba.
   el tope, el esquema; y, tercera vuelta, el prestamista dicho a la IA, la
   máscara con saltos de línea, el carácter nulo, los enlaces y la frase como
   sugerencia del porqué).
-- `pruebas/conta/pantalla.js`: 185 comprobaciones de esta escena, con la base
+- `pruebas/conta/pantalla.js`: 186 comprobaciones de esta escena, con la base
   simulada sacada del banco (`f19-capturar.js` → `pantalla-f19.json`, semilla
   `f19-semilla.sql`; las lecturas por partes, con `f19-parte.js`, que el
   capturador comprueba contra la base). Solo esa escena:

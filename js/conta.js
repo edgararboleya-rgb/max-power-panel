@@ -4404,23 +4404,36 @@
   function wireBnGrupos(filas) {
     const cont = $("ct-bn-grupos"); if (!cont) return;
     const gs = bnGrupos(filas);
-    const todos = $("ct-bn-g-todos"); if (todos) todos.addEventListener("click", () => { S.bn.verGrupos = true; bnRepintarGrupos(); });
-    cont.querySelectorAll("[data-bn-grupo]").forEach(card => {
-      const g = gs.find(x => x.clave === card.dataset.bnGrupo); if (!g) return;
-      card.addEventListener("toggle", () => { if (card.open) S.bn.grupoAbierto = g.clave; else if (S.bn.grupoAbierto === g.clave) S.bn.grupoAbierto = null; });
-      const sel = card.querySelector("[data-bn-g-cat]"), campos = card.querySelector("[data-bn-g-campos]"), soloC = card.querySelector("[data-bn-g-solo-c]");
-      if (sel) sel.addEventListener("change", () => { const s = bnSub(sel.value); campos.innerHTML = s ? bnCamposHTML(s, null, bnPreGrupo(g)) : ""; if (soloC) soloC.innerHTML = bnSoloGrupoHTML(g, s); const c = card.querySelector(".ct-bn-res"); if (c) c.innerHTML = ""; });
-      // (el grupo en el que Edgar ya eligió algo no se repinta debajo de su dedo cuando llegan más recomendaciones)
-      const tocar = () => { card.dataset.tocada = "1"; };
-      card.addEventListener("input", tocar); card.addEventListener("change", tocar);
-      const asi = card.querySelector("[data-bn-g-asi]"); if (asi) asi.addEventListener("click", () => bnAsiGrupo(card, g));
-      card.querySelector("[data-bn-g-ver]").addEventListener("click", () => {
-        S.bj.grupo = { clave: g.clave, nombre: g.nombre || "", ids: new Set(g.ms.map(m => m.movimiento_id)) };
-        // (se va a contestarlos en la lista: el grupo se pliega, y así sus cuentas se ponen al día con cada respuesta)
-        card.open = false; delete card.dataset.tocada;
-        pintarListaBandeja();
-        const l = $("ct-bj-lista"); if (l && typeof l.scrollIntoView === "function") l.scrollIntoView({ behavior: "smooth", block: "start" });
-      });
+    // «VER LOS N GRUPOS»: los que no se veían se AÑADEN debajo, sin repintar los que ya están. (Repintarlos todos borraba lo que
+    // Edgar llevaba elegido en un grupo abierto; y bnRepintarGrupos, que por eso no repinta un grupo tocado, dejaba el botón sin
+    // hacer nada justo entonces.)
+    const todos = $("ct-bn-g-todos");
+    if (todos) todos.addEventListener("click", () => {
+      S.bn.verGrupos = true;
+      const hay = new Set([...cont.querySelectorAll("[data-bn-grupo]")].map(c => c.dataset.bnGrupo)), pie = todos.closest(".ct-acciones") || todos;
+      const resto = bnGrupos(S.bandeja).filter(g => !hay.has(g.clave));
+      pie.insertAdjacentHTML("beforebegin", resto.map(bnGrupoHTML).join(""));
+      pie.remove();
+      cont.querySelectorAll("[data-bn-grupo]").forEach(card => { if (!hay.has(card.dataset.bnGrupo)) wireBnGrupo(card, resto); });
+    });
+    cont.querySelectorAll("[data-bn-grupo]").forEach(card => wireBnGrupo(card, gs));
+  }
+  // los botones y los campos de UN grupo (el de esa tarjeta, entre los `gs` que se acaban de pintar)
+  function wireBnGrupo(card, gs) {
+    const g = gs.find(x => x.clave === card.dataset.bnGrupo); if (!g) return;
+    card.addEventListener("toggle", () => { if (card.open) S.bn.grupoAbierto = g.clave; else if (S.bn.grupoAbierto === g.clave) S.bn.grupoAbierto = null; });
+    const sel = card.querySelector("[data-bn-g-cat]"), campos = card.querySelector("[data-bn-g-campos]"), soloC = card.querySelector("[data-bn-g-solo-c]");
+    if (sel) sel.addEventListener("change", () => { const s = bnSub(sel.value); campos.innerHTML = s ? bnCamposHTML(s, null, bnPreGrupo(g)) : ""; if (soloC) soloC.innerHTML = bnSoloGrupoHTML(g, s); const c = card.querySelector(".ct-bn-res"); if (c) c.innerHTML = ""; });
+    // (el grupo en el que Edgar ya eligió algo no se repinta debajo de su dedo cuando llegan más recomendaciones)
+    const tocar = () => { card.dataset.tocada = "1"; };
+    card.addEventListener("input", tocar); card.addEventListener("change", tocar);
+    const asi = card.querySelector("[data-bn-g-asi]"); if (asi) asi.addEventListener("click", () => bnAsiGrupo(card, g));
+    card.querySelector("[data-bn-g-ver]").addEventListener("click", () => {
+      S.bj.grupo = { clave: g.clave, nombre: g.nombre || "", ids: new Set(g.ms.map(m => m.movimiento_id)) };
+      // (se va a contestarlos en la lista: el grupo se pliega, y así sus cuentas se ponen al día con cada respuesta)
+      card.open = false; delete card.dataset.tocada;
+      pintarListaBandeja();
+      const l = $("ct-bj-lista"); if (l && typeof l.scrollIntoView === "function") l.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   }
   // los grupos, otra vez con lo último (`forzar`: aunque Edgar esté dentro de uno: acaba de contestarlo)
@@ -6800,9 +6813,9 @@
     $("ct-fis-csv-tax").addEventListener("click", () => {
       const filas = [["Form", "Line", "Description", "Account", "Account name", "Amount", "Note"]];
       // (el año parcial, dicho también en el archivo: es lo que el contador abre)
-      if (parcial) filas.push(["", "", `PARTIAL YEAR: ${p.period_start} to ${p.period_end} only (books in this system start on ${p.books_start || p.period_start}; earlier activity is in QuickBooks)`, "", "", ""]);
+      if (parcial) filas.push(["", "", `PARTIAL YEAR: ${p.period_start} to ${p.period_end} only (books in this system start on ${p.books_start || p.period_start}; earlier activity is in QuickBooks)`, "", "", "", ""]);
       for (const l of (p.tax_lines || []).concat(p.form_1125a || []).concat(Array.isArray(re.rows) ? re.rows.map(x => ({ ...x, form: "M-2" })) : [])) {
-        filas.push([l.form || forma, l.line, l.label, "", "", l.amount]);
+        filas.push([l.form || forma, l.line, l.label, "", "", l.amount, ""]);
         for (const a of Array.isArray(l.accounts) ? l.accounts : []) filas.push([l.form || forma, l.line, "", a.account, a.name, a.amount, a.note || ""]);
       }
       if (descargarTexto(csv(filas), `tax-lines-${p.fiscal_year || S.fis.anio}-form-${forma}.csv`)) S.hooks.avisar("Resumen por línea descargado: mándaselo al contador.");
