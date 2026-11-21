@@ -2288,8 +2288,13 @@ video.foto-mini { background: var(--mp-black); }
   box-shadow: var(--mp-shadow-lg);
   z-index: 200;
   max-width: calc(100vw - 2rem);
+  /* Un aviso largo, en el teléfono, a casi todo el ancho (centrado con left: 50 %, el ancho «al contenido» se quedaba en media
+     pantalla y salía en diez renglones); y no se come los toques de lo que tapa (su botón «Deshacer» sí se toca) */
+  width: max-content;
+  pointer-events: none;
 }
 #toast.error { color: var(--night-bad); border-color: var(--rojo-noche-50); }
+#toast .toast-deshacer { pointer-events: auto; }
 
 /* Sin animaciones para quien lo pide en el teléfono (accesibilidad): se apagan la chispa
    del cable, la del Pulso, el anillo y todo lo que se mueve */

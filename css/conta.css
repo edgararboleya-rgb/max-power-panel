@@ -1846,11 +1846,35 @@ body[data-vista="conta"] .fab { display: none; }
 #conta-raiz .ct-bn-tanda-l > summary { cursor: pointer; min-height: var(--tap); display: flex; align-items: center; font-size: .86rem; font-weight: 700; color: var(--cu-dark); }
 #conta-raiz .ct-bn-tanda-l > summary:focus-visible { outline: 3px solid var(--mp-blue); outline-offset: 2px; }
 #conta-raiz .ct-bn-deja-solo { font-size: .88rem; font-weight: 600; line-height: 1.35; align-items: flex-start; }
-#conta-raiz .ct-bn-cambiados .ct-bn-gm { padding: 0 0 .3rem; }
 @media (min-width: 900px) {
   #conta-raiz .ct-bn-g-c > .ct-bn-g-lista, #conta-raiz .ct-bn-g-c > [data-bn-g-solo-c] { grid-column: 1 / -1; }
   #conta-raiz .ct-bn > .ct-bn-sube { grid-column: 1; }
   #conta-raiz .ct-bn-recibo .ct-acciones .accion { flex: 0 1 15rem; }
+}
+/* (tercera vuelta) los envoltorios de la franja, los grupos y la barra no ocupan sitio (sus hijos van en la rejilla de la página): se
+   ponen al día uno a uno después de cada respuesta, sin repintar la lista */
+#conta-raiz .ct-env { display: contents; }
+/* la tarjeta cuya recomendación todavía no llegó; lo que escribió la IA, con su voz (otra letra que el porqué de la app); lo que un
+   grupo dejó sin registrar; lo que no puede entrar solo; las tarifas de los procesadores */
+#conta-raiz .ct-bn-pensando { border-style: dotted; }
+#conta-raiz .ct-bn-ia-dice { margin: 0; padding: .1rem 0 .1rem .6rem; border-left: 3px solid var(--mp-blue); font-size: .86rem; line-height: 1.45; font-style: italic; color: var(--mp-ink-2); overflow-wrap: anywhere; }
+#conta-raiz .ct-bn-ia-dice b { font-style: normal; font-weight: 800; color: var(--mp-blue); }
+#conta-raiz .ct-bn-falta .ct-bn-ia-dice { margin-top: .35rem; color: inherit; border-left-color: currentColor; }
+#conta-raiz .ct-bn-falta .ct-bn-ia-dice b { color: inherit; }
+#conta-raiz .ct-bn-g-quedo { margin: 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-bn-apagada { opacity: .6; }
+#conta-raiz .ct-bn-mem-n { font-size: .8rem; color: var(--mp-ink-3); }
+#conta-raiz .ct-bn-tarifas { margin-top: .4rem; padding-top: .5rem; border-top: 1px solid var(--mp-line); }
+#conta-raiz .ct-bn-tarifas h4 { margin: 0 0 .2rem; font-size: .9rem; }
+/* un nombre de contraparte de una sola palabra muy larga no ensancha la tarjeta: los rótulos se parten, y los hijos de sus rejillas
+   pueden encoger */
+#conta-raiz .ct-bn-rec > *, #conta-raiz .ct-bn-ia > *, #conta-raiz .ct-bn-rc > *, #conta-raiz .ct-bn-prop, #conta-raiz .ct-bn-prop > * { min-width: 0; }
+#conta-raiz .ct-bn .ct-casilla, #conta-raiz .ct-bn .ct-campo, #conta-raiz .ct-bn-g .ct-casilla, #conta-raiz .ct-bn-g .ct-campo, #conta-raiz .ct-bn-mas .ct-casilla, #conta-raiz .ct-bn-mas .ct-campo { min-width: 0; overflow-wrap: anywhere; }
+@media (min-width: 900px) {
+  /* con la nota «¿tienes la foto del recibo?» en la columna 1, «Dímelo» bajaba a la tercera fila y dejaba un hueco arriba a la derecha:
+     la rejilla rellena los huecos */
+  #conta-raiz .ct-bn { grid-auto-flow: row dense; }
+  #conta-raiz .ct-bn-g-c > .ct-bn-g-quedo { grid-column: 1 / -1; }
 }
 
 /* ===========================================================================
@@ -1877,6 +1901,8 @@ body[data-vista="conta"] .fab { display: none; }
 #conta-raiz .ct-fis-t td, #conta-raiz .ct-fis-t th { font-size: .86rem; overflow-wrap: anywhere; }
 #conta-raiz .ct-fis-t tr.ct-fis-l td, #conta-raiz .ct-fis-t tr.ct-fis-section td, #conta-raiz .ct-fis-t tr.ct-fis-total td { font-weight: 700; }
 #conta-raiz .ct-fis-t tr.ct-fis-c td:first-child, #conta-raiz .ct-fis-t tr.ct-fis-account td:first-child { padding-left: 1.4rem; color: var(--mp-ink-2); }
+/* la nota de una cuenta dentro de su línea (las comidas: deducible la mitad), debajo de su nombre */
+#conta-raiz .ct-fis-nota { display: block; font-size: .78rem; line-height: 1.35; color: var(--mp-ink-3); overflow-wrap: anywhere; }
 #conta-raiz .ct-fis-t tr.ct-fis-total td { border-top: 1.5px solid var(--mp-ink); }
 #conta-raiz .ct-fis-t td.r, #conta-raiz .ct-fis-t th.r { text-align: right; white-space: nowrap; }
 @media (min-width: 700px) { #conta-raiz .ct-fis-aj { grid-template-columns: 10rem minmax(0, 20rem) minmax(0, 1fr); } }

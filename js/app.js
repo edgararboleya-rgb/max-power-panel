@@ -192,7 +192,8 @@
     $t.className = esError ? "toast error" : "toast";
     $t.hidden = false;
     clearTimeout($t._timer);
-    $t._timer = setTimeout(() => { $t.hidden = true; }, 5000);
+    // un aviso largo (los de la Bandeja: qué se registró, qué se quedó y por qué) se queda más: lo que tarda en leerse, hasta 14 s
+    $t._timer = setTimeout(() => { $t.hidden = true; }, Math.min(14000, Math.max(5000, String(msg || "").length * 70)));
   }
 
   // ============================================================
