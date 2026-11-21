@@ -1,6 +1,6 @@
 -- =====================================================================
 -- c18-pruebas.sql — la contabilidad en inglés y su mapeo fiscal se prueban
--- a sí mismos (c18-fiscal.sql). 21-nov-2026.
+-- a sí mismos (c18-fiscal.sql). 21-nov-2026 (segunda vuelta: 13 pruebas).
 --
 -- Se pega en el SQL Editor DESPUÉS de c18-fiscal.sql (o, en el banco:
 --   PGPASSWORD=editor_sql psql -h 127.0.0.1 -p 5433 -U editor_sql -d <bd> -1 \
@@ -30,7 +30,16 @@
 --    mientras no esté confirmado, y deja de avisar al confirmarlo;
 --  9 lo que lee la pantalla: la configuración, las secciones y todas las
 --    cuentas; y leer no escribe nada;
--- 10 nada queda.
+-- (segunda vuelta)
+-- 10 EL SCHEDULE L CUADRA: las utilidades retenidas (L25 / L24) son las del
+--    balance (la 3900, más el resultado del año, menos las distribuciones),
+--    no el saldo del mayor; la conciliación de utilidades retenidas (M-2); y
+--    el control lo mira;
+-- 11 EL AÑO PARCIAL: si el libro empieza dentro del año, el paquete lo dice
+--    arriba (el título, el período y el primer aviso); un año entero, no;
+-- 12 EL 1125-A: «Purchases» es lo comprado (lo gastado más lo que subió el
+--    inventario) y sus líneas dan el costo de ventas de los libros;
+-- 13 nada queda.
 -- =====================================================================
 create temp table if not exists _pruebas(n int, prueba text, esperado text, obtenido text, ok boolean);
 truncate _pruebas;
@@ -81,7 +90,7 @@ insert into _f18 values ('antes', pg_temp.f18_conteos());
 do $$
 declare
   v_obt text;
-  v_esp text := 'nada falta | 3 tablas con RLS | 1 vista | funciones sin comentario c18: ninguna | ninguna SECURITY DEFINER | configuración: 1 fila | marca 2026112101';
+  v_esp text := 'nada falta | 3 tablas con RLS | 1 vista | funciones sin comentario c18: ninguna | ninguna SECURITY DEFINER | configuración: 1 fila | marca 2026112102';
 begin
   begin
     perform pg_temp.f18_ser('editor');
@@ -351,7 +360,7 @@ begin
     perform pg_temp.f18_ser('dueno');
     p1 := fn_fiscal_paquete(v_anio);
     s1 := fn_fiscal_paquete(v_anio, '1120-S');
-    a := case when p1->>'title' ~ '^Year-End Accounting Package' and p1->'trial_balance' @> '[{"account": "6300", "name": "Vehicle Expense", "category": "Operating Expenses"}]'
+    a := case when p1->>'title' ~ 'Accounting Package — ' and p1->'trial_balance' @> '[{"account": "6300", "name": "Vehicle Expense", "category": "Operating Expenses"}]'
                    and exists (select 1 from jsonb_array_elements(p1->'income_statement') x where x->>'label' = 'Operating Expenses')
               then 'en inglés (título, categorías, cuentas)' else 'NO está en inglés' end;
     b := format('1120: otros ingresos +%s a la 10, la gasolina +%s a la 26, la multa +%s a M-1, lo personal +%s a M-2 5a',
@@ -366,7 +375,8 @@ begin
                 pg_temp.f18_linea(s1, 'tax_lines', 'K16d') - pg_temp.f18_linea(s0, 'tax_lines', 'K16d'));
     d := format('1125-A: el material en bodega +%s a la 7', pg_temp.f18_linea(p1, 'form_1125a', '7') - pg_temp.f18_linea(p0, 'form_1125a', '7'));
     e := case when (select sum((x->>'ending')::numeric) from jsonb_array_elements(p1->'trial_balance') x) = 0 then 'la balanza cuadra' else 'la balanza NO cuadra' end;
-    f := case when p1->'warnings'->>0 ~ '^ENTITY TYPE PENDING CONFIRMATION' and not (p1->'entity'->>'confirmed')::boolean then 'avisa del tipo de entidad' else 'NO avisa' end;
+    f := case when exists (select 1 from jsonb_array_elements_text(p1->'warnings') w where w ~ '^ENTITY TYPE PENDING CONFIRMATION')
+                   and not (p1->'entity'->>'confirmed')::boolean then 'avisa del tipo de entidad' else 'NO avisa' end;
     perform fn_fiscal_forma('{"confirmada": true}');
     g := case when not exists (select 1 from jsonb_array_elements_text(fn_fiscal_paquete(v_anio)->'warnings') w where w ~ 'PENDING CONFIRMATION')
                    and (fn_fiscal_paquete(v_anio)->'entity'->>'confirmed')::boolean then 'ya no avisa' else 'SIGUE avisando' end;
@@ -405,14 +415,153 @@ begin
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
--- 10. Nada queda.
+-- 10. EL SCHEDULE L CUADRA.
+do $$
+declare
+  v_obt text; p0 jsonb; p1 jsonb; s0 jsonb; s1 jsonb; a text; b text; c text; d text; e text;
+  v_anio int := extract(year from pg_temp.f18('d')::date)::int;
+  v_esp text := 'las líneas L: activo +4460.00 = pasivo +300.00 y capital +4160.00, cuadra | utilidades retenidas (L25): +4160.00, no el saldo de la 3900 | '
+                'la conciliación: utilidad según libros +4200.00, distribuciones +40.00, saldo final +4160.00 (= L25) | '
+                'en el 1120-S: L24 +4160.00, cuadra | el control: verde';
+begin
+  if exists (select 1 from fiscal_cuentas f where f.fijada and f.codigo in ('1010', '2010', '4900', '6300', '3200', '3900')) then
+    insert into _pruebas values (10, 'EL SCHEDULE L CUADRA', v_esp, 'omitida: alguna de las cuentas de la prueba tiene su línea cambiada a mano (fijada)', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.f18_ser('dueno');
+    perform fn_fiscal_forma('{"forma": "1120", "confirmada": false}');
+    p0 := fn_fiscal_paquete(v_anio);
+    s0 := fn_fiscal_paquete(v_anio, '1120-S');
+    perform pg_temp.f18_ser('editor');
+    -- un año inventado: 5,000 de otros ingresos, 800 de gasolina (300 de ellos, a deber) y 40 que el dueño sacó
+    perform fn_postear(jsonb_build_object('fecha', pg_temp.f18('d'), 'descripcion', 'c18-pruebas: un año de prueba (se deshace)',
+      'lineas', jsonb_build_array(
+        jsonb_build_object('cuenta', '1010', 'monto', '4460.00'),
+        jsonb_build_object('cuenta', '4900', 'monto', '-5000.00'),
+        jsonb_build_object('cuenta', '6300', 'monto', '800.00'),
+        jsonb_build_object('cuenta', '3200', 'monto', '40.00'),
+        jsonb_build_object('cuenta', '2010', 'monto', '-300.00'))));
+    perform pg_temp.f18_ser('dueno');
+    p1 := fn_fiscal_paquete(v_anio);
+    s1 := fn_fiscal_paquete(v_anio, '1120-S');
+    a := format('activo +%s = pasivo +%s y capital +%s, %s',
+                (p1->'schedule_l'->>'assets')::numeric - (p0->'schedule_l'->>'assets')::numeric,
+                (p1->'schedule_l'->>'liabilities')::numeric - (p0->'schedule_l'->>'liabilities')::numeric,
+                (p1->'schedule_l'->>'equity')::numeric - (p0->'schedule_l'->>'equity')::numeric,
+                case when (p1->'schedule_l'->>'balanced')::boolean and (p0->'schedule_l'->>'balanced')::boolean then 'cuadra' else 'NO CUADRA' end);
+    b := format('+%s, %s', pg_temp.f18_linea(p1, 'tax_lines', 'L25') - pg_temp.f18_linea(p0, 'tax_lines', 'L25'),
+                case when (select sum((x->>'ending')::numeric) from jsonb_array_elements(p1->'trial_balance') x where x->>'account' = '3900') is not distinct from
+                          (select sum((x->>'ending')::numeric) from jsonb_array_elements(p0->'trial_balance') x where x->>'account' = '3900')
+                     then 'no el saldo de la 3900' else 'LA 3900 CAMBIÓ' end);
+    c := format('utilidad según libros +%s, distribuciones +%s, saldo final +%s%s',
+                (p1->'retained_earnings'->>'net_income')::numeric - (p0->'retained_earnings'->>'net_income')::numeric,
+                (p1->'retained_earnings'->>'distributions')::numeric - (p0->'retained_earnings'->>'distributions')::numeric,
+                (p1->'retained_earnings'->>'ending')::numeric - (p0->'retained_earnings'->>'ending')::numeric,
+                case when (p1->'retained_earnings'->>'ending')::numeric = pg_temp.f18_linea(p1, 'tax_lines', 'L25')
+                          and (p1->'retained_earnings'->>'beginning')::numeric = (p0->'retained_earnings'->>'beginning')::numeric
+                          and p1->'retained_earnings'->'rows' @> '[{"line": "M-2 8"}, {"line": "M-2 2"}, {"line": "M-2 5a"}, {"line": "M-2 1"}]'
+                     then ' (= L25)' else ' (NO ES LA L25, o el saldo inicial cambió)' end);
+    d := format('L24 +%s, %s', pg_temp.f18_linea(s1, 'tax_lines', 'L24') - pg_temp.f18_linea(s0, 'tax_lines', 'L24'),
+                case when (s1->'schedule_l'->>'balanced')::boolean and pg_temp.f18_linea(s1, 'tax_lines', 'L24') = pg_temp.f18_linea(p1, 'tax_lines', 'L25')
+                     then 'cuadra' else 'NO CUADRA' end);
+    e := case when exists (select 1 from fn_fiscal_control() k where k.orden = 35 and k.ok and k.nivel = 'cuadre') then 'verde' else 'ROJO' end;
+    perform pg_temp.f18_ser('editor');
+    v_obt := format('las líneas L: %s | utilidades retenidas (L25): %s | la conciliación: %s | en el 1120-S: %s | el control: %s', a, b, c, d, e);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.f18_ser('editor');
+  insert into _pruebas values (10, 'EL SCHEDULE L CUADRA: con un año inventado (ingresos, un gasto en parte a deber, y dinero que el dueño sacó), las líneas L de activo son iguales a las de pasivo y capital; las utilidades retenidas (L25 en el 1120, L24 en el 1120-S) son las del balance —la 3900 más el resultado del año menos las distribuciones—, no el saldo del mayor de la 3900 (el cierre del ejercicio no postea); el paquete trae la conciliación de utilidades retenidas (los renglones del Schedule M-2); y el control tiene su cuadre',
+    v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 11. EL AÑO PARCIAL.
+do $$
+declare
+  v_obt text; v_esp text; p1 jsonb; p2 jsonb; v_a1 int; v_d date; v_a2 int; a text; b text;
+begin
+  -- el primer año que la app lleva, y desde qué día; y un año posterior que ya esté en los períodos (entero)
+  select extract(year from min(p.desde))::int, min(p.desde) into v_a1, v_d from periodos p where p.tipo = 'mes';
+  select min(p.anio) into v_a2 from periodos p where p.tipo = 'anio' and p.anio > v_a1;
+  v_esp := case when v_d > make_date(v_a1, 1, 1) then 'el primer año: parcial, desde el arranque del libro, dicho arriba y sin «Year-End»'
+                else 'el primer año: entero (el libro empieza el 1 de enero)' end
+           || ' | ' || case when v_a2 is null then 'no hay otro año en los períodos' else 'un año entero: «Year-End», sin aviso de parcial' end;
+  begin
+    perform pg_temp.f18_ser('dueno');
+    p1 := fn_fiscal_paquete(v_a1);
+    a := case when v_d > make_date(v_a1, 1, 1) then
+                case when (p1->>'partial_year')::boolean and (p1->>'period_start')::date = v_d and p1->>'title' !~ 'Year-End'
+                          and p1->>'title' ~ 'partial year' and p1->'warnings'->>0 ~ ('^PARTIAL YEAR: the books in this system start on ' || v_d::text)
+                          and p1->'warnings'->>0 ~ 'NOT included'
+                     then 'el primer año: parcial, desde el arranque del libro, dicho arriba y sin «Year-End»'
+                     else 'el primer año: NO LO DICE (' || left(p1->>'title', 80) || ' · ' || left(coalesce(p1->'warnings'->>0, ''), 80) || ')' end
+              else case when not (p1->>'partial_year')::boolean and p1->>'title' ~ '^Year-End' then 'el primer año: entero (el libro empieza el 1 de enero)'
+                        else 'el primer año: DICE PARCIAL SIN SERLO' end end;
+    if v_a2 is null then
+      b := 'no hay otro año en los períodos';
+    else
+      p2 := fn_fiscal_paquete(v_a2);
+      b := case when not (p2->>'partial_year')::boolean and p2->>'title' ~ '^Year-End Accounting Package' and (p2->>'period_start')::date = make_date(v_a2, 1, 1)
+                     and not exists (select 1 from jsonb_array_elements_text(p2->'warnings') w where w ~ 'PARTIAL YEAR')
+                then 'un año entero: «Year-End», sin aviso de parcial' else 'un año entero: DICE PARCIAL' end;
+    end if;
+    perform pg_temp.f18_ser('editor');
+    v_obt := a || ' | ' || b;
+  exception when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.f18_ser('editor');
+  insert into _pruebas values (11, 'EL AÑO PARCIAL: si el libro de la app empieza dentro del año (2026: el 1 de octubre; de enero a septiembre está QuickBooks), el paquete NO presenta esos meses como el año: «partial_year», el período desde el arranque del libro, el título sin «Year-End» y el PRIMER aviso («PARTIAL YEAR…: … is NOT included here»); un año que la app lleva entero sale como siempre',
+    v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 12. EL 1125-A.
+do $$
+declare
+  v_obt text; p0 jsonb; p1 jsonb;
+  v_anio int := extract(year from pg_temp.f18('d')::date)::int;
+  v_esp text := 'material comprado y todavía en bodega: +200.00 a la línea 7 y +200.00 a «Purchases» (línea 2) | '
+                'el costo de ventas del 1125-A no cambia (+0.00) y es el de los libros';
+begin
+  if exists (select 1 from fiscal_cuentas f where f.fijada and f.codigo in ('1300', '5100')) then
+    insert into _pruebas values (12, 'EL 1125-A', v_esp, 'omitida: alguna de las cuentas de la prueba tiene su línea cambiada a mano (fijada)', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.f18_ser('dueno');
+    p0 := fn_fiscal_paquete(v_anio);
+    perform pg_temp.f18_ser('editor');
+    perform fn_postear(jsonb_build_object('fecha', pg_temp.f18('d'), 'descripcion', 'c18-pruebas: material a la bodega (se deshace)',
+      'lineas', jsonb_build_array(jsonb_build_object('cuenta', '1010', 'monto', '-200.00'), jsonb_build_object('cuenta', '1300', 'monto', '200.00'))));
+    perform pg_temp.f18_ser('dueno');
+    p1 := fn_fiscal_paquete(v_anio);
+    perform pg_temp.f18_ser('editor');
+    v_obt := format('material comprado y todavía en bodega: +%s a la línea 7 y +%s a «Purchases» (línea 2) | el costo de ventas del 1125-A %s y %s',
+      pg_temp.f18_linea(p1, 'form_1125a', '7') - pg_temp.f18_linea(p0, 'form_1125a', '7'),
+      pg_temp.f18_linea(p1, 'form_1125a', '2') - pg_temp.f18_linea(p0, 'form_1125a', '2'),
+      format('no cambia (+%s)', (p1->'form_1125a_check'->>'line_8_cost_of_goods_sold')::numeric - (p0->'form_1125a_check'->>'line_8_cost_of_goods_sold')::numeric),
+      case when (p1->'form_1125a_check'->>'matches')::boolean and (p0->'form_1125a_check'->>'matches')::boolean then 'es el de los libros'
+           else 'NO ES EL DE LOS LIBROS: ' || (p1->'form_1125a_check')::text end);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.f18_ser('editor');
+  insert into _pruebas values (12, 'EL 1125-A: el material comprado que sigue en la bodega sube el inventario al cierre (línea 7) y es una COMPRA (línea 2, «Purchases»: lo gastado más lo que subió el inventario), no un costo: las líneas del 1125-A (1 + 2 + 3 + 5 − 7) siguen dando el costo de ventas de los libros',
+    v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 13. Nada queda.
 do $$
 declare
   v_obt text;
 begin
   perform pg_temp.f18_ser('editor');
   v_obt := case when pg_temp.f18_conteos() = pg_temp.f18('antes') then 'igual que antes' else 'CAMBIÓ: ' || pg_temp.f18_conteos() end;
-  insert into _pruebas values (10, 'nada queda de las pruebas: la configuración, el catálogo, el mapeo, los asientos y el plan de cuentas están como antes',
+  insert into _pruebas values (13, 'nada queda de las pruebas: la configuración, el catálogo, el mapeo, los asientos y el plan de cuentas están como antes',
     'igual que antes', v_obt, v_obt = 'igual que antes');
 end $$;
 

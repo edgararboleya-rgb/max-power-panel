@@ -58,7 +58,12 @@
 --                      (y el 1125-A), con sus avisos. Sale de las vistas de
 --                      c4 (v_balanza, v_resultados, v_balance_general): las
 --                      mismas cifras que la pantalla. No calcula el impuesto
---                      ni la declaración: eso es del CPA.
+--                      ni la declaración: eso es del CPA. (Segunda vuelta,
+--                      marca 2026112102: el capital del Schedule L sale del
+--                      balance —las utilidades retenidas con el resultado
+--                      del año y las distribuciones— con su conciliación
+--                      M-2; el año que la app no lleva entero se dice arriba
+--                      —PARTIAL YEAR—; y el 1125-A trae su línea 1.)
 --   fn_fiscal_forma, fn_fiscal_cuenta   lo que se cambia, con rastro de
 --                      quién y cuándo.
 --   fn_fiscal_control, fn_fiscal_pegado
@@ -137,7 +142,7 @@ end $$;
 create or replace function public.fn_fiscal_version() returns bigint
 language sql immutable
 set search_path = public, pg_temp
-as $$ select 2026112101::bigint $$;
+as $$ select 2026112102::bigint $$;
 revoke execute on function public.fn_fiscal_version() from public, anon, service_role;
 grant  execute on function public.fn_fiscal_version() to authenticated;
 comment on function public.fn_fiscal_version() is 'c18: la marca de la versión pegada de c18-fiscal.sql.';
@@ -619,6 +624,24 @@ comment on function public.fn_fiscal_leer() is 'c18: lo que la pantalla necesita
 -- (balance); el 1125-A, las cuentas de costo por su línea. NO calcula el
 -- impuesto, ni los ajustes fiscales (M-1), ni la depreciación fiscal: dice
 -- en sus avisos lo que el CPA tiene que mirar. Solo lee.
+-- (Segunda vuelta, 21-nov)
+--   · EL CAPITAL DEL SCHEDULE L sale del balance de c4, no del saldo del
+--     mayor: las utilidades retenidas (L25 en el 1120, L24 en el 1120-S) son
+--     la 3900 MÁS los resultados de los años cerrados y por cerrar, MÁS el
+--     resultado del año, MENOS las distribuciones (el cierre del ejercicio en
+--     c4 es de presentación y no postea: con solo la 3900, las líneas L no
+--     cuadraban y nada lo decía). Con ello va la conciliación de utilidades
+--     retenidas (los renglones del Schedule M-2: saldo inicial, utilidad
+--     según libros, distribuciones, saldo final) y «schedule_l» dice si las
+--     líneas de activo son iguales a las de pasivo y capital.
+--   · EL AÑO PARCIAL: si el libro de la app empieza dentro del año (2026:
+--     el 1 de octubre; de enero a septiembre está QuickBooks), el paquete lo
+--     dice ARRIBA (partial_year, period_start = el arranque del libro, el
+--     título sin «Year-End» y el primer aviso): tres meses no se presentan
+--     como el año.
+--   · EL 1125-A lleva su línea 1 (el inventario al inicio) y «Purchases» es
+--     lo comprado: el material gastado más lo que subió el inventario; así
+--     1 + 2 + 3 + 5 − 7 es el costo de ventas de los libros (form_1125a_check).
 create or replace function public.fn_fiscal_paquete(p_anio int, p_forma text default null) returns jsonb
 language plpgsql stable
 set search_path = public, pg_temp
@@ -634,6 +657,16 @@ declare
   v_cogs   jsonb;
   v_avisos text[] := '{}';
   v_x      text;
+  v_desde  date;
+  v_parc   boolean;
+  v_cap    jsonb;
+  v_l      jsonb;
+  v_m2     jsonb;
+  v_inv0   numeric;
+  v_inv1   numeric;
+  v_cogsb  numeric;
+  v_chk    jsonb;
+  v_lret   text;
 begin
   perform fn_fiscal_exigir_dueno();
   if current_user = 'service_role' then
@@ -704,7 +737,77 @@ begin
     join (select m.linea, sum(m.monto) as monto,
                  jsonb_agg(jsonb_build_object('account', m.codigo, 'name', m.nombre_en, 'amount', m.monto) order by m.codigo) as cuentas
             from mov m where m.monto <> 0 group by m.linea) t on t.linea = l.linea
-   where l.forma = v_forma;
+   where l.forma = v_forma
+     -- (las utilidades retenidas no son el saldo del mayor de la 3900: van abajo, del balance de c4)
+     and l.linea <> case v_forma when '1120' then 'L25' else 'L24' end;
+  -- EL CAPITAL DEL SCHEDULE L, como el balance de c4: sus renglones del capital al cierre del año. Las utilidades retenidas son
+  -- todo el capital que no es capital social ni aportaciones (la 3900, los resultados de años anteriores, el del año y, restando,
+  -- las distribuciones): así las líneas L de activo son las de pasivo y capital cuando el balance de c4 cuadra
+  v_lret := case v_forma when '1120' then 'L25' else 'L24' end;
+  select jsonb_build_object(
+           'total', coalesce(max(g.cifra) filter (where g.linea = 'total_capital'), 0),
+           'stock', coalesce(sum(g.cifra) filter (where g.nivel = 'linea' and g.linea = 'capital_social'), 0),
+           'paid_in', coalesce(sum(g.cifra) filter (where g.nivel = 'linea' and g.linea = 'aportaciones'), 0),
+           'net_income', coalesce(sum(g.cifra) filter (where g.nivel = 'linea' and g.linea = 'resultado_ejercicio'), 0),
+           'components', coalesce(jsonb_agg(jsonb_build_object('name', coalesce(g.etiqueta_en, g.etiqueta_es), 'amount', g.cifra)
+                                            order by g.linea_orden)
+                                    filter (where g.nivel = 'linea' and g.seccion = 'capital'
+                                              and g.linea not in ('capital_social', 'aportaciones') and coalesce(g.cifra, 0) <> 0), '[]'::jsonb))
+    into v_cap
+    from v_balance_general g
+   where g.periodo = v_per and (g.seccion = 'capital' or g.linea = 'total_capital');
+  if (v_cap->>'total')::numeric - (v_cap->>'stock')::numeric - (v_cap->>'paid_in')::numeric <> 0 then
+    select coalesce(jsonb_agg(x.t order by x.o), '[]'::jsonb) into v_tax
+      from (select t, (select l.orden from fiscal_lineas l where l.forma = v_forma and l.linea = t->>'line') as o
+              from jsonb_array_elements(v_tax) t
+            union all
+            select jsonb_build_object('form', v_forma, 'line', l.linea, 'label', l.etiqueta_en,
+                                      'amount', (v_cap->>'total')::numeric - (v_cap->>'stock')::numeric - (v_cap->>'paid_in')::numeric,
+                                      'accounts', v_cap->'components',
+                                      'note', 'Per the balance sheet: retained earnings account plus prior-year results, plus net income for the year, less shareholder distributions (the books do not post a year-end closing entry).'),
+                   l.orden
+              from fiscal_lineas l where l.forma = v_forma and l.linea = v_lret) x;
+  end if;
+  -- ¿cuadran las líneas L? (activo = pasivo + capital, por el orden del catálogo: 200–289 activo, 290–339 pasivo, 340–369 capital)
+  select jsonb_build_object(
+           'assets', coalesce(sum((t->>'amount')::numeric) filter (where l.orden between 200 and 289), 0),
+           'liabilities', coalesce(sum((t->>'amount')::numeric) filter (where l.orden between 290 and 339), 0),
+           'equity', coalesce(sum((t->>'amount')::numeric) filter (where l.orden between 340 and 369), 0))
+    into v_l
+    from jsonb_array_elements(v_tax) t
+    join fiscal_lineas l on l.forma = v_forma and l.linea = t->>'line'
+   where l.linea like 'L%';
+  v_l := v_l || jsonb_build_object('liabilities_and_equity', (v_l->>'liabilities')::numeric + (v_l->>'equity')::numeric,
+                                   'balanced', (v_l->>'assets')::numeric = (v_l->>'liabilities')::numeric + (v_l->>'equity')::numeric);
+  -- la conciliación de las utilidades retenidas (los renglones del Schedule M-2), según libros
+  select jsonb_build_object('dist', coalesce(sum(b.saldo_final - b.saldo_inicial) filter (where b.cuenta like '3200%'), 0),
+                            'otros', coalesce(-sum(b.saldo_final - b.saldo_inicial) filter (where b.cuenta like '3900%'), 0))
+    into v_m2
+    from v_balanza b where b.periodo = v_per and b.nivel = 'cuenta' and (b.cuenta like '3200%' or b.cuenta like '3900%');
+  v_m2 := jsonb_build_object(
+    'basis', 'Per books',
+    'ending', (v_cap->>'total')::numeric - (v_cap->>'stock')::numeric - (v_cap->>'paid_in')::numeric,
+    'net_income', (v_cap->>'net_income')::numeric,
+    'distributions', (v_m2->>'dist')::numeric,
+    'other_changes', (v_m2->>'otros')::numeric,
+    'beginning', (v_cap->>'total')::numeric - (v_cap->>'stock')::numeric - (v_cap->>'paid_in')::numeric
+                 - (v_cap->>'net_income')::numeric + (v_m2->>'dist')::numeric - (v_m2->>'otros')::numeric);
+  v_m2 := v_m2 || jsonb_build_object('rows', jsonb_build_array(
+    jsonb_build_object('line', case v_forma when '1120' then 'M-2 1' else 'RE 1' end,
+                       'label', case v_forma when '1120' then 'Schedule M-2, line 1 — Balance at beginning of year'
+                                                           else 'Retained earnings per books — beginning of year' end, 'amount', v_m2->'beginning'),
+    jsonb_build_object('line', case v_forma when '1120' then 'M-2 2' else 'RE 2' end,
+                       'label', case v_forma when '1120' then 'Schedule M-2, line 2 — Net income (loss) per books' else 'Net income (loss) per books' end,
+                       'amount', v_m2->'net_income'),
+    jsonb_build_object('line', case v_forma when '1120' then 'M-2 3' else 'RE 3' end,
+                       'label', case v_forma when '1120' then 'Schedule M-2, line 3 — Other increases (direct entries to retained earnings)'
+                                                           else 'Other changes (direct entries to retained earnings)' end, 'amount', v_m2->'other_changes'),
+    jsonb_build_object('line', case v_forma when '1120' then 'M-2 5a' else 'K16d' end,
+                       'label', case v_forma when '1120' then 'Schedule M-2, line 5a — Distributions: cash'
+                                                           else 'Distributions (Schedule K, line 16d)' end, 'amount', v_m2->'distributions'),
+    jsonb_build_object('line', case v_forma when '1120' then 'M-2 8' else 'L24' end,
+                       'label', case v_forma when '1120' then 'Schedule M-2, line 8 — Balance at end of year (Schedule L, line 25)'
+                                                           else 'Retained earnings per books — end of year (Schedule L, line 24)' end, 'amount', v_m2->'ending')));
   -- el Form 1125-A: las cuentas de costo por su línea (y el inventario al cierre)
   select coalesce(jsonb_agg(jsonb_build_object('form', '1125-A', 'line', l.linea, 'label', l.etiqueta_en, 'amount', t.monto, 'accounts', t.cuentas)
                             order by l.orden), '[]'::jsonb)
@@ -721,7 +824,53 @@ begin
              and (case when v.tipo = 'activo' then b.saldo_final else b.saldo_final - b.saldo_inicial end) <> 0
            group by v.linea_1125a) t on t.linea = l.linea
    where l.forma = '1125-A';
+  -- el inventario (las cuentas de activo con línea del 1125-A): al inicio (línea 1) y al cierre (línea 7); y «Purchases» (línea
+  -- 2) es lo COMPRADO: el material gastado más lo que subió el inventario. Así 1 + 2 + 3 + 5 − 7 es el costo de ventas de los libros
+  select coalesce(sum(b.saldo_inicial), 0), coalesce(sum(b.saldo_final), 0) into v_inv0, v_inv1
+    from v_balanza b join v_fiscal_cuentas v on v.codigo = b.cuenta
+   where b.periodo = v_per and b.nivel = 'cuenta' and v.tipo = 'activo' and v.linea_1125a is not null;
+  select coalesce(sum(b.saldo_final - b.saldo_inicial), 0) into v_cogsb
+    from v_balanza b join v_fiscal_cuentas v on v.codigo = b.cuenta
+   where b.periodo = v_per and b.nivel = 'cuenta' and v.tipo = 'costo';
+  if v_inv0 <> 0 or v_inv1 <> 0 then
+    select coalesce(jsonb_agg(x.t order by x.o), '[]'::jsonb) into v_cogs
+      from (select case when t->>'line' = '2' and v_inv1 - v_inv0 <> 0
+                        then jsonb_set(jsonb_set(t, '{amount}', to_jsonb((t->>'amount')::numeric + v_inv1 - v_inv0)),
+                                       '{accounts}', (t->'accounts') || jsonb_build_array(jsonb_build_object(
+                                         'name', 'Change in inventory (ending less beginning)', 'amount', v_inv1 - v_inv0)))
+                        else t end as t,
+                   (select l.orden from fiscal_lineas l where l.forma = '1125-A' and l.linea = t->>'line') as o
+              from jsonb_array_elements(v_cogs) t
+            union all
+            select jsonb_build_object('form', '1125-A', 'line', l.linea, 'label', l.etiqueta_en, 'amount', v_inv0, 'accounts', '[]'::jsonb), l.orden
+              from fiscal_lineas l where l.forma = '1125-A' and l.linea = '1' and v_inv0 <> 0
+            union all
+            -- (sin material gastado en el año y con inventario comprado: la línea 2 es solo lo que subió el inventario)
+            select jsonb_build_object('form', '1125-A', 'line', l.linea, 'label', l.etiqueta_en, 'amount', v_inv1 - v_inv0,
+                                      'accounts', jsonb_build_array(jsonb_build_object('name', 'Change in inventory (ending less beginning)',
+                                                                                       'amount', v_inv1 - v_inv0))), l.orden
+              from fiscal_lineas l
+             where l.forma = '1125-A' and l.linea = '2' and v_inv1 - v_inv0 <> 0
+               and not exists (select 1 from jsonb_array_elements(v_cogs) t where t->>'line' = '2')) x;
+  end if;
+  select jsonb_build_object(
+           'line_6_total', coalesce(sum((t->>'amount')::numeric) filter (where t->>'line' <> '7'), 0),
+           'line_7_ending_inventory', coalesce(sum((t->>'amount')::numeric) filter (where t->>'line' = '7'), 0),
+           'line_8_cost_of_goods_sold', coalesce(sum((t->>'amount')::numeric) filter (where t->>'line' <> '7'), 0)
+                                        - coalesce(sum((t->>'amount')::numeric) filter (where t->>'line' = '7'), 0),
+           'cost_of_goods_sold_per_books', v_cogsb)
+    into v_chk
+    from jsonb_array_elements(v_cogs) t;
+  v_chk := v_chk || jsonb_build_object('matches', (v_chk->>'line_8_cost_of_goods_sold')::numeric = v_cogsb);
+  -- EL AÑO PARCIAL: desde cuándo lleva la app el libro de ese año
+  select coalesce(min(r.acumulado_desde), make_date(p_anio, 1, 1)) into v_desde from v_resultados r where r.periodo = v_per;
+  v_desde := greatest(v_desde, make_date(p_anio, 1, 1));
+  v_parc := v_desde > make_date(p_anio, 1, 1);
   -- los avisos, en inglés (es lo que lee el CPA)
+  if v_parc then
+    v_avisos := v_avisos || format('PARTIAL YEAR: the books in this system start on %s (opening balances as of %s, carried over from the prior accounting system). The income statement and the tax-line amounts cover %s to %s only; activity from %s to %s is in the prior system (QuickBooks) and is NOT included here.',
+                                   v_desde, v_desde - 1, v_desde, make_date(p_anio, 12, 31), make_date(p_anio, 1, 1), v_desde - 1);
+  end if;
   if not cfg.confirmada then
     v_avisos := v_avisos || format('ENTITY TYPE PENDING CONFIRMATION: this package uses Form %s (%s). The corporation''s IRS notice CP 575 assigns Form 1120 (C corporation); an S election (Form 2553) has not been confirmed for this entity. Please confirm which form applies before relying on the tax-line summary; the line mapping for the other form is available on request.',
                                    v_forma, case v_forma when '1120' then 'C corporation' else 'S corporation' end);
@@ -738,6 +887,14 @@ begin
   if exists (select 1 from jsonb_array_elements(v_bs) x where x->>'balanced' = 'false') then
     v_avisos := v_avisos || 'The balance sheet does not balance for this period: do not rely on this package until the books are corrected.'::text;
   end if;
+  if not (v_l->>'balanced')::boolean then
+    v_avisos := v_avisos || format('Schedule L lines do not balance in this summary (assets %s; liabilities and equity %s): do not rely on the Schedule L lines until the books are corrected.',
+                                   v_l->>'assets', v_l->>'liabilities_and_equity');
+  end if;
+  if not (v_chk->>'matches')::boolean then
+    v_avisos := v_avisos || format('Form 1125-A lines do not add up to cost of goods sold per books (%s vs %s): an inventory or cost account may be missing its 1125-A line.',
+                                   v_chk->>'line_8_cost_of_goods_sold', v_chk->>'cost_of_goods_sold_per_books');
+  end if;
   if to_regclass('public.v_ejercicios') is not null then
     execute 'select case when not coalesce((select e.cerrado from public.v_ejercicios e where e.anio = $1), false) '
             'then ''The fiscal year is not closed in the books yet: figures may still change.'' end' into v_x using p_anio;
@@ -749,14 +906,17 @@ begin
                                  cfg.formas_anio, p_anio);
   return jsonb_build_object(
     'company', 'Max Power Electrical Solutions, Inc.',
-    'title', format('Year-End Accounting Package — %s', p_anio),
-    'fiscal_year', p_anio, 'period_start', make_date(p_anio, 1, 1), 'period_end', make_date(p_anio, 12, 31),
+    'title', case when v_parc then format('Accounting Package — %s (partial year: %s to %s)', p_anio, v_desde, make_date(p_anio, 12, 31))
+                  else format('Year-End Accounting Package — %s', p_anio) end,
+    'fiscal_year', p_anio, 'period_start', v_desde, 'period_end', make_date(p_anio, 12, 31),
+    'partial_year', v_parc, 'books_start', v_desde,
     'entity', jsonb_build_object('form', v_forma, 'type', case v_forma when '1120' then 'C corporation' else 'S corporation' end,
                                  'confirmed', cfg.confirmada and v_forma = cfg.forma, 'note', cfg.nota),
     'basis', 'Accrual basis, per books',
     'generated_at', now(),
     'warnings', to_jsonb(v_avisos),
     'trial_balance', v_tb, 'income_statement', v_is, 'balance_sheet', v_bs, 'tax_lines', v_tax, 'form_1125a', v_cogs,
+    'schedule_l', v_l, 'retained_earnings', v_m2, 'form_1125a_check', v_chk,
     'chart_of_accounts', (select coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
                                    'account', v.codigo, 'name', v.nombre_en, 'name_es', v.nombre, 'category', v.seccion_en, 'group', v.grupo_en,
                                    'form_1120_line', v.linea_1120, 'form_1120s_line', v.linea_1120s, 'form_1125a_line', v.linea_1125a,
@@ -765,7 +925,7 @@ begin
 end $$;
 revoke execute on function public.fn_fiscal_paquete(int, text) from public, anon, service_role;
 grant  execute on function public.fn_fiscal_paquete(int, text) to authenticated;
-comment on function public.fn_fiscal_paquete(int, text) is 'c18: el paquete de fin de año en inglés para el CPA: la balanza, el estado de resultados, el balance general y el resumen por línea del Form 1120 o del 1120-S (y el 1125-A), con el plan de cuentas mapeado a las dos formas y sus avisos (el tipo de entidad pendiente de confirmar). Sale de las vistas de c4; solo lee; no calcula el impuesto.';
+comment on function public.fn_fiscal_paquete(int, text) is 'c18: el paquete de fin de año en inglés para el CPA: la balanza, el estado de resultados, el balance general y el resumen por línea del Form 1120 o del 1120-S (con el capital del Schedule L como el balance de c4 y la conciliación de utilidades retenidas) y el 1125-A (con su línea 1), con el plan de cuentas mapeado a las dos formas y sus avisos (el año parcial, el tipo de entidad pendiente de confirmar). Sale de las vistas de c4; solo lee; no calcula el impuesto.';
 
 
 -- ---------------------------------------------------------------------
@@ -804,6 +964,16 @@ as $$
                 from v_fiscal_cuentas v
                where v.tipo = 'costo' and v.imputable and (v.linea_1120 <> '2' or v.linea_1120s <> '2' or v.linea_1125a is null)) t
       union all
+      -- 35: las líneas L del resumen cuadran (activo = pasivo y capital) en el año en curso y en el anterior, si la app los lleva
+      select 35, 'fiscal: el Schedule L cuadra (activo = pasivo y capital)', 'cuadre', t.n = 0, t.n, 0,
+             case when t.n > 0 then t.d || ' → mira primero si el balance general de Estados cuadra; si cuadra, alguna cuenta de balance tiene una línea que no es del Schedule L (fn_fiscal_cuenta)' end
+        from (select count(*) as n, left(string_agg(format('%s: activo %s, pasivo y capital %s', y.anio, y.s->>'assets', y.s->>'liabilities_and_equity'), '; '), 600) as d
+                from (select p.anio, fn_fiscal_paquete(p.anio)->'schedule_l' as s
+                        from periodos p
+                       where ve.si and current_user <> 'service_role' and p.tipo = 'anio'
+                         and p.anio between extract(year from fn_fecha_miami(now()))::int - 1 and extract(year from fn_fecha_miami(now()))::int) y
+               where not coalesce((y.s->>'balanced')::boolean, false)) t
+      union all
       -- 40 (aviso): cuentas imputables sin su fila de mapeo (salen con la línea de bulto de su tipo)
       select 40, 'fiscal: cada cuenta tiene su línea propia', 'aviso', t.n = 0, t.n, 0,
              case when t.n > 0 then t.d || ' → ponle su línea con fn_fiscal_cuenta (mientras, sale con la de su tipo)' end
@@ -820,7 +990,7 @@ as $$
 $$;
 revoke execute on function public.fn_fiscal_control() from public, anon, service_role;
 grant  execute on function public.fn_fiscal_control() to authenticated;
-comment on function public.fn_fiscal_control() is 'c18: el control del mapeo fiscal: la configuración, que cada línea existe en su catálogo y que el costo va al costo de ventas (cuadres); las cuentas sin línea propia y el tipo de entidad sin confirmar (avisos).';
+comment on function public.fn_fiscal_control() is 'c18: el control del mapeo fiscal: la configuración, que cada línea existe en su catálogo, que el costo va al costo de ventas y que las líneas del Schedule L cuadran (cuadres); las cuentas sin línea propia y el tipo de entidad sin confirmar (avisos).';
 
 create or replace function public.fn_fiscal_pegado() returns table (que text, detalle text)
 language plpgsql stable
