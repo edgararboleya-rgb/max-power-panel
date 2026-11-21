@@ -26,7 +26,7 @@
 --     otro día en dos;
 --   · un préstamo dado de alta (c6) con dos cuotas en el banco;
 --   · LOS MOVIMIENTOS DEL BANCO que esperan en la Bandeja (por Plaid, c6):
---     tres cargos de Home Depot (dos el día de una sola obra), dos de
+--     cuatro cargos de Home Depot (dos el día de una sola obra), dos de
 --     Netflix, Klarna, DoorDash, gasolina, un permiso del condado, el
 --     depósito de un prestamista (OnDeck), el depósito del procesador
 --     (Intuit) con dos facturas y su comisión, el Zelle de una LLC, un
@@ -45,7 +45,16 @@
 --     reserva que el banco no reconoce como traspaso (la puerta frena y
 --     pide su porqué); y UNA TARJETA DE OBRA con tres compras cuyos recibos
 --     «llegan después» (dos iguales el mismo día y una sola: f19-capturar.js
---     las registra desde la Bandeja y después sube sus recibos).
+--     las registra desde la Bandeja y después sube sus recibos);
+--   · (tercera vuelta) LO QUE PROPONE LA IA DE ANTES (c8), que en producción
+--     es lo que dice buena parte de las tarjetas: además del gasto general
+--     de la ferretería, un cargo PERSONAL (c8 lo manda al retiro del dueño,
+--     con sus códigos en el motivo) y otro de la misma ferretería que ella
+--     manda a una OBRA, firme (la tarjeta la trae puesta). Los dos de la
+--     ferretería forman un grupo «mezclado» (no propone nada). El permiso y
+--     la luz de la ciudad ya no forman grupo: son contrapartes distintas;
+--   · (tercera vuelta) UNA COMIDA ya registrada (no espera en la Bandeja):
+--     para que el paquete del año traiga la nota de las comidas en su línea.
 -- Sus ids quedan en la tabla f19_semilla (clave → movimiento): la lee
 -- f19-capturar.js. Se borra con la base.
 -- =====================================================================
@@ -134,6 +143,9 @@ select fn_prestamo_guardar(jsonb_build_object(
 select pg_temp.s19_mov('hd1', 6,  -245.37,  'THE HOME DEPOT #6341 OCALA FL') is not null;
 select pg_temp.s19_mov('hd2', 6,   -89.10,  'THE HOME DEPOT #6341 OCALA FL') is not null;
 select pg_temp.s19_mov('hd3', 4, -1320.55,  'THE HOME DEPOT 6355 BELLEVIEW FL') is not null;
+-- (tercera vuelta) un cuarto, un día sin horas de la cuadrilla: decidido el grupo con «la obra del día», se quedan DOS sin obra (el
+-- grupo sigue, dice por qué y pide una obra para los dos)
+select pg_temp.s19_mov('hd4', 3,   -76.20,  'THE HOME DEPOT 6355 BELLEVIEW FL') is not null;
 select pg_temp.s19_mov('nf1', 12,  -15.49,  'NETFLIX.COM') is not null;
 select pg_temp.s19_mov('nf2', 9,   -15.49,  'NETFLIX.COM') is not null;
 select pg_temp.s19_mov('kl1', 3,   -45.00,  'KLARNA 8J2 PAYMENT') is not null;
@@ -190,15 +202,41 @@ begin
   perform set_config('request.jwt.claim.sub', '', true);
 end $$;
 
--- 7. Una propuesta de la IA (c8) pendiente para el cargo de la ferretería
+-- 6c. (tercera vuelta) Dos cargos más para los que la IA de antes (c8) tiene su propuesta: uno personal y otro de la misma
+--     ferretería, que ella manda a una obra (los dos de la ferretería forman un grupo «mezclado»: sus tarjetas no dicen lo mismo)
+select pg_temp.s19_mov('ia2', 2,   -17.99,  'ZZ CINE CLUB 0042') is not null;
+select pg_temp.s19_mov('ia3', 1,  -412.60,  'ZZ FERRETERIA CENTRAL 0042') is not null;
+-- y un comercio cuyo nombre es UNA palabra de más de cuarenta letras (los rótulos de su tarjeta la parten; no la ensanchan)
+select pg_temp.s19_mov('lg1', 1,   -53.27,  'ZZSUPERDISTRIBUIDORAELECTRICADELCENTRODEFLORIDA 0042') is not null;
+
+-- 6d. (tercera vuelta) UNA COMIDA ya en el libro (clasificada en el banco de siempre, no por la Bandeja: no espera ni sale en lo
+--     contestado): el paquete del año la lleva en su línea al 100 % de libros, y en su renglón dice que solo la mitad es deducible
+do $$
+declare
+  v uuid;
+begin
+  v := pg_temp.s19_mov('cm1', 9, -84.60, 'ZZ FONDA LA OBRA 0042');
+  perform set_config('request.jwt.claims', json_build_object('sub', pg_temp.s19_dueno(), 'role', 'authenticated', 'aal', 'aal2')::text, true);
+  perform set_config('request.jwt.claim.sub', pg_temp.s19_dueno(), true);
+  perform fn_banco_clasificar(v, '[{"cuenta": "6350"}]'::jsonb, null);
+  perform set_config('request.jwt.claims', '', true);
+  perform set_config('request.jwt.claim.sub', '', true);
+end $$;
+
+-- 7. Las propuestas de la IA (c8) pendientes: el cargo de la ferretería (un gasto general) y, tercera vuelta, lo que en producción
+--    dice buena parte de las tarjetas: algo personal (c8 lo manda siempre al retiro del dueño, con su jerga en el motivo) y un
+--    gasto de obra con la obra que ella propone, firme (flags.obra_fuerte: la única que se preselecciona)
 with l as (
   insert into contador_lotes (modelo, effort, prompt_version, n, usage, centavos, por, cerrado_el)
-  values ('claude-opus-5-5', 'low', 'f19-semilla', 1, '{"input": 1200, "output": 90}', 1, pg_temp.s19_dueno()::uuid, now())
+  values ('claude-opus-5-5', 'low', 'f19-semilla', 3, '{"input": 3600, "output": 270}', 3, pg_temp.s19_dueno()::uuid, now())
   returning id)
 insert into contador_propuestas (movimiento_id, fuente, lote_id, modelo, effort, prompt_version, propuesta, estado)
-select (select movimiento from public.f19_semilla where clave = 'fe1'), 'ia', l.id, 'claude-opus-5-5', 'low', 'f19-semilla',
-       '{"lineas": [{"cuenta": "6400"}], "motivo": "una ferretería: herramienta menor", "confianza": 0.86}'::jsonb, 'pendiente'
-  from l;
+select (select movimiento from public.f19_semilla where clave = x.clave), 'ia', l.id, 'claude-opus-5-5', 'low', 'f19-semilla', x.propuesta, 'pendiente'
+  from l, (values
+    ('fe1', '{"lineas": [{"cuenta": "6400"}], "motivo": "una ferretería: herramienta menor", "confianza": 0.86}'::jsonb),
+    ('ia2', '{"lineas": [{"cuenta": "3200"}], "motivo": "Una suscripción de cine es personal: va a distribuciones (3200), no a gasto de la empresa.", "confianza": 0.9, "flags": {"personal": true}}'::jsonb),
+    ('ia3', '{"lineas": [{"cuenta": "5100", "proyecto_id": "oficina-nch-7xq2"}], "motivo": "Material eléctrico (5100) para la obra donde estuvo la cuadrilla esa semana.", "confianza": 0.84, "flags": {"obra_propuesta": true, "obra_fuerte": true}, "obra": {"proyecto_id": "oficina-nch-7xq2", "confianza": 0.86, "motivo": "las horas de esa semana"}}'::jsonb)
+  ) as x(clave, propuesta);
 
 commit;
 

@@ -33,14 +33,26 @@
         1120-S, y la forma confirmada;
         (segunda vuelta) y LOS GUIONES, cada uno en UNA transacción, paso a
         paso como los daría la pantalla: el recibo que llega después de
-        registrar su cargo (uno se cambia solo; de dos cargos iguales, «es
-        otra compra» con el freno y su porqué, y «es su recibo»), una
+        registrar su cargo (ninguno se cambia solo: los tres esperan arriba;
+        de dos cargos iguales, «es otra compra» con el freno y su porqué, y
+        «es su recibo»), una
         decisión por grupo que se deshace entera (su tanda), lo ya
         contestado que se toca otra vez («fuera»), el freno del banco con su
         huella (por «Más opciones» y por el «Dímelo»), el pago a la
         cuadrilla que c10 apunta y no registra («dicho»), una propuesta que
         ya no está pendiente (MX008), el paquete de un año que la app no
         lleva, y los nombres en inglés que traen las vistas de los estados;
+        (tercera vuelta) LA LECTURA POR PARTES: la Bandeja leída con el reloj
+        corto (lo que no dio tiempo vuelve en «faltan», con su tarjeta
+        «pensando») y las partes que la pantalla pide después; en cada acción
+        suelta, que lo que la base contesta a {ids: los hermanos de lo
+        contestado} es lo que f19-parte.js saca de la lectura entera (con eso
+        contesta pantalla.js las lecturas por partes); las tres propuestas de
+        la IA de antes (c8) aprobadas por su puerta y ANOTADAS por la Bandeja
+        (un gasto, algo personal y un gasto de obra con su obra); deshacer
+        una decisión por grupo que dejó «que entre solo» (se apaga, o no, si
+        Edgar lo dice) y que el cargo siguiente espera; y la tarifa de un
+        procesador que se olvida;
      3. revisa que en lo capturado no salga ningún nombre de la semilla de
         siempre (los ids de obra de 02-semilla.sql son inventados y ya son
         públicos: se quitan antes de revisar);
@@ -57,6 +69,7 @@
 'use strict';
 const fs = require('fs'), path = require('path'), crypto = require('crypto');
 const { execFileSync } = require('child_process');
+const { parteDe, comparable } = require('./f19-parte.js');
 
 const ARGS = process.argv.slice(2).filter(a => !a.startsWith('--'));
 const BD = ARGS[0], PLANTILLA = ARGS[1] || 'g16a';
@@ -141,13 +154,18 @@ function pedir(ordenes) {
 // un guion: el cuerpo es plpgsql (declarados: r, r2 jsonb; t text) que va llamando a pg_temp.paso(nombre, sql[, quien]); devuelve
 // [{paso, resp, despues: {ids, leer, rojo57}}]
 function guion(nombre, cuerpo) {
+  // (tercera vuelta) y las filas de los movimientos que LLEGARON durante el guion (pg_temp.llega): no están en la Bandeja del
+  // principio, y la pantalla las necesita para pintarlos
   const sql = ['begin;', AYUDA, `do $g$\ndeclare r jsonb; r2 jsonb; t text;\nbegin\n${cuerpo}\nend $g$;`,
-    `select coalesce(jsonb_agg(jsonb_build_object('paso', paso, 'resp', resp, 'leer', leer, 'ids', ids, 'rojo57', rojo57) order by n), '[]'::jsonb)::text from _guion;`, 'rollback;'].join('\n');
+    `select coalesce(jsonb_agg(jsonb_build_object('paso', paso, 'resp', resp, 'leer', leer, 'ids', ids, 'rojo57', rojo57) order by n), '[]'::jsonb)::text from _guion;`,
+    `select coalesce(pg_temp.pedir($q$select coalesce(jsonb_agg(to_jsonb(b) order by b.fecha, b.movimiento_id), '[]'::jsonb) from v_banco_bandeja b
+       where b.movimiento_id in (select s.movimiento from public.f19_semilla s where s.clave not in (${Object.keys(ids).map(k => `'${k}'`).join(', ')}))$q$, 'dueno'), '[]'::jsonb)::text;`,
+    'rollback;'].join('\n');
   const out = psql(sql).split('\n').filter(l => l.length);
-  const pasos = JSON.parse(out[out.length - 1]);
+  const pasos = JSON.parse(out[out.length - 2]), nuevas = sano(JSON.parse(out[out.length - 1]), `guion ${nombre}: las filas que llegaron`);
   if (!pasos.length) throw new Error(`guion ${nombre}: no dejó ningún paso`);
   return pasos.map(p => { if (p.resp && p.resp.ERROR && !/^MX/.test(p.resp.ERROR)) throw new Error(`guion ${nombre}, ${p.paso}: ${p.resp.ERROR}: ${p.resp.message}`);
-    return { paso: p.paso, resp: p.resp, despues: { ids: p.ids, leer: resto(p.leer), rojo57: p.rojo57 } }; });
+    return { paso: p.paso, resp: p.resp, despues: { ids: p.ids, leer: resto(p.leer), rojo57: p.rojo57, ...(nuevas.length ? { nuevas } : {}) } }; });
 }
 const j = v => `${dolar(JSON.stringify(v))}::jsonb`;
 const sano = (r, que) => { if (r && r.ERROR) throw new Error(`${que}: la base contestó ${r.ERROR}: ${r.message}`); return r; };
@@ -175,7 +193,8 @@ console.log('  capas del árbol, c17, c18 y la semilla puestas');
 
 // ---------- 2. lo que la pantalla pide ----------
 const ids = Object.fromEntries(psql('select clave, movimiento from public.f19_semilla order by clave').split('\n').filter(Boolean).map(l => l.split('|')));
-const propIA = psql(`select id from contador_propuestas where movimiento_id = '${ids.fe1}' and estado = 'pendiente'`).trim();
+const propDe = k => psql(`select id from contador_propuestas where movimiento_id = '${ids[k]}' and estado = 'pendiente'`).trim();
+const propIA = propDe('fe1');
 const anio = Number(psql('select extract(year from fn_fecha_miami(now()))::int').trim());
 const [bandeja, leer, facturas, cuentas, proyectos, validar] = pedir([FILAS, LEER, { sql: 'select fn_bandeja_facturas()' },
   { sql: `select jsonb_agg(jsonb_build_object('codigo', c.codigo, 'nombre', c.nombre, 'tipo', c.tipo, 'regla_obra', c.regla_obra) order by c.codigo) from cuentas c where c.imputable and c.activa` },
@@ -187,7 +206,15 @@ const sinRec = k => { const t = leer.tarjetas[ids[k]]; if (!t || (t.rec && t.rec
 // lo que la semilla tiene que dejar (si cambia, las comprobaciones de la pantalla dejarían de valer: falla aquí)
 const espera = (k, accion, fuente) => { const r = rec(k); if (r.accion !== accion || (fuente && r.fuente !== fuente)) throw new Error(`«${k}» debía recomendarse como ${accion}${fuente ? ' (' + fuente + ')' : ''} y salió ${r.accion} (${r.fuente})`); };
 espera('hd1', 'gasto', 'nombre'); espera('hd3', 'gasto', 'nombre'); espera('nf1', 'personal', 'nombre'); espera('ww1', 'gasto', 'nombre');
-espera('od1', 'prestamo', 'app'); espera('in1', 'cobro', 'app'); espera('zl1', 'cobro', 'app'); espera('cu1', 'banco', 'banco'); espera('it1', 'banco', 'banco'); espera('fe1', 'ia', 'ia');
+espera('od1', 'prestamo', 'app'); espera('in1', 'cobro', 'app'); espera('zl1', 'cobro', 'app'); espera('cu1', 'banco', 'banco'); espera('it1', 'banco', 'banco');
+// (tercera vuelta) LA PROPUESTA DE LA IA DE ANTES (c8), dicha como las demás: un gasto de su categoría, «es tuyo», o un gasto de
+// obra con la obra firme que ella propone; sin códigos de cuenta ni su motivo crudo, y con la propuesta de la que sale
+espera('fe1', 'gasto', 'ia'); espera('ia2', 'personal', 'ia'); espera('ia3', 'gasto', 'ia');
+for (const k of ['fe1', 'ia2', 'ia3']) {
+  const r = rec(k);
+  if (r.propuesta_ia !== propDe(k) || /\b\d{4}\b|distribuciones|una ferretería|donde estuvo la cuadrilla/i.test(`${r.texto} ${r.porque || ''}`.replace(/\$[\d,.]+/g, ''))) throw new Error(`la propuesta de c8 de «${k}» debía salir en llano y con su propuesta: ${JSON.stringify(r)}`);
+}
+if (!/^Es tuyo, no de la empresa/.test(rec('ia2').texto) || rec('ia3').datos.proyecto_id !== 'oficina-nch-7xq2' || rec('ia3').pide_obra) throw new Error('lo personal y el gasto de obra de c8 no salieron como la semilla los monta: ' + JSON.stringify([rec('ia2'), rec('ia3')]));
 // (segunda vuelta) el pago de la tarjeta lo reconoce el banco; la comisión del procesador y QuickBooks, cada uno lo suyo; el
 // permiso y la luz de la ciudad, también
 espera('tj1', 'banco', 'banco'); espera('if1', 'gasto', 'app'); espera('iq1', 'gasto', 'nombre'); espera('co1', 'gasto', 'nombre'); espera('co2', 'gasto', 'nombre');
@@ -203,70 +230,102 @@ gr('C:HOME DEPOT'); gr('C:NETFLIX'); gr('M:cuota_prestamo'); gr('M:interes_tarje
 // (segunda vuelta) los grupos son de CARGOS y dicen lo que sus tarjetas: el de la ciudad está mezclado (no propone nada), el de la
 // maderera no se sabe, y los depósitos del procesador van juntos pero de uno en uno
 if (!gr('C:HOME DEPOT').rec || gr('C:HOME DEPOT').rec.accion !== 'gasto' || !gr('C:NETFLIX').rec || gr('C:NETFLIX').rec.accion !== 'personal') throw new Error('los grupos de Home Depot y de Netflix debían traer la recomendación de sus tarjetas');
-if (!gr('C:CITY OF OCALA').mixto || gr('C:CITY OF OCALA').rec) throw new Error('el grupo de la ciudad debía salir mezclado y sin recomendación');
+// (tercera vuelta) un ayuntamiento cobra cosas distintas con el mismo nombre: el permiso y la luz son contrapartes distintas, cada
+// uno con su tarjeta y sin grupo. El grupo «mezclado» es ahora el de la ferretería: la IA de antes manda un cargo a herramienta y
+// el otro a una obra, así que el grupo no propone nada
+if (leer.tarjetas[ids.co1].clave === leer.tarjetas[ids.co2].clave || (leer.grupos || []).some(g => g.movimientos.includes(ids.co1) || g.movimientos.includes(ids.co2))) throw new Error('el permiso y la luz de la ciudad debían ser contrapartes distintas, sin grupo: ' + JSON.stringify([leer.tarjetas[ids.co1].clave, leer.tarjetas[ids.co2].clave]));
+if (!gr(leer.tarjetas[ids.fe1].clave).mixto || gr(leer.tarjetas[ids.fe1].clave).rec || leer.tarjetas[ids.ia3].clave !== leer.tarjetas[ids.fe1].clave) throw new Error('el grupo de la ferretería debía salir mezclado y sin recomendación');
 if (gr('C:ZZ MADERAS DEL SUR').rec || gr('C:ZZ MADERAS DEL SUR').mixto) throw new Error('el grupo de la maderera debía salir sin decidir');
 if (!gr('P:INTUIT').uno_a_uno || gr('P:INTUIT').rec) throw new Error('los depósitos del procesador debían ir juntos pero de uno en uno');
 if ((leer.grupos || []).length !== 7 || (leer.control || []).length) throw new Error(`se esperaban 7 grupos y ningún aviso del control: ${JSON.stringify((leer.grupos || []).map(x => x.clave))} · ${JSON.stringify(leer.control)}`);
 
 // una acción suelta: lo que contesta y cómo queda la Bandeja (en su transacción, que se deshace)
 const sueltas = {};
-function suelta(clave, firma, orden, pideHecho) {
+const movsDe = c => gr(c).movimientos;
+// (tercera vuelta) `de`: los movimientos que la acción contesta. Después de registrar, la pantalla pide solo las tarjetas de SUS
+// HERMANOS (los demás pendientes de la misma contraparte): aquí se le pide eso mismo a la base, en la misma transacción repetida, y
+// se comprueba que es lo que f19-parte.js saca de la lectura entera de después (con lo que pantalla.js contesta esas lecturas)
+let partesComprobadas = 0;
+function suelta(clave, firma, orden, pideHecho, de) {
   const [resp, despues, quedan] = pedir([orden, LEER, IDS]);
   sano(resp, clave);
   if (pideHecho === true && resp.hecho !== true && !(Number(resp.hechos) > 0)) throw new Error(`${clave}: debía registrarse y no: ${JSON.stringify(resp).slice(0, 300)}`);
   if (pideHecho === false && (resp.hecho === true || Number(resp.hechos) > 0)) throw new Error(`${clave}: no debía registrarse y sí`);
   sueltas[clave] = { firma, resp, despues: { ids: sano(quedan, clave), leer: resto(despues) } };
+  if (de && (resp.hecho === true || Number(resp.hechos) > 0)) {
+    const claves = new Set(de.map(id => (LEER0.tarjetas[id] || {}).clave).filter(Boolean));
+    const hermanos = quedan.filter(id => despues.tarjetas[id] && claves.has(despues.tarjetas[id].clave));
+    const [, entera, parte] = pedir([orden, LEER, { sql: `select fn_bandeja_leer(${j({ ids: hermanos })})` }]);
+    const a = JSON.stringify(comparable(sano(parte, clave + ' por partes'))), b = JSON.stringify(comparable(parteDe(sano(entera, clave), hermanos)));
+    // (los instantes —«el»— de lo recién registrado cambian de una transacción a otra: no se comparan)
+    const sinHora = t => t.replace(/"(el|creado_el|cambiada_el|ultima_vez)":"[^"]*"/g, '"$1":"…"').replace(/"(hecho_id|tanda|asiento_id|dimelo_id)":"[0-9a-f-]{36}"/g, '"$1":"…"').replace(/asiento \d{4}-\d+/g, 'asiento …').replace(/"asiento":"\d{4}-\d+"/g, '"asiento":"…"');
+    if (sinHora(a) !== sinHora(b)) {
+      let i = 0; const x = sinHora(a), y = sinHora(b); while (i < x.length && x[i] === y[i]) i++;
+      throw new Error(`${clave}: lo que la base contesta a {ids: los ${hermanos.length} hermanos} no es lo que f19-parte.js saca de la lectura entera:\n  base: …${x.slice(Math.max(0, i - 120), i + 200)}\n  proy: …${y.slice(Math.max(0, i - 120), i + 200)}`);
+    }
+    partesComprobadas += 1;
+  }
 }
 const R = { fuente: 'recomendacion', recordar: true };
 // (la firma: la función, el movimiento o el grupo, la acción y lo que distingue una llamada de otra; pantalla.js arma la misma)
-suelta('asi_wawa', `hacer|${ids.ww1}|gasto||`, hacer(ids.ww1, 'gasto', rec('ww1').datos, R), true);
-suelta('asi_hd_dia', `hacer|${ids.hd1}|gasto|casa-perez-k3m9|`, hacer(ids.hd1, 'gasto', rec('hd1').datos, R), true);
+suelta('asi_wawa', `hacer|${ids.ww1}|gasto||`, hacer(ids.ww1, 'gasto', rec('ww1').datos, R), true, [ids.ww1]);
+suelta('asi_hd_dia', `hacer|${ids.hd1}|gasto|casa-perez-k3m9|`, hacer(ids.hd1, 'gasto', rec('hd1').datos, R), true, [ids.hd1]);
 suelta('hd_sin_obra', `hacer|${ids.hd3}|gasto||`, hacer(ids.hd3, 'gasto', { cuenta: '5100' }, R), false);
-suelta('asi_hd_obra', `hacer|${ids.hd3}|gasto|oficina-nch-7xq2|`, hacer(ids.hd3, 'gasto', { cuenta: '5100', proyecto_id: 'oficina-nch-7xq2' }, R), true);
-suelta('asi_netflix', `hacer|${ids.nf1}|personal||`, hacer(ids.nf1, 'personal', rec('nf1').datos, R), true);
-suelta('asi_ondeck', `hacer|${ids.od1}|prestamo||`, hacer(ids.od1, 'prestamo', rec('od1').datos, R), true);
-suelta('asi_intuit', `hacer|${ids.in1}|cobro||`, hacer(ids.in1, 'cobro', rec('in1').datos, R), true);
-suelta('asi_zelle_llc', `hacer|${ids.zl1}|cobro||`, hacer(ids.zl1, 'cobro', rec('zl1').datos, R), true);
-suelta('asi_cuota', `hacer|${ids.cu1}|banco||`, hacer(ids.cu1, 'banco', rec('cu1').datos, { fuente: 'recomendacion' }), true);
-suelta('mas_parcial', `hacer|${ids.dp1}|cobro||`, hacer(ids.dp1, 'cobro', { facturas: [{ id: '-1900004', monto: '1000.00' }] }, { fuente: 'mas' }), true);
+suelta('asi_hd_obra', `hacer|${ids.hd3}|gasto|oficina-nch-7xq2|`, hacer(ids.hd3, 'gasto', { cuenta: '5100', proyecto_id: 'oficina-nch-7xq2' }, R), true, [ids.hd3]);
+suelta('asi_netflix', `hacer|${ids.nf1}|personal||`, hacer(ids.nf1, 'personal', rec('nf1').datos, R), true, [ids.nf1]);
+suelta('asi_ondeck', `hacer|${ids.od1}|prestamo||`, hacer(ids.od1, 'prestamo', rec('od1').datos, R), true, [ids.od1]);
+suelta('asi_intuit', `hacer|${ids.in1}|cobro||`, hacer(ids.in1, 'cobro', rec('in1').datos, R), true, [ids.in1]);
+suelta('asi_zelle_llc', `hacer|${ids.zl1}|cobro||`, hacer(ids.zl1, 'cobro', rec('zl1').datos, R), true, [ids.zl1]);
+suelta('asi_cuota', `hacer|${ids.cu1}|banco||`, hacer(ids.cu1, 'banco', rec('cu1').datos, { fuente: 'recomendacion' }), true, [ids.cu1]);
+suelta('mas_parcial', `hacer|${ids.dp1}|cobro||`, hacer(ids.dp1, 'cobro', { facturas: [{ id: '-1900004', monto: '1000.00' }] }, { fuente: 'mas' }), true, [ids.dp1]);
 suelta('mas_aporte_sin', `hacer|${ids.at1}|aporte||`, hacer(ids.at1, 'aporte', { tipo: 'prestamo_accionista' }, { fuente: 'mas' }), false);
 // (segunda vuelta) el banco cree que ese depósito lo explica una factura: la línea que Edgar escribe («de dónde salió») NO apaga ese
 // freno; la puerta lo dice y pide su porqué, y solo con él (y la huella de ese freno) entra
 suelta('mas_aporte_con', `hacer|${ids.at1}|aporte||m`, hacer(ids.at1, 'aporte', { tipo: 'prestamo_accionista' }, { fuente: 'mas', motivo: 'efectivo mío que metí para cubrir la semana' }), false);
 if (!sueltas.mas_aporte_con.resp.freno || sueltas.mas_aporte_con.resp.pide_motivo !== true) throw new Error('el dinero del dueño en un depósito que el banco cree de una factura debía frenar con su huella: ' + JSON.stringify(sueltas.mas_aporte_con.resp));
 suelta('mas_aporte_visto', `hacer|${ids.at1}|aporte||mv`, hacer(ids.at1, 'aporte', { tipo: 'prestamo_accionista' },
-  { fuente: 'mas', motivo: 'efectivo mío que metí para cubrir la semana. no es de ningún cliente: lo saqué de mi cuenta', visto: sueltas.mas_aporte_con.resp.freno }), true);
-suelta('mas_anticipo', `hacer|${ids.at1}|anticipo|casa-perez-k3m9|`, hacer(ids.at1, 'anticipo', { proyecto_id: 'casa-perez-k3m9' }, { fuente: 'mas' }), true);
+  { fuente: 'mas', motivo: 'efectivo mío que metí para cubrir la semana. no es de ningún cliente: lo saqué de mi cuenta', visto: sueltas.mas_aporte_con.resp.freno }), true, [ids.at1]);
+suelta('mas_anticipo', `hacer|${ids.at1}|anticipo|casa-perez-k3m9|`, hacer(ids.at1, 'anticipo', { proyecto_id: 'casa-perez-k3m9' }, { fuente: 'mas' }), true, [ids.at1]);
 // (segunda vuelta) lo que el banco ya reconoce, en llano: el pago de la tarjeta
-suelta('asi_tarjeta', `hacer|${ids.tj1}|banco||`, hacer(ids.tj1, 'banco', rec('tj1').datos, { fuente: 'recomendacion' }), true);
+suelta('asi_tarjeta', `hacer|${ids.tj1}|banco||`, hacer(ids.tj1, 'banco', rec('tj1').datos, { fuente: 'recomendacion' }), true, [ids.tj1]);
 // EL FRENO DEL BANCO y su huella: «entre mis cuentas» en algo que el banco no reconoce como traspaso. Sin porqué, la puerta frena y
 // lo dice; un porqué SIN la huella de ese freno no lo levanta; con ella, entra
 suelta('mas_traspaso_freno', `hacer|${ids.tr1}|traspaso||`, hacer(ids.tr1, 'traspaso', { cuenta: '1030' }, { fuente: 'mas', recordar: true }), false);
 if (!sueltas.mas_traspaso_freno.resp.freno || sueltas.mas_traspaso_freno.resp.pide_motivo !== true) throw new Error('el traspaso que el banco no reconoce debía frenar con su huella: ' + JSON.stringify(sueltas.mas_traspaso_freno.resp));
 suelta('mas_traspaso_sin_ver', `hacer|${ids.tr1}|traspaso||m`, hacer(ids.tr1, 'traspaso', { cuenta: '1030' }, { fuente: 'mas', recordar: true, motivo: 'lo pasé a la reserva de impuestos' }), false);
-suelta('mas_traspaso_visto', `hacer|${ids.tr1}|traspaso||mv`, hacer(ids.tr1, 'traspaso', { cuenta: '1030' }, { fuente: 'mas', recordar: true, motivo: 'lo pasé a la reserva de impuestos', visto: sueltas.mas_traspaso_freno.resp.freno }), true);
+suelta('mas_traspaso_visto', `hacer|${ids.tr1}|traspaso||mv`, hacer(ids.tr1, 'traspaso', { cuenta: '1030' }, { fuente: 'mas', recordar: true, motivo: 'lo pasé a la reserva de impuestos', visto: sueltas.mas_traspaso_freno.resp.freno }), true, [ids.tr1]);
 // EL PAGO A LA CUADRILLA que c10 apunta y no registra (avisa de algo): «dicho»; la tarjeta pasa a ser la de la mano de obra
 suelta('mas_cuadrilla', `hacer|${ids.zp1}|cuadrilla||`, hacer(ids.zp1, 'cuadrilla', { usuario_id: '00000000-0000-4000-a000-000000000002' }, { fuente: 'mas', recordar: true }), false);
 if (sueltas.mas_cuadrilla.resp.dicho !== true) throw new Error('el pago a la cuadrilla debía quedar «dicho» (apuntado, sin registrar): ' + JSON.stringify(sueltas.mas_cuadrilla.resp));
 // el pago a un subcontratista, con su nombre
-suelta('mas_contratista', `hacer|${ids.zp1}|contratista|oficina-nch-7xq2|`, hacer(ids.zp1, 'contratista', { proyecto_id: 'oficina-nch-7xq2', proveedor_id: leer.proveedores[0].proveedor_id }, { fuente: 'mas', recordar: true }), true);
+suelta('mas_contratista', `hacer|${ids.zp1}|contratista|oficina-nch-7xq2|`, hacer(ids.zp1, 'contratista', { proyecto_id: 'oficina-nch-7xq2', proveedor_id: leer.proveedores[0].proveedor_id }, { fuente: 'mas', recordar: true }), true, [ids.zp1]);
 // el préstamo sin dar de alta: registrado, el control de la Bandeja lo dice (en llano) en lo que lee la pantalla
 if (!((sueltas.asi_ondeck.despues.leer.control || []).some(k => Number(k.orden) === 70))) throw new Error('tras registrar el préstamo sin alta, la lectura debía traer el aviso 70 del control: ' + JSON.stringify(sueltas.asi_ondeck.despues.leer.control));
-const movsDe = c => gr(c).movimientos;
-suelta('lote_cuotas', 'grupo|M:cuota_prestamo||', grupo('M:cuota_prestamo', null, {}, { movimientos: movsDe('M:cuota_prestamo') }), true);
-suelta('lote_intereses', 'grupo|M:interes_tarjeta||', grupo('M:interes_tarjeta', null, {}, { movimientos: movsDe('M:interes_tarjeta') }), true);
-suelta('grupo_hd_dia', 'grupo|C:HOME DEPOT|gasto|', grupo('C:HOME DEPOT', 'gasto', { cuenta: '5100' }, { movimientos: movsDe('C:HOME DEPOT'), recordar: true, solo: false }), true);
-suelta('grupo_hd_obra', 'grupo|C:HOME DEPOT|gasto|oficina-nch-7xq2', grupo('C:HOME DEPOT', 'gasto', { cuenta: '5100', proyecto_id: 'oficina-nch-7xq2' }, { movimientos: movsDe('C:HOME DEPOT'), recordar: true, solo: false }), true);
+suelta('lote_cuotas', 'grupo|M:cuota_prestamo||', grupo('M:cuota_prestamo', null, {}, { movimientos: movsDe('M:cuota_prestamo') }), true, movsDe('M:cuota_prestamo'));
+suelta('lote_intereses', 'grupo|M:interes_tarjeta||', grupo('M:interes_tarjeta', null, {}, { movimientos: movsDe('M:interes_tarjeta') }), true, movsDe('M:interes_tarjeta'));
+suelta('grupo_hd_dia', 'grupo|C:HOME DEPOT|gasto|', grupo('C:HOME DEPOT', 'gasto', { cuenta: '5100' }, { movimientos: movsDe('C:HOME DEPOT'), recordar: true, solo: false }), true, movsDe('C:HOME DEPOT'));
+suelta('grupo_hd_obra', 'grupo|C:HOME DEPOT|gasto|oficina-nch-7xq2', grupo('C:HOME DEPOT', 'gasto', { cuenta: '5100', proyecto_id: 'oficina-nch-7xq2' }, { movimientos: movsDe('C:HOME DEPOT'), recordar: true, solo: false }), true, movsDe('C:HOME DEPOT'));
+// (tercera vuelta) el grupo de la ferretería decidido como «Herramienta menor y uniformes»: es LO MISMO que la IA de antes proponía
+// para uno de sus dos cargos (el otro lo mandaba a una obra). Las dos propuestas quedan abiertas (propuestas_ia) y la base dice
+// cuál proponía lo mismo (propuestas_ia_iguales): la pantalla la cierra sin decir que Edgar contestó otra cosa
+suelta('grupo_ferre', 'grupo|C:ZZ FERRETERIA CENTRAL|gasto|', grupo('C:ZZ FERRETERIA CENTRAL', 'gasto', { cuenta: '6400' }, { movimientos: movsDe('C:ZZ FERRETERIA CENTRAL'), recordar: true, solo: false }), true, movsDe('C:ZZ FERRETERIA CENTRAL'));
+{
+  const r = sueltas.grupo_ferre.resp, todas = r.propuestas_ia || [], iguales = r.propuestas_ia_iguales || [];
+  if (Number(r.hechos) !== 2 || todas.length !== 2 || iguales.length !== 1 || iguales[0] !== propDe('fe1') || !todas.includes(propDe('ia3')))
+    throw new Error('el grupo de la ferretería como herramienta debía registrar los dos y decir que solo la propuesta de fe1 proponía lo mismo: ' + JSON.stringify(r).slice(0, 500));
+}
 // (segunda vuelta) los depósitos NO se deciden por grupo: la base lo rechaza con su regla (MX008), dicho en llano
 const grupoDep = pedir([grupo('P:INTUIT', 'anticipo', { proyecto_id: 'casa-perez-k3m9' }, { movimientos: movsDe('P:INTUIT') })])[0];
 if (!grupoDep || grupoDep.ERROR !== 'MX008') throw new Error('decidir por grupo los depósitos del procesador debía rechazarse con MX008: ' + JSON.stringify(grupoDep));
-console.log(`  ${Object.keys(sueltas).length} acciones sueltas`);
+if (partesComprobadas < 12) throw new Error(`solo se comprobó la lectura por partes de ${partesComprobadas} acciones`);
+console.log(`  ${Object.keys(sueltas).length} acciones sueltas (la lectura por partes de los hermanos, comprobada contra la base en ${partesComprobadas})`);
 
 // LOS GUIONES (segunda vuelta): varios pasos en una transacción
 const guiones = {};
 // EL RECIBO QUE LLEGA DESPUÉS. Tres compras con la tarjeta de obra se registran desde la Bandeja (a ZZ Oficina Norte) y DESPUÉS la
-// cuadrilla sube sus recibos (a ZZ Casa Roble): el de la compra suelta se cambia solo; el de las dos compras iguales no se sabe de
-// cuál es: la Bandeja enseña las dos, cada una con «es su recibo» y «es otra compra»
+// cuadrilla sube sus recibos (a ZZ Casa Roble). (Tercera vuelta) NINGUNO SE CAMBIA SOLO —el banco no deja volver atrás un cambio
+// así—: los tres esperan arriba, cada uno con «es su recibo» y «es otra compra». De las dos compras iguales no se sabe de cuál es
+// el recibo: a una se le dice «es otra compra» (frena, y con su porqué queda) y a la otra «es su recibo»; y la suelta, «es su recibo»
 guiones.recibos = guion('recibos', `
   perform pg_temp.pedir(format($q$select fn_bandeja_hacer(%L, 'gasto', '{"cuenta":"5100","proyecto_id":"oficina-nch-7xq2"}', '{"fuente":"mas"}')$q$, pg_temp.mov(k))) from unnest(array['rc1','rc2','rc3']) k;
   insert into recibos (id, proyecto_id, ruta, total, proveedor, notas, estado, autor_id, creado, fecha, categoria, num_recibo, metodo_pago, ultimos4)
@@ -284,23 +343,74 @@ guiones.recibos = guion('recibos', `
          r->>'movimiento_id', jsonb_build_object('fuente', 'mas', 'motivo', 'fueron dos compras iguales el mismo día', 'visto', r->>'freno')));
   perform pg_temp.paso('recibo', $q$select fn_bandeja_hacer((fn_bandeja_leer()->'recibos'->0->>'movimiento_id')::uuid, 'banco',
          (select jsonb_build_object('opcion', o->'opcion', 'huella', o->>'huella') from jsonb_array_elements(fn_bandeja_leer()->'recibos'->0->'opciones') o where o->>'es' = 'recibo'),
+         '{"fuente":"mas"}')$q$);
+  perform pg_temp.paso('recibo_suelto', $q$select fn_bandeja_hacer((fn_bandeja_leer()->'recibos'->0->>'movimiento_id')::uuid, 'banco',
+         (select jsonb_build_object('opcion', o->'opcion', 'huella', o->>'huella') from jsonb_array_elements(fn_bandeja_leer()->'recibos'->0->'opciones') o where o->>'es' = 'recibo'),
          '{"fuente":"mas"}')$q$);`);
 {
   const g = Object.fromEntries(guiones.recibos.map(p => [p.paso, p])), rs = p => (g[p].despues.leer.recibos || LEER0.recibos || []);
   if (!g.inicio.despues.rojo57 || rs('inicio').length) throw new Error('guion recibos: al principio el control debía decir que hay un gasto dos veces y la Bandeja todavía no saberlo');
-  if ((g.solo.resp.recibos.cambiados || []).length !== 1 || g.solo.resp.recibos.esperan !== 2 || rs('solo').length !== 2 || !g.solo.despues.rojo57) throw new Error('guion recibos: la rutina debía cambiar uno y dejar dos esperando: ' + JSON.stringify(g.solo.resp));
-  if (g.otra_freno.resp.hecho !== false || !g.otra_freno.resp.freno || g.otra_visto.resp.hecho !== true || rs('otra_visto').length !== 1) throw new Error('guion recibos: «es otra compra» debía frenar y, con su porqué leído, quedar: ' + JSON.stringify([g.otra_freno.resp, g.otra_visto.resp]).slice(0, 500));
-  if (g.recibo.resp.hecho !== true || rs('recibo').length || g.recibo.despues.rojo57) throw new Error('guion recibos: «es su recibo» debía cambiarlo y dejar el banco en verde: ' + JSON.stringify(g.recibo.resp).slice(0, 300));
+  if ('cambiados' in (g.solo.resp.recibos || {}) || g.solo.resp.recibos.esperan !== 3 || rs('solo').length !== 3 || !g.solo.despues.rojo57 || (g.solo.resp.registrados || []).length) throw new Error('guion recibos: la rutina no debía cambiar ninguno, y dejar los tres esperando: ' + JSON.stringify(g.solo.resp));
+  // (los dos primeros son las compras iguales —el mismo día, el mismo monto—; el tercero, la suelta)
+  if (rs('solo')[0].monto !== rs('solo')[1].monto || rs('solo')[2].monto === rs('solo')[0].monto) throw new Error('guion recibos: se esperaban primero las dos compras iguales y después la suelta: ' + JSON.stringify(rs('solo').map(x => x.monto)));
+  if (g.otra_freno.resp.hecho !== false || !g.otra_freno.resp.freno || g.otra_visto.resp.hecho !== true || rs('otra_visto').length !== 2) throw new Error('guion recibos: «es otra compra» debía frenar y, con su porqué leído, quedar: ' + JSON.stringify([g.otra_freno.resp, g.otra_visto.resp]).slice(0, 500));
+  if (g.recibo.resp.hecho !== true || rs('recibo').length !== 1 || !g.recibo.despues.rojo57) throw new Error('guion recibos: «es su recibo» debía cambiarlo y dejar el de la compra suelta esperando: ' + JSON.stringify(g.recibo.resp).slice(0, 300));
+  if (g.recibo_suelto.resp.hecho !== true || rs('recibo_suelto').length || g.recibo_suelto.despues.rojo57) throw new Error('guion recibos: el último «es su recibo» debía dejar el banco en verde: ' + JSON.stringify(g.recibo_suelto.resp).slice(0, 300));
 }
 // UNA DECISIÓN POR GRUPO QUE SE DESHACE ENTERA (su tanda)
 guiones.tanda = guion('tanda', `
   r := pg_temp.paso('grupo', format($q$select fn_bandeja_grupo('C:HOME DEPOT', 'gasto', '{"cuenta":"5100","proyecto_id":"oficina-nch-7xq2"}', %L)$q$,
-         jsonb_build_object('movimientos', (select jsonb_agg(pg_temp.mov(k)) from unnest(array['hd1','hd2','hd3']) k), 'recordar', true, 'solo', false)));
+         jsonb_build_object('movimientos', (select jsonb_agg(pg_temp.mov(k)) from unnest(array['hd1','hd2','hd3','hd4']) k), 'recordar', true, 'solo', false)));
   perform pg_temp.paso('deshacer_tanda', format($q$select fn_bandeja_deshacer_tanda(%L, 'me equivoqué de obra')$q$, r->>'tanda'));`);
 {
   const [a, b] = guiones.tanda;
-  if (Number(a.resp.hechos) !== 3 || !a.resp.tanda || (a.despues.leer.tandas || []).length !== 1 || Number(a.despues.leer.tandas[0].n) !== 3) throw new Error('guion tanda: el grupo debía registrar los tres con su tanda: ' + JSON.stringify(a.resp).slice(0, 300));
-  if (Number(b.resp.deshechos) !== 3 || (b.despues.leer.tandas || LEER0.tandas || []).length) throw new Error('guion tanda: deshacer la tanda debía devolver los tres: ' + JSON.stringify(b.resp));
+  if (Number(a.resp.hechos) !== 4 || !a.resp.tanda || (a.despues.leer.tandas || []).length !== 1 || Number(a.despues.leer.tandas[0].n) !== 4) throw new Error('guion tanda: el grupo debía registrar los cuatro con su tanda: ' + JSON.stringify(a.resp).slice(0, 300));
+  if (Number(b.resp.deshechos) !== 4 || (b.despues.leer.tandas || LEER0.tandas || []).length || b.resp.solo_apagado) throw new Error('guion tanda: deshacer la tanda debía devolver los cuatro (y no había ninguna regla «que entre solo» que apagar): ' + JSON.stringify(b.resp));
+}
+// (tercera vuelta) DESHACER LA RESPUESTA QUE PUSO «QUE ENTRE SOLO»: el grupo de Netflix se contesta «es mío» con «que lo siguiente
+// entre solo»; al deshacer esa decisión entera, la regla SE APAGA (la base lo hace y dice de quién), y el cargo que llega después
+// espera en la Bandeja. Y si Edgar desmarca la casilla (deja_solo: false), la regla sigue y el cargo siguiente entra solo
+const NETFLIX_SOLO = `r := pg_temp.paso('grupo_solo', format($q$select fn_bandeja_grupo('C:NETFLIX', 'personal', '{}', %L)$q$,
+         jsonb_build_object('movimientos', (select jsonb_agg(pg_temp.mov(k)) from unnest(array['nf1','nf2']) k), 'recordar', true, 'solo', true)));`;
+guiones.tanda_solo = guion('tanda_solo', `
+  ${NETFLIX_SOLO}
+  perform pg_temp.paso('deshacer_tanda', format($q$select fn_bandeja_deshacer_tanda(%L, 'no eran míos: son de la oficina')$q$, r->>'tanda'));
+  perform pg_temp.llega('nf5', 1, -15.49, 'NETFLIX.COM');
+  perform pg_temp.paso('solo', $q$select fn_bandeja_solo('{"corrio":"pantalla"}')$q$);`);
+guiones.tanda_deja = guion('tanda_deja', `
+  ${NETFLIX_SOLO}
+  perform pg_temp.paso('deshacer_tanda', format($q$select fn_bandeja_deshacer_tanda(%L, 'me equivoqué de mes', '{"deja_solo": false}')$q$, r->>'tanda'));`);
+{
+  const [a, b, c] = guiones.tanda_solo, [, d] = guiones.tanda_deja;
+  const regla = l => ((l.memoria || LEER0.memoria || []).find(x => x.clave === 'C:NETFLIX') || {});
+  if (Number(a.resp.hechos) !== 2 || !(a.resp.recordado || {}).solo || regla(a.despues.leer).solo !== true || !(a.despues.leer.tandas || [])[0] || a.despues.leer.tandas[0].clave !== 'C:NETFLIX') throw new Error('guion tanda_solo: el grupo debía entrar con «que lo siguiente entre solo» y su tanda traer la clave: ' + JSON.stringify(a.resp).slice(0, 300));
+  if (Number(b.resp.deshechos) !== 2 || b.resp.solo_apagado !== 'NETFLIX' || regla(b.despues.leer).solo !== false) throw new Error('guion tanda_solo: deshacer la tanda debía apagar «entra solo» de Netflix: ' + JSON.stringify(b.resp));
+  if ((c.resp.registrados || []).length || c.despues.ids.length !== b.despues.ids.length + 1) throw new Error('guion tanda_solo: el cargo que llegó después debía esperar en la Bandeja: ' + JSON.stringify(c.resp));
+  if (Number(d.resp.deshechos) !== 2 || d.resp.solo_apagado || regla(d.despues.leer).solo !== true) throw new Error('guion tanda_deja: con deja_solo en falso la regla debía seguir encendida: ' + JSON.stringify(d.resp));
+}
+// (tercera vuelta) LA TARIFA DE UN PROCESADOR, a la vista y con su «Olvidar»: el cobro con comisión que Edgar confirma deja
+// confirmada la tarifa que lo explica; olvidarla le quita esa confirmación
+guiones.tarifa = guion('tarifa', `
+  perform pg_temp.paso('cobro', format($q$select fn_bandeja_hacer(%L, 'cobro', %L, '{"fuente":"recomendacion","recordar":true}')$q$, pg_temp.mov('in1'), ${dolar(JSON.stringify(rec('in1').datos))}));
+  perform pg_temp.paso('olvidar', $q$select fn_bandeja_tarifa_olvidar((fn_bandeja_leer()->'tarifas'->0) - 'veces' - 'origen', true)$q$);`);
+{
+  const [a, b] = guiones.tarifa, ts = a.despues.leer.tarifas || [];
+  if (a.resp.hecho !== true || ts.length !== 1 || ts[0].proc !== 'INTUIT' || !(Number(ts[0].veces) > 0)) throw new Error('guion tarifa: el cobro con comisión debía dejar confirmada una tarifa de Intuit: ' + JSON.stringify(ts));
+  if (!b.resp || (b.despues.leer.tarifas || []).length) throw new Error('guion tarifa: olvidarla debía quitarla de lo que se lee: ' + JSON.stringify([b.resp, b.despues.leer.tarifas]));
+}
+// (tercera vuelta) UN GRUPO QUE NO ENTRA ENTERO: los cuatro de Home Depot con «la obra del día de cada uno»: entran los dos del día
+// de una sola obra y se quedan dos sin obra. El grupo sigue (con dos), su recomendación dice que a esos les falta la obra (ya no
+// ofrece «la del día», que no puede avanzar) y, eligiendo una para los dos, entran
+guiones.hd_resto = guion('hd_resto', `
+  perform pg_temp.paso('grupo_dia', format($q$select fn_bandeja_grupo('C:HOME DEPOT', 'gasto', '{"cuenta":"5100"}', %L)$q$,
+         jsonb_build_object('movimientos', (select jsonb_agg(pg_temp.mov(k)) from unnest(array['hd1','hd2','hd3','hd4']) k), 'recordar', true, 'solo', false)));
+  perform pg_temp.paso('grupo_obra', format($q$select fn_bandeja_grupo('C:HOME DEPOT', 'gasto', '{"cuenta":"5100","proyecto_id":"oficina-nch-7xq2"}', %L)$q$,
+         jsonb_build_object('movimientos', (select jsonb_agg(pg_temp.mov(k)) from unnest(array['hd3','hd4']) k), 'recordar', true, 'solo', false)));`);
+{
+  const [a, b] = guiones.hd_resto, g2 = (a.despues.leer.grupos || []).find(x => x.clave === 'C:HOME DEPOT');
+  if (Number(a.resp.hechos) !== 2 || (a.resp.quedan || []).length !== 2 || !a.resp.quedan.every(x => x.pide_obra) || (a.resp.registrados || []).length !== 2) throw new Error('guion hd_resto: debían entrar dos y quedarse dos pidiendo la obra: ' + JSON.stringify(a.resp).slice(0, 400));
+  if (!g2 || g2.movimientos.length !== 2 || !g2.rec || g2.rec.falta_obra !== true || !/les falta la obra/.test(g2.rec.texto)) throw new Error('guion hd_resto: el grupo que queda debía decir que a los dos les falta la obra: ' + JSON.stringify(g2));
+  if (Number(b.resp.hechos) !== 2 || (b.resp.quedan || []).length) throw new Error('guion hd_resto: con la obra para los dos debían entrar: ' + JSON.stringify(b.resp).slice(0, 300));
 }
 // LO YA CONTESTADO, TOCADO OTRA VEZ (otra pestaña, o la contestación que se perdió): «fuera»
 guiones.fuera = guion('fuera', `
@@ -316,7 +426,9 @@ const cadena = (() => {
     ['llega', () => ({ sql: `select pg_temp.llega('nf3', 1, -15.49, 'NETFLIX.COM')`, quien: 'editor' })],
     ['entra_solo', () => ({ sql: `select fn_bandeja_solo(${j({ corrio: 'pantalla' })})` })],
     ['deshacer', null],
-    ['ya_no_entra', () => ({ sql: `select fn_bandeja_memoria(${j({ clave: 'C:NETFLIX', solo: false })})` })],
+    // (tercera vuelta) deshacer lo que entró solo APAGA la regla (lo hace la base): el cargo que llega después espera
+    ['llega2', () => ({ sql: `select pg_temp.llega('nf4', 1, -15.49, 'NETFLIX.COM')`, quien: 'editor' })],
+    ['no_entra', () => ({ sql: `select fn_bandeja_solo(${j({ corrio: 'pantalla' })})` })],
     ['apagar', () => ({ sql: `select fn_bandeja_config(${j({ solo: false })})` })],
     ['olvidar', () => ({ sql: `select fn_bandeja_memoria(${j({ clave: 'C:NETFLIX', activa: false })})` })]];
   // (el paso «deshacer» necesita el registro que dejó «entra_solo»: se saca dentro de la misma transacción)
@@ -331,7 +443,8 @@ const cadena = (() => {
   const de = p => pasos.find(x => x.paso === p);
   if (Number(de('grupo_solo').resp.hechos) !== 2 || !(de('grupo_solo').resp.recordado || {}).solo) throw new Error('cadena: el grupo de Netflix no entró con «que lo siguiente entre solo»');
   if ((de('entra_solo').resp.registrados || []).length !== 1) throw new Error('cadena: el cargo que llegó no entró solo: ' + JSON.stringify(de('entra_solo').resp));
-  if (de('deshacer').resp.deshecho !== true) throw new Error('cadena: no se deshizo');
+  if (de('deshacer').resp.deshecho !== true || de('deshacer').resp.solo_apagado !== 'NETFLIX') throw new Error('cadena: no se deshizo, o no apagó «entra solo» de Netflix: ' + JSON.stringify(de('deshacer').resp));
+  if ((de('no_entra').resp.registrados || []).length || de('no_entra').despues.filas.length !== de('deshacer').despues.filas.length + 1) throw new Error('cadena: el cargo que llegó después de deshacer debía esperar: ' + JSON.stringify(de('no_entra').resp));
   return pasos;
 })();
 console.log(`  la cadena de lo que entra solo: ${cadena.length} pasos`);
@@ -398,14 +511,57 @@ const dimelo = {};
   if (fr.resp.hecho !== false || !fr.resp.freno || fr.resp.pide_motivo !== true || ap.resp.hecho !== true) throw new Error('dimelo: el «Así es» debía frenar y, con su porqué leído, entrar: ' + JSON.stringify([fr.resp, ap.resp]).slice(0, 500));
   dimelo.traspaso = { movimiento: ids.tr1, frase, ia, guardado: g.resp, aprobar_freno: fr.resp, aprobar: { resp: ap.resp, despues: ap.despues } };
 }
+{
+  // (g) (tercera vuelta) un comercio cuyo nombre es una sola palabra larguísima: lo que entendió el «Dímelo» lleva ese nombre en
+  // sus casillas («Recordarlo: lo próximo de …»), y la tarjeta tiene que caber igual
+  const frase = 'son cables y conectores para el taller', ia = { accion: 'gasto', cuenta: '6400', recordar: true, explicacion: 'Una compra a una distribuidora de material eléctrico menor.' };
+  const [g] = pedir([guardar(ids.lg1, frase, ia)]);
+  if (sano(g, 'dimelo larga').estado !== 'pendiente' || !/^[A-Z]{40,}$/.test(leer.tarjetas[ids.lg1].nombre || '')) throw new Error('dimelo: el comercio de nombre largo debía quedar con su propuesta pendiente: ' + JSON.stringify([g, leer.tarjetas[ids.lg1]]).slice(0, 300));
+  dimelo.larga = { movimiento: ids.lg1, frase, ia, guardado: g };
+}
 console.log(`  «Dímelo»: ${Object.keys(dimelo).length} casos`);
 
-// la propuesta de la IA (c8) aprobada por su puerta (lo que hace la función de borde «contador» con «aprobar»)
-const iaAprobar = (() => {
-  const [a, l, q] = pedir([{ quien: 'editor', sql: `select fn_contador_aprobar('${propIA}', '${DUENO}', null, true)` }, LEER, IDS]);
-  sano(a, 'fn_contador_aprobar');
-  return { propuesta: propIA, movimiento: ids.fe1, resp: a, despues: { ids: q, leer: resto(l) } };
+// LAS PROPUESTAS DE LA IA DE ANTES (c8), aprobadas por SU puerta (lo que hace la función de borde «contador» con «aprobar») y,
+// tercera vuelta, ANOTADAS por la Bandeja (fn_bandeja_anotar, como el dueño): el gasto general, lo personal y el gasto de obra con
+// la obra que Edgar deja en la tarjeta. Quedan en «Lo que contestaste estos días», recordadas, y se pueden deshacer (lo aprobado
+// por c8 vuelve entonces para caducarlo)
+const iaUna = (k, obra, op) => {
+  const prop = propDe(k);
+  const [a, sinRastro, an, l, q, an2, des, l2] = pedir([
+    { quien: 'editor', sql: `select fn_contador_aprobar('${prop}', '${DUENO}', ${obra ? `'${obra}'` : 'null'}, true)` },
+    { quien: 'editor', sql: `select to_jsonb((select count(*) from bandeja_hechos h where h.movimiento_id = '${ids[k]}'))` },
+    { sql: `select fn_bandeja_anotar('${ids[k]}', ${j(op)})` }, LEER, IDS,
+    { sql: `select fn_bandeja_anotar('${ids[k]}', ${j(op)})` },
+    { sql: `select fn_bandeja_deshacer((select h.id from bandeja_hechos h where h.movimiento_id = '${ids[k]}' and h.deshecho_el is null), 'no era eso')` }, LEER]);
+  sano(a, 'fn_contador_aprobar ' + k); sano(an, 'fn_bandeja_anotar ' + k); sano(des, 'deshacer lo anotado ' + k);
+  if (Number(sinRastro) !== 0 || an.hecho !== true || an2.hecho_id !== an.hecho_id || !(l.recientes || []).some(h => h.hecho_id === an.hecho_id)) throw new Error(`c8 ${k}: aprobar no debía dejar rastro en la Bandeja, y anotar sí (una sola vez): ` + JSON.stringify([sinRastro, an, an2]).slice(0, 400));
+  if (/\b\d{4}\b/.test(String(an.texto).replace(/\$[\d,.]+/g, '')) || des.deshecho !== true || !(des.ia_caducar || []).includes(prop) || !(l2.ia_caducar || []).includes(prop)) throw new Error(`c8 ${k}: lo anotado debía decirse en llano y, al deshacerlo, devolver la propuesta para caducarla: ` + JSON.stringify([an, des]).slice(0, 400));
+  return { clave: k, propuesta: prop, movimiento: ids[k], obra: obra || null, resp: a, anotar: an, despues: { ids: q, leer: resto(l) }, deshacer: { resp: des, leer: resto(l2) } };
+};
+const iaAprobar = iaUna('fe1', null, { recordar: true, solo: false });
+const iaMas = { ia2: iaUna('ia2', null, { recordar: true, solo: true }), ia3: iaUna('ia3', 'oficina-nch-7xq2', { recordar: true, solo: false }) };
+if (!(iaMas.ia2.anotar.recordado || {}).solo || !/^Es tuyo, no de la empresa/.test(iaMas.ia2.anotar.texto) || !/ZZ Oficina Norte/.test(iaMas.ia3.anotar.texto)) throw new Error('c8: lo personal debía quedar recordado con «entra solo», y el gasto de obra con su obra: ' + JSON.stringify([iaMas.ia2.anotar, iaMas.ia3.anotar]).slice(0, 500));
+console.log('  las tres propuestas de la IA de antes: aprobadas por su puerta, anotadas y deshechas');
+
+// (tercera vuelta) LA BANDEJA LEÍDA POR PARTES: con el reloj corto (aquí, «max»: unas pocas recomendaciones por llamada, que es lo
+// que el reloj hace con una Bandeja de cientos) la primera lectura trae unas tarjetas y deja las demás «pensando», en «faltan»; la
+// pantalla las pide con {ids: faltan} hasta que no falta ninguna
+const partes = (() => {
+  const [p0] = pedir([{ sql: `select fn_bandeja_leer(${j({ max: 6 })})` }]);
+  sano(p0, 'leer por partes');
+  const [p1] = pedir([{ sql: `select fn_bandeja_leer(${j({ ids: p0.faltan, max: 10 })})` }]);
+  sano(p1, 'la segunda parte');
+  const [p2] = pedir([{ sql: `select fn_bandeja_leer(${j({ ids: p1.faltan })})` }]);
+  sano(p2, 'la tercera parte');
+  const pens = Object.values(p0.tarjetas).filter(t => t.pensando).length;
+  if (p0.parcial !== true || !p0.faltan.length || pens !== p0.faltan.length || !(p0.grupos || []).some(g => g.pendiente) || !(p0.grupos || []).some(g => !g.pendiente && g.rec)) throw new Error('leer por partes: la primera debía traer unas recomendaciones, y lo demás «pensando» y en «faltan», con algún grupo pendiente: ' + JSON.stringify({ parcial: p0.parcial, faltan: p0.faltan.length, pens }));
+  if (p1.parte !== true || !p1.faltan.length || p1.faltan.length >= p0.faltan.length || p2.faltan.length || p2.parcial) throw new Error('leer por partes: cada parte debía avanzar y la última no dejar nada: ' + JSON.stringify([p0.faltan.length, p1.faltan.length, p2.faltan.length]));
+  // juntas, las tres partes dicen lo mismo que la lectura entera
+  const tj = { ...p0.tarjetas, ...p1.tarjetas, ...p2.tarjetas };
+  for (const id of Object.keys(leer.tarjetas)) if (JSON.stringify(tj[id]) !== JSON.stringify(leer.tarjetas[id])) throw new Error('leer por partes: la tarjeta de ' + id + ' no quedó como en la lectura entera: ' + JSON.stringify([tj[id], leer.tarjetas[id]]).slice(0, 400));
+  return [p0, p1, p2];
 })();
+console.log(`  la lectura por partes: ${partes.map(p => Object.keys(p.tarjetas).length + ' tarjetas, faltan ' + p.faltan.length).join(' → ')}`);
 
 // lo fiscal (c18)
 const fiscal = (() => {
@@ -426,6 +582,14 @@ const fiscal = (() => {
   if (p.partial_year !== true || !/^PARTIAL YEAR/.test((p.warnings || [])[0] || '') || /Year-End/.test(p.title)) throw new Error('fiscal: el año que el libro empieza a medias debía salir como parcial, dicho arriba: ' + JSON.stringify([p.title, (p.warnings || [])[0]]));
   if (pf.in_books !== false || !/^NO BOOKS FOR/.test((pf.warnings || [])[0] || '')) throw new Error('fiscal: el año de antes del libro debía salir vacío y dicho: ' + JSON.stringify([pf.title, (pf.warnings || [])[0]]));
   if (!p.retained_earnings || !(p.retained_earnings.rows || []).length || !p.schedule_l || p.schedule_l.balanced !== true) throw new Error('fiscal: el paquete debía traer las utilidades retenidas y el Schedule L cuadrado');
+  // (tercera vuelta) LAS COMIDAS: la semilla deja una ya en el libro; el paquete la lleva en su línea (la 26 del 1120, la 20 del
+  // 1120-S) al 100 % de libros, con su mitad no deducible dicha en el renglón de la cuenta y en un aviso
+  const comida = pq => (pq.tax_lines || []).flatMap(t => (t.accounts || []).map(a => ({ ...a, line: t.line }))).find(a => a.account === '6350');
+  for (const [pq, linea] of [[p, '26'], [p2, '20']]) {
+    const a = comida(pq);
+    if (!a || a.line !== linea || !(Number(a.amount) > 0) || Number(a.deductible) + Number(a.nondeductible) !== Number(a.amount) || !/only 50% is deductible/i.test(a.note || '') || !(pq.warnings || []).some(w => /^MEALS: account 6350/.test(w)))
+      throw new Error(`fiscal: las comidas debían salir en la línea ${linea} con su nota y su aviso: ` + JSON.stringify(a));
+  }
   if (!etq || Object.keys(etq).length < 5) throw new Error('fiscal: las vistas de los estados debían traer sus nombres en inglés: ' + JSON.stringify(etq));
   return { anio, leer: l, paquete: p, a_1120s: { resp: f, leer: l2, paquete: p2 }, confirmada: { resp: c, leer: l3, paquete: p3 }, fuera: { anio: anio - 1, paquete: pf }, etiquetas: etq };
 })();
@@ -436,7 +600,7 @@ const out = {
   que: 'La base simulada de la Bandeja nueva (c17) y de las cuentas en inglés (c18), sacada del banco de pruebas por pruebas/conta/f19-capturar.js: cada respuesta es la que dio la base, como el dueño.',
   capturado: psql('select fn_fecha_miami(now())').trim(), plantilla: PLANTILLA,
   huellas: { 'docs/conta/c17-bandeja.sql': huella('docs/conta/c17-bandeja.sql'), 'docs/conta/c18-fiscal.sql': huella('docs/conta/c18-fiscal.sql'), [SEMILLA]: huella(SEMILLA) },
-  dueno: DUENO, ids, propuesta_ia: propIA, cuentas, proyectos, bandeja, leer, facturas, validar, sueltas, grupo_depositos: grupoDep, guiones, cadena, dimelo, ia_aprobar: iaAprobar, fiscal
+  dueno: DUENO, ids, propuesta_ia: propIA, cuentas, proyectos, bandeja, leer, facturas, validar, sueltas, grupo_depositos: grupoDep, guiones, cadena, dimelo, ia_aprobar: iaAprobar, ia_mas: iaMas, partes, fiscal
 };
 const texto = JSON.stringify(out, null, 1);
 const sinIds = texto.replace(/casa-perez-k3m9|oficina-nch-7xq2|taller-ruiz-5b2n/g, '');

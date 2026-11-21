@@ -3213,7 +3213,9 @@ const llamadas = [], lecturas = []; // lecturas: cada GET a /rest/v1/<vista>?…
 // (fase 19) c17 y c18 pegados o no (sin ellos, sus funciones contestan 404, PGRST202); la IA parada por su tope al pedir un «Dímelo»;
 // y la función «contador» desplegada de antes del «Dímelo» (no conoce la acción)
 // (segunda vuelta) y la contestación de una llamada que se PIERDE por el camino (la base la aplicó; la pantalla no la recibe)
-Object.assign(estado, { c17: false, c17Bloqueado: false, c17FnVieja: false, c18: false, c17Corta: null });
+// (tercera vuelta) la Bandeja leída POR PARTES (lo que no dio tiempo vuelve en «faltan»), y lo que tarda en contestar una parte
+// (fn_bandeja_leer con {ids}) o el «Dímelo» (para mirar la pantalla mientras tanto)
+Object.assign(estado, { c17: false, c17Bloqueado: false, c17FnVieja: false, c18: false, c17Corta: null, c17Partes: false, c17ParteMs: 0, c17DimeloMs: 0, c17Apagada: false });
 // ---- (fase 19) LA BANDEJA NUEVA (c17) Y LAS CUENTAS EN INGLÉS (c18): la base simulada es la del banco ----
 // No hay una mentira escrita a mano para lo que la base contesta: pantalla-f19.json lo saca f19-capturar.js del banco de pruebas
 // (un clon de g16a con las capas del árbol, c17, c18 y f19-semilla.sql; cada respuesta, como el dueño). Aquí solo se lleva la
@@ -3221,29 +3223,50 @@ Object.assign(estado, { c17: false, c17Bloqueado: false, c17FnVieja: false, c18:
 // después de esa misma llamada, en su transacción); la cadena de lo que entra solo va paso a paso, en su orden. Una llamada que el
 // banco no contestó al capturar NO se inventa: contesta un error con su nombre (la comprobación falla y lo dice).
 const F19 = JSON.parse(fs.readFileSync(path.join(__dirname, 'pantalla-f19.json'), 'utf8'));
+// (tercera vuelta) lo que la base contesta cuando se le piden unas tarjetas ({ids}): lo que f19-parte.js saca de su lectura entera
+// de ese momento (f19-capturar.js comprueba contra el banco, acción por acción, que es lo mismo)
+const { parteDe } = require('./f19-parte.js');
 const sha1corto = f => require('crypto').createHash('sha1').update(fs.readFileSync(path.join(ROOT, f))).digest('hex').slice(0, 12);
 const F19_VIEJA = Object.keys(F19.huellas).filter(f => F19.huellas[f] !== sha1corto(f));
 // (segunda vuelta) LOS GUIONES (F19.guiones): varios pasos seguidos del banco en una sola transacción (el recibo que llega después,
 // la tanda de un grupo, lo ya contestado). b19Guion(nombre) pone la escena al principio de uno; cada llamada que le toca avanza un paso
-const B19 = { despues: null, paso: 0, llega: false, fiscal: 'inicio', guion: null, pasoG: 0, rechazadas: new Set() };
-function b19Reset() { B19.despues = null; B19.paso = 0; B19.llega = false; B19.fiscal = 'inicio'; B19.guion = null; B19.pasoG = 0; B19.rechazadas.clear(); estado.c17Bloqueado = false; estado.c17FnVieja = false; estado.c17Corta = null; }
+const B19 = { despues: null, paso: 0, llega: false, fiscal: 'inicio', guion: null, pasoG: 0, rechazadas: new Set(), aprobada: null, extra: null };
+function b19Reset() { B19.despues = null; B19.aprobada = null; B19.extra = null; B19.paso = 0; B19.llega = false; B19.fiscal = 'inicio'; B19.guion = null; B19.pasoG = 0; B19.rechazadas.clear(); estado.c17Bloqueado = false; estado.c17FnVieja = false; estado.c17Corta = null;
+  estado.c17Partes = false; estado.c17ParteMs = 0; estado.c17DimeloMs = 0; estado.c17Apagada = false; }
 function b19Guion(nombre) { const g = F19.guiones[nombre]; B19.guion = nombre; B19.pasoG = 0; B19.despues = null; if (g[0].paso === 'inicio') { B19.despues = g[0].despues; B19.pasoG = 1; } }
 const b19PasoG = nombre => { const g = F19.guiones[B19.guion], p = g && g[B19.pasoG]; if (!p || p.paso !== nombre) return null; B19.pasoG += 1; B19.despues = p.despues; return p.resp; };
 const NO_FN = fn => ({ status: 404, error: { code: 'PGRST202', message: `Could not find the function public.${fn} in the schema cache`, details: null, hint: null } });
 const b19Falta = que => ({ status: 400, error: { code: 'F19', message: `pantalla-f19.json no trae esa llamada (${que}): vuelve a capturar con f19-capturar.js o corrige la comprobación`, details: null, hint: null } });
 const b19Leer = () => ({ ...F19.leer, ...(B19.despues ? B19.despues.leer : {}) });
-const b19Filas = () => !B19.despues ? F19.bandeja : B19.despues.filas || F19.bandeja.filter(f => B19.despues.ids.includes(f.movimiento_id));
+// (las filas de después: las de la cadena vienen enteras; las de un guion, las del principio que siguen y las que llegaron en él)
+// (B19.extra: un movimiento que LLEGA del banco por otro lado mientras Edgar contesta: lo trae la lectura siguiente)
+const b19Filas = () => (!B19.despues ? F19.bandeja : B19.despues.filas || F19.bandeja.concat(B19.despues.nuevas || []).filter(f => B19.despues.ids.includes(f.movimiento_id))).concat(B19.extra || []);
+const mismos = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every(x => b.includes(x));
+// las propuestas de la IA de antes (c8) que la escena aprueba por su puerta y la Bandeja anota
+const b19IA = () => [F19.ia_aprobar, ...Object.values(F19.ia_mas || {})];
 const b19Paso = nombre => { const p = F19.cadena[B19.paso]; if (!p || p.paso !== nombre) return null; B19.paso += 1; B19.despues = p.despues; return p.resp; };
 function b19Rpc(fn, a) {
   const op = a.p_opciones || {}, d = a.p_datos || {};
-  if (fn === 'fn_bandeja_leer') return b19Leer();
+  if (fn === 'fn_bandeja_leer') {
+    const p = a.p || {};
+    // (tercera vuelta) LA BANDEJA LEÍDA POR PARTES: la primera trae unas tarjetas y «faltan»; cada {ids: faltan}, la parte siguiente
+    if (estado.c17Partes) {
+      if (!Array.isArray(p.ids)) return F19.partes[0];
+      const k = F19.partes.findIndex(x => mismos(x.faltan, p.ids));
+      return k >= 0 && F19.partes[k + 1] ? F19.partes[k + 1] : b19Falta('fn_bandeja_leer: esa parte no se capturó');
+    }
+    // unas tarjetas (los hermanos de lo contestado): lo que saldría de la lectura entera de después
+    return Array.isArray(p.ids) ? parteDe(b19Leer(), p.ids) : b19Leer();
+  }
   if (fn === 'fn_bandeja_facturas') return F19.facturas;
   if (fn === 'fn_bandeja_validar') return a.p_movimiento === F19.ids.hd3 && a.p_accion === 'gasto' && d.proyecto_id === 'oficina-nch-7xq2' ? F19.validar : { ok: false, falta: 'f19: sin capturar' };
   if (fn === 'fn_bandeja_solo') {
-    // (segunda vuelta) el recibo que llegó después: la rutina cambia sola el que no tiene duda y deja los otros a la vista
-    if (B19.guion === 'recibos') { const r = b19PasoG('solo'); if (r) return r; }
-    // el cargo que llega después de la regla «que entre solo» (la cadena: «llega» y «entra_solo»)
-    if (B19.llega && F19.cadena[B19.paso] && F19.cadena[B19.paso].paso === 'llega') { B19.paso += 1; B19.llega = false; return b19Paso('entra_solo'); }
+    // (segunda vuelta) el recibo que llegó después: la rutina lo mira (tercera vuelta: no cambia ninguno; los deja todos a la vista)
+    // (tercera vuelta) y el cargo que llega después de deshacer la decisión que puso «que entre solo»: espera
+    if (B19.guion === 'recibos' || (B19.guion === 'tanda_solo' && B19.llega)) { const r = b19PasoG('solo'); if (r) { B19.llega = false; return r; } }
+    // el cargo que llega después de la regla «que entre solo» (la cadena: «llega» y «entra_solo»); y, tercera vuelta, el que llega
+    // después de deshacer lo que entró solo («llega2» y «no_entra»: la regla se apagó)
+    if (B19.llega && F19.cadena[B19.paso] && /^llega/.test(F19.cadena[B19.paso].paso)) { const sig = F19.cadena[B19.paso].paso === 'llega' ? 'entra_solo' : 'no_entra'; B19.paso += 1; B19.llega = false; return b19Paso(sig); }
     return { encendido: b19Leer().config.solo !== false, registrados: [], esperan: 0, no: 0, completo: true };
   }
   if (fn === 'fn_bandeja_hacer') {
@@ -3252,7 +3275,7 @@ function b19Rpc(fn, a) {
     if (B19.guion === 'recibos' && a.p_accion === 'banco') {
       const r = (b19Leer().recibos || []).find(x => x.movimiento_id === a.p_movimiento), o = r && (r.opciones || []).find(x => x.huella === d.huella && Number(x.opcion) === Number(d.opcion));
       if (!o || !pg) return b19Falta(`recibos: ${a.p_movimiento} con esa opción no está en lo que la pantalla leyó`);
-      const quiere = o.es === 'otra' ? (op.motivo ? 'otra_visto' : 'otra_freno') : 'recibo';
+      const quiere = o.es === 'otra' ? (op.motivo ? 'otra_visto' : 'otra_freno') : pg.paso === 'recibo_suelto' ? 'recibo_suelto' : 'recibo';
       if (pg.paso !== quiere) return b19Falta(`el guion de los recibos iba por «${pg.paso}» y llegó «${quiere}»`);
       // (un porqué sin la huella del freno que se leyó no lo levanta: la base vuelve a frenar)
       if (quiere === 'otra_visto' && op.visto !== g[B19.pasoG - 1].resp.freno) return g[B19.pasoG - 1].resp;
@@ -3260,6 +3283,8 @@ function b19Rpc(fn, a) {
     }
     // lo ya contestado, tocado otra vez (otra pestaña): la primera registra, la segunda dice «fuera»
     if (B19.guion === 'fuera' && a.p_movimiento === F19.ids.ww1 && pg) return b19PasoG(pg.paso);
+    // (tercera vuelta) el cobro con comisión que deja confirmada la tarifa del procesador
+    if (B19.guion === 'tarifa' && a.p_movimiento === F19.ids.in1 && a.p_accion === 'cobro') return b19PasoG('cobro') || b19Falta('el guion de la tarifa ya había pasado por el cobro');
     // (la firma: lo que distingue una llamada de otra; «m» si lleva un porqué escrito y «v» si además lleva la huella del freno que se leyó)
     const firma = `hacer|${a.p_movimiento}|${a.p_accion}|${d.proyecto_id || ''}|${op.motivo ? 'm' : ''}${op.visto ? 'v' : ''}`;
     const s = Object.values(F19.sueltas).find(x => x.firma === firma);
@@ -3271,6 +3296,10 @@ function b19Rpc(fn, a) {
     // (segunda vuelta) los depósitos no se deciden por grupo: la base lo rechaza con su regla; y la tanda de un grupo, para deshacerla
     if (/^(P|D|Z<):/.test(a.p_clave || '')) return { status: 400, error: { code: F19.grupo_depositos.ERROR, message: F19.grupo_depositos.message, details: null, hint: null } };
     if (B19.guion === 'tanda' && a.p_clave === 'C:HOME DEPOT') { const r = b19PasoG('grupo'); if (r) return r; }
+    // (tercera vuelta) el grupo que no entra entero: con «la obra del día» entran dos y se quedan dos; con una obra para los dos, entran
+    if (B19.guion === 'hd_resto' && a.p_clave === 'C:HOME DEPOT') return b19PasoG(d.proyecto_id ? 'grupo_obra' : 'grupo_dia') || b19Falta('el guion del grupo que no entra entero no iba por ahí');
+    // (tercera vuelta) el grupo de Netflix con «que lo siguiente entre solo», para deshacer después esa decisión entera
+    if ((B19.guion === 'tanda_solo' || B19.guion === 'tanda_deja') && a.p_clave === 'C:NETFLIX' && a.p_accion === 'personal' && op.solo === true) return b19PasoG('grupo_solo') || b19Falta('el guion ya había pasado por el grupo de Netflix');
     if (a.p_clave === 'C:NETFLIX' && a.p_accion === 'personal' && op.solo === true) return b19Paso('grupo_solo') || b19Falta('la cadena no iba por el grupo de Netflix');
     const firma = `grupo|${a.p_clave}|${a.p_accion || ''}|${d.proyecto_id || ''}`;
     const s = Object.values(F19.sueltas).find(x => x.firma === firma);
@@ -3278,9 +3307,29 @@ function b19Rpc(fn, a) {
     if (Number(s.resp.hechos) > 0 || s.resp.recordado) B19.despues = s.despues;
     return s.resp;
   }
-  if (fn === 'fn_bandeja_deshacer_tanda') return (B19.guion === 'tanda' && a.p_tanda === F19.guiones.tanda[0].resp.tanda && b19PasoG('deshacer_tanda')) || b19Falta('deshacer_tanda fuera de su guion');
-  if (fn === 'fn_bandeja_deshacer') return b19Paso('deshacer') || b19Falta('deshacer fuera de la cadena');
-  if (fn === 'fn_bandeja_memoria') return b19Paso((a.p || {}).activa === false ? 'olvidar' : 'ya_no_entra') || b19Falta('memoria fuera de la cadena');
+  if (fn === 'fn_bandeja_deshacer_tanda') {
+    // (tercera vuelta) la tanda que dejó «que entre solo»: deshacerla apaga la regla, salvo deja_solo: false (su guion es otro)
+    const g = ['tanda', 'tanda_solo', 'tanda_deja'].includes(B19.guion) ? F19.guiones[B19.guion] : null, deja = op.deja_solo === false;
+    if (!g || a.p_tanda !== g[0].resp.tanda || deja !== (B19.guion === 'tanda_deja')) return b19Falta('deshacer_tanda fuera de su guion' + (deja ? ' (con deja_solo: false)' : ''));
+    return b19PasoG('deshacer_tanda') || b19Falta('el guion ya había deshecho su tanda');
+  }
+  if (fn === 'fn_bandeja_deshacer') {
+    // (tercera vuelta) lo que la IA de antes registró y la Bandeja anotó: deshecho, vuelve a la Bandeja y trae la propuesta para caducarla
+    const ia = b19IA().find(x => x.anotar.hecho_id === a.p_hecho);
+    if (ia) { B19.despues = { ids: F19.bandeja.map(f => f.movimiento_id), leer: ia.deshacer.leer }; return ia.deshacer.resp; }
+    if (op.deja_solo === false) return b19Falta('deshacer con deja_solo: false no se capturó en la cadena');
+    return b19Paso('deshacer') || b19Falta('deshacer fuera de la cadena');
+  }
+  // (tercera vuelta) lo que la IA de antes (c8) registró al aprobar su propuesta, anotado en la Bandeja (y lo que se recuerda con ello)
+  if (fn === 'fn_bandeja_anotar') {
+    const ia = b19IA().find(x => x.movimiento === a.p_movimiento && B19.aprobada === x.propuesta);
+    if (!ia) return b19Falta('fn_bandeja_anotar de un movimiento que la IA de antes no acaba de aprobar');
+    B19.despues = ia.despues;
+    return ia.anotar;
+  }
+  if (fn === 'fn_bandeja_tarifa_olvidar') return (B19.guion === 'tarifa' && a.p_todo === true && b19PasoG('olvidar')) || b19Falta('olvidar una tarifa fuera de su guion');
+  // (tercera vuelta: la regla «que entre solo» la apaga la base al deshacer; aquí solo queda «Olvidar»)
+  if (fn === 'fn_bandeja_memoria') return ((a.p || {}).activa === false && b19Paso('olvidar')) || b19Falta('memoria fuera de la cadena');
   if (fn === 'fn_bandeja_config') return b19Paso('apagar') || b19Falta('config fuera de la cadena');
   if (fn === 'fn_bandeja_aprobar' || fn === 'fn_bandeja_rechazar') {
     const k = Object.keys(F19.dimelo).find(x => (F19.dimelo[x].guardado || {}).dimelo_id === a.p_dimelo);
@@ -3301,14 +3350,26 @@ function b19Rpc(fn, a) {
 function b19Contador(b) {
   if (b.accion === 'dimelo') {
     if (estado.c17FnVieja) return { estado: 400, cuerpo: { ok: false, codigo: 'ACCION', error: 'Acción desconocida: «dimelo».' } };
+    // (tercera vuelta) el contador apagado: la base lo dice en el mismo «bloqueado», con su motivo de verdad
+    if (estado.c17Apagada) return { cuerpo: { ok: true, bloqueado: true, motivo: 'el contador está apagado (contador_config.activa = false): la bandeja sigue como siempre', tope: { ...F19.dimelo.bloqueado.contexto.tope, activa: false, bloqueado: true } } };
     if (estado.c17Bloqueado) return { cuerpo: { ok: true, bloqueado: true, ...F19.dimelo.bloqueado.contexto } };
     const frase = String(b.frase || '').replace(/\s+/g, ' ').trim();
     const k = Object.keys(F19.dimelo).find(x => F19.dimelo[x].frase === frase && F19.dimelo[x].movimiento === b.movimiento);
     if (!k) return { estado: 400, cuerpo: { ok: false, codigo: 'F19', error: `pantalla-f19.json no trae esa frase para ese movimiento: «${frase}»` } };
     return { cuerpo: { ok: true, bloqueado: false, ...F19.dimelo[k].guardado, respondio: true, modelo: 'claude-opus-5-5', effort: 'medium', prompt_version: 'f19', usage: { input: 2400, output: 180 }, ms: 12 } };
   }
-  if (b.accion === 'aprobar' && b.propuesta === F19.propuesta_ia) { B19.despues = F19.ia_aprobar.despues; return { cuerpo: { ok: true, ...F19.ia_aprobar.resp } }; }
+  // (tercera vuelta) «aprobar» de una propuesta de c8: lo que contestó su puerta con ESA obra (la Bandeja lo anota después, y entonces
+  // sale de la lista: fn_bandeja_anotar). Con otra obra que la capturada, no se inventa
+  if (b.accion === 'aprobar') {
+    const ia = b19IA().find(x => x.propuesta === b.propuesta);
+    if (ia) {
+      if ((b.proyecto_id || null) !== ia.obra) return { estado: 400, cuerpo: { ok: false, codigo: 'F19', error: `pantalla-f19.json trae esa propuesta aprobada con la obra «${ia.obra}», no con «${b.proyecto_id || ''}»` } };
+      B19.aprobada = ia.propuesta;
+      return { cuerpo: { ok: true, ...ia.resp } };
+    }
+  }
   if (b.accion === 'rechazar') return { cuerpo: { ok: true, estado: 'rechazada', propuesta: b.propuesta } };
+  if (b.accion === 'caducar') return { cuerpo: { ok: true, estado: 'caducada', propuesta: b.propuesta } };
   return null;
 }
 // lo fiscal (c18): leer, el paquete del año y la forma de la entidad (con el 1120, con el 1120-S y confirmada)
@@ -3611,6 +3672,8 @@ async function simular(ctx, rol) {
       if (b.accion === 'proponer') { estado.iaVuelo += 1; estado.iaVueloMax = Math.max(estado.iaVueloMax, estado.iaVuelo); }
       const r = funcionContador(b, auth);
       const responder = () => { if (b.accion === 'proponer') estado.iaVuelo -= 1; return route.fulfill({ status: r.estado || 200, headers: CORS, contentType: 'application/json', body: JSON.stringify(r.cuerpo) }); };
+      // (fase 19, tercera vuelta) la IA que tarda en contestar un «Dímelo»: mientras tanto se contestan las demás tarjetas
+      if (b.accion === 'dimelo' && estado.c17DimeloMs) return new Promise(listo => setTimeout(listo, estado.c17DimeloMs)).then(responder);
       return b.accion === 'proponer' && estado.iaLento ? new Promise(listo => setTimeout(listo, estado.iaLento)).then(responder) : responder();
     }
     // c8 sin pegar: las vistas v_contador_* no existen (PostgREST: 404 PGRST205); la lectura se anota igual (la pantalla sí las pidió)
@@ -3739,6 +3802,8 @@ async function simular(ctx, rol) {
       if (estado.c17Corta && estado.c17Corta === fn) { estado.c17Corta = null; return route.abort('failed'); }
       if (r && r.error) return route.fulfill({ status: r.status || 400, headers: CORS, contentType: 'application/json', body: JSON.stringify(r.error) });
       if (r === null) return route.fulfill({ status: 204, headers: CORS });
+      // (fase 19, tercera vuelta) una parte de la Bandeja nueva que tarda en llegar: la pantalla ya está pintada con lo que hay
+      if (fn === 'fn_bandeja_leer' && estado.c17ParteMs && args.p && Array.isArray(args.p.ids)) return new Promise(listo => setTimeout(listo, estado.c17ParteMs)).then(() => route.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify(r) }));
       return route.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify(r) });
     }
     if (u.pathname.startsWith('/rest/v1/')) {
@@ -3782,7 +3847,9 @@ const titulo2 = async pg => (await pg.locator('#titulo-vista').textContent()).tr
 const tab = async (pg, k) => { await pg.locator(`.ct-tab[data-pag="${k}"]`).evaluate(b => b.click()); };
 // esperar a que la pantalla termine de pintar (ni «Cargando…» ni una acción en curso)
 // (7c) ni la cadena de la IA en marcha (propone sola: sin esperarla, lo pintado sería de antes de terminar)
-const pintado = async pg => { await pg.waitForTimeout(150); await pg.waitForFunction(() => !document.querySelector('#conta-raiz .ct-cargando') && !window.MXP_CONTA._estado.ocupado && !(window.MXP_CONTA._estado.cadena && window.MXP_CONTA._estado.cadena.activa), null, { timeout: 8000 }); };
+// (fase 19, tercera vuelta) …ni la Bandeja nueva tiene algo en camino por detrás (lo que relee después de contestar, o las partes que faltan)
+const pintado = async pg => { await pg.waitForTimeout(150); await pg.waitForFunction(() => { const s = window.MXP_CONTA._estado, bn = s.bn || {};
+  return !document.querySelector('#conta-raiz .ct-cargando') && !s.ocupado && !(s.cadena && s.cadena.activa) && !((bn.detras || {}).vuelo > 0) && !((bn.partes || {}).corriendo); }, null, { timeout: 8000 }); };
 // una fila de la bandeja: se despliega (si no lo está) y devuelve su tarjeta, con los botones a la vista
 const fila = async (pg, id) => { const c = pg.locator(`.ct-mov[data-id="${id}"]`); await c.locator('.ct-mov-fila').waitFor({ state: 'attached', timeout: 8000 });
   if ((await c.locator('.ct-mov-fila').getAttribute('aria-expanded')) !== 'true') { await c.locator('.ct-mov-fila').evaluate(b => b.click()); await pg.waitForTimeout(120); } return c; };
@@ -3821,7 +3888,9 @@ async function escenaF19(b, errs) {
   const cuantas = (n0, fn) => desde(n0).filter(l => l.fn === fn).length;
   const tostada = q => plano(q, '#toast');
   // la Bandeja otra vez como al principio (la base de mentira y lo que la pantalla recuerda de la sesión)
-  const reinicio = async q => { b19Reset(); await q.evaluate(() => { const s = window.MXP_CONTA._estado; s.bn.dim.clear(); s.bn.frases.clear(); s.bn.mas.clear(); s.bn.grupoAbierto = null; s.bj.abierta = null; s.bj.grupo = null; }); await ve(q, 'bandeja'); };
+  // (la base simulada vuelve al principio: lo que la página recuerda de esta sesión —las propuestas de la IA de antes que ya cerró— también)
+  const reinicio = async q => { b19Reset(); await q.evaluate(() => { const s = window.MXP_CONTA._estado; s.bn.dim.clear(); s.bn.frases.clear(); s.bn.mas.clear(); s.bn.grupoAbierto = null; s.bj.abierta = null; s.bj.grupo = null;
+    s.bn.ia.hechas.clear(); s.bn.ia.mal.clear(); s.bn.quedo = null; }); await ve(q, 'bandeja'); };
   const esta = (q, k) => q.locator(`.ct-mov[data-id="${ID[k]}"]`).count();
   // ni nombres de funciones ni códigos de cuenta (los montos y las fechas no cuentan)
   const sinJerga = t => !/fn_[a-z]|\b\d{4}(-\d{4})?\b/.test(String(t).replace(/\$[\d,]+(\.\d\d)?/g, '').replace(/#[A-Z0-9-]+/g, ''));
@@ -3867,8 +3936,8 @@ async function escenaF19(b, errs) {
       ls.includes('fn_bandeja_solo') && cuantas(n0, 'fn_bandeja_leer') === 1 && ls.indexOf('fn_bandeja_solo') < ls.indexOf('fn_bandeja_leer') && ultima(n0, 'fn_bandeja_solo').args.p.corrio === 'pantalla', ls.filter(f => f.startsWith('fn_bandeja')).join(','));
     const gruposTxt = await plano(q, '#ct-bn-grupos');
     ok('«Decide por grupo»: dice cuántos grupos y cuántos movimientos son (y que los depósitos se contestan de uno en uno), y enseña los dos lotes que el banco ya reconoce (las cuotas del préstamo y los intereses de la tarjeta) y los comercios con varios cargos (Home Depot y Netflix con lo que recomiendan sus tarjetas; la maderera, sin decidir), cada uno con cuántos son y su total; los que no caben quedan detrás de «Ver los 7 grupos»',
-      (await q.locator('[data-bn-grupo]').count()) === 6 && /Hay 7 grupos con varios movimientos esperando \(15 en total\): una respuesta vale para todos los de cada grupo\. Los depósitos se contestan de uno en uno: cada uno paga sus facturas\./.test(gruposTxt) && /Cuotas de préstamos.*2 movimientos.*1,200\.00/.test(gruposTxt) && /Intereses de la tarjeta.*59\.70/.test(gruposTxt) && /HOME DEPOT.*3 movimientos.*Material.*1,655\.02/.test(gruposTxt) && /NETFLIX.*2 movimientos.*Personal.*30\.98/.test(gruposTxt)
-      && /ZZ MADERAS DEL SUR.*2 movimientos · sin decidir.*128\.74/.test(gruposTxt) && (await q.locator('#ct-bn-g-todos').textContent()).trim() === 'Ver los 7 grupos', gruposTxt.slice(0, 260));
+      (await q.locator('[data-bn-grupo]').count()) === 6 && /Hay 7 grupos con varios movimientos esperando \(16 en total\): una respuesta vale para todos los de cada grupo\. Los depósitos se contestan de uno en uno: cada uno paga sus facturas\./.test(gruposTxt) && /Cuotas de préstamos.*2 movimientos.*1,200\.00/.test(gruposTxt) && /Intereses de la tarjeta.*59\.70/.test(gruposTxt) && /HOME DEPOT.*4 movimientos.*Material.*1,731\.22/.test(gruposTxt) && /NETFLIX.*2 movimientos.*Personal.*30\.98/.test(gruposTxt)
+      && /ZZ MADERAS DEL SUR.*2 movimientos · sin decidir.*128\.74/.test(gruposTxt) && /ZZ FERRETERIA CENTRAL.*2 movimientos · hay cosas distintas.*501\.00/.test(gruposTxt) && (await q.locator('#ct-bn-g-todos').textContent()).trim() === 'Ver los 7 grupos', gruposTxt.slice(0, 260));
     ok('…y sin franja todavía: nada entró solo, nada contestado, nada recordado', (await q.locator('#ct-bn-franja').count()) === 0);
     const pildora = async k => (await q.locator(`.ct-mov[data-id="${ID[k]}"] .ct-f-motivo .ct-pill`).first().textContent()).trim();
     ok('Cada fila dice en una palabra qué cree la app que es: «Personal» (Netflix), «Material» (Home Depot), «Préstamo» (OnDeck), «Cobro de factura» (Intuit) y «¿Qué es?» donde no lo sabe (el cajero)',
@@ -3886,6 +3955,9 @@ async function escenaF19(b, errs) {
       sinJerga(await c.locator('[data-bn]').innerText()) && !/fn_/.test(await c.locator('.ct-bn-viejo').textContent()), (await c.locator('[data-bn]').innerText()).replace(/\s+/g, ' ').slice(0, 160));
     ok('…y, por ser un comercio, deja recordarlo (marcado) y que lo siguiente entre solo (sin marcar, con su tope)',
       await c.locator('[data-bn-recordar]').isChecked() && !(await c.locator('[data-bn-solo]').isChecked()) && /lo siguiente de WAWA entre solo \(hasta \$500\.00/.test(await plano(q, `.ct-mov[data-id="${ID.ww1}"] .ct-bn-solo`)));
+    // (tercera vuelta: una marca en OTRA tarjeta —si la lista se repintara entera, se perdería— y por dónde van las lecturas)
+    await q.evaluate(id => { document.querySelector(`.ct-mov[data-id="${id}"]`).dataset.pruebaViva = '1'; }, ID.hd1);
+    const lec0 = lecturas.length;
     n0 = llamadas.length;
     await tocar(q, c.locator('[data-bn-asi]'));
     let l = ultima(n0, 'fn_bandeja_hacer');
@@ -3898,6 +3970,11 @@ async function escenaF19(b, errs) {
       (await q.locator('.ct-mov.abierta').count()) === 1 && (await q.locator('.ct-mov.abierta').getAttribute('data-id')) === F19.bandeja[F19.bandeja.findIndex(f => f.movimiento_id === ID.ww1) + 1].movimiento_id, await q.locator('.ct-mov.abierta .ct-f-desc b').textContent().catch(() => 'ninguna'));
     ok('…y en la franja aparece «Lo que contestaste estos días» (con «Deshacer») y «Lo que recuerdo»',
       /Lo que contestaste estos días · 1 movimiento/.test(await plano(q, '#ct-bn-recientes > summary')) && /Lo que recuerdo · 1 comercio o persona/.test(await plano(q, '#ct-bn-mem > summary')) && (await q.locator('#ct-bn-recientes [data-bn-deshacer]').count()) === 1);
+    ok('(tercera vuelta) «ASÍ ES» YA NO LEE NI REPINTA LA BANDEJA ENTERA (con cientos de pendientes eran segundos, y una veintena de peticiones, por respuesta): sale la tarjeta contestada y las demás NO se vuelven a pintar (son las mismas); la cuenta de arriba se pone al día; y por detrás va UNA lectura por partes de la Bandeja nueva (las tarjetas de ese comercio: aquí no hay más) y UNA de los movimientos del banco',
+      cuantas(n0, 'fn_bandeja_leer') === 1 && JSON.stringify(ultima(n0, 'fn_bandeja_leer').args.p) === '{"ids":[]}' && lecturas.slice(lec0).filter(x => x.startsWith('v_banco_bandeja')).length === 1
+      && (await q.locator(`.ct-mov[data-id="${ID.hd1}"][data-prueba-viva="1"]`).count()) === 1 && (await q.locator('#ct-bj-lista .ct-mov').count()) === F19.bandeja.length - 1
+      && new RegExp(`^${F19.bandeja.length - 1} movimientos del banco esperan`).test(await plano(q, '.ct-pag-cab .ct-pag-sub')) && (await q.locator('.ct-cargando').count()) === 0,
+      `${desde(n0).map(x => x.fn).join(',')} · ${lecturas.slice(lec0).filter(x => x.startsWith('v_banco_bandeja')).length} · ${await plano(q, '.ct-pag-cab .ct-pag-sub')}`);
 
     // -- un gasto de obra: la obra del día, y la que falta --
     await reinicio(q);
@@ -3953,14 +4030,60 @@ async function escenaF19(b, errs) {
     l = ultima(n0, 'fn_bandeja_hacer');
     ok('Lo que el banco ya reconoce (la cuota de un préstamo) se acepta igual, con un toque: acción «banco», su primera opción', !!l && l.args.p_accion === 'banco' && Number(l.args.p_datos.opcion) === 0 && (await esta(q, 'cu1')) === 0, JSON.stringify(l && l.args).slice(0, 160));
     await reinicio(q);
+    // -- (tercera vuelta) LO QUE PROPONE LA IA DE ANTES (c8): en producción es lo que dice buena parte de las tarjetas --
     c = await fila(q, ID.fe1);
-    ok('Un cargo con una propuesta de la IA pendiente: la recomendación es esa propuesta, en llano («Es un gasto de «Herramienta menor y uniformes»: $88.40.» · «Lo propone la IA…»)',
-      (await c.locator('[data-bn-t]').textContent()).trim() === T0[ID.fe1].rec.texto && /^Lo propone la IA/.test(await plano(q, `.ct-mov[data-id="${ID.fe1}"] .ct-bn-por`)));
+    const IA1 = F19.ia_aprobar, IA2 = F19.ia_mas.ia2, IA3 = F19.ia_mas.ia3;
+    ok('Un cargo con una propuesta de la IA pendiente: la recomendación es esa propuesta, en llano («Es un gasto de «Herramienta menor y uniformes»: $88.40.» · «Lo propone la IA, por el comercio…»), sin su motivo crudo ni códigos de cuenta',
+      (await c.locator('[data-bn-t]').textContent()).trim() === T0[ID.fe1].rec.texto && /^Lo propone la IA, por el comercio y por lo que ya contestaste otras veces\.$/.test(await plano(q, `.ct-mov[data-id="${ID.fe1}"] .ct-bn-por`)) && sinJerga(await c.locator('[data-bn]').innerText()) && !/una ferretería/.test(await c.locator('[data-bn-caja="rec"]').textContent()),
+      (await c.locator('[data-bn-caja="rec"]').innerText()).replace(/\s+/g, ' ').slice(0, 200));
+    ok('(tercera vuelta) …y es una tarjeta COMO LAS DEMÁS: deja «Recordarlo» (marcado) y «que lo siguiente entre solo» (antes la de la IA no los traía)',
+      await c.locator('[data-bn-caja="rec"] [data-bn-recordar]').isChecked() && (await c.locator('[data-bn-caja="rec"] [data-bn-solo]').count()) === 1);
     n0 = llamadas.length;
     await tocar(q, c.locator('[data-bn-asi]'));
     l = ultima(n0, 'contador:aprobar');
-    ok('…y «Así es» la aprueba por SU función de siempre (la función «contador», «aprobar» con esa propuesta), no por fn_bandeja_hacer',
-      !!l && l.args.propuesta === F19.propuesta_ia && l.args.recordar === true && cuantas(n0, 'fn_bandeja_hacer') === 0 && (await esta(q, 'fe1')) === 0, await tostada(q));
+    let la = ultima(n0, 'fn_bandeja_anotar');
+    ok('…«Así es» la aprueba por SU función de siempre (la función «contador», «aprobar» con esa propuesta: ella registra, aprende su regla y cuenta su acierto), no por fn_bandeja_hacer',
+      !!l && l.args.propuesta === F19.propuesta_ia && l.args.recordar === true && !('proyecto_id' in l.args) && cuantas(n0, 'contador:aprobar') === 1 && cuantas(n0, 'fn_bandeja_hacer') === 0 && (await esta(q, 'fe1')) === 0, await tostada(q));
+    ok('(tercera vuelta) …y DESPUÉS la Bandeja ANOTA ese registro (fn_bandeja_anotar con el movimiento y lo que Edgar dejó en «Recordarlo»: no toca el libro): el aviso es el de cualquier «Así es» («Registrado: Es un gasto de «Herramienta menor y uniformes»: $88.40 · asiento … · lo recordaré para ZZ FERRETERIA CENTRAL»), no el de la IA de antes («Así es: en el libro · regla nueva…»)',
+      !!la && cuantas(n0, 'fn_bandeja_anotar') === 1 && la.args.p_movimiento === ID.fe1 && la.args.p_opciones.recordar === true && la.args.p_opciones.solo === false && desde(n0).findIndex(x => x.fn === 'contador:aprobar') < desde(n0).findIndex(x => x.fn === 'fn_bandeja_anotar')
+      && /^Registrado: Es un gasto de «Herramienta menor y uniformes»: \$88\.40 · asiento 2026-\d+ · lo recordaré para ZZ FERRETERIA CENTRAL$/.test(await tostada(q)), await tostada(q));
+    const hIA = q.locator(`#ct-bn-recientes [data-bn-hecho="${IA1.anotar.hecho_id}"]`);
+    ok('…y esa respuesta QUEDA EN «LO QUE CONTESTASTE ESTOS DÍAS» con su «Deshacer», y en «Lo que recuerdo» (antes no dejaba rastro en la Bandeja: con el mismo botón, unas respuestas se podían deshacer y otras no)',
+      (await hIA.count()) === 1 && (await hIA.locator('[data-bn-deshacer]').count()) === 1 && /Herramienta menor y uniformes/.test(await hIA.textContent()) && /Lo que recuerdo · 1 comercio o persona/.test(await plano(q, '#ct-bn-mem > summary')), await plano(q, '#ct-bn-recientes').then(t => t.slice(0, 200)));
+    await q.locator('#ct-bn-recientes > summary').click(); await q.waitForTimeout(150);
+    await hIA.locator('[data-bn-deshacer]').click(); await q.waitForTimeout(150);
+    await hIA.locator('.ct-form textarea[name="motivo"]').fill('no era eso');
+    n0 = llamadas.length;
+    await hIA.locator('.ct-form button[type="submit"]').click(); await esperarLlamada(q, n0, 'contador:caducar'); await pintado(q); await q.waitForTimeout(300);
+    l = ultima(n0, 'fn_bandeja_deshacer');
+    const lc = ultima(n0, 'contador:caducar');
+    ok('…«Deshacer» lo des-registra como cualquier otro (el cargo vuelve a la Bandeja), y lo que la IA tenía APROBADO con ese asiento se cierra por su función (UNA llamada a «caducar» con esa propuesta y su porqué): no queda aprobada una propuesta sin asiento',
+      !!l && l.args.p_hecho === IA1.anotar.hecho_id && l.args.p_motivo === 'no era eso' && (await esta(q, 'fe1')) === 1 && !!lc && cuantas(n0, 'contador:caducar') === 1 && lc.args.propuesta === F19.propuesta_ia && lc.args.motivo === 'Edgar lo deshizo en la Bandeja' && IA1.deshacer.resp.ia_caducar.includes(F19.propuesta_ia), JSON.stringify(lc && lc.args));
+    await reinicio(q);
+    c = await fila(q, ID.ia2);
+    const pildoraDe = async k => (await q.locator(`.ct-mov[data-id="${ID[k]}"] .ct-f-motivo .ct-pill`).first().textContent()).trim();
+    ok('(tercera vuelta) LO PERSONAL QUE PROPONE LA IA DE ANTES se dice como lo demás: «Es tuyo, no de la empresa: $17.99 que salen como retiro tuyo (no es un gasto del negocio).» (antes: «Es un gasto de «Es mío, no de la empresa (retiro del accionista)»» y el motivo de c8 tal cual, con «(3200)»); la fila dice «Personal» y la tarjeta deja recordarlo y que lo siguiente entre solo',
+      (await c.locator('[data-bn-t]').textContent()).trim() === T0[ID.ia2].rec.texto && /^Es tuyo, no de la empresa: \$17\.99 que salen como retiro tuyo \(no es un gasto del negocio\)\.$/.test(T0[ID.ia2].rec.texto) && !/3200|distribuciones|Es un gasto de/.test(await c.locator('[data-bn-caja="rec"]').textContent())
+      && await pildoraDe('ia2') === 'Personal' && (await c.locator('[data-bn-caja="rec"] [data-bn-recordar]').count()) === 1 && (await c.locator('[data-bn-caja="rec"] [data-bn-solo]').count()) === 1, (await c.locator('[data-bn-caja="rec"]').innerText()).replace(/\s+/g, ' ').slice(0, 220));
+    await c.locator('[data-bn-caja="rec"] [data-bn-solo]').check();
+    n0 = llamadas.length;
+    await tocar(q, c.locator('[data-bn-asi]'));
+    l = ultima(n0, 'contador:aprobar'); la = ultima(n0, 'fn_bandeja_anotar');
+    ok('…«Así es» con «que lo siguiente entre solo»: aprobada por su función y anotada con recordar y solo; la Bandeja lo recuerda («…lo recordaré para ZZ CINE CLUB (lo siguiente entra solo)»)',
+      !!l && l.args.propuesta === IA2.propuesta && !!la && la.args.p_movimiento === ID.ia2 && la.args.p_opciones.recordar === true && la.args.p_opciones.solo === true && (await esta(q, 'ia2')) === 0
+      && /^Registrado: Es tuyo, no de la empresa: \$17\.99 que salen como retiro tuyo \(no es un gasto del negocio\) · asiento 2026-\d+ · lo recordaré para ZZ CINE CLUB \(lo siguiente entra solo\)$/.test(await tostada(q)), await tostada(q));
+    await reinicio(q);
+    c = await fila(q, ID.ia3);
+    const obrasIA = await c.locator('[data-bn-caja="rec"] [data-bn-obra] option').evaluateAll(os => os.map(o => o.value));
+    ok('(tercera vuelta) UN GASTO DE OBRA que propone la IA de antes trae PUESTA la obra que ella propone cuando es firme («ZZ Oficina Norte»), y lo dice («…La obra la propone ella: mírala.»); se puede cambiar por otra, pero no dejarla vacía: lo que se ve es lo que entra',
+      (await c.locator('[data-bn-caja="rec"] [data-bn-obra]').inputValue()) === 'oficina-nch-7xq2' && /La obra la propone ella: mírala\.$/.test(await plano(q, `.ct-mov[data-id="${ID.ia3}"] .ct-bn-por`)) && !obrasIA.includes('') && obrasIA.length >= 2
+      && /Es un gasto de «Material» de la obra ZZ Oficina Norte: \$412\.60\./.test(await c.locator('[data-bn-t]').textContent()), `${await plano(q, `.ct-mov[data-id="${ID.ia3}"] .ct-bn-por`)} · ${obrasIA.join(',')}`);
+    n0 = llamadas.length;
+    await tocar(q, c.locator('[data-bn-asi]'));
+    l = ultima(n0, 'contador:aprobar'); la = ultima(n0, 'fn_bandeja_anotar');
+    ok('…«Así es» manda a la IA de antes LA OBRA QUE SE VE en la tarjeta (sin ella, su puerta pondría la de su propuesta), la Bandeja lo anota, y por detrás solo se relee la otra tarjeta de esa ferretería',
+      !!l && l.args.propuesta === IA3.propuesta && l.args.proyecto_id === 'oficina-nch-7xq2' && !!la && la.args.p_movimiento === ID.ia3 && (await esta(q, 'ia3')) === 0 && /^Registrado: Es un gasto de «Material» de la obra ZZ Oficina Norte: \$412\.60/.test(await tostada(q))
+      && cuantas(n0, 'fn_bandeja_leer') === 1 && mismos(ultima(n0, 'fn_bandeja_leer').args.p.ids, [ID.fe1]) && (await q.locator('[data-bn-grupo="C:ZZ FERRETERIA CENTRAL"]').count()) === 0, `${await tostada(q)} · ${JSON.stringify(desde(n0).filter(x => x.fn === 'fn_bandeja_leer').map(x => x.args))}`);
 
     // -- «DÍMELO CON TUS PALABRAS» --
     await reinicio(q);
@@ -3977,6 +4100,9 @@ async function escenaF19(b, errs) {
       !!l && l.args.movimiento === ID.at1 && l.args.frase === D.anticipo.frase && /^Bearer /.test(l.auth) && cuantas(n0, 'fn_bandeja_hacer') + cuantas(n0, 'fn_bandeja_aprobar') === 0 && (await esta(q, 'at1')) === 1);
     ok('…vuelve UNA propuesta, en llano y con el monto («Entendí esto» · «Es un anticipo de la obra ZZ Casa Roble (todavía sin factura): $800.00.»), con «Así es» y «No, es otra cosa»',
       /Entendí esto/.test(await c.locator('[data-bn-caja="dim"]').textContent()) && (await c.locator('[data-bn-caja="dim"] [data-bn-t]').textContent()).trim() === D.anticipo.guardado.texto && (await c.locator('[data-bn-ia-asi]').textContent()).trim() === 'Así es' && (await c.locator('[data-bn-ia-no]').textContent()).trim() === 'No, es otra cosa');
+    ok('(tercera vuelta) …y el porqué de esa propuesta, que es texto libre de la IA, sale DICHO QUE ES SUYO y con otra letra que el porqué de la app («La IA dice: Un adelanto en efectivo del cliente de ZZ Casa Roble, todavía sin factura.»)',
+      (await c.locator('[data-bn-caja="dim"] [data-bn-ia-dice]').count()) === 1 && (await plano(q, `.ct-mov[data-id="${ID.at1}"] [data-bn-caja="dim"] [data-bn-ia-dice]`)) === `La IA dice: ${D.anticipo.guardado.porque}`
+      && await c.locator('[data-bn-caja="dim"] [data-bn-ia-dice]').evaluate(e => getComputedStyle(e).fontStyle === 'italic') && await (async () => { const w = await fila(q, ID.ww1), r = await w.locator('.ct-bn-por').evaluate(e => getComputedStyle(e).fontStyle); await fila(q, ID.at1); return r !== 'italic'; })(), await plano(q, `.ct-mov[data-id="${ID.at1}"] [data-bn-caja="dim"]`).then(t => t.slice(0, 200)));
     n0 = llamadas.length;
     await tocar(q, c.locator('[data-bn-ia-asi]'));
     l = ultima(n0, 'fn_bandeja_aprobar');
@@ -4003,14 +4129,55 @@ async function escenaF19(b, errs) {
     await c.locator('[data-bn-enviar]').click(); await esperarLlamada(q, n0, 'contador:dimelo'); await pintado(q); await q.waitForTimeout(200);
     ok('Si no lo encuentra, dice qué le falta («No sé de qué obra es: dime el nombre de la obra o del cliente…»), y el botón pasa a «Enviar otra vez»',
       (await c.locator('[data-bn-prop]').textContent()).includes(D.falta.guardado.falta) && (await c.locator('[data-bn-enviar]').textContent()).trim() === 'Enviar otra vez');
+    ok('(tercera vuelta) …y eso que le falta lo escribió la IA (lo dice la base: falta_de_la_ia): la tarjeta lo dice con SU voz («La IA dice: …»), no con la de la app; lo que frena la base (el caso de antes) sale sin esa marca',
+      D.falta.guardado.falta_de_la_ia === true && (await plano(q, `.ct-mov[data-id="${ID.dp1}"] [data-bn-prop] [data-bn-ia-dice]`)) === `La IA dice: ${D.falta.guardado.falta}` && /^No lo pude dejar listo\.$/.test((await c.locator('[data-bn-prop] .ct-bn-falta > p').first().textContent()).trim())
+      && !D.frenada.guardado.falta_de_la_ia && (await q.locator(`.ct-mov[data-id="${ID.zp1}"] [data-bn-prop] [data-bn-ia-dice]`).count()) === 0, await plano(q, `.ct-mov[data-id="${ID.dp1}"] [data-bn-prop]`));
     estado.c17Bloqueado = true; n0 = llamadas.length;
     await c.locator('[data-bn-enviar]').click(); await esperarLlamada(q, n0, 'contador:dimelo'); await pintado(q); await q.waitForTimeout(200);
     ok('Con la IA parada por su tope del mes: lo dice en llano (sin nombres de tablas ni de ajustes) y manda a «Más opciones»',
       /llegó a su tope de gasto de este mes/.test(await c.locator('[data-bn-prop]').textContent()) && !/contador_config|tope_mes/.test(await c.locator('[data-bn]').textContent()));
+    estado.c17Bloqueado = false; estado.c17Apagada = true; n0 = llamadas.length;
+    await c.locator('[data-bn-enviar]').click(); await esperarLlamada(q, n0, 'contador:dimelo'); await pintado(q); await q.waitForTimeout(200);
+    ok('(tercera vuelta) Con la IA APAGADA no dice que «llegó a su tope»: la base manda el motivo de verdad y la tarjeta lo dice en llano («La IA está apagada, así que no le puedo preguntar. Elige tú en «Más opciones»…»), sin nombres de tablas',
+      /^La IA está apagada, así que no le puedo preguntar\. Elige tú en «Más opciones»/.test((await c.locator('[data-bn-prop]').textContent()).trim()) && (await c.locator('[data-bn-prop] [data-bn-dim-apagada]').count()) === 1 && !/tope de gasto|contador_config|activa = false/.test(await c.locator('[data-bn]').textContent()), await c.locator('[data-bn-prop]').textContent());
+    estado.c17Apagada = false;
     estado.c17Bloqueado = false; estado.c17FnVieja = true; n0 = llamadas.length;
     await c.locator('[data-bn-enviar]').click(); await esperarLlamada(q, n0, 'contador:dimelo'); await pintado(q); await q.waitForTimeout(200);
     ok('Con la función «contador» desplegada de antes (no conoce «dimelo»): dice que hay que volver a desplegarla, y «Más opciones» sigue ahí', /anterior al «Dímelo».*volver a desplegarla/.test(await c.locator('[data-bn-dim] .ct-bn-res').textContent()));
     estado.c17FnVieja = false;
+
+    // -- (tercera vuelta) EL «DÍMELO» OCUPA SU TARJETA, NO LA BANDEJA --
+    await reinicio(q);
+    c = await fila(q, ID.at1);
+    estado.c17DimeloMs = 2600; n0 = llamadas.length;
+    await c.locator('[data-bn-frase]').fill(D.anticipo.frase);
+    await c.locator('[data-bn-enviar]').click(); await esperarLlamada(q, n0, 'contador:dimelo'); await q.waitForTimeout(250);
+    ok('(tercera vuelta) EL «DÍMELO» OCUPA SU TARJETA, NO LA BANDEJA: mientras la IA piensa (puede tardar más de un minuto) su caja lo dice («Pensando qué es… Mientras tanto puedes contestar otros.») y solo su caja queda apagada',
+      /^Pensando qué es… Mientras tanto puedes contestar otros\.$/.test((await c.locator('[data-bn-dim] .ct-bn-res').textContent()).trim()) && await c.locator('[data-bn-enviar]').isDisabled() && await q.evaluate(() => window.MXP_CONTA._estado.ocupado === false && window.MXP_CONTA._estado.bn.pensando.size === 1));
+    const wE = await fila(q, ID.ww1);
+    const nE = llamadas.length;
+    await wE.locator('[data-bn-asi]').click(); await esperarLlamada(q, nE, 'fn_bandeja_hacer'); await q.waitForTimeout(500);
+    ok('…y las demás se contestan mientras tanto: «Así es» en otra tarjeta registra (antes, hasta que la IA contestaba, ningún botón de la Bandeja hacía nada, y nada lo decía)',
+      cuantas(nE, 'fn_bandeja_hacer') === 1 && (await esta(q, 'ww1')) === 0 && /^Registrado: Es un gasto de «Camioneta y gasolina»/.test(await tostada(q)) && await q.evaluate(() => window.MXP_CONTA._estado.bn.pensando.size === 1) && (await esta(q, 'at1')) === 1, await tostada(q));
+    // (después de contestar se abre sola la tarjeta SIGUIENTE de la lista. Si resulta ser la del «Dímelo» —el orden entre los
+    // movimientos de un mismo día sale de sus ids, que cambian en cada captura—, se pliega: aquí se prueba el aviso de cuando la
+    // tarjeta NO está a la vista)
+    if (await q.evaluate(id => window.MXP_CONTA._estado.bj.abierta === id, ID.at1)) { await q.locator(`.ct-mov[data-id="${ID.at1}"] .ct-mov-fila`).click(); await q.waitForTimeout(150); }
+    await q.waitForTimeout(2600); await pintado(q); await q.waitForTimeout(200);
+    c = q.locator(`.ct-mov[data-id="${ID.at1}"]`);
+    ok('…cuando la IA contesta y esa tarjeta ya no es la que está abierta, se avisa («Ya miré «ATM CASH DEPOSIT 1234 ZZ MAIN ST»: ábrelo para ver lo que entendí.»); al abrirla, ahí está su propuesta con «Así es»',
+      /^Ya miré «ATM CASH DEPOSIT 1234 ZZ MAIN ST»: ábrelo para ver lo que entendí\.$/.test(await tostada(q)) && await q.evaluate(() => window.MXP_CONTA._estado.bn.pensando.size === 0)
+      && await (async () => { const x = await fila(q, ID.at1); return (await x.locator('[data-bn-caja="dim"] [data-bn-t]').textContent()).trim() === D.anticipo.guardado.texto && await x.locator('[data-bn-ia-asi]').isEnabled() && await x.locator('[data-bn-enviar]').isEnabled(); })(), await tostada(q));
+    estado.c17DimeloMs = 0;
+    // (una llamada que toca el libro en vuelo: la siguiente espera, y se dice)
+    c = await fila(q, ID.kl1);
+    await q.evaluate(() => { window.MXP_CONTA._estado.ocupado = true; });
+    n0 = llamadas.length;
+    await c.locator('[data-bn-asi]').click(); await q.waitForTimeout(200);
+    const espera = (await c.locator('[data-bn-caja="rec"] .ct-bn-res').textContent()).trim();
+    await q.evaluate(() => { window.MXP_CONTA._estado.ocupado = false; });
+    ok('(tercera vuelta) …y si una llamada que toca el libro está en vuelo, el toque en otra tarjeta no se pierde en silencio: no llama a nada y lo dice («Espera un momento: estoy terminando lo anterior.»)',
+      cuantas(n0, 'fn_bandeja_hacer') === 0 && espera === 'Espera un momento: estoy terminando lo anterior.' && (await esta(q, 'kl1')) === 1, espera);
 
     // -- «MÁS OPCIONES»: las categorías en dos niveles --
     await reinicio(q);
@@ -4051,7 +4218,7 @@ async function escenaF19(b, errs) {
     const FRA = F19.sueltas.mas_aporte_con.resp;
     ok('(segunda vuelta) EL FRENO DEL BANCO NO SE SALTA: con la línea escrita lo manda como «aporte» (préstamo del accionista) con ese motivo y SIN huella; el banco cree que ese depósito lo explica una factura, la base NO lo registra, y la tarjeta lo dice en llano arriba del porqué y pide contestarle',
       !!l && l.args.p_accion === 'aporte' && l.args.p_datos.tipo === 'prestamo_accionista' && l.args.p_opciones.motivo === 'efectivo mío que metí para cubrir la semana' && !('visto' in l.args.p_opciones) && (await esta(q, 'at1')) === 1
-      && (await c.locator('[data-bn-cat] [data-bn-freno]').textContent()).trim() === FRA.por_que && /Hay una factura por cobrar.*Si de verdad es otra cosa, escribe por qué\./.test(FRA.por_que) && sinJerga(FRA.por_que)
+      && (await c.locator('[data-bn-cat] [data-bn-freno]').textContent()).trim() === FRA.por_que && /^Hay facturas por cobrar mayores que este depósito: podría ser una parte de una de ellas \(un pago a cuenta\)\..*Si de verdad es otra cosa, escribe por qué\.$/.test(FRA.por_que) && sinJerga(FRA.por_que)
       && await c.locator('[data-bn-cat] [data-bn-motivo]').isVisible() && /Si aun así es eso, escribe por qué/.test(await c.locator('[data-bn-cat] [data-bn-motivo-et]').textContent()), (await c.locator('[data-bn-cat]').innerText()).replace(/\s+/g, ' ').slice(0, 260));
     n0 = llamadas.length;
     await c.locator('[data-bn-cat-asi]').click(); await q.waitForTimeout(200);
@@ -4089,6 +4256,15 @@ async function escenaF19(b, errs) {
     ok('(segunda vuelta) Una compra para una obra: la tarjeta dice que, si hay recibo, mejor subirlo («¿Tienes la foto del recibo de esta compra? Súbela a su obra…»), y NO ofrece «que lo siguiente entre solo» (lo de una obra se propone cada vez); la gasolina sí lo ofrece, y no pide recibo',
       /¿Tienes la foto del recibo de esta compra\? Súbela a su obra y este cargo se casa solo con ella/.test(await c.locator('[data-bn-sube]').textContent()) && (await c.locator('[data-bn-recordar]').count()) === 1 && (await c.locator('[data-bn-solo]').count()) === 0
       && await (async () => { const w = await fila(q, ID.ww1); return (await w.locator('[data-bn-sube]').count()) === 0 && (await w.locator('[data-bn-solo]').count()) === 1; })());
+    {
+      const z = await fila(q, ID.zp1), nZ = await z.locator('[data-bn-sube]').count(), r = await fila(q, ID.rc3), nR = await r.locator('[data-bn-sube]').count();
+      ok('(tercera vuelta) …y esa nota del recibo sale SOLO en la compra a un comercio: en un Zelle a una persona no hay recibo que subir (antes salía también ahí)', nZ === 0 && nR === 1 && T0[ID.zp1].clase === 'zelle_a' && T0[ID.rc3].clase === 'comercio', `zelle ${nZ} · comercio ${nR}`);
+      // a 1280, con esa nota en la columna de la recomendación, «Dímelo» queda arriba a la derecha (antes bajaba a la tercera fila y dejaba un hueco)
+      const h = await fila(q, ID.hd1);
+      const cajas = await h.evaluate(card => { const t = s => { const e = card.querySelector(s); return e ? Math.round(e.getBoundingClientRect().top) : null; }; return { rec: t('[data-bn-caja="rec"]'), dim: t('[data-bn-dim]'), sube: t('[data-bn-sube]') }; });
+      ok('(tercera vuelta) …y en la computadora, con la nota del recibo debajo de la recomendación, la caja «Dímelo» queda ARRIBA A LA DERECHA, a la altura de la recomendación (antes bajaba a la tercera fila y dejaba un hueco)',
+        cajas.rec != null && cajas.dim != null && Math.abs(cajas.dim - cajas.rec) <= 2 && cajas.sube > cajas.rec, JSON.stringify(cajas));
+    }
     c = await fila(q, ID.tr1);
     await c.locator('[data-bn-mas] > summary').click(); await q.waitForTimeout(150);
     await c.locator('[data-bn-cat-sel]').selectOption('personal/retiro'); await q.waitForTimeout(150);
@@ -4096,13 +4272,48 @@ async function escenaF19(b, errs) {
       (await c.locator('[data-bn-cat] [data-bn-recordar]').count()) === 1 && (await c.locator('[data-bn-cat] [data-bn-solo]').count()) === 0
       && await (async () => { const k = await fila(q, ID.kl1); await k.locator('[data-bn-mas] > summary').click(); await q.waitForTimeout(150); await k.locator('[data-bn-cat-sel]').selectOption('personal/retiro'); await q.waitForTimeout(150); return (await k.locator('[data-bn-cat] [data-bn-solo]').count()) === 1; })());
     // la lista de categorías se llena al abrir «Más opciones» (no va pintada en cada tarjeta)
+    // (tercera vuelta) …y EL CUERPO ENTERO de la tarjeta nueva se pinta al abrirla: una tarjeta cerrada es solo su fila
     ok('(segunda vuelta) La lista de categorías de «Más opciones» NO va pintada en cada tarjeta: se llena al abrirlo (con una Bandeja larga eran decenas de miles de opciones que se repintaban tras cada «Así es»)',
-      await q.evaluate(([a, b]) => { const n = id => document.querySelector(`.ct-mov[data-id="${id}"] [data-bn-cat-sel]`).options.length; return n(a) === 1 && n(b) > 10; }, [ID.dd1, ID.kl1]));
+      await q.evaluate(([a, b]) => { const n = id => { const x = document.querySelector(`.ct-mov[data-id="${id}"] [data-bn-cat-sel]`); return x ? x.options.length : 0; }; return n(a) <= 1 && n(b) > 10; }, [ID.dd1, ID.kl1]));
+    {
+      const nodos = await q.evaluate(() => { const cs = [...document.querySelectorAll('#ct-bj-lista .ct-mov')], cerradas = cs.filter(c => !c.classList.contains('abierta') && c.querySelector('.ct-mov-det[data-bn-vacia]'));
+        return { tarjetas: cs.length, sinCuerpo: cerradas.length, dentro: cerradas.reduce((s, c) => s + c.querySelector('.ct-mov-det').childElementCount, 0), nunca: cs.filter(c => c.querySelector('.ct-mov-det[data-bn-vacia]') && c.querySelector('[data-bn], [data-bn-mas]')).length, porTarjeta: Math.round(document.querySelectorAll('#ct-bj-lista *').length / cs.length) }; });
+      ok('(tercera vuelta) EL CUERPO DE LA TARJETA NUEVA SE PINTA AL ABRIRLA: una tarjeta cerrada es solo su fila (ni la recomendación, ni «Dímelo», ni «Más opciones» pintados: con cientos de movimientos eran decenas de miles de nodos que se repintaban tras cada respuesta); las que se abrieron conservan lo suyo',
+        nodos.tarjetas === F19.bandeja.length && nodos.sinCuerpo >= nodos.tarjetas - 6 && nodos.dentro === 0 && nodos.nunca === 0 && nodos.porTarjeta < 40, JSON.stringify(nodos));
+      const cerrada = q.locator(`.ct-mov[data-id="${ID.dd1}"]`);
+      await cerrada.locator('.ct-mov-fila').evaluate(b => b.click()); await q.waitForTimeout(150);
+      ok('…y al tocar su fila se pinta entera, con sus botones cableados (la recomendación con «Así es», «Dímelo» y «Más opciones»)',
+        (await cerrada.locator('.ct-mov-det[data-bn-vacia]').count()) === 0 && (await cerrada.locator('[data-bn] [data-bn-dim]').count()) === 1 && (await cerrada.locator('[data-bn-mas]').count()) === 1 && await cerrada.locator('[data-bn-frase]').isVisible()
+        && await (async () => { await cerrada.locator('[data-bn-mas] > summary').click(); await q.waitForTimeout(150); return (await cerrada.locator('[data-bn-cat-sel] option').count()) > 10; })());
+    }
     c = await fila(q, ID.cd1);
     await c.locator('[data-bn-mas] > summary').click(); await q.waitForTimeout(150);
     const viejoCd = (await c.locator('.ct-bn-viejo .ct-texto').textContent()).trim();
     ok('(segunda vuelta) «Lo que dice el banco» no enseña órdenes de SQL a medias: de «…desde el SQL Editor (select fn_…(\'{…}\'); …)» no queda ni la orden ni su paréntesis roto (antes se quitaba solo el nombre de la función y quedaba «select (\'4456\', …);»)',
       /Dinero a la cuenta ····4456, que no conozco/.test(viejoCd) && !/select|fn_|SQL Editor|\(\s*'|\{"|;\)/.test(viejoCd) && /select fn_/.test(F19.bandeja.find(f => f.movimiento_id === ID.cd1).texto), viejoCd.slice(0, 700));
+    {
+      const ops = (await c.locator('.ct-bn-viejo [data-op]').allTextContents()).map(x => x.trim()), crudas = F19.bandeja.find(f => f.movimiento_id === ID.cd1).opciones.map(o => o.texto);
+      const it = await fila(q, ID.it1); await it.locator('[data-bn-mas] > summary').click(); await q.waitForTimeout(150);
+      const opsIt = (await it.locator('.ct-bn-viejo [data-op]').allTextContents()).map(x => x.trim());
+      const dp = await fila(q, ID.zl1); await dp.locator('[data-bn-mas] > summary').click(); await q.waitForTimeout(150);
+      const opsZl = (await dp.locator('.ct-bn-viejo [data-op]').allTextContents()).map(x => x.trim());
+      const sinCodigo = t => !/\b\d{4}(-\d{4})?\b/.test(String(t).replace(/····\d{4}/g, '').replace(/#[A-Z0-9-]+/g, '').replace(/\d[\d,]*\.\d\d/g, ''));
+      ok('(tercera vuelta) LOS BOTONES DE «LO QUE DICE EL BANCO» (dentro de «Más opciones») YA NO TRAEN CÓDIGOS DE CUENTA: «Intereses · 7100» es «Intereses»; «A 1030 (Reserva de impuestos)» es «A Reserva de impuestos»; «…distribución · 3200 (con su motivo)» pierde el código; y la obra de una factura sale por su nombre («Factura #ZZ-103 (ZZ Patio Sur)»), no por su clave',
+        crudas.filter(t => /\b(1030|3200|1130|2900)\b/.test(t)).length === 4 && ops.length === 4 && ops.every(sinCodigo) && ops.includes('A Reserva de impuestos (con su motivo)') && ops.some(t => /^Para Edgar \(¿su cuenta personal\? ····4456, sin dar de alta\): distribución \(con su motivo\)$/.test(t))
+        && opsIt[0] === 'Intereses' && opsZl.includes('Factura #ZZ-103 (ZZ Patio Sur)') && opsZl.every(sinCodigo), JSON.stringify([opsIt, opsZl, ops]).slice(0, 600));
+    }
+    { const W_LARGA = 1280;
+    {
+      // (tercera vuelta) un comercio cuyo nombre es UNA palabra de más de cuarenta letras: su tarjeta cabe igual
+      const lg = await fila(q, ID.lg1), nL = llamadas.length;
+      await lg.locator('[data-bn-frase]').fill(F19.dimelo.larga.frase);
+      await lg.locator('[data-bn-enviar]').evaluate(b => b.click()); await esperarLlamada(q, nL, 'contador:dimelo'); await pintado(q); await q.waitForTimeout(200);
+      const med = await lg.evaluate(card => { const r = e => e.getBoundingClientRect(), c = r(card), ia = card.querySelector('[data-bn-caja="dim"]'), bn = card.querySelector('[data-bn]');
+        return { doc: document.documentElement.scrollWidth, ven: window.innerWidth, tarjeta: Math.round(c.right), caja: ia ? Math.round(r(ia).right) : null, dentro: bn.scrollWidth <= bn.clientWidth + 1, rotulo: ia ? ia.querySelector('.ct-bn-recordar').textContent.trim().slice(0, 80) : '' }; });
+      ok(`(tercera vuelta) UN NOMBRE DE COMERCIO DE UNA SOLA PALABRA LARGUÍSIMA (47 letras) no ensancha la tarjeta a ${W_LARGA} px: lo que entendió el «Dímelo» («Recordarlo: lo próximo de ZZSUPERDISTRIBUIDORA… te lo propongo así») parte la palabra y la caja «Entendí esto» queda dentro de la tarjeta`,
+        med.doc <= med.ven + 1 && med.caja != null && med.caja <= med.tarjeta + 1 && med.dentro && /ZZSUPERDISTRIBUIDORAELECTRICADELCENTRODEFLORIDA/.test(med.rotulo), JSON.stringify(med));
+    }
+    }
 
     // -- (segunda vuelta) EL FRENO DEL BANCO, TAMBIÉN POR EL «DÍMELO»: la frase no es un motivo --
     await reinicio(q);
@@ -4118,6 +4329,8 @@ async function escenaF19(b, errs) {
     ok('…«Así es» NO manda la frase como motivo (ni huella): la puerta del banco frena, nada se registra, y la tarjeta dice por qué («El banco no dice que esto sea un traspaso… Si de verdad es un traspaso, escribe por qué.») y enseña dónde contestarle',
       !!l && !('motivo' in l.args.p_opciones) && !('visto' in l.args.p_opciones) && (await esta(q, 'tr1')) === 1 && (await c.locator('[data-bn-caja="dim"] [data-bn-freno]').textContent()).trim() === D.traspaso.aprobar_freno.por_que
       && /El banco no dice que esto sea un traspaso entre tus cuentas/.test(D.traspaso.aprobar_freno.por_que) && sinJerga(D.traspaso.aprobar_freno.por_que) && await c.locator('[data-bn-caja="dim"] [data-bn-motivo]').isVisible(), JSON.stringify(l && l.args.p_opciones));
+    ok('(tercera vuelta) …y la caja del porqué sale YA ESCRITA con lo que Edgar había dicho (la base lo devuelve como sugerencia: no tiene que escribirlo otra vez; lo lee junto al freno, lo cambia si quiere y vuelve a tocar). La frase sola no levanta el freno: hace falta ese segundo toque, con la huella',
+      D.traspaso.aprobar_freno.sugerido === D.traspaso.frase && (await c.locator('[data-bn-caja="dim"] [data-bn-motivo]').inputValue()) === D.traspaso.frase && cuantas(n0, 'fn_bandeja_aprobar') === 1, await c.locator('[data-bn-caja="dim"] [data-bn-motivo]').inputValue());
     await c.locator('[data-bn-caja="dim"] [data-bn-motivo]').fill('es el apartado de los impuestos del trimestre');
     n0 = llamadas.length;
     await tocar(q, c.locator('[data-bn-ia-asi]'));
@@ -4189,31 +4402,53 @@ async function escenaF19(b, errs) {
     await tocar(q, g.locator('[data-bn-g-asi]'));
     l = ultima(n0, 'fn_bandeja_grupo');
     ok('Un lote del banco (los intereses de la tarjeta): «Así es para los 2» → fn_bandeja_grupo con su clave y SOLO los movimientos que se veían',
-      !!l && l.args.p_clave === 'M:interes_tarjeta' && l.args.p_accion === null && JSON.stringify([...l.args.p_opciones.movimientos].sort()) === JSON.stringify([ID.it1, ID.it2].sort()) && /^Intereses de la tarjeta: 2 registrados por \$59\.70 · Si te equivocaste, se deshacen todos juntos en «Lo que contestaste estos días»\.$/.test(await tostada(q)) && (await esta(q, 'it1')) + (await esta(q, 'it2')) === 0, await tostada(q));
-    await reinicio(q);
+      !!l && l.args.p_clave === 'M:interes_tarjeta' && l.args.p_accion === null && JSON.stringify([...l.args.p_opciones.movimientos].sort()) === JSON.stringify([ID.it1, ID.it2].sort()) && /^Intereses de la tarjeta: 2 registrados por \$59\.70 · Se deshacen juntos en «Lo que contestaste estos días»\.$/.test(await tostada(q)) && (await esta(q, 'it1')) + (await esta(q, 'it2')) === 0, await tostada(q));
+    await conGuion(q, 'hd_resto');
     g = q.locator('[data-bn-grupo="C:HOME DEPOT"]');
     await g.locator('summary').first().click(); await q.waitForTimeout(150);
-    ok('El grupo de un comercio (Home Depot, 3 cargos): su recomendación, la categoría ya elegida («Material») y la obra en «La del día de cada uno», con su explicación',
-      (await g.locator('[data-bn-g-cat]').inputValue()) === 'costo/material' && (await g.locator('[name="bn_obra"]').inputValue()) === '' && /La del día de cada uno/.test(await g.locator('[name="bn_obra"] option').first().textContent()) && /Si ese día no hubo una sola, ese se queda/.test(await g.locator('.ct-bn-obra-dia').textContent()) && (await g.locator('[data-bn-g-asi]').textContent()).trim() === 'Así es para los 3');
-    ok('(segunda vuelta) …y ENSEÑA LO QUE HAY DENTRO: sus tres movimientos con su fecha, su descripción entera y su monto; solo ofrece lo que se puede decidir por grupo (un gasto, algo personal, entre cuentas, la cuadrilla, un subcontrato: nada de depósitos); y, como va a una obra, NO ofrece «que lo siguiente entre solo»',
-      (await g.locator('[data-bn-g-lista] li').count()) === 3 && /THE HOME DEPOT #6341 OCALA FL.*245\.37/.test(await plano(q, '[data-bn-grupo="C:HOME DEPOT"] [data-bn-g-lista]')) && /THE HOME DEPOT 6355 BELLEVIEW FL.*1,320\.55/.test(await plano(q, '[data-bn-grupo="C:HOME DEPOT"] [data-bn-g-lista]'))
+    ok('El grupo de un comercio (Home Depot, 4 cargos): su recomendación, la categoría ya elegida («Material») y la obra en «La del día de cada uno», con su explicación',
+      (await g.locator('[data-bn-g-cat]').inputValue()) === 'costo/material' && (await g.locator('[name="bn_obra"]').inputValue()) === '' && /La del día de cada uno/.test(await g.locator('[name="bn_obra"] option').first().textContent()) && /Si ese día no hubo una sola, ese se queda/.test(await g.locator('.ct-bn-obra-dia').textContent()) && (await g.locator('[data-bn-g-asi]').textContent()).trim() === 'Así es para los 4');
+    ok('(segunda vuelta) …y ENSEÑA LO QUE HAY DENTRO: sus cuatro movimientos con su fecha, su descripción entera y su monto; solo ofrece lo que se puede decidir por grupo (un gasto, algo personal, entre cuentas, la cuadrilla, un subcontrato: nada de depósitos); y, como va a una obra, NO ofrece «que lo siguiente entre solo»',
+      (await g.locator('[data-bn-g-lista] li').count()) === 4 && /THE HOME DEPOT #6341 OCALA FL.*245\.37/.test(await plano(q, '[data-bn-grupo="C:HOME DEPOT"] [data-bn-g-lista]')) && /THE HOME DEPOT 6355 BELLEVIEW FL.*1,320\.55/.test(await plano(q, '[data-bn-grupo="C:HOME DEPOT"] [data-bn-g-lista]'))
       && (await g.locator('[data-bn-g-solo]').count()) === 0 && (await g.locator('[data-bn-g-cat] option').evaluateAll(os => os.map(o => o.value))).every(v => !/^(cobro|ingresos|prestamo)\//.test(v)), await plano(q, '[data-bn-grupo="C:HOME DEPOT"] [data-bn-g-lista]'));
     n0 = llamadas.length;
     await tocar(q, g.locator('[data-bn-g-asi]'));
     l = ultima(n0, 'fn_bandeja_grupo');
-    ok('…«Así es para los 3»: una llamada con la acción, la cuenta, sus tres movimientos y «recordar»; entran los dos del día de una sola obra y el tercero se queda diciendo por qué',
-      !!l && l.args.p_clave === 'C:HOME DEPOT' && l.args.p_accion === 'gasto' && l.args.p_datos.cuenta === '5100' && !('proyecto_id' in l.args.p_datos) && l.args.p_opciones.movimientos.length === 3 && l.args.p_opciones.recordar === true && !('solo' in l.args.p_opciones) && !('motivo' in l.args.p_opciones)
-      && /^HOME DEPOT: 2 registrados por \$334\.47 · 1 se queda en la Bandeja \(Falta decir de qué obra es: «Material» va siempre a una obra\) · recordado · Si te equivocaste, se deshacen todos juntos en «Lo que contestaste estos días»\.$/.test(await tostada(q)) && (await esta(q, 'hd1')) + (await esta(q, 'hd2')) === 0 && (await esta(q, 'hd3')) === 1, await tostada(q));
+    ok('…«Así es para los 4»: una llamada con la acción, la cuenta, sus cuatro movimientos y «recordar»; entran los dos del día de una sola obra y los otros dos se quedan (el aviso, corto: lo que se quedó queda escrito en el grupo)',
+      !!l && cuantas(n0, 'fn_bandeja_grupo') === 1 && l.args.p_clave === 'C:HOME DEPOT' && l.args.p_accion === 'gasto' && l.args.p_datos.cuenta === '5100' && !('proyecto_id' in l.args.p_datos) && l.args.p_opciones.movimientos.length === 4 && l.args.p_opciones.recordar === true && !('solo' in l.args.p_opciones) && !('motivo' in l.args.p_opciones)
+      && /^HOME DEPOT: 2 registrados por \$334\.47 · 2 se quedan \(está dicho en el grupo\) · recordado$/.test(await tostada(q)) && (await esta(q, 'hd1')) + (await esta(q, 'hd2')) === 0 && (await esta(q, 'hd3')) + (await esta(q, 'hd4')) === 2, await tostada(q));
+    ok('(tercera vuelta) …sin leer la Bandeja entera otra vez ni repintarla: salen las dos tarjetas registradas y, por detrás, UNA lectura por partes de las tarjetas de ese comercio (las que quedan) y la de los movimientos del banco',
+      cuantas(n0, 'fn_bandeja_leer') === 1 && mismos(ultima(n0, 'fn_bandeja_leer').args.p.ids, [ID.hd3, ID.hd4]) && (await q.locator('#ct-bj-lista .ct-mov').count()) === F19.bandeja.length - 2, JSON.stringify(desde(n0).filter(x => x.fn === 'fn_bandeja_leer').map(x => x.args)));
+    ok('(tercera vuelta) EL GRUPO QUE NO ENTRÓ ENTERO SIGUE, Y DICE QUÉ FALTA: queda abierto con sus dos movimientos, con lo que se quedó escrito dentro («2 quedaron registrados. 2 se quedaron sin registrar: Falta decir de qué obra es… Elige aquí abajo la obra para todos, o «Verlos uno por uno».») y ya NO ofrece «la del día de cada uno», que no puede avanzar: pide una obra para los dos',
+      await g.evaluate(d => d.open) && (await g.locator('[data-bn-g-lista] li').count()) === 2 && /^2 quedaron registrados\. 2 se quedaron sin registrar: Falta decir de qué obra es: «Material» va siempre a una obra\. Elige aquí abajo la obra para todos, o «Verlos uno por uno»\.$/.test((await g.locator('[data-bn-g-quedo]').textContent()).trim())
+      && /les falta la obra/.test(await g.locator('.ct-bn-t').textContent()) && (await g.locator('[name="bn_obra"][required]').count()) === 1 && /Elige la obra…/.test(await g.locator('[name="bn_obra"] option').first().textContent()) && (await g.locator('[data-bn-g-falta-obra]').count()) === 1 && (await g.locator('[data-bn-g-asi]').textContent()).trim() === 'Así es para los 2',
+      (await plano(q, '[data-bn-grupo="C:HOME DEPOT"] .ct-bn-g-c')).slice(0, 300));
+    await q.locator('#ct-bn-mem').evaluate(d => { d.open = true; }); await q.waitForTimeout(150);
+    ok('(tercera vuelta) …y en «Lo que recuerdo», lo de Home Depot (que va a una obra) NO ofrece la casilla «entra solo» —la base la rechazaría: qué obra fue no lo sabe una regla— y lo dice («lo de una obra no entra solo»)',
+      /HOME DEPOT → Material/.test(await q.locator('[data-bn-mem="C:HOME DEPOT"]').textContent()) && (await q.locator('[data-bn-mem="C:HOME DEPOT"] [data-bn-mem-solo]').count()) === 0 && (await q.locator('[data-bn-mem="C:HOME DEPOT"] [data-bn-mem-obra]').textContent()).trim() === 'lo de una obra no entra solo', await plano(q, '#ct-bn-mem .ct-bn-mem-l'));
+    await q.locator('#ct-bn-mem').evaluate(d => { d.open = false; }); await q.waitForTimeout(100);
+    n0 = llamadas.length;
+    await g.locator('[data-bn-g-asi]').click(); await q.waitForTimeout(200);
+    ok('…sin la obra, «Así es para los 2» no llama a nada y lo dice («Elige la obra para todos, o contéstalos uno por uno.»)', cuantas(n0, 'fn_bandeja_grupo') === 0 && /Elige la obra para todos, o contéstalos uno por uno\./.test(await g.locator('.ct-bn-res').textContent()), await g.locator('.ct-bn-res').textContent());
     c = await fila(q, ID.hd3);
-    ok('…y el que se quedó ya trae lo recordado como recomendación («Ya me lo dijiste antes: HOME DEPOT → Material…»), pidiendo solo la obra',
+    ok('…y cada uno de los que se quedaron ya trae lo recordado como recomendación («Ya me lo dijiste antes: HOME DEPOT → Material…»), pidiendo solo la obra',
       /Ya me lo dijiste antes: HOME DEPOT → Material/.test(await plano(q, `.ct-mov[data-id="${ID.hd3}"] .ct-bn-por`)) && (await c.locator('[data-bn-obra]').inputValue()) === '' && (await c.locator('[data-bn-recordar]').count()) === 0);
+    await g.locator('[name="bn_obra"]').selectOption('oficina-nch-7xq2');
+    n0 = llamadas.length;
+    await tocar(q, g.locator('[data-bn-g-asi]'));
+    l = ultima(n0, 'fn_bandeja_grupo');
+    ok('…con la obra elegida para los dos, entran: el grupo desaparece y sus tarjetas salen de la lista',
+      !!l && l.args.p_datos.proyecto_id === 'oficina-nch-7xq2' && mismos(l.args.p_opciones.movimientos, [ID.hd3, ID.hd4]) && /^HOME DEPOT: 2 registrados por \$1,396\.75 · recordado · Se deshacen juntos en «Lo que contestaste estos días»\.$/.test(await tostada(q))
+      && (await q.locator('[data-bn-grupo="C:HOME DEPOT"]').count()) === 0 && (await esta(q, 'hd3')) + (await esta(q, 'hd4')) === 0, await tostada(q));
     // -- (segunda vuelta) LOS GRUPOS: uno mezclado, los depósitos de uno en uno, y deshacer una decisión entera --
     await reinicio(q);
-    g = q.locator('[data-bn-grupo="C:CITY OF OCALA"]');
+    g = q.locator('[data-bn-grupo="C:ZZ FERRETERIA CENTRAL"]');
     await g.locator('summary').first().click(); await q.waitForTimeout(150);
-    ok('(segunda vuelta) UN GRUPO MEZCLADO (la ciudad: un permiso de obra y el recibo de la luz) NO propone nada: lo dice («Aquí dentro hay cosas distintas…»), enseña sus dos movimientos y deja la categoría en «Elige…» (antes proponía «Permisos» para los dos, y un toque los mandaba mal y lo dejaba recordado)',
+    ok('(segunda vuelta) UN GRUPO MEZCLADO (la ferretería: a un cargo la IA de antes lo manda a herramienta y al otro a una obra) NO propone nada: lo dice («Aquí dentro hay cosas distintas…»), enseña sus dos movimientos y deja la categoría en «Elige…» (antes un grupo así proponía lo mismo para los dos, y un toque los mandaba mal y lo dejaba recordado)',
       /hay cosas distintas/.test(await g.locator('summary').first().textContent()) && /Aquí dentro hay cosas distintas: sus tarjetas no dicen todas lo mismo/.test(await g.locator('[data-bn-g-mixto]').textContent()) && (await g.locator('[data-bn-g-cat]').inputValue()) === ''
-      && (await g.locator('[data-bn-g-lista] li').count()) === 2 && /CITY OF OCALA BLDG PERMIT 0091.*125\.00/.test(await plano(q, '[data-bn-grupo="C:CITY OF OCALA"] [data-bn-g-lista]')) && /CITY OF OCALA UTILITIES.*210\.40/.test(await plano(q, '[data-bn-grupo="C:CITY OF OCALA"] [data-bn-g-lista]')), await plano(q, '[data-bn-grupo="C:CITY OF OCALA"] .ct-bn-g-c').then(t => t.slice(0, 240)));
+      && (await g.locator('[data-bn-g-lista] li').count()) === 2 && /ZZ FERRETERIA CENTRAL 0042.*88\.40/.test(await plano(q, '[data-bn-grupo="C:ZZ FERRETERIA CENTRAL"] [data-bn-g-lista]')) && /ZZ FERRETERIA CENTRAL 0042.*412\.60/.test(await plano(q, '[data-bn-grupo="C:ZZ FERRETERIA CENTRAL"] [data-bn-g-lista]')), await plano(q, '[data-bn-grupo="C:ZZ FERRETERIA CENTRAL"] .ct-bn-g-c').then(t => t.slice(0, 240)));
+    ok('(tercera vuelta) …y el permiso y la luz de la ciudad YA NO forman grupo: un ayuntamiento cobra cosas distintas con el mismo nombre, y son contrapartes distintas (cada uno con su tarjeta y lo suyo: «Permisos e inspecciones» y «Luz, agua e internet»)',
+      (await q.locator('[data-bn-grupo^="C:CITY OF OCALA"]').count()) === 0 && T0[ID.co1].clave !== T0[ID.co2].clave && T0[ID.co1].rec.datos.cuenta !== T0[ID.co2].rec.datos.cuenta && await pildora('co1') !== await pildora('co2'), `${T0[ID.co1].clave} · ${T0[ID.co2].clave} · ${await pildora('co1')} · ${await pildora('co2')}`);
     n0 = llamadas.length;
     await g.locator('[data-bn-g-asi]').click(); await q.waitForTimeout(200);
     ok('…y «Así es para los 2» sin decir qué son no llama a nada («Elige antes qué son.»)', cuantas(n0, 'fn_bandeja_grupo') === 0 && /Elige antes qué son\./.test(await g.locator('.ct-bn-res').textContent()));
@@ -4228,6 +4463,25 @@ async function escenaF19(b, errs) {
     await g.locator('[data-bn-g-ver]').click(); await q.waitForTimeout(200);
     ok('…su único botón es «Verlos uno por uno»: la lista queda con esos dos depósitos, cada uno con su tarjeta (y ninguna llamada de grupo)',
       (await q.locator('#ct-bj-lista .ct-mov').count()) === 2 && cuantas(n0, 'fn_bandeja_grupo') === 0 && (await esta(q, 'in1')) === 1 && (await esta(q, 'in2')) === 1 && await (async () => { await q.locator('#ct-bn-viendo-quitar').click(); await q.waitForTimeout(150); return (await q.locator('#ct-bj-lista .ct-mov').count()) === F19.bandeja.length; })());
+    // -- (tercera vuelta) EL GRUPO DECIDIDO COMO LO QUE LA IA DE ANTES PROPONÍA para uno de sus cargos --
+    {
+      await reinicio(q);
+      g = q.locator('[data-bn-grupo="C:ZZ FERRETERIA CENTRAL"]');
+      await g.locator('summary').first().click(); await q.waitForTimeout(150);
+      await g.locator('[data-bn-g-cat]').selectOption({ label: 'Herramienta menor y uniformes' }); await q.waitForTimeout(150);
+      n0 = llamadas.length;
+      await tocar(q, g.locator('[data-bn-g-asi]'));
+      await esperarLlamada(q, n0, 'contador:rechazar'); await q.waitForTimeout(300); await pintado(q);
+      l = ultima(n0, 'fn_bandeja_grupo');
+      const rz = desde(n0).filter(x => x.fn === 'contador:rechazar'), igual = rz.find(x => x.args.propuesta === F19.propuesta_ia), otra = rz.find(x => x.args.propuesta === F19.ia_mas.ia3.propuesta);
+      ok('(tercera vuelta) EL GRUPO DECIDIDO COMO LO QUE LA IA DE ANTES PROPONÍA: la ferretería, «Herramienta menor y uniformes» para los 2 (la IA proponía eso mismo para uno de sus cargos; al otro lo mandaba a una obra). Las dos propuestas se cierran por su función —c8 no tiene otra puerta para una pendiente que rechazarla—, pero la que proponía LO MISMO lleva su motivo («…con la misma categoría que proponía la IA…»: la base dice cuál, propuestas_ia_iguales) y solo la otra dice «Edgar lo contestó de otra forma» (antes las dos quedaban como contestadas de otra forma, aunque Edgar hubiera elegido lo mismo)',
+        !!l && l.args.p_accion === 'gasto' && l.args.p_datos.cuenta === '6400' && mismos(l.args.p_opciones.movimientos, [ID.fe1, ID.ia3]) && rz.length === 2
+        && !!igual && igual.args.motivo === 'Edgar lo registró en la Bandeja con la misma categoría que proponía la IA (por otro camino)'
+        && !!otra && otra.args.motivo === 'Edgar lo contestó de otra forma en la Bandeja'
+        && /^ZZ FERRETERIA CENTRAL: 2 registrados por \$501\.00 · recordado · Se deshacen juntos en «Lo que contestaste estos días»\.$/.test(await tostada(q))
+        && (await esta(q, 'fe1')) + (await esta(q, 'ia3')) === 0 && (await q.locator('[data-bn-grupo="C:ZZ FERRETERIA CENTRAL"]').count()) === 0,
+        `${await tostada(q)} · ${JSON.stringify(rz.map(x => x.args.motivo))}`);
+    }
     // deshacer una decisión por grupo ENTERA (su tanda)
     await conGuion(q, 'tanda');
     g = q.locator('[data-bn-grupo="C:HOME DEPOT"]');
@@ -4236,22 +4490,22 @@ async function escenaF19(b, errs) {
     n0 = llamadas.length;
     await dosToques(q, g.locator('[data-bn-g-asi]'));
     const TA = F19.guiones.tanda[0].resp;
-    ok('(segunda vuelta) Home Depot, «Así es para los 3» con UNA obra para todos (y dos toques seguidos: una sola llamada): entran los tres, y el aviso dice dónde se deshacen juntos',
-      cuantas(n0, 'fn_bandeja_grupo') === 1 && ultima(n0, 'fn_bandeja_grupo').args.p_datos.proyecto_id === 'oficina-nch-7xq2' && /^HOME DEPOT: 3 registrados por \$1,655\.02 · recordado · Si te equivocaste, se deshacen todos juntos en «Lo que contestaste estos días»\.$/.test(await tostada(q)) && (await esta(q, 'hd1')) + (await esta(q, 'hd2')) + (await esta(q, 'hd3')) === 0, await tostada(q));
+    ok('(segunda vuelta) Home Depot, «Así es para los 4» con UNA obra para todos (y dos toques seguidos: una sola llamada): entran los cuatro, y el aviso dice dónde se deshacen juntos',
+      cuantas(n0, 'fn_bandeja_grupo') === 1 && ultima(n0, 'fn_bandeja_grupo').args.p_datos.proyecto_id === 'oficina-nch-7xq2' && /^HOME DEPOT: 4 registrados por \$1,731\.22 · recordado · Se deshacen juntos en «Lo que contestaste estos días»\.$/.test(await tostada(q)) && (await esta(q, 'hd1')) + (await esta(q, 'hd2')) + (await esta(q, 'hd3')) + (await esta(q, 'hd4')) === 0, await tostada(q));
     const td = q.locator(`#ct-bn-recientes [data-bn-tanda="${TA.tanda}"]`);
-    ok('…«Lo que contestaste estos días» (ya desplegado) enseña ESA DECISIÓN como una sola cosa («HOME DEPOT → «Material»» · 3 movimientos que contestaste de una vez · $1,655.02) con «Deshacer los 3», y dentro cada movimiento con su «Deshacer»',
-      await q.locator('#ct-bn-recientes').evaluate(d => d.open) && (await td.count()) === 1 && /HOME DEPOT → «Material».*1,655\.02/.test(await td.locator('.ct-bn-hecho-cab').first().textContent()) && /3 movimientos que contestaste de una vez/.test(await td.textContent()) && (await td.locator('[data-bn-tanda-deshacer]').textContent()).trim() === 'Deshacer los 3'
-      && (await td.locator('.ct-bn-tanda-l [data-bn-hecho]').count()) === 3 && (await q.locator('#ct-bn-recientes > .ct-bn-hechos > [data-bn-hecho]').count()) === 0, (await td.textContent()).replace(/\s+/g, ' ').slice(0, 200));
+    ok('…«Lo que contestaste estos días» (ya desplegado) enseña ESA DECISIÓN como una sola cosa («HOME DEPOT → «Material»» · 4 movimientos que contestaste de una vez · $1,731.22) con «Deshacer los 4», y dentro cada movimiento con su «Deshacer»',
+      await q.locator('#ct-bn-recientes').evaluate(d => d.open) && (await td.count()) === 1 && /HOME DEPOT → «Material».*1,731\.22/.test(await td.locator('.ct-bn-hecho-cab').first().textContent()) && /4 movimientos que contestaste de una vez/.test(await td.textContent()) && (await td.locator('[data-bn-tanda-deshacer]').textContent()).trim() === 'Deshacer los 4'
+      && (await td.locator('.ct-bn-tanda-l [data-bn-hecho]').count()) === 4 && (await q.locator('#ct-bn-recientes > .ct-bn-hechos > [data-bn-hecho]').count()) === 0, (await td.textContent()).replace(/\s+/g, ' ').slice(0, 200));
     await td.locator('[data-bn-tanda-deshacer]').click(); await q.waitForTimeout(150);
     n0 = llamadas.length;
     const tdf = td.locator('> .ct-form');
     await tdf.locator('button[type="submit"]').click(); await q.waitForTimeout(150);
-    ok('…«Deshacer los 3» pide UN porqué para todos: sin él no llama a nada', cuantas(n0, 'fn_bandeja_deshacer_tanda') === 0 && /sus asientos se reversan \(no se borran\) y vuelven todos a la Bandeja/.test(await tdf.textContent()));
+    ok('…«Deshacer los 4» pide UN porqué para todos: sin él no llama a nada (y, como ese comercio no tiene una regla «que entre solo», no pregunta por ella)', cuantas(n0, 'fn_bandeja_deshacer_tanda') === 0 && /sus asientos se reversan \(no se borran\) y vuelven todos a la Bandeja/.test(await tdf.textContent()) && (await tdf.locator('[name="deja_solo"]').count()) === 0);
     await tdf.locator('textarea[name="motivo"]').fill('me equivoqué de obra');
     await tdf.locator('button[type="submit"]').click(); await esperarLlamada(q, n0, 'fn_bandeja_deshacer_tanda'); await pintado(q); await q.waitForTimeout(200);
     l = ultima(n0, 'fn_bandeja_deshacer_tanda');
-    ok('…con el porqué: UNA llamada a fn_bandeja_deshacer_tanda con esa tanda y el motivo; los tres vuelven a la Bandeja y el aviso lo dice («Deshechos 3: volvieron a la Bandeja.»). Antes, de un grupo de 25 solo 12 tenían su «Deshacer» a la vista, y a los tres días ninguno',
-      !!l && cuantas(n0, 'fn_bandeja_deshacer_tanda') === 1 && l.args.p_tanda === TA.tanda && l.args.p_motivo === 'me equivoqué de obra' && /^Deshechos 3: volvieron a la Bandeja\.$/.test(await tostada(q)) && (await esta(q, 'hd1')) + (await esta(q, 'hd2')) + (await esta(q, 'hd3')) === 3 && (await q.locator('[data-bn-tanda]').count()) === 0, await tostada(q));
+    ok('…con el porqué: UNA llamada a fn_bandeja_deshacer_tanda con esa tanda y el motivo; los cuatro vuelven a la Bandeja y el aviso lo dice («Deshechos 4: volvieron a la Bandeja.»). Antes, de un grupo de 25 solo 12 tenían su «Deshacer» a la vista, y a los tres días ninguno',
+      !!l && cuantas(n0, 'fn_bandeja_deshacer_tanda') === 1 && l.args.p_tanda === TA.tanda && l.args.p_motivo === 'me equivoqué de obra' && !('p_opciones' in l.args) && /^Deshechos 4: volvieron a la Bandeja\.$/.test(await tostada(q)) && (await esta(q, 'hd1')) + (await esta(q, 'hd2')) + (await esta(q, 'hd3')) + (await esta(q, 'hd4')) === 4 && (await q.locator('[data-bn-tanda]').count()) === 0, await tostada(q));
 
     await reinicio(q);
     g = q.locator('[data-bn-grupo="C:NETFLIX"]');
@@ -4260,13 +4514,15 @@ async function escenaF19(b, errs) {
     ok('«Verlos uno por uno»: la lista queda solo con los de ese grupo, dicho arriba con «Ver todos»',
       (await q.locator('#ct-bj-lista .ct-mov').count()) === 2 && /Solo los de NETFLIX/.test(await plano(q, '#ct-bn-viendo')) && await (async () => { await q.locator('#ct-bn-viendo-quitar').click(); await q.waitForTimeout(150); return (await q.locator('#ct-bj-lista .ct-mov').count()) === F19.bandeja.length; })());
 
+    ok('(tercera vuelta) …y el grupo se pliega al irse a contestarlos uno por uno (así sus cuentas se ponen al día con cada respuesta)', !(await g.evaluate(d => d.open)));
     // -- LA CADENA DE LO QUE ENTRA SOLO --
+    await g.locator('summary').first().click(); await q.waitForTimeout(150);
     await g.locator('[data-bn-g-solo]').check();
     n0 = llamadas.length;
     await tocar(q, g.locator('[data-bn-g-asi]'));
     l = ultima(n0, 'fn_bandeja_grupo');
     ok('Netflix, «Así es para los 2» con «Y que lo siguiente de NETFLIX entre solo» marcado: la llamada lleva «personal», sus dos movimientos, recordar y solo',
-      !!l && l.args.p_clave === 'C:NETFLIX' && l.args.p_accion === 'personal' && l.args.p_opciones.solo === true && l.args.p_opciones.recordar === true && l.args.p_opciones.movimientos.length === 2 && /^NETFLIX: 2 registrados por \$30\.98 · recordado: lo siguiente entra solo · Si te equivocaste, se deshacen todos juntos en «Lo que contestaste estos días»\.$/.test(await tostada(q)), await tostada(q));
+      !!l && l.args.p_clave === 'C:NETFLIX' && l.args.p_accion === 'personal' && l.args.p_opciones.solo === true && l.args.p_opciones.recordar === true && l.args.p_opciones.movimientos.length === 2 && /^NETFLIX: 2 registrados por \$30\.98 · recordado: lo siguiente entra solo · Se deshacen juntos en «Lo que contestaste estos días»\.$/.test(await tostada(q)), await tostada(q));
     ok('…la franja lo dice: «Lo que recuerdo · 1 comercio o persona · 1 entra solo» y «Lo que contestaste estos días · 2 movimientos»; todavía nada «Registrado solo»',
       /1 comercio o persona · 1 entra solo/.test(await plano(q, '#ct-bn-mem > summary')) && /2 movimientos/.test(await plano(q, '#ct-bn-recientes > summary')) && (await q.locator('#ct-bn-solos').count()) === 0);
     // llega otro cargo de Netflix: al abrir la Bandeja, la rutina lo registra sola
@@ -4287,27 +4543,132 @@ async function escenaF19(b, errs) {
       await h.locator('.ct-form [name="deja_solo"]').isChecked() && /Y que lo siguiente de NETFLIX deje de entrar solo \(te lo propongo y tú tocas «Así es»\)/.test(await h.locator('.ct-form .ct-bn-deja-solo').textContent()));
     await h.locator('.ct-form textarea[name="motivo"]').fill('no era mío: fue una compra de la oficina');
     // (dos toques en «Deshacer»: una sola llamada)
-    await h.locator('.ct-form button[type="submit"]').evaluate(b => { b.click(); b.click(); }); await esperarLlamada(q, n0, 'fn_bandeja_memoria'); await pintado(q); await q.waitForTimeout(200);
+    await h.locator('.ct-form button[type="submit"]').evaluate(b => { b.click(); b.click(); }); await esperarLlamada(q, n0, 'fn_bandeja_leer'); await pintado(q); await q.waitForTimeout(200);
     l = ultima(n0, 'fn_bandeja_deshacer');
     c = q.locator(`.ct-mov[data-id="${nf3}"]`);
     ok('…con el motivo (y dos toques seguidos): UNA llamada a fn_bandeja_deshacer con ese registro; el cargo vuelve a la Bandeja con su tarjeta abierta y dicho que ya no entra solo; «Registrado solo» queda vacío',
       !!l && cuantas(n0, 'fn_bandeja_deshacer') === 1 && l.args.p_hecho === solo1.hecho_id && l.args.p_motivo === 'no era mío: fue una compra de la oficina' && (await c.count()) === 1 && (await c.locator('.ct-mov-fila').getAttribute('aria-expanded')) === 'true' && /ya no entra solo, te lo pregunto/.test(await c.locator('[data-bn-deshecho]').textContent()) && (await q.locator('#ct-bn-solos').count()) === 0);
-    l = ultima(n0, 'fn_bandeja_memoria');
-    ok('(segunda vuelta) …y, con la casilla marcada, la regla se apaga detrás: fn_bandeja_memoria con su clave y solo: false, y el aviso lo dice («Deshecho… Lo de NETFLIX ya no entra solo: te lo propongo.»). Antes la regla seguía y el siguiente cargo entraba solo otra vez',
-      !!l && cuantas(n0, 'fn_bandeja_memoria') === 1 && l.args.p.clave === 'C:NETFLIX' && l.args.p.solo === false && /^Deshecho: el movimiento volvió a la Bandeja\. Lo de NETFLIX ya no entra solo: te lo propongo\.$/.test(await tostada(q)), await tostada(q));
+    ok('(tercera vuelta) …y, con la casilla marcada, LA REGLA LA APAGA LA BASE en esa misma llamada (sin opciones: es lo de fábrica; ninguna llamada aparte a lo recordado, que podía fallar y dejarla encendida), y el aviso lo dice («Deshecho… Y lo de NETFLIX ya no entra solo: te lo propongo.»)',
+      !!l && !('p_opciones' in l.args) && cuantas(n0, 'fn_bandeja_memoria') === 0 && F19.cadena.find(p => p.paso === 'deshacer').resp.solo_apagado === 'NETFLIX' && /^Deshecho: el movimiento volvió a la Bandeja\. Y lo de NETFLIX ya no entra solo: te lo propongo\.$/.test(await tostada(q)), await tostada(q));
+    // llega OTRO cargo de Netflix después de deshacer: la regla está apagada, así que espera
+    B19.llega = true; await q.evaluate(() => { window.MXP_CONTA._estado.bn.solo.el = 0; });
+    n0 = llamadas.length;
+    await ve(q, 'bandeja');
+    const nf4 = F19.cadena.find(p => p.paso === 'llega2').resp;
+    ok('(tercera vuelta) …y el cargo de ese comercio que llega DESPUÉS ESPERA en la Bandeja (la rutina corre y no registra nada): antes la regla seguía encendida y entraba solo, con lo que Edgar acababa de decir que estaba mal',
+      cuantas(n0, 'fn_bandeja_solo') === 1 && F19.cadena.find(p => p.paso === 'no_entra').resp.registrados.length === 0 && (await q.locator(`.ct-mov[data-id="${nf4}"]`).count()) === 1 && (await q.locator('#ct-bn-solos').count()) === 0 && !/Registrado solo/.test(await tostada(q)), await tostada(q));
     await q.locator('#ct-bn-mem > summary').click(); await q.waitForTimeout(150);
     const mem = q.locator('[data-bn-mem="C:NETFLIX"]');
     ok('«Lo que recuerdo»: «NETFLIX → es tuyo, no de la empresa», con su casilla «entra solo» (ya sin marcar: sigue recordado, solo se propone), «Olvidar», el interruptor general y su tope',
-      /NETFLIX → es tuyo, no de la empresa/.test(await mem.textContent()) && !(await mem.locator('[data-bn-mem-solo]').isChecked()) && await q.locator('#ct-bn-cfg-solo').isChecked() && (await q.locator('#ct-bn-cfg-tope').inputValue()) === '500' && /un depósito, un Zelle a una persona o la nómina, nunca/.test(await plano(q, '#ct-bn-mem')));
+      /NETFLIX → es tuyo, no de la empresa/.test(await mem.textContent()) && !(await mem.locator('[data-bn-mem-solo]').isChecked()) && await q.locator('#ct-bn-cfg-solo').isChecked() && (await q.locator('#ct-bn-cfg-tope').inputValue()) === '500' && /un depósito, un Zelle a una persona o la nómina, nunca/.test(await plano(q, '#ct-bn-mem'))
+      && /Lo que recuerdo · 1 comercio o persona$/.test(await plano(q, '#ct-bn-mem > summary')), await plano(q, '#ct-bn-mem > summary'));
     n0 = llamadas.length;
     await q.locator('#ct-bn-cfg-solo').uncheck(); await esperarLlamada(q, n0, 'fn_bandeja_config'); await pintado(q); await q.waitForTimeout(200);
     l = ultima(n0, 'fn_bandeja_config');
     ok('…apagar lo de «entra solo» entero: fn_bandeja_config con solo: false; desde entonces ninguna tarjeta ofrece «que lo siguiente entre solo»',
-      !!l && l.args.p.solo === false && /^Apagado: nada entra solo/.test(await tostada(q)) && !(await q.locator('#ct-bn-cfg-solo').isChecked()) && await (async () => { const k = await fila(q, ID.kl1); return (await k.locator('[data-bn-recordar]').count()) === 1 && (await k.locator('[data-bn-solo]').count()) === 0; })());
+      !!l && l.args.p.solo === false && /^Apagado: nada entra solo/.test(await tostada(q)) && !(await q.locator('#ct-bn-cfg-solo').isChecked())
+      // (tercera vuelta) …sin leer la Bandeja entera otra vez: una lectura por partes (sin tarjetas: solo la franja)
+      && cuantas(n0, 'fn_bandeja_leer') === 1 && JSON.stringify(ultima(n0, 'fn_bandeja_leer').args.p) === '{"ids":[]}' && /entra solo \(apagado arriba\)/.test(await plano(q, '[data-bn-mem="C:NETFLIX"]')) && await (async () => { const k = await fila(q, ID.kl1); return (await k.locator('[data-bn-recordar]').count()) === 1 && (await k.locator('[data-bn-solo]').count()) === 0; })());
     n0 = llamadas.length;
     await q.locator('[data-bn-mem="C:NETFLIX"] [data-bn-mem-olvidar]').click(); await esperarLlamada(q, n0, 'fn_bandeja_memoria'); await pintado(q); await q.waitForTimeout(200);
     l = ultima(n0, 'fn_bandeja_memoria');
-    ok('…y «Olvidar»: fn_bandeja_memoria con activa: false; ya no hay nada recordado', !!l && l.args.p.clave === 'C:NETFLIX' && l.args.p.activa === false && (await q.locator('#ct-bn-mem').count()) === 0 && /^Olvidado: lo de NETFLIX te lo vuelvo a preguntar\.$/.test(await tostada(q)));
+    ok('…y «Olvidar»: fn_bandeja_memoria con activa: false; ya no hay nada recordado (y solo se releen las tarjetas de ese comercio, que vuelven a preguntar)', !!l && l.args.p.clave === 'C:NETFLIX' && l.args.p.activa === false && (await q.locator('#ct-bn-mem').count()) === 0 && /^Olvidado: lo de NETFLIX te lo vuelvo a preguntar\.$/.test(await tostada(q))
+      && cuantas(n0, 'fn_bandeja_leer') === 1 && mismos(ultima(n0, 'fn_bandeja_leer').args.p.ids, [nf3, nf4]), JSON.stringify(desde(n0).filter(x => x.fn === 'fn_bandeja_leer').map(x => x.args)));
+
+    // -- (tercera vuelta) DESHACER LA RESPUESTA QUE PUSO «QUE ENTRE SOLO», desde «Lo que contestaste estos días» --
+    // Edgar contesta el grupo de Netflix «es mío» con «que lo siguiente entre solo», se da cuenta del error y deshace esa decisión
+    // entera. Antes la forma no nombraba la regla (solo se preguntaba al deshacer algo de «Registrado solo»), el aviso decía
+    // «Deshecho» y la regla seguía encendida: el siguiente cargo de ese comercio entraba al libro sin preguntar
+    for (const [nombre, deja] of [['tanda_solo', false], ['tanda_deja', true]]) {
+      await conGuion(q, nombre);
+      const TS = F19.guiones[nombre];
+      g = q.locator('[data-bn-grupo="C:NETFLIX"]');
+      await g.locator('summary').first().click(); await q.waitForTimeout(150);
+      await g.locator('[data-bn-g-solo]').check();
+      await tocar(q, g.locator('[data-bn-g-asi]'));
+      const td2 = q.locator(`#ct-bn-recientes [data-bn-tanda="${TS[0].resp.tanda}"]`);
+      await td2.locator('[data-bn-tanda-deshacer]').click(); await q.waitForTimeout(150);
+      const f2 = td2.locator('> .ct-form');
+      if (!deja) ok('(tercera vuelta) DESHACER UNA DECISIÓN POR GRUPO QUE DEJÓ «QUE ENTRE SOLO»: «Deshacer los 2» nombra la regla y la apaga de fábrica («Y que lo siguiente de NETFLIX deje de entrar solo (te lo propongo y tú tocas «Así es»)», marcada)',
+        (await td2.count()) === 1 && TS[0].despues.leer.tandas[0].clave === 'C:NETFLIX' && await f2.locator('[name="deja_solo"]').isChecked() && /Y que lo siguiente de NETFLIX deje de entrar solo \(te lo propongo y tú tocas «Así es»\)/.test(await f2.locator('.ct-bn-deja-solo').textContent()), (await f2.textContent()).replace(/\s+/g, ' ').slice(0, 260));
+      if (deja) await f2.locator('[name="deja_solo"]').uncheck();
+      await f2.locator('textarea[name="motivo"]').fill(deja ? 'me equivoqué de mes' : 'no eran míos: son de la oficina');
+      n0 = llamadas.length;
+      await f2.locator('button[type="submit"]').click(); await esperarLlamada(q, n0, 'fn_bandeja_leer'); await pintado(q); await q.waitForTimeout(200);
+      l = ultima(n0, 'fn_bandeja_deshacer_tanda');
+      if (!deja) {
+        ok('…con su porqué: UNA llamada a fn_bandeja_deshacer_tanda (sin opciones: la base apaga la regla al deshacer) y el aviso lo dice («Deshechos 2: volvieron a la Bandeja. Y lo de NETFLIX ya no entra solo: te lo propongo.»); en «Lo que recuerdo», Netflix sigue recordado pero ya sin «entra solo»',
+          !!l && cuantas(n0, 'fn_bandeja_deshacer_tanda') === 1 && !('p_opciones' in l.args) && cuantas(n0, 'fn_bandeja_memoria') === 0 && /^Deshechos 2: volvieron a la Bandeja\. Y lo de NETFLIX ya no entra solo: te lo propongo\.$/.test(await tostada(q))
+          && (await esta(q, 'nf1')) + (await esta(q, 'nf2')) === 2 && /Lo que recuerdo · 1 comercio o persona$/.test(await plano(q, '#ct-bn-mem > summary')) && !(await q.locator('[data-bn-mem="C:NETFLIX"] [data-bn-mem-solo]').isChecked()), await tostada(q));
+        B19.llega = true; await q.evaluate(() => { window.MXP_CONTA._estado.bn.solo.el = 0; });
+        n0 = llamadas.length;
+        await ve(q, 'bandeja');
+        const nf5 = TS[2].despues.nuevas[0].movimiento_id;
+        ok('…llega otro cargo de Netflix y ESPERA en la Bandeja con su tarjeta (la rutina corre y no registra nada; nada en «Registrado solo»)',
+          cuantas(n0, 'fn_bandeja_solo') === 1 && TS[2].resp.registrados.length === 0 && (await q.locator(`.ct-mov[data-id="${nf5}"]`).count()) === 1 && (await q.locator('#ct-bn-solos').count()) === 0, await tostada(q));
+      } else ok('(tercera vuelta) …y si Edgar DESMARCA la casilla (la regla estaba bien; se equivocó en otra cosa), la llamada lo dice (deja_solo: false), la regla sigue encendida y el aviso también lo dice («…Lo de ese comercio sigue entrando solo, como dijiste.»)',
+        !!l && l.args.p_opciones && l.args.p_opciones.deja_solo === false && /^Deshechos 2: volvieron a la Bandeja\. Lo de ese comercio sigue entrando solo, como dijiste\.$/.test(await tostada(q)) && /1 comercio o persona · 1 entra solo/.test(await plano(q, '#ct-bn-mem > summary')), await tostada(q));
+    }
+    await reinicio(q);
+    // -- (tercera vuelta) LO QUE CAMBIA POR OTRO LADO mientras Edgar contesta --
+    {
+      await reinicio(q);
+      const llegaC = F19.cadena.find(p => p.paso === 'llega'), nueva = llegaC.despues.filas.find(f => f.movimiento_id === llegaC.resp);
+      c = await fila(q, ID.ww1);
+      const sigW = F19.bandeja[F19.bandeja.findIndex(f => f.movimiento_id === ID.ww1) + 1].movimiento_id;
+      B19.extra = [nueva]; n0 = llamadas.length;
+      await tocar(q, c.locator('[data-bn-asi]'));
+      ok('(tercera vuelta) …y si mientras tanto LA LISTA CAMBIÓ POR OTRO LADO (llegó un movimiento del banco), lo que se lee por detrás lo trae: la Bandeja se pinta con él sin pasar por «Cargando…», la cuenta de arriba lo suma, la tarjeta siguiente sigue abierta, y la tarjeta del que llegó se pide aparte',
+        !!nueva && (await q.locator(`.ct-mov[data-id="${nueva.movimiento_id}"]`).count()) === 1 && (await esta(q, 'ww1')) === 0 && new RegExp(`^${F19.bandeja.length} movimientos del banco esperan`).test(await plano(q, '.ct-pag-cab .ct-pag-sub'))
+        && (await q.locator('.ct-mov.abierta').getAttribute('data-id')) === sigW && desde(n0).filter(x => x.fn === 'fn_bandeja_leer').some(x => mismos(x.args.p.ids, [nueva.movimiento_id])) && !desde(n0).some(x => x.fn === 'fn_bandeja_leer' && !Array.isArray(x.args.p.ids)),
+        `${await plano(q, '.ct-pag-cab .ct-pag-sub')} · ${JSON.stringify(desde(n0).filter(x => x.fn === 'fn_bandeja_leer').map(x => (x.args.p.ids || ['entera']).length))}`);
+      B19.extra = null;
+    }
+    // -- (tercera vuelta) LA BANDEJA LLENA: LEER POR PARTES --
+    // La base recomienda por reloj (cada llamada contesta mucho antes del corte de la API, que con unos cuatrocientos pendientes la
+    // cortaba entera: la Bandeja nueva no salía y la de antes esperaba ocho segundos en cada apertura) y devuelve en «faltan» lo que
+    // no le dio tiempo. Aquí la primera lectura trae seis recomendaciones y cada parte tarda en llegar, para mirar la pantalla mientras
+    {
+      const P = F19.partes;
+      b19Reset(); estado.c17Partes = true; estado.c17ParteMs = 2000;
+      await q.evaluate(() => { const s = window.MXP_CONTA._estado; s.bn.dim.clear(); s.bn.frases.clear(); s.bn.mas.clear(); s.bn.grupoAbierto = null; s.bn.verGrupos = false; s.bj.abierta = null; s.bj.grupo = null; s.bn.solo.el = Date.now(); });
+      n0 = llamadas.length;
+      await q.evaluate(() => window.MXP_CONTA.ir('bandeja', {}));
+      await q.waitForSelector('#ct-bj-lista .ct-mov', { timeout: 8000 }); await q.waitForTimeout(450);
+      const mirando = () => q.locator('#ct-bj-lista .ct-mov .ct-f-motivo .ct-pill', { hasText: 'Mirándolo…' }).count();
+      ok('(tercera vuelta) LA BANDEJA SE LEE POR PARTES: con la primera lectura la página YA ESTÁ PINTADA con todos sus movimientos (no espera a las demás); los que la base todavía no ha pensado dicen «Mirándolo…» en su fila, la franja dice cuántos son («Todavía estoy mirando 29 movimientos: su recomendación llega sola…») y un grupo sin mirar dice «mirándolos…»; los grupos grandes, que la base piensa primero, ya traen lo suyo',
+        (await q.locator('#ct-bj-lista .ct-mov').count()) === F19.bandeja.length && (await mirando()) === P[0].faltan.length && new RegExp(`^Todavía estoy mirando ${P[0].faltan.length} movimientos: su recomendación llega sola en un momento\\. Los demás ya se pueden contestar\\.$`).test(await plano(q, '[data-bn-parcial="mirando"]'))
+        && (await q.locator('[data-bn-grupo] summary', { hasText: 'mirándolos…' }).count()) >= 1 && /HOME DEPOT.*4 movimientos.*Material/.test(await plano(q, '#ct-bn-grupos')) && cuantas(n0, 'fn_bandeja_leer') === 2 && mismos(ultima(n0, 'fn_bandeja_leer').args.p.ids, P[0].faltan),
+        `${await mirando()} de ${P[0].faltan.length} · ${await plano(q, '[data-bn-parcial]').catch(() => 'sin nota')} · llamadas ${cuantas(n0, 'fn_bandeja_leer')}`);
+      // una tarjeta que todavía se está mirando (y que llega en la última parte), abierta
+      const idP = P[0].faltan.find(id => P[2].tarjetas[id] && P[2].tarjetas[id].rec && P[2].tarjetas[id].rec.accion), cP = await fila(q, idP);
+      ok('…una tarjeta que todavía se está mirando se abre igual: lo dice («Todavía estoy mirando este cargo: en un momento te digo qué creo que es. Si ya lo sabes, dímelo aquí abajo.») y deja decirlo o elegirlo',
+        /^Todavía estoy mirando este (cargo|depósito): en un momento te digo qué creo que es\. Si ya lo sabes, dímelo aquí abajo\.$/.test((await cP.locator('[data-bn-pensando]').textContent()).trim()) && (await cP.locator('[data-bn-asi]').count()) === 0 && await cP.locator('[data-bn-frase]').isEnabled() && (await cP.locator('[data-bn-mas]').count()) === 1);
+      await q.waitForTimeout(2000);
+      ok('…llega la segunda parte y solo se ponen al día SUS filas y los grupos (quedan menos «Mirándolo…», la lista no se repinta entera y la tarjeta abierta sigue abierta); la pantalla ya pidió la siguiente con lo que falta',
+        (await mirando()) === P[1].faltan.length && (await q.locator('.ct-mov.abierta').getAttribute('data-id')) === idP && cuantas(n0, 'fn_bandeja_leer') === 3 && mismos(ultima(n0, 'fn_bandeja_leer').args.p.ids, P[1].faltan) && (await q.locator('.ct-cargando').count()) === 0,
+        `${await mirando()} de ${P[1].faltan.length} · llamadas ${cuantas(n0, 'fn_bandeja_leer')}`);
+      await pintado(q); await q.waitForTimeout(200);
+      const gF = await plano(q, '#ct-bn-grupos');
+      ok('…y con la última no falta ninguna: tres llamadas en total (la entera y dos por partes, cada una con {ids: lo que faltaba}), ningún «Mirándolo…», la franja ya no lo dice, los grupos quedan como en la lectura entera y la tarjeta que estaba abierta trae ya su recomendación con «Así es»',
+        cuantas(n0, 'fn_bandeja_leer') === 3 && (await mirando()) === 0 && (await q.locator('[data-bn-parcial]').count()) === 0 && !/mirándolos/.test(gF) && /Hay 7 grupos con varios movimientos esperando \(16 en total\)/.test(gF) && /NETFLIX.*2 movimientos.*Personal/.test(gF)
+        && (await cP.locator('[data-bn-pensando]').count()) === 0 && (await cP.locator('[data-bn-t]').textContent()).trim() === P[2].tarjetas[idP].rec.texto && (await cP.locator('[data-bn-asi]').count()) === 1, gF.slice(0, 200));
+      estado.c17Partes = false; estado.c17ParteMs = 0;
+    }
+    // -- (tercera vuelta) LA TARIFA DEL PROCESADOR, a la vista y con su «Olvidar» --
+    await conGuion(q, 'tarifa');
+    c = await fila(q, ID.in1);
+    await tocar(q, c.locator('[data-bn-asi]'));
+    await q.locator('#ct-bn-mem').evaluate(d => { d.open = true; }); await q.waitForTimeout(150);
+    ok('(tercera vuelta) LA TARIFA DEL PROCESADOR YA NO ES UNA MEMORIA A ESCONDIDAS: confirmado el cobro con comisión, «Lo que recuerdo» la enseña en llano («Intuit: el 2.99 % de cada factura · la confirmaste en 1 cobro») con su «Olvidar»',
+      /^Intuit: el 2\.99 % de cada factura · la confirmaste en 1 cobro$/.test((await q.locator('#ct-bn-tarifas [data-bn-tarifa] .ct-bn-mem-t').first().textContent()).trim()) && (await q.locator('#ct-bn-tarifas [data-bn-tarifa-olvidar]').count()) === 1 && /Lo que cobran los procesadores de tarjetas, según tus cobros/.test(await plano(q, '#ct-bn-tarifas')), await plano(q, '#ct-bn-mem').then(t => t.slice(0, 300)));
+    n0 = llamadas.length;
+    await q.locator('#ct-bn-tarifas [data-bn-tarifa-olvidar]').click(); await esperarLlamada(q, n0, 'fn_bandeja_tarifa_olvidar'); await pintado(q); await q.waitForTimeout(200);
+    l = ultima(n0, 'fn_bandeja_tarifa_olvidar');
+    ok('…«Olvidar» la quita (fn_bandeja_tarifa_olvidar con ese procesador y esa tarifa, entera) y lo dice («Olvidada esa tarifa de Intuit: la vuelvo a aprender del próximo cobro que confirmes.»)',
+      !!l && l.args.p.proc === 'INTUIT' && Number(l.args.p.pct) === 2.99 && l.args.p_todo === true && /^Olvidada esa tarifa de Intuit: la vuelvo a aprender del próximo cobro que confirmes\.$/.test(await tostada(q)) && (await q.locator('#ct-bn-tarifas').count()) === 0, await tostada(q));
+    await reinicio(q);
+
     await foto(q, 'f19-1280-bandeja');
 
     // -- (segunda vuelta) EL RECIBO QUE LLEGA DESPUÉS de registrar su cargo --
@@ -4324,20 +4685,22 @@ async function escenaF19(b, errs) {
     await ve(q, 'movimientos');
     ok('…ni Movimientos: pinta lo suyo y lo avisa arriba, con su botón a la Bandeja («…Se contesta en la Bandeja, arriba.»)',
       (await q.locator('.ct-rojo').count()) === 0 && /Llegó el recibo de un cargo que ya estaba registrado: ese gasto está dos veces en el libro.*Se contesta en la Bandeja, arriba\./.test(await plano(q, '#ct-mov-recibo')) && (await q.locator('#ct-mov-ir-bandeja').count()) === 1, (await plano(q, '#conta-raiz')).slice(0, 200));
-    // al abrir la Bandeja corre la rutina: el recibo que no tiene duda se cambia solo; los dos cargos iguales esperan a Edgar
+    // (tercera vuelta) al abrir la Bandeja corre la rutina: MIRA los recibos y NO CAMBIA NINGUNO SOLO (el banco no deja volver atrás un
+    // cambio así: lo cambiado solo no tenía deshacer). Los tres esperan arriba, cada uno con sus dos respuestas
     await q.evaluate(() => { window.MXP_CONTA._estado.bn.solo.el = 0; });
     n0 = llamadas.length;
     await ve(q, 'bandeja');
     const RS = F19.guiones.recibos, rsolo = RS.find(p => p.paso === 'solo'), lista = rsolo.despues.leer.recibos;
-    ok('…al abrir la Bandeja, la rutina CAMBIA SOLA por su recibo la compra que no tiene duda (una, del mismo monto, sin otro cargo que pueda ser el suyo) y lo avisa: «Llegó el recibo de 1 cargo que ya estaba registrado: lo cambié por su recibo (el gasto queda una sola vez, en la obra del recibo)…»',
-      cuantas(n0, 'fn_bandeja_solo') === 1 && rsolo.resp.recibos.cambiados.length === 1 && /^Llegó el recibo de 1 cargo que ya estaba registrado: lo cambié por su recibo \(el gasto queda una sola vez, en la obra del recibo\)\. Está arriba, en la Bandeja\.$/.test(await tostada(q))
-      && /Cambiados por su recibo · 1 cargo/.test(await plano(q, '#ct-bn-cambiados > summary')) && await q.locator('#ct-bn-cambiados').evaluate(d => d.open) && /ZZ ELECTRICA TOTAL 0007 OCALA FL.*Antes: Es un gasto de «Material» de la obra ZZ Oficina Norte: \$77\.31\./.test(await plano(q, '#ct-bn-cambiados')), await tostada(q));
-    const rcA = q.locator(`[data-bn-recibo="${lista[0].movimiento_id}"]`), rcB = q.locator(`[data-bn-recibo="${lista[1].movimiento_id}"]`);
+    ok('(tercera vuelta) …al abrir la Bandeja, la rutina mira los recibos y NO CAMBIA NINGUNO SOLO: ni aviso de «lo cambié», ni lista de «Cambiados por su recibo» (lo que Edgar contestó solo lo cambia él, de un toque); los tres cargos esperan arriba',
+      cuantas(n0, 'fn_bandeja_solo') === 1 && !('cambiados' in rsolo.resp.recibos) && rsolo.resp.recibos.esperan === 3 && !/lo cambi|los cambi/.test(await tostada(q)) && (await q.locator('#ct-bn-cambiados').count()) === 0 && !/Cambiados por su recibo/.test(await plano(q, '#ct-bn-franja')) && (await q.locator('[data-bn-recibo]').count()) === 3, `${await tostada(q)} · ${JSON.stringify(rsolo.resp.recibos)}`);
+    const rcA = q.locator(`[data-bn-recibo="${lista[0].movimiento_id}"]`), rcB = q.locator(`[data-bn-recibo="${lista[1].movimiento_id}"]`), rcC = q.locator(`[data-bn-recibo="${lista[2].movimiento_id}"]`);
     const recTxt = await plano(q, '#ct-bn-recibos');
-    ok('…y los dos cargos IGUALES (un solo recibo: no se sabe de cuál es) salen ARRIBA, cada uno con lo que se registró y sus dos respuestas en llano —«Es su recibo: cámbialo» y «Es otra compra»—, sin nombres de funciones ni códigos de cuenta',
-      (await q.locator('.ct-rojo').count()) === 0 && (await q.locator('[data-bn-recibo]').count()) === 2 && /Llegaron los recibos de 2 cargos que ya habías registrado/.test(recTxt) && /ese gasto está dos veces en el libro/.test(recTxt)
+    ok('…los dos cargos IGUALES (un solo recibo: no se sabe de cuál es) y la compra suelta salen ARRIBA, cada uno con lo que se registró y sus dos respuestas en llano —«Es su recibo: cámbialo» y «Es otra compra»—, sin nombres de funciones ni códigos de cuenta',
+      (await q.locator('.ct-rojo').count()) === 0 && /Llegaron los recibos de 3 cargos que ya habías registrado/.test(recTxt) && /ese gasto está dos veces en el libro/.test(recTxt)
       && /Lo registraste así: Es un gasto de «Material» de la obra ZZ Oficina Norte: \$64\.37\./.test(await rcA.textContent()) && /Es su recibo: el del .* por \$64\.37, de la obra ZZ Casa Roble/.test(await rcA.locator('.ct-bn-recibo-t').textContent())
-      && (await rcA.locator('[data-bn-recibo-op]').allTextContents()).map(x => x.trim()).join('|') === 'Es su recibo: cámbialo|Es otra compra' && !/fn_[a-z]|\d{4}-\d{4}|p_motivo|ticket|casar_con|duplicado/i.test(recTxt), recTxt.slice(0, 300));
+      && /ZZ ELECTRICA TOTAL 0007 OCALA FL/.test(await rcC.textContent()) && /Es su recibo: el del .* por \$77\.31, de la obra ZZ Casa Roble/.test(await rcC.locator('.ct-bn-recibo-t').textContent())
+      && (await rcA.locator('[data-bn-recibo-op]').allTextContents()).map(x => x.trim()).join('|') === 'Es su recibo: cámbialo|Es otra compra' && (await rcC.locator('[data-bn-recibo-op]').allTextContents()).map(x => x.trim()).join('|') === 'Es su recibo: cámbialo|Es otra compra'
+      && !/fn_[a-z]|\d{4}-\d{4}|p_motivo|ticket|casar_con|duplicado/i.test(recTxt), recTxt.slice(0, 300));
     await foto(q, 'f19-1280-recibos');
     n0 = llamadas.length;
     await rcA.locator('[data-bn-recibo-otra]').click(); await esperarLlamada(q, n0, 'fn_bandeja_hacer'); await pintado(q); await q.waitForTimeout(200);
@@ -4345,19 +4708,25 @@ async function escenaF19(b, errs) {
     const FRO = RS.find(p => p.paso === 'otra_freno').resp;
     ok('«Es otra compra»: va a la base con la opción que el banco le puso a ESE cargo (por su huella) y sin porqué; como el gasto quedaría dos veces a propósito, el banco pide escribir por qué, y la tarjeta lo dice («Si es otra compra, el gasto queda dos veces en el libro a propósito…») y enseña dónde',
       !!l && l.args.p_movimiento === lista[0].movimiento_id && l.args.p_accion === 'banco' && l.args.p_datos.huella === lista[0].opciones.find(o => o.es === 'otra').huella && !('motivo' in l.args.p_opciones)
-      && (await rcA.locator('[data-bn-freno]').textContent()).trim() === FRO.por_que && /^Si es otra compra, el gasto queda dos veces en el libro a propósito/.test(FRO.por_que) && await rcA.locator('[data-bn-motivo]').isVisible() && (await q.locator('[data-bn-recibo]').count()) === 2, JSON.stringify(l && l.args).slice(0, 220));
+      && (await rcA.locator('[data-bn-freno]').textContent()).trim() === FRO.por_que && /^Si es otra compra, el gasto queda dos veces en el libro a propósito/.test(FRO.por_que) && await rcA.locator('[data-bn-motivo]').isVisible() && (await q.locator('[data-bn-recibo]').count()) === 3, JSON.stringify(l && l.args).slice(0, 220));
     await rcA.locator('[data-bn-motivo]').fill('fueron dos compras iguales el mismo día');
     n0 = llamadas.length;
     await rcA.locator('[data-bn-recibo-otra]').click(); await esperarLlamada(q, n0, 'fn_bandeja_leer'); await pintado(q); await q.waitForTimeout(200);
     l = ultima(n0, 'fn_bandeja_hacer');
-    ok('…con el porqué escrito (y la huella del freno que se leyó): queda anotado como otra compra; ese cargo sale de la lista y el otro sigue esperando',
-      !!l && l.args.p_opciones.motivo === 'fueron dos compras iguales el mismo día' && l.args.p_opciones.visto === FRO.freno && /^Anotado: es otra compra\. El gasto queda dos veces a propósito, con tu porqué\.$/.test(await tostada(q)) && (await q.locator('[data-bn-recibo]').count()) === 1 && (await rcB.count()) === 1, await tostada(q));
+    ok('…con el porqué escrito (y la huella del freno que se leyó): queda anotado como otra compra; ese cargo sale de la lista y los otros dos siguen esperando',
+      !!l && l.args.p_opciones.motivo === 'fueron dos compras iguales el mismo día' && l.args.p_opciones.visto === FRO.freno && /^Anotado: es otra compra\. El gasto queda dos veces a propósito, con tu porqué\.$/.test(await tostada(q)) && (await q.locator('[data-bn-recibo]').count()) === 2 && (await rcB.count()) === 1 && (await rcC.count()) === 1, await tostada(q));
     n0 = llamadas.length;
     await rcB.locator('[data-bn-recibo-op]:not([data-bn-recibo-otra])').click(); await esperarLlamada(q, n0, 'fn_bandeja_leer'); await pintado(q); await q.waitForTimeout(200);
     l = ultima(n0, 'fn_bandeja_hacer');
-    ok('«Es su recibo: cámbialo»: lo registrado se cambia por el recibo con un toque (la opción del banco, por su huella); el gasto queda una sola vez, en la obra del recibo, no queda ninguno esperando y el control del banco vuelve a verde',
+    ok('«Es su recibo: cámbialo»: lo registrado se cambia por el recibo con UN toque (la opción del banco, por su huella); el gasto queda una sola vez, en la obra del recibo, y sigue esperando la compra suelta',
       !!l && l.args.p_movimiento === lista[1].movimiento_id && l.args.p_accion === 'banco' && l.args.p_datos.huella === RS.find(p => p.paso === 'otra_visto').despues.leer.recibos[0].opciones.find(o => o.es === 'recibo').huella
-      && /^Cambiado por su recibo: el gasto queda una sola vez, en la obra del recibo\.$/.test(await tostada(q)) && (await q.locator('[data-bn-recibo], #ct-bn-recibos, .ct-bn-recibo-falta, .ct-rojo').count()) === 0 && !RS.find(p => p.paso === 'recibo').despues.rojo57, await tostada(q));
+      && /^Cambiado por su recibo: el gasto queda una sola vez, en la obra del recibo\.$/.test(await tostada(q)) && (await q.locator('[data-bn-recibo]').count()) === 1 && (await rcC.count()) === 1 && /Llegó el recibo de un cargo que ya habías registrado/.test(await plano(q, '#ct-bn-recibos')), await tostada(q));
+    n0 = llamadas.length;
+    await rcC.locator('[data-bn-recibo-op]:not([data-bn-recibo-otra])').click(); await esperarLlamada(q, n0, 'fn_bandeja_leer'); await pintado(q); await q.waitForTimeout(200);
+    l = ultima(n0, 'fn_bandeja_hacer');
+    ok('(tercera vuelta) …y la compra suelta (la que antes se cambiaba sola), igual: un toque en «Es su recibo: cámbialo»; no queda ninguno esperando y el control del banco vuelve a verde',
+      !!l && cuantas(n0, 'fn_bandeja_hacer') === 1 && l.args.p_movimiento === lista[2].movimiento_id && l.args.p_accion === 'banco' && !('motivo' in l.args.p_opciones)
+      && /^Cambiado por su recibo: el gasto queda una sola vez, en la obra del recibo\.$/.test(await tostada(q)) && (await q.locator('[data-bn-recibo], #ct-bn-recibos, .ct-bn-recibo-falta, .ct-rojo').count()) === 0 && !RS.find(p => p.paso === 'recibo_suelto').despues.rojo57, await tostada(q));
     await cx.close();
   }
 
@@ -4395,6 +4764,21 @@ async function escenaF19(b, errs) {
     ok('…la tarjeta abierta cabe; «Así es» es un botón de dedo (44 px o más de alto, casi todo el ancho) y la caja de «Dímelo» escribe a 16 px (el iPhone no hace zoom)',
       a.doc <= a.ven + 1 && caja.height >= 44 && caja.width >= tarj.width * 0.7 && ta >= 16, JSON.stringify({ alto: caja.height, ancho: caja.width, tarjeta: tarj.width, letra: ta }));
     await foto(q, 'f19-390-tarjeta');
+    {
+      // (tercera vuelta) EL AVISO, EN EL TELÉFONO: los de la Bandeja son largos y traen lo que Edgar necesita leer
+      const largo = 'HOME DEPOT: 2 registrados por $334.47 · 2 se quedan (está dicho en el grupo) · recordado. Y este aviso sigue un poco más para medir lo que tarda en irse cuando es largo.';
+      await q.evaluate(t => window.MXP_CONTA._estado.hooks.avisar(t), largo);
+      await q.waitForTimeout(200);
+      const tt = await q.evaluate(() => { const t = document.getElementById('toast'), r = t.getBoundingClientRect(), cs = getComputedStyle(t); return { ancho: Math.round(r.width), ven: window.innerWidth, toques: cs.pointerEvents, alto: Math.round(r.height), izq: Math.round(r.left), der: Math.round(r.right) }; });
+      ok('(tercera vuelta) EL AVISO EN EL TELÉFONO sale a casi todo el ancho (antes, centrado con el ancho «al contenido», se quedaba en media pantalla y en diez renglones), dentro de la pantalla, y NO SE COME LOS TOQUES de lo que tapa',
+        tt.ancho >= tt.ven * 0.8 && tt.izq >= 0 && tt.der <= tt.ven && tt.toques === 'none' && tt.alto < 200, JSON.stringify(tt));
+      await q.waitForTimeout(6300);
+      const sigue = await q.evaluate(() => !document.getElementById('toast').hidden);
+      await q.evaluate(() => window.MXP_CONTA._estado.hooks.avisar('Corto.'));
+      await q.waitForTimeout(5400);
+      const seFue = await q.evaluate(() => document.getElementById('toast').hidden);
+      ok('…y un aviso largo SE QUEDA LO QUE TARDA EN LEERSE (a los seis segundos sigue ahí; antes todos se iban a los cinco); uno corto se va a los cinco, como siempre', sigue === true && seFue === true, JSON.stringify({ sigue, seFue }));
+    }
     let g = q.locator('[data-bn-grupo="C:HOME DEPOT"]');
     await g.locator('summary').first().tap(); await q.waitForTimeout(150);
     a = await ancho();
@@ -4415,8 +4799,20 @@ async function escenaF19(b, errs) {
     const bs = await c.locator('[data-bn-caja="dim"] .accion').evaluateAll(bs => bs.map(x => x.getBoundingClientRect().height));
     ok('…y lo que entendió el «Dímelo», con sus dos botones de dedo', a.doc <= a.ven + 1 && bs.length === 2 && bs.every(x => x >= 44), JSON.stringify(bs));
     await foto(q, 'f19-390-dimelo');
+    { const W_LARGA = 390;
+    {
+      // (tercera vuelta) un comercio cuyo nombre es UNA palabra de más de cuarenta letras: su tarjeta cabe igual
+      const lg = await fila(q, ID.lg1), nL = llamadas.length;
+      await lg.locator('[data-bn-frase]').fill(F19.dimelo.larga.frase);
+      await lg.locator('[data-bn-enviar]').evaluate(b => b.click()); await esperarLlamada(q, nL, 'contador:dimelo'); await pintado(q); await q.waitForTimeout(200);
+      const med = await lg.evaluate(card => { const r = e => e.getBoundingClientRect(), c = r(card), ia = card.querySelector('[data-bn-caja="dim"]'), bn = card.querySelector('[data-bn]');
+        return { doc: document.documentElement.scrollWidth, ven: window.innerWidth, tarjeta: Math.round(c.right), caja: ia ? Math.round(r(ia).right) : null, dentro: bn.scrollWidth <= bn.clientWidth + 1, rotulo: ia ? ia.querySelector('.ct-bn-recordar').textContent.trim().slice(0, 80) : '' }; });
+      ok(`(tercera vuelta) UN NOMBRE DE COMERCIO DE UNA SOLA PALABRA LARGUÍSIMA (47 letras) no ensancha la tarjeta a ${W_LARGA} px: lo que entendió el «Dímelo» («Recordarlo: lo próximo de ZZSUPERDISTRIBUIDORA… te lo propongo así») parte la palabra y la caja «Entendí esto» queda dentro de la tarjeta`,
+        med.doc <= med.ven + 1 && med.caja != null && med.caja <= med.tarjeta + 1 && med.dentro && /ZZSUPERDISTRIBUIDORAELECTRICADELCENTRODEFLORIDA/.test(med.rotulo), JSON.stringify(med));
+    }
+    }
     // (segunda vuelta) lo nuevo, en el teléfono: un grupo con lo que lleva dentro, y «Llegó su recibo»
-    g = q.locator('[data-bn-grupo="C:CITY OF OCALA"]');
+    g = q.locator('[data-bn-grupo="C:ZZ FERRETERIA CENTRAL"]');
     await g.locator('summary').first().tap(); await q.waitForTimeout(150);
     a = await ancho();
     ok('(segunda vuelta) …un grupo con la lista de lo que lleva dentro cabe: cada movimiento en su renglón (la fecha, la descripción entera, que parte en dos líneas si hace falta, y el monto)',
@@ -4424,8 +4820,8 @@ async function escenaF19(b, errs) {
     await conGuion(q, 'recibos', true);
     a = await ancho();
     const rb = await q.locator('[data-bn-recibo] .accion').evaluateAll(xs => xs.map(x => x.getBoundingClientRect().height));
-    ok('(segunda vuelta) …y «Llegó su recibo»: las dos tarjetas arriba, cada una con sus dos botones de dedo (44 px o más), sin desplazar a los lados',
-      a.doc <= a.ven + 1 && (await q.locator('[data-bn-recibo]').count()) === 2 && rb.length === 4 && rb.every(x => x >= 44), JSON.stringify({ a, rb }));
+    ok('(segunda vuelta) …y «Llegó su recibo»: las tres tarjetas arriba, cada una con sus dos botones de dedo (44 px o más), sin desplazar a los lados',
+      a.doc <= a.ven + 1 && (await q.locator('[data-bn-recibo]').count()) === 3 && rb.length === 6 && rb.every(x => x >= 44), JSON.stringify({ a, rb }));
     await foto(q, 'f19-390-recibos');
     await cx.close();
   }
@@ -4489,6 +4885,22 @@ async function escenaF19(b, errs) {
       const [bajada2] = await Promise.all([q.waitForEvent('download', { timeout: 8000 }), q.locator('#ct-fis-csv-tax').click()]);
       const csvTax = fs.readFileSync(await bajada2.path(), 'utf8');
       ok('…y «Descargar el resumen por línea (CSV)»: cada línea del formulario con su monto y las cuentas que la forman (y, en un año parcial, dicho también en el archivo: «PARTIAL YEAR: 2026-10-01 to 2026-12-31 only…»)', /^tax-lines-\d{4}-form-1120\.csv$/.test(bajada2.suggestedFilename()) && /Form,Line,Description,Account,Account name,Amount/.test(csvTax) && csvTax.includes('1a,Line 1a — Gross receipts or sales') && /PARTIAL YEAR: 2026-10-01 to 2026-12-31 only/.test(csvTax) && /M-2,M-2 1,/.test(csvTax), csvTax.slice(0, 260));
+      // (tercera vuelta) LAS COMIDAS: en libros al 100 %, deducible la mitad. La base lo dice en la cuenta de su línea y en un aviso;
+      // la pantalla lo enseña en ese renglón, y va también en el CSV (su columna «Note») y en la hoja de imprimir
+      {
+        const comida = P.tax_lines.flatMap(x => (x.accounts || []).map(a => ({ ...a, line: x.line }))).find(a => a.account === '6350');
+        const fila = q.locator('#ct-fis tr.ct-fis-c', { hasText: '6350' });
+        const [hoja] = await Promise.all([q.context().waitForEvent('page', { timeout: 8000 }), q.locator('#ct-fis-imprimir').click()]);
+        await hoja.waitForLoadState('domcontentloaded').catch(() => {});
+        const hojaTxt = await hoja.evaluate(() => document.body ? document.body.innerText : '').catch(() => '');
+        await hoja.close().catch(() => {});
+        ok('(tercera vuelta) LAS COMIDAS EN EL PAQUETE: la cuenta 6350 va en la línea 26 al 100 % de libros, y EN SU RENGLÓN dice que solo la mitad es deducible y a dónde va la otra («Booked at 100%; only 50% is deductible. Nondeductible half (…): Schedule M-1, line 5c.»); el aviso «MEALS: account 6350…» sale arriba con los demás, y la nota va también en el CSV del resumen por línea (columna «Note») y en la hoja de imprimir (antes la línea 26 llevaba las comidas enteras sin decir nada en su renglón: quien la tecleara deducía de más)',
+          !!comida && comida.line === '26' && Number(comida.deductible) + Number(comida.nondeductible) === Number(comida.amount) && /only 50% is deductible/.test(comida.note)
+          && (await fila.count()) === 1 && (await fila.locator('[data-fis-nota]').textContent()).trim() === comida.note
+          && (await q.locator('.ct-fis-w li').allTextContents()).some(w => /^MEALS: account 6350/.test(w))
+          && /Form,Line,Description,Account,Account name,Amount,Note/.test(csvTax) && csvTax.includes(comida.note) && hojaTxt.includes(comida.note) && /MEALS: account 6350/.test(hojaTxt),
+          `${JSON.stringify(comida)} · ${(await fila.count()) ? (await fila.textContent()).replace(/\s+/g, ' ') : 'sin renglón'} · hoja: ${hojaTxt.length} letras`);
+      }
       n0 = llamadas.length;
       await q.locator('#ct-fis-confirmada').check(); await esperarLlamada(q, n0, 'fn_fiscal_forma'); await pintado(q); await q.waitForTimeout(200);
       l = ultima(n0, 'fn_fiscal_forma');
@@ -5519,7 +5931,13 @@ async function escenaF19(b, errs) {
       !desde(n0).some(l => l.fn === 'contador:proponer') && /^5 propuestas listas · 1 por proponer · este mes \$4\.20 de \$30\.00$/.test((await q.locator('#ct-ia-cifras').textContent()).trim()) && /Proponer ahora \(1\)/.test(await q.locator('#ct-ia-proponer').textContent()) && !(await q.locator('#ct-ia-proponer').isDisabled()) && (await q.locator('.ct-ia-freno').count()) === 0,
       await q.locator('#ct-ia-franja').textContent());
     ok('IA · la franja va debajo de la cabecera y antes de la barra de herramientas; la bandeja trae los 8 movimientos (los 3 de siempre y los 5 cargos de la IA)',
-      JSON.stringify(await q.locator('#ct-main > *').evaluateAll(xs => xs.map(x => x.id || x.className).slice(0, 3))) === '["ct-pag-cab","ct-ia-franja","ct-bj-herr"]' && (await q.locator('.ct-mov').count()) === 8,
+      // (tercera vuelta de c17: la barra va dentro de un envoltorio que no ocupa sitio —display: contents—, y delante de él los de
+      // la franja y los grupos de la Bandeja nueva, que sin c17 van vacíos: a la vista, detrás de la franja de la IA sigue la barra)
+      JSON.stringify(await q.locator('#ct-main > *').evaluateAll(xs => xs.map(x => x.id || x.className).slice(0, 2))) === '["ct-pag-cab","ct-ia-franja"]'
+      && await q.evaluate(() => { const f = document.getElementById('ct-ia-franja'), h = document.getElementById('ct-bj-herr');
+           const cajas = [...document.querySelectorAll('#ct-main > *, #ct-main > .ct-env > *')].filter(x => !x.classList.contains('ct-env'));
+           return !!f && !!h && cajas[cajas.indexOf(f) + 1] === h && ['ct-bn-franja-env', 'ct-bn-grupos-env', 'ct-bj-herr-env'].every(id => getComputedStyle(document.getElementById(id)).display === 'contents'); })
+      && (await q.locator('.ct-mov').count()) === 8,
       JSON.stringify(await q.locator('#ct-main > *').evaluateAll(xs => xs.map(x => x.id || x.className))));
     // el chip de cada fila
     const chip = async id => (await movQ(id).locator('.ct-f-motivo .ct-ia-chip').count()) ? (await movQ(id).locator('.ct-f-motivo .ct-ia-chip').textContent()).trim() : null;
