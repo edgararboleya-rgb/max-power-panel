@@ -172,3 +172,24 @@ arriba.
   hiciera falta quitarlo entero: `drop function if exists public.fn_tablero(jsonb);`
   (la app vuelve a la portada de siempre, con su línea de qué pegar); para
   volver, se pega `docs/conta/c16-tablero.sql` otra vez.
+- La Bandeja nueva (c17), lo que entra solo: lo apaga Edgar desde la app
+  (Bandeja → «Lo que recuerdo» → «Dejar que entre solo lo que yo marque
+  aquí»). De urgencia, desde el SQL Editor (la tabla tiene guarda: hace falta
+  la marca, en la misma transacción):
+  `begin; select set_config('mx_bandeja.escribe', 'bandeja_config', true); update bandeja_config set solo = false where id = 1; commit;`
+  Y las dos tareas: `select cron.unschedule('mxp-bandeja-solo-manana'); select cron.unschedule('mxp-bandeja-solo-tarde');`
+  (vuelven al pegar `docs/conta/c17-bandeja.sql` otra vez). Lo que entró solo
+  se deshace en la Bandeja («Registrado solo» → «Deshacer»); qué entró y
+  cuándo: `select * from bandeja_hechos where solo order by el desc;`.
+- El «Dímelo» (c17): `begin; select set_config('mx_bandeja.escribe', 'bandeja_config', true); update bandeja_config set dimelo = false where id = 1; commit;`
+  (la caja desaparece de las tarjetas; «Así es» y «Más opciones» siguen). Su
+  gasto cuenta contra el tope del contador (c8, acción `contador_dimelo`).
+- Si hiciera falta quitar la Bandeja nueva entera sin tocar datos:
+  `drop function if exists public.fn_bandeja_leer(jsonb);` (la app vuelve a la
+  Bandeja de antes; lo registrado no cambia). Para volver, se pega c17 otra
+  vez.
+- La forma de la entidad para el paquete del contador (c18): la cambia Edgar
+  en Estados → «Para el contador». Cómo está:
+  `select forma, confirmada, confirmada_el from fiscal_config;`. El control de
+  las dos capas: `select * from v_bandeja_control;` y
+  `select * from fn_fiscal_control();`.

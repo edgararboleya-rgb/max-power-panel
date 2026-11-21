@@ -37,3 +37,15 @@ Lo que salga del primer cierre real de enero.
 
 ## Terminó cuando
 Tu CPA recibe el paquete y no te pide nada más.
+
+## Adelantado el 21-nov (c18)
+
+Por decisión de Edgar («Cuentas y reportes» en inglés), la primera pieza del
+paquete ya está construida: `docs/conta/c18-fiscal.sql` da a cada cuenta su
+nombre en inglés y su línea del Form 1120, del 1120-S y del 1125-A, y
+`fn_fiscal_paquete(año)` arma la balanza con sus líneas, los estados, el
+resumen por línea y el 1125-A. Sale en Estados → «Para el contador». La forma
+de la entidad (1120 o 1120-S) está pendiente de que el CPA la confirme; el
+paquete lo avisa. Lo demás de esta fase (los doce hashes, las conciliaciones,
+la cédula de activos, el READ ME) sigue aquí. Detalle:
+`docs/conta/fases/f19-bandeja.md`.

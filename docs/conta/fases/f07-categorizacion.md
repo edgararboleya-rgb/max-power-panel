@@ -338,3 +338,12 @@ tareas `mxp-contador-manana` y `mxp-contador-tarde` se programan al pegar);
 (v296). Las propuestas pendientes siguen como están (una de la 7b sale débil
 y pide el toque); la versión del prompt cambia y la primera ráfaga vuelve a
 escribir el caché.
+
+## La Bandeja nueva (21-nov)
+
+Lo que quedó pendiente el 16-nov («Dímelo con tus palabras», una sola
+recomendación por tarjeta, decidir por grupo y lo que entra solo) está
+construido en una capa aparte, c17, sin tocar c8: `docs/conta/fases/f19-bandeja.md`.
+La función `contador` gana una acción, `dimelo`; la ráfaga de siempre
+(`proponer`) y sus instrucciones no cambian, así que su caché no se vuelve a
+escribir.
