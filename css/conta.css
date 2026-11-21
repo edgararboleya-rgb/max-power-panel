@@ -1791,6 +1791,7 @@ body[data-vista="conta"] .fab { display: none; }
 #conta-raiz .ct-bn-hecho.nuevo { border-color: var(--cu); box-shadow: inset 3px 0 0 var(--cu); }
 #conta-raiz .ct-bn-hecho-cab { display: flex; justify-content: space-between; align-items: baseline; gap: .6rem; font-size: .95rem; }
 #conta-raiz .ct-bn-hecho-cab b { min-width: 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-bn-hecho-cab .ct-num { flex: none; white-space: nowrap; }
 #conta-raiz .ct-bn-hecho .ct-sub { margin: .15rem 0 0; font-size: .84rem; line-height: 1.4; overflow-wrap: anywhere; }
 #conta-raiz .ct-bn-cfg { display: grid; gap: .3rem; margin: .2rem 0 .5rem; }
 #conta-raiz .ct-bn-cfg-tope { max-width: 16rem; }
@@ -1814,6 +1815,43 @@ body[data-vista="conta"] .fab { display: none; }
   #conta-raiz .ct-bn-cat { max-width: 34rem; }
 }
 #conta-raiz .ct-bn-g-cab .ct-f-chev { grid-area: auto; grid-column: 3; grid-row: 1; }
+/* (segunda vuelta) el freno del banco arriba del porqué; «¿tienes el recibo?»; lo de dentro de un grupo; «Llegó su recibo»; la tanda */
+#conta-raiz .ct-bn-freno { margin: 0; font-size: .95rem; line-height: 1.45; overflow-wrap: anywhere; }
+#conta-raiz .ct-bn-freno[hidden], #conta-raiz .ct-bn-motivo[hidden] { display: none; }
+#conta-raiz .ct-bn-motivo > span { display: block; }
+#conta-raiz .ct-bn-sube { margin: 0; font-size: .86rem; line-height: 1.45; }
+#conta-raiz .ct-bn-prov-n { margin: 0; font-size: .82rem; }
+#conta-raiz .ct-bn-g-lista { min-width: 0; border: 1px solid var(--mp-line); border-radius: 12px; background: var(--mp-card); }
+#conta-raiz .ct-bn-g-lista > summary { cursor: pointer; min-height: var(--tap); display: flex; align-items: center; padding: .2rem .7rem; font-size: .86rem; font-weight: 700; color: var(--cu-dark); }
+#conta-raiz .ct-bn-g-lista > summary:focus-visible { outline: 3px solid var(--mp-blue); outline-offset: -3px; }
+#conta-raiz .ct-bn-gm { list-style: none; margin: 0; padding: 0 .7rem .3rem; display: grid; min-width: 0; }
+#conta-raiz .ct-bn-gm li { display: grid; grid-template-columns: 3.6rem minmax(0, 1fr) auto; gap: .1rem .5rem; align-items: baseline; padding: .35rem 0; border-top: 1px solid var(--mp-line); font-size: .88rem; line-height: 1.35; min-width: 0; }
+#conta-raiz .ct-bn-gm-f { color: var(--mp-ink-3); white-space: nowrap; }
+#conta-raiz .ct-bn-gm-d { min-width: 0; overflow-wrap: anywhere; }
+#conta-raiz .ct-bn-gm-d small { display: block; font-size: .82rem; color: var(--mp-ink-2); }
+#conta-raiz .ct-bn-gm li > .ct-num { white-space: nowrap; font-weight: 700; }
+#conta-raiz .ct-bn-gm li > .ct-num.pos { color: var(--ok-ink); }
+#conta-raiz .ct-bn-recibos { display: grid; gap: .5rem; margin: 0 0 .5rem; padding: .7rem .8rem .8rem; border-radius: 12px; border: 1px solid var(--mp-warn-bd); border-left: 4px solid var(--warn-ink); background: var(--warn-bg); min-width: 0; }
+#conta-raiz .ct-bn-recibos h3 { margin: 0; font-size: 1rem; line-height: 1.35; color: var(--warn-ink); }
+#conta-raiz .ct-bn-recibos > .ct-sub { margin: 0; font-size: .88rem; line-height: 1.4; color: var(--mp-ink-2); }
+#conta-raiz .ct-bn-recibo { display: grid; gap: .4rem; padding: .6rem .7rem .7rem; border-radius: 12px; border: 1px solid var(--mp-line); background: var(--mp-card); min-width: 0; }
+#conta-raiz .ct-bn-recibo > * { min-width: 0; }
+#conta-raiz .ct-bn-recibo .ct-sub, #conta-raiz .ct-bn-tanda .ct-sub { margin: 0; font-size: .84rem; line-height: 1.4; overflow-wrap: anywhere; }
+#conta-raiz .ct-bn-recibo-t { margin: 0; font-size: .95rem; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; }
+#conta-raiz .ct-bn-recibo .ct-nota { margin: 0; }
+#conta-raiz .ct-bn-recibo .ct-acciones .accion { flex: 1 1 11rem; justify-content: center; text-align: center; min-height: var(--tap); }
+#conta-raiz .ct-bn-recibo .ct-bn-res:empty { display: none; }
+#conta-raiz .ct-bn-tanda { display: grid; gap: .35rem; padding: .6rem .7rem; border-radius: 12px; border: 1px solid var(--mp-line); border-left: 4px solid var(--cu); background: var(--mp-card); min-width: 0; }
+#conta-raiz .ct-bn-tanda > * { min-width: 0; }
+#conta-raiz .ct-bn-tanda-l > summary { cursor: pointer; min-height: var(--tap); display: flex; align-items: center; font-size: .86rem; font-weight: 700; color: var(--cu-dark); }
+#conta-raiz .ct-bn-tanda-l > summary:focus-visible { outline: 3px solid var(--mp-blue); outline-offset: 2px; }
+#conta-raiz .ct-bn-deja-solo { font-size: .88rem; font-weight: 600; line-height: 1.35; align-items: flex-start; }
+#conta-raiz .ct-bn-cambiados .ct-bn-gm { padding: 0 0 .3rem; }
+@media (min-width: 900px) {
+  #conta-raiz .ct-bn-g-c > .ct-bn-g-lista, #conta-raiz .ct-bn-g-c > [data-bn-g-solo-c] { grid-column: 1 / -1; }
+  #conta-raiz .ct-bn > .ct-bn-sube { grid-column: 1; }
+  #conta-raiz .ct-bn-recibo .ct-acciones .accion { flex: 0 1 15rem; }
+}
 
 /* ===========================================================================
    CUENTAS Y REPORTES EN INGLÉS (c18): en qué idioma van los nombres de los

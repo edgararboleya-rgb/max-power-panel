@@ -32,7 +32,20 @@
 --     (Intuit) con dos facturas y su comisión, el Zelle de una LLC, un
 --     depósito en efectivo por el cajero, un depósito sin nombre, un Zelle
 --     a una persona, las dos cuotas del préstamo, dos cargos de intereses
---     de la tarjeta y un cargo con una propuesta de la IA (c8) pendiente.
+--     de la tarjeta y un cargo con una propuesta de la IA (c8) pendiente;
+--   · (segunda vuelta) lo que la revisión encontró y la pantalla tiene que
+--     enseñar bien: el PAGO DE LA TARJETA desde el banco (lo que el banco
+--     ya reconoce, dicho en llano y sin códigos); un SEGUNDO depósito del
+--     procesador (los depósitos de un mismo pagador van juntos a la vista,
+--     pero se contestan de uno en uno); dos cargos de «INTUIT» que NO son
+--     lo mismo (su comisión por los pagos con tarjeta y la suscripción de
+--     QuickBooks: cada uno va por su lado); dos cargos de la ciudad que
+--     tampoco (un permiso y el recibo de la luz: un grupo «mezclado» no
+--     propone nada); un movimiento a la
+--     reserva que el banco no reconoce como traspaso (la puerta frena y
+--     pide su porqué); y UNA TARJETA DE OBRA con tres compras cuyos recibos
+--     «llegan después» (dos iguales el mismo día y una sola: f19-capturar.js
+--     las registra desde la Bandeja y después sube sus recibos).
 -- Sus ids quedan en la tabla f19_semilla (clave → movimiento): la lee
 -- f19-capturar.js. Se borra con la base.
 -- =====================================================================
@@ -128,7 +141,8 @@ select pg_temp.s19_mov('dd1', 3,   -32.18,  'DOORDASH*ZZ BURGER') is not null;
 select pg_temp.s19_mov('ww1', 5,   -62.00,  'WAWA 5234 OCALA FL') is not null;
 select pg_temp.s19_mov('pm1', 6,  -350.00,  'MARION COUNTY BOCC PERMITS') is not null;
 select pg_temp.s19_mov('od1', 8, 25000.00,  'ORIG CO NAME:ONDECK CAPITAL ORIG ID:1234567890 DESC DATE:ZZ19') is not null;
-select pg_temp.s19_mov('in1', 7, 11154.70,  'INTUIT 77788899 DEPOSIT') is not null;
+-- (lo que llega es el neto: Intuit se queda el 2.99 % de CADA factura: $124.99 de la ZZ-101 y $218.86 de la ZZ-102)
+select pg_temp.s19_mov('in1', 7, 11156.15,  'INTUIT 77788899 DEPOSIT') is not null;
 select pg_temp.s19_mov('zl1', 7,  2640.80,  'ZELLE PAYMENT FROM ZZ ALFA HOLDINGS LLC 123456') is not null;
 select pg_temp.s19_mov('at1', 5,   800.00,  'ATM CASH DEPOSIT 1234 ZZ MAIN ST') is not null;
 select pg_temp.s19_mov('dp1', 5,  1000.00,  'DEPOSIT ID NUMBER 447102') is not null;
@@ -138,6 +152,43 @@ select pg_temp.s19_mov('cu2', 3,  -600.00,  'ACH ZZCAPITAL PAYMENT 0002') is not
 select pg_temp.s19_mov('fe1', 2,   -88.40,  'ZZ FERRETERIA CENTRAL 0042') is not null;
 select pg_temp.s19_mov('it1', 11,  -31.56,  'INTEREST CHARGE ON PURCHASES', '2100-2013') is not null;
 select pg_temp.s19_mov('it2', 2,   -28.14,  'INTEREST CHARGE ON PURCHASES', '2100-2013') is not null;
+
+-- 6b. (segunda vuelta) Lo que la revisión encontró
+-- el pago de la tarjeta desde el banco; otro depósito del procesador (sin factura que cuadre: se pregunta); la comisión del
+-- procesador y la suscripción de QuickBooks (los dos dicen «INTUIT» y no son lo mismo); y dinero que se pasa a la reserva
+select pg_temp.s19_mov('tj1', 9,  -430.89,  'AMEX EPAYMENT ACH PMT ZZ1234') is not null;
+select pg_temp.s19_mov('in2', 2,  1300.00,  'INTUIT 77788899 DEPOSIT') is not null;
+select pg_temp.s19_mov('if1', 7,   -44.10,  'INTUIT 77788899 TRAN FEE') is not null;
+select pg_temp.s19_mov('iq1', 8,   -99.00,  'INTUIT *QBOOKS ONLINE') is not null;
+select pg_temp.s19_mov('tr1', 2, -2000.13,  'ZZ MOVIMIENTO A LA RESERVA') is not null;
+-- dos cargos de la ciudad que NO son lo mismo (un permiso de obra y el recibo de la luz): su grupo no propone nada
+select pg_temp.s19_mov('co1', 8,  -125.00,  'CITY OF OCALA BLDG PERMIT 0091') is not null;
+select pg_temp.s19_mov('co2', 3,  -210.40,  'CITY OF OCALA UTILITIES') is not null;
+-- dinero a una cuenta que la app no conoce: lo que dice el banco trae una orden para el SQL Editor (la tarjeta no la enseña)
+select pg_temp.s19_mov('cd1', 3,  -300.00,  'ONLINE TRANSFER TO CHK ...4456 TRANSACTION#: 99887766') is not null;
+-- UNA TARJETA DE OBRA (la que lleva la cuadrilla): sus compras llegan por el banco y sus recibos, por la app. Dos compras iguales
+-- el mismo día (el banco pregunta si la segunda es la misma: Edgar dice que no) y una sola
+insert into cuentas (codigo, nombre, nombre_en, tipo, saldo_normal, imputable, regla_obra, regla_cost_code)
+values ('2100-9919', 'ZZ Tarjeta de obra', 'ZZ Job card', 'pasivo', 'haber', true, 'prohibida', 'prohibida')
+on conflict (codigo) do nothing;
+select fn_tarjeta_alta('9919', '2100-9919', 'f19-semilla: la tarjeta de obra') is not null as tarjeta;
+select fn_mapeo_categoria('material', '5100') is not null, fn_mapeo_metodo_pago('credito', 'tarjeta') is not null;
+-- un subcontratista dado de alta (a quién se le paga un subcontrato: con su nombre, el pago sale en su 1099)
+select fn_proveedor_alta('ZZ Azulejos Sur', 'Net 30', array['zz azulejos sur llc']) is not null as proveedor;
+select pg_temp.s19_mov('rc1', 5,   -64.37,  'ZZ MADERAS DEL SUR 0042 OCALA FL', '2100-9919') is not null;
+select pg_temp.s19_mov('rc2', 5,   -64.37,  'ZZ MADERAS DEL SUR 0042 OCALA FL', '2100-9919') is not null;
+select pg_temp.s19_mov('rc3', 4,   -77.31,  'ZZ ELECTRICA TOTAL 0007 OCALA FL', '2100-9919') is not null;
+do $$
+begin
+  perform set_config('request.jwt.claims', json_build_object('sub', pg_temp.s19_dueno(), 'role', 'authenticated', 'aal', 'aal2')::text, true);
+  perform set_config('request.jwt.claim.sub', pg_temp.s19_dueno(), true);
+  perform fn_banco_duplicado(s.movimiento, false, 'f19-semilla: fueron dos compras iguales el mismo día')
+     from public.f19_semilla s join movimientos_banco m on m.id = s.movimiento
+    where s.clave in ('rc1', 'rc2') and m.posible_duplicado_de is not null and m.duplicado is null;
+  perform fn_banco_casar(s.movimiento) from public.f19_semilla s where s.clave in ('rc1', 'rc2');
+  perform set_config('request.jwt.claims', '', true);
+  perform set_config('request.jwt.claim.sub', '', true);
+end $$;
 
 -- 7. Una propuesta de la IA (c8) pendiente para el cargo de la ferretería
 with l as (
