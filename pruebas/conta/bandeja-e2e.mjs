@@ -32,6 +32,16 @@
        motivo; la tarjeta enseña el freno y solo con su huella se levanta;
      · la opción de c6 que cambia entre guardar y aprobar; y la «comisión»
        de un depósito que no es de un procesador;
+     · (tercera vuelta) LO QUE LA APP SABE DE UN DEPÓSITO: de un prestamista,
+       a la IA se le dice quién lo deposita y no se le ofrecen las opciones
+       que lo cobran; y si aun así contesta «el cobro de esa factura», al
+       aprobar la base FRENA (su huella), aunque haya una factura por ese
+       monto; LA MÁSCARA: el correo de quien paga por Zelle no sale ni en el
+       nombre de la contraparte; UN CARÁCTER NULO en lo que escribe la IA no
+       tumba el guardado, y si la base no puede guardar la respuesta, el
+       gasto de la llamada se anota igual; LOS ENLACES de lo que la IA
+       escribe no llegan a Edgar; y la devolución de algo suyo (personal en
+       un depósito) con el freno del banco y la caja del porqué rellena;
      · lo que no contesta (una negativa, un JSON roto, un corte, una caída con
        su reintento) queda «sin propuesta» con su porqué; el tope del mes
        gastado: bloqueado y ni una llamada; la llave que no vale y sin llave;
@@ -168,10 +178,17 @@ const PR = modulo._probar;
 const dolar = (s) => { let tag = 'mxp'; while (s.includes(`$${tag}$`)) tag += 'x'; return `$${tag}$${s}$${tag}$`; };
 const literal = (v) => v === null || v === undefined ? 'NULL' : typeof v === 'number' ? String(v) : typeof v === 'boolean' ? String(v) : dolar(typeof v === 'string' ? v : JSON.stringify(v));
 const llamadasBase = [];
+// (tercera vuelta) para probar que el gasto se anota aunque la base no pueda guardar lo que dijo la IA: la próxima llamada a
+// fn_bandeja_dimelo_guardar QUE TRAIGA RESPUESTA falla como falla Postgres con algo que no cabe en un jsonb
+const fallaGuardar = { veces: 0 };
 modulo.usarBaseDePruebas({
   async rpc(fn, args) {
     if (!/^fn_(contador_[a-z_]+|bandeja_dimelo_(contexto|guardar))$/.test(fn)) throw Object.assign(new Error(`la función de borde no llama a ${fn}`), { code: '42501' });
     llamadasBase.push(fn);
+    if (fn === 'fn_bandeja_dimelo_guardar' && fallaGuardar.veces > 0 && args.p_respuesta) {
+      fallaGuardar.veces -= 1;
+      throw Object.assign(new Error('unsupported Unicode escape sequence'), { code: '22P05' });
+    }
     const llamada = `select ${fn}(${Object.keys(args).map((k) => `${k} => ${literal(args[k])}`).join(', ')}) as r;`;
     const r = await psqlAsync(`\\set ON_ERROR_STOP 1\n\\set VERBOSITY verbose\nbegin;\nselect set_config('request.jwt.claims', '', true) as a, set_config('request.jwt.claim.sub', '', true) as b \\gset x_\n${llamada}\ncommit;\n`);
     if (r.codigo !== 0) {
@@ -438,6 +455,81 @@ let dZelle = null;
   const r2 = await dimelo(N.parcial, 'pagaron con tarjeta, lo que falta es la COMISIÓN');
   ok('B17-31 LA COMISIÓN la valida la base: un Zelle que paga 150 de menos que la factura y una IA que lo llama «comisión»: NO queda como propuesta (no viene de un procesador de tarjetas: es un pago parcial), y nada entra',
      r2.j?.estado === 'sin_propuesta' && /no viene de un procesador de tarjetas/.test(r2.j.falta ?? '') && estadoMov(N.parcial) === 'pendiente', r2);
+}
+
+// ---- 8c. (tercera vuelta) el prestamista, la máscara, el nulo, los enlaces y la devolución de algo tuyo ---
+{
+  // (a) EL PRESTAMISTA con una factura por ese mismo monto, y una IA que no hace caso y lo cobra
+  q(`insert into facturas (id, proyecto_id, num, fecha, monto, retencion, pagada) overriding system value values (-1790011, ${lit(F_LIBRE.obra)}, 'E2E-P', ${lit(DIA)}, 4321.17, 0, false)`);
+  qErr(`select fn_puentes_correr()`);
+  const N = sembrar([{ clave: 'kab', monto: 4321.17, desc: 'ACH CREDIT KABBAGE FUNDING 778' }]);
+  const a0 = nAsientos();
+  const r = await dimelo(N.kab, 'es el pago de la FACTURA E2E-P');
+  const ps = await peticiones(-1);
+  const p = ps[0]?.cuerpo ?? {};
+  const msg = JSON.parse(p.messages?.[0]?.content ?? '{}');
+  const sistema = String(p.system?.[0]?.text ?? '');
+  ok('B17-32 LO QUE LA APP SABE DE UN DEPÓSITO va a la IA: el movimiento dice quién lo deposita («prestamista»: Kabbage), lo que dice el banco no empuja a cobrarlo («lo deposita un prestamista»), las opciones del banco que lo cobran no se le ofrecen, y las instrucciones dicen qué hacer con «prestamista» y con «lo_manda_edgar»',
+     msg.movimiento?.prestamista?.prestamista === 'Kabbage' && /^Lo deposita Kabbage, un prestamista/.test(msg.movimiento?.lo_que_dice_el_banco ?? '')
+     && !(msg.movimiento?.opciones_del_banco ?? []).some((o) => /factura/i.test(o.texto ?? '')) && !/lo explican/.test(JSON.stringify(msg.movimiento))
+     && /Si el movimiento trae «prestamista»/.test(sistema) && /«lo_manda_edgar»: true/.test(sistema), { mov: msg.movimiento });
+  const a = aprobar(r.j?.dimelo_id);
+  ok('B17-33 y si la IA no hace caso y propone «el cobro de esa factura» (queda como propuesta: la factura existe y cuadra), al aprobar la base FRENA: nada entra, dice en llano que lo deposita un prestamista, con su huella y pidiendo el porqué; la factura sigue por cobrar',
+     r.j?.estado === 'pendiente' && r.j.accion === 'cobro' && a?.hecho === false && a.pide_motivo === true && typeof a.freno === 'string'
+     && /^El banco dice que este dinero lo deposita Kabbage, un prestamista: es una deuda, no el pago de un cliente/.test(a.por_que ?? '')
+     && nAsientos() === a0 && estadoMov(N.kab) === 'pendiente' && q(`select saldo_libro from facturas_cobro where id = -1790011`) === '4321.17', { r, a });
+}
+{
+  // (b) LA MÁSCARA: quien paga por Zelle es un correo (c6 lo deja «JPEREZ OBRAS EXAMPLE COM» en su texto normalizado)
+  const N = sembrar([{ clave: 'correo', monto: 801.19, desc: 'ZELLE PAYMENT FROM JPEREZ.OBRAS@EXAMPLE.COM 7781' }]);
+  const r = await dimelo(N.correo, `es un ANTICIPO de ${OTRA_OBRA[1]}, cuenta 1234-5678-90, ssn 123.45.6789`);
+  const ps = await peticiones(-1);
+  const todo = JSON.stringify(ps[0]?.cuerpo ?? {});
+  const msg = JSON.parse(ps[0]?.cuerpo?.messages?.[0]?.content ?? '{}');
+  ok('B17-34 LA MÁSCARA: el correo de quien paga por Zelle no sale hacia la IA ni en la descripción ni en el NOMBRE de la contraparte (salía «Jperez Obras Example Com»), y la cuenta con guiones y el SSN con puntos de la frase tampoco',
+     r.estado === 200 && !/jperez|obras@|example/i.test(todo) && !/1234-5678|5678-90|123\.45\.6789/.test(todo) && msg.movimiento?.contraparte?.clase === 'zelle_de'
+     && /\[número\]/.test(msg.lo_que_dice_edgar ?? ''), { contraparte: msg.movimiento?.contraparte, frase: msg.lo_que_dice_edgar, desc: msg.movimiento?.descripcion });
+}
+{
+  // (c) UN CARÁCTER NULO en lo que escribe la IA; y la base que no puede guardar la respuesta
+  const N = sembrar([{ clave: 'nulo', monto: -33.19, desc: 'ZZ GASOLINERA DEL SUR 12' }, { clave: 'noguarda', monto: -34.21, desc: 'ZZ GASOLINERA DEL SUR 13' }]);
+  const u0 = Number(q(`select count(*) from asistente_uso where accion = 'contador_dimelo'`));
+  const r = await dimelo(N.nulo, 'NULO es GASOLINA de la camioneta');
+  const fila = dimeloDe(r.j?.dimelo_id);
+  ok('B17-35 UN CARÁCTER NULO en la respuesta de la IA (Postgres no lo guarda en un jsonb): la función lo quita antes y la propuesta queda guardada como siempre (antes la base no guardaba nada: ni la propuesta ni el gasto, y Edgar veía un error)',
+     r.estado === 200 && r.j?.estado === 'pendiente' && r.j.accion === 'gasto' && r.j.respondio === true && !JSON.stringify(r.j).includes('\\u0000')
+     && /Con un nulo dentro/.test(fila?.porque ?? '') && Number(q(`select count(*) from asistente_uso where accion = 'contador_dimelo'`)) === u0 + 1, { r, porque: fila?.porque });
+  fallaGuardar.veces = 1;
+  const b0 = llamadasBase.length;
+  const r2 = await dimelo(N.noguarda, 'es GASOLINA de la camioneta');
+  const fila2 = dimeloDe(r2.j?.dimelo_id);
+  ok('B17-36 y si la base NO puede guardar lo que dijo la IA, la llamada (ya pagada) no se pierde: se guarda sin la respuesta, «sin propuesta», con su gasto anotado contra el tope; Edgar ve que no hubo propuesta, no un error',
+     r2.estado === 200 && r2.j?.estado === 'sin_propuesta' && r2.j.respondio === false && Number(fila2?.uso?.output ?? 0) > 0 && /no se pudo guardar/.test(fila2?.uso?.error ?? '')
+     && q(`select count(*) from asistente_uso where accion = 'contador_dimelo' and resultado like 'no se pudo guardar%' and salida > 0`) === '1'
+     && Number(q(`select count(*) from asistente_uso where accion = 'contador_dimelo'`)) === u0 + 2
+     && llamadasBase.slice(b0).filter((f) => f === 'fn_bandeja_dimelo_guardar').length === 2 && estadoMov(N.noguarda) === 'pendiente', { r2, uso: fila2?.uso });
+}
+{
+  // (d) LOS ENLACES en lo que la IA escribe y Edgar va a leer
+  const N = sembrar([{ clave: 'enlace', monto: -35.23, desc: 'ZZ GASOLINERA DEL SUR 14' }]);
+  const r = await dimelo(N.enlace, 'ENLACE es GASOLINA de la camioneta');
+  const r2 = await dimelo(N.enlace, 'ENLACE no tengo idea');
+  ok('B17-37 LOS ENLACES: lo que la IA explica y lo que dice que le falta llegan a Edgar sin enlaces («[enlace]»), lo que le falta va marcado como dicho por la IA, y en la base tampoco quedan',
+     r.j?.estado === 'pendiente' && /\[enlace\]/.test(r.j.porque ?? '') && !/https?:|www\.|example/.test(r.j.porque ?? '')
+     && r2.j?.estado === 'sin_propuesta' && /\[enlace\]/.test(r2.j.falta ?? '') && !/https?:|www\.|example/.test(r2.j.falta ?? '') && r2.j.falta_de_la_ia === true
+     && q(`select count(*) from bandeja_dimelo where movimiento_id = ${lit(N.enlace)} and (coalesce(porque, '') || coalesce(falta, '')) ~* '(https?:|www\.)'`) === '0', { r, r2 });
+}
+{
+  // (e) LA DEVOLUCIÓN DE ALGO TUYO: «personal» en un depósito, con el freno del banco (hay facturas mayores por cobrar)
+  const N = sembrar([{ clave: 'devol', monto: 45.07, desc: 'KLARNA 8J2 REFUND' }]);
+  const r = await dimelo(N.devol, 'me DEVOLVIERON lo de la tele que compré con la tarjeta de la empresa');
+  const a = aprobar(r.j?.dimelo_id);
+  const b = aprobar(r.j?.dimelo_id, { motivo: a?.sugerido, visto: a?.freno });
+  const lin = q(`select string_agg(l.cuenta || ' ' || l.monto, ', ' order by l.cuenta) from asiento_lineas l where l.asiento_id = ${lit(b?.asiento_id ?? '00000000-0000-4000-8000-000000000000')}`);
+  ok('B17-38 LA DEVOLUCIÓN DE ALGO TUYO: «personal» en un depósito queda como propuesta («la devolución de algo tuyo»); al aprobar, el banco frena (hay facturas por cobrar mayores: podría ser una parte de una) y la caja del porqué viene RELLENA con la frase de Edgar; leído y vuelto a tocar, entra bajando lo retirado (3200), con su frase escrita',
+     r.j?.estado === 'pendiente' && r.j.accion === 'personal' && /^Es la devolución de algo tuyo/.test(r.j.texto ?? '')
+     && a?.hecho === false && a.pide_motivo === true && typeof a.freno === 'string' && /lo de la tele/.test(a.sugerido ?? '')
+     && b?.hecho === true && lin === '1010 45.07, 3200 -45.07', { r, a, b, lin });
 }
 
 // ---- 9. el cierre ----------------------------------------------------------------

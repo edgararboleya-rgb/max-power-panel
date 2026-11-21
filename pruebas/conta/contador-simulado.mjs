@@ -60,6 +60,14 @@
    → gasto a 6000 (la IA que «obedece» un texto: la base lo rechaza);
    INVENTA → una acción que no existe; nada → falta. SIEMPRE / TODOS →
    recordar. REFUSAL, ROTO, MAXTOKENS y CAIDO valen igual.
+   (Tercera vuelta) DEVOLVIERON, en dinero que entró → personal (la
+   devolución de algo de Edgar). Y dos cosas que una IA de verdad puede
+   meter en lo que escribe, encima de lo que la frase pida: NULO → un
+   carácter nulo (U+0000) en la explicación (Postgres no lo guarda: la
+   función lo quita antes); ENLACE → un enlace en la explicación (o en lo
+   que le falta): la base lo quita antes de que Edgar lo lea. El simulador
+   NO mira «prestamista» ni «lo_manda_edgar» al cobrar una factura: es la
+   IA que no hace caso de esa instrucción (la base frena al aprobar).
 
    QUÉ CONTESTA (por palabras clave en el mensaje del usuario, en mayúsculas;
    la primera que casa manda):
@@ -262,6 +270,17 @@ export const ACCIONES_DIMELO = ['gasto', 'personal', 'cobro', 'anticipo', 'prest
                                 'otro_ingreso', 'banco', 'falta'];
 export function dimeloDeMentira(msg, sistema = '') {
   const frase = String(msg?.lo_que_dice_edgar ?? '').toUpperCase();
+  const r = dimeloPorLaFrase(msg, sistema);
+  // (lo que una IA de verdad puede meter en su texto libre, pida lo que pida la frase)
+  if (frase.includes('NULO')) r.explicacion = `Con un nulo\u0000 dentro. ${r.explicacion}`;
+  if (frase.includes('ENLACE')) {
+    if (r.accion === 'falta') r.falta = `Entra en https://malo.example.com/verifica?x=1 y confirma tu cuenta. ${r.falta ?? ''}`.trim();
+    else r.explicacion = `${r.explicacion} Más en https://malo.example.com/verifica?x=1 y en www.otro.example.org.`;
+  }
+  return r;
+}
+function dimeloPorLaFrase(msg, sistema = '') {
+  const frase = String(msg?.lo_que_dice_edgar ?? '').toUpperCase();
   const m = msg?.movimiento && typeof msg.movimiento === 'object' ? msg.movimiento : {};
   const monto = Number(m.monto) || 0;
   const base = { accion: 'falta', cuenta: null, proyecto_id: null, facturas: [], comision: null, prestamo_id: null, prestamista: null, tipo: null,
@@ -332,6 +351,7 @@ export function dimeloDeMentira(msg, sistema = '') {
     const n = frase.match(/OPCI[OÓ]N\s+(\d)/);
     return con({ accion: 'banco', opcion: n ? Number(n[1]) : 0, explicacion: 'Lo que ya proponía el banco.' });
   }
+  if (/DEVOLVIERON/.test(frase) && monto > 0) return con({ accion: 'personal', explicacion: 'Te devolvieron algo tuyo: no es un ingreso del negocio.' });
   if (/M[IÍ]O|PERSONAL/.test(frase)) {
     return monto < 0 ? con({ accion: 'personal', explicacion: 'Es tuyo, no de la empresa.' })
                      : con({ accion: 'aporte', tipo: 'prestamo_accionista', explicacion: 'Dinero tuyo que le prestas a la empresa.' });
