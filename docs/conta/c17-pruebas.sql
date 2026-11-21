@@ -1238,7 +1238,7 @@ declare
   v_obt text; m1 uuid; m2 uuid; m3 uuid; m4 uuid; r jsonb; v_c0 text; v_c1 text;
   v_nom text := 'leer: una llamada trae la tarjeta de cada movimiento pendiente (su contraparte y su recomendación), el grupo de un comercio con dos cargos y su recomendación por el nombre, lo que entró solo y lo recordado; y leer y recomendar NO escriben nada';
   v_esp text := 'tarjetas: las 4 | el Zelle a una persona: sin recomendación | la ferretería de marca: gasto 5100 por el nombre | '
-                'el grupo: 2 cargos, gasto 5100 | categorías: 8 | no escribe nada';
+                'el grupo: 2 cargos, gasto 5100 | el lote del banco: 2 cargos del banco, fuera de los grupos | categorías: 8 | no escribe nada';
 begin
   if pg_temp.b17_omitir(25, v_nom, v_esp) then return; end if;
   begin
@@ -1247,18 +1247,25 @@ begin
     m2 := pg_temp.b17_mov('B17-25B', -62.29, 'ACE HARDWARE BDIECISIETE');
     m3 := pg_temp.b17_mov('B17-25C', -40.23, 'ZELLE PAYMENT TO ZZ BDIECISIETE AYUDANTE 99');
     m4 := pg_temp.b17_mov('B17-25D', 800.13, 'ATM CASH DEPOSIT BDIECISIETE');
+    perform pg_temp.b17_mov('B17-25E', -12.17, 'MONTHLY SERVICE FEE BDIECISIETE');
+    perform pg_temp.b17_mov('B17-25F', -15.19, 'MONTHLY SERVICE FEE BDIECISIETE');
     v_c0 := pg_temp.b17_conteos();
     perform pg_temp.b17_ser('dueno');
     r := fn_bandeja_leer();
     perform pg_temp.b17_ser('editor');
     v_c1 := pg_temp.b17_conteos();
-    v_obt := format('tarjetas: %s | el Zelle a una persona: %s | la ferretería de marca: %s | el grupo: %s | categorías: %s | %s',
+    v_obt := format('tarjetas: %s | el Zelle a una persona: %s | la ferretería de marca: %s | el grupo: %s | el lote del banco: %s | categorías: %s | %s',
       case when r->'tarjetas' ?& array[m1::text, m2::text, m3::text, m4::text] then 'las 4' else 'FALTAN' end,
       case when r->'tarjetas'->(m3::text)->'rec' is null then 'sin recomendación' else 'CON: ' || (r->'tarjetas'->(m3::text)->'rec'->>'accion') end,
       format('%s %s por %s', r->'tarjetas'->(m1::text)->'rec'->>'accion', r->'tarjetas'->(m1::text)->'rec'->'datos'->>'cuenta',
              case r->'tarjetas'->(m1::text)->'rec'->>'fuente' when 'nombre' then 'el nombre' else r->'tarjetas'->(m1::text)->'rec'->>'fuente' end),
       (select format('%s cargos, %s %s', g->>'n', g->'rec'->>'accion', g->'rec'->'datos'->>'cuenta')
          from jsonb_array_elements(r->'grupos') g where g->>'clave' = r->'tarjetas'->(m1::text)->>'clave'),
+      coalesce((select format('%s cargos del banco', g->>'n') from jsonb_array_elements(r->'grupos') g where g->>'clave' = 'M:cargo_banco'), 'NO HAY LOTE')
+        || case when exists (select 1 from jsonb_array_elements(r->'grupos') g, jsonb_array_elements_text(g->'movimientos') e
+                              where g->>'clase' <> 'lote'
+                                and e in (select mb.id::text from movimientos_banco mb where mb.id_externo in ('B17-25E', 'B17-25F')))
+                then ', Y TAMBIÉN EN UN GRUPO' else ', fuera de los grupos' end,
       jsonb_array_length(r->'categorias'),
       case when v_c0 = v_c1 then 'no escribe nada' else 'ESCRIBIÓ: ' || v_c1 end);
     raise exception using errcode = 'MXT00';
@@ -1301,8 +1308,10 @@ end $$;
 do $$
 declare
   v_obt text; r jsonb; m1 uuid; m2 uuid; m3 uuid; c_clave constant text := 'C:BDIECISIETE PAPELERIA';
-  v_nom text := 'el grupo decide SOLO lo que la pantalla enseñó: con la lista de movimientos que manda, de tres cargos del mismo comercio entran los dos que enseñó; el tercero (llegó después, o tiene su propia tarjeta) sigue en la Bandeja sin tocar';
-  v_esp text := 'con la lista: 2 hechos | el tercero: pendiente, sin registro';
+  v_nom text := 'el grupo decide SOLO lo que la pantalla enseñó (y el lote de lo que el banco ya reconoce, y los depósitos que c6 solo supone pagos parciales): con la lista de movimientos que manda, de tres cargos del mismo comercio entran los dos que enseñó; el tercero (llegó después, o tiene su propia tarjeta) sigue en la Bandeja sin tocar';
+  v_esp text := 'con la lista: 2 hechos | el tercero: pendiente, sin registro | el lote del banco: 2 hechos a 6130 | '
+                'tres depósitos que el banco supone pagos parciales, como anticipos: 3 hechos';
+  r2 jsonb; r3 jsonb; f1 uuid; f2 uuid; d1 uuid; d2 uuid; d3 uuid;
 begin
   if pg_temp.b17_omitir(27, v_nom, v_esp) then return; end if;
   begin
@@ -1311,9 +1320,27 @@ begin
     m2 := pg_temp.b17_mov('B17-27B', -12.19, 'BDIECISIETE PAPELERIA 77 OCALA FL');
     m3 := pg_temp.b17_mov('B17-27C', -13.23, 'BDIECISIETE PAPELERIA 77 OCALA FL');
     r := pg_temp.b17_grupo(c_clave, 'gasto', '{"cuenta":"6500"}', jsonb_build_object('movimientos', jsonb_build_array(m1, m2)));
-    v_obt := format('con la lista: %s hechos | el tercero: %s, %s', r->>'hechos',
+    f1 := pg_temp.b17_mov('B17-27D', -12.17, 'MONTHLY SERVICE FEE BDIECISIETE');
+    f2 := pg_temp.b17_mov('B17-27E', -15.19, 'MONTHLY SERVICE FEE BDIECISIETE');
+    r2 := pg_temp.b17_grupo('M:cargo_banco', null, '{}', jsonb_build_object('movimientos', jsonb_build_array(f1, f2)));
+    -- tres depósitos del mismo cliente, menores que una factura abierta (c6 los supone pagos parciales): Edgar dice que son anticipos
+    perform pg_temp.b17_factura(-1700027, 'B17-27', 'b17-prueba-a', 9000.17);
+    d1 := pg_temp.b17_mov('B17-27F', 500.13, 'ZELLE PAYMENT FROM ZZ BDIECISIETE GAMMA LLC 111');
+    d2 := pg_temp.b17_mov('B17-27G', 600.17, 'ZELLE PAYMENT FROM ZZ BDIECISIETE GAMMA LLC 222');
+    d3 := pg_temp.b17_mov('B17-27H', 700.19, 'ZELLE PAYMENT FROM ZZ BDIECISIETE GAMMA LLC 333');
+    r3 := pg_temp.b17_grupo('Z<:ZZ BDIECISIETE GAMMA LLC', 'anticipo', '{"proyecto_id":"b17-prueba-b"}',
+                            jsonb_build_object('movimientos', jsonb_build_array(d1, d2, d3)));
+    v_obt := format('con la lista: %s hechos | el tercero: %s, %s | el lote del banco: %s hechos a %s | '
+                    'tres depósitos que el banco supone pagos parciales, como anticipos: %s',
+      r->>'hechos',
       (select mb.estado from movimientos_banco mb where mb.id = m3),
-      case when exists (select 1 from bandeja_hechos h where h.movimiento_id = m3) then 'CON registro' else 'sin registro' end);
+      case when exists (select 1 from bandeja_hechos h where h.movimiento_id = m3) then 'CON registro' else 'sin registro' end,
+      r2->>'hechos',
+      coalesce((select string_agg(distinct l.cuenta, ',') from bandeja_hechos h join asiento_lineas l on l.asiento_id = h.asiento_id
+                 where h.movimiento_id in (f1, f2) and l.cuenta <> pg_temp.b17('banco')), '?'),
+      case when (r3->>'hechos')::int = 3 then '3 hechos'
+           else format('%s hechos (%s; los motivos de c6: %s)', r3->>'hechos', left(coalesce(r3->'quedan'->0->>'por_que', ''), 160),
+                       (select string_agg(mb.propuesta->>'motivo', ',') from movimientos_banco mb where mb.id in (d1, d2, d3))) end);
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;

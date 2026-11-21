@@ -1964,7 +1964,7 @@ begin
         'aviso', format('Parece la cuota de un préstamo de %s que todavía no está dado de alta en Contabilidad. Hasta que se dé de alta (una vez, con su contrato) no se puede repartir entre capital e intereses.',
                         fn_bandeja_prestamista(m.desc_norm)->>'prestamista'));
     else
-      select p.id, p.propuesta into q
+      select p.id, p.propuesta, p.fuente into q
         from contador_propuestas p
        where p.movimiento_id = m.id and p.estado = 'pendiente'
        order by p.creado_el desc limit 1;
@@ -1989,7 +1989,8 @@ begin
                                     (select string_agg('«' || fn_bandeja_cuenta_llana(l->>'cuenta') || '»', ' y ' order by n)
                                        from jsonb_array_elements(q.propuesta->'lineas') with ordinality as t(l, n)),
                                     fn_bandeja_usd(abs(m.monto))) end,
-          'porque', 'Lo propone la IA' || coalesce(': ' || nullif(left(q.propuesta->>'motivo', 240), ''), '') || coalesce(' (' || (ob->>'por') || ')', ''),
+          'porque', case q.fuente when 'regla' then 'Por una regla que ya aprendió de ti' when 'edgar' then 'Ya lo habías dicho tú' else 'Lo propone la IA' end
+                    || coalesce(': ' || nullif(left(q.propuesta->>'motivo', 240), ''), '') || coalesce(' (' || (ob->>'por') || ')', ''),
           'pide_obra', case when v_obra and ob is null
                                  and (select k.regla_obra from cuentas k where k.codigo = v_cta) = 'obligatoria' then true end));
       end if;
@@ -2118,7 +2119,10 @@ begin
       r := fn_bandeja_hacer(m.id, 'banco', jsonb_build_object('opcion', 0),
                             jsonb_strip_nulls(jsonb_build_object('fuente', 'grupo', 'motivo', op->>'motivo')));
     else
-      if coalesce(m.propuesta->>'motivo', 'sin_propuesta') not in ('sin_ticket', 'clasificar', 'dudosa', 'sin_propuesta', 'deposito_sin_factura')
+      -- (lo que c6 solo SUPONE de un depósito —un pago parcial, una factura sin su cobro— no es otra explicación: la
+      -- puerta lo guarda igual con sus frenos)
+      if coalesce(m.propuesta->>'motivo', 'sin_propuesta') not in ('sin_ticket', 'clasificar', 'dudosa', 'sin_propuesta', 'deposito_sin_factura',
+                                                                   'deposito_parcial', 'deposito_sin_cobro')
          and nullif(btrim(coalesce(op->>'motivo', '')), '') is null then
         v_quedan := v_quedan || jsonb_build_object('movimiento_id', m.id,
                                                    'por_que', 'Para este el banco tiene otra explicación: míralo aparte.');
@@ -2712,7 +2716,8 @@ begin
                                  then true end)));
     v_lista := v_lista || jsonb_build_object('id', m.id, 'monto', m.monto, 'clave', c->>'clave', 'nombre', c->>'nombre', 'clase', c->>'clase',
                                              'motivo', coalesce(m.propuesta->>'motivo', 'sin_propuesta'), 'acc', rec->>'accion',
-                                             'cta', rec->'datos'->>'cuenta', 'pide', rec->'pide', 'pm', rec->'pide_motivo');
+                                             'cta', rec->'datos'->>'cuenta', 'pide', rec->'pide', 'pm', rec->'pide_motivo',
+                                             'av', case when rec ? 'aviso' then true end);
   end loop;
   -- LOS GRUPOS: dos o más pendientes de la misma contraparte. La recomendación del grupo: lo que Edgar ya dijo, lo que sugiere
   -- el nombre, o lo que la IA propone para la mayoría (seis de cada diez con la misma cuenta).
@@ -2743,6 +2748,8 @@ begin
                                  mode() within group (order by x->>'cta') as cta
                             from jsonb_array_elements(v_lista) x
                            where x->>'clave' is not null and x->>'clase' in ('comercio', 'zelle_a', 'zelle_de', 'deposito', 'procesador')
+                             -- (lo que el banco ya reconoce va en su lote; lo que se contesta en otra parte no entra en un grupo)
+                             and x->>'acc' is distinct from 'banco' and x->>'av' is null
                            group by x->>'clave'
                           having count(*) >= 2) b) a) z;
   -- (el texto llano de la recomendación de cada grupo)
@@ -2769,7 +2776,7 @@ begin
                                                               'texto', 'El banco ya los reconoce: se registran todos como propone.')) as g
             from jsonb_array_elements(v_lista) x
            where x->>'motivo' in ('interes_tarjeta', 'cargo_banco', 'interes', 'cuota_prestamo') and x->>'acc' = 'banco'
-             and x->'pide' is null and x->'pm' is null
+             and x->>'pide' is null and x->>'pm' is null
            group by x->>'motivo'
           having count(*) >= 2) z;
   return jsonb_build_object(
