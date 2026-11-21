@@ -63,7 +63,13 @@
 --                      balance —las utilidades retenidas con el resultado
 --                      del año y las distribuciones— con su conciliación
 --                      M-2; el año que la app no lleva entero se dice arriba
---                      —PARTIAL YEAR—; y el 1125-A trae su línea 1.)
+--                      —PARTIAL YEAR—; y el 1125-A trae su línea 1.
+--                      Tercera vuelta, marca 2026112103: las comidas —que
+--                      los libros llevan al 100 %— se avisan arriba y en su
+--                      línea con la mitad que no se deduce; y en un año
+--                      parcial el M-2 no dice «saldo al inicio del año: 0»:
+--                      dice que ese saldo no está en este sistema y cuál fue
+--                      el de apertura.)
 --   fn_fiscal_forma, fn_fiscal_cuenta   lo que se cambia, con rastro de
 --                      quién y cuándo.
 --   fn_fiscal_control, fn_fiscal_pegado
@@ -142,7 +148,7 @@ end $$;
 create or replace function public.fn_fiscal_version() returns bigint
 language sql immutable
 set search_path = public, pg_temp
-as $$ select 2026112102::bigint $$;
+as $$ select 2026112103::bigint $$;
 revoke execute on function public.fn_fiscal_version() from public, anon, service_role;
 grant  execute on function public.fn_fiscal_version() to authenticated;
 comment on function public.fn_fiscal_version() is 'c18: la marca de la versión pegada de c18-fiscal.sql.';
@@ -644,6 +650,18 @@ comment on function public.fn_fiscal_leer() is 'c18: lo que la pantalla necesita
 --   · EL 1125-A lleva su línea 1 (el inventario al inicio) y «Purchases» es
 --     lo comprado: el material gastado más lo que subió el inventario; así
 --     1 + 2 + 3 + 5 − 7 es el costo de ventas de los libros (form_1125a_check).
+-- (Tercera vuelta, 21-nov)
+--   · LAS COMIDAS (6350) van a su línea de «otras deducciones» al 100 % de
+--     los libros, y solo la mitad se deduce: copiada tal cual, la línea
+--     deducía de más. El resumen sigue siendo «según libros» (no hace
+--     ajustes fiscales), pero ya no lo calla: la cuenta lleva en su línea lo
+--     deducible y lo que no (deductible, nondeductible, note) y un aviso
+--     arriba dice cuánto va al Schedule M-1, línea 5c (o al K, línea 16c).
+--   · EL M-2 DE UN AÑO PARCIAL decía «Balance at beginning of year: 0» y
+--     metía el saldo de apertura como «otros aumentos». El saldo al 1 de
+--     enero no está en este sistema: el renglón lo dice, y el de los asientos
+--     directos se llama por lo que es (el saldo de apertura traído del
+--     sistema anterior, que incluye el resultado de enero al arranque).
 create or replace function public.fn_fiscal_paquete(p_anio int, p_forma text default null) returns jsonb
 language plpgsql stable
 set search_path = public, pg_temp
@@ -671,6 +689,8 @@ declare
   v_cogsb  numeric;
   v_chk    jsonb;
   v_lret   text;
+  v_meals  numeric;
+  v_mded   numeric;
 begin
   perform fn_fiscal_exigir_dueno();
   if current_user = 'service_role' then
@@ -721,6 +741,10 @@ begin
     from v_balance_general g
     left join v_fiscal_cuentas v on v.codigo = g.cuenta
    where g.periodo = v_per;
+  -- EL AÑO PARCIAL: desde cuándo lleva la app el libro de ese año
+  select coalesce(min(r.acumulado_desde), make_date(p_anio, 1, 1)) into v_desde from v_resultados r where r.periodo = v_per;
+  v_desde := greatest(v_desde, make_date(p_anio, 1, 1));
+  v_parc := v_desde > make_date(p_anio, 1, 1);
   -- el resumen por línea del formulario: lo del año de las cuentas de resultados (en su signo de presentación: un ingreso y un
   -- gasto, en positivo) y el saldo al cierre de las de balance (un activo en positivo; un pasivo y el capital, en positivo)
   with mov as (
@@ -744,6 +768,23 @@ begin
    where l.forma = v_forma
      -- (las utilidades retenidas no son el saldo del mayor de la 3900: van abajo, del balance de c4)
      and l.linea <> case v_forma when '1120' then 'L25' else 'L24' end;
+  -- LAS COMIDAS (6350): en los libros, al 100 %; se deduce la mitad. En su línea, la cuenta dice cuánto de cada cosa
+  select (a->>'amount')::numeric into v_meals
+    from jsonb_array_elements(v_tax) t, jsonb_array_elements(t->'accounts') a where a->>'account' = '6350' limit 1;
+  if coalesce(v_meals, 0) <> 0 then
+    v_mded := round(v_meals / 2, 2);
+    select jsonb_agg(case when exists (select 1 from jsonb_array_elements(y.t->'accounts') a where a->>'account' = '6350')
+                          then jsonb_set(y.t, '{accounts}',
+                                 (select jsonb_agg(case when x.a->>'account' = '6350'
+                                                        then x.a || jsonb_build_object('deductible', v_mded, 'nondeductible', v_meals - v_mded,
+                                                               'note', format('Booked at 100%%; only 50%% is deductible. Nondeductible half (%s): %s.', v_meals - v_mded,
+                                                                              case v_forma when '1120' then 'Schedule M-1, line 5c' else 'Schedule K, line 16c' end))
+                                                        else x.a end order by x.n)
+                                    from jsonb_array_elements(y.t->'accounts') with ordinality as x(a, n)))
+                          else y.t end order by y.n)
+      into v_tax
+      from jsonb_array_elements(v_tax) with ordinality as y(t, n);
+  end if;
   -- EL CAPITAL DEL SCHEDULE L, como el balance de c4: sus renglones del capital al cierre del año. Las utilidades retenidas son
   -- todo el capital que no es capital social ni aportaciones (la 3900, los resultados de años anteriores, el del año y, restando,
   -- las distribuciones): así las líneas L de activo son las de pasivo y capital cuando el balance de c4 cuadra
@@ -797,15 +838,22 @@ begin
     'beginning', (v_cap->>'total')::numeric - (v_cap->>'stock')::numeric - (v_cap->>'paid_in')::numeric
                  - (v_cap->>'net_income')::numeric + (v_m2->>'dist')::numeric - (v_m2->>'otros')::numeric);
   v_m2 := v_m2 || jsonb_build_object('rows', jsonb_build_array(
+    -- (año parcial: el saldo al 1 de enero no está en este sistema; un «0» con ese rótulo no es verdad)
     jsonb_build_object('line', case v_forma when '1120' then 'M-2 1' else 'RE 1' end,
                        'label', case v_forma when '1120' then 'Schedule M-2, line 1 — Balance at beginning of year'
-                                                           else 'Retained earnings per books — beginning of year' end, 'amount', v_m2->'beginning'),
+                                                           else 'Retained earnings per books — beginning of year' end
+                                || case when v_parc then format(' (NOT in this system: the books start on %s; see the prior accounting system)', v_desde)
+                                        else '' end,
+                       'amount', v_m2->'beginning'),
     jsonb_build_object('line', case v_forma when '1120' then 'M-2 2' else 'RE 2' end,
                        'label', case v_forma when '1120' then 'Schedule M-2, line 2 — Net income (loss) per books' else 'Net income (loss) per books' end,
                        'amount', v_m2->'net_income'),
     jsonb_build_object('line', case v_forma when '1120' then 'M-2 3' else 'RE 3' end,
-                       'label', case v_forma when '1120' then 'Schedule M-2, line 3 — Other increases (direct entries to retained earnings)'
-                                                           else 'Other changes (direct entries to retained earnings)' end, 'amount', v_m2->'other_changes'),
+                       'label', case when v_parc
+                                     then format('Opening retained earnings carried over from the prior accounting system as of %s (prior years plus results from %s to %s), and other direct entries',
+                                                 v_desde - 1, make_date(p_anio, 1, 1), v_desde - 1)
+                                     when v_forma = '1120' then 'Schedule M-2, line 3 — Other increases (direct entries to retained earnings)'
+                                     else 'Other changes (direct entries to retained earnings)' end, 'amount', v_m2->'other_changes'),
     jsonb_build_object('line', case v_forma when '1120' then 'M-2 5a' else 'K16d' end,
                        'label', case v_forma when '1120' then 'Schedule M-2, line 5a — Distributions: cash'
                                                            else 'Distributions (Schedule K, line 16d)' end, 'amount', v_m2->'distributions'),
@@ -866,10 +914,6 @@ begin
     into v_chk
     from jsonb_array_elements(v_cogs) t;
   v_chk := v_chk || jsonb_build_object('matches', (v_chk->>'line_8_cost_of_goods_sold')::numeric = v_cogsb);
-  -- EL AÑO PARCIAL: desde cuándo lleva la app el libro de ese año
-  select coalesce(min(r.acumulado_desde), make_date(p_anio, 1, 1)) into v_desde from v_resultados r where r.periodo = v_per;
-  v_desde := greatest(v_desde, make_date(p_anio, 1, 1));
-  v_parc := v_desde > make_date(p_anio, 1, 1);
   -- EL AÑO QUE LA APP NO LLEVA (anterior a su libro, o que todavía no existe): el paquete sale vacío, y lo dice; ceros con el
   -- título de un cierre de año no son el cierre de ese año
   v_hay := exists (select 1 from periodos p where p.tipo = 'anio' and p.anio = p_anio);
@@ -882,6 +926,11 @@ begin
   if v_parc then
     v_avisos := v_avisos || format('PARTIAL YEAR: the books in this system start on %s (opening balances as of %s, carried over from the prior accounting system). The income statement and the tax-line amounts cover %s to %s only; activity from %s to %s is in the prior system (QuickBooks) and is NOT included here.',
                                    v_desde, v_desde - 1, v_desde, make_date(p_anio, 12, 31), make_date(p_anio, 1, 1), v_desde - 1);
+  end if;
+  if coalesce(v_meals, 0) <> 0 then
+    v_avisos := v_avisos || format('MEALS: account 6350 (%s for the period) is included in %s at 100%% of the book amount. Only 50%% is deductible: the nondeductible half (%s) belongs on %s. This summary makes no tax adjustments.',
+                                   v_meals, case v_forma when '1120' then 'line 26' else 'line 20' end, v_meals - v_mded,
+                                   case v_forma when '1120' then 'Form 1120, Schedule M-1, line 5c' else 'Form 1120-S, Schedule K, line 16c' end);
   end if;
   if not cfg.confirmada then
     v_avisos := v_avisos || format('ENTITY TYPE PENDING CONFIRMATION: this package uses Form %s (%s). The corporation''s IRS notice CP 575 assigns Form 1120 (C corporation); an S election (Form 2553) has not been confirmed for this entity. Please confirm which form applies before relying on the tax-line summary; the line mapping for the other form is available on request.',
@@ -938,7 +987,7 @@ begin
 end $$;
 revoke execute on function public.fn_fiscal_paquete(int, text) from public, anon, service_role;
 grant  execute on function public.fn_fiscal_paquete(int, text) to authenticated;
-comment on function public.fn_fiscal_paquete(int, text) is 'c18: el paquete de fin de año en inglés para el CPA: la balanza, el estado de resultados, el balance general y el resumen por línea del Form 1120 o del 1120-S (con el capital del Schedule L como el balance de c4 y la conciliación de utilidades retenidas) y el 1125-A (con su línea 1), con el plan de cuentas mapeado a las dos formas y sus avisos (el año parcial, el tipo de entidad pendiente de confirmar). Sale de las vistas de c4; solo lee; no calcula el impuesto.';
+comment on function public.fn_fiscal_paquete(int, text) is 'c18: el paquete de fin de año en inglés para el CPA: la balanza, el estado de resultados, el balance general y el resumen por línea del Form 1120 o del 1120-S (con el capital del Schedule L como el balance de c4 y la conciliación de utilidades retenidas) y el 1125-A (con su línea 1), con el plan de cuentas mapeado a las dos formas y sus avisos (el año parcial, las comidas que solo se deducen a la mitad, el tipo de entidad pendiente de confirmar). Sale de las vistas de c4; solo lee; no calcula el impuesto.';
 
 
 -- ---------------------------------------------------------------------

@@ -90,7 +90,7 @@ insert into _f18 values ('antes', pg_temp.f18_conteos());
 do $$
 declare
   v_obt text;
-  v_esp text := 'nada falta | 3 tablas con RLS | 1 vista | funciones sin comentario c18: ninguna | ninguna SECURITY DEFINER | configuración: 1 fila | marca 2026112102';
+  v_esp text := 'nada falta | 3 tablas con RLS | 1 vista | funciones sin comentario c18: ninguna | ninguna SECURITY DEFINER | configuración: 1 fila | marca 2026112103';
 begin
   begin
     perform pg_temp.f18_ser('editor');
@@ -331,11 +331,12 @@ end $$;
 -- 8. EL PAQUETE.
 do $$
 declare
-  v_obt text; p0 jsonb; p1 jsonb; s0 jsonb; s1 jsonb; a text; b text; c text; d text; e text; f text; g text;
+  v_obt text; p0 jsonb; p1 jsonb; s0 jsonb; s1 jsonb; a text; b text; c text; d text; e text; f text; g text; h text; p2 jsonb; s2 jsonb; v_m0 numeric;
   v_anio int := extract(year from pg_temp.f18('d')::date)::int;
   v_esp text := 'en inglés (título, categorías, cuentas) | 1120: otros ingresos +500.00 a la 10, la gasolina +100.00 a la 26, la multa +25.00 a M-1, lo personal +40.00 a M-2 5a | '
                 '1120-S: +500.00 a la 5, +100.00 a la 20, +25.00 a K16c, +40.00 a K16d | 1125-A: el material en bodega +200.00 a la 7 | la balanza cuadra | '
-                'sin confirmar: avisa del tipo de entidad | confirmada: ya no avisa';
+                'sin confirmar: avisa del tipo de entidad | confirmada: ya no avisa | '
+                'las comidas: en su línea al 100 %, con la mitad que no se deduce dicha en la cuenta y arriba (M-1 5c; en el 1120-S, K16c)';
 begin
   if exists (select 1 from fiscal_cuentas f where f.fijada and f.codigo in ('4900', '6300', '7920', '3200', '1300')) then
     insert into _pruebas values (8, 'EL PAQUETE', v_esp, 'omitida: alguna de las cuentas de la prueba tiene su línea cambiada a mano (fijada)', null);
@@ -380,15 +381,35 @@ begin
     perform fn_fiscal_forma('{"confirmada": true}');
     g := case when not exists (select 1 from jsonb_array_elements_text(fn_fiscal_paquete(v_anio)->'warnings') w where w ~ 'PENDING CONFIRMATION')
                    and (fn_fiscal_paquete(v_anio)->'entity'->>'confirmed')::boolean then 'ya no avisa' else 'SIGUE avisando' end;
+    -- LAS COMIDAS: 80.00 más en la 6350 (lo que ya tuviera el año, más eso)
     perform pg_temp.f18_ser('editor');
-    v_obt := format('%s | %s | %s | %s | %s | sin confirmar: %s | confirmada: %s', a, b, c, d, e, f, g);
+    v_m0 := coalesce((select (x->>'ending')::numeric - (x->>'beginning')::numeric from jsonb_array_elements(p1->'trial_balance') x where x->>'account' = '6350'), 0);
+    perform fn_postear(jsonb_build_object('fecha', pg_temp.f18('d'), 'descripcion', 'c18-pruebas: una comida (se deshace)',
+      'lineas', jsonb_build_array(jsonb_build_object('cuenta', '6350', 'monto', '80.00'), jsonb_build_object('cuenta', '1010', 'monto', '-80.00'))));
+    perform pg_temp.f18_ser('dueno');
+    p2 := fn_fiscal_paquete(v_anio);
+    s2 := fn_fiscal_paquete(v_anio, '1120-S');
+    h := case when pg_temp.f18_linea(p2, 'tax_lines', '26') - pg_temp.f18_linea(p1, 'tax_lines', '26') = 80.00
+                   and exists (select 1 from jsonb_array_elements(p2->'tax_lines') t, jsonb_array_elements(t->'accounts') x
+                                where t->>'line' = '26' and x->>'account' = '6350' and (x->>'amount')::numeric = v_m0 + 80.00
+                                  and (x->>'deductible')::numeric = round((v_m0 + 80.00) / 2, 2)
+                                  and (x->>'deductible')::numeric + (x->>'nondeductible')::numeric = v_m0 + 80.00 and x->>'note' ~ 'Schedule M-1, line 5c')
+                   and exists (select 1 from jsonb_array_elements_text(p2->'warnings') w
+                                where w ~ '^MEALS: account 6350' and w ~ 'line 26 at 100%' and w ~ 'Schedule M-1, line 5c' and w ~ ((v_m0 + 80.00) - round((v_m0 + 80.00) / 2, 2))::text)
+                   and exists (select 1 from jsonb_array_elements(s2->'tax_lines') t, jsonb_array_elements(t->'accounts') x
+                                where t->>'line' = '20' and x->>'account' = '6350' and x->>'note' ~ 'Schedule K, line 16c')
+                   and exists (select 1 from jsonb_array_elements_text(s2->'warnings') w where w ~ '^MEALS: account 6350' and w ~ 'Schedule K, line 16c')
+              then 'en su línea al 100 %, con la mitad que no se deduce dicha en la cuenta y arriba (M-1 5c; en el 1120-S, K16c)'
+              else 'NO: ' || left(coalesce((select string_agg(w, ' // ') from jsonb_array_elements_text(p2->'warnings') w where w ~ 'MEALS'), 'sin aviso'), 300) end;
+    perform pg_temp.f18_ser('editor');
+    v_obt := format('%s | %s | %s | %s | %s | sin confirmar: %s | confirmada: %s | las comidas: %s', a, b, c, d, e, f, g, h);
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
     when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
   perform pg_temp.f18_ser('editor');
-  insert into _pruebas values (8, 'EL PAQUETE de fin de año: en inglés; lo que se postea en el año aparece en su línea del Form 1120 y, pedido para el 1120-S, en la del 1120-S (otros ingresos, la gasolina, una multa no deducible, lo personal) y el material en bodega en el 1125-A; la balanza cuadra; avisa arriba del tipo de entidad mientras no esté confirmado, y deja de avisar al confirmarlo',
+  insert into _pruebas values (8, 'EL PAQUETE de fin de año: en inglés; lo que se postea en el año aparece en su línea del Form 1120 y, pedido para el 1120-S, en la del 1120-S (otros ingresos, la gasolina, una multa no deducible, lo personal) y el material en bodega en el 1125-A; la balanza cuadra; avisa arriba del tipo de entidad mientras no esté confirmado, y deja de avisar al confirmarlo. LAS COMIDAS (6350) van a su línea al 100 % de los libros y solo la mitad se deduce: la cuenta lo dice en su línea (lo deducible, lo que no, y a dónde va) y un aviso lo dice arriba',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
@@ -486,7 +507,7 @@ begin
   -- el primer año que la app lleva, y desde qué día; y un año posterior que ya esté en los períodos (entero)
   select extract(year from min(p.desde))::int, min(p.desde) into v_a1, v_d from periodos p where p.tipo = 'mes';
   select min(p.anio) into v_a2 from periodos p where p.tipo = 'anio' and p.anio > v_a1;
-  v_esp := case when v_d > make_date(v_a1, 1, 1) then 'el primer año: parcial, desde el arranque del libro, dicho arriba y sin «Year-End»'
+  v_esp := case when v_d > make_date(v_a1, 1, 1) then 'el primer año: parcial, desde el arranque del libro, dicho arriba y sin «Year-End»; su M-2 no dice «saldo al inicio: 0» a secas'
                 else 'el primer año: entero (el libro empieza el 1 de enero)' end
            || ' | ' || case when v_a2 is null then 'no hay otro año en los períodos' else 'un año entero: «Year-End», sin aviso de parcial' end
            || ' | un año de antes del libro: vacío, dicho arriba y sin «Year-End»';
@@ -497,7 +518,12 @@ begin
                 case when (p1->>'partial_year')::boolean and (p1->>'period_start')::date = v_d and p1->>'title' !~ 'Year-End'
                           and p1->>'title' ~ 'partial year' and p1->'warnings'->>0 ~ ('^PARTIAL YEAR: the books in this system start on ' || v_d::text)
                           and p1->'warnings'->>0 ~ 'NOT included'
-                     then 'el primer año: parcial, desde el arranque del libro, dicho arriba y sin «Year-End»'
+                          -- (el M-2: el saldo al 1 de enero no está en este sistema, y el de apertura se llama por lo que es)
+                          and exists (select 1 from jsonb_array_elements(p1->'retained_earnings'->'rows') x
+                                       where x->>'line' in ('M-2 1', 'RE 1') and x->>'label' ~ ('NOT in this system: the books start on ' || v_d::text))
+                          and exists (select 1 from jsonb_array_elements(p1->'retained_earnings'->'rows') x
+                                       where x->>'line' in ('M-2 3', 'RE 3') and x->>'label' ~ ('^Opening retained earnings carried over from the prior accounting system as of ' || (v_d - 1)::text))
+                     then 'el primer año: parcial, desde el arranque del libro, dicho arriba y sin «Year-End»; su M-2 no dice «saldo al inicio: 0» a secas'
                      else 'el primer año: NO LO DICE (' || left(p1->>'title', 80) || ' · ' || left(coalesce(p1->'warnings'->>0, ''), 80) || ')' end
               else case when not (p1->>'partial_year')::boolean and p1->>'title' ~ '^Year-End' then 'el primer año: entero (el libro empieza el 1 de enero)'
                         else 'el primer año: DICE PARCIAL SIN SERLO' end end;
@@ -507,6 +533,7 @@ begin
       p2 := fn_fiscal_paquete(v_a2);
       b := case when not (p2->>'partial_year')::boolean and p2->>'title' ~ '^Year-End Accounting Package' and (p2->>'period_start')::date = make_date(v_a2, 1, 1)
                      and not exists (select 1 from jsonb_array_elements_text(p2->'warnings') w where w ~ 'PARTIAL YEAR')
+                     and not exists (select 1 from jsonb_array_elements(p2->'retained_earnings'->'rows') x where x->>'label' ~ '(NOT in this system|Opening retained earnings)')
                 then 'un año entero: «Year-End», sin aviso de parcial' else 'un año entero: DICE PARCIAL' end;
     end if;
     -- un año que la app no lleva (el anterior al primero): ceros, pero dicho
@@ -521,7 +548,7 @@ begin
   exception when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
   perform pg_temp.f18_ser('editor');
-  insert into _pruebas values (11, 'EL AÑO PARCIAL: si el libro de la app empieza dentro del año (2026: el 1 de octubre; de enero a septiembre está QuickBooks), el paquete NO presenta esos meses como el año: «partial_year», el período desde el arranque del libro, el título sin «Year-End» y el PRIMER aviso («PARTIAL YEAR…: … is NOT included here»); un año que la app lleva entero sale como siempre; y un año que la app NO lleva (de antes de su libro) sale vacío diciéndolo («in_books» en falso, «NO BOOKS FOR…»), no como un cierre en ceros',
+  insert into _pruebas values (11, 'EL AÑO PARCIAL: si el libro de la app empieza dentro del año (2026: el 1 de octubre; de enero a septiembre está QuickBooks), el paquete NO presenta esos meses como el año: «partial_year», el período desde el arranque del libro, el título sin «Year-End» y el PRIMER aviso («PARTIAL YEAR…: … is NOT included here»); y su conciliación de utilidades retenidas (M-2) no dice «saldo al inicio del año: 0» a secas (ese saldo no está en este sistema: el renglón lo dice, y el saldo de apertura se llama por lo que es); un año que la app lleva entero sale como siempre; y un año que la app NO lleva (de antes de su libro) sale vacío diciéndolo («in_books» en falso, «NO BOOKS FOR…»), no como un cierre en ceros',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
