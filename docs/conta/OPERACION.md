@@ -184,6 +184,25 @@ arriba.
 - El «Dímelo» (c17): `begin; select set_config('mx_bandeja.escribe', 'bandeja_config', true); update bandeja_config set dimelo = false where id = 1; commit;`
   (la caja desaparece de las tarjetas; «Así es» y «Más opciones» siguen). Su
   gasto cuenta contra el tope del contador (c8, acción `contador_dimelo`).
+- Qué sale hacia la IA con el «Dímelo» (c17): la descripción y la nota del
+  banco de ESE movimiento, la frase que Edgar escribe, los números y los
+  montos de hasta cuarenta facturas por cobrar, y los NOMBRES de las obras, de
+  sus clientes, de la cuadrilla y de los subcontratistas (sin ellos no puede
+  decir de quién es un pago), más lo que Edgar ya enseñó de cada comercio.
+  Antes de salir todo pasa por la máscara (`fn_bandeja_sin_datos`: correos,
+  teléfonos, números de cuenta y de tarjeta, SSN, ITIN y EIN salen tapados), y
+  la frase queda guardada ya tapada. Lo que la IA contesta no registra nada:
+  es una propuesta que la base valida y Edgar aprueba.
+- El recibo que llega después de registrar su cargo (c17): la rutina lo cambia
+  sola si no hay duda, y si la hay lo deja arriba en la Bandeja con sus dos
+  botones. Cuántos esperan: `select * from v_bandeja_control where orden = 65;`.
+  El control del banco los dice en rojo («ningún ticket después de
+  clasificar») hasta que Edgar conteste: es lo esperado, y la Bandeja y el
+  Resumen siguen pintando.
+- Las tarifas de los procesadores de tarjetas (c17), con las que se casa un
+  depósito neto con sus facturas: `select tarifas from bandeja_config;`. Las
+  que Edgar confirma con un lote («Así es») quedan marcadas (`veces`) y son
+  las que se usan desde entonces para ese procesador.
 - Si hiciera falta quitar la Bandeja nueva entera sin tocar datos:
   `drop function if exists public.fn_bandeja_leer(jsonb);` (la app vuelve a la
   Bandeja de antes; lo registrado no cambia). Para volver, se pega c17 otra
