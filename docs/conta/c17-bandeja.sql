@@ -1,7 +1,7 @@
 -- =====================================================================
 -- c17-bandeja.sql — LA BANDEJA NUEVA (Fase 7, «Dímelo con tus palabras»).
--- 21-nov-2026 (segunda vuelta, tras la revisión: marca 2026112102). Se pega
--- en el SQL Editor de Supabase DESPUÉS de c1…c16 (pide c1, c2, c3, c6 y c8;
+-- 21-nov-2026 (tercera vuelta, tras la segunda revisión: marca 2026112103).
+-- Se pega en el SQL Editor de Supabase DESPUÉS de c1…c16 (pide c1, c2, c3, c6 y c8;
 -- c10 y lo demás, si están, se usan). No cambia ninguna capa anterior: no
 -- toca sus tablas, sus funciones ni sus permisos; todo lo de aquí se llama
 -- bandeja_*, fn_bandeja_* y v_bandeja_*.
@@ -35,8 +35,12 @@
 --     instrucciones: van en el mensaje, no en las instrucciones (tampoco lo
 --     ya recordado, que lleva el nombre que escribió el banco), y todo pasa
 --     antes por la máscara (fn_bandeja_sin_datos: la de c8 —correos,
---     teléfonos, números de cuenta— y además una tarjeta escrita en grupos,
---     un SSN o un ITIN, un EIN y un teléfono de siete dígitos).
+--     teléfonos, números de cuenta— y además el número que va detrás de la
+--     palabra que dice lo que es —cuenta, tarjeta, ssn…—, una tarjeta
+--     escrita en grupos, un SSN o un ITIN, un EIN y un teléfono de siete
+--     dígitos; el nombre de quien paga por Zelle sale de la descripción ya
+--     tapada: a veces es un correo). Lo que la IA escribe y Edgar va a leer
+--     se guarda sin enlaces.
 --   · UN MOTIVO NO SE INVENTA NI SE HEREDA. Las puertas de c6 frenan lo que
 --     puede estar dos veces en el libro o va a donde no debe («si de verdad
 --     es otra cosa, dilo en el motivo»): para c6, un motivo escrito es «lo
@@ -48,6 +52,11 @@
 --     siempre) solo se usa después de ENSAYAR la puerta sin motivo
 --     (fn_bandeja_ensayo); y una opción de c6 se registra solo si sigue
 --     siendo la que se enseñó (su huella), no la que hoy ocupe su número.
+--     Y ESTA CAPA TIENE SU PROPIO FRENO: cuando el banco mismo dice que un
+--     depósito lo pone un prestamista, o el propio Edgar, cualquier
+--     respuesta que lo trate como dinero de un cliente (el cobro de una
+--     factura, un anticipo, un ingreso, el botón del banco que cobra) frena
+--     igual, con su huella, venga de la lista, de la IA o de un botón.
 --   · NADA INSEGURO ENTRA SOLO. Solo entra solo un CARGO de un comercio con
 --     una regla que Edgar puso con «que entre solo», de algo personal o de un
 --     gasto que NO LLEVA OBRA, hasta el tope de bandeja_config.solo_tope,
@@ -57,7 +66,11 @@
 --     retiro de cajero, la nómina, un traspaso o un préstamo NUNCA entran
 --     solos por esta capa: solo se proponen. (Los Zelle a la cuadrilla los
 --     registra c10 con sus propias reglas, si Edgar las tiene encendidas:
---     «la cuadrilla, sola»; esta capa no los toca.)
+--     «la cuadrilla, sola»; esta capa no los toca.) Lo que Edgar YA contestó
+--     no lo cambia nadie más que él: el recibo que llega después de
+--     registrar su cargo se pregunta (arriba, de un toque), no se cambia
+--     solo. Y deshacer una respuesta apaga «que lo siguiente entre solo» de
+--     ese comercio.
 --
 -- LA LISTA CERRADA (lo que el banco ya sabe registrar; cada una, su puerta):
 --   gasto         un gasto o un costo (o, en un cargo, la compra de un
@@ -66,7 +79,9 @@
 --                 una compra.
 --   personal      un cargo personal pagado desde la empresa: retiro del
 --                 accionista, 3200 (fn_banco_clasificar, con la línea de
---                 esta capa, después del ensayo).
+--                 esta capa, después del ensayo). En un depósito es la
+--                 devolución de algo suyo (baja lo retirado), con su línea
+--                 escrita.
 --   cobro         el cobro de una o varias facturas con saldo en el libro
 --                 (entero, una parte, o su retención), con la comisión del
 --                 procesador si llegó neto y quien deposita ES un procesador
@@ -102,24 +117,36 @@
 --     tiene que ser ÚNICA entre TODAS las facturas con saldo (no entre las
 --     más cercanas): una sola, o el lote de un procesador de tarjetas (hasta
 --     4 facturas) con la comisión que ese procesador cobra de verdad,
---     factura a factura (bandeja_config.tarifas; la que no está en la lista
---     se aprende del primer lote que Edgar confirma). Con dos respuestas
---     posibles no se recomienda ninguna.
+--     factura a factura (bandeja_config.tarifas: todas las de la lista se
+--     prueban siempre, las que Edgar ya confirmó delante; una que no está
+--     se apunta solo de un LOTE de dos facturas o más con un tanto por
+--     ciento limpio, y se puede olvidar). Una comisión que ninguna tarifa
+--     explica no se recomienda («aproximado» cerraba la factura que no
+--     era). Con dos respuestas posibles no se recomienda ninguna. Y el
+--     cobro que YA estaba anotado y espera su depósito va antes que
+--     cualquier factura.
 --   · Al registrar un cobro (también por una opción de c6), Proyectos queda
 --     al día: la factura sin saldo, cobrada (pagada, cobrada_el); la pagada
 --     a cuenta, con su abono; y «Cobrado» de la obra sube lo que haga falta.
---     Deshacer lo devuelve todo a como estaba.
+--     Deshacer deja Proyectos como dice el libro en ese momento (con dos
+--     pagos a cuenta, lo que quede del otro) y le resta a «Cobrado» lo que
+--     ese registro le sumó.
 --   · Un depósito de un prestamista (los de la tabla prestamos, por su
 --     descriptor o su nombre entero, y las marcas corrientes del oficio) se
 --     propone como préstamo ANTES de mirar facturas; el dinero que manda el
---     propio Edgar, como dinero suyo: nunca como el pago de un cliente.
+--     propio Edgar, como dinero suyo: nunca como el pago de un cliente (y
+--     si Edgar contesta que sí lo es, frena: el freno de esta capa).
 --   · Un cargo de un comercio de obra, sin recibo, en un día en que la
 --     cuadrilla reportó horas en UNA sola obra: se PROPONE esa obra.
 --   · El recibo subido a una obra sigue casando su cargo con esa obra por c6
 --     («primero casar»). Y si el recibo llega DESPUÉS de registrar el cargo
---     aquí, lo registrado se cambia solo por el recibo (fn_bandeja_recibos:
---     el gasto queda una vez, en la obra del recibo); si no es inequívoco,
---     la Bandeja lo enseña arriba con «Es su recibo» / «Es otra compra».
+--     aquí, la Bandeja lo enseña arriba con «Es su recibo: cámbialo» (el
+--     gasto queda una vez, en la obra del recibo) / «Es otra compra»: se
+--     contesta de un toque, y nada se cambia solo (fn_bandeja_recibos solo
+--     pide a c6 que lo mire: para c6, un cargo pendiente con un recibo libre
+--     de su monto ES el de ese recibo, y lo cambiado solo no tenía vuelta).
+--   · El pago a la cuadrilla que repartió c10 se deshace por la puerta de
+--     c10 (su reparto queda deshecho).
 --
 -- LAS CATEGORÍAS EN DOS NIVELES (fn_bandeja_categorias): lo que Edgar ve.
 --   Gastos:   Costo de obra · Gastos generales · Otros gastos · Personal
@@ -135,6 +162,25 @@
 -- lo que Edgar dijo que es. La próxima vez SE PROPONE con eso; entra solo
 -- únicamente lo del párrafo «nada inseguro». Una regla nunca fija una obra:
 -- la obra se propone cada vez (la del día de la cuadrilla) o se pregunta.
+-- Un ayuntamiento o un condado cobran cosas distintas con el mismo nombre
+-- (la luz, un permiso): son contrapartes distintas. Y lo recordado de un
+-- comercio no se aplica (ni entra solo) cuando la descripción de ahora
+-- sugiere otra cosa que la de cuando Edgar lo dijo.
+--
+-- CON LA BANDEJA LLENA (tercera vuelta). La API corta cada llamada a los 8
+-- segundos y producción va unas diez veces más despacio que el banco de
+-- pruebas. Por eso:
+--   · fn_bandeja_leer recomienda POR UNIDADES (un grupo de cargos, entero;
+--     lo demás, de uno en uno) y por reloj (2.5 s de fábrica): lo que no dio
+--     tiempo vuelve en «faltan», con su tarjeta «pensando», y la pantalla lo
+--     pide otra vez con {ids} (solo lo pedido se mira). Siempre al menos una
+--     unidad por llamada: avanza.
+--   · decidir un grupo, deshacer una tanda y la rutina que registra sola
+--     cortan por su reloj (3 s) y dicen «sigue»; la pantalla llama otra vez.
+--   · nada de expresiones regulares en lo que se hace por cada tarjeta
+--     (Postgres guarda compiladas solo 32: con más, se recompilaban todas
+--     en cada movimiento).
+-- Lo mide pruebas/conta/c17-volumen.sh con 400 y con 1,000 pendientes.
 --
 -- CÓMO ESTÁ HECHA
 --   · Lo determinista (leer, recomendar, hacer, deshacer, decidir por grupo,
@@ -207,7 +253,8 @@ begin
                  ('proyectos', 'nombre'), ('proyectos', 'cliente'), ('proyectos', 'estado'),
                  ('horas', 'fecha'), ('horas', 'proyecto_id'), ('horas', 'horas'),
                  ('prestamos', 'prestamista'), ('prestamos', 'descriptor'), ('prestamos', 'cuenta'), ('prestamos', 'estado'),
-                 ('tarjetas', 'cuenta'), ('tarjetas', 'activa'), ('perfiles', 'rol'), ('perfiles', 'activo'), ('perfiles', 'nombre'),
+                 ('tarjetas', 'cuenta'), ('tarjetas', 'activa'), ('tarjetas', 'ultimos4'), ('perfiles', 'rol'), ('perfiles', 'activo'),
+                 ('perfiles', 'nombre'), ('recibos', 'contabilizado_en'), ('facturas', 'cobrado'),
                  ('cuentas', 'tipo'), ('cuentas', 'regla_obra'), ('cuentas', 'imputable'), ('cuentas', 'nombre_en'),
                  ('contador_propuestas', 'movimiento_id'), ('contador_propuestas', 'estado'), ('contador_config', 'modelo'),
                  ('asistente_uso', 'accion'), ('asistente_uso', 'costo_centavos')) as x(t, c)
@@ -268,7 +315,7 @@ end $$;
 create or replace function public.fn_bandeja_version() returns bigint
 language sql immutable
 set search_path = public, pg_temp
-as $$ select 2026112102::bigint $$;
+as $$ select 2026112103::bigint $$;
 revoke execute on function public.fn_bandeja_version() from public, anon, service_role;
 grant  execute on function public.fn_bandeja_version() to authenticated;
 comment on function public.fn_bandeja_version() is 'c17: la marca de la versión pegada de c17-bandeja.sql.';
@@ -460,6 +507,18 @@ alter table public.bandeja_config add column if not exists tarifas jsonb not nul
   {"proc": "CLOVER", "pct": 2.6, "fijo": 0.10},  {"proc": "CLOVER", "pct": 3.5, "fijo": 0.10}]'::jsonb;
 alter table public.bandeja_hechos add column if not exists tanda uuid;
 create index if not exists bandeja_hechos_tanda_idx on public.bandeja_hechos (tanda) where tanda is not null;
+-- (21-nov, tercera vuelta)
+--   bandeja_memoria.sugerida   lo que SUGERÍA la descripción del banco del
+--     movimiento con que Edgar enseñó esa regla («gasto|6110»; nulo: nada). Lo
+--     recordado vale para lo que el banco describe como entonces: si la
+--     descripción de ahora sugiere OTRA cosa que la de entonces (la factura de
+--     la luz y el permiso de obra de una misma ciudad, que comparten nombre),
+--     lo recordado no se aplica ni entra solo: se propone por la descripción.
+alter table public.bandeja_memoria add column if not exists sugerida text;
+--   bandeja_memoria.privado    el nombre de esa contraparte sale de un CORREO
+--     (un Zelle a o de «alguien@…»): es de aquí, para reconocer su próximo
+--     movimiento, pero no va a la IA (lo ya enseñado se le manda sin él).
+alter table public.bandeja_memoria add column if not exists privado boolean not null default false;
 do $$
 begin
   if not exists (select 1 from pg_constraint where conname = 'bandeja_config_tarifas' and conrelid = 'public.bandeja_config'::regclass) then
@@ -644,8 +703,16 @@ comment on function public.fn_bandeja_llano(text) is 'c17: un texto de c6 sin je
 -- su frase para Edgar, con lo que importa (qué recibo, qué factura, cuánto)
 -- y sin nombres de funciones ni códigos; el que no se conoce pasa por
 -- fn_bandeja_llano. Es el texto que la tarjeta enseña ANTES de dejar escribir
--- un motivo (ver «EL FRENO», en el apartado 10).
-create or replace function public.fn_bandeja_freno_llano(p text) returns text
+-- un motivo (ver «EL FRENO», en el apartado 10). p_c6: lo que c6 pensaba del
+-- movimiento (el motivo de su propuesta). Con él, el freno de un depósito
+-- dice lo que hay de verdad: c6 frena igual «una factura por ese monto», «un
+-- cobro ya anotado» y «alguna factura mayor que el depósito, por si fuera
+-- una parte» (deposito_parcial), y en producción, con facturas abiertas, lo
+-- último sale en casi todo depósito que no es un cobro (el efectivo del
+-- cajero, dinero de Edgar): decir ahí «hay una factura que explica este
+-- depósito» no era verdad.
+drop function if exists public.fn_bandeja_freno_llano(text);
+create or replace function public.fn_bandeja_freno_llano(p text, p_c6 text default null) returns text
 language plpgsql immutable
 set search_path = public, pg_temp
 as $$
@@ -685,10 +752,19 @@ begin
            'es. Si es el pago de esas facturas, regístralo como su cobro. Si de verdad es un anticipo, escribe por qué.';
   elsif v ~ '(propone un cobro o una factura que explica este depósito|Este depósito lo explica)' then
     m := regexp_match(v, 'la factura #(\S+) \([^)]*\), abierta por ([0-9]+(?:\.[0-9]+)?)');
-    return format('Hay %s que explica este depósito. Si es el pago de un cliente, regístralo como el cobro de esa factura.%s',
+    if m is null and v !~ 'el cobro del' and p_c6 = 'deposito_parcial' then
+      -- (c6 solo SUPONE un pago a cuenta: ninguna factura tiene ese monto)
+      return 'Hay facturas por cobrar mayores que este depósito: podría ser una parte de una de ellas (un pago a cuenta). Si lo es, '
+             'regístralo como el cobro de esa factura.' || c_si;
+    end if;
+    return format('Hay %s que explica este depósito. Si es el pago de un cliente, regístralo como %s.%s',
                   case when m is not null then format('una factura por cobrar (la #%s, por %s)', m[1], fn_bandeja_usd(m[2]::numeric))
-                       when v ~ 'el cobro del' then 'un cobro ya anotado, sin su depósito,'
-                       else 'una factura por cobrar (o un cobro ya anotado)' end, c_si);
+                       when v ~ 'el cobro del' or p_c6 in ('deposito_cobro', 'deposito_cobros', 'deposito_otro_cobro')
+                         then 'un cobro ya anotado, sin su depósito,'
+                       when p_c6 = 'deposito_sin_cobro' then 'una factura por cobrar por ese mismo monto'
+                       else 'una factura por cobrar (o un cobro ya anotado)' end,
+                  case when v ~ 'el cobro del' or p_c6 in ('deposito_cobro', 'deposito_cobros', 'deposito_otro_cobro')
+                       then 'el depósito de ese cobro (está en «Más opciones»)' else 'el cobro de esa factura' end, c_si);
   elsif v ~ 'es del patrimonio del accionista' then
     return 'Es dinero tuyo (lo que sacas de la empresa o pones en ella): escribe en una línea de qué es, para que quede en el libro.'
            || case when v ~ 'este depósito lo explica' then ' Ojo: hay una factura por cobrar por ese mismo monto; si es el pago de un cliente, es su cobro.'
@@ -749,9 +825,9 @@ begin
   end if;
   return coalesce(fn_bandeja_llano(v), 'El banco no lo aceptó.');
 end $$;
-revoke execute on function public.fn_bandeja_freno_llano(text) from public, anon, service_role;
-grant  execute on function public.fn_bandeja_freno_llano(text) to authenticated;
-comment on function public.fn_bandeja_freno_llano(text) is 'c17: lo que dice una puerta de c6 cuando frena, en palabras de Edgar (qué recibo, qué factura, cuánto), sin nombres de funciones ni códigos.';
+revoke execute on function public.fn_bandeja_freno_llano(text, text) from public, anon, service_role;
+grant  execute on function public.fn_bandeja_freno_llano(text, text) to authenticated;
+comment on function public.fn_bandeja_freno_llano(text, text) is 'c17: lo que dice una puerta de c6 cuando frena, en palabras de Edgar (qué recibo, qué factura, cuánto), sin nombres de funciones ni códigos; con lo que c6 pensaba del movimiento (p_c6), el freno de un depósito dice si hay una factura por ese monto, un cobro ya anotado o solo alguna factura mayor.';
 
 
 -- ---------------------------------------------------------------------
@@ -764,14 +840,21 @@ comment on function public.fn_bandeja_freno_llano(text) is 'c17: lo que dice una
 -- un número (el de la tienda), sin lo que el banco pone delante (la forma
 -- de pago —«POS DEBIT», «SQ», «TST»—, la fecha —«11/02»— o el número de la
 -- tarjeta —«XXXXX1234»—), sin la ciudad y el estado del final («ZZ TACOS
--- OCALA FL» → «ZZ TACOS») y con tres palabras como mucho. Un ACH dice quién
--- cobra después de «ORIG CO NAME». Una CADENA conocida es siempre su marca,
--- la tienda que sea («HOME DEPOT WEST PALM» → «HOME DEPOT»; «LOWE'S», que
--- c6 deja en «LOWE S», → «LOWES»). Las tiendas dentro de una plataforma
--- («DOORDASH BURGERKING», «AMZN MKTP») se quedan en la plataforma; las de
--- USO MIXTO llevan qué es («GOOGLE ADS» no es «GOOGLE YOUTUBE» ni
--- «MICROSOFT XBOX» es «MICROSOFT»), y PayPal, la tienda de detrás. Nulo si
--- no queda nada con sentido (una palabra del banco sola: «DEPOSIT»).
+-- OCALA FL» → «ZZ TACOS»), sin la palabra de cómo se paga («VERIZON
+-- WIRELESS AUTOPAY» y «VERIZON WIRELESS PAYMENTS» son «VERIZON WIRELESS»)
+-- y con tres palabras como mucho. Un ACH dice quién cobra después de «ORIG
+-- CO NAME». Una CADENA conocida es siempre su marca, la tienda que sea
+-- («HOME DEPOT WEST PALM» → «HOME DEPOT»; «LOWE'S», que c6 deja en «LOWE
+-- S», → «LOWES»). Las tiendas dentro de una plataforma («DOORDASH
+-- BURGERKING», «AMZN MKTP») se quedan en la plataforma; las de USO MIXTO
+-- llevan qué es («GOOGLE ADS» no es «GOOGLE YOUTUBE» ni «MICROSOFT XBOX» es
+-- «MICROSOFT»), y PayPal, la tienda de detrás. Nulo si no queda nada con
+-- sentido (una palabra del banco sola: «DEPOSIT»).
+-- (Tercera vuelta) SIN EXPRESIONES REGULARES en el camino corriente: Postgres
+-- guarda compiladas solo las 32 últimas, y entre esta función, la
+-- contraparte, el prestamista y lo que sugiere la descripción se usaban más
+-- de cuarenta por movimiento: con la Bandeja llena cada una se volvía a
+-- compilar en cada tarjeta (de 2 a 3 ms por movimiento solo en eso).
 create or replace function public.fn_bandeja_comercio(p text) returns text
 language plpgsql immutable
 set search_path = public, pg_temp
@@ -787,10 +870,13 @@ declare
                                        'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT',
                                        'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC', 'PR'];
   c_sueltas   constant text[] := array['WWW', 'COM', 'NET', 'ORG', 'HTTPS', 'HTTP', 'INC', 'LLC', 'CORP', 'LTD'];
+  -- (cómo se paga, no a quién: detrás del nombre no cuenta; tampoco las siglas de un cobro por ACH)
+  c_ruido     constant text[] := array['AUTOPAY', 'PAYMENT', 'PAYMENTS', 'PMT', 'PMTS', 'PYMT', 'EPAY', 'EPAYMENT', 'BILLPAY', 'PPD', 'CCD', 'ACH',
+                                       'ID'];
   c_genericas constant text[] := array['CHECK', 'CHEQUE', 'CHK', 'ATM', 'DEPOSIT', 'TRANSFER', 'XFER', 'FEE', 'WIRE', 'ZELLE', 'VENMO',
                                        'CASHAPP', 'MOBILE', 'REMOTE', 'CASH', 'COUNTER', 'BRANCH', 'TELLER', 'INTEREST', 'ID', 'REF',
                                        'NUMBER', 'NO', 'PAYMENT', 'PURCHASE', 'DEBIT', 'CREDIT', 'CARD', 'ONLINE', 'WITHDRAWAL',
-                                       'FEDWIRE', 'RTP', 'CHIPS'];
+                                       'FEDWIRE', 'RTP', 'CHIPS', 'THANK', 'AUTOPAY'];
   c_una       constant text[] := array['DOORDASH', 'GRUBHUB', 'INSTACART', 'LYFT', 'AMAZON', 'NETFLIX', 'SPOTIFY', 'KLARNA', 'AFFIRM',
                                        'AFTERPAY', 'APPLE', 'SUNPASS', 'HULU'];
   c_marcas    constant text[] := array['HOME DEPOT', 'LOWES', 'ACE HARDWARE', 'HARBOR FREIGHT', 'NORTHERN TOOL', 'CITY ELECTRIC',
@@ -800,7 +886,9 @@ declare
                                        'MCDONALDS', 'BURGER KING', 'WENDYS', 'CHICK FIL A', 'SUBWAY', 'STARBUCKS', 'DUNKIN', 'TACO BELL',
                                        'CHIPOTLE', 'POLLO TROPICAL', 'AUTOZONE', 'OREILLY', 'ADVANCE AUTO', 'SUNBELT', 'UNITED RENTALS'];
   c_union     constant text[] := array['DE', 'DEL', 'LA', 'LAS', 'LOS', 'EL', 'Y', 'OF', 'AND', 'THE'];
+  c_dig       constant text := '0123456789';
   v  text := upper(btrim(coalesce(p, '')));
+  e  text;
   m  text[];
   w  text[];
   r  text[] := '{}';
@@ -811,19 +899,27 @@ begin
   if v = '' then
     return null;
   end if;
-  m := regexp_match(v, 'ORIG CO NAME (.+?)(?: ORIG ID| CO ENTRY| SEC | DESC | IND ID| IND NAME| TRN |$)');
-  if m is not null then
-    v := m[1];
+  if position('ORIG CO NAME ' in v) > 0 then
+    m := regexp_match(v, 'ORIG CO NAME (.+?)(?: ORIG ID| CO ENTRY| SEC | DESC | IND ID| IND NAME| TRN |$)');
+    if m is not null then
+      v := m[1];
+    end if;
   end if;
+  v := translate(v, '#*&', '   ');
   -- (el apóstrofo que c6 volvió un espacio: «LOWE S» → «LOWES», «MCDONALD S» → «MCDONALDS»)
-  v := regexp_replace(regexp_replace(v, '[#*&]', ' ', 'g'), '\m([A-Z]{3,}) S\M', '\1S', 'g');
-  w := regexp_split_to_array(btrim(v), '\s+');
+  if position(' S ' in v || ' ') > 0 then
+    v := regexp_replace(v, '\m([A-Z]{3,}) S\M', '\1S', 'g');
+  end if;
+  w := array_remove(string_to_array(btrim(v), ' '), '');
   n := coalesce(array_length(w, 1), 0);
+  e := ' ' || v || ' ';
   -- lo que el banco pone delante (la forma de pago, la fecha, el número de la tarjeta), fuera; nunca hasta dejarlo vacío
   while i < n loop
-    if w[i] = any (c_delante) or w[i] ~ '^[0-9]{4,}$' or w[i] ~ '^X+[0-9]+$' then
+    x := w[i];
+    if x = any (c_delante) or (length(x) >= 4 and translate(x, c_dig, '') = '')
+       or (left(x, 1) = 'X' and ltrim(x, 'X') <> '' and translate(ltrim(x, 'X'), c_dig, '') = '') then
       i := i + 1;
-    elsif w[i] ~ '^[0-9]{1,2}$' and w[i + 1] ~ '^[0-9]{1,2}$' and i + 1 < n then
+    elsif length(x) <= 2 and translate(x, c_dig, '') = '' and length(w[i + 1]) <= 2 and translate(w[i + 1], c_dig, '') = '' and i + 1 < n then
       i := i + 2;   -- una fecha: «11 02»
     else
       exit;
@@ -831,8 +927,8 @@ begin
   end loop;
   for j in i .. n loop
     x := w[j];
-    exit when x ~ '[0-9]' and cardinality(r) > 0;
-    continue when x = '' or x = any (c_sueltas);
+    exit when translate(x, c_dig, '') <> x and cardinality(r) > 0;
+    continue when x = any (c_sueltas) or (cardinality(r) > 0 and x = any (c_ruido));
     r := r || x;
     exit when cardinality(r) >= 4;
   end loop;
@@ -846,14 +942,15 @@ begin
   end if;
   if r[1] = 'GOOGLE' then
     -- (por la descripción entera: «GOOGLE ADS1234567» trae el número pegado, y la palabra con números ya no está en el nombre)
-    r := case when v ~ '\mGOOGLE (ADS|ADWORDS|ADSENSE)' then array['GOOGLE', 'ADS']
-              when v ~ '\mGOOGLE YOUTUBE' then array['GOOGLE', 'YOUTUBE']
+    r := case when position(' GOOGLE ADS' in e) > 0 or position(' GOOGLE ADWORDS' in e) > 0 then array['GOOGLE', 'ADS']
+              when position(' GOOGLE YOUTUBE' in e) > 0 then array['GOOGLE', 'YOUTUBE']
               when r[2] in ('WORKSPACE', 'GSUITE', 'STORAGE', 'CLOUD', 'ONE', 'DOMAINS', 'FI', 'PLAY', 'NEST', 'VOICE') then r[1:2]
               else r[1:1] end;
   elsif r[1] = 'MICROSOFT' then
     r := case when 'XBOX' = any (r) then array['MICROSOFT', 'XBOX'] else r[1:1] end;
   elsif r[1] = 'INTUIT' then
-    r := case when v ~ '(QBOOKS|QUICKBOOKS|\mQBO?\M)' then array['INTUIT', 'QUICKBOOKS'] else r[1:1] end;
+    r := case when position('QBOOKS' in e) > 0 or position('QUICKBOOKS' in e) > 0 or position(' QB ' in e) > 0 or position(' QBO ' in e) > 0
+              then array['INTUIT', 'QUICKBOOKS'] else r[1:1] end;
   elsif r[1] = 'PAYPAL' then
     r := r[1:least(3, cardinality(r))];
   elsif r[1] = any (c_una) then
@@ -874,7 +971,7 @@ begin
     end if;
   end if;
   x := array_to_string(r, ' ');
-  if length(x) < 3 or x ~ '^[0-9 ]+$' or r[1] = any (c_genericas) then
+  if length(x) < 3 or translate(x, c_dig || ' ', '') = '' or r[1] = any (c_genericas) then
     return null;
   end if;
   return x;
@@ -889,7 +986,12 @@ comment on function public.fn_bandeja_comercio(text) is 'c17: el nombre del come
 --   zelle_a/_de    un Zelle (o Venmo, Cash App) a alguien o de alguien: la
 --                  clave lleva su nombre como lo escribe el banco.
 --   nomina         lo que c6 reconoce como nómina (Gusto).
---   transferencia  entre cuentas propias, o el pago de una tarjeta.
+--   transferencia  entre cuentas propias, o el pago de una tarjeta. «AUTOPAY»
+--                  y «THANK YOU» solos NO lo son: el cobro automático de la
+--                  luz, del teléfono o del seguro es un gasto de su comercio
+--                  («VERIZON WIRELESS AUTOPAY»). Solo cuando el texto nombra
+--                  una tarjeta (la emisora, o los cuatro últimos de una dada
+--                  de alta), o es el abono que la tarjeta recibe.
 --   procesador     el depósito de un procesador de tarjetas (Intuit,
 --                  Stripe, Square…): junta cobros de clientes.
 --   deposito       cualquier otro depósito, con clave SOLO si dice quién
@@ -901,7 +1003,13 @@ comment on function public.fn_bandeja_comercio(text) is 'c17: el nombre del come
 --   comercio       un cargo de un comercio: la clave es su nombre. Lo que
 --                  un procesador de tarjetas COBRA por sus cobros lleva su
 --                  propia clave («INTUIT COMISIONES»): no es la suscripción
---                  de QuickBooks.
+--                  de QuickBooks. Y UN AYUNTAMIENTO O UN CONDADO cobra cosas
+--                  distintas con el mismo nombre (la luz y el agua, un
+--                  permiso de obra): su clave lleva cuál, cuando la
+--                  descripción lo dice («CITY OF OCALA PERMISOS», «CITY OF
+--                  OCALA SERVICIOS»). Con una sola clave, recordar la
+--                  factura de la luz mandaba los permisos a «Luz, agua y
+--                  servicios» (y, con «que entre solo», sin un toque).
 --   otro           un cargo que no dice de quién.
 -- Solo un «comercio» puede entrar solo (y solo si Edgar lo dijo).
 create or replace function public.fn_bandeja_contraparte(p_desc_norm text, p_memo text, p_monto numeric, p_tipo text, p_cheque text)
@@ -912,43 +1020,72 @@ as $$
 declare
   c_proc constant text := '(?:^| )(INTUIT|QBPAYMENTS|QUICKBOOKS|QB PAYMENTS|STRIPE|SQUARE|SQ|PAYPAL|CLOVER|BANKCARD|MERCHANT|WORLDPAY)(?: |$)';
   v    text := upper(btrim(coalesce(p_desc_norm, '')));
+  e    text;    -- con un espacio a cada lado: «( |^)X( |$)» es « X »
+  t    text;    -- y además sin # ni &: el borde de una palabra es un espacio
   m    text[];
   r    text[] := '{}';
   x    text;
   v_n  text;
+  sg   jsonb;
 begin
-  if coalesce(p_tipo, '') = 'CHECK' or nullif(btrim(coalesce(p_cheque, '')), '') is not null or v ~ '^(CHECK|CHEQUE|CHK)( |$)' then
+  e := ' ' || v || ' ';
+  t := translate(e, '#&', '  ');
+  if coalesce(p_tipo, '') = 'CHECK' or nullif(btrim(coalesce(p_cheque, '')), '') is not null
+     or split_part(v, ' ', 1) in ('CHECK', 'CHEQUE', 'CHK') then
     return jsonb_build_object('clase', 'cheque', 'nombre', 'Cheque' || coalesce(' ' || nullif(btrim(p_cheque), ''), ''));
   end if;
-  if coalesce(p_tipo, '') = 'ATM' or v ~ '(^| )ATM( |$)' or v ~ 'CASH (WITHDRAWAL|DEPOSIT)' then
+  if coalesce(p_tipo, '') = 'ATM' or position(' ATM ' in e) > 0 or position('CASH WITHDRAWAL' in v) > 0 or position('CASH DEPOSIT' in v) > 0 then
     return jsonb_build_object('clase', 'cajero', 'nombre', case when p_monto > 0 then 'Depósito de efectivo' else 'Retiro de cajero' end);
   end if;
-  m := regexp_match(v, '(?:^| )(?:ZELLE|VENMO|CASH ?APP)(?: (?:PAYMENT|TRANSFER|INSTANT|PMT))* (?:TO|FROM) (.+)$');
-  if m is not null or v ~ '(^| )(ZELLE|VENMO)( |$)' then
-    if m is not null then
-      foreach x in array regexp_split_to_array(m[1], '\s+') loop
-        exit when x ~ '[0-9]' or x in ('CONF', 'CONFIRMATION', 'REF', 'ID', 'MEMO', 'JPM', 'BAC', 'WFCT', 'ON', 'FOR', 'VIA');
-        r := r || x;
-        exit when cardinality(r) >= 4;
-      end loop;
+  if position('ZELLE' in v) > 0 or position('VENMO' in v) > 0 or position('CASH' in v) > 0 then
+    m := regexp_match(v, '(?:^| )(?:ZELLE|VENMO|CASH ?APP)(?: (?:PAYMENT|TRANSFER|INSTANT|PMT))* (?:TO|FROM) (.+)$');
+    if m is not null or position(' ZELLE ' in e) > 0 or position(' VENMO ' in e) > 0 then
+      if m is not null then
+        foreach x in array string_to_array(m[1], ' ') loop
+          continue when x = '';
+          exit when translate(x, '0123456789', '') <> x or x in ('CONF', 'CONFIRMATION', 'REF', 'ID', 'MEMO', 'JPM', 'BAC', 'WFCT', 'ON', 'FOR', 'VIA');
+          r := r || x;
+          exit when cardinality(r) >= 4;
+        end loop;
+      end if;
+      v_n := nullif(array_to_string(r, ' '), '');
+      return jsonb_strip_nulls(jsonb_build_object(
+        'clase', case when p_monto < 0 then 'zelle_a' else 'zelle_de' end,
+        'clave', case when v_n is not null then 'Z' || case when p_monto < 0 then '>' else '<' end || ':' || v_n end,
+        -- (el nombre como se escribe: «Zz Alfa Holdings Llc» no; las siglas —LLC, INC, lo que no lleva vocales— se quedan en mayúsculas)
+        'nombre', coalesce((select string_agg(case when z.w in ('LLC', 'INC', 'CORP', 'LLP', 'PLLC', 'LP', 'PA', 'USA', 'DBA')
+                                                        or translate(z.w, 'AEIOUY', '') = z.w then z.w else initcap(z.w) end,
+                                              ' ' order by z.i)
+                              from unnest(r) with ordinality as z(w, i)), 'Zelle')));
     end if;
-    v_n := nullif(array_to_string(r, ' '), '');
-    return jsonb_strip_nulls(jsonb_build_object(
-      'clase', case when p_monto < 0 then 'zelle_a' else 'zelle_de' end,
-      'clave', case when v_n is not null then 'Z' || case when p_monto < 0 then '>' else '<' end || ':' || v_n end,
-      -- (el nombre como se escribe: «Zz Alfa Holdings Llc» no; las siglas —LLC, INC, lo que no lleva vocales— se quedan en mayúsculas)
-      'nombre', coalesce((select string_agg(case when t.w ~ '^(LLC|INC|CORP|LLP|PLLC|LP|PA|USA|DBA)$' or t.w !~ '[AEIOUY]' then t.w else initcap(t.w) end,
-                                            ' ' order by t.i)
-                            from unnest(r) with ordinality as t(w, i)), 'Zelle')));
+    m := null;
   end if;
   if fn_banco_dice_nomina(v, p_memo) then
     return jsonb_build_object('clase', 'nomina', 'nombre', 'Nómina');
   end if;
   if coalesce(p_tipo, '') = 'XFER'
-     or v ~ '(ONLINE TRANSFER|TRANSFER (TO|FROM)|(^| )XFER( |$)|THANK YOU|AUTOPAY|(^| )AMEX( |$)|AMERICAN EXPRESS|CREDIT CA?RD|CARD ?MEMBER SERV)' then
+     or position('ONLINE TRANSFER' in v) > 0 or position('TRANSFER TO' in v) > 0 or position('TRANSFER FROM' in v) > 0
+     or position(' XFER ' in e) > 0 or position(' AMEX ' in e) > 0 or position('AMERICAN EXPRESS' in v) > 0
+     or position('CREDIT CARD' in v) > 0 or position('CREDIT CRD' in v) > 0
+     or position('CARDMEMBER SERV' in v) > 0 or position('CARD MEMBER SERV' in v) > 0 then
     return jsonb_build_object('clase', 'transferencia', 'nombre', 'Entre cuentas');
   end if;
-  m := regexp_match(v, c_proc);
+  -- («AUTOPAY» y «THANK YOU»: el abono que recibe la tarjeta, o un cargo que nombra una tarjeta. El cobro automático de un comercio, no)
+  if (position('THANK YOU' in v) > 0 or position('AUTOPAY' in v) > 0)
+     and (p_monto > 0
+          or position('CHASE CARD' in v) > 0 or position('CAPITAL ONE' in v) > 0 or position('CITI CARD' in v) > 0
+          or position('CITICARD' in v) > 0 or position(' DISCOVER ' in t) > 0 or position('BARCLAY' in v) > 0
+          or position('EPAYMENT' in v) > 0 or position(' CARD ' in t) > 0
+          or exists (select 1 from tarjetas tj
+                      where coalesce(tj.activa, true) and nullif(btrim(coalesce(tj.ultimos4, '')), '') is not null
+                        and position(' ' || tj.ultimos4 || ' ' in t) > 0)) then
+    return jsonb_build_object('clase', 'transferencia', 'nombre', 'Entre cuentas');
+  end if;
+  if position('INTUIT' in v) > 0 or position('QBPAYMENTS' in v) > 0 or position('QUICKBOOKS' in v) > 0 or position('QB PAYMENTS' in v) > 0
+     or position('STRIPE' in v) > 0 or position('SQUARE' in v) > 0 or position(' SQ ' in e) > 0 or position('PAYPAL' in v) > 0
+     or position('CLOVER' in v) > 0 or position('BANKCARD' in v) > 0 or position('MERCHANT' in v) > 0 or position('WORLDPAY' in v) > 0 then
+    m := regexp_match(v, c_proc);
+  end if;
   if m is not null then
     x := case when m[1] in ('INTUIT', 'QBPAYMENTS', 'QUICKBOOKS', 'QB PAYMENTS') then 'INTUIT'
               when m[1] in ('SQUARE', 'SQ') then 'SQUARE'
@@ -974,18 +1111,27 @@ begin
     return jsonb_strip_nulls(jsonb_build_object('clase', 'deposito', 'clave', 'D:' || v_n, 'nombre', coalesce(v_n, 'Depósito')));
   end if;
   -- lo que el procesador COBRA por los cobros con tarjeta: su propia clave
-  if m is not null and v ~ '(\mFEE|DISCOUNT|PROCESSING|\mMERCH)' then
+  if m is not null and (position(' FEE' in t) > 0 or position('DISCOUNT' in v) > 0 or position('PROCESSING' in v) > 0 or position(' MERCH' in t) > 0) then
     return jsonb_build_object('clase', 'comercio', 'clave', 'C:' || x || ' COMISIONES', 'nombre', v_n || ' · comisiones de tarjeta', 'comision', true);
   end if;
   v_n := fn_bandeja_comercio(v);
   if v_n is null then
     return jsonb_build_object('clase', 'otro', 'nombre', 'Sin nombre');
   end if;
+  -- un ayuntamiento o un condado: la clave lleva QUÉ cobra, si la descripción lo dice (un permiso, o la luz y el agua)
+  if position(' CITY OF ' in t) > 0 or position(' COUNTY ' in t) > 0 or position(' TOWN OF ' in t) > 0 or position(' VILLAGE OF ' in t) > 0 then
+    sg := fn_bandeja_sugerida(v);
+    if sg->>'cuenta' = '5400' then
+      return jsonb_build_object('clase', 'comercio', 'clave', 'C:' || v_n || ' PERMISOS', 'nombre', v_n || ' · permisos');
+    elsif sg->>'cuenta' = '6110' then
+      return jsonb_build_object('clase', 'comercio', 'clave', 'C:' || v_n || ' SERVICIOS', 'nombre', v_n || ' · luz y agua');
+    end if;
+  end if;
   return jsonb_build_object('clase', 'comercio', 'clave', 'C:' || v_n, 'nombre', v_n);
 end $$;
 revoke execute on function public.fn_bandeja_contraparte(text, text, numeric, text, text) from public, anon, service_role;
 grant  execute on function public.fn_bandeja_contraparte(text, text, numeric, text, text) to authenticated;
-comment on function public.fn_bandeja_contraparte(text, text, numeric, text, text) is 'c17: la contraparte de un movimiento del banco: {clase (cheque, cajero, zelle_a, zelle_de, nomina, transferencia, procesador, deposito, comercio, otro), clave (el grupo; nula si no dice quién: el canal de un pago no es de nadie), nombre}.';
+comment on function public.fn_bandeja_contraparte(text, text, numeric, text, text) is 'c17: la contraparte de un movimiento del banco: {clase (cheque, cajero, zelle_a, zelle_de, nomina, transferencia, procesador, deposito, comercio, otro), clave (el grupo; nula si no dice quién: el canal de un pago no es de nadie; la de un ayuntamiento o un condado lleva qué cobra: PERMISOS o SERVICIOS), nombre}.';
 
 
 -- ---------------------------------------------------------------------
@@ -1029,9 +1175,10 @@ as $$
     (401, 'personal', 'Personal',          'gasto',   'retiro',        'Es mío, no de la empresa (retiro del accionista)', 'personal', '3200', null),
     (501, 'cobro',    'Cobro de obra',     'ingreso', 'factura',       'El pago de una factura',                'cobro',        null,   null),
     (502, 'cobro',    'Cobro de obra',     'ingreso', 'anticipo',      'Un anticipo de una obra (sin factura todavía)', 'anticipo', null, null),
-    (601, 'ingresos', 'Otros ingresos',    'ingreso', 'otro_ingreso',  'Otro ingreso (un reembolso, una recompensa)', 'otro_ingreso', '4900', null),
+    (601, 'ingresos', 'Otros ingresos',    'ingreso', 'otro_ingreso',  'Otro ingreso (una recompensa, un premio)', 'otro_ingreso', '4900', null),
     (602, 'ingresos', 'Otros ingresos',    'ingreso', 'intereses_banco', 'Intereses que paga el banco',         'otro_ingreso', '4910', null),
     (603, 'ingresos', 'Otros ingresos',    'ingreso', 'devolucion',    'La devolución de una compra',           'gasto',        null,   '{"devolucion": true}'),
+    (604, 'ingresos', 'Otros ingresos',    'ingreso', 'devolucion_mia', 'La devolución de algo mío (un cargo personal)', 'personal', '3200', '{"devolucion": true}'),
     (701, 'prestamo', 'Préstamo o aporte', 'ingreso', 'prestamo',      'Dinero de un préstamo',                 'prestamo',     '2540', null),
     (702, 'prestamo', 'Préstamo o aporte', 'ingreso', 'mio_prestado',  'Dinero mío que le presto a la empresa', 'aporte',       '2900', '{"tipo": "prestamo_accionista"}'),
     (703, 'prestamo', 'Préstamo o aporte', 'ingreso', 'mio_aportado',  'Dinero mío que aporto a la empresa',    'aporte',       '3100', '{"tipo": "aportacion"}'),
@@ -1063,18 +1210,53 @@ grant  execute on function public.fn_bandeja_categorias() to authenticated;
 comment on function public.fn_bandeja_categorias() is 'c17: las categorías en dos niveles que ve Edgar (Costo de obra, Gastos generales, Otros gastos, Personal; Cobro de obra, Otros ingresos, Préstamo o aporte, Entre tus cuentas), cada una con su acción de la lista cerrada y su cuenta de fábrica.';
 
 -- El nombre llano de una cuenta: el de su categoría («Material»,
--- «Camioneta y gasolina») o, si no tiene, el de la cuenta.
+-- «Camioneta y gasolina») o, si no tiene, el de la cuenta. (Tercera vuelta:
+-- los nombres van aquí en su propia lista —la primera categoría de cada
+-- cuenta del catálogo de arriba; la prueba 5 comprueba que digan lo mismo—
+-- porque esta función se llama una o dos veces por tarjeta, y leyendo el
+-- catálogo cada vez se iba en ella la cuarta parte de la lectura de la
+-- Bandeja.)
 create or replace function public.fn_bandeja_cuenta_llana(p_cuenta text) returns text
-language sql stable
+language plpgsql stable
 set search_path = public, pg_temp
 as $$
-  select coalesce(
-    (select c.nombre from fn_bandeja_cat() c
-      where c.cuenta = p_cuenta and c.accion in ('gasto', 'personal', 'otro_ingreso', 'contratista')
-      order by c.orden limit 1),
-    (select k.nombre from cuentas k where k.codigo = p_cuenta),
-    p_cuenta)
-$$;
+declare
+  v text;
+begin
+  v := case p_cuenta
+         when '5100' then 'Material'
+         when '5200' then 'Subcontratos'
+         when '5400' then 'Permisos e inspecciones'
+         when '5300' then 'Equipo y renta'
+         when '5500' then 'Consumibles'
+         when '5600' then 'Flete'
+         when '6300' then 'Camioneta y gasolina'
+         when '6200' then 'Seguros'
+         when '6120' then 'Teléfono e internet'
+         when '6500' then 'Oficina y software'
+         when '6350' then 'Comidas'
+         when '6700' then 'Publicidad'
+         when '6600' then 'Profesionales (contador, abogado)'
+         when '6400' then 'Herramienta menor y uniformes'
+         when '6100' then 'Renta del local'
+         when '6110' then 'Luz, agua y servicios'
+         when '6800' then 'Licencias y cuotas'
+         when '6360' then 'Viajes y alojamiento'
+         when '6130' then 'Cargos del banco y de la tarjeta'
+         when '9000' then 'Impuestos y tasas de la empresa'
+         when '7100' then 'Intereses'
+         when '7920' then 'Multas y recargos'
+         when '7910' then 'Donaciones'
+         when '7900' then 'Otro gasto'
+         when '3200' then 'Es mío, no de la empresa (retiro del accionista)'
+         when '4900' then 'Otro ingreso (una recompensa, un premio)'
+         when '4910' then 'Intereses que paga el banco'
+       end;
+  if v is null then
+    select k.nombre into v from cuentas k where k.codigo = p_cuenta;
+  end if;
+  return coalesce(v, p_cuenta);
+end $$;
 revoke execute on function public.fn_bandeja_cuenta_llana(text) from public, anon, service_role;
 grant  execute on function public.fn_bandeja_cuenta_llana(text) to authenticated;
 comment on function public.fn_bandeja_cuenta_llana(text) is 'c17: el nombre llano de una cuenta (el de su categoría de la Bandeja, o el de la cuenta).';
@@ -1088,52 +1270,120 @@ comment on function public.fn_bandeja_cuenta_llana(text) is 'c17: el nombre llan
 -- BUILDING, BOCC…): su recibo de luz y agua va a servicios, la renovación de
 -- la licencia (DBPR) a licencias, y el recaudador (TAX COLLECTOR), a nada.
 -- Es solo una sugerencia: nunca entra sola por esto. {accion, cuenta} o nulo.
+-- CÓMO ESTÁ HECHA (tercera vuelta): una lista de palabras por regla, y se
+-- busca cada una en la descripción (sin expresiones regulares: eran quince,
+-- y con las de la contraparte pasaban de las 32 que Postgres guarda
+-- compiladas). Cada entrada lleva delante las dos letras de su regla; un
+-- espacio delante de la palabra quiere decir «empieza una palabra» y uno
+-- detrás, «la termina» (« HULU » es la palabra entera; « TOLL», lo que
+-- empieza por TOLL; «DISNEY», en cualquier sitio). Las reglas se miran en
+-- el orden de abajo y gana la primera.
 create or replace function public.fn_bandeja_sugerida(p_desc text) returns jsonb
-language sql immutable
+language plpgsql immutable
 set search_path = public, pg_temp
 as $$
-  select case
-    when p is null then null
-    when p ~ '(NETFLIX|SPOTIFY|\mHULU\M|DISNEY|\mHBO\M|PARAMOUNT|PEACOCK|YOUTUBE|PLAYSTATION|\mXBOX\M|GAME PASS|NINTENDO|\mSTEAM|EPIC GAMES|ROBLOX|TWITCH|DOORDASH|UBER EATS|GRUBHUB|INSTACART|KLARNA|AFFIRM|AFTERPAY|SEZZLE|MORTGAGE)'
-      then jsonb_build_object('accion', 'personal', 'cuenta', '3200')
-    when p ~ '(FACEBK|FACEBOOK|META ADS|GOOGLE ADS|\mADWORDS\M|\mYELP\M|\mANGI\M|THUMBTACK|HOMEADVISOR|VISTAPRINT)'
-      then jsonb_build_object('accion', 'gasto', 'cuenta', '6700')
-    -- lo que un procesador de tarjetas COBRA por los cobros (no es la suscripción de QuickBooks)
-    when p ~ '(\mINTUIT\M|QBPAYMENTS|QUICKBOOKS|QB PAYMENTS|\mSTRIPE\M|\mSQUARE\M|\mPAYPAL\M|\mCLOVER\M|BANKCARD|\mMERCHANT\M|WORLDPAY)'
-         and p ~ '(\mFEE|DISCOUNT|PROCESSING|\mMERCH)'
-      then jsonb_build_object('accion', 'gasto', 'cuenta', '6130')
-    when p ~ '(HOME DEPOT|\mLOWES\M|\mLOWE S\M|\mCED\M|GRAYBAR|\mPLATT\M|\mREXEL\M|ELECTRIC(AL)? SUPPLY|CITY ELECTRIC|\mCES\M|FERGUSON|GRAINGER|ACE HARDWARE|MENARDS|\mWESCO\M|WINSUPPLY|ELLIOTT ELECTRIC|MAYER ELECTRIC)'
-      then jsonb_build_object('accion', 'gasto', 'cuenta', '5100')
-    when p ~ '(HARBOR FREIGHT|NORTHERN TOOL)'
-      then jsonb_build_object('accion', 'gasto', 'cuenta', '6400')
-    when p ~ '(SUNBELT|UNITED RENTALS|HERC RENTALS)'
-      then jsonb_build_object('accion', 'gasto', 'cuenta', '5300')
-    when p ~ '(\mSHELL\M|CHEVRON|EXXON|\mMOBIL\M|\mBP\M|\mWAWA\M|RACETRAC|SUNOCO|MARATHON|CIRCLE K|7 ELEVEN|SPEEDWAY|MURPHY|BUC EE|\mCITGO\M|\mVALERO\M|SUNPASS|\mE ?PASS\M|\mTOLL|AUTOZONE|O ?REILLY|ADVANCE AUTO|JIFFY LUBE|DISCOUNT TIRE)'
-      then jsonb_build_object('accion', 'gasto', 'cuenta', '6300')
+declare
+  c_pat constant text[] := array[
+    -- pe: lo personal (la casa, los juegos, la comida a domicilio, lo comprado a plazos, la hipoteca)
+    'peNETFLIX', 'peSPOTIFY', 'pe HULU ', 'peDISNEY', 'pe HBO ', 'pePARAMOUNT', 'pePEACOCK', 'peYOUTUBE', 'pePLAYSTATION', 'pe XBOX ',
+    'peGAME PASS', 'peNINTENDO', 'pe STEAM', 'peEPIC GAMES', 'peROBLOX', 'peTWITCH', 'peDOORDASH', 'peUBER EATS', 'peGRUBHUB',
+    'peINSTACART', 'peKLARNA', 'peAFFIRM', 'peAFTERPAY', 'peSEZZLE', 'peMORTGAGE',
+    -- pu: publicidad
+    'puFACEBK', 'puFACEBOOK', 'puMETA ADS', 'puGOOGLE ADS', 'pu ADWORDS ', 'pu YELP ', 'pu ANGI ', 'puTHUMBTACK', 'puHOMEADVISOR',
+    'puVISTAPRINT',
+    -- pr + fe: lo que un procesador de tarjetas COBRA por los cobros (no es la suscripción de QuickBooks)
+    'pr INTUIT ', 'prQBPAYMENTS', 'prQUICKBOOKS', 'prQB PAYMENTS', 'pr STRIPE ', 'pr SQUARE ', 'pr PAYPAL ', 'pr CLOVER ', 'prBANKCARD',
+    'pr MERCHANT ', 'prWORLDPAY',
+    'fe FEE', 'feDISCOUNT', 'fePROCESSING', 'fe MERCH',
+    -- ma: material de obra
+    'maHOME DEPOT', 'ma LOWES ', 'ma LOWE S ', 'ma CED ', 'maGRAYBAR', 'ma PLATT ', 'ma REXEL ', 'maELECTRIC SUPPLY', 'maELECTRICAL SUPPLY',
+    'maCITY ELECTRIC', 'ma CES ', 'maFERGUSON', 'maGRAINGER', 'maACE HARDWARE', 'maMENARDS', 'ma WESCO ', 'maWINSUPPLY',
+    'maELLIOTT ELECTRIC', 'maMAYER ELECTRIC',
+    -- he: herramienta menor · re: renta de equipo
+    'heHARBOR FREIGHT', 'heNORTHERN TOOL',
+    'reSUNBELT', 'reUNITED RENTALS', 'reHERC RENTALS',
+    -- ga: la camioneta (gasolina, peajes, refacciones)
+    'ga SHELL ', 'gaCHEVRON', 'gaEXXON', 'ga MOBIL ', 'ga BP ', 'ga WAWA ', 'gaRACETRAC', 'gaSUNOCO', 'gaMARATHON', 'gaCIRCLE K',
+    'ga7 ELEVEN', 'gaSPEEDWAY', 'gaMURPHY', 'gaBUC EE', 'ga CITGO ', 'ga VALERO ', 'gaSUNPASS', 'ga E PASS ', 'ga EPASS ', 'ga TOLL',
+    'gaAUTOZONE', 'gaO REILLY', 'gaOREILLY', 'gaADVANCE AUTO', 'gaJIFFY LUBE', 'gaDISCOUNT TIRE',
+    -- go + ut: los servicios de un ayuntamiento o un condado · lu: la compañía de la luz
+    'go CITY OF ', 'go COUNTY ', 'go TOWN OF ', 'go VILLAGE OF ',
+    'utUTILIT', 'ut WATER ', 'utSEWER', 'ut ELECTRIC ', 'utSOLID WASTE', 'utGARBAGE',
+    'lu FPL ', 'luFLORIDA POWER', 'luDUKE ENERGY', 'lu TECO ',
+    -- tx: el recaudador (no se sugiere nada) · li: licencias · pm: permisos
+    'txTAX COLLECTOR',
+    'li DBPR ',
+    'pm PERMIT', 'pm BLDG ', 'pmBUILDING DEP', 'pmBUILDING DIV', 'pmBUILDING SERV', 'pmBUILDING SAFETY', 'pmBUILDING INSP', 'pm BOCC ',
+    'pm INSPECTION', 'pmGROWTH M', 'pmCODE ENF', 'pm ZONING',
+    -- te: teléfono e internet · se: seguros
+    'teVERIZON', 'teT MOBILE', 'teTMOBILE', 'te ATT ', 'teCOMCAST', 'teXFINITY', 'teSPECTRUM',
+    'sePROGRESSIVE', 'se GEICO ', 'seSTATE FARM', 'seALLSTATE', 'seINSURANCE', 'se NEXT INS',
+    -- of: oficina y software
+    'ofQUICKBOOKS', 'ofQBOOKS', 'of INTUIT ', 'ofGOOGLE WORKSPACE', 'ofGOOGLE GSUITE', 'ofGOOGLE STORAGE', 'ofGOOGLE CLOUD', 'ofGOOGLE ONE',
+    'ofGOOGLE DOMAINS', 'of GSUITE ', 'ofMICROSOFT 365', 'ofMICROSOFT OFFICE', 'ofOFFICE 365', 'of ADOBE ', 'ofDROPBOX', 'of ZOOM ',
+    'ofOPENAI', 'ofANTHROPIC', 'ofGODADDY', 'of WIX ', 'ofSUPABASE', 'ofGITHUB',
+    -- co: comidas
+    'coMCDONALD', 'coBURGER KING', 'co WENDY', 'coCHICK FIL', 'co SUBWAY ', 'coSTARBUCKS', 'coDUNKIN', 'coTACO BELL', 'coCHIPOTLE',
+    'coPOLLO TROPICAL', 'coRESTAURANT', 'co PIZZA', 'co GRILL ', 'co CAFE '];
+  p  text;
+  h  text[];
+begin
+  if p_desc is null then
+    return null;
+  end if;
+  -- (lo que no es letra ni número separa palabras, como en la descripción normalizada de c6)
+  p := ' ' || translate(upper(p_desc), '#&*.,;:/\-_()[]''"+=!?@$%', '                          ') || ' ';
+  select array_agg(distinct left(x.x, 2)) into h from unnest(c_pat) as x(x) where position(substr(x.x, 3) in p) > 0;
+  if h is null then
+    return null;
+  end if;
+  return case
+    when 'pe' = any (h) then jsonb_build_object('accion', 'personal', 'cuenta', '3200')
+    when 'pu' = any (h) then jsonb_build_object('accion', 'gasto', 'cuenta', '6700')
+    when 'pr' = any (h) and 'fe' = any (h) then jsonb_build_object('accion', 'gasto', 'cuenta', '6130')
+    when 'ma' = any (h) then jsonb_build_object('accion', 'gasto', 'cuenta', '5100')
+    when 'he' = any (h) then jsonb_build_object('accion', 'gasto', 'cuenta', '6400')
+    when 're' = any (h) then jsonb_build_object('accion', 'gasto', 'cuenta', '5300')
+    when 'ga' = any (h) then jsonb_build_object('accion', 'gasto', 'cuenta', '6300')
     -- lo de un ayuntamiento, un condado o la compañía de la luz: los servicios no son un permiso
-    when (p ~ '(\mCITY OF\M|\mCOUNTY\M|\mTOWN OF\M|\mVILLAGE OF\M)' and p ~ '(UTILIT|\mWATER\M|SEWER|\mELECTRIC\M|SOLID WASTE|GARBAGE)')
-         or p ~ '(\mFPL\M|FLORIDA POWER|DUKE ENERGY|\mTECO\M)'
-      then jsonb_build_object('accion', 'gasto', 'cuenta', '6110')
-    when p ~ 'TAX COLLECTOR'
-      then null
-    when p ~ '\mDBPR\M'
-      then jsonb_build_object('accion', 'gasto', 'cuenta', '6800')
-    when p ~ '(\mPERMIT|\mBLDG\M|BUILDING (DEP|DIV|SERV|SAFETY|INSP)|\mBOCC\M|\mINSPECTION|GROWTH M|CODE ENF|\mZONING)'
-      then jsonb_build_object('accion', 'gasto', 'cuenta', '5400')
-    when p ~ '(VERIZON|T MOBILE|TMOBILE|\mATT\M|COMCAST|XFINITY|SPECTRUM)'
-      then jsonb_build_object('accion', 'gasto', 'cuenta', '6120')
-    when p ~ '(PROGRESSIVE|\mGEICO\M|STATE FARM|ALLSTATE|INSURANCE|\mNEXT INS)'
-      then jsonb_build_object('accion', 'gasto', 'cuenta', '6200')
-    when p ~ '(QUICKBOOKS|QBOOKS|\mINTUIT\M|GOOGLE (WORKSPACE|GSUITE|STORAGE|CLOUD|ONE|DOMAINS)|\mGSUITE\M|MICROSOFT (365|OFFICE)|OFFICE 365|\mADOBE\M|DROPBOX|\mZOOM\M|OPENAI|ANTHROPIC|GODADDY|\mWIX\M|SUPABASE|GITHUB)'
-      then jsonb_build_object('accion', 'gasto', 'cuenta', '6500')
-    when p ~ '(MCDONALD|BURGER KING|\mWENDY|CHICK FIL|\mSUBWAY\M|STARBUCKS|DUNKIN|TACO BELL|CHIPOTLE|POLLO TROPICAL|RESTAURANT|\mPIZZA|\mGRILL\M|\mCAFE\M)'
-      then jsonb_build_object('accion', 'gasto', 'cuenta', '6350')
-  end
-  from (select upper(p_desc) as p) x
-$$;
+    when ('go' = any (h) and 'ut' = any (h)) or 'lu' = any (h) then jsonb_build_object('accion', 'gasto', 'cuenta', '6110')
+    when 'tx' = any (h) then null
+    when 'li' = any (h) then jsonb_build_object('accion', 'gasto', 'cuenta', '6800')
+    when 'pm' = any (h) then jsonb_build_object('accion', 'gasto', 'cuenta', '5400')
+    when 'te' = any (h) then jsonb_build_object('accion', 'gasto', 'cuenta', '6120')
+    when 'se' = any (h) then jsonb_build_object('accion', 'gasto', 'cuenta', '6200')
+    when 'of' = any (h) then jsonb_build_object('accion', 'gasto', 'cuenta', '6500')
+    when 'co' = any (h) then jsonb_build_object('accion', 'gasto', 'cuenta', '6350')
+  end;
+end $$;
 revoke execute on function public.fn_bandeja_sugerida(text) from public, anon, service_role;
 grant  execute on function public.fn_bandeja_sugerida(text) to authenticated;
 comment on function public.fn_bandeja_sugerida(text) is 'c17: lo que sugiere la descripción del banco de un comercio corriente (material, gasolina, permisos, servicios, lo personal…): {accion, cuenta} o nulo. Solo sugiere: nada entra solo por esto.';
+
+-- ¿VALE LO RECORDADO PARA ESTE CARGO? Lo que Edgar dijo de un comercio vale
+-- para lo que el banco describe como entonces. Si la descripción de AHORA
+-- sugiere algo (un permiso) que no es ni lo recordado (la luz) ni lo que
+-- sugería la descripción con que se enseñó (bandeja_memoria.sugerida), es
+-- otra cosa con el mismo nombre: lo recordado no se aplica ni entra solo; se
+-- propone por la descripción y se pregunta. p_recordado y p_sugerida:
+-- «accion|cuenta» (lo que la regla dice, y lo que sugería entonces).
+create or replace function public.fn_bandeja_memoria_vale(p_recordado text, p_sugerida text, p_desc_norm text) returns boolean
+language plpgsql immutable
+set search_path = public, pg_temp
+as $$
+declare
+  sg jsonb := fn_bandeja_sugerida(p_desc_norm);
+  v  text;
+begin
+  if sg is null then
+    return true;
+  end if;
+  v := (sg->>'accion') || '|' || coalesce(sg->>'cuenta', '');
+  return v = coalesce(p_recordado, '') or v = coalesce(p_sugerida, '');
+end $$;
+revoke execute on function public.fn_bandeja_memoria_vale(text, text, text) from public, anon, service_role;
+grant  execute on function public.fn_bandeja_memoria_vale(text, text, text) to authenticated;
+comment on function public.fn_bandeja_memoria_vale(text, text, text) is 'c17: si lo recordado de un comercio vale para un cargo: no, cuando la descripción de ahora sugiere otra cosa que lo recordado y que lo que sugería la descripción con que se enseñó (el permiso y la luz de una misma ciudad).';
 
 
 -- LAS CUENTAS PROPIAS entre las que se traspasa dinero: los bancos (10xx) y
@@ -1207,11 +1457,10 @@ comment on function public.fn_bandeja_facturas() is 'c17: las facturas con saldo
 --   · si lo deposita un procesador de tarjetas (p_proc: INTUIT, STRIPE,
 --     SQUARE…), lo sumen NETO DE SU COMISIÓN, calculada factura a factura
 --     con UNA de las tarifas de ese procesador (bandeja_config.tarifas: un
---     tanto por ciento más un fijo; las que Edgar ya confirmó con un lote,
---     si las hay, y solo esas). No «lo que quepa hasta un 3.5 %»: con una
---     docena de facturas abiertas casi cualquier depósito cabía en alguna
---     combinación, y la app recomendaba facturas equivocadas más veces de
---     las que acertaba.
+--     tanto por ciento más un fijo). No «lo que quepa hasta un 3.5 %»: con
+--     una docena de facturas abiertas casi cualquier depósito cabía en
+--     alguna combinación, y la app recomendaba facturas equivocadas más
+--     veces de las que acertaba.
 -- CUÁNTAS FACTURAS JUNTAS se buscan lo decide CUÁNTAS HAY: con muchas
 -- facturas por cobrar, que tres o cuatro sumen un depósito al centavo puede
 -- ser pura casualidad (con cien, casi cualquier monto es la suma de algunas
@@ -1221,15 +1470,20 @@ comment on function public.fn_bandeja_facturas() is 'c17: las facturas con saldo
 -- se pregunta (y Edgar lo dice con sus palabras).
 -- Primero entre las MARCADAS COBRADAS en Proyectos (Edgar ya dijo que esas
 -- se pagaron); si entre ellas no hay respuesta, entre todas. Solo contesta
--- si la respuesta es ÚNICA (exacto antes que con comisión; NO «menos
--- facturas antes que más»): {facturas: [{id, num, obra, monto}], comision,
--- bruto, marcadas, tarifa}. Con varias igual de buenas, {varias: n}: se
--- pregunta. Sin ninguna, nulo.
--- EL RESPALDO, solo para un procesador del que todavía no se ha confirmado
--- ninguna tarifa y con pocas facturas por cobrar (12 o menos): si UNA sola
--- combinación, entre todas, supera el depósito en una comisión creíble (el
--- tope de c6: 3.5 % + $0.30 por factura), se propone diciéndolo (aprox:
--- true); la tarifa se aprende cuando Edgar lo confirma.
+-- si la respuesta es ÚNICA en su escalón: exacto, antes que con una tarifa
+-- que Edgar ya CONFIRMÓ (la de un lote que aprobó: veces), antes que con las
+-- demás de la lista (NO «menos facturas antes que más»): {facturas: [{id,
+-- num, obra, monto}], comision, bruto, marcadas, tarifa}. Con varias igual
+-- de buenas, {varias: n}: se pregunta. Sin ninguna, nulo.
+-- (Tercera vuelta) LAS TARIFAS DE LA LISTA SE PRUEBAN SIEMPRE: antes, con una
+-- confirmada solo se probaban las confirmadas, y confirmar el primer lote de
+-- tarjeta (2.99 %) dejaba sin reconocer el depósito pagado por transferencia
+-- (1 %); y una «comisión» rara aprendida de un solo cobro apagaba todas las
+-- buenas. Y YA NO HAY «RESPALDO» (la única combinación que cabía hasta el
+-- 3.5 %, «míralo bien»): con diez facturas por cobrar acertaba tres de cada
+-- cuatro veces y las demás recomendaba facturas que no eran. Un procesador
+-- con una tarifa que no está en la lista se contesta una vez a mano (o
+-- diciéndolo) y su tarifa queda apuntada: el siguiente lote ya se reconoce.
 drop function if exists public.fn_bandeja_cobro_de(jsonb, numeric, date, boolean);
 create or replace function public.fn_bandeja_cobro_de(p_facturas jsonb, p_monto numeric, p_fecha date, p_proc text default null)
 returns jsonb
@@ -1244,7 +1498,6 @@ declare
   v_n     int;
   v_t     int;
   v_k     int;
-  v_conf  boolean := false;
   n       numeric;
   n_marc  int;
   c_tope  constant numeric := 20000;
@@ -1266,14 +1519,12 @@ begin
     return null;
   end if;
   if p_proc is not null then
-    -- las tarifas de ese procesador: las confirmadas con un lote (veces), si hay alguna; si no, las de la lista
-    select coalesce(jsonb_agg(y) filter (where coalesce((y->>'veces')::int, 0) > 0),
-                    jsonb_agg(y), '[]'::jsonb),
-           coalesce(bool_or(coalesce((y->>'veces')::int, 0) > 0), false)
-      into v_tar, v_conf
+    -- las tarifas de ese procesador, todas; «conf»: la que Edgar ya confirmó con un lote (una de la lista, una vez; una aprendida, dos)
+    select coalesce(jsonb_agg(y || jsonb_build_object('conf', coalesce((y->>'veces')::int, 0) >= case when y->>'origen' = 'aprendida' then 2 else 1 end)),
+                    '[]'::jsonb)
+      into v_tar
       from bandeja_config g, jsonb_array_elements(g.tarifas) y
      where g.id = 1 and y->>'proc' = p_proc and jsonb_typeof(y->'pct') = 'number';
-    v_tar := coalesce(v_tar, '[]'::jsonb);
   end if;
   v_t := 1 + jsonb_array_length(v_tar);
   select count(*) into n_marc from jsonb_array_elements(v_f) x where (x->>'marcada')::boolean;
@@ -1295,9 +1546,11 @@ begin
     with f as materialized (
       select * from jsonb_to_recordset(v_fn) as x(id bigint, num text, saldo numeric, obra text, fecha date, marcada boolean)),
     t as materialized (
-      select 0 as tn, 0::numeric as pct, 0::numeric as fijo, null::numeric as tope
+      -- (esc: el escalón de la respuesta. 0: suman al centavo; 1: con una tarifa confirmada; 2: con otra de la lista)
+      select 0 as tn, 0::numeric as pct, 0::numeric as fijo, null::numeric as tope, 0 as esc
       union all
-      select (row_number() over ())::int, (y->>'pct')::numeric, coalesce((y->>'fijo')::numeric, 0), (y->>'tope')::numeric
+      select (row_number() over ())::int, (y->>'pct')::numeric, coalesce((y->>'fijo')::numeric, 0), (y->>'tope')::numeric,
+             case when (y->>'conf')::boolean then 1 else 2 end
         from jsonb_array_elements(v_tar) y),
     -- cada factura con cada tarifa: lo que llega al banco de ella
     i as materialized (
@@ -1325,14 +1578,13 @@ begin
         cross join generate_series(-1, 1) as o(c)
         join p b on b.tn = a.tn and b.neto = p_monto - a.neto + o.c / 100.0 and b.i1 > a.i2
        where v_k >= 4 and (a.tn > 0 or o.c = 0)),
-    -- (un mismo juego de facturas puede casar con dos tarifas: es UNA respuesta; la exacta, antes)
-    s2 as (select distinct on (s.ids) s.ids, s.tn from sol s order by s.ids, s.tn),
-    s3 as (select s2.ids, s2.tn, cardinality(s2.ids) as cnt,
+    -- (un mismo juego de facturas puede casar con dos tarifas: es UNA respuesta; la de mejor escalón)
+    s2 as (select distinct on (s.ids) s.ids, s.tn, t.esc from sol s join t on t.tn = s.tn order by s.ids, t.esc, s.tn),
+    s3 as (select s2.ids, s2.tn, s2.esc, cardinality(s2.ids) as cnt,
                   (select count(*) from f where f.id = any (s2.ids) and f.marcada) as marc,
                   (select sum(f.saldo) from f where f.id = any (s2.ids)) as suma
              from s2),
-    mejor as (select * from s3
-               where (case when s3.tn = 0 then 0 else 1 end) = (select case when z.tn = 0 then 0 else 1 end from s3 z order by 1 limit 1))
+    mejor as (select * from s3 where s3.esc = (select min(z.esc) from s3 z))
     select (select count(*) from mejor),
            (select jsonb_build_object(
                      'facturas', (select jsonb_agg(jsonb_build_object('id', f.id, 'num', f.num, 'obra', f.obra, 'monto', f.saldo) order by f.fecha, f.id)
@@ -1347,46 +1599,16 @@ begin
       return jsonb_build_object('varias', v_n);
     end if;
   end loop;
-  -- EL RESPALDO: un procesador sin ninguna tarifa confirmada todavía, y pocas facturas por cobrar
-  if p_proc is null or v_conf or jsonb_array_length(v_f) > 12 then
-    return null;
-  end if;
-  with recursive f as (
-    select x.*, row_number() over (order by x.id) as n
-      from jsonb_to_recordset(v_f) as x(id bigint, num text, saldo numeric, obra text, fecha date, marcada boolean)),
-  s (ids, suma, tope, marc, ult, cnt) as (
-    select array[f.id], f.saldo, round(0.035 * f.saldo + 0.30, 2), f.marcada::int, f.n, 1 from f
-    union all
-    select s.ids || f.id, s.suma + f.saldo, s.tope + round(0.035 * f.saldo + 0.30, 2), s.marc + f.marcada::int, f.n, s.cnt + 1
-      from s join f on f.n > s.ult
-     where s.cnt < 4 and s.suma < p_monto * 1.04 + 2),
-  sol as (select * from s where s.suma > p_monto and s.suma - p_monto <= s.tope)
-  select (select count(*) from sol),
-         (select jsonb_build_object(
-                   'facturas', (select jsonb_agg(jsonb_build_object('id', f.id, 'num', f.num, 'obra', f.obra, 'monto', f.saldo) order by f.fecha, f.id)
-                                  from f where f.id = any (m.ids)),
-                   'comision', m.suma - p_monto, 'bruto', m.suma, 'marcadas', m.marc, 'aprox', true)
-            from sol m limit 1)
-    into v_n, v_res;
-  if v_n = 1 then
-    return v_res;
-  elsif v_n > 1 then
-    return jsonb_build_object('varias', v_n);
-  end if;
   return null;
 end $$;
 revoke execute on function public.fn_bandeja_cobro_de(jsonb, numeric, date, text) from public, anon, service_role;
 grant  execute on function public.fn_bandeja_cobro_de(jsonb, numeric, date, text) to authenticated;
-comment on function public.fn_bandeja_cobro_de(jsonb, numeric, date, text) is 'c17: las facturas con saldo (una, o varias juntas: hasta cuatro mientras haya pocas por cobrar; con muchas, menos, para que una suma no cuadre por casualidad) que explican un depósito al centavo o, de un procesador de tarjetas, netas de su comisión según una de sus tarifas (factura a factura); primero entre las marcadas cobradas en Proyectos. Solo si la respuesta es única; {varias} si hay que preguntar.';
+comment on function public.fn_bandeja_cobro_de(jsonb, numeric, date, text) is 'c17: las facturas con saldo (una, o varias juntas: hasta cuatro mientras haya pocas por cobrar; con muchas, menos, para que una suma no cuadre por casualidad) que explican un depósito al centavo o, de un procesador de tarjetas, netas de su comisión según una de sus tarifas (factura a factura; las confirmadas, antes); primero entre las marcadas cobradas en Proyectos. Solo si la respuesta es única; {varias} si hay que preguntar.';
 
 -- La tarifa de un procesador que explica una comisión: de las suyas en
 -- bandeja_config.tarifas, la primera que, factura a factura, da esa comisión
--- (con un centavo de holgura por factura). Nulo si ninguna. Y APRENDER del
--- lote que Edgar confirmó: la tarifa de la lista que lo explica queda
--- CONFIRMADA (veces: desde entonces, de ese procesador solo se prueban las
--- confirmadas); y si ninguna lo explicaba y la comisión es un tanto por
--- ciento limpio (dos decimales, sin fijo) de cada factura, se añade (origen
--- «aprendida»): el siguiente lote ya se reconoce al centavo.
+-- (con un centavo de holgura por factura; las confirmadas, antes). Nulo si
+-- ninguna.
 create or replace function public.fn_bandeja_tarifa(p_proc text, p_montos numeric[], p_comision numeric) returns jsonb
 language sql stable
 set search_path = public, pg_temp
@@ -1404,6 +1626,18 @@ revoke execute on function public.fn_bandeja_tarifa(text, numeric[], numeric) fr
 grant  execute on function public.fn_bandeja_tarifa(text, numeric[], numeric) to authenticated;
 comment on function public.fn_bandeja_tarifa(text, numeric[], numeric) is 'c17: la tarifa de un procesador de tarjetas (de bandeja_config.tarifas) que, factura a factura, da esa comisión (las confirmadas, antes), con su lugar en la lista (n); nulo si ninguna.';
 
+-- APRENDER del cobro con comisión que Edgar confirmó (facturas ENTERAS: de
+-- un pago a cuenta no se aprende nada, lo decide quien llama):
+--   · si una tarifa de la lista lo explica, queda CONFIRMADA una vez más
+--     (veces): sus lotes se recomiendan antes que los de las demás;
+--   · si ninguna lo explicaba, es un LOTE (dos facturas o más: de una sola
+--     «comisión» escrita a mano no se saca una tarifa) y la comisión es un
+--     tanto por ciento limpio (dos decimales, sin fijo) de cada factura, se
+--     APUNTA (origen «aprendida», veces 1): desde entonces se prueba como
+--     las de la lista, y con el segundo lote que la confirme pasa delante.
+-- Devuelve la tarifa tocada ({proc, pct, fijo, tope?, origen?, veces}) o
+-- nulo: fn_bandeja_hacer la deja en su registro, y deshacerlo le quita esa
+-- vez (fn_bandeja_tarifa_olvidar).
 create or replace function public.fn_bandeja_tarifa_aprender(p_proc text, p_montos numeric[], p_comision numeric) returns jsonb
 language plpgsql
 set search_path = public, pg_temp
@@ -1418,7 +1652,7 @@ begin
   end if;
   v_t := fn_bandeja_tarifa(p_proc, p_montos, p_comision);
   if v_t is not null then
-    -- la tarifa de la lista que explica este lote queda confirmada (una vez más)
+    -- la tarifa de la lista que explica este cobro queda confirmada (una vez más)
     perform set_config('mx_bandeja.escribe', 'bandeja_config', true);
     update bandeja_config
        set tarifas = jsonb_set(tarifas, array[((v_t->>'n')::int - 1)::text, 'veces'], to_jsonb(coalesce((v_t->>'veces')::int, 0) + 1)),
@@ -1426,6 +1660,9 @@ begin
      where id = 1;
     perform set_config('mx_bandeja.escribe', '', true);
     return (v_t - 'n') || jsonb_build_object('veces', coalesce((v_t->>'veces')::int, 0) + 1);
+  end if;
+  if cardinality(p_montos) < 2 then
+    return null;   -- una sola factura con una comisión que no es de la lista: puede ser un pago corto; no se aprende
   end if;
   v_pct := round(p_comision / (select sum(s) from unnest(p_montos) s) * 100, 2);
   if v_pct < 0.25 or v_pct > 3.5
@@ -1440,7 +1677,51 @@ begin
 end $$;
 revoke execute on function public.fn_bandeja_tarifa_aprender(text, numeric[], numeric) from public, anon, service_role;
 grant  execute on function public.fn_bandeja_tarifa_aprender(text, numeric[], numeric) to authenticated;
-comment on function public.fn_bandeja_tarifa_aprender(text, numeric[], numeric) is 'c17: aprende del lote de un procesador que Edgar confirmó: la tarifa de la lista que lo explica queda confirmada (veces) y, si ninguna lo explicaba y es un tanto por ciento limpio de cada factura, se añade a bandeja_config.tarifas. Solo el dueño, con su sesión.';
+comment on function public.fn_bandeja_tarifa_aprender(text, numeric[], numeric) is 'c17: aprende del cobro con comisión que Edgar confirmó: la tarifa de la lista que lo explica queda confirmada (veces) y, si ninguna lo explicaba, es un lote de dos facturas o más y es un tanto por ciento limpio de cada una, se apunta en bandeja_config.tarifas (origen «aprendida»). Devuelve la tarifa tocada. Solo el dueño, con su sesión.';
+
+-- OLVIDAR lo que un cobro enseñó de una tarifa: al deshacerlo (p_todo falso:
+-- se le quita esa vez; la aprendida que se queda sin ninguna se borra de la
+-- lista) o porque Edgar la quita de «Lo que recuerdo» (p_todo: la aprendida
+-- se borra; a una de la lista se le quitan sus confirmaciones). p: {proc,
+-- pct, fijo, tope}. Devuelve {proc, pct, quitada | veces} o nulo si no está.
+create or replace function public.fn_bandeja_tarifa_olvidar(p jsonb, p_todo boolean default false) returns jsonb
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_i   int;
+  v_t   jsonb;
+  v_n   int;
+  v_fue boolean;
+begin
+  perform fn_bandeja_quien();
+  select y.n::int - 1, y.y into v_i, v_t
+    from bandeja_config g
+    cross join lateral jsonb_array_elements(g.tarifas) with ordinality as y(y, n)
+   where g.id = 1 and y.y->>'proc' = p->>'proc' and (y.y->>'pct')::numeric = (p->>'pct')::numeric
+     and coalesce((y.y->>'fijo')::numeric, 0) = coalesce((p->>'fijo')::numeric, 0)
+     and (y.y->>'tope')::numeric is not distinct from (p->>'tope')::numeric
+   order by (y.y->>'origen' = 'aprendida') desc nulls last, y.n
+   limit 1;
+  if v_i is null then
+    return null;
+  end if;
+  v_n := case when coalesce(p_todo, false) then 0 else greatest(coalesce((v_t->>'veces')::int, 0) - 1, 0) end;
+  v_fue := coalesce(v_t->>'origen' = 'aprendida', false) and v_n = 0;
+  perform set_config('mx_bandeja.escribe', 'bandeja_config', true);
+  update bandeja_config
+     set tarifas = case when v_fue then tarifas - v_i
+                        when v_n = 0 then jsonb_set(tarifas, array[v_i::text], (tarifas->v_i) - 'veces')
+                        else jsonb_set(tarifas, array[v_i::text, 'veces'], to_jsonb(v_n)) end,
+         actualizado = now()
+   where id = 1;
+  perform set_config('mx_bandeja.escribe', '', true);
+  return jsonb_strip_nulls(jsonb_build_object('proc', v_t->>'proc', 'pct', (v_t->>'pct')::numeric, 'quitada', case when v_fue then true end,
+                                              'veces', case when not v_fue then v_n end));
+end $$;
+revoke execute on function public.fn_bandeja_tarifa_olvidar(jsonb, boolean) from public, anon, service_role;
+grant  execute on function public.fn_bandeja_tarifa_olvidar(jsonb, boolean) to authenticated;
+comment on function public.fn_bandeja_tarifa_olvidar(jsonb, boolean) is 'c17: olvida lo que un cobro enseñó de la tarifa de un procesador: le quita una confirmación (al deshacer ese cobro) o todas (p_todo: la quita Edgar); la aprendida que se queda sin ninguna se borra de la lista. Solo el dueño, con su sesión.';
 
 -- ¿ES DE UN PRESTAMISTA? Los préstamos dados de alta, por su DESCRIPTOR (lo
 -- que escribe el banco, dicho al darlo de alta) o por su NOMBRE ENTERO (todas
@@ -1451,20 +1732,25 @@ comment on function public.fn_bandeja_tarifa_aprender(text, numeric[], numeric) 
 -- transferencia, salían como un préstamo. Un Zelle (o Venmo, Cash App) lo
 -- manda una persona o un cliente, nunca un prestamista. {prestamo_id,
 -- prestamista, cuenta, conocido, por (descriptor | nombre | marca)} o nulo.
--- Un depósito así NO es el cobro de un cliente.
+-- Un depósito así NO es el cobro de un cliente: fn_bandeja_recomendar lo
+-- propone como préstamo y fn_bandeja_hacer FRENA cualquier otra respuesta
+-- que lo trate como dinero de un cliente (venga de donde venga: la lista,
+-- lo que entendió la IA o una opción de c6).
 create or replace function public.fn_bandeja_prestamista(p_desc_norm text) returns jsonb
 language plpgsql stable
 set search_path = public, pg_temp
 as $$
 declare
   v      text := upper(coalesce(p_desc_norm, ''));
+  e      text;
   r      record;
   m      text[];
   v_nom  text;
   v_n    int;
   v_id   uuid;
 begin
-  if v = '' or v ~ '(^| )(ZELLE|VENMO|CASH ?APP)( |$)' then
+  e := ' ' || v || ' ';
+  if v = '' or position(' ZELLE ' in e) > 0 or position(' VENMO ' in e) > 0 or position(' CASHAPP ' in e) > 0 or position(' CASH APP ' in e) > 0 then
     return null;
   end if;
   for r in select p.id, p.prestamista, p.cuenta, p.descriptor from prestamos p order by p.creado_el, p.id loop
@@ -1477,7 +1763,7 @@ begin
     end;
     v_nom := btrim(regexp_replace(upper(coalesce(r.prestamista, '')), '[^[:alnum:]]+', ' ', 'g'));
     v_nom := btrim(regexp_replace(v_nom, '( (INC|LLC|CORP|CO|LTD|NA))+$', ''));
-    if position(' ' in v_nom) > 0 and position(' ' || v_nom || ' ' in ' ' || v || ' ') > 0 then
+    if position(' ' in v_nom) > 0 and position(' ' || v_nom || ' ' in e) > 0 then
       return jsonb_build_object('prestamo_id', r.id, 'prestamista', r.prestamista, 'cuenta', r.cuenta, 'conocido', true, 'por', 'nombre');
     end if;
   end loop;
@@ -1502,6 +1788,56 @@ end $$;
 revoke execute on function public.fn_bandeja_prestamista(text) from public, anon, service_role;
 grant  execute on function public.fn_bandeja_prestamista(text) to authenticated;
 comment on function public.fn_bandeja_prestamista(text) is 'c17: si la descripción del banco nombra a un prestamista (los dados de alta en prestamos, por su descriptor o su nombre entero; o las marcas corrientes de un préstamo de negocio): {prestamo_id, prestamista, cuenta, conocido, por} o nulo. Nunca por una palabra suelta ni en un Zelle.';
+
+-- LOS PENDIENTES QUE PUEDEN SER DE UN PRESTAMISTA, de una vez: los que
+-- nombran una marca de préstamo, o casan con el descriptor o con el nombre
+-- entero de un préstamo dado de alta. Es para fn_bandeja_leer: mirar eso
+-- movimiento a movimiento (un descriptor por préstamo, cada uno una
+-- expresión regular) costaba más que todo lo demás de la tarjeta; aquí cada
+-- descriptor se mira una vez contra todos. Devuelve {<movimiento>: true}
+-- de los que HAY QUE MIRAR con fn_bandeja_prestamista (de más, nunca de
+-- menos); los demás no son de un prestamista.
+create or replace function public.fn_bandeja_prestamista_quiza(p_ids uuid[] default null) returns jsonb
+language plpgsql stable
+set search_path = public, pg_temp
+as $$
+declare
+  v      uuid[];
+  x      uuid[];
+  r      record;
+  v_nom  text;
+begin
+  perform fn_bandeja_exigir_dueno();
+  select coalesce(array_agg(mb.id), '{}') into v
+    from movimientos_banco mb
+   where mb.estado = 'pendiente' and (p_ids is null or mb.id = any (p_ids))
+     and upper(mb.desc_norm) ~ '\m(ONDECK|ON DECK|KABBAGE|BLUEVINE|FUNDBOX|KAPITUS|LENDINGCLUB|LENDING CLUB|FUNDING CIRCLE|CREDIBLY|RAPID FINANCE|NATIONAL FUNDING|FORWARD FINANCING|HEADWAY CAPITAL|SQUARE CAPITAL|SQ CAPITAL|QUICKBOOKS CAPITAL|QB CAPITAL|INTUIT FINANCING|SBAD TREAS|SBA EIDL|WORKING CAPITAL|LOAN PROCEEDS|LOAN FUNDING|LOAN DISBURSEMENT|LOAN ADVANCE|CAPITAL ADVANCE|MERCHANT CASH ADVANCE)\M';
+  for r in select p.prestamista, p.descriptor from prestamos p loop
+    begin
+      if nullif(btrim(coalesce(r.descriptor, '')), '') is not null then
+        select array_agg(mb.id) into x
+          from movimientos_banco mb
+         where mb.estado = 'pendiente' and (p_ids is null or mb.id = any (p_ids)) and upper(mb.desc_norm) ~* r.descriptor;
+        v := v || coalesce(x, '{}');
+      end if;
+    exception when others then
+      null;  -- un descriptor que no es una expresión regular válida: no casa con nada
+    end;
+    v_nom := btrim(regexp_replace(upper(coalesce(r.prestamista, '')), '[^[:alnum:]]+', ' ', 'g'));
+    v_nom := btrim(regexp_replace(v_nom, '( (INC|LLC|CORP|CO|LTD|NA))+$', ''));
+    if position(' ' in v_nom) > 0 then
+      select array_agg(mb.id) into x
+        from movimientos_banco mb
+       where mb.estado = 'pendiente' and (p_ids is null or mb.id = any (p_ids))
+         and position(' ' || v_nom || ' ' in ' ' || upper(mb.desc_norm) || ' ') > 0;
+      v := v || coalesce(x, '{}');
+    end if;
+  end loop;
+  return (select coalesce(jsonb_object_agg(u.id, true), '{}'::jsonb) from (select distinct unnest(v) as id) u);
+end $$;
+revoke execute on function public.fn_bandeja_prestamista_quiza(uuid[]) from public, anon, service_role;
+grant  execute on function public.fn_bandeja_prestamista_quiza(uuid[]) to authenticated;
+comment on function public.fn_bandeja_prestamista_quiza(uuid[]) is 'c17: los movimientos pendientes que pueden ser de un prestamista ({id: true}), mirados de una vez (cada descriptor contra todos): los únicos que fn_bandeja_leer manda mirar con fn_bandeja_prestamista.';
 
 -- LA OBRA DEL DÍA: si ese día la cuadrilla reportó horas en UNA sola obra,
 -- esa obra. Con dos o más, o con ninguna, nulo (se pregunta).
@@ -1770,6 +2106,8 @@ declare
   v_i      int;
   v_op     jsonb;
   v_tarj   boolean;
+  v_cta_a  boolean := false;
+  pr       jsonb;
   c_uuid   constant text := '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$';
   c_activa constant text[] := array['aprobado', 'ejecucion', 'pausa'];
 begin
@@ -1818,11 +2156,13 @@ begin
                                     coalesce(' de la obra ' || v_obra, case when v_pide then ' (falta la obra)' else '' end), v_usd) end;
       end if;
     when 'personal' then
-      if m.monto >= 0 then
-        v_falta := 'Un gasto personal es dinero que sale, y esto es dinero que entró.';
-      else
-        o := jsonb_build_object('cuenta', '3200');
+      o := jsonb_build_object('cuenta', '3200');
+      if m.monto < 0 then
         v_texto := format('Es tuyo, no de la empresa: %s que salen como retiro tuyo (no es un gasto del negocio).', v_usd);
+      else
+        -- (la devolución de un cargo personal: lo que salió como retiro tuyo, vuelve; no es un ingreso del negocio)
+        v_texto := format('Es la devolución de algo tuyo (un cargo personal que te devolvieron): entran %s y baja lo que llevas '
+                          'retirado. No es un ingreso del negocio.', v_usd);
       end if;
     when 'cobro' then
       if m.monto <= 0 then
@@ -1872,6 +2212,7 @@ begin
             else
               v_apps := v_apps || jsonb_strip_nulls(jsonb_build_object('id', f.id, 'num', f.num, 'obra', f.obra, 'proyecto_id', f.proyecto_id,
                                                                        'monto', v_m, 'retencion', nullif(v_rt, 0)));
+              v_cta_a := v_cta_a or (f.saldo > 0 and v_m < f.saldo);
               v_suma := v_suma + v_m;
               v_tope := v_tope + round(0.035 * v_m + 0.30, 2);
               v_txt := v_txt || case when f.saldo <= 0
@@ -1898,7 +2239,8 @@ begin
                             'por factura: %s). Si el cliente pagó menos, es un pago parcial: di cuánto va a cada factura.',
                             fn_bandeja_usd(v_com), fn_bandeja_usd(v_tope));
         end if;
-        o := jsonb_strip_nulls(jsonb_build_object('facturas', v_apps, 'comision', nullif(v_com, 0)));
+        -- (a_cuenta: alguna factura no queda saldada. De un pago a cuenta no se aprende la tarifa de un procesador)
+        o := jsonb_strip_nulls(jsonb_build_object('facturas', v_apps, 'comision', nullif(v_com, 0), 'a_cuenta', case when v_cta_a then true end));
         v_texto := case when v_n = 1 then format('Es el cobro de la factura %s.', v_txt[1])
                         else format('Es el cobro de %s facturas: %s.', v_n, array_to_string(v_txt, ', ')) end
                    || case when v_com > 0
@@ -1922,6 +2264,7 @@ begin
       if m.monto <= 0 then
         v_falta := 'Un préstamo recibido es dinero que entra; la cuota de un préstamo tiene su propia opción.';
       else
+        pr := fn_bandeja_prestamista(m.desc_norm);
         if coalesce(d->>'prestamo_id', '') ~ c_uuid then
           select p.prestamista, p.cuenta into v_nom, v_cta from prestamos p where p.id = (d->>'prestamo_id')::uuid;
           if v_nom is null then
@@ -1929,6 +2272,12 @@ begin
           else
             o := jsonb_build_object('prestamo_id', d->>'prestamo_id');
           end if;
+        elsif coalesce((pr->>'conocido')::boolean, false) then
+          -- (el banco mismo nombra a uno DADO DE ALTA: es ese, con su cuenta, aunque de fuera venga solo un nombre. Antes salía
+          -- «todavía no está dado de alta» de un préstamo que sí lo estaba, y su dinero iba a la cuenta de los que no)
+          v_nom := pr->>'prestamista';
+          v_cta := pr->>'cuenta';
+          o := jsonb_build_object('prestamo_id', pr->>'prestamo_id');
         else
           -- (el nombre puede venir de la IA: solo letras, números y . & ' -, sin números largos, cuarenta letras)
           v_nom := regexp_replace(coalesce(d->>'prestamista', ''), '[0-9][0-9 .()-]{6,}[0-9]', ' ', 'g');
@@ -2009,7 +2358,7 @@ begin
         v_cta := case when d->>'cuenta' = '4910' then '4910' else '4900' end;
         o := jsonb_build_object('cuenta', v_cta);
         v_texto := format('Es %s: %s. No es el pago de una factura.',
-                          case when v_cta = '4910' then 'intereses que te paga el banco' else 'otro ingreso (un reembolso, una recompensa)' end, v_usd);
+                          case when v_cta = '4910' then 'intereses que te paga el banco' else 'otro ingreso (una recompensa, un premio)' end, v_usd);
       end if;
     when 'banco' then
       v_i := case when coalesce(d->>'opcion', '') ~ '^[0-9]{1,2}$' then (d->>'opcion')::int end;
@@ -2064,6 +2413,8 @@ declare
   v_txt   text;
   v_solo  boolean;
   v_pid   text;
+  v_sg    text;
+  sg      jsonb;
   r       bandeja_memoria;
 begin
   v_quien := fn_bandeja_quien();
@@ -2072,6 +2423,9 @@ begin
     return null;
   end if;
   c := fn_bandeja_contraparte(m.desc_norm, m.memo, m.monto, m.tipo_banco, m.cheque);
+  -- (lo que sugería la descripción de ESTE movimiento: con ello se sabe después si otro del mismo nombre es lo mismo)
+  sg := case when m.monto < 0 then fn_bandeja_sugerida(m.desc_norm) end;
+  v_sg := case when sg is not null then (sg->>'accion') || '|' || coalesce(sg->>'cuenta', '') end;
   if not (c ? 'clave') or (c->>'clase') not in ('comercio', 'zelle_a', 'zelle_de', 'deposito', 'procesador')
      or p_accion not in ('gasto', 'personal', 'cobro', 'anticipo', 'prestamo', 'aporte', 'traspaso', 'cuadrilla', 'contratista', 'otro_ingreso') then
     return null;   -- no dice quién (un cheque, el cajero) o no es algo que se recuerde (una opción de c6)
@@ -2125,11 +2479,15 @@ begin
   v_solo := coalesce(p_solo, false) and c->>'clase' = 'comercio'
             and (p_accion = 'personal' or (p_accion = 'gasto' and not (t ? 'obra')));
   perform set_config('mx_bandeja.escribe', 'bandeja_memoria', true);
-  insert into bandeja_memoria as bm (clave, nombre, clase, accion, datos, texto, solo, activa, origen, creada_por)
+  insert into bandeja_memoria as bm (clave, nombre, clase, accion, datos, texto, solo, activa, origen, creada_por, sugerida, privado)
   values (c->>'clave', c->>'nombre', c->>'clase', p_accion, t, v_txt, v_solo, true,
-          case when p_origen in ('grupo', 'dimelo') then p_origen else 'tarjeta' end, v_quien)
+          case when p_origen in ('grupo', 'dimelo') then p_origen else 'tarjeta' end, v_quien, v_sg,
+          -- (el nombre de quien manda o recibe sale de un correo: no va a la IA)
+          c->>'clase' in ('zelle_a', 'zelle_de', 'deposito')
+          and concat_ws(' ', m.descripcion, m.memo) ~ '[[:alnum:]._%+-]+@[[:alnum:].-]+\.[[:alpha:]]{2,}')
   on conflict (clave) do update
      set accion = excluded.accion, datos = excluded.datos, texto = excluded.texto, nombre = excluded.nombre, clase = excluded.clase,
+         sugerida = excluded.sugerida, privado = excluded.privado,
          -- (lo que ya entraba solo sigue entrando solo si la acción es la misma; si cambia, hay que volver a decirlo)
          solo = excluded.solo or (bm.solo and bm.accion = excluded.accion and bm.datos = excluded.datos and p_solo is null
                                   and not (excluded.datos ? 'obra')),
@@ -2261,6 +2619,20 @@ comment on function public.fn_bandeja_config(jsonb) is 'c17: cambia la configura
 --     deshace (fn_bandeja_ensayo): solo si c6 no tiene nada que decir de ese
 --     movimiento se registra con la línea. Lo que ENTRA SOLO pasa por lo
 --     mismo: nada entra solo si la puerta, hoy, lo frenaría.
+--
+--     EL FRENO DE ESTA CAPA (tercera vuelta). Lo que la app sabe de un
+--     DEPÓSITO —el banco mismo nombra a un prestamista, o c6 reconoce que lo
+--     manda el propio Edgar— antes solo lo miraba la recomendación: con una
+--     factura por ese mismo monto, «es el cobro de esa factura» (de la
+--     lista, de la IA o del botón de c6 que cobra) entraba sin un aviso. Ahora
+--     la respuesta que lo trata como dinero de un cliente (cobro, anticipo,
+--     otro ingreso, la devolución de una compra, la opción de c6 que cobra)
+--     FRENA aquí, en llano y con su huella como los frenos de c6 (la puerta
+--     real se ENSAYA para decir de una vez lo que diga también c6): solo
+--     entra si Edgar lo lee y escribe por qué. Y cuando la respuesta ES la que
+--     dice el banco (un préstamo, dinero suyo) y c6 la frena por si fuera un
+--     cobro, el texto no manda a cobrar la factura: dice que el banco mismo
+--     lo tiene por un préstamo (o por dinero de Edgar) y pide confirmarlo.
 -- ---------------------------------------------------------------------
 -- LA PUERTA de una acción ya validada: la de c6 (o la de c10) que le toca,
 -- con el motivo que se le dé (o ninguno). Lo que la puerta rechace, lo lanza.
@@ -2483,6 +2855,7 @@ declare
   v_motivo text;
   v_corrio text;
   m        movimientos_banco;
+  mem      bandeja_memoria;
   v        jsonb;
   d        jsonb;
   c        jsonb;
@@ -2492,10 +2865,14 @@ declare
   v_fr     jsonb;
   v_tok    text;
   v_mot    text;
+  v_c6     text;
+  v_propio text;
+  v_txt    text;
   v_con    boolean := false;
   v_lev    boolean;
   v_libre  boolean;
   v_antes  boolean;
+  v_cobra  boolean;
   v_as0    uuid;
   v_hecho  uuid := gen_random_uuid();
   v_marc   jsonb := '[]'::jsonb;
@@ -2504,10 +2881,14 @@ declare
   v_tanda  uuid;
   v_ia     jsonb;
   v_mem    jsonb;
+  v_tar    jsonb;
   v_nota   text;
   v_num    text;
+  v_fac    text[];
+  v_hay    text;
   p        text;
   c_regla  constant text := '^(MX[0-9A-Z]+|22023|22007|23514)$';
+  c_expl   constant text := '(propone un cobro o una factura que explica este depósito|Este depósito lo explica)';
 begin
   v_quien := fn_bandeja_quien();
   v_fuente := coalesce(nullif(op->>'fuente', ''), 'recomendacion');
@@ -2532,19 +2913,24 @@ begin
   v_antes := m.estado <> 'pendiente';   -- (un cargo ya registrado cuyo recibo llegó después)
   v_as0 := m.asiento_id;
   -- ¿c6 no tenía otra explicación para este movimiento? (lo que guardó la última vez que lo miró)
-  v_libre := coalesce(m.propuesta->>'motivo', 'sin_propuesta') in ('sin_ticket', 'clasificar', 'dudosa', 'sin_propuesta')
+  v_c6 := coalesce(m.propuesta->>'motivo', 'sin_propuesta');
+  v_libre := v_c6 in ('sin_ticket', 'clasificar', 'dudosa', 'sin_propuesta')
              and not (m.posible_duplicado_de is not null and m.duplicado is null);
   -- LO QUE ENTRA SOLO se comprueba aquí otra vez, entero (la rutina ya lo
   -- filtró): un cargo de un comercio con regla «que entre solo», de algo
   -- personal o de un gasto que NO lleva obra, hasta el tope, sin otra
-  -- explicación de c6, sin sospecha de duplicado y nunca deshecho. Y no
-  -- lleva un motivo escrito por nadie: si la puerta, hoy, lo frena, no entra.
+  -- explicación de c6, sin sospecha de duplicado, nunca deshecho, y descrito
+  -- por el banco como cuando Edgar puso la regla (fn_bandeja_memoria_vale).
+  -- Y no lleva un motivo escrito por nadie: si la puerta, hoy, lo frena, no
+  -- entra.
   if v_fuente = 'solo' then
+    select * into mem from bandeja_memoria bm where bm.clave = c->>'clave' and bm.activa and bm.solo and bm.accion = p_accion;
     if not (m.monto < 0 and c->>'clase' = 'comercio' and p_accion in ('gasto', 'personal') and v_libre
             and m.posible_duplicado_de is null and not (d ? 'proyecto_id')
             and (p_accion = 'personal' or (select k.regla_obra from cuentas k where k.codigo = d->>'cuenta') is distinct from 'obligatoria')
             and coalesce((select g.solo and abs(m.monto) <= g.solo_tope from bandeja_config g where g.id = 1), false)
-            and exists (select 1 from bandeja_memoria bm where bm.clave = c->>'clave' and bm.activa and bm.solo and bm.accion = p_accion)
+            and mem.clave is not null
+            and fn_bandeja_memoria_vale(p_accion || '|' || coalesce(d->>'cuenta', ''), mem.sugerida, m.desc_norm)
             and not exists (select 1 from bandeja_hechos h where h.movimiento_id = m.id and h.deshecho_el is not null)) then
       return jsonb_build_object('hecho', false, 'movimiento_id', m.id, 'por_que', 'Esto no puede entrar solo: se te pregunta.');
     end if;
@@ -2560,29 +2946,45 @@ begin
       end if;
     end loop;
   end if;
-  -- 1. LA PUERTA, SIN MOTIVO (o su ensayo, si la respuesta es de las que c6 pide siempre por escrito)
+  -- 0. LO QUE LA APP YA SABE DE ESE DEPÓSITO. Si el banco mismo nombra a un
+  --    PRESTAMISTA, o dice que el dinero lo manda EL PROPIO EDGAR, la
+  --    respuesta que lo trata como dinero de un cliente (el cobro de una
+  --    factura, un anticipo, un ingreso, la devolución de una compra, o la
+  --    opción de c6 que cobra) FRENA, venga de donde venga: de la lista, de
+  --    lo que entendió la IA o de un botón del banco. Es el freno de ESTA
+  --    capa (c6 no lo tiene en su puerta de cobrar), con su huella como los
+  --    demás: Edgar lo lee y, si de verdad es eso, escribe por qué.
+  if m.monto > 0 and not v_antes then
+    v_cobra := p_accion in ('cobro', 'anticipo') or (p_accion = 'banco' and d->>'llamar' = 'fn_banco_cobrar');
+    if v_cobra or p_accion in ('otro_ingreso', 'gasto', 'personal') then
+      pr := fn_bandeja_prestamista(m.desc_norm);
+      v_txt := case when v_cobra then 'el pago de un cliente' when p_accion = 'otro_ingreso' then 'un ingreso del negocio'
+                    else 'la devolución de una compra' end;
+      if pr is not null then
+        v_propio := format('El banco dice que este dinero lo deposita %s, un prestamista%s: es una deuda, no %s.', pr->>'prestamista',
+                           case when (pr->>'conocido')::boolean then ' que ya tienes dado de alta' else '' end, v_txt);
+      elsif v_c6 = 'aporte_edgar' then
+        v_propio := format('El banco dice que este dinero lo mandaste tú: es dinero tuyo a la empresa, no %s.', v_txt);
+      end if;
+    end if;
+  end if;
+  -- 1. LA PUERTA, SIN MOTIVO: de verdad; o ENSAYADA (se deshace siempre) si la respuesta es de las que c6 pide siempre por
+  --    escrito, o si esta capa ya tiene un freno que enseñar (para leer de una vez lo que diga también c6)
   if p_accion in ('personal', 'aporte', 'otro_ingreso') then
     v_fr := fn_bandeja_ensayo(m.id);
-    if v_fr is null then
-      -- (la línea de esta capa, solo si c6 no tenía otra explicación para el movimiento: un retiro del cajero, por ejemplo,
-      -- lleva la línea de Edgar)
-      v_mot := coalesce(v_motivo,
-                        case when p_accion = 'personal' and v_libre
-                             then format('Gasto personal de Edgar pagado desde la empresa (%s): %s', c->>'nombre',
-                                         case when v_fuente = 'solo' then 'regla suya en la Bandeja (entró solo)' else 'lo dijo en la Bandeja' end) end);
-      if v_mot is null then
-        return jsonb_build_object('hecho', false, 'movimiento_id', m.id, 'pide_motivo', true,
-                 'por_que', case when p_accion = 'aporte'
-                                   then 'Escribe en una línea de dónde salió ese dinero tuyo (queda escrito en el libro).'
-                                 when p_accion = 'otro_ingreso'
-                                   then 'Escribe en una línea de qué es ese ingreso (queda escrito en el libro).'
-                                 when c->>'clase' = 'cajero'
-                                   then 'Es efectivo que salió del cajero. Si fue para ti, escribe en una línea para qué (queda escrito en el libro).'
-                                 else 'Para este movimiento el banco tenía otra explicación. Si de verdad es tuyo, escribe en una línea de qué '
-                                      'fue (queda escrito en el libro).' end);
-      end if;
-      v_con := true;
-    end if;
+  elsif v_propio is not null then
+    begin
+      perform fn_bandeja_puerta(m.id, p_accion, d, null);
+      raise exception using errcode = 'MXB00', message = 'el ensayo se deshace siempre';
+    exception
+      when sqlstate 'MXB00' then
+        v_fr := null;
+      when others then
+        if sqlstate !~ c_regla then
+          raise;
+        end if;
+        v_fr := jsonb_build_object('codigo', sqlstate, 'mensaje', sqlerrm);
+    end;
   else
     begin
       v_res := fn_bandeja_puerta(m.id, p_accion, d, null);
@@ -2593,8 +2995,8 @@ begin
       v_fr := jsonb_build_object('codigo', sqlstate, 'mensaje', sqlerrm);
     end;
   end if;
-  -- 2. EL FRENO: lo que la puerta dijo sin motivo
-  if v_fr is not null then
+  -- 2. EL FRENO: lo que la puerta dijo sin motivo, y lo que esta capa sabe
+  if v_fr is not null or v_propio is not null then
     -- (ya estaba en el libro y casa solo —su recibo, su cobro—: se casa de verdad y no hay nada que registrar)
     if v_fr->>'mensaje' ~ '^Este movimiento casa solo' then
       perform fn_banco_casar(m.id);
@@ -2604,23 +3006,61 @@ begin
                                   'por_que', 'Esto ya estaba en el libro: quedó casado con ello y no hay que registrarlo otra vez.');
       end if;
     end if;
-    v_tok := md5(m.id::text || '|' || p_accion || '|' || (v_fr->>'mensaje'));
-    v_lev := (v_fr->>'codigo') in ('MX008', '22023') and (v_fr->>'mensaje') ~* '(dilo en |di por qué|dice por qué)';
-    if v_lev and v_motivo is not null and op->>'visto' = v_tok then
+    v_tok := md5(m.id::text || '|' || p_accion || '|' || coalesce(v_propio, '') || '|' || coalesce(v_fr->>'mensaje', ''));
+    v_lev := v_fr is null or ((v_fr->>'codigo') in ('MX008', '22023') and (v_fr->>'mensaje') ~* '(dilo en |di por qué|dice por qué)');
+    if v_lev and v_motivo is not null and op->>'visto' = v_tok and v_fuente <> 'solo' then
       -- Edgar leyó ESTE freno y escribió su porqué: la puerta, con su motivo
       v_mot := v_motivo;
       v_con := true;
     else
       pr := case when p_accion = 'prestamo' then fn_bandeja_prestamista(m.desc_norm) end;
+      -- (la factura que c6 nombra, si nombra una: se dice cuál)
+      v_fac := regexp_match(coalesce(v_fr->>'mensaje', ''), 'la factura #(\S+) \([^)]*\), abierta por ([0-9]+(?:\.[0-9]+)?)');
+      v_hay := case when v_fac is not null
+                    then format('Hay una factura por cobrar (la #%s, por %s), y el banco frena por si este depósito fuera un pago de ella.',
+                                v_fac[1], fn_bandeja_usd(v_fac[2]::numeric))
+                    else 'Hay facturas por cobrar, y el banco frena por si este depósito fuera el pago de una.' end;
+      v_txt := case
+        when v_fr is null then v_propio || ' Si de verdad es eso, escribe por qué.'
+        when v_propio is not null then v_propio || ' Además: ' || fn_bandeja_freno_llano(v_fr->>'mensaje', v_c6)
+        -- (la respuesta ES la que el banco mismo dice —un préstamo, dinero de Edgar— y c6 la frena por si fuera un cobro: el freno
+        -- no manda a cobrar la factura)
+        when p_accion = 'prestamo' and pr is not null and v_lev and (v_fr->>'mensaje') ~ c_expl
+          then v_hay || format(' Pero él mismo dice que lo deposita %s, un prestamista: si es el dinero del préstamo, confírmalo aquí abajo.',
+                               pr->>'prestamista')
+        when p_accion = 'aporte' and v_c6 = 'aporte_edgar' and v_lev and (v_fr->>'mensaje') ~ c_expl
+          then v_hay || ' Pero él mismo dice que lo mandaste tú: si es dinero tuyo a la empresa, confírmalo aquí abajo.'
+        else fn_bandeja_freno_llano(v_fr->>'mensaje', v_c6) end;
       return jsonb_strip_nulls(jsonb_build_object(
-        'hecho', false, 'movimiento_id', m.id, 'codigo', v_fr->>'codigo',
+        'hecho', false, 'movimiento_id', m.id, 'codigo', coalesce(v_fr->>'codigo', 'MX008'),
         'pide_motivo', case when v_lev and v_fuente <> 'solo' then true end,
         'freno', case when v_lev and v_fuente <> 'solo' then v_tok end,
-        'por_que', fn_bandeja_freno_llano(v_fr->>'mensaje'),
+        'por_que', v_txt,
         -- (el banco mismo nombra al prestamista: la respuesta al freno ya está dicha; Edgar la confirma o la cambia)
         'sugerido', case when v_lev and pr is not null
                          then format('Es un préstamo de %s (lo dice el banco), no el pago de un cliente', pr->>'prestamista') end));
     end if;
+  elsif p_accion in ('personal', 'aporte', 'otro_ingreso') then
+    -- (c6 no tiene nada que decir de este movimiento: la línea que estas respuestas llevan siempre. La de esta capa, solo en «es
+    -- mío» y si c6 no tenía otra explicación: un retiro del cajero, por ejemplo, lleva la línea de Edgar)
+    v_mot := coalesce(v_motivo,
+                      case when p_accion = 'personal' and v_libre and m.monto < 0
+                           then format('Gasto personal de Edgar pagado desde la empresa (%s): %s', c->>'nombre',
+                                       case when v_fuente = 'solo' then 'regla suya en la Bandeja (entró solo)' else 'lo dijo en la Bandeja' end) end);
+    if v_mot is null then
+      return jsonb_build_object('hecho', false, 'movimiento_id', m.id, 'pide_motivo', true,
+               'por_que', case when p_accion = 'aporte'
+                                 then 'Escribe en una línea de dónde salió ese dinero tuyo (queda escrito en el libro).'
+                               when p_accion = 'otro_ingreso'
+                                 then 'Escribe en una línea de qué es ese ingreso (queda escrito en el libro).'
+                               when m.monto > 0
+                                 then 'Escribe en una línea de qué era lo tuyo que te devolvieron (queda escrito en el libro).'
+                               when c->>'clase' = 'cajero'
+                                 then 'Es efectivo que salió del cajero. Si fue para ti, escribe en una línea para qué (queda escrito en el libro).'
+                               else 'Para este movimiento el banco tenía otra explicación. Si de verdad es tuyo, escribe en una línea de qué '
+                                    'fue (queda escrito en el libro).' end);
+    end if;
+    v_con := true;
   end if;
   if v_con then
     begin
@@ -2629,7 +3069,8 @@ begin
       if sqlstate !~ c_regla then
         raise;
       end if;
-      return jsonb_build_object('hecho', false, 'movimiento_id', p_movimiento, 'codigo', sqlstate, 'por_que', fn_bandeja_freno_llano(sqlerrm));
+      return jsonb_build_object('hecho', false, 'movimiento_id', p_movimiento, 'codigo', sqlstate,
+                                'por_que', fn_bandeja_freno_llano(sqlerrm, v_c6));
     end;
   end if;
   select * into m from movimientos_banco where id = p_movimiento;
@@ -2652,13 +3093,13 @@ begin
       v_marc := '[]'::jsonb;
       v_nota := 'El cobro quedó registrado, pero no pude dejarlo dicho en Proyectos: marca allí la factura como cobrada.';
     end;
-    -- la tarifa del procesador, si esta comisión no la explicaba ninguna de la lista
-    if p_accion = 'cobro' and d ? 'comision' and c->>'clase' = 'procesador' then
+    -- la tarifa del procesador que este cobro confirma (o enseña): de facturas ENTERAS; de un pago a cuenta no se aprende nada
+    if p_accion = 'cobro' and d ? 'comision' and c->>'clase' = 'procesador' and not coalesce((d->>'a_cuenta')::boolean, false) then
       begin
-        perform fn_bandeja_tarifa_aprender(c->>'proc', (select array_agg((a->>'monto')::numeric) from jsonb_array_elements(d->'facturas') a),
-                                           (d->>'comision')::numeric);
+        v_tar := fn_bandeja_tarifa_aprender(c->>'proc', (select array_agg((a->>'monto')::numeric) from jsonb_array_elements(d->'facturas') a),
+                                            (d->>'comision')::numeric);
       exception when others then
-        null;
+        v_tar := null;
       end;
     end if;
   end if;
@@ -2673,7 +3114,8 @@ begin
     values (v_hecho, m.id, p_accion,
             d || jsonb_strip_nulls(jsonb_build_object('marcadas', nullif(v_marc, '[]'::jsonb), 'cobro', v_cobro,
                                                       'cobro_nuevo', case when v_cobro is not null then v_nuevo end,
-                                                      'motivo', case when v_con and v_fr is not null then v_mot end)),
+                                                      'motivo', case when v_con and (v_fr is not null or v_propio is not null) then v_mot end,
+                                                      'tarifa', case when v_tar is not null then v_tar - 'veces' - 'origen' end)),
             v->>'texto', v_fuente, v_fuente = 'solo', c->>'clave',
             case when coalesce(op->>'dimelo_id', '') ~ '^[0-9a-fA-F-]{36}$' then (op->>'dimelo_id')::uuid end,
             m.monto, m.asiento_id, v_corrio, v_quien, v_tanda);
@@ -2704,30 +3146,146 @@ begin
 end $$;
 revoke execute on function public.fn_bandeja_hacer(uuid, text, jsonb, jsonb) from public, anon, service_role;
 grant  execute on function public.fn_bandeja_hacer(uuid, text, jsonb, jsonb) to authenticated;
-comment on function public.fn_bandeja_hacer(uuid, text, jsonb, jsonb) is 'c17: «Así es»: valida una acción de la lista cerrada y la registra por la puerta de c6 (o de c10) que corresponde, SIEMPRE primero sin motivo: si la puerta frena, devuelve lo que dijo (en llano) y la huella de ese freno, y un motivo solo lo levanta con ella. Devuelve {hecho: true, …} o {hecho: false, por_que, pide_motivo, freno, pide_obra, campos}; nada queda a medias. Deja el rastro en bandeja_hechos y, al cobrar, lo deja dicho en Proyectos.';
+comment on function public.fn_bandeja_hacer(uuid, text, jsonb, jsonb) is 'c17: «Así es»: valida una acción de la lista cerrada y la registra por la puerta de c6 (o de c10) que corresponde, SIEMPRE primero sin motivo: si la puerta frena (o esta capa: un depósito que el banco dice de un prestamista o del propio Edgar no entra como dinero de un cliente), devuelve lo que dijo (en llano) y la huella de ese freno, y un motivo solo lo levanta con ella. Devuelve {hecho: true, …} o {hecho: false, por_que, pide_motivo, freno, pide_obra, campos}; nada queda a medias. Deja el rastro en bandeja_hechos y, al cobrar, lo deja dicho en Proyectos.';
 
--- DESHACER algo que la Bandeja registró (lo que entró solo, o un «Así es»
--- equivocado), con su motivo: se des-casa por la puerta de c6 (su asiento
--- se reversa y el movimiento vuelve a la Bandeja) y lo deshecho NO vuelve a
--- entrar solo. Si lo registrado creó un cobro (el pago de una factura, un
--- anticipo, también por una opción de c6), ese cobro se anula por la puerta
--- de c3 y la factura vuelve a quedar por cobrar; un cobro que ya estaba
--- anotado y con el que el depósito solo se casó, se queda. Y Proyectos
--- vuelve a como estaba: la factura que esta capa marcó cobrada, su abono y
--- lo que se le sumó a «Cobrado» de la obra. Si el movimiento ya no está como
--- lo dejó este registro (alguien lo des-casó por otro lado), solo se marca.
-create or replace function public.fn_bandeja_deshacer(p_hecho uuid, p_motivo text) returns jsonb
+-- LO QUE REGISTRÓ LA IA DE ANTES (c8) AL APROBAR SU PROPUESTA desde la
+-- tarjeta nueva: el «Así es» de una recomendación que venía de una propuesta
+-- pendiente de c8 se registra por SU camino de siempre (la función de borde
+-- «contador», acción «aprobar»: ella clasifica, aprende su regla y cuenta el
+-- acierto en su marcador). Pero ese camino no deja rastro aquí: la respuesta
+-- no salía en «Lo que contestaste estos días», no se podía deshacer desde la
+-- Bandeja y no ofrecía «Recordarlo». Esta función ANOTA ese registro: no
+-- toca el libro. Comprueba que el movimiento quedó clasificado con el
+-- asiento de una propuesta de c8 aprobada (o editada: Edgar cambió la obra)
+-- y deja su fila en bandeja_hechos (la acción y los datos, leídos del
+-- asiento: una sola línea de gasto, o «es mío»), con lo que Edgar pidió
+-- recordar. p_opciones: {recordar, solo}. Devuelve {hecho: true, hecho_id,
+-- texto, asiento, recordado} o {hecho: false, por_que}. Llamarla dos veces
+-- no anota dos veces.
+create or replace function public.fn_bandeja_anotar(p_movimiento uuid, p_opciones jsonb default '{}'::jsonb) returns jsonb
 language plpgsql
 set search_path = public, pg_temp
 as $$
 declare
   v_quien uuid;
+  op      jsonb := case when jsonb_typeof(p_opciones) = 'object' then p_opciones else '{}'::jsonb end;
+  m       movimientos_banco;
+  q       contador_propuestas;
+  c       jsonb;
+  d       jsonb;
+  v_acc   text;
+  v_txt   text;
+  v_cta   text;
+  v_pid   text;
+  v_obra  text;
+  v_n     int;
+  v_id    uuid;
+  v_mem   jsonb;
+  v_num   text;
+begin
+  v_quien := fn_bandeja_quien();
+  if p_movimiento is null then
+    raise exception using errcode = '22023', message = 'Falta el movimiento.';
+  end if;
+  perform pg_advisory_xact_lock(820261121, hashtext('bandeja:' || p_movimiento::text));
+  select * into m from movimientos_banco where id = p_movimiento;
+  if not found or m.estado <> 'casado' or m.casado_clase is distinct from 'clasificado' or m.asiento_id is null then
+    return jsonb_build_object('hecho', false, 'movimiento_id', p_movimiento, 'por_que', 'Ese movimiento no quedó registrado.');
+  end if;
+  select * into q from contador_propuestas p
+   where p.movimiento_id = m.id and p.asiento_id = m.asiento_id and p.estado in ('aprobada', 'editada')
+   order by p.aprobado_el desc nulls last limit 1;
+  if not found then
+    return jsonb_build_object('hecho', false, 'movimiento_id', m.id, 'por_que', 'Eso no lo registró la IA al aprobar su propuesta.');
+  end if;
+  select h.id into v_id from bandeja_hechos h where h.movimiento_id = m.id and h.asiento_id = m.asiento_id and h.deshecho_el is null limit 1;
+  select a.numero into v_num from asientos a where a.id = m.asiento_id;
+  -- lo que entró, leído del asiento: las líneas que no son la del banco
+  select count(*), min(l.cuenta), min(l.proyecto_id) into v_n, v_cta, v_pid
+    from asiento_lineas l where l.asiento_id = m.asiento_id and l.cuenta <> m.cuenta;
+  if v_n <> 1 then
+    return jsonb_build_object('hecho', false, 'movimiento_id', m.id, 'asiento', v_num,
+                              'por_que', 'Quedó registrado repartido entre varias cuentas: se deshace desde Banco → Movimientos.');
+  end if;
+  v_acc := case when v_cta = '3200' then 'personal' else 'gasto' end;
+  v_obra := (select p.nombre from proyectos p where p.id = v_pid);
+  d := jsonb_strip_nulls(jsonb_build_object('cuenta', v_cta, 'proyecto_id', v_pid, 'propuesta_ia', q.id));
+  v_txt := case when v_acc = 'personal'
+                then format('Es tuyo, no de la empresa: %s que salen como retiro tuyo (no es un gasto del negocio).', fn_bandeja_usd(abs(m.monto)))
+                else format('Es un gasto de «%s»%s: %s.', fn_bandeja_cuenta_llana(v_cta), coalesce(' de la obra ' || v_obra, ''),
+                            fn_bandeja_usd(abs(m.monto))) end;
+  c := fn_bandeja_contraparte(m.desc_norm, m.memo, m.monto, m.tipo_banco, m.cheque);
+  if v_id is null then
+    v_id := gen_random_uuid();
+    perform set_config('mx_bandeja.escribe', 'bandeja_hechos', true);
+    insert into bandeja_hechos (id, movimiento_id, accion, datos, texto, fuente, solo, memoria_clave, monto, asiento_id, corrio, por)
+    values (v_id, m.id, v_acc, d, v_txt, 'recomendacion', false, c->>'clave', m.monto, m.asiento_id, 'pantalla', v_quien);
+    perform set_config('mx_bandeja.escribe', '', true);
+    if coalesce((op->>'recordar')::boolean, false) then
+      v_mem := fn_bandeja_recordar(m.id, v_acc, d - 'propuesta_ia' - 'proyecto_id', case when op ? 'solo' then (op->>'solo')::boolean end, 'tarjeta');
+    end if;
+    if c ? 'clave' then
+      perform set_config('mx_bandeja.escribe', 'bandeja_memoria', true);
+      update bandeja_memoria set veces = veces + 1, ultima_vez = now() where clave = c->>'clave' and activa and accion = v_acc;
+      perform set_config('mx_bandeja.escribe', '', true);
+    end if;
+  end if;
+  return jsonb_strip_nulls(jsonb_build_object('hecho', true, 'hecho_id', v_id, 'movimiento_id', m.id, 'estado', m.estado,
+                                              'asiento_id', m.asiento_id, 'asiento', v_num, 'texto', v_txt, 'monto', m.monto,
+                                              'recordado', v_mem));
+end $$;
+revoke execute on function public.fn_bandeja_anotar(uuid, jsonb) from public, anon, service_role;
+grant  execute on function public.fn_bandeja_anotar(uuid, jsonb) to authenticated;
+comment on function public.fn_bandeja_anotar(uuid, jsonb) is 'c17: anota en el rastro de la Bandeja (bandeja_hechos) lo que la IA de c8 registró al aprobar su propuesta desde la tarjeta nueva, para que salga en «Lo que contestaste estos días», se pueda deshacer y se recuerde como las demás respuestas. No toca el libro; dos veces no anota dos veces. Solo el dueño, con su sesión.';
+
+-- DESHACER algo que la Bandeja registró (lo que entró solo, o un «Así es»
+-- equivocado), con su motivo: se des-casa por la puerta de c6 (su asiento
+-- se reversa y el movimiento vuelve a la Bandeja) y lo deshecho NO vuelve a
+-- entrar solo. Además:
+--   · EL PAGO A LA CUADRILLA que repartió c10 se deshace por la puerta de
+--     c10 (fn_jornal_deshacer: su reparto queda deshecho y sus horas libres);
+--     des-casarlo a secas dejaba el reparto «aplicado» con su asiento
+--     reversado y el control de c10 en rojo.
+--   · Si lo registrado creó un COBRO (el pago de una factura, un anticipo,
+--     también por una opción de c6), ese cobro se anula por la puerta de c3
+--     y la factura vuelve a quedar por cobrar; un cobro que ya estaba
+--     anotado y con el que el depósito solo se casó, se queda.
+--   · PROYECTOS queda como dice EL LIBRO en ese momento (no como la foto de
+--     «antes» de ese registro: con dos pagos a cuenta de una factura,
+--     deshacer el primero la dejaba con cero cobrado teniendo el libro el
+--     segundo): cada factura que ese cobro tocó, cobrada solo si el libro no
+--     le deja saldo, y con lo abonado que el libro diga; y a «Cobrado» de la
+--     obra se le resta lo que ese registro le sumó.
+--   · LA TARIFA del procesador que ese cobro confirmó pierde esa vez.
+--   · «QUE LO SIGUIENTE ENTRE SOLO» de esa contraparte SE APAGA (la regla
+--     sigue recordada: se propone): quien deshace una respuesta no quiere
+--     que el siguiente cargo de ese comercio entre sin preguntar con la
+--     misma respuesta. p_opciones {deja_solo: false} la deja encendida (el
+--     cargo de más de un comercio cuya regla está bien).
+-- Si el movimiento ya no está como lo dejó este registro (alguien lo
+-- des-casó por otro lado), solo se marca. Devuelve {deshecho, estado,
+-- cobro_anulado, solo_apagado (el nombre del comercio), ia_caducar (las
+-- propuestas de c8 aprobadas cuyo asiento se acaba de reversar: la pantalla
+-- las cierra por la función de borde)}.
+drop function if exists public.fn_bandeja_deshacer(uuid, text);
+create or replace function public.fn_bandeja_deshacer(p_hecho uuid, p_motivo text, p_opciones jsonb default '{}'::jsonb) returns jsonb
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_quien uuid;
+  op      jsonb := case when jsonb_typeof(p_opciones) = 'object' then p_opciones else '{}'::jsonb end;
   h       bandeja_hechos;
   m       movimientos_banco;
   v_res   jsonb;
   x       jsonb;
   v_cobro uuid;
+  v_rep   uuid;
   v_anul  boolean := false;
+  v_sl    numeric;
+  v_cl    numeric;
+  v_ia    jsonb;
+  v_apag  text;
   v_mot   text := nullif(btrim(regexp_replace(coalesce(p_motivo, ''), '\s+', ' ', 'g')), '');
 begin
   v_quien := fn_bandeja_quien();
@@ -2745,8 +3303,21 @@ begin
   end if;
   select * into m from movimientos_banco where id = h.movimiento_id;
   if found and m.estado <> 'pendiente' and m.asiento_id is not distinct from h.asiento_id then
+    -- lo de la IA (c8) aprobado con este asiento: al reversarlo queda sin asiento vivo, y lo cierra la pantalla
+    select jsonb_agg(q.id order by q.creado_el) into v_ia
+      from contador_propuestas q
+     where q.movimiento_id = m.id and q.asiento_id = h.asiento_id and q.estado in ('aprobada', 'editada');
     v_cobro := case when m.casado_clase = 'cobro' and coalesce(m.casado_ref, '') ~ '^[0-9a-fA-F-]{36}$' then m.casado_ref::uuid end;
-    v_res := fn_banco_descasar(m.id, v_mot);
+    -- el pago a la cuadrilla que repartió c10: por la puerta de c10 (ella des-casa por c6 y deja su reparto deshecho)
+    if to_regclass('public.jornal_repartos') is not null and to_regprocedure('public.fn_jornal_deshacer(uuid,text)') is not null then
+      execute 'select r.id from public.jornal_repartos r where r.movimiento_id = $1 and r.asiento_id = $2 and r.estado = ''aplicado'' '
+              'order by r.creado_el desc limit 1' into v_rep using m.id, h.asiento_id;
+    end if;
+    if v_rep is not null then
+      execute 'select public.fn_jornal_deshacer($1, $2)' into v_res using v_rep, v_mot;
+    else
+      v_res := fn_banco_descasar(m.id, v_mot);
+    end if;
     -- el cobro que ESTE registro creó: des-casar suelta el depósito pero deja el cobro anotado; se anula (la factura vuelve a
     -- quedar por cobrar) y c6 vuelve a proponer para el depósito
     if v_cobro is not null
@@ -2757,68 +3328,88 @@ begin
       perform fn_banco_casar(m.id);
       v_anul := true;
     end if;
-    -- Proyectos, como estaba (solo lo que el libro ya no respalda)
+    -- Proyectos, como dice EL LIBRO ahora: cada factura que este registro tocó
     for x in select value from jsonb_array_elements(coalesce(h.datos->'marcadas', '[]'::jsonb)) loop
-      if x ? 'antes' then
+      select coalesce(fc.saldo_libro, 0), coalesce(fc.cobrado_libro, 0) into v_sl, v_cl
+        from facturas_cobro fc where fc.id = (x->>'id')::bigint;
+      if found and v_sl > 0 then
         update facturas f
-           set pagada = coalesce((x->'antes'->>'pagada')::boolean, false),
-               cobrada_el = (x->'antes'->>'cobrada_el')::timestamptz,
-               cobrado = (x->'antes'->>'cobrado')::numeric
+           set pagada = false, cobrada_el = null, cobrado = v_cl
          where f.id = (x->>'id')::bigint
-           and exists (select 1 from facturas_cobro fc where fc.id = f.id
-                        and (coalesce(fc.saldo_libro, 0) > 0 and coalesce(f.pagada, false)
-                             or coalesce(fc.cobrado_libro, 0) < coalesce(f.cobrado, 0)));
-        if found and coalesce((x->>'sumado')::numeric, 0) > 0 then
-          update finanzas_proyecto
-             set cobrado = round(cobrado - (x->>'sumado')::numeric, 2)
-           where proyecto_id = x->>'proyecto_id' and coalesce(cobrado, 0) >= (x->>'sumado')::numeric;
-        end if;
-      else
-        -- (un registro de antes de guardar cómo estaba: solo la marca)
-        update facturas set pagada = false, cobrada_el = null
-         where id = (x->>'id')::bigint and coalesce(pagada, false)
-           and exists (select 1 from facturas_cobro fc where fc.id = facturas.id and coalesce(fc.saldo_libro, 0) > 0);
+           and (coalesce(f.pagada, false) or coalesce(f.cobrado, 0) is distinct from v_cl);
+      end if;
+      if coalesce((x->>'sumado')::numeric, 0) > 0 then
+        update finanzas_proyecto
+           set cobrado = round(greatest(coalesce(cobrado, 0) - (x->>'sumado')::numeric, 0), 2)
+         where proyecto_id = x->>'proyecto_id';
       end if;
     end loop;
+    -- la tarifa del procesador que este cobro confirmó (o enseñó): pierde esa vez
+    if h.datos ? 'tarifa' then
+      begin
+        perform fn_bandeja_tarifa_olvidar(h.datos->'tarifa', false);
+      exception when others then
+        null;
+      end;
+    end if;
   end if;
   perform set_config('mx_bandeja.escribe', 'bandeja_hechos', true);
   update bandeja_hechos set deshecho_el = now(), deshecho_por = v_quien, deshecho_motivo = v_mot where id = h.id;
   perform set_config('mx_bandeja.escribe', '', true);
+  -- «que lo siguiente entre solo» de esa contraparte se apaga (salvo que Edgar diga que siga)
+  if coalesce((op->>'deja_solo')::boolean, true) and h.memoria_clave is not null then
+    perform set_config('mx_bandeja.escribe', 'bandeja_memoria', true);
+    update bandeja_memoria set solo = false, cambiada_por = v_quien, cambiada_el = now()
+     where clave = h.memoria_clave and solo
+    returning nombre into v_apag;
+    perform set_config('mx_bandeja.escribe', '', true);
+  end if;
   select * into m from movimientos_banco where id = h.movimiento_id;
   return jsonb_strip_nulls(jsonb_build_object('deshecho', true, 'hecho_id', h.id, 'movimiento_id', h.movimiento_id, 'estado', m.estado,
-                                              'cobro_anulado', case when v_anul then true end, 'banco', v_res));
+                                              'cobro_anulado', case when v_anul then true end, 'banco', v_res,
+                                              'solo_apagado', v_apag, 'ia_caducar', v_ia));
 end $$;
-revoke execute on function public.fn_bandeja_deshacer(uuid, text) from public, anon, service_role;
-grant  execute on function public.fn_bandeja_deshacer(uuid, text) to authenticated;
-comment on function public.fn_bandeja_deshacer(uuid, text) is 'c17: deshace, con su motivo, algo que la Bandeja registró: lo des-casa por c6 (su asiento se reversa y vuelve a la Bandeja), anula el cobro que ese registro creó (también por una opción de c6), devuelve Proyectos a como estaba (la factura, su abono y «Cobrado» de la obra) y lo deja marcado: lo deshecho no vuelve a entrar solo.';
+revoke execute on function public.fn_bandeja_deshacer(uuid, text, jsonb) from public, anon, service_role;
+grant  execute on function public.fn_bandeja_deshacer(uuid, text, jsonb) to authenticated;
+comment on function public.fn_bandeja_deshacer(uuid, text, jsonb) is 'c17: deshace, con su motivo, algo que la Bandeja registró: lo des-casa por c6 (el pago a la cuadrilla, por c10), anula el cobro que ese registro creó, deja Proyectos como dice el libro (la factura, su abono y «Cobrado» de la obra), quita la vez de la tarifa que confirmó, apaga «que entre solo» de esa contraparte (salvo deja_solo: false) y lo deja marcado: lo deshecho no vuelve a entrar solo.';
 
 -- DESHACER UNA DECISIÓN DE GRUPO entera («Así es para los 25», con la obra
 -- equivocada): todos los registros vivos de esa tanda, con UN motivo. Cada
--- uno pasa por fn_bandeja_deshacer; el que no se pueda (un mes ya cerrado)
--- se queda y se dice. Con muchos corta por reloj («sigue»: se llama otra vez).
-create or replace function public.fn_bandeja_deshacer_tanda(p_tanda uuid, p_motivo text) returns jsonb
+-- uno pasa por fn_bandeja_deshacer (y «que entre solo» de ese comercio se
+-- apaga, salvo deja_solo: false); el que no se pueda (un mes ya cerrado) se
+-- queda y se dice. Corta por reloj mucho antes del corte de la API (3 s de
+-- fábrica; p_opciones {ms}) y dice «sigue»: se la llama otra vez.
+drop function if exists public.fn_bandeja_deshacer_tanda(uuid, text);
+create or replace function public.fn_bandeja_deshacer_tanda(p_tanda uuid, p_motivo text, p_opciones jsonb default '{}'::jsonb) returns jsonb
 language plpgsql
 set search_path = public, pg_temp
 as $$
 declare
+  op       jsonb := case when jsonb_typeof(p_opciones) = 'object' then p_opciones else '{}'::jsonb end;
   h        record;
+  r        jsonb;
   v_n      int := 0;
   v_quedan jsonb := '[]'::jsonb;
+  v_ia     jsonb := '[]'::jsonb;
+  v_apag   text;
   v_sigue  boolean := false;
-  v_fin    timestamptz := clock_timestamp() + interval '18 seconds';
+  v_fin    timestamptz;
 begin
   perform fn_bandeja_quien();
   if p_tanda is null or nullif(btrim(coalesce(p_motivo, '')), '') is null or length(btrim(p_motivo)) < 3 then
     raise exception using errcode = '22023', message = 'Deshacer dice por qué (queda escrito).';
   end if;
+  v_fin := clock_timestamp() + make_interval(secs => least(greatest(coalesce(fn_bandeja_num(op->>'ms'), 3000), 50), 6000) / 1000.0);
   for h in select b.id, b.movimiento_id from bandeja_hechos b where b.tanda = p_tanda and b.deshecho_el is null order by b.el, b.id loop
-    if clock_timestamp() > v_fin then
+    if v_n > 0 and clock_timestamp() > v_fin then
       v_sigue := true;
       exit;
     end if;
     begin
-      perform fn_bandeja_deshacer(h.id, p_motivo);
+      r := fn_bandeja_deshacer(h.id, p_motivo, jsonb_build_object('deja_solo', coalesce((op->>'deja_solo')::boolean, true)));
       v_n := v_n + 1;
+      v_ia := v_ia || coalesce(r->'ia_caducar', '[]'::jsonb);
+      v_apag := coalesce(r->>'solo_apagado', v_apag);
     exception when others then
       if sqlstate !~ '^(MX[0-9A-Z]+|22023|22007|23514)$' then
         raise;
@@ -2826,11 +3417,12 @@ begin
       v_quedan := v_quedan || jsonb_build_object('hecho_id', h.id, 'movimiento_id', h.movimiento_id, 'por_que', fn_bandeja_freno_llano(sqlerrm));
     end;
   end loop;
-  return jsonb_strip_nulls(jsonb_build_object('tanda', p_tanda, 'deshechos', v_n, 'quedan', v_quedan, 'sigue', case when v_sigue then true end));
+  return jsonb_strip_nulls(jsonb_build_object('tanda', p_tanda, 'deshechos', v_n, 'quedan', v_quedan, 'sigue', case when v_sigue then true end,
+                                              'solo_apagado', v_apag, 'ia_caducar', nullif(v_ia, '[]'::jsonb)));
 end $$;
-revoke execute on function public.fn_bandeja_deshacer_tanda(uuid, text) from public, anon, service_role;
-grant  execute on function public.fn_bandeja_deshacer_tanda(uuid, text) to authenticated;
-comment on function public.fn_bandeja_deshacer_tanda(uuid, text) is 'c17: deshace entera una decisión de grupo (todos los registros vivos de esa tanda) con un solo motivo; el que no se pueda se queda y se dice; con muchos corta por reloj (sigue).';
+revoke execute on function public.fn_bandeja_deshacer_tanda(uuid, text, jsonb) from public, anon, service_role;
+grant  execute on function public.fn_bandeja_deshacer_tanda(uuid, text, jsonb) to authenticated;
+comment on function public.fn_bandeja_deshacer_tanda(uuid, text, jsonb) is 'c17: deshace entera una decisión de grupo (todos los registros vivos de esa tanda) con un solo motivo; el que no se pueda se queda y se dice; corta por reloj (3 s de fábrica) y dice «sigue».';
 
 
 -- ---------------------------------------------------------------------
@@ -2881,15 +3473,16 @@ declare
   v_n     int;
   v_k     int;
   v_cta   text;
-  v_obra  boolean;
   v_tope  numeric;
+  v_ia    uuid;
 begin
   perform fn_bandeja_exigir_dueno();
   select * into m from movimientos_banco where id = p_movimiento;
   if not found or m.estado <> 'pendiente' then
     return null;
   end if;
-  c := fn_bandeja_contraparte(m.desc_norm, m.memo, m.monto, m.tipo_banco, m.cheque);
+  -- (fn_bandeja_leer ya calculó la contraparte de cada movimiento y qué pendientes pueden ser de un prestamista: no se repite)
+  c := coalesce(p_ctx->'c', fn_bandeja_contraparte(m.desc_norm, m.memo, m.monto, m.tipo_banco, m.cheque));
   v_mot := coalesce(m.propuesta->>'motivo', 'sin_propuesta');
   ops := case when jsonb_typeof(m.propuesta->'opciones') = 'array' then m.propuesta->'opciones' else '[]'::jsonb end;
   v_n := jsonb_array_length(ops);
@@ -2912,8 +3505,8 @@ begin
       else 'Puede ser algo que venía de QuickBooks, de antes del 1 de octubre. Míralo en «Más opciones».' end);
   end if;
   select * into mem from bandeja_memoria bm where bm.clave = c->>'clave' and bm.activa;
+  pr := case when p_ctx ? 'prest' and not (p_ctx->'prest' ? m.id::text) then null else fn_bandeja_prestamista(m.desc_norm) end;
   if m.monto > 0 then
-    pr := fn_bandeja_prestamista(m.desc_norm);
     if v_mot in ('transferencia_otro_lado', 'cobro_que_lo_nombra', 'otro_lado_clasificado') and v_n >= 1 then
       v_acc := 'banco'; v_dat := jsonb_build_object('opcion', 0); v_fte := 'banco';
     elsif pr is not null then
@@ -2927,6 +3520,18 @@ begin
       -- DINERO DEL PROPIO EDGAR: nunca el cobro de un cliente, aunque una factura tenga ese mismo monto
       v_acc := 'aporte'; v_dat := jsonb_build_object('tipo', 'prestamo_accionista'); v_fte := 'banco';
       v_por := 'El banco dice que este dinero lo mandaste tú: es dinero tuyo a la empresa, no el pago de un cliente.';
+    elsif v_mot in ('deposito_cobro', 'deposito_cobros') and v_n >= 1 and ops->0->>'llamar' = 'fn_banco_casar_con' then
+      -- UN COBRO QUE YA ESTABA ANOTADO y espera su depósito (por ese monto): es lo que ya está en el libro. Pero si además una
+      -- factura por cobrar tiene ese mismo monto, hay dos lecturas (casarlo con el cobro, o cobrar esa otra factura: el dinero
+      -- quedaría dos veces): no se recomienda ninguna
+      v_fact := coalesce(p_ctx->'facturas', fn_bandeja_facturas());
+      cb := fn_bandeja_cobro_de(v_fact, m.monto, m.fecha, v_proc);
+      if cb is not null then
+        return jsonb_build_object('fuente', 'banco',
+          'aviso', 'Este depósito puede ser el de un cobro que ya estaba anotado por ese monto, o el pago de otra factura por cobrar '
+                   'con ese mismo monto. Elige cuál en «Más opciones», o dímelo abajo: si se registran los dos, el dinero queda dos veces.');
+      end if;
+      v_acc := 'banco'; v_dat := jsonb_build_object('opcion', 0); v_fte := 'banco';
     elsif mem.clave is not null then
       v_fte := 'memoria'; v_por := 'Ya me lo dijiste antes: ' || mem.texto || '.';
       if mem.accion = 'cobro' then
@@ -2937,24 +3542,32 @@ begin
           from jsonb_array_elements(v_fact) x
          where x->>'proyecto_id' = mem.datos->>'proyecto_id' or (v_cli is not null and lower(btrim(x->>'cliente')) = v_cli);
         cb := fn_bandeja_cobro_de(v_suyas, m.monto, m.fecha, v_proc);
-        if not (coalesce(cb, '{}'::jsonb) ? 'facturas') then
-          cb := fn_bandeja_cobro_de(v_fact, m.monto, m.fecha, v_proc);
-        end if;
         if coalesce(cb, '{}'::jsonb) ? 'facturas' then
           v_acc := 'cobro'; v_dat := jsonb_strip_nulls(jsonb_build_object('facturas', cb->'facturas', 'comision', cb->'comision'));
         else
           -- UN PAGO A CUENTA: no cuadra con una factura entera. Si de las suyas hay UNA sola por cobrar, y por más que el
-          -- depósito, es una parte de ella. Si no, se pregunta: un «anticipo» supuesto dejaría la factura entera por cobrar
-          -- (o el dinero de otro cliente en esta obra)
+          -- depósito, es una parte de ella
           select count(*), min(x->>'id') filter (where (x->>'saldo')::numeric > m.monto) into v_k, v_cta
             from jsonb_array_elements(v_suyas) x where (x->>'saldo')::numeric > 0 and (x->>'fecha')::date <= m.fecha;
           if v_k = 1 and v_cta is not null then
             v_acc := 'cobro'; v_dat := jsonb_build_object('facturas', jsonb_build_array(jsonb_build_object('id', v_cta::bigint, 'monto', m.monto)));
             v_por := v_por || ' No cuadra con una factura entera: va como una parte de la única que tiene por cobrar.';
           else
-            return jsonb_build_object('fuente', 'memoria',
-              'aviso', format('Ya me dijiste esto: %s. Pero este depósito no cuadra con ninguna factura suya por cobrar. Dime abajo qué es: '
-                              'el pago de una factura, una parte de ella o un anticipo.', mem.texto));
+            -- ni entera ni a cuenta de las SUYAS. Si cuadra justo con la factura de OTRO cliente se propone esa, diciéndolo (no con
+            -- la razón de lo recordado: antes salía «Ya me lo dijiste: paga la obra X» delante de la factura de otra obra); si
+            -- no, se pregunta: un «anticipo» supuesto dejaría la factura entera por cobrar
+            cb := fn_bandeja_cobro_de(v_fact, m.monto, m.fecha, v_proc);
+            if coalesce(cb, '{}'::jsonb) ? 'facturas' and not (cb ? 'comision') then
+              v_acc := 'cobro'; v_fte := 'app';
+              v_dat := jsonb_build_object('facturas', cb->'facturas');
+              v_por := format('Me dijiste que %s, pero este depósito no cuadra con ninguna factura suya: cuadra justo con %s, que es de '
+                              'otra obra. Míralo bien antes de tocar.', mem.texto,
+                              case when jsonb_array_length(cb->'facturas') = 1 then 'esta factura' else 'estas facturas' end);
+            else
+              return jsonb_build_object('fuente', 'memoria',
+                'aviso', format('Ya me dijiste esto: %s. Pero este depósito no cuadra con ninguna factura suya por cobrar. Dime abajo qué es: '
+                                'el pago de una factura, una parte de ella o un anticipo.', mem.texto));
+            end if;
           end if;
         end if;
       else
@@ -2971,11 +3584,7 @@ begin
                                 else 'Las marcaste cobradas en Proyectos y juntas suman este depósito' end
                       else case when jsonb_array_length(cb->'facturas') = 1 then 'Es la única factura por cobrar con ese monto'
                                 else 'Son las únicas facturas por cobrar que juntas suman este depósito' end end
-                 || case when coalesce((cb->>'aprox')::boolean, false)
-                           then format(', menos %s de comisión (el %s %% del cobro): es el único juego de facturas que cabe. Míralo bien antes de tocar.',
-                                       fn_bandeja_usd((cb->>'comision')::numeric),
-                                       round(100 * (cb->>'comision')::numeric / (cb->>'bruto')::numeric, 2))
-                         when cb ? 'comision'
+                 || case when cb ? 'comision'
                            then format(', menos la comisión de la tarjeta (el %s %%%s de cada factura).', cb->'tarifa'->>'pct',
                                        case when coalesce((cb->'tarifa'->>'fijo')::numeric, 0) > 0
                                             then ' más ' || fn_bandeja_usd((cb->'tarifa'->>'fijo')::numeric) else '' end)
@@ -2994,7 +3603,10 @@ begin
       -- LO QUE COBRA EL PROCESADOR por los pagos con tarjeta (antes que lo recordado: no es la suscripción de QuickBooks)
       v_acc := 'gasto'; v_dat := jsonb_build_object('cuenta', '6130'); v_fte := 'app';
       v_por := 'Es lo que cobra el procesador de tarjetas por los pagos de tus clientes.';
-    elsif mem.clave is not null then
+    elsif mem.clave is not null
+          -- (lo recordado vale para lo que el banco describe como entonces: el permiso y la luz de una misma ciudad no son lo mismo)
+          and fn_bandeja_memoria_vale(mem.accion || '|' || coalesce(mem.datos->>'cuenta', case when mem.accion = 'personal' then '3200' else '' end),
+                                      mem.sugerida, m.desc_norm) then
       v_acc := mem.accion; v_dat := mem.datos - 'obra'; v_fte := 'memoria';
       v_por := 'Ya me lo dijiste antes: ' || mem.texto || '.';
       if mem.solo then
@@ -3005,8 +3617,7 @@ begin
                                  then ' No entró solo porque ya lo deshiciste una vez.'
                                else '' end;
       end if;
-    elsif fn_bandeja_prestamista(m.desc_norm) is not null then
-      pr := fn_bandeja_prestamista(m.desc_norm);
+    elsif pr is not null then
       return jsonb_strip_nulls(jsonb_build_object('fuente', 'app',
         'sin_alta', case when not coalesce((pr->>'conocido')::boolean, false) then pr->>'prestamista' end,
         'aviso', case when (pr->>'conocido')::boolean
@@ -3020,37 +3631,40 @@ begin
         from contador_propuestas p
        where p.movimiento_id = m.id and p.estado = 'pendiente'
        order by p.creado_el desc limit 1;
-      if found and jsonb_typeof(q.propuesta->'lineas') = 'array' and jsonb_array_length(q.propuesta->'lineas') >= 1 then
-        -- LA PROPUESTA DE LA IA (c8): se aprueba por su función de siempre
+      if found and jsonb_typeof(q.propuesta->'lineas') = 'array' and jsonb_array_length(q.propuesta->'lineas') = 1 then
+        -- LA PROPUESTA PENDIENTE DE LA IA DE ANTES (c8), dicha como las demás: «es tuyo» si va a tu retiro, o el gasto de su
+        -- categoría (con la obra que traía, si era firme). El porqué es fijo: el motivo libre de c8 trae códigos de cuenta y jerga.
+        -- Se aprueba por SU camino (la función de borde: ella la registra, aprende su regla y cuenta el acierto) y la Bandeja
+        -- anota el registro (fn_bandeja_anotar): por eso lleva propuesta_ia
         v_cta := q.propuesta->'lineas'->0->>'cuenta';
-        v_obra := coalesce((select k.regla_obra from cuentas k where k.codigo = v_cta), 'prohibida') in ('obligatoria', 'opcional');
-        ob := case when v_obra then coalesce(
-                case when nullif(q.propuesta->'lineas'->0->>'proyecto_id', '') is not null
-                          and coalesce((q.propuesta->'obra'->>'fuerte')::boolean, true)
-                     then (select jsonb_build_object('proyecto_id', pj.id, 'nombre', pj.nombre, 'por', 'la propuso la IA')
-                             from proyectos pj where pj.id = q.propuesta->'lineas'->0->>'proyecto_id') end,
-                fn_bandeja_obra_del_dia(v_dia)) end;
-        return jsonb_strip_nulls(jsonb_build_object(
-          'accion', 'ia', 'fuente', 'ia',
-          'datos', jsonb_strip_nulls(jsonb_build_object('propuesta_id', q.id, 'cuenta', v_cta, 'proyecto_id', ob->>'proyecto_id',
-                                                        'lineas', jsonb_array_length(q.propuesta->'lineas'))),
-          'texto', case when jsonb_array_length(q.propuesta->'lineas') = 1
-                        then format('Es un gasto de «%s»%s: %s.', fn_bandeja_cuenta_llana(v_cta),
-                                    coalesce(' de la obra ' || (ob->>'nombre'), ''), fn_bandeja_usd(abs(m.monto)))
-                        else format('Se reparte entre %s: %s.',
-                                    (select string_agg('«' || fn_bandeja_cuenta_llana(l->>'cuenta') || '»', ' y ' order by n)
-                                       from jsonb_array_elements(q.propuesta->'lineas') with ordinality as t(l, n)),
-                                    fn_bandeja_usd(abs(m.monto))) end,
-          'porque', case q.fuente when 'regla' then 'Por una regla que ya aprendió de ti' when 'edgar' then 'Ya lo habías dicho tú' else 'Lo propone la IA' end
-                    || coalesce(': ' || nullif(left(q.propuesta->>'motivo', 240), ''), '') || coalesce(' (' || (ob->>'por') || ')', ''),
-          'pide_obra', case when v_obra and ob is null
-                                 and (select k.regla_obra from cuentas k where k.codigo = v_cta) = 'obligatoria' then true end));
-      end if;
-      -- lo que sugiere la descripción ENTERA del banco (no el nombre ya recortado)
-      sg := fn_bandeja_sugerida(m.desc_norm);
-      if sg is not null and c->>'clase' = 'comercio' then
-        v_acc := sg->>'accion'; v_dat := case when v_acc = 'gasto' then jsonb_build_object('cuenta', sg->>'cuenta') else '{}'::jsonb end;
-        v_fte := 'nombre'; v_por := format('Por el nombre del comercio (%s).', c->>'nombre');
+        v_ia := q.id; v_fte := 'ia';
+        if v_cta = '3200' then
+          v_acc := 'personal';
+        else
+          v_acc := 'gasto';
+          v_dat := jsonb_strip_nulls(jsonb_build_object(
+                     'cuenta', v_cta,
+                     'proyecto_id', case when nullif(q.propuesta->'lineas'->0->>'proyecto_id', '') is not null
+                                              and coalesce((q.propuesta->'obra'->>'fuerte')::boolean, true)
+                                              and (select k.regla_obra from cuentas k where k.codigo = v_cta) in ('obligatoria', 'opcional')
+                                         then (select pj.id from proyectos pj where pj.id = q.propuesta->'lineas'->0->>'proyecto_id') end));
+        end if;
+        v_por := case q.fuente when 'regla' then 'Por una regla que la app ya aprendió de ti.'
+                               when 'edgar' then 'Ya lo habías dicho tú.'
+                               else 'Lo propone la IA, por el comercio y por lo que ya contestaste otras veces.' end
+                 || case when v_dat ? 'proyecto_id' then ' La obra la propone ella: mírala.' else '' end;
+      elsif found and jsonb_typeof(q.propuesta->'lineas') = 'array' and jsonb_array_length(q.propuesta->'lineas') > 1 then
+        return jsonb_build_object('fuente', 'ia',
+          'aviso', format('La IA propone repartirlo entre %s. Míralo en «Más opciones» (ahí está su «Así es»), o dímelo abajo.',
+                          (select string_agg('«' || fn_bandeja_cuenta_llana(l->>'cuenta') || '»', ' y ' order by n)
+                             from jsonb_array_elements(q.propuesta->'lineas') with ordinality as t(l, n))));
+      else
+        -- lo que sugiere la descripción ENTERA del banco (no el nombre ya recortado)
+        sg := fn_bandeja_sugerida(m.desc_norm);
+        if sg is not null and c->>'clase' = 'comercio' then
+          v_acc := sg->>'accion'; v_dat := case when v_acc = 'gasto' then jsonb_build_object('cuenta', sg->>'cuenta') else '{}'::jsonb end;
+          v_fte := 'nombre'; v_por := format('Por el nombre del comercio (%s).', c->>'nombre');
+        end if;
       end if;
     end if;
   end if;
@@ -3070,20 +3684,24 @@ begin
   end if;
   v := fn_bandeja_validar(m.id, v_acc, v_dat);
   if not coalesce((v->>'ok')::boolean, false) and not coalesce((v->>'pide_obra')::boolean, false) then
+    if v_ia is not null then
+      -- (la IA de antes propuso algo que la tarjeta nueva no sabe decir: una cuenta que no es de gasto)
+      return jsonb_build_object('fuente', 'ia', 'aviso', 'La IA tiene una propuesta para este cargo: mírala en «Más opciones» (ahí está su «Así es»), o dímelo abajo.');
+    end if;
     return null;   -- lo recordado ya no vale (la cuenta, la persona o el préstamo cambiaron): se pregunta
   end if;
   return jsonb_strip_nulls(jsonb_build_object(
     'accion', v_acc, 'datos', case when (v->>'ok')::boolean then v->'datos' else v_dat end, 'texto', v->>'texto',
     'porque', nullif(concat_ws(' ', v_por, case when ob is not null then 'La obra: ' || (ob->>'por') || '.' end), ''),
-    'fuente', v_fte, 'pide_obra', v->'pide_obra',
-    'pide_motivo', case when v_acc in ('aporte', 'otro_ingreso')
+    'fuente', v_fte, 'pide_obra', v->'pide_obra', 'propuesta_ia', v_ia,
+    'pide_motivo', case when v_acc in ('aporte', 'otro_ingreso') or (v_acc = 'personal' and m.monto > 0)
                              or (v_acc = 'banco' and v->'datos'->'pide' ?| array['p_motivo', 'p_notas', 'p_partidas.motivo']) then true end,
     'pide', case when v_acc = 'banco' then (select nullif(jsonb_agg(e), '[]'::jsonb) from jsonb_array_elements_text(coalesce(v->'datos'->'pide', '[]'::jsonb)) e
                                              where e not in ('p_motivo', 'p_notas', 'p_partidas.motivo')) end));
 end $$;
 revoke execute on function public.fn_bandeja_recomendar(uuid, jsonb) from public, anon, service_role;
 grant  execute on function public.fn_bandeja_recomendar(uuid, jsonb) to authenticated;
-comment on function public.fn_bandeja_recomendar(uuid, jsonb) is 'c17: LA recomendación de un movimiento pendiente (una o ninguna): {accion de la lista cerrada (o «ia»: la propuesta de c8), datos, texto llano, porque, fuente, pide_obra, pide_motivo, pide}, o {aviso}, o nulo. Un depósito de un prestamista se propone como préstamo antes de mirar facturas; dinero del propio Edgar, nunca como el cobro de un cliente; un pagador recordado sin factura que cuadre, se pregunta. No escribe nada.';
+comment on function public.fn_bandeja_recomendar(uuid, jsonb) is 'c17: LA recomendación de un movimiento pendiente (una o ninguna): {accion de la lista cerrada, datos, texto llano, porque, fuente (banco, app, memoria, ia, nombre), pide_obra, pide_motivo, pide, propuesta_ia (la propuesta pendiente de c8 de la que sale: se aprueba por su camino)}, o {aviso}, o nulo. Un depósito de un prestamista se propone como préstamo antes de mirar facturas; dinero del propio Edgar, nunca como el cobro de un cliente; un cobro ya anotado que espera su depósito, antes que cualquier factura; un pagador recordado sin factura que cuadre, se pregunta; lo recordado de un comercio no vale si la descripción de ahora sugiere otra cosa. No escribe nada.';
 
 
 -- ---------------------------------------------------------------------
@@ -3100,13 +3718,16 @@ comment on function public.fn_bandeja_recomendar(uuid, jsonb) is 'c17: LA recome
 -- obra. Cada movimiento pasa por fn_bandeja_hacer con sus guardas (la
 -- puerta, sin motivo): el que algo frena se queda en la Bandeja y se dice
 -- por qué. p_opciones: {recordar (de fábrica sí), solo (que lo siguiente
--- entre solo), motivo (la línea de lo que la pide: nunca levanta un freno),
--- movimientos: [los que la pantalla enseñó: solo esos], tanda (la de una
--- llamada anterior que cortó por reloj)}. Sin obra en los datos, cada gasto
--- de obra va a la del día de la cuadrilla (Edgar lo eligió así para el
--- grupo); el que no tenga una sola, se queda. Devuelve {clave, tanda,
--- hechos, monto, quedan: [{movimiento_id, por_que}], recordado,
--- propuestas_ia, sigue (cortó por reloj: llámala otra vez)}.
+-- entre solo), movimientos: [los que la pantalla enseñó: solo esos], tanda
+-- (la de una llamada anterior que cortó por reloj), ms (el reloj: 3 s de
+-- fábrica, muy por debajo del corte de la API)}. Sin obra en los datos,
+-- cada gasto de obra va a la del día de la cuadrilla (Edgar lo eligió así
+-- para el grupo); el que no tenga una sola, se queda. Devuelve {clave,
+-- tanda, hechos, monto, quedan: [{movimiento_id, por_que}], recordado,
+-- propuestas_ia, sigue (cortó por reloj: llámala otra vez, con su tanda)}.
+-- Lo ya mirado en una llamada anterior de la misma tanda (registrado, o
+-- frenado) no se vuelve a mirar: la pantalla quita de «movimientos» los que
+-- ya le contestaron.
 create or replace function public.fn_bandeja_grupo(p_clave text, p_accion text default null, p_datos jsonb default '{}'::jsonb,
                                                    p_opciones jsonb default '{}'::jsonb)
 returns jsonb
@@ -3118,7 +3739,7 @@ declare
   op       jsonb := case when jsonb_typeof(p_opciones) = 'object' then p_opciones else '{}'::jsonb end;
   d0       jsonb := case when jsonb_typeof(p_datos) = 'object' then p_datos else '{}'::jsonb end;
   v_lote   boolean := coalesce(p_clave, '') like 'M:%';
-  v_fin    timestamptz := clock_timestamp() + interval '18 seconds';
+  v_fin    timestamptz;
   v_tanda  uuid := case when coalesce(op->>'tanda', '') ~ '^[0-9a-fA-F-]{36}$' then (op->>'tanda')::uuid else gen_random_uuid() end;
   m        movimientos_banco;
   c        jsonb;
@@ -3133,6 +3754,7 @@ declare
   v_sigue  boolean := false;
   v_ultimo uuid;
   v_obra   boolean := false;
+  v_k      int := 0;
 begin
   v_quien := fn_bandeja_quien();
   if coalesce(p_clave, '') !~ '^(C|D|P|M|Z[<>]):.+' then
@@ -3154,9 +3776,12 @@ begin
     v_obra := p_accion = 'contratista'
               or (p_accion = 'gasto' and (select k.regla_obra from cuentas k where k.codigo = d0->>'cuenta') = 'obligatoria');
   end if;
-  for m in select mb.* from movimientos_banco mb where mb.estado = 'pendiente' order by mb.fecha, mb.id loop
-    -- (la pantalla manda los que enseñó: lo que llegó después, o lo que tiene su propia tarjeta, no entra en esta respuesta)
-    continue when jsonb_typeof(op->'movimientos') = 'array' and not (op->'movimientos' ? m.id::text);
+  v_fin := clock_timestamp() + make_interval(secs => least(greatest(coalesce(fn_bandeja_num(op->>'ms'), 3000), 50), 6000) / 1000.0);
+  for m in select mb.* from movimientos_banco mb
+            where mb.estado = 'pendiente'
+              -- (la pantalla manda los que enseñó: lo que llegó después, o lo que tiene su propia tarjeta, no entra en esta respuesta)
+              and (jsonb_typeof(op->'movimientos') is distinct from 'array' or op->'movimientos' ? mb.id::text)
+            order by mb.fecha, mb.id loop
     if v_lote then
       continue when coalesce(m.propuesta->>'motivo', '') <> substring(p_clave from 3)
                  or jsonb_typeof(m.propuesta->'opciones') is distinct from 'array' or jsonb_array_length(m.propuesta->'opciones') < 1;
@@ -3164,10 +3789,12 @@ begin
       c := fn_bandeja_contraparte(m.desc_norm, m.memo, m.monto, m.tipo_banco, m.cheque);
       continue when c->>'clave' is distinct from p_clave;
     end if;
-    if clock_timestamp() > v_fin then
+    -- (el reloj: siempre al menos uno por llamada; los que falten, en la siguiente, con «sigue»)
+    if v_k > 0 and clock_timestamp() > v_fin then
       v_sigue := true;
       exit;
     end if;
+    v_k := v_k + 1;
     v_ultimo := m.id;
     if m.posible_duplicado_de is not null and m.duplicado is null then
       v_quedan := v_quedan || jsonb_build_object('movimiento_id', m.id, 'por_que', 'Se parece a otro movimiento: dime primero si es el mismo.');
@@ -3210,7 +3837,7 @@ begin
 end $$;
 revoke execute on function public.fn_bandeja_grupo(text, text, jsonb, jsonb) from public, anon, service_role;
 grant  execute on function public.fn_bandeja_grupo(text, text, jsonb, jsonb) to authenticated;
-comment on function public.fn_bandeja_grupo(text, text, jsonb, jsonb) is 'c17: una decisión para todos los CARGOS pendientes de una contraparte (o el lote de uno de cuatro motivos de c6, «M:…»): cada uno pasa por fn_bandeja_hacer con sus guardas; el que algo frena se queda y se dice por qué. Los depósitos no se deciden por grupo (MX008). Guarda lo dicho en la memoria y deja su tanda (para deshacerla entera).';
+comment on function public.fn_bandeja_grupo(text, text, jsonb, jsonb) is 'c17: una decisión para todos los CARGOS pendientes de una contraparte (o el lote de uno de cuatro motivos de c6, «M:…»): cada uno pasa por fn_bandeja_hacer con sus guardas; el que algo frena se queda y se dice por qué. Los depósitos no se deciden por grupo (MX008). Guarda lo dicho en la memoria y deja su tanda (para deshacerla entera). Corta por reloj (3 s de fábrica) y dice «sigue».';
 
 -- EL RECIBO QUE LLEGA DESPUÉS. Edgar (o una regla suya) registró un cargo
 -- desde la Bandeja y, días después, la cuadrilla sube el recibo de esa
@@ -3218,42 +3845,49 @@ comment on function public.fn_bandeja_grupo(text, text, jsonb, jsonb) is 'c17: u
 -- (c6 lo dice: «llegó su ticket», y su control se pone rojo). Aquí, por cada
 -- cargo que la Bandeja registró y que tiene un recibo libre por ese mismo
 -- monto en su cuenta, se le pide a c6 que lo mire (fn_banco_casar: él decide
--- si es su recibo, con su ventana de fechas) y:
---   · si es UN solo recibo, del mismo monto, y ningún otro movimiento puede
---     ser el de ese recibo, SE CAMBIA SOLO por la puerta de c6 (la
---     clasificación se reversa y el cargo casa con el recibo y con SU obra):
---     es lo que habría pasado si el recibo hubiera llegado primero. Lo
---     registrado queda deshecho, con su porqué, y se dice;
---   · si no (dos recibos posibles, otro total, una conciliación ya
---     confirmada), queda con la propuesta de c6 a la vista: fn_bandeja_leer
---     lo da en «recibos» y la pantalla enseña «Es su recibo» / «Es otra
---     compra».
--- Devuelve {cambiados: [{movimiento_id, fecha, monto, descripcion, antes,
--- texto}], esperan}. La llama fn_bandeja_solo (al abrir la Bandeja y en la
--- tarea de la base).
+-- si puede ser su recibo, con su ventana de fechas) y queda con la propuesta
+-- de c6 a la vista: fn_bandeja_leer lo da en «recibos» y la pantalla lo
+-- enseña ARRIBA con sus dos respuestas, de un toque: «Es su recibo:
+-- cámbialo» / «Es otra compra».
+-- NADA SE CAMBIA SOLO (tercera vuelta). Antes, si c6 proponía un solo
+-- recibo, lo registrado se cambiaba por él sin un toque. Pero que sea «su»
+-- recibo c6 lo decide por el monto, la cuenta y la fecha (hasta tres días
+-- DESPUÉS del cargo), sin mirar el comercio, y el cargo de verdad de un
+-- recibo recién subido tarda días en llegar al banco: el «es mío» de un
+-- cargo de 50.00 se perdía dos días después por el recibo de OTRA compra de
+-- 50.00 (y esa compra entraba luego otra vez): un gasto dos veces y el
+-- retiro perdido, sin un toque, con «entra solo» apagado y con los controles
+-- en verde. Y NO SE PODÍA DESHACER: para c6, un cargo pendiente con un
+-- recibo libre de su monto y su tarjeta ES el de ese recibo (su puerta no
+-- deja clasificarlo, con motivo o sin él), así que lo cambiado no tenía
+-- vuelta a «como Edgar lo dijo». «Es otra compra» solo existe mientras el
+-- cargo sigue registrado como él lo dejó: por eso la pregunta se hace ANTES
+-- de tocar nada, y lo que Edgar contestó no lo cambia nadie más que él.
+-- p: {ms (el reloj: 1.5 s de fábrica)}. Devuelve {esperan (cuántos tienen su
+-- recibo esperando la respuesta de Edgar)}. La llama fn_bandeja_solo (al
+-- abrir la Bandeja y en la tarea de la base); corre aunque lo de «entra
+-- solo» esté apagado: no registra nada, solo pide a c6 que mire.
 create or replace function public.fn_bandeja_recibos(p jsonb default '{}'::jsonb) returns jsonb
 language plpgsql
 set search_path = public, pg_temp
 as $$
 declare
-  v_quien uuid;
-  r       record;
-  m       movimientos_banco;
-  ops     jsonb;
-  v_txt   text;
-  v_camb  jsonb := '[]'::jsonb;
-  v_esp   int := 0;
-  v_fin   timestamptz := clock_timestamp() + interval '6 seconds';
+  r      record;
+  m      movimientos_banco;
+  v_esp  int := 0;
+  v_k    int := 0;
+  v_fin  timestamptz;
 begin
-  v_quien := fn_bandeja_quien();
+  perform fn_bandeja_quien();
+  v_fin := clock_timestamp() + make_interval(secs => least(greatest(coalesce(fn_bandeja_num(p->>'ms'), 1500), 50), 20000) / 1000.0);
   for r in
-    select distinct on (mb.id) mb.id, h.texto
+    select distinct mb.id
       from bandeja_hechos h
       join movimientos_banco mb on mb.id = h.movimiento_id
      where h.deshecho_el is null and h.accion in ('gasto', 'personal', 'contratista')
        and mb.estado = 'casado' and mb.casado_clase = 'clasificado' and mb.asiento_id is not distinct from h.asiento_id
        and mb.monto < 0 and mb.fecha >= fn_fecha_miami(now()) - 120
-       -- (barato: una línea libre de un recibo por ese monto en su cuenta, de esos días; si es SU recibo lo decide c6)
+       -- (barato: una línea libre de un recibo por ese monto en su cuenta, de esos días; si puede ser SU recibo lo decide c6)
        and exists (select 1 from asiento_lineas l join asientos a on a.id = l.asiento_id
                     where l.cuenta = mb.cuenta and l.monto = mb.monto and a.origen_tabla = 'recibos'
                       and a.fecha_contable between mb.fecha - 70 and mb.fecha + 35
@@ -3261,51 +3895,33 @@ begin
                       and not exists (select 1 from asientos z where z.reversa_a = a.id)
                       and not exists (select 1 from banco_casado_lineas bl
                                        where bl.asiento_id = l.asiento_id and bl.orden = l.orden and bl.vigente))
-     order by mb.id, h.el desc loop
-    exit when clock_timestamp() > v_fin;
-    begin
-      perform fn_banco_casar(r.id);
-    exception when others then
-      continue;   -- c6 no lo pudo mirar ahora: lo dirá su control, y la próxima pasada lo vuelve a intentar
-    end;
+     order by mb.id loop
+    exit when v_k > 0 and clock_timestamp() > v_fin;
+    v_k := v_k + 1;
     select * into m from movimientos_banco where id = r.id;
-    continue when m.estado <> 'casado' or m.propuesta->>'motivo' is distinct from 'llego_su_ticket';
-    select jsonb_agg(o) into ops
-      from jsonb_array_elements(case when jsonb_typeof(m.propuesta->'opciones') = 'array' then m.propuesta->'opciones' else '[]'::jsonb end) o
-     where o->>'llamar' = 'fn_banco_casar_con';
-    if coalesce(jsonb_array_length(ops), 0) = 1
-       and not exists (select 1 from jsonb_array_elements(case when jsonb_typeof(m.propuesta->'tickets') = 'array' then m.propuesta->'tickets'
-                                                               else '[]'::jsonb end) t where t ? 'otro_total')
-       and not exists (select 1 from movimientos_banco o2
-                        where o2.id <> m.id and o2.cuenta = m.cuenta and o2.monto = m.monto and o2.fecha between m.fecha - 10 and m.fecha + 10
-                          and (o2.estado = 'pendiente' or (o2.estado = 'casado' and o2.casado_clase = 'clasificado'))) then
+    -- (c6 ya lo tiene mirado y a la vista: no se le pide otra vez)
+    if m.propuesta->>'motivo' is distinct from 'llego_su_ticket' then
       begin
-        v_txt := fn_bandeja_opcion_texto(ops->0, m.monto, m.id);
-        perform fn_banco_casar_con(m.id, ops->0->'args'->'p_con', 'Llegó su recibo después de registrarlo en la Bandeja: se cambia por él');
-        perform set_config('mx_bandeja.escribe', 'bandeja_hechos', true);
-        update bandeja_hechos
-           set deshecho_el = now(), deshecho_por = v_quien, deshecho_motivo = 'Llegó su recibo: lo registrado se cambió por él'
-         where movimiento_id = m.id and deshecho_el is null;
-        perform set_config('mx_bandeja.escribe', '', true);
-        v_camb := v_camb || jsonb_build_object('movimiento_id', m.id, 'fecha', m.fecha, 'monto', m.monto, 'descripcion', m.descripcion,
-                                               'antes', r.texto, 'texto', v_txt);
+        perform fn_banco_casar(r.id);
       exception when others then
-        perform set_config('mx_bandeja.escribe', '', true);
-        v_esp := v_esp + 1;   -- la puerta no lo dejó (una conciliación confirmada, un mes cerrado): queda a la vista, con sus botones
+        continue;   -- c6 no lo pudo mirar ahora: lo dirá su control, y la próxima pasada lo vuelve a intentar
       end;
-    else
+      select * into m from movimientos_banco where id = r.id;
+    end if;
+    if m.estado = 'casado' and m.propuesta->>'motivo' = 'llego_su_ticket' then
       v_esp := v_esp + 1;
     end if;
   end loop;
-  return jsonb_build_object('cambiados', v_camb, 'esperan', v_esp);
+  return jsonb_build_object('esperan', v_esp);
 end $$;
 revoke execute on function public.fn_bandeja_recibos(jsonb) from public, anon, service_role;
 grant  execute on function public.fn_bandeja_recibos(jsonb) to authenticated;
-comment on function public.fn_bandeja_recibos(jsonb) is 'c17: el recibo que llega después de registrar su cargo en la Bandeja: si es uno solo, del mismo monto y sin otro movimiento que pueda ser el suyo, cambia lo registrado por el recibo por la puerta de c6 (el gasto queda una vez, en la obra del recibo); si no, lo deja con la propuesta de c6 a la vista. Devuelve {cambiados, esperan}.';
+comment on function public.fn_bandeja_recibos(jsonb) is 'c17: el recibo que llega después de registrar su cargo en la Bandeja: le pide a c6 que lo mire, para que salga arriba con «Es su recibo» / «Es otra compra». No cambia nada sola (lo que Edgar contestó solo lo cambia él, de un toque): devuelve {esperan}.';
 
 -- LA RUTINA QUE REGISTRA SOLA. Primero, los recibos que llegaron después
--- (fn_bandeja_recibos: encendida o apagada, es arreglar lo que ya está dos
--- veces). Después entra solo, y solo, lo que cumple TODO esto:
+-- (fn_bandeja_recibos: se miran siempre, para que salgan arriba con sus dos
+-- botones; ninguno se cambia solo). Después entra solo, y solo, lo que
+-- cumple TODO esto:
 --   · bandeja_config.solo está encendido;
 --   · es un CARGO (dinero que sale) de un COMERCIO (no un Zelle, un cheque,
 --     el cajero, la nómina, un traspaso ni un prestamista);
@@ -3315,6 +3931,9 @@ comment on function public.fn_bandeja_recibos(jsonb) is 'c17: el recibo que lleg
 --     fue no lo sabe una regla (la cuadrilla en una sola obra ese día es una
 --     pista para PROPONERLA, no para darla por hecha), y de esas compras
 --     suele llegar el recibo, que es quien dice la obra;
+--   · el banco lo describe como cuando Edgar puso la regla: si la
+--     descripción de ahora sugiere otra cosa (el permiso de una ciudad cuya
+--     regla es de la luz), no entra: se propone por la descripción;
 --   · no pasa del tope (bandeja_config.solo_tope);
 --   · c6 no tiene nada mejor que decir de él (su motivo es «sin ticket») y
 --     no lo señaló como posible duplicado;
@@ -3323,11 +3942,13 @@ comment on function public.fn_bandeja_recibos(jsonb) is 'c17: el recibo que lleg
 --     ensaya, si es algo personal), y ella misma rehace lo que sabía si
 --     estaba viejo. Su recibo ya subido, uno de otro total, un mes cerrado,
 --     algo que puede estar ya en el libro: no entra.
--- Lo comprueba otra vez fn_bandeja_hacer con la fuente «solo». p: {segundos
--- (el reloj: 12 de fábrica), corrio (pantalla | rutina)}. Devuelve
--- {encendido, registrados: [...], esperan (siempre 0: ya nada espera a una
--- obra), no (la puerta no los aceptó), completo, propuestas_ia, recibos:
--- {cambiados, esperan}}.
+-- Lo comprueba otra vez fn_bandeja_hacer con la fuente «solo». p: {ms (el
+-- reloj de toda la llamada: 3 s de fábrica, muy por debajo del corte de la
+-- API; la tarea de la base, sin ese corte, pide 20 s), corrio (pantalla |
+-- rutina)}. Devuelve {encendido, registrados: [...], esperan (siempre 0: ya
+-- nada espera a una obra), no (la puerta no los aceptó), completo (false:
+-- cortó por reloj; se la llama otra vez), propuestas_ia, recibos:
+-- {esperan}}.
 create or replace function public.fn_bandeja_solo(p jsonb default '{}'::jsonb) returns jsonb
 language plpgsql
 set search_path = public, pg_temp
@@ -3343,31 +3964,31 @@ declare
   v_reg   jsonb := '[]'::jsonb;
   v_ia    jsonb := '[]'::jsonb;
   v_no    int := 0;
+  v_k     int := 0;
   v_comp  boolean := true;
+  v_ms    numeric;
   v_fin   timestamptz;
 begin
   v_quien := fn_bandeja_quien();
+  -- (el reloj: «segundos» es el nombre de antes; «ms» manda)
+  v_ms := least(greatest(coalesce(fn_bandeja_num(p->>'ms'), fn_bandeja_num(p->>'segundos') * 1000, 3000), 100), 25000);
+  v_fin := clock_timestamp() + make_interval(secs => v_ms / 1000.0);
   begin
-    v_rec := fn_bandeja_recibos();
+    v_rec := fn_bandeja_recibos(jsonb_build_object('ms', round(v_ms / 2)));
   exception when others then
-    v_rec := jsonb_build_object('cambiados', '[]'::jsonb, 'esperan', 0, 'error', left(sqlerrm, 300));
+    v_rec := jsonb_build_object('esperan', 0, 'error', left(sqlerrm, 300));
   end;
   select * into cfg from bandeja_config where id = 1;
   if not coalesce(cfg.solo, false) or not exists (select 1 from bandeja_memoria bm where bm.activa and bm.solo) then
     return jsonb_build_object('encendido', coalesce(cfg.solo, false), 'registrados', '[]'::jsonb, 'esperan', 0, 'no', 0, 'completo', true,
                               'recibos', v_rec);
   end if;
-  v_fin := clock_timestamp() + make_interval(secs => least(greatest(coalesce(fn_bandeja_num(p->>'segundos'), 12), 1), 25));
   for m in select mb.* from movimientos_banco mb
             where mb.estado = 'pendiente' and mb.monto < 0 and abs(mb.monto) <= cfg.solo_tope
               and coalesce(mb.propuesta->>'motivo', '') in ('sin_ticket', 'dudosa')
               and mb.posible_duplicado_de is null
               and not exists (select 1 from bandeja_hechos h where h.movimiento_id = mb.id and h.deshecho_el is not null)
             order by mb.fecha, mb.id loop
-    if clock_timestamp() > v_fin then
-      v_comp := false;
-      exit;
-    end if;
     c := fn_bandeja_contraparte(m.desc_norm, m.memo, m.monto, m.tipo_banco, m.cheque);
     continue when c->>'clase' <> 'comercio' or not (c ? 'clave');
     select * into mem from bandeja_memoria bm where bm.clave = c->>'clave' and bm.activa and bm.solo and bm.accion in ('gasto', 'personal');
@@ -3375,6 +3996,14 @@ begin
     -- (lo que va a una obra no entra solo: se propone)
     continue when mem.datos ? 'obra'
                or (mem.accion = 'gasto' and (select k.regla_obra from cuentas k where k.codigo = mem.datos->>'cuenta') = 'obligatoria');
+    -- (ni lo que el banco describe distinto de cuando se puso la regla: el permiso de una ciudad cuya regla es de la luz)
+    continue when not fn_bandeja_memoria_vale(mem.accion || '|' || coalesce(mem.datos->>'cuenta', case when mem.accion = 'personal' then '3200' else '' end),
+                                              mem.sugerida, m.desc_norm);
+    if v_k > 0 and clock_timestamp() > v_fin then
+      v_comp := false;
+      exit;
+    end if;
+    v_k := v_k + 1;
     r := fn_bandeja_hacer(m.id, mem.accion, mem.datos - 'obra', jsonb_build_object('fuente', 'solo', 'corrio', coalesce(p->>'corrio', 'pantalla')));
     if coalesce((r->>'hecho')::boolean, false) then
       v_reg := v_reg || jsonb_build_object('hecho_id', r->>'hecho_id', 'movimiento_id', m.id, 'fecha', m.fecha, 'monto', m.monto,
@@ -3389,7 +4018,7 @@ begin
 end $$;
 revoke execute on function public.fn_bandeja_solo(jsonb) from public, anon, service_role;
 grant  execute on function public.fn_bandeja_solo(jsonb) to authenticated;
-comment on function public.fn_bandeja_solo(jsonb) is 'c17: LA RUTINA QUE REGISTRA SOLA (una regla de Edgar, no la IA): primero cambia por su recibo lo registrado cuyo recibo llegó después; después, los cargos de un comercio con regla «que entre solo» de algo personal o de un gasto que no lleva obra, hasta el tope, que c6 da por «sin ticket», sin sospecha de duplicado, nunca deshechos, y que la puerta de c6 hoy no frena. Nunca un depósito, un Zelle, un cheque, el cajero, la nómina, un traspaso ni un costo de obra.';
+comment on function public.fn_bandeja_solo(jsonb) is 'c17: LA RUTINA QUE REGISTRA SOLA (una regla de Edgar, no la IA): primero mira los recibos que llegaron después de registrar su cargo (y cambia solo los de evidencia fuerte); después, los cargos de un comercio con regla «que entre solo» de algo personal o de un gasto que no lleva obra, descritos por el banco como cuando se puso la regla, hasta el tope, que c6 da por «sin ticket», sin sospecha de duplicado, nunca deshechos, y que la puerta de c6 hoy no frena. Nunca un depósito, un Zelle, un cheque, el cajero, la nómina, un traspaso ni un costo de obra. Corta por reloj (3 s de fábrica).';
 
 -- LA TAREA SIN PANTALLA (pg_cron, o el SQL Editor; sin API): corre la
 -- rutina EN NOMBRE DEL DUEÑO que encendió lo de solo (el mecanismo de c10,
@@ -3435,7 +4064,7 @@ begin
     if not es_dueno() then
       raise exception using errcode = '42501', message = 'el dueño en cuyo nombre se registra ya no es el dueño';
     end if;
-    v_res := fn_bandeja_solo(jsonb_build_object('segundos', 20, 'corrio', 'rutina'));
+    v_res := fn_bandeja_solo(jsonb_build_object('ms', 20000, 'corrio', 'rutina'));
     if to_regprocedure('public.fn_contador_rechazar(uuid,uuid,text)') is not null then
       for i in select jsonb_array_elements_text(coalesce(v_res->'propuestas_ia', '[]'::jsonb)) loop
         begin
@@ -3458,7 +4087,7 @@ begin
     'el', clock_timestamp(), 'registrados', coalesce(jsonb_array_length(v_res->'registrados'), 0),
     'monto', (select coalesce(sum((x->>'monto')::numeric), 0) from jsonb_array_elements(coalesce(v_res->'registrados', '[]'::jsonb)) x),
     'esperan', coalesce((v_res->>'esperan')::int, 0), 'no', coalesce((v_res->>'no')::int, 0),
-    'recibos', nullif(coalesce(jsonb_array_length(v_res->'recibos'->'cambiados'), 0), 0),
+    'recibos', nullif(coalesce((v_res->'recibos'->>'esperan')::int, 0), 0),
     'completo', coalesce((v_res->>'completo')::boolean, v_err is null), 'ia_cerradas', v_cerr, 'error', left(v_err, 600)));
   perform set_config('mx_bandeja.escribe', 'bandeja_config', true);
   update bandeja_config set solo_ultimo = v_ult where id = 1;
@@ -3491,11 +4120,26 @@ end $$;
 -- LA MÁSCARA de lo que escribe Edgar (y de lo que escribió el banco) antes
 -- de ir a la IA y de guardarse: la de c8 (fn_contador_sin_datos: correos,
 -- teléfonos de diez dígitos, números de ocho o más) y, además, lo que una
--- caja de texto LIBRE puede traer y c8 no tapa: una tarjeta escrita en
--- grupos (4-4-4-4, o 4-6-5), un SSN o un ITIN (3-2-4), un EIN (2-7) y un
--- teléfono de siete dígitos (555-0142). No tapa el número de una tienda
--- (#6341), una fecha (11/05, 2026-11-05), un monto ($1,234.56), el número de
--- un cheque (1043) ni un código postal (33130-1234). La de c8 no se toca
+-- caja de texto LIBRE puede traer y c8 no tapa:
+--   · lo que va DETRÁS de la palabra que dice lo que es (cuenta, cta, acct,
+--     account, routing, aba, iban, tarjeta, card, ssn, itin, ein, tin,
+--     seguro social, licencia, pasaporte): aunque sea corto o lleve guiones
+--     («la cuenta 1234-5678-90», «ACCT 123456»). Con cinco cifras o más: «va
+--     a la cuenta 5100» es una cuenta del plan, no la del banco;
+--   · una tarjeta escrita en grupos (4-4-4-4, o 4-6-5), con espacio, guion
+--     o punto;
+--   · un SSN o un ITIN (3-2-4) con guion, espacio o punto, aunque vaya
+--     pegado a su etiqueta («SSN123-45-6789»); un EIN (2-7) con guion o
+--     espacio;
+--   · un teléfono de siete dígitos con guion o punto (555-0142), o con un
+--     espacio si va detrás de «tel», «cel» o «llama». Un espacio suelto no:
+--     «la factura 103 2640.80» son un número de factura y su monto, y
+--     tapados la IA perdía los dos;
+--   · y antes de nada, los guiones que no son el del teclado (pegados de un
+--     correo o de un PDF: ‑ – —) se leen como «-».
+-- No tapa el número de una tienda (#6341), una fecha (11/05, 2026-11-05),
+-- un monto ($1,234.56), el número de un cheque (1043), un código postal
+-- (33130-1234) ni los cuatro últimos de una tarjeta. La de c8 no se toca
 -- (la ráfaga sigue igual): esta la envuelve, solo para el «Dímelo».
 create or replace function public.fn_bandeja_sin_datos(p text) returns text
 language plpgsql immutable
@@ -3512,15 +4156,18 @@ begin
      or v ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
     return fn_contador_sin_datos(v);
   end if;
-  v := regexp_replace(v, '\m[0-9]{4}([ -][0-9]{4}){3}\M', '[número]', 'g');
-  v := regexp_replace(v, '\m[0-9]{4}[ -][0-9]{6}[ -][0-9]{5}\M', '[número]', 'g');
-  v := regexp_replace(v, '\m[0-9]{3}[- ][0-9]{2}[- ][0-9]{4}\M', '[número]', 'g');
-  v := regexp_replace(v, '\m[0-9]{2}-[0-9]{7}\M', '[número]', 'g');
+  v := translate(v, U&'\2010\2011\2012\2013\2014\2015\2212', '-------');
+  v := regexp_replace(v, '(\m(?:cuenta|cta|acct|account|routing|aba|iban|tarjeta|card|ssn|itin|ein|tin|seguro social|social security|licencia|license|pasaporte|passport)\M(?:\s+(?:n[uú]mero|num|no|n[º°]))?[\s#:.]*)([A-Z]{0,2}[0-9][0-9 .-]{3,}[0-9])\M', '\1[número]', 'gi');
+  v := regexp_replace(v, '\m[0-9]{4}([ .-][0-9]{4}){3}\M', '[número]', 'g');
+  v := regexp_replace(v, '\m[0-9]{4}[ .-][0-9]{6}[ .-][0-9]{5}\M', '[número]', 'g');
+  v := regexp_replace(v, '(^|[^0-9])[0-9]{3}[-. ][0-9]{2}[-. ][0-9]{4}(?![0-9])', '\1[número]', 'g');
+  v := regexp_replace(v, '\m[0-9]{2}[- ][0-9]{7}\M', '[número]', 'g');
   v := fn_contador_sin_datos(v);
-  return regexp_replace(v, '\m[0-9]{3}[ .-][0-9]{4}\M', '[teléfono]', 'g');
+  v := regexp_replace(v, '(\m(?:tel|tel[eé]fono|cel|celular|m[oó]vil|phone|llama|ll[aá]mame|llamar)\M[\s#:.]*(?:al\s+)?)[0-9]{3} [0-9]{4}\M(?![.,][0-9])', '\1[teléfono]', 'gi');
+  return regexp_replace(v, '\m[0-9]{3}[.-][0-9]{4}\M(?![.,][0-9])', '[teléfono]', 'g');
 end $$;
 revoke execute on function public.fn_bandeja_sin_datos(text) from public, anon, authenticated, service_role;
-comment on function public.fn_bandeja_sin_datos(text) is 'c17: la máscara del «Dímelo»: la de c8 (correos, teléfonos, números largos) y además una tarjeta en grupos, un SSN o ITIN, un EIN y un teléfono de siete dígitos. Solo desde la función de borde.';
+comment on function public.fn_bandeja_sin_datos(text) is 'c17: la máscara del «Dímelo»: la de c8 (correos, teléfonos, números largos) y además lo que va detrás de la palabra que dice lo que es (cuenta, tarjeta, ssn…), una tarjeta en grupos, un SSN o ITIN, un EIN y un teléfono de siete dígitos. Solo desde la función de borde.';
 
 create or replace function public.fn_bandeja_sin_datos_jsonb(p jsonb) returns jsonb
 language plpgsql immutable
@@ -3585,6 +4232,9 @@ declare
   m        movimientos_banco;
   mem      bandeja_memoria;
   c        jsonb;
+  c_ia     jsonb;
+  pr       jsonb;
+  v_c6     text;
   v_frase  text := nullif(btrim(regexp_replace(coalesce(p_frase, ''), '\s+', ' ', 'g')), '');
   v_fl     text;
   v_tope   jsonb;
@@ -3616,6 +4266,12 @@ begin
     return jsonb_build_object('bloqueado', true, 'motivo', v_tope->>'motivo', 'tope', v_tope);
   end if;
   c := fn_bandeja_contraparte(m.desc_norm, m.memo, m.monto, m.tipo_banco, m.cheque);
+  -- (el NOMBRE de la contraparte que se le da a la IA sale de la descripción YA TAPADA: el de un Zelle es a veces un correo, que
+  -- c6 deja normalizado —«JPEREZ OBRAS EJEMPLO COM»— y la máscara de texto ya no reconoce)
+  c_ia := fn_bandeja_contraparte(fn_contador_sin_datos_norm(m.desc_norm, m.descripcion, m.memo), m.memo, m.monto, m.tipo_banco, m.cheque);
+  -- (lo que la app ya sabe de ese dinero: lo deposita un prestamista, o lo manda el propio Edgar)
+  pr := case when m.monto > 0 then fn_bandeja_prestamista(m.desc_norm) end;
+  v_c6 := coalesce(m.propuesta->>'motivo', 'sin_propuesta');
   select * into mem from bandeja_memoria bm where bm.clave = c->>'clave' and bm.activa;
   v_fact := fn_bandeja_facturas();
   v_fl := lower(v_frase);
@@ -3672,22 +4328,32 @@ begin
     'fecha', m.fecha, 'monto', m.monto, 'es', case when m.monto < 0 then 'dinero que salió' else 'dinero que entró' end,
     'descripcion', m.descripcion, 'memo', m.memo,
     'cuenta', m.cuenta, 'cuenta_nombre', (select k.nombre from cuentas k where k.codigo = m.cuenta), 'tipo_banco', m.tipo_banco,
-    'contraparte', jsonb_build_object('clase', c->>'clase', 'nombre', c->>'nombre'),
+    'contraparte', jsonb_build_object('clase', c->>'clase', 'nombre', c_ia->>'nombre'),
     'obra_del_dia', fn_bandeja_obra_del_dia(coalesce(m.fecha_transaccion, m.fecha)) - 'por',
-    'prestamista', fn_bandeja_prestamista(m.desc_norm) - 'cuenta' - 'por',
-    'lo_que_dice_el_banco', left(fn_bandeja_llano(m.propuesta->>'texto'), 500),
+    'prestamista', pr - 'cuenta' - 'por',
+    'lo_manda_edgar', case when m.monto > 0 and v_c6 = 'aporte_edgar' then true end,
+    -- (de un prestamista, lo que c6 dice del depósito —«estas facturas abiertas lo explican»— no se le pasa a la IA: empujaría a cobrarlo)
+    'lo_que_dice_el_banco', case when pr is not null
+                                 then format('Lo deposita %s, un prestamista: es dinero de un préstamo (una deuda de la empresa), no el pago de '
+                                             'un cliente.', pr->>'prestamista')
+                                 else left(fn_bandeja_llano(m.propuesta->>'texto'), 500) end,
     'opciones_del_banco', (select nullif(jsonb_agg(jsonb_build_object('opcion', (n - 1)::int, 'texto', fn_bandeja_opcion_texto(o, m.monto, m.id),
                                                                       'huella', fn_bandeja_opcion_huella(o)) order by n), '[]'::jsonb)
                              from jsonb_array_elements(case when jsonb_typeof(m.propuesta->'opciones') = 'array' then m.propuesta->'opciones'
                                                             else '[]'::jsonb end) with ordinality as t(o, n)
-                            where o->>'llamar' = any (fn_bandeja_puertas()))));
+                            where o->>'llamar' = any (fn_bandeja_puertas())
+                              -- (un depósito de un prestamista, o del propio Edgar: las opciones de c6 que lo cobran como el pago
+                              -- de un cliente no se le ofrecen a la IA. Si lo es de verdad, lo dirá Edgar, y la base frena)
+                              and not ((pr is not null or v_c6 = 'aporte_edgar') and o->>'llamar' = 'fn_banco_cobrar'))));
   return fn_bandeja_sin_datos_jsonb(jsonb_build_object(
     'bloqueado', false,
     'config', jsonb_build_object('modelo', cfg8.modelo, 'effort', cfg.dimelo_effort),
     'tope', v_tope,
     'fijo', v_fijo,
     'ya_enseno', (select coalesce(jsonb_agg(x.t order by x.t), '[]'::jsonb)
-                    from (select bm.texto as t from bandeja_memoria bm where bm.activa order by bm.ultima_vez desc nulls last limit 60) x),
+                    -- (sin el nombre que sale de un correo: lo demás de lo recordado —qué es, de qué obra— sí va)
+                    from (select case when bm.privado then replace(bm.texto, bm.nombre, '[correo]') else bm.texto end as t
+                            from bandeja_memoria bm where bm.activa order by bm.ultima_vez desc nulls last limit 60) x),
     'movimiento', v_mov,
     'facturas_por_cobrar', v_env,
     'facturas_no_enviadas', case when m.monto > 0 then greatest(jsonb_array_length(v_fact) - jsonb_array_length(v_env), 0) else 0 end,
@@ -3742,6 +4408,7 @@ declare
   v_id     uuid := gen_random_uuid();
   v_s      jsonb;
   v_rec    boolean := false;
+  v_de_ia  boolean := false;
   v_exp    text;
   c_lista  constant text[] := array['gasto', 'personal', 'cobro', 'anticipo', 'prestamo', 'aporte', 'traspaso', 'cuadrilla', 'contratista',
                                     'otro_ingreso', 'banco'];
@@ -3776,15 +4443,22 @@ begin
   -- la respuesta, a una acción de la lista cerrada
   if p_error is not null or r is null then
     -- (el porqué técnico queda en «uso»; a Edgar, en llano)
-    v_falta := case when coalesce(p_error, '') ~* 'cort' then 'La IA se quedó a medias pensándolo. Dímelo más corto, o elige tú en «Más opciones».'
-                    when coalesce(p_error, '') ~* '(tiempo|no contestó)' then 'La IA tardó demasiado en contestar. Prueba otra vez, o elige en «Más opciones».'
+    -- (primero el plazo: su mensaje también dice que la llamada «se cortó», y a Edgar se le decía «dímelo más corto»)
+    v_falta := case when coalesce(p_error, '') ~* '(tiempo|plazo|no contestó|tard[oó])' then 'La IA tardó demasiado en contestar. Prueba otra vez, o elige en «Más opciones».'
+                    when coalesce(p_error, '') ~* 'cort' then 'La IA se quedó a medias pensándolo. Dímelo más corto, o elige tú en «Más opciones».'
                     else 'La IA no pudo contestar esta vez. Prueba otra vez, o elige en «Más opciones».' end;
   else
     v_acc := r->>'accion';
-    v_exp := nullif(left(fn_bandeja_sin_datos(btrim(regexp_replace(coalesce(r->>'explicacion', ''), '\s+', ' ', 'g'))), 300), '');
+    -- (el texto libre de la IA llega a la tarjeta marcado como suyo, tapado, corto y SIN ENLACES: una orden metida en la nota de
+    -- un Zelle —«entra a esta dirección y escribe tu código»— que la IA repita no sale con la voz de la app ni con un enlace)
+    v_exp := nullif(left(btrim(regexp_replace(regexp_replace(fn_bandeja_sin_datos(coalesce(r->>'explicacion', '')),
+                                                             '(https?://|www\.)\S+', '[enlace]', 'gi'), '\s+', ' ', 'g')), 300), '');
     if v_acc is null or not (v_acc = any (c_lista)) then
-      v_falta := coalesce(nullif(left(fn_bandeja_sin_datos(btrim(coalesce(r->>'falta', ''))), 400), ''),
+      v_falta := coalesce(nullif(left(btrim(regexp_replace(regexp_replace(fn_bandeja_sin_datos(coalesce(r->>'falta', '')),
+                                                                          '(https?://|www\.)\S+', '[enlace]', 'gi'), '\s+', ' ', 'g')), 200), ''),
                           'No encontré a qué corresponde con lo que la app sabe. Dime algo más: la obra, el cliente o de qué fue.');
+      -- (de_la_ia: ese «falta» lo escribió la IA, no la base: la tarjeta lo dice)
+      v_de_ia := nullif(btrim(coalesce(r->>'falta', '')), '') is not null;
       v_acc := null;
     else
       v_dat := jsonb_strip_nulls(case v_acc
@@ -3839,7 +4513,8 @@ begin
   return jsonb_strip_nulls(jsonb_build_object(
     'dimelo_id', v_id, 'movimiento_id', p_movimiento, 'estado', v_est, 'accion', case when v_est = 'pendiente' then v_acc end,
     'datos', case when v_est = 'pendiente' then v_dat end, 'texto', case when v_est = 'pendiente' then v->>'texto' end,
-    'porque', v_exp, 'falta', v_falta, 'pide_obra', case when v_est = 'pendiente' then v->'pide_obra' end,
+    'porque', v_exp, 'falta', v_falta, 'falta_de_la_ia', case when v_de_ia then true end,
+    'pide_obra', case when v_est = 'pendiente' then v->'pide_obra' end,
     -- (lo que el banco pide para esa opción y no es el motivo: el capital y el interés de una cuota; se mandan al aprobar)
     'pide', case when v_est = 'pendiente' and v_acc = 'banco'
                  then (select nullif(jsonb_agg(e), '[]'::jsonb)
@@ -3892,10 +4567,18 @@ begin
               || case when q.accion = 'banco' and jsonb_typeof(op->'campos') = 'object'
                       then jsonb_build_object('campos', op->'campos') else '{}'::jsonb end;
   v_mot := coalesce(nullif(btrim(coalesce(op->>'motivo', '')), ''),
-                    case when q.accion in ('aporte', 'otro_ingreso') then 'Edgar dijo: «' || q.frase || '»' end);
+                    case when q.accion in ('aporte', 'otro_ingreso')
+                              or (q.accion = 'personal' and (select mb.monto from movimientos_banco mb where mb.id = q.movimiento_id) > 0)
+                         then 'Edgar dijo: «' || q.frase || '»' end);
   r := fn_bandeja_hacer(q.movimiento_id, q.accion, d, jsonb_strip_nulls(jsonb_build_object(
          'fuente', 'dimelo', 'dimelo_id', q.id, 'motivo', v_mot, 'visto', op->>'visto',
          'recordar', coalesce((op->>'recordar')::boolean, false), 'solo', op->'solo')));
+  -- (el banco frenó y deja seguir con un porqué: la caja sale con lo que Edgar YA le dijo a la IA, para que no lo escriba dos
+  -- veces. No levanta nada sola: él lee el freno con su frase debajo y, si aun así es eso, vuelve a tocar, con la huella)
+  if not coalesce((r->>'hecho')::boolean, false) and coalesce((r->>'pide_motivo')::boolean, false) and r ? 'freno'
+     and not (r ? 'sugerido') and nullif(btrim(q.frase), '') is not null then
+    r := r || jsonb_build_object('sugerido', left(q.frase, 300));
+  end if;
   if coalesce((r->>'hecho')::boolean, false) or coalesce((r->>'cambio')::boolean, false) then
     perform set_config('mx_bandeja.escribe', 'bandeja_dimelo', true);
     update bandeja_dimelo
@@ -3942,25 +4625,47 @@ comment on function public.fn_bandeja_rechazar(uuid, text) is 'c17: «No, es otr
 
 
 -- ---------------------------------------------------------------------
--- 14. LO QUE LEE LA PANTALLA, de una vez: fn_bandeja_leer().
+-- 14. LO QUE LEE LA PANTALLA: fn_bandeja_leer(p).
+--     p: {} (todo), o {ids: [movimientos]} (solo esas tarjetas: lo que quedó
+--     en «faltan», o las de una contraparte después de contestar una; la
+--     pantalla conserva lo demás), ms (el reloj de las recomendaciones: 2.5 s
+--     de fábrica, 4 s como mucho), max (cuántas recomendaciones como mucho),
+--     entre (solo estos pendientes existen para la llamada: lo usan las
+--     pruebas, para que valgan con lo que la base tenga pendiente).
 --     {version, config, categorias, cuentas_propias, prestamos, cuadrilla,
---      proveedores,
+--      proveedores (estos cinco, solo en la llamada entera),
 --      tarjetas: {<movimiento_id>: {clave, nombre, clase, rec, dimelo,
---      deshecho}},
---      grupos: [{clave, nombre, clase, n, total, movimientos, rec, mixto,
+--      deshecho, pensando (su recomendación no dio tiempo: viene en la
+--      llamada siguiente)}},
+--      grupos: [{clave, nombre, clase, n, total, movimientos (por fecha),
+--      rec, mixto, pendiente (sus tarjetas no se han mirado todavía),
 --      memoria, solo_ok, uno_a_uno}],
+--      parte (se pidieron unas: ids), faltan: [los movimientos cuya
+--      recomendación no dio tiempo, por unidades enteras y en su orden: se
+--      piden otra vez con {ids}], parcial (quedó alguno),
 --      recibos: [lo ya registrado cuyo recibo llegó después y espera a
 --      Edgar: {movimiento_id, fecha, monto, descripcion, registrado, otro,
 --      opciones: [{opcion, huella, es (recibo | otra), texto}]}],
---      recibos_cambiados: [lo que se cambió solo por su recibo, 14 días],
 --      solos: [lo que entró solo en 14 días],
 --      recientes: [los «Así es» de 14 días, para deshacer; con su tanda],
 --      tandas: [las decisiones por grupo de 14 días, para deshacerlas
---      enteras], memoria: [...],
+--      enteras] (los dos, con la clave de su comercio: al deshacer se sabe
+--      si hay una regla «que entre solo» que apagar), memoria: [...],
+--      tarifas: [las de un procesador que Edgar confirmó o enseñó],
 --      ia_abiertas: [propuestas de la IA (c8) que siguen pendientes en
 --      movimientos que esta capa ya registró: la pantalla las cierra],
+--      ia_caducar: [las aprobadas cuyo asiento deshizo la Bandeja: igual],
 --      control: [lo del control de esta capa que Edgar tiene que saber, en
---      llano], parcial (cortó por reloj: faltan recomendaciones)}.
+--      llano]}.
+--     LAS RECOMENDACIONES VAN POR UNIDADES Y POR RELOJ: un grupo de cargos
+--     de una contraparte (o un lote de c6) se recomienda entero o no se
+--     recomienda (lo que dice el grupo sale de lo que dicen todas sus
+--     tarjetas); lo demás, de uno en uno. Primero los grupos, del más grande
+--     al más chico (lo que la pantalla enseña arriba); después el resto, por
+--     fecha. El reloj se mira entre unidad y unidad, y siempre sale al menos
+--     una: con la Bandeja llena la llamada contesta mucho antes del corte de
+--     la API (antes lo recomendaba todo de una vez, con un reloj de 8 s: el
+--     mismo corte), y la pantalla va pidiendo lo que falta.
 --     LOS GRUPOS son solo de CARGOS (un comercio, un Zelle a alguien): los
 --     depósitos de un mismo pagador se dan aparte (uno_a_uno: cada depósito
 --     paga sus facturas; no se deciden de una vez). Y la recomendación de un
@@ -3970,147 +4675,245 @@ comment on function public.fn_bandeja_rechazar(uuid, text) is 'c17: «No, es otr
 --     toque mandaba las comisiones del procesador a «Oficina y software».
 --     Solo lee; a quien no es el dueño no le devuelve nada.
 -- ---------------------------------------------------------------------
+-- LO QUE RECOMIENDA UN GRUPO cuando sus tarjetas coinciden: la acción y los
+-- datos que salen de la clave de sus tarjetas («gasto|5100», «personal|»,
+-- «cuadrilla|<persona>»…) y su texto llano. p_falta_obra: a TODOS los del
+-- grupo les falta la obra (ese día la cuadrilla no estuvo en una sola): el
+-- texto lo dice, en vez de volver a ofrecer «la del día de cada uno».
+create or replace function public.fn_bandeja_grupo_rec(p_k text, p_fuente text, p_falta_obra boolean default false) returns jsonb
+language plpgsql stable
+set search_path = public, pg_temp
+as $$
+declare
+  v_acc  text := split_part(coalesce(p_k, ''), '|', 1);
+  v_dato text := split_part(coalesce(p_k, ''), '|', 2);
+  v_obra text := case when coalesce(p_falta_obra, false)
+                      then '. A estos les falta la obra: ese día la cuadrilla no estuvo en una sola. Elige la obra para todos, o '
+                           'contéstalos uno por uno'
+                      else '. Cada uno va a la obra donde estuvo la cuadrilla ese día (el que no tenga una sola, se queda para que '
+                           'digas la obra), o a la que tú digas para todos' end;
+begin
+  if v_acc not in ('gasto', 'personal', 'cuadrilla', 'contratista', 'traspaso') then
+    return null;
+  end if;
+  return jsonb_build_object(
+    'accion', v_acc, 'fuente', coalesce(p_fuente, 'app'),
+    'datos', case v_acc
+               when 'gasto' then jsonb_build_object('cuenta', v_dato)
+               when 'traspaso' then jsonb_build_object('cuenta', v_dato)
+               when 'cuadrilla' then jsonb_build_object('usuario_id', v_dato)
+               when 'contratista' then jsonb_strip_nulls(jsonb_build_object('proveedor_id', nullif(v_dato, '')))
+               else '{}'::jsonb end,
+    'texto', case v_acc
+               when 'personal' then 'Son tuyos, no de la empresa: salen como retiro tuyo, no como gasto del negocio.'
+               when 'contratista' then 'Son pagos a un subcontratista' || v_obra || '.'
+               when 'cuadrilla' then format('Son pagos a %s, de la cuadrilla: se reparten entre las obras según sus horas.',
+                                            coalesce((select pf.nombre from perfiles pf where pf.id::text = v_dato), 'alguien de la cuadrilla'))
+               when 'traspaso' then format('Son dinero entre tus cuentas (con %s): no son un gasto.',
+                                           coalesce((select y->>'nombre' from jsonb_array_elements(fn_bandeja_cuentas_propias()) y
+                                                      where y->>'codigo' = v_dato), 'otra cuenta tuya'))
+               else format('Son «%s»%s.', fn_bandeja_cuenta_llana(v_dato),
+                           case when (select k2.regla_obra from cuentas k2 where k2.codigo = v_dato) = 'obligatoria' then v_obra else '' end) end,
+    'falta_obra', case when coalesce(p_falta_obra, false) then true end);
+end $$;
+revoke execute on function public.fn_bandeja_grupo_rec(text, text, boolean) from public, anon, service_role;
+grant  execute on function public.fn_bandeja_grupo_rec(text, text, boolean) to authenticated;
+comment on function public.fn_bandeja_grupo_rec(text, text, boolean) is 'c17: lo que recomienda un grupo de cargos cuyas tarjetas coinciden: {accion, datos, texto llano, fuente} a partir de la clave de sus tarjetas; dice cuándo a todos les falta la obra.';
+
 create or replace function public.fn_bandeja_leer(p jsonb default '{}'::jsonb) returns jsonb
 language plpgsql stable
 set search_path = public, pg_temp
 as $$
 declare
   cfg       bandeja_config;
-  m         record;
+  u         record;
+  x         jsonb;
   c         jsonb;
   rec       jsonb;
   dim       jsonb;
   ctx       jsonb;
   v_k       text;
-  v_tarj    jsonb := '{}'::jsonb;
-  v_lista   jsonb := '[]'::jsonb;
-  v_grupos  jsonb;
-  v_dep     jsonb;
-  v_lotes   jsonb;
+  v_id      uuid;
+  v_base    jsonb;
+  v_tarj    jsonb;
+  v_tk      text[] := '{}';     -- (las tarjetas se juntan en arreglos y se arman al final: pegar jsonb a jsonb en cada vuelta
+  v_tv      jsonb[] := '{}';    --  copia todo lo anterior, y con mil pendientes eso solo era un segundo)
+  v_lista   jsonb[] := '{}';
+  v_uids    uuid[];
+  v_uentre  uuid[];
+  v_grupos  jsonb := '[]'::jsonb;
+  v_dep     jsonb := '[]'::jsonb;
+  v_lotes   jsonb := '[]'::jsonb;
   v_ctl     jsonb := '[]'::jsonb;
   v_sin     jsonb := '{}'::jsonb;
-  v_fin     timestamptz := clock_timestamp() + interval '8 seconds';
-  v_parcial boolean := false;
+  v_faltan  uuid[] := '{}';
+  v_res     jsonb;
+  v_ids     jsonb := case when jsonb_typeof(p->'ids') = 'array' then p->'ids' end;
+  v_entre   jsonb := case when jsonb_typeof(p->'entre') = 'array' then p->'entre' end;
+  v_parte   boolean;
+  v_max     int;
+  v_n       int := 0;
+  v_fin     timestamptz;
+  v_corta   boolean := false;
   c_libre   constant text[] := array['sin_ticket', 'clasificar', 'dudosa', 'sin_propuesta'];
+  c_lote    constant text[] := array['interes_tarjeta', 'cargo_banco', 'interes', 'cuota_prestamo'];
 begin
   perform fn_bandeja_exigir_dueno();
   if current_user = 'service_role' then
     return null;
   end if;
+  v_parte := v_ids is not null;
+  v_max := case when coalesce(p->>'max', '') ~ '^[0-9]{1,5}$' then (p->>'max')::int end;
+  v_fin := clock_timestamp() + make_interval(secs => least(greatest(coalesce(fn_bandeja_num(p->>'ms'), 2500), 20), 4000) / 1000.0);
   select * into cfg from bandeja_config where id = 1;
+  if v_ids is not null then
+    select coalesce(array_agg(distinct e::uuid), '{}') into v_uids
+      from jsonb_array_elements_text(v_ids) e where e ~ '^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$';
+  end if;
+  if v_entre is not null then
+    select coalesce(array_agg(distinct e::uuid), '{}') into v_uentre
+      from jsonb_array_elements_text(v_entre) e where e ~ '^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$';
+  end if;
+  -- 1. LO BARATO de cada pendiente: de quién es (la contraparte) y qué pensaba c6. Con ello se sabe qué GRUPO forma con otros.
+  --    (Cuando la pantalla pide unas tarjetas —ids—, solo las de esas: las pide por unidades enteras, como vinieron en «faltan» o
+  --    todas las de una misma contraparte; así lo que cuesta una llamada de seguir va con lo pedido y no con la Bandeja entera)
+  select coalesce(jsonb_agg(z.x order by z.fecha, z.id), '[]'::jsonb) into v_base
+    from (select mb.id, mb.fecha,
+                 jsonb_build_object('id', mb.id, 'f', mb.fecha, 'monto', mb.monto, 'motivo', coalesce(mb.propuesta->>'motivo', 'sin_propuesta'),
+                                    'c', fn_bandeja_contraparte(mb.desc_norm, mb.memo, mb.monto, mb.tipo_banco, mb.cheque)) as x
+            from movimientos_banco mb
+           where mb.estado = 'pendiente' and (v_uids is null or mb.id = any (v_uids)) and (v_uentre is null or mb.id = any (v_uentre))) z;
+  -- (lo que las recomendaciones comparten: las facturas por cobrar, y qué pendientes pueden ser de un prestamista)
   ctx := jsonb_build_object('facturas', fn_bandeja_facturas());
-  for m in select mb.id, mb.fecha, mb.monto, mb.desc_norm, mb.memo, mb.tipo_banco, mb.cheque, mb.propuesta
-             from movimientos_banco mb where mb.estado = 'pendiente' order by mb.fecha, mb.id loop
-    c := fn_bandeja_contraparte(m.desc_norm, m.memo, m.monto, m.tipo_banco, m.cheque);
-    if clock_timestamp() > v_fin then
-      v_parcial := true;
-      rec := null;
-    else
-      rec := fn_bandeja_recomendar(m.id, ctx);
+  begin
+    ctx := ctx || jsonb_build_object('prest', fn_bandeja_prestamista_quiza(coalesce(v_uids, v_uentre)));
+  exception when others then
+    null;   -- sin eso, cada tarjeta lo mira por su cuenta (más lento, igual de bien)
+  end;
+  -- 2. LAS RECOMENDACIONES, por UNIDADES: un grupo de cargos de una misma contraparte (o un lote de c6) se recomienda ENTERO o
+  --    no se recomienda (lo que dice el grupo sale de lo que dicen todas sus tarjetas); lo demás, de uno en uno. Primero los
+  --    grupos, del más grande al más chico (es lo que la pantalla enseña arriba), y después el resto por fecha; o, si la
+  --    pantalla pide unos (ids), las unidades de esos, en su orden. El reloj se mira entre unidad y unidad.
+  for u in
+    with b as (select t.x, t.n,
+                      case when t.x->>'motivo' = any (c_lote) then 'L:' || (t.x->>'motivo')
+                           when t.x->'c'->>'clave' is not null and t.x->'c'->>'clase' in ('comercio', 'zelle_a')
+                                and (t.x->>'monto')::numeric < 0 and t.x->>'motivo' = any (c_libre) then 'G:' || (t.x->'c'->>'clave')
+                           else 'M:' || (t.x->>'id') end as uk
+                 from jsonb_array_elements(v_base) with ordinality as t(x, n)),
+         i as (select e.id, min(e.pos) as pos from jsonb_array_elements_text(coalesce(v_ids, '[]'::jsonb)) with ordinality as e(id, pos) group by e.id),
+         un as (select b.uk, count(*) as n, sum(abs((b.x->>'monto')::numeric)) as total, min(b.n) as primero,
+                       jsonb_agg(b.x order by b.n) as xs, min(i.pos) as pedido
+                  from b left join i on i.id = b.x->>'id'
+                 group by b.uk)
+    select un.uk, un.xs
+      from un
+     where not v_parte or un.pedido is not null
+     order by case when v_parte then un.pedido end,
+              (un.n >= 2) desc, case when un.n >= 2 then un.n end desc, case when un.n >= 2 then un.total end desc, un.primero
+  loop
+    if v_n > 0 and (clock_timestamp() > v_fin or (v_max is not null and v_n >= v_max)) then
+      v_corta := true;
     end if;
-    select jsonb_strip_nulls(jsonb_build_object('dimelo_id', q.id, 'estado', q.estado, 'frase', q.frase, 'accion', q.accion, 'datos', q.datos,
-                                                'texto', q.texto, 'porque', q.porque, 'falta', q.falta, 'recordar', q.recordar,
-                                                'pide_obra', case when q.estado = 'pendiente' and q.falta is not null then true end))
-      into dim
-      from bandeja_dimelo q
-     where q.movimiento_id = m.id and q.estado in ('pendiente', 'sin_propuesta') and q.creado_el > now() - interval '7 days'
-       and not exists (select 1 from bandeja_dimelo z where z.movimiento_id = q.movimiento_id and z.creado_el > q.creado_el)
-     order by q.creado_el desc limit 1;
-    if not found then
-      dim := null;
-    end if;
-    -- lo que la tarjeta recomienda, en una clave: con ella se ve si las de un grupo dicen lo mismo
-    v_k := case rec->>'accion'
-             when 'gasto' then 'gasto|' || coalesce(rec->'datos'->>'cuenta', '')
-             when 'personal' then 'personal|'
-             when 'cuadrilla' then 'cuadrilla|' || coalesce(rec->'datos'->>'usuario_id', '')
-             when 'contratista' then 'contratista|' || coalesce(rec->'datos'->>'proveedor_id', '')
-             when 'traspaso' then 'traspaso|' || coalesce(rec->'datos'->>'cuenta', '')
-             when 'ia' then case when coalesce((rec->'datos'->>'lineas')::int, 1) > 1 then 'reparto|' || m.id
-                                 when rec->'datos'->>'cuenta' = '3200' then 'personal|'
-                                 else 'gasto|' || coalesce(rec->'datos'->>'cuenta', '') end
-           end;
-    if rec ? 'sin_alta' then
-      v_sin := v_sin || jsonb_build_object(rec->>'sin_alta', coalesce((v_sin->>(rec->>'sin_alta'))::int, 0) + 1);
-    end if;
-    v_tarj := v_tarj || jsonb_build_object(m.id::text, jsonb_strip_nulls(jsonb_build_object(
-                'clave', c->>'clave', 'nombre', c->>'nombre', 'clase', c->>'clase', 'rec', rec - 'sin_alta', 'dimelo', dim,
-                'deshecho', case when exists (select 1 from bandeja_hechos h where h.movimiento_id = m.id and h.deshecho_el is not null)
-                                 then true end)));
-    v_lista := v_lista || jsonb_build_object('id', m.id, 'monto', m.monto, 'clave', c->>'clave', 'nombre', c->>'nombre', 'clase', c->>'clase',
-                                             'motivo', coalesce(m.propuesta->>'motivo', 'sin_propuesta'), 'acc', rec->>'accion', 'k', v_k,
-                                             'fte', rec->>'fuente', 'pide', rec->'pide', 'pm', rec->'pide_motivo',
-                                             'av', case when rec ? 'aviso' then true end);
+    for x in select value from jsonb_array_elements(u.xs) loop
+      c := x->'c';
+      v_id := (x->>'id')::uuid;
+      if v_corta then
+        v_faltan := v_faltan || v_id;
+        rec := null;
+        continue when v_parte;   -- (lo pedido que no dio tiempo: la pantalla conserva lo que tenía y lo vuelve a pedir)
+      else
+        rec := fn_bandeja_recomendar(v_id, ctx || jsonb_build_object('c', c));
+        v_n := v_n + 1;
+      end if;
+      select jsonb_strip_nulls(jsonb_build_object('dimelo_id', q.id, 'estado', q.estado, 'frase', q.frase, 'accion', q.accion, 'datos', q.datos,
+                                                  'texto', q.texto, 'porque', q.porque, 'falta', q.falta, 'recordar', q.recordar,
+                                                  'pide_obra', case when q.estado = 'pendiente' and q.falta is not null then true end))
+        into dim
+        from bandeja_dimelo q
+       where q.movimiento_id = v_id and q.estado in ('pendiente', 'sin_propuesta') and q.creado_el > now() - interval '7 days'
+         and not exists (select 1 from bandeja_dimelo z where z.movimiento_id = q.movimiento_id and z.creado_el > q.creado_el)
+       order by q.creado_el desc limit 1;
+      if not found then
+        dim := null;
+      end if;
+      -- lo que la tarjeta recomienda, en una clave: con ella se ve si las de un grupo dicen lo mismo
+      v_k := case rec->>'accion'
+               when 'gasto' then 'gasto|' || coalesce(rec->'datos'->>'cuenta', '')
+               when 'personal' then 'personal|'
+               when 'cuadrilla' then 'cuadrilla|' || coalesce(rec->'datos'->>'usuario_id', '')
+               when 'contratista' then 'contratista|' || coalesce(rec->'datos'->>'proveedor_id', '')
+               when 'traspaso' then 'traspaso|' || coalesce(rec->'datos'->>'cuenta', '')
+             end;
+      if rec ? 'sin_alta' then
+        v_sin := v_sin || jsonb_build_object(rec->>'sin_alta', coalesce((v_sin->>(rec->>'sin_alta'))::int, 0) + 1);
+      end if;
+      v_tk := v_tk || v_id::text;
+      v_tv := v_tv || jsonb_strip_nulls(jsonb_build_object(
+                  'clave', c->>'clave', 'nombre', c->>'nombre', 'clase', c->>'clase', 'rec', rec - 'sin_alta', 'dimelo', dim,
+                  -- (pensando: su recomendación no dio tiempo en esta llamada; viene en la siguiente)
+                  'pensando', case when v_corta then true end,
+                  'deshecho', case when exists (select 1 from bandeja_hechos h where h.movimiento_id = v_id and h.deshecho_el is not null)
+                                   then true end));
+      v_lista := v_lista || jsonb_build_object('id', v_id, 'f', x->>'f', 'monto', x->'monto', 'clave', c->>'clave', 'nombre', c->>'nombre',
+                                               'clase', c->>'clase', 'motivo', x->>'motivo', 'u', u.uk, 'ev', not v_corta,
+                                               'acc', rec->>'accion', 'k', v_k, 'fte', rec->>'fuente', 'pide', rec->'pide',
+                                               'pm', rec->'pide_motivo', 'po', rec->'pide_obra',
+                                               'av', case when rec ? 'aviso' then true end);
+    end loop;
   end loop;
-  -- LOS GRUPOS DE CARGOS: dos o más pendientes de la misma contraparte, de los que c6 no dice otra cosa.
+  select coalesce(jsonb_object_agg(t.k, t.v), '{}'::jsonb) into v_tarj from unnest(v_tk, v_tv) as t(k, v);
+  -- 3. LOS GRUPOS DE CARGOS: dos o más pendientes de la misma contraparte, de los que c6 no dice otra cosa. Su recomendación
+  --    es la de SUS TARJETAS cuando coinciden (todas las que dicen algo, y al menos seis de cada diez); «pendiente» si todavía
+  --    no dio tiempo a mirarlas.
   select coalesce(jsonb_agg(z.g order by z.n desc, z.total), '[]'::jsonb) into v_grupos
     from (select a.n, a.total,
                  jsonb_strip_nulls(jsonb_build_object(
                    'clave', a.clave, 'nombre', a.nombre, 'clase', a.clase, 'n', a.n, 'total', a.total, 'movimientos', a.movs,
                    'solo_ok', case when a.clase = 'comercio' then true end,
-                   'mixto', case when a.nk > 1 then true end,
+                   'pendiente', case when not a.ev then true end,
+                   'mixto', case when a.ev and a.nk > 1 then true end,
                    'memoria', (select jsonb_build_object('accion', bm.accion, 'datos', bm.datos, 'texto', bm.texto, 'solo', bm.solo)
                                  from bandeja_memoria bm where bm.clave = a.clave and bm.activa),
-                   -- (lo que dicen sus tarjetas, si todas las que dicen algo dicen lo mismo y son al menos seis de cada diez)
-                   'rec', case when a.nk = 1 and a.nr * 10 >= a.n * 6 and split_part(a.k, '|', 1) <> 'reparto' then
-                            jsonb_build_object(
-                              'accion', split_part(a.k, '|', 1), 'fuente', coalesce(a.fte, 'app'),
-                              'datos', case split_part(a.k, '|', 1)
-                                         when 'gasto' then jsonb_build_object('cuenta', split_part(a.k, '|', 2))
-                                         when 'traspaso' then jsonb_build_object('cuenta', split_part(a.k, '|', 2))
-                                         when 'cuadrilla' then jsonb_build_object('usuario_id', split_part(a.k, '|', 2))
-                                         when 'contratista' then jsonb_strip_nulls(jsonb_build_object('proveedor_id', nullif(split_part(a.k, '|', 2), '')))
-                                         else '{}'::jsonb end,
-                              'texto', case split_part(a.k, '|', 1)
-                                         when 'personal' then 'Son tuyos, no de la empresa: salen como retiro tuyo, no como gasto del negocio.'
-                                         when 'contratista' then 'Son pagos a un subcontratista. Cada uno va a la obra donde estuvo la cuadrilla ese día (el que '
-                                                                 'no tenga una sola, se queda para que digas la obra), o a la que tú digas para todos.'
-                                         when 'cuadrilla' then format('Son pagos a %s, de la cuadrilla: se reparten entre las obras según sus horas.',
-                                                                      coalesce((select pf.nombre from perfiles pf
-                                                                                 where pf.id::text = split_part(a.k, '|', 2)), 'alguien de la cuadrilla'))
-                                         when 'traspaso' then format('Son dinero entre tus cuentas (con %s): no son un gasto.',
-                                                                     coalesce((select y->>'nombre' from jsonb_array_elements(fn_bandeja_cuentas_propias()) y
-                                                                                where y->>'codigo' = split_part(a.k, '|', 2)), 'otra cuenta tuya'))
-                                         else format('Son «%s»%s.', fn_bandeja_cuenta_llana(split_part(a.k, '|', 2)),
-                                                     case when (select k2.regla_obra from cuentas k2 where k2.codigo = split_part(a.k, '|', 2)) = 'obligatoria'
-                                                          then '. Cada uno va a la obra donde estuvo la cuadrilla ese día (el que no tenga una sola, se queda '
-                                                               'para que digas la obra), o a la que tú digas para todos' else '' end) end)
-                          end)) as g
-            from (select x->>'clave' as clave, min(x->>'nombre') as nombre, min(x->>'clase') as clase, count(*) as n,
-                         sum((x->>'monto')::numeric) as total, jsonb_agg(x->>'id') as movs,
-                         count(distinct x->>'k') as nk, count(x->>'k') as nr, min(x->>'k') as k,
-                         mode() within group (order by x->>'fte') as fte
-                    from jsonb_array_elements(v_lista) x
-                   where x->>'clave' is not null and x->>'clase' in ('comercio', 'zelle_a') and (x->>'monto')::numeric < 0
-                     -- (lo que el banco ya reconoce va en su lote; lo que se contesta en otra parte no entra en un grupo)
-                     and x->>'motivo' = any (c_libre) and x->>'acc' is distinct from 'banco' and x->>'av' is null
-                   group by x->>'clave'
+                   'rec', case when a.ev and a.nk = 1 and a.nr * 10 >= a.n * 6
+                               then fn_bandeja_grupo_rec(a.k, coalesce(a.fte, 'app'), a.npo = a.n) end)) as g
+            from (select y->>'clave' as clave, min(y->>'nombre') as nombre, min(y->>'clase') as clase, count(*) as n,
+                         sum((y->>'monto')::numeric) as total, jsonb_agg(y->>'id' order by y->>'f', y->>'id') as movs,
+                         count(distinct y->>'k') as nk, count(y->>'k') as nr, min(y->>'k') as k,
+                         mode() within group (order by y->>'fte') as fte,
+                         bool_and((y->>'ev')::boolean) as ev, count(*) filter (where y->>'po' = 'true') as npo
+                    from unnest(v_lista) as y
+                   -- (lo que el banco ya reconoce va en su lote; lo que se contesta en otra parte no entra en un grupo)
+                   where y->>'u' like 'G:%' and (not (y->>'ev')::boolean or (y->>'acc' is distinct from 'banco' and y->>'av' is null))
+                   group by y->>'clave'
                   having count(*) >= 2) a) z;
   -- LOS DEPÓSITOS DE UN MISMO PAGADOR (un procesador de tarjetas, un cliente por Zelle o por transferencia): juntos a la vista,
   -- pero cada uno con su respuesta
-  select coalesce(jsonb_agg(z.g order by z.n desc, z.total desc), '[]'::jsonb) into v_dep
-    from (select count(*) as n, sum((x->>'monto')::numeric) as total,
-                 jsonb_build_object('clave', x->>'clave', 'nombre', min(x->>'nombre'), 'clase', min(x->>'clase'), 'n', count(*),
-                                    'total', sum((x->>'monto')::numeric), 'movimientos', jsonb_agg(x->>'id'), 'uno_a_uno', true) as g
-            from jsonb_array_elements(v_lista) x
-           where x->>'clave' is not null and x->>'clase' in ('zelle_de', 'deposito', 'procesador') and (x->>'monto')::numeric > 0
-           group by x->>'clave'
-          having count(*) >= 2) z;
+  if not v_parte then
+    select coalesce(jsonb_agg(z.g order by z.n desc, z.total desc), '[]'::jsonb) into v_dep
+      from (select count(*) as n, sum((y->>'monto')::numeric) as total,
+                   jsonb_build_object('clave', y->>'clave', 'nombre', min(y->>'nombre'), 'clase', min(y->>'clase'), 'n', count(*),
+                                      'total', sum((y->>'monto')::numeric), 'movimientos', jsonb_agg(y->>'id' order by y->>'f', y->>'id'),
+                                      'uno_a_uno', true) as g
+              from unnest(v_lista) as y
+             where y->>'clave' is not null and y->>'clase' in ('zelle_de', 'deposito', 'procesador') and (y->>'monto')::numeric > 0
+             group by y->>'clave'
+            having count(*) >= 2) z;
+  end if;
   -- LOS LOTES de c6: lo que c6 ya reconoce igual en varios (intereses, cargos del banco, cuotas): aceptar todos de una vez.
   select coalesce(jsonb_agg(z.g order by z.n desc), '[]'::jsonb) into v_lotes
     from (select count(*) as n,
-                 jsonb_build_object('clave', 'M:' || (x->>'motivo'), 'clase', 'lote', 'n', count(*), 'total', sum((x->>'monto')::numeric),
-                                    'movimientos', jsonb_agg(x->>'id'),
-                                    'nombre', case x->>'motivo' when 'interes_tarjeta' then 'Intereses de la tarjeta'
+                 jsonb_build_object('clave', 'M:' || (y->>'motivo'), 'clase', 'lote', 'n', count(*), 'total', sum((y->>'monto')::numeric),
+                                    'movimientos', jsonb_agg(y->>'id' order by y->>'f', y->>'id'),
+                                    'nombre', case y->>'motivo' when 'interes_tarjeta' then 'Intereses de la tarjeta'
                                                                 when 'cargo_banco' then 'Cargos del banco'
                                                                 when 'interes' then 'Intereses que paga el banco'
                                                                 else 'Cuotas de préstamos' end,
                                     'rec', jsonb_build_object('accion', 'banco', 'fuente', 'banco',
                                                               'texto', 'El banco ya los reconoce: se registra cada uno como dice su tarjeta.')) as g
-            from jsonb_array_elements(v_lista) x
-           where x->>'motivo' in ('interes_tarjeta', 'cargo_banco', 'interes', 'cuota_prestamo') and x->>'acc' = 'banco'
-             and x->>'pide' is null and x->>'pm' is null
-           group by x->>'motivo'
+            from unnest(v_lista) as y
+           where y->>'u' like 'L:%' and (y->>'ev')::boolean and y->>'acc' = 'banco' and y->>'pide' is null and y->>'pm' is null
+           group by y->>'motivo'
           having count(*) >= 2) z;
   -- LO DEL CONTROL que Edgar tiene que saber, en llano (lo demás lo ve quien pega, en v_bandeja_control)
   select coalesce(jsonb_agg(jsonb_build_object('orden', k.orden, 'nivel', k.nivel, 'texto', k.texto) order by k.orden), '[]'::jsonb) into v_ctl
@@ -4131,23 +4934,18 @@ begin
            '[]'::jsonb)
     into v_ctl
     from jsonb_each_text(v_sin) e;
-  return jsonb_build_object(
+  v_res := jsonb_build_object(
     'version', fn_bandeja_version(),
     'config', jsonb_build_object('solo', cfg.solo, 'solo_tope', cfg.solo_tope, 'dimelo', cfg.dimelo,
                                  'c10', to_regprocedure('public.fn_jornal_pago(jsonb)') is not null, 'solo_ultimo', cfg.solo_ultimo),
-    'categorias', fn_bandeja_categorias(),
-    'cuentas_propias', fn_bandeja_cuentas_propias(),
-    'prestamos', (select coalesce(jsonb_agg(jsonb_build_object('id', pr.id, 'prestamista', pr.prestamista) order by pr.creado_el), '[]'::jsonb)
-                    from prestamos pr),
-    'cuadrilla', case when to_regprocedure('public.fn_jornal_pago(jsonb)') is null then '[]'::jsonb
-                      else (select coalesce(jsonb_agg(jsonb_build_object('usuario_id', pf.id, 'nombre', pf.nombre) order by pf.nombre), '[]'::jsonb)
-                              from perfiles pf where pf.rol <> 'dueno' and coalesce(pf.activo, true)) end,
-    -- (a quién se le paga un subcontrato: con él, el pago sale con su nombre en el 1099)
-    'proveedores', (select coalesce(jsonb_agg(jsonb_build_object('proveedor_id', pv.id, 'nombre', pv.nombre) order by lower(pv.nombre)), '[]'::jsonb)
-                      from proveedores pv where pv.activo),
     'tarjetas', v_tarj,
     'grupos', v_lotes || v_grupos || v_dep,
-    -- LO YA REGISTRADO CUYO RECIBO LLEGÓ DESPUÉS y no se pudo cambiar solo: el gasto está dos veces hasta que Edgar diga
+    -- (parte: la pantalla pidió unas tarjetas —ids—; lo demás lo conserva. faltan: las que no dio tiempo a recomendar, en su
+    -- orden: se piden otra vez con {ids: faltan}. parcial: quedó alguna)
+    'parte', v_parte,
+    'faltan', to_jsonb(v_faltan),
+    'parcial', cardinality(v_faltan) > 0,
+    -- LO YA REGISTRADO CUYO RECIBO LLEGÓ DESPUÉS y no se cambió solo: el gasto está dos veces hasta que Edgar diga
     'recibos', (select coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
                          'movimiento_id', mb.id, 'fecha', mb.fecha, 'monto', mb.monto, 'descripcion', mb.descripcion,
                          'registrado', (select h.texto from bandeja_hechos h
@@ -4167,12 +4965,6 @@ begin
                          order by mb.fecha, mb.id), '[]'::jsonb)
                   from movimientos_banco mb
                  where mb.estado = 'casado' and mb.propuesta->>'motivo' = 'llego_su_ticket'),
-    'recibos_cambiados', (select coalesce(jsonb_agg(jsonb_build_object('movimiento_id', h.movimiento_id, 'fecha', mb.fecha, 'monto', h.monto,
-                                                                       'descripcion', mb.descripcion, 'antes', h.texto, 'el', h.deshecho_el)
-                                                    order by h.deshecho_el desc), '[]'::jsonb)
-                            from bandeja_hechos h
-                            join movimientos_banco mb on mb.id = h.movimiento_id
-                           where h.deshecho_el > now() - interval '14 days' and h.deshecho_motivo like 'Llegó su recibo%'),
     'solos', (select coalesce(jsonb_agg(jsonb_build_object('hecho_id', h.id, 'movimiento_id', h.movimiento_id, 'fecha', mb.fecha,
                                                            'monto', h.monto, 'descripcion', mb.descripcion, 'texto', h.texto, 'el', h.el,
                                                            'asiento', a.numero, 'corrio', h.corrio, 'clave', h.memoria_clave,
@@ -4181,22 +4973,28 @@ begin
                 join movimientos_banco mb on mb.id = h.movimiento_id
                 left join asientos a on a.id = h.asiento_id
                where h.solo and h.deshecho_el is null and h.el > now() - interval '14 days'),
+    -- (con su clave: al deshacer se sabe si lo de esa contraparte «entra solo», para apagarlo o preguntarlo)
     'recientes', (select coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
-                                              'hecho_id', x.id, 'movimiento_id', x.movimiento_id, 'fecha', x.fecha, 'monto', x.monto,
-                                              'descripcion', x.descripcion, 'texto', x.texto, 'el', x.el, 'fuente', x.fuente, 'tanda', x.tanda))
-                                            order by x.el desc), '[]'::jsonb)
-                    from (select h.id, h.movimiento_id, mb.fecha, h.monto, mb.descripcion, h.texto, h.el, h.fuente, h.tanda
+                                              'hecho_id', z.id, 'movimiento_id', z.movimiento_id, 'fecha', z.fecha, 'monto', z.monto,
+                                              'descripcion', z.descripcion, 'texto', z.texto, 'el', z.el, 'fuente', z.fuente, 'tanda', z.tanda,
+                                              'clave', z.memoria_clave))
+                                            order by z.el desc), '[]'::jsonb)
+                    from (select h.id, h.movimiento_id, mb.fecha, h.monto, mb.descripcion, h.texto, h.el, h.fuente, h.tanda, h.memoria_clave
                             from bandeja_hechos h
                             join movimientos_banco mb on mb.id = h.movimiento_id
                            where not h.solo and h.deshecho_el is null and h.el > now() - interval '14 days'
                              and mb.estado <> 'pendiente' and mb.asiento_id is not distinct from h.asiento_id
-                           order by h.el desc limit 300) x),
+                           order by h.el desc limit 300) z),
     -- LAS DECISIONES POR GRUPO (su tanda), para deshacerlas enteras con un solo porqué
-    'tandas', (select coalesce(jsonb_agg(jsonb_build_object('tanda', t.tanda, 'n', t.n, 'monto', t.monto, 'el', t.el, 'nombre', t.nombre,
-                                                            'texto', t.que) order by t.el desc), '[]'::jsonb)
+    'tandas', (select coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object('tanda', t.tanda, 'n', t.n, 'monto', t.monto, 'el', t.el,
+                                                            'nombre', t.nombre, 'texto', t.que, 'clave', t.clave)) order by t.el desc), '[]'::jsonb)
                  from (select h.tanda, count(*) as n, sum(h.monto) as monto, max(h.el) as el,
-                              case when count(distinct h.memoria_clave) = 1 then min(substring(h.memoria_clave from '^[A-Z]+[<>]?:(.*)$'))
+                              case when min(h.accion) = 'banco'
+                                     then case when bool_and(h.datos->>'llamar' = 'fn_prestamo_cuota') then 'Cuotas de préstamos'
+                                               else 'Lo que el banco ya reconocía' end
+                                   when count(distinct h.memoria_clave) = 1 then min(substring(h.memoria_clave from '^[A-Z]+[<>]?:(.*)$'))
                                    else 'Varios' end as nombre,
+                              case when count(distinct h.memoria_clave) = 1 and min(h.accion) <> 'banco' then min(h.memoria_clave) end as clave,
                               case min(h.accion)
                                 when 'personal' then 'tuyos (personales)'
                                 when 'gasto' then case when count(distinct h.datos->>'cuenta') = 1 then '«' || fn_bandeja_cuenta_llana(min(h.datos->>'cuenta')) || '»'
@@ -4204,28 +5002,59 @@ begin
                                 when 'cuadrilla' then 'pagos a la cuadrilla'
                                 when 'contratista' then 'pagos a un subcontratista'
                                 when 'traspaso' then 'dinero entre tus cuentas'
-                                else 'lo que proponía el banco' end as que
+                                else 'como decía cada tarjeta' end as que
                          from bandeja_hechos h
                          join movimientos_banco mb on mb.id = h.movimiento_id
                         where h.tanda is not null and h.deshecho_el is null and h.el > now() - interval '14 days'
                           and mb.estado <> 'pendiente' and mb.asiento_id is not distinct from h.asiento_id
                         group by h.tanda
                        having count(*) >= 2) t),
-    'memoria', (select coalesce(jsonb_agg(jsonb_build_object('clave', bm.clave, 'nombre', bm.nombre, 'clase', bm.clase, 'accion', bm.accion,
-                                                             'texto', bm.texto, 'solo', bm.solo, 'veces', bm.veces) order by bm.nombre), '[]'::jsonb)
+    -- (obra: lo recordado va a una obra —nunca entra solo: la pantalla no ofrece la casilla—)
+    'memoria', (select coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
+                                            'clave', bm.clave, 'nombre', bm.nombre, 'clase', bm.clase, 'accion', bm.accion,
+                                            'texto', bm.texto, 'solo', bm.solo, 'veces', bm.veces,
+                                            'obra', case when bm.datos ? 'obra' or bm.accion = 'contratista'
+                                                              or (bm.accion = 'gasto' and (select k.regla_obra from cuentas k
+                                                                                            where k.codigo = bm.datos->>'cuenta') = 'obligatoria')
+                                                         then true end)) order by bm.nombre), '[]'::jsonb)
                   from bandeja_memoria bm where bm.activa),
+    -- LAS TARIFAS de los procesadores que Edgar confirmó con un cobro, o que la app apuntó de uno (se pueden olvidar)
+    'tarifas', (select coalesce(jsonb_agg(y - 'conf' order by y->>'proc', (y->>'pct')::numeric), '[]'::jsonb)
+                  from jsonb_array_elements(cfg.tarifas) y
+                 where coalesce((y->>'veces')::int, 0) > 0 or y->>'origen' = 'aprendida'),
     -- lo de la IA (c8) que quedó abierto en movimientos que esta capa ya registró: la pantalla lo cierra por la función de borde
     'ia_abiertas', (select coalesce(jsonb_agg(q.id order by q.creado_el), '[]'::jsonb)
                       from contador_propuestas q
                      where q.estado = 'pendiente'
                        and exists (select 1 from bandeja_hechos h join movimientos_banco mb on mb.id = h.movimiento_id
                                     where h.movimiento_id = q.movimiento_id and h.deshecho_el is null and mb.estado <> 'pendiente')),
-    'control', v_ctl,
-    'parcial', v_parcial);
+    -- y lo que la IA tenía APROBADO con un asiento que la Bandeja deshizo: ya no tiene asiento vivo; la pantalla lo cierra igual
+    'ia_caducar', (select coalesce(jsonb_agg(q.id order by q.creado_el), '[]'::jsonb)
+                     from contador_propuestas q
+                    where q.estado in ('aprobada', 'editada') and q.asiento_id is not null
+                      and exists (select 1 from bandeja_hechos h
+                                   where h.movimiento_id = q.movimiento_id and h.asiento_id = q.asiento_id and h.deshecho_el is not null)
+                      and exists (select 1 from asientos r where r.reversa_a = q.asiento_id and r.camino in ('reverso', 'reverso_automatico'))),
+    'control', v_ctl);
+  if not v_parte then
+    -- (lo fijo, que la pantalla conserva entre una llamada y otra)
+    v_res := v_res || jsonb_build_object(
+      'categorias', fn_bandeja_categorias(),
+      'cuentas_propias', fn_bandeja_cuentas_propias(),
+      'prestamos', (select coalesce(jsonb_agg(jsonb_build_object('id', pr.id, 'prestamista', pr.prestamista) order by pr.creado_el), '[]'::jsonb)
+                      from prestamos pr),
+      'cuadrilla', case when to_regprocedure('public.fn_jornal_pago(jsonb)') is null then '[]'::jsonb
+                        else (select coalesce(jsonb_agg(jsonb_build_object('usuario_id', pf.id, 'nombre', pf.nombre) order by pf.nombre), '[]'::jsonb)
+                                from perfiles pf where pf.rol <> 'dueno' and coalesce(pf.activo, true)) end,
+      -- (a quién se le paga un subcontrato: con él, el pago sale con su nombre en el 1099)
+      'proveedores', (select coalesce(jsonb_agg(jsonb_build_object('proveedor_id', pv.id, 'nombre', pv.nombre) order by lower(pv.nombre)), '[]'::jsonb)
+                        from proveedores pv where pv.activo));
+  end if;
+  return v_res;
 end $$;
 revoke execute on function public.fn_bandeja_leer(jsonb) from public, anon, service_role;
 grant  execute on function public.fn_bandeja_leer(jsonb) to authenticated;
-comment on function public.fn_bandeja_leer(jsonb) is 'c17: lo que la Bandeja nueva lee de una vez: la configuración, las categorías, las cuentas propias, los préstamos, la cuadrilla, los proveedores, la tarjeta de cada movimiento pendiente (contraparte, recomendación y propuesta del «Dímelo»), los grupos de cargos con la recomendación de sus tarjetas (si coinciden) y los depósitos de un mismo pagador (uno a uno), lo registrado cuyo recibo llegó después, lo que entró solo y lo contestado (14 días, con sus tandas), lo recordado y lo del control que el dueño tiene que saber. Solo lee.';
+comment on function public.fn_bandeja_leer(jsonb) is 'c17: lo que la Bandeja nueva lee: la tarjeta de cada movimiento pendiente (contraparte, recomendación y propuesta del «Dímelo»), los grupos de cargos con la recomendación de sus tarjetas (si coinciden) y los depósitos de un mismo pagador (uno a uno), lo registrado cuyo recibo llegó después y espera su respuesta, lo que entró solo y lo contestado (14 días, con sus tandas), lo recordado, las tarifas confirmadas y lo del control que el dueño tiene que saber. Las recomendaciones van por reloj (ms: 2.5 s de fábrica) y por unidades (un grupo, entero): lo que no dio tiempo se devuelve en «faltan» y se pide otra vez con {ids}. Solo lee.';
 
 
 -- ---------------------------------------------------------------------
@@ -4255,10 +5084,11 @@ as $$
              case when t.n > 0 then t.d || ' → deshazlo en la Bandeja (Registrado solo → Deshacer) y avisa' end
         from (select count(*) as n, left(string_agg(format('%s %s «%s»', v.fecha, v.monto, coalesce(v.descripcion, '')), '; '), 1200) as d
                 from vivo v
-               where v.solo and (v.monto >= 0 or v.accion not in ('gasto', 'personal') or coalesce(v.memoria_clave, '') not like 'C:%'
-                                 or abs(v.monto) > 5000 or v.datos ? 'proyecto_id'
-                                 or (v.accion = 'gasto'
-                                     and (select k.regla_obra from cuentas k where k.codigo = v.datos->>'cuenta') = 'obligatoria'))) t
+               where v.solo
+                 and (v.monto >= 0 or v.accion not in ('gasto', 'personal') or coalesce(v.memoria_clave, '') not like 'C:%'
+                      or abs(v.monto) > 5000 or v.datos ? 'proyecto_id'
+                      or (v.accion = 'gasto'
+                          and (select k.regla_obra from cuentas k where k.codigo = v.datos->>'cuenta') = 'obligatoria'))) t
       union all
       -- 30: una propuesta del «Dímelo» aprobada tiene su registro
       select 30, 'bandeja: cada propuesta aprobada del «Dímelo» tiene su registro', 'cuadre', t.n = 0, t.n, 0,
