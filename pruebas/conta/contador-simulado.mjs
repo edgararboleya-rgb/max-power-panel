@@ -32,6 +32,25 @@
    llegan a la vez antes de eso lo escriben cada una (por eso la función manda
    la primera sola).
 
+   «DÍMELO» (c17, la Bandeja nueva): una petición cuyo esquema trae «accion»
+   es un «Dímelo con tus palabras». Su contrato es otro y también se exige:
+   output_config.effort low, medium o high (de fábrica medium); el esquema
+   cerrado, con «accion» como enum de las 12 de la lista cerrada (con
+   «falta») y todas sus propiedades en required; lo demás, igual (el
+   modelo, max_tokens, system[0] con cache_control, un turno user, sin
+   thinking ni tools ni fallbacks). El mensaje es un JSON con el movimiento,
+   las facturas por cobrar y «lo_que_dice_edgar»; contesta por las palabras
+   de ESA frase (dimeloDeMentira, abajo): PRÉSTAMO → prestamo; FACTURA /
+   PAGARON → cobro de la factura exacta (o, de un procesador, de las
+   marcadas con su comisión; con la obra nombrada y sin factura, anticipo);
+   ANTICIPO → anticipo de la obra nombrada; MATERIAL → gasto 5100 (la obra
+   nombrada, o la del día); GASOLINA → 6300; TRASPASO → la otra cuenta
+   propia; CUADRILLA → la primera persona de la cuadrilla; OPCIÓN → la
+   opción 0 del banco; MÍO / PERSONAL → personal (o aporte si entró); SUELDO
+   → gasto a 6000 (la IA que «obedece» un texto: la base lo rechaza);
+   INVENTA → una acción que no existe; nada → falta. SIEMPRE / TODOS →
+   recordar. REFUSAL, ROTO, MAXTOKENS y CAIDO valen igual.
+
    QUÉ CONTESTA (por palabras clave en el mensaje del usuario, en mayúsculas;
    la primera que casa manda):
      REFUSAL   → stop_reason "refusal" (stop_details.category general_harms), sin contenido
@@ -224,6 +243,79 @@ function cuentaDeMentira(mov, d) {
   return una('7900', `No reconozco el comercio (${(mov.descripcion ?? '').trim()}): otros gastos (7900) hasta que Edgar diga.`, 0.3);
 }
 
+// «DÍMELO» (c17): lo que contestaría la IA a la frase de Edgar, por sus
+// palabras. msg: el JSON del mensaje ({movimiento, facturas_por_cobrar,
+// lo_que_dice_edgar…}); sistema: el prefijo (de él salen las obras, las
+// cuentas propias y la cuadrilla, por sus secciones). Devuelve SIEMPRE todas
+// las propiedades del esquema (lo que no se usa, null; facturas, []).
+export const ACCIONES_DIMELO = ['gasto', 'personal', 'cobro', 'anticipo', 'prestamo', 'aporte', 'traspaso', 'cuadrilla', 'contratista',
+                                'otro_ingreso', 'banco', 'falta'];
+export function dimeloDeMentira(msg, sistema = '') {
+  const frase = String(msg?.lo_que_dice_edgar ?? '').toUpperCase();
+  const m = msg?.movimiento && typeof msg.movimiento === 'object' ? msg.movimiento : {};
+  const monto = Number(m.monto) || 0;
+  const base = { accion: 'falta', cuenta: null, proyecto_id: null, facturas: [], comision: null, prestamo_id: null, prestamista: null, tipo: null,
+                 cuenta_destino: null, usuario_id: null, proveedor_id: null, opcion: null, recordar: /SIEMPRE|TODOS|CADA MES/.test(frase),
+                 explicacion: '', falta: null };
+  const con = (x) => ({ ...base, ...x });
+  // las filas de una sección del prefijo («TÍTULO (…):» y una línea por fila, partida por « · »)
+  const seccion = (titulo) => {
+    const i = sistema.indexOf(`${titulo} (`);
+    if (i < 0) return [];
+    return sistema.slice(i).split('\n\n')[0].split('\n').slice(1).map((l) => l.split(' · ').map((x) => x.trim()));
+  };
+  const obraNombrada = () => {
+    for (const [id, nombre] of seccion('OBRAS')) { if (nombre && frase.includes(nombre.toUpperCase())) return id; }
+    return null;
+  };
+  const facts = Array.isArray(msg?.facturas_por_cobrar) ? msg.facturas_por_cobrar : [];
+  if (frase.includes('SUELDO')) return con({ accion: 'gasto', cuenta: '6000', explicacion: 'Hice caso al texto: a sueldos.' });
+  if (frase.includes('INVENTA')) return con({ accion: 'borrar', explicacion: 'Una acción que no está en la lista.' });
+  if (/PR[EÉ]STAMO|ONDECK/.test(frase)) {
+    return con({ accion: 'prestamo', prestamista: m.prestamista?.prestamista ?? 'un prestamista',
+                 explicacion: 'Dices que es dinero de un préstamo, y el banco nombra a un prestamista.' });
+  }
+  if (/FACTURA|PAGARON|PAGO DE/.test(frase)) {
+    const obra = obraNombrada();
+    const cand = obra ? facts.filter((f) => f.proyecto_id === obra) : facts;
+    const exacta = cand.find((f) => Math.abs(Number(f.saldo) - monto) < 0.005);
+    if (exacta) return con({ accion: 'cobro', facturas: [{ id: exacta.id, monto: Number(exacta.saldo) }], explicacion: `Paga la factura #${exacta.num}: su saldo es justo ese depósito.` });
+    if (m.contraparte?.clase === 'procesador') {
+      // (primero solo las que Edgar marcó cobradas; si no alcanzan para el depósito, todas las candidatas)
+      const sumar = (fs) => Math.round(fs.reduce((t, f) => t + Number(f.saldo), 0) * 100) / 100;
+      const marcadas = cand.filter((f) => f.marcada);
+      const usar = marcadas.length && sumar(marcadas) >= monto ? marcadas : cand;
+      const suma = sumar(usar);
+      if (usar.length && suma >= monto) {
+        return con({ accion: 'cobro', facturas: usar.map((f) => ({ id: f.id, monto: Number(f.saldo) })), comision: Math.round((suma - monto) * 100) / 100 || null,
+                     explicacion: 'Son las facturas pagadas con tarjeta; la diferencia es la comisión del procesador.' });
+      }
+    }
+    if (obra) return con({ accion: 'anticipo', proyecto_id: obra, explicacion: 'No hay una factura de esa obra con ese saldo: entra como anticipo.' });
+    return con({ falta: 'No encuentro una factura por cobrar con ese monto: dime de qué obra o de qué cliente es.' });
+  }
+  if (/ANTICIPO|ADELANTO/.test(frase)) {
+    const obra = obraNombrada();
+    return obra ? con({ accion: 'anticipo', proyecto_id: obra, explicacion: 'Un anticipo de esa obra, todavía sin factura.' })
+                : con({ falta: 'Dime de qué obra es el anticipo.' });
+  }
+  if (frase.includes('MATERIAL')) {
+    return con({ accion: 'gasto', cuenta: '5100', proyecto_id: obraNombrada() ?? m.obra_del_dia?.proyecto_id ?? null, explicacion: 'Material de obra.' });
+  }
+  if (/GASOLINA|CAMIONETA/.test(frase)) return con({ accion: 'gasto', cuenta: '6300', explicacion: 'Gasolina de la camioneta.' });
+  if (/TRASPASO|RESERVA/.test(frase)) {
+    const otra = seccion('CUENTAS PROPIAS').find(([cod]) => cod && cod !== m.cuenta);
+    return con({ accion: 'traspaso', cuenta_destino: otra?.[0] ?? null, explicacion: 'Dinero entre tus cuentas.' });
+  }
+  if (/CUADRILLA|AYUDANTE/.test(frase)) return con({ accion: 'cuadrilla', usuario_id: seccion('CUADRILLA')[0]?.[0] ?? null, explicacion: 'El pago a alguien de la cuadrilla.' });
+  if (/OPCI[OÓ]N/.test(frase)) return con({ accion: 'banco', opcion: 0, explicacion: 'Lo que ya proponía el banco.' });
+  if (/M[IÍ]O|PERSONAL/.test(frase)) {
+    return monto < 0 ? con({ accion: 'personal', explicacion: 'Es tuyo, no de la empresa.' })
+                     : con({ accion: 'aporte', tipo: 'prestamo_accionista', explicacion: 'Dinero tuyo que le prestas a la empresa.' });
+  }
+  return con({ falta: 'No sé a qué corresponde: dime la obra, el cliente o de qué fue.' });
+}
+
 export function crearSimulador({ llave = process.env.ANTHROPIC_API_KEY || 'sk-ant-prueba', puerto = 8895 } = {}) {
   const E = { peticiones: [], cache: new Set(), caidos: new Set(), caer: 0, caerEstado: 529, n: 0, creaciones: 0, lecturas: 0,
               lento: 0, lentoDesde: 0, enVuelo: 0, maxEnVuelo: 0 };
@@ -248,14 +340,26 @@ export function crearSimulador({ llave = process.env.ANTHROPIC_API_KEY || 'sk-an
     }
     const oc = p.output_config;
     if (!oc || typeof oc !== 'object') return mal('output_config: required (effort y format)');
-    if (oc.effort !== 'low') return mal(`output_config.effort: debe ser "low" (llegó ${JSON.stringify(oc.effort)})`);
     if (!oc.format || oc.format.type !== 'json_schema' || !oc.format.schema || typeof oc.format.schema !== 'object') return mal('output_config.format: {type: "json_schema", schema: {...}} required');
     if (oc.format.schema.additionalProperties !== false) return mal('output_config.format.schema: additionalProperties must be false');
+    // («Dímelo», c17: el esquema trae «accion»; su contrato es otro)
+    const esDimelo = !!(oc.format.schema.properties && oc.format.schema.properties.accion);
+    anot.dimelo = esDimelo;
+    if (esDimelo) {
+      if (!['low', 'medium', 'high'].includes(oc.effort)) return mal(`output_config.effort: el «Dímelo» va en low, medium o high (llegó ${JSON.stringify(oc.effort)})`);
+      const esq = oc.format.schema, lista = esq.properties.accion.enum;
+      if (!Array.isArray(lista) || lista.length !== ACCIONES_DIMELO.length || ACCIONES_DIMELO.some((a) => !lista.includes(a))) {
+        return mal('output_config.format.schema: «accion» debe ser el enum de la lista cerrada del «Dímelo» (12 acciones, con «falta»)');
+      }
+      if (!Array.isArray(esq.required) || Object.keys(esq.properties).some((k) => !esq.required.includes(k))) {
+        return mal('output_config.format.schema: todas las propiedades del «Dímelo» van en required (lo que no se usa, null)');
+      }
+    } else if (oc.effort !== 'low') return mal(`output_config.effort: debe ser "low" (llegó ${JSON.stringify(oc.effort)})`);
     // (el contrato de la 7b: la propuesta lleva «obra», objeto o null —type ["object", "null"], o anyOf con el objeto y
     // {type: "null"} si la API de verdad pidiera esa forma—, y va en required como todo lo demás)
     const obraEsq = oc.format.schema.properties?.obra;
     const esObjeto = (s) => !!s && typeof s === 'object' && ((Array.isArray(s.type) ? s.type : [s.type]).includes('object') || (Array.isArray(s.anyOf) && s.anyOf.some((x) => x?.type === 'object')));
-    if (!esObjeto(obraEsq) || !Array.isArray(oc.format.schema.required) || !oc.format.schema.required.includes('obra')) {
+    if (!esDimelo && (!esObjeto(obraEsq) || !Array.isArray(oc.format.schema.required) || !oc.format.schema.required.includes('obra'))) {
       return mal('output_config.format.schema: el contrato de c8 (7b) pide «obra» ({proyecto_id, confianza, motivo} o null) en properties y en required');
     }
     if (!Array.isArray(p.system) || !p.system.length) return mal('system: must be an array of text blocks');
@@ -310,10 +414,17 @@ export function crearSimulador({ llave = process.env.ANTHROPIC_API_KEY || 'sk-an
       const txt = '{"lineas": [{"cuenta": "5100", esto no es JSON';
       return { estado: 200, cuerpo: { ...base, content: [pensando, { type: 'text', text: txt }], stop_reason: 'end_turn', stop_details: null, usage: usage(tokens(txt)) } };
     }
-    const { obra_por, ...propuesta } = proponerDeMentira(texto);
-    anot.obra = propuesta.obra ? propuesta.obra.proyecto_id : null;
-    anot.obra_por = obra_por;
-    const txt = JSON.stringify(propuesta);
+    let txt;
+    if (esDimelo) {
+      const resp = dimeloDeMentira(mov, s0.text);
+      anot.accion = resp.accion;
+      txt = JSON.stringify(resp);
+    } else {
+      const { obra_por, ...propuesta } = proponerDeMentira(texto);
+      anot.obra = propuesta.obra ? propuesta.obra.proyecto_id : null;
+      anot.obra_por = obra_por;
+      txt = JSON.stringify(propuesta);
+    }
     if (d.includes('MAXTOKENS')) {
       const corto = txt.slice(0, Math.floor(txt.length / 2));
       return { estado: 200, cuerpo: { ...base, content: [pensando, { type: 'text', text: corto }], stop_reason: 'max_tokens', stop_details: null, usage: usage(p.max_tokens) } };
