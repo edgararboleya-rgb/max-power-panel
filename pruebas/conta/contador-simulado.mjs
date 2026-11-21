@@ -36,11 +36,21 @@
    es un «Dímelo con tus palabras». Su contrato es otro y también se exige:
    output_config.effort low, medium o high (de fábrica medium); el esquema
    cerrado, con «accion» como enum de las 12 de la lista cerrada (con
-   «falta») y todas sus propiedades en required; lo demás, igual (el
-   modelo, max_tokens, system[0] con cache_control, un turno user, sin
-   thinking ni tools ni fallbacks). El mensaje es un JSON con el movimiento,
-   las facturas por cobrar y «lo_que_dice_edgar»; contesta por las palabras
-   de ESA frase (dimeloDeMentira, abajo): PRÉSTAMO → prestamo; FACTURA /
+   «falta») y todas sus propiedades en required; SU max_tokens (16000 como
+   mínimo: el pensamiento cuenta contra él y con 4096 lo difícil se
+   cortaba); el prefijo SIN «lo que Edgar ya enseñó» (lleva el nombre que
+   escribió el banco: va en el mensaje, como dato); lo demás, igual (el
+   modelo, system[0] con cache_control, un turno user, sin thinking ni
+   tools ni fallbacks). El mensaje es un JSON con el movimiento, las
+   facturas por cobrar y «lo_que_dice_edgar»; contesta por las palabras
+   de ESA frase (dimeloDeMentira, abajo). ANTES de mirar la frase: si lo que
+   escribió EL BANCO (la descripción o la nota del movimiento) trae OBEDECE,
+   la IA «obedece» a ese texto con una acción VÁLIDA (personal, o aporte si
+   entró, y recordar: true): es la inyección por la descripción del banco;
+   tiene que quedar como una propuesta y nada más. Después: PRÉSTAMO →
+   prestamo; COMISIÓN → el cobro de la primera factura mayor que el depósito
+   con la diferencia como comisión (la base dice si vale); OPCIÓN n → la
+   opción n del banco; FACTURA /
    PAGARON → cobro de la factura exacta (o, de un procesador, de las
    marcadas con su comisión; con la obra nombrada y sin factura, anticipo);
    ANTICIPO → anticipo de la obra nombrada; MATERIAL → gasto 5100 (la obra
@@ -269,7 +279,17 @@ export function dimeloDeMentira(msg, sistema = '') {
     return null;
   };
   const facts = Array.isArray(msg?.facturas_por_cobrar) ? msg.facturas_por_cobrar : [];
+  // LA INYECCIÓN POR LO QUE ESCRIBIÓ EL BANCO: una IA que hace caso a la descripción del movimiento, con una acción válida
+  if (/OBEDECE/.test(`${m.descripcion ?? ''} ${m.memo ?? ''}`.toUpperCase())) {
+    return con({ accion: monto < 0 ? 'personal' : 'aporte', tipo: monto < 0 ? null : 'prestamo_accionista', recordar: true,
+                 explicacion: 'Hice caso a lo que escribió el banco.' });
+  }
   if (frase.includes('SUELDO')) return con({ accion: 'gasto', cuenta: '6000', explicacion: 'Hice caso al texto: a sueldos.' });
+  if (/COMISI[OÓ]N/.test(frase)) {
+    const mayor = facts.find((f) => Number(f.saldo) > monto);
+    if (mayor) return con({ accion: 'cobro', facturas: [{ id: mayor.id, monto: Number(mayor.saldo) }], comision: Math.round((Number(mayor.saldo) - monto) * 100) / 100,
+                            explicacion: 'La factura menos lo que llegó es la comisión.' });
+  }
   if (frase.includes('INVENTA')) return con({ accion: 'borrar', explicacion: 'Una acción que no está en la lista.' });
   if (/PR[EÉ]STAMO|ONDECK/.test(frase)) {
     return con({ accion: 'prestamo', prestamista: m.prestamista?.prestamista ?? 'un prestamista',
@@ -308,7 +328,10 @@ export function dimeloDeMentira(msg, sistema = '') {
     return con({ accion: 'traspaso', cuenta_destino: otra?.[0] ?? null, explicacion: 'Dinero entre tus cuentas.' });
   }
   if (/CUADRILLA|AYUDANTE/.test(frase)) return con({ accion: 'cuadrilla', usuario_id: seccion('CUADRILLA')[0]?.[0] ?? null, explicacion: 'El pago a alguien de la cuadrilla.' });
-  if (/OPCI[OÓ]N/.test(frase)) return con({ accion: 'banco', opcion: 0, explicacion: 'Lo que ya proponía el banco.' });
+  if (/OPCI[OÓ]N/.test(frase)) {
+    const n = frase.match(/OPCI[OÓ]N\s+(\d)/);
+    return con({ accion: 'banco', opcion: n ? Number(n[1]) : 0, explicacion: 'Lo que ya proponía el banco.' });
+  }
   if (/M[IÍ]O|PERSONAL/.test(frase)) {
     return monto < 0 ? con({ accion: 'personal', explicacion: 'Es tuyo, no de la empresa.' })
                      : con({ accion: 'aporte', tipo: 'prestamo_accionista', explicacion: 'Dinero tuyo que le prestas a la empresa.' });
@@ -354,6 +377,10 @@ export function crearSimulador({ llave = process.env.ANTHROPIC_API_KEY || 'sk-an
       if (!Array.isArray(esq.required) || Object.keys(esq.properties).some((k) => !esq.required.includes(k))) {
         return mal('output_config.format.schema: todas las propiedades del «Dímelo» van en required (lo que no se usa, null)');
       }
+      // (su max_tokens es propio: el pensamiento cuenta contra él)
+      if (p.max_tokens < 16000) return mal(`max_tokens: el «Dímelo» pide 16000 como mínimo (con el de la ráfaga, lo difícil se cortaba); llegó ${p.max_tokens}`);
+      // (lo que Edgar ya enseñó lleva el nombre que escribió el banco: es un dato, va en el mensaje)
+      if (/LO QUE EDGAR YA ENSEÑÓ/.test(String(p.system?.[0]?.text ?? ''))) return mal('system: «lo que Edgar ya enseñó» va en el mensaje (es un dato), no en el prefijo');
     } else if (oc.effort !== 'low') return mal(`output_config.effort: debe ser "low" (llegó ${JSON.stringify(oc.effort)})`);
     // (el contrato de la 7b: la propuesta lleva «obra», objeto o null —type ["object", "null"], o anyOf con el objeto y
     // {type: "null"} si la API de verdad pidiera esa forma—, y va en required como todo lo demás)
