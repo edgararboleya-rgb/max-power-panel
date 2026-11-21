@@ -2048,8 +2048,9 @@ comment on function public.fn_bandeja_recomendar(uuid, jsonb) is 'c17: LA recome
 -- fn_bandeja_hacer con sus guardas: el que algo frena se queda en la
 -- Bandeja y se dice por qué. De un grupo se salta el movimiento para el que
 -- c6 tiene OTRA explicación (su recibo, un duplicado). p_opciones:
--- {recordar (de fábrica sí), solo (que lo siguiente entre solo), obra:
--- "dia" (la del día de la cuadrilla en cada uno), motivo}. Devuelve {clave,
+-- {recordar (de fábrica sí), solo (que lo siguiente entre solo), motivo,
+-- movimientos: [los que la pantalla enseñó: solo esos]}. Sin obra en los
+-- datos, cada gasto de obra va a la del día de la cuadrilla. Devuelve {clave,
 -- hechos, monto, quedan: [{movimiento_id, por_que}], recordado,
 -- propuestas_ia, sigue (cortó por reloj: llámala otra vez)}.
 create or replace function public.fn_bandeja_grupo(p_clave text, p_accion text default null, p_datos jsonb default '{}'::jsonb,
@@ -2095,6 +2096,8 @@ begin
               or (p_accion = 'gasto' and (select k.regla_obra from cuentas k where k.codigo = d0->>'cuenta') = 'obligatoria');
   end if;
   for m in select mb.* from movimientos_banco mb where mb.estado = 'pendiente' order by mb.fecha, mb.id loop
+    -- (la pantalla manda los que enseñó: lo que llegó después, o lo que tiene su propia tarjeta, no entra en esta respuesta)
+    continue when jsonb_typeof(op->'movimientos') = 'array' and not (op->'movimientos' ? m.id::text);
     if v_lote then
       continue when coalesce(m.propuesta->>'motivo', '') <> substring(p_clave from 3)
                  or jsonb_typeof(m.propuesta->'opciones') is distinct from 'array' or jsonb_array_length(m.propuesta->'opciones') < 1;
@@ -2557,8 +2560,11 @@ begin
     'datos', case when v_est = 'pendiente' then v_dat end, 'texto', case when v_est = 'pendiente' then v->>'texto' end,
     'porque', nullif(left(fn_contador_sin_datos(btrim(regexp_replace(coalesce(r->>'explicacion', ''), '\s+', ' ', 'g'))), 300), ''),
     'falta', v_falta, 'pide_obra', case when v_est = 'pendiente' then v->'pide_obra' end,
-    'pide_motivo', case when v_est = 'pendiente' and v_acc = 'banco'
-                             and v->'datos'->'pide' ?| array['p_capital', 'p_interes'] then true end,
+    -- (lo que el banco pide para esa opción y no es el motivo: el capital y el interés de una cuota; se mandan al aprobar)
+    'pide', case when v_est = 'pendiente' and v_acc = 'banco'
+                 then (select nullif(jsonb_agg(e), '[]'::jsonb)
+                         from jsonb_array_elements_text(coalesce(v->'datos'->'pide', '[]'::jsonb)) e
+                        where e not in ('p_motivo', 'p_notas', 'p_partidas.motivo')) end,
     'recordar', coalesce((r->>'recordar')::boolean, false) and v_est = 'pendiente',
     'centavos', coalesce(v_cent, 0), 'tope', fn_contador_tope()));
 end $$;
@@ -2569,8 +2575,10 @@ comment on function public.fn_bandeja_dimelo_guardar(uuid, uuid, text, boolean, 
 -- «ASÍ ES» de una propuesta del «Dímelo»: la registra fn_bandeja_hacer con
 -- la acción YA VALIDADA que se guardó (nunca con algo que venga de fuera),
 -- y con LA FRASE DE EDGAR como motivo escrito. p_opciones: {proyecto_id (la
--- obra que faltaba), motivo (otro motivo), recordar, solo}. Devuelve lo de
--- fn_bandeja_hacer; con hecho: false la propuesta sigue pendiente.
+-- obra que faltaba), motivo (otro motivo), campos (lo que el banco pide para
+-- esa opción: el capital y el interés de una cuota), recordar, solo}.
+-- Devuelve lo de fn_bandeja_hacer; con hecho: false la propuesta sigue
+-- pendiente.
 create or replace function public.fn_bandeja_aprobar(p_dimelo uuid, p_opciones jsonb default '{}'::jsonb) returns jsonb
 language plpgsql
 set search_path = public, pg_temp
@@ -2592,7 +2600,9 @@ begin
   end if;
   d := q.datos || case when nullif(btrim(coalesce(op->>'proyecto_id', '')), '') is not null
                             and q.accion in ('gasto', 'anticipo', 'contratista')
-                       then jsonb_build_object('proyecto_id', btrim(op->>'proyecto_id')) else '{}'::jsonb end;
+                       then jsonb_build_object('proyecto_id', btrim(op->>'proyecto_id')) else '{}'::jsonb end
+              || case when q.accion = 'banco' and jsonb_typeof(op->'campos') = 'object'
+                      then jsonb_build_object('campos', op->'campos') else '{}'::jsonb end;
   r := fn_bandeja_hacer(q.movimiento_id, q.accion, d, jsonb_strip_nulls(jsonb_build_object(
          'fuente', 'dimelo', 'dimelo_id', q.id,
          'motivo', coalesce(nullif(btrim(coalesce(op->>'motivo', '')), ''), 'Edgar dijo: «' || q.frase || '»'),
@@ -2647,6 +2657,8 @@ comment on function public.fn_bandeja_rechazar(uuid, text) is 'c17: «No, es otr
 --      deshecho}}, grupos: [{clave, nombre, clase, n, total, movimientos,
 --      rec, memoria, solo_ok}], solos: [lo que entró solo en 14 días],
 --      recientes: [los últimos «Así es», para deshacer], memoria: [...],
+--      ia_abiertas: [propuestas de la IA (c8) que siguen pendientes en
+--      movimientos que esta capa ya registró: la pantalla las cierra],
 --      parcial (cortó por reloj: faltan recomendaciones)}.
 --     Solo lee; a quien no es el dueño no le devuelve nada.
 -- ---------------------------------------------------------------------
@@ -2792,6 +2804,12 @@ begin
     'memoria', (select coalesce(jsonb_agg(jsonb_build_object('clave', bm.clave, 'nombre', bm.nombre, 'clase', bm.clase, 'accion', bm.accion,
                                                              'texto', bm.texto, 'solo', bm.solo, 'veces', bm.veces) order by bm.nombre), '[]'::jsonb)
                   from bandeja_memoria bm where bm.activa),
+    -- lo de la IA (c8) que quedó abierto en movimientos que esta capa ya registró: la pantalla lo cierra por la función de borde
+    'ia_abiertas', (select coalesce(jsonb_agg(q.id order by q.creado_el), '[]'::jsonb)
+                      from contador_propuestas q
+                     where q.estado = 'pendiente'
+                       and exists (select 1 from bandeja_hechos h join movimientos_banco mb on mb.id = h.movimiento_id
+                                    where h.movimiento_id = q.movimiento_id and h.deshecho_el is null and mb.estado <> 'pendiente')),
     'parcial', v_parcial);
 end $$;
 revoke execute on function public.fn_bandeja_leer(jsonb) from public, anon, service_role;
@@ -2885,12 +2903,21 @@ as $$
       -- 80 (aviso): la tarea que registra sola falló la última vez
       select 80, 'bandeja: la tarea que registra sola', 'aviso', (select (c.solo_ultimo->>'error') is null from cfg c), 0, 0,
              (select 'la última corrida falló: ' || (c.solo_ultimo->>'error') from cfg c where c.solo_ultimo ? 'error')
+      union all
+      -- 90 (aviso): lo de la IA (c8) que sigue pendiente en un movimiento que la Bandeja ya registró (la pantalla lo cierra
+      --     al abrirse, y la tarea lo suyo; si queda, el cierre del mes lo cuenta como «esperando tu toque»)
+      select 90, 'bandeja: ninguna propuesta de la IA abierta en lo ya registrado', 'aviso', t.n = 0, t.n, 0,
+             case when t.n > 0 then format('%s propuesta(s) de la IA siguen pendientes en movimientos que ya se registraron desde la Bandeja → abre la Bandeja con el código del teléfono: se cierran solas', t.n) end
+        from (select count(*) as n from contador_propuestas q
+               where q.estado = 'pendiente'
+                 and exists (select 1 from vivo v where v.movimiento_id = q.movimiento_id and v.mov_estado is distinct from 'pendiente'
+                                                    and v.mov_estado is not null)) t
     ) z
    where ve.si
 $$;
 revoke execute on function public.fn_bandeja_control() from public, anon, service_role;
 grant  execute on function public.fn_bandeja_control() to authenticated;
-comment on function public.fn_bandeja_control() is 'c17: el control de la Bandeja nueva: la configuración, que nada entró solo fuera de lo permitido, que cada propuesta aprobada tiene su registro, los permisos y las reglas «que entre solo» (cuadres), y lo registrado que se des-casó por fuera, los préstamos sin dar de alta y la tarea (avisos).';
+comment on function public.fn_bandeja_control() is 'c17: el control de la Bandeja nueva: la configuración, que nada entró solo fuera de lo permitido, que cada propuesta aprobada tiene su registro, los permisos y las reglas «que entre solo» (cuadres), y lo registrado que se des-casó por fuera, los préstamos sin dar de alta, la tarea y lo de la IA que quedó abierto en lo ya registrado (avisos).';
 
 drop view if exists public.v_bandeja_control;
 create view public.v_bandeja_control with (security_invoker = true) as

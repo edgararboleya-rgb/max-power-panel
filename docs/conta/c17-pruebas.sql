@@ -80,7 +80,13 @@
 -- 25 leer: la tarjeta de cada movimiento, los grupos, lo que entró solo, lo
 --    recordado; y leer y recomendar no escriben nada;
 -- 26 el control: en verde; y ve lo que entró solo sin permiso;
--- 27 nada queda, y los controles de c3, c6 y c8 siguen como estaban.
+-- 27 el grupo decide solo lo que la pantalla enseñó (su lista de
+--    movimientos): lo que llegó después no entra en esa respuesta;
+-- 28 lo que el banco pide para una opción (el capital y el interés de una
+--    cuota), por el «Dímelo»: sin los datos no entra; con ellos, sí;
+-- 29 lo de la IA (c8) que un registro deja abierto: se devuelve, se lee y
+--    el control avisa hasta que se cierra;
+-- 30 nada queda, y los controles de c3, c6 y c8 siguen como estaban.
 -- =====================================================================
 create temp table if not exists _pruebas(n int, prueba text, esperado text, obtenido text, ok boolean);
 truncate _pruebas;
@@ -1291,7 +1297,112 @@ begin
   insert into _pruebas values (26, v_nom, v_esp, v_obt, v_obt = v_esp);
 end $$;
 
--- 27. Nada queda, y los demás controles siguen como estaban.
+-- 27. El grupo decide solo lo que la pantalla enseñó.
+do $$
+declare
+  v_obt text; r jsonb; m1 uuid; m2 uuid; m3 uuid; c_clave constant text := 'C:BDIECISIETE PAPELERIA';
+  v_nom text := 'el grupo decide SOLO lo que la pantalla enseñó: con la lista de movimientos que manda, de tres cargos del mismo comercio entran los dos que enseñó; el tercero (llegó después, o tiene su propia tarjeta) sigue en la Bandeja sin tocar';
+  v_esp text := 'con la lista: 2 hechos | el tercero: pendiente, sin registro';
+begin
+  if pg_temp.b17_omitir(27, v_nom, v_esp) then return; end if;
+  begin
+    perform pg_temp.b17_montar();
+    m1 := pg_temp.b17_mov('B17-27A', -11.17, 'BDIECISIETE PAPELERIA 77 OCALA FL');
+    m2 := pg_temp.b17_mov('B17-27B', -12.19, 'BDIECISIETE PAPELERIA 77 OCALA FL');
+    m3 := pg_temp.b17_mov('B17-27C', -13.23, 'BDIECISIETE PAPELERIA 77 OCALA FL');
+    r := pg_temp.b17_grupo(c_clave, 'gasto', '{"cuenta":"6500"}', jsonb_build_object('movimientos', jsonb_build_array(m1, m2)));
+    v_obt := format('con la lista: %s hechos | el tercero: %s, %s', r->>'hechos',
+      (select mb.estado from movimientos_banco mb where mb.id = m3),
+      case when exists (select 1 from bandeja_hechos h where h.movimiento_id = m3) then 'CON registro' else 'sin registro' end);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.b17_ser('editor');
+  insert into _pruebas values (27, v_nom, v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 28. Lo que el banco pide para una opción, por el «Dímelo».
+do $$
+declare
+  v_obt text; m uuid; g jsonb; r jsonb; r2 jsonb; n int;
+  v_nom text := 'lo que el banco pide para una opción, por el «Dímelo»: la cuota de un préstamo «con el capital y el interés del statement» queda propuesta diciendo qué datos pide; aprobarla sin ellos no registra nada y los vuelve a pedir; con ellos entra por la puerta del préstamo con ese capital (a la cuenta del préstamo que decide c6) y ese interés';
+  v_esp text := 'propuesta: banco, pide p_capital y p_interes | sin los datos: no entra y los pide | con los datos: hecho, 2550 510.00 y 7100 102.34';
+begin
+  if pg_temp.b17_omitir(28, v_nom, v_esp) then return; end if;
+  begin
+    perform pg_temp.b17_montar();
+    perform fn_prestamo_guardar(jsonb_build_object('prestamista', 'ZZ Bdiecisiete Capital', 'descripcion', 'c17-pruebas: préstamo de prueba',
+              'principal', '25000.00', 'tasa_anual', '19.99', 'cuota', '600.00', 'primer_pago', pg_temp.b17_d()::text, 'dia_pago', 15,
+              'plazo_meses', 52, 'frecuencia', 'semanal', 'cuenta', '2540', 'cuenta_largo', '2550',
+              'saldo_inicial', '25000.00', 'saldo_inicial_al', (pg_temp.b17_d() - 1)::text,
+              'descriptor', 'BDIECISIETE CAPITAL'));
+    m := pg_temp.b17_mov('B17-28A', -612.34, 'ACH BDIECISIETE CAPITAL PAYMENT 77');
+    select (o.i - 1)::int into n
+      from movimientos_banco mb, jsonb_array_elements(mb.propuesta->'opciones') with ordinality as o(x, i)
+     where mb.id = m and o.x->'pide' ? 'p_capital';
+    g := fn_bandeja_dimelo_guardar(m, pg_temp.b17('dueno')::uuid, 'es la cuota, con lo que dice el statement', false, '{}', '{}',
+           jsonb_build_object('accion', 'banco', 'opcion', n, 'explicacion', 'La cuota, con el statement.'),
+           'claude-opus-5-5', 'medium', 'pv', '{"input": 10, "output": 10}');
+    perform pg_temp.b17_ser('dueno');
+    r := fn_bandeja_aprobar((g->>'dimelo_id')::uuid);
+    r2 := fn_bandeja_aprobar((g->>'dimelo_id')::uuid, '{"campos": {"p_capital": "510.00", "p_interes": "102.34"}}');
+    perform pg_temp.b17_ser('editor');
+    v_obt := format('propuesta: %s, pide %s | sin los datos: %s | con los datos: %s', coalesce(g->>'accion', 'NINGUNA: ' || coalesce(g->>'falta', '')),
+      coalesce((select string_agg(e, ' y ') from jsonb_array_elements_text(g->'pide') e), 'NADA'),
+      case when not (r->>'hecho')::boolean and r->'campos' ? 'p_capital' then 'no entra y los pide' else 'NO: ' || left(r::text, 200) end,
+      case when (r2->>'hecho')::boolean
+           then 'hecho, ' || (select string_agg(l.cuenta || ' ' || l.monto, ' y ' order by l.cuenta) from asiento_lineas l
+                               where l.asiento_id = (r2->>'asiento_id')::uuid and l.cuenta <> pg_temp.b17('banco'))
+           else 'NO: ' || coalesce(r2->>'por_que', '') end);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.b17_ser('editor');
+  insert into _pruebas values (28, v_nom, v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 29. Lo de la IA (c8) que un registro deja abierto.
+do $$
+declare
+  v_obt text; m uuid; r jsonb; l jsonb; l2 jsonb; v_prop uuid; a text; b text; c text; d text;
+  v_nom text := 'lo de la IA (c8) que un registro deja abierto: el cargo tenía una propuesta de la IA pendiente y Edgar lo contestó de otra forma; «Así es» devuelve esa propuesta para que la pantalla la cierre, leer la sigue dando mientras siga abierta y el control avisa; cerrada por la puerta de c8, deja de salir y el aviso se apaga';
+  v_esp text := 'al registrar: la devuelve | al leer: la da | el control: avisa | cerrada: ya no sale, y el aviso se apaga';
+begin
+  if pg_temp.b17_omitir(29, v_nom, v_esp) then return; end if;
+  begin
+    perform pg_temp.b17_montar();
+    m := pg_temp.b17_mov('B17-29A', -45.13, 'BDIECISIETE COSAS 88');
+    insert into contador_propuestas (movimiento_id, fuente, propuesta, estado)
+    values (m, 'edgar', '{"lineas": [{"cuenta": "6300"}], "motivo": "c17-pruebas: una propuesta abierta", "confianza": 1}', 'pendiente')
+    returning id into v_prop;
+    r := pg_temp.b17_hacer(m, 'gasto', '{"cuenta":"6500"}', '{"fuente":"mas"}');
+    a := case when (r->>'hecho')::boolean and r->'propuestas_ia' ? v_prop::text then 'la devuelve' else 'NO: ' || left(r::text, 200) end;
+    perform pg_temp.b17_ser('dueno');
+    l := fn_bandeja_leer();
+    perform pg_temp.b17_ser('editor');
+    b := case when l->'ia_abiertas' ? v_prop::text then 'la da' else 'NO la da' end;
+    c := case when exists (select 1 from fn_bandeja_control() k where k.orden = 90 and not k.ok and k.nivel = 'aviso') then 'avisa' else 'NO avisa' end;
+    perform fn_contador_rechazar(v_prop, pg_temp.b17('dueno')::uuid, 'c17-pruebas: ya se registró desde la Bandeja');
+    perform pg_temp.b17_ser('dueno');
+    l2 := fn_bandeja_leer();
+    perform pg_temp.b17_ser('editor');
+    d := case when not (l2->'ia_abiertas' ? v_prop::text) and exists (select 1 from fn_bandeja_control() k where k.orden = 90 and k.ok)
+              then 'ya no sale, y el aviso se apaga' else 'SIGUE' end;
+    v_obt := format('al registrar: %s | al leer: %s | el control: %s | cerrada: %s', a, b, c, d);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.b17_ser('editor');
+  insert into _pruebas values (29, v_nom, v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 30. Nada queda, y los demás controles siguen como estaban.
 do $$
 declare
   v_obt text;
@@ -1304,7 +1415,7 @@ begin
       case when pg_temp.b17_rojos() = pg_temp.b17('rojos_antes') then 'igual que antes' else 'CAMBIARON: ' || pg_temp.b17_rojos() end);
   exception when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (27, 'nada queda de las pruebas: lo recordado, las propuestas, lo registrado, los asientos, los movimientos del banco y la configuración están como antes; y los controles de c3, c6 y c8 no cambiaron',
+  insert into _pruebas values (30, 'nada queda de las pruebas: lo recordado, las propuestas, lo registrado, los asientos, los movimientos del banco y la configuración están como antes; y los controles de c3, c6 y c8 no cambiaron',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
