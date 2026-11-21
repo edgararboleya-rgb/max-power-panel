@@ -165,7 +165,15 @@
     conc: null, concCuenta: null, movCuenta: null, movEstado: "", filtroCuenta: null,
     importe: null, impAbierto: false, ocupado: false,
     // la bandeja como bank feed: qué se busca, qué motivo, en qué orden, si se agrupa por comercio y qué fila está desplegada
-    bj: { q: "", motivo: "", orden: "fecha_asc", agrupar: false, abierta: null, soloJr: false, desde: null, hasta: null, lado: null },
+    // (la Bandeja nueva, c17) `grupo`: el grupo que se está viendo uno por uno ({ clave, nombre, ids })
+    bj: { q: "", motivo: "", orden: "fecha_asc", agrupar: false, abierta: null, soloJr: false, desde: null, hasta: null, lado: null, grupo: null },
+    // (la Bandeja nueva, c17) si la capa está (null: todavía no se sabe; false: no está), lo que leyó fn_bandeja_leer y su error; lo que
+    // entró solo en esta sesión (se resalta); qué «Más opciones» están abiertas; lo que el «Dímelo» dijo de cada movimiento en esta
+    // sesión y la frase a medio escribir; la rutina que registra sola (cuándo se llamó, la llamada en curso, si faltó el código, su
+    // error); lo de la IA (c8) que se está cerrando o no se pudo cerrar; qué listas de la franja están desplegadas; si se ven todos
+    // los grupos y cuál está abierto
+    bn: { instalado: null, datos: null, err: null, nuevos: new Set(), mas: new Set(), dim: new Map(), frases: new Map(),
+      solo: { el: 0, promesa: null, sinCodigo: false, err: null }, ia: { cerrando: new Set(), mal: new Set() }, abiertas: {}, verGrupos: false, grupoAbierto: null },
     plaid: null, plaidErr: null, mfa: null,
     // Stripe (p1): la fila de v_stripe_estado, por qué no se leyó, la salud de la función, los depósitos asentados (para la bandeja) y la pestaña
     stripe: null, stripeErr: null, stripeSalud: null, stripePayouts: null, cobros: null,
@@ -177,6 +185,9 @@
     // Estados financieros: qué estado (sub), qué período, la bajada cuenta → asiento,
     // el método del flujo, la caché de v_cortes (con el día en que se leyó) y la serie contra el doble pintado
     est: { sub: "resultados", periodo: null, cuenta: null, asiento: null, metodo: "directo", cortes: null, cortesDia: null, todos: false, avisoHoy: false, serie: 0 },
+    // (c18) las cuentas y los reportes en inglés: si la capa está (null: no se sabe; false: no), lo que leyó fn_fiscal_leer, en qué idioma
+    // salen los nombres de los estados (y si lo eligió Edgar en esta sesión), el año del paquete y el último paquete armado
+    fis: { instalado: null, datos: null, idioma: "es", elegido: false, anio: null, paquete: null },
     // El cierre del mes (c9): qué apartado (sub), qué período se mira, las filas de v_cierre_estado, la serie contra el doble pintado,
     // el último error del cierre para explicarlo una vez (MX010), qué período se está exportando, el error de su export,
     // y las notas que la base devolvió (la baja de un activo, la depreciación del mes) para enseñarlas tras repintar
@@ -315,6 +326,7 @@
       S.bj.desde = opciones.desde || null; S.bj.hasta = opciones.hasta || null;
       S.bj.lado = ["deposito", "cargo"].includes(opciones.lado) ? opciones.lado : null;
       if (opciones.motivo !== undefined) S.bj.motivo = opciones.motivo || "";
+      S.bj.grupo = null;
     }
     if (opciones.cuenta !== undefined) {
       if (pag === "bandeja") S.filtroCuenta = opciones.cuenta;
@@ -2787,6 +2799,8 @@
     if (!navigator.onLine) return sinSenal(pintarBandeja);
     // (v5) la cuadrilla, sola: la base registra los pagos que nada frena ANTES de leer la bandeja (no lanza; sin la v5, nada)
     await jornalSolo("pantalla");
+    // (la Bandeja nueva, c17) lo que Edgar ya dijo que entre solo, también antes de leer (no lanza; sin c17, nada)
+    await bandejaSolo();
     if (S.pagina !== "bandeja") return;
     let filas;
     try {
@@ -2804,7 +2818,9 @@
         leerContador(),
         leerJornalBandeja(),
         // (fase 11) los cargos de Gusto que la nómina reconoce: «Casar con la nómina» (sin c15, nada)
-        leerNomBandeja(b)
+        leerNomBandeja(b),
+        // (la Bandeja nueva, c17) la recomendación de cada movimiento, los grupos, lo que entró solo y lo recordado (sin c17, nada)
+        leerBandejaNueva()
       ]);
       const hoy = hoyMiami();
       await controlar(["v_banco_bandeja"], { v_banco_bandeja: b.filter(f => String(f.fecha) <= hoy).length });
@@ -2822,11 +2838,15 @@
     if (S.bj.abierta && !filas.some(f => f.movimiento_id === S.bj.abierta)) S.bj.abierta = null;
     const motivos = [...new Set(filas.map(f => f.motivo).filter(Boolean))].sort((a, b) => motivoLlano(a).localeCompare(motivoLlano(b)));
     if (S.bj.motivo && !motivos.includes(S.bj.motivo)) S.bj.motivo = "";
+    // (c17) el grupo que se estaba viendo uno por uno sigue filtrado mientras le queden movimientos
+    if (S.bj.grupo && !filas.some(f => S.bj.grupo.ids.has(f.movimiento_id))) S.bj.grupo = null;
     const viejos = filas.filter(f => f.alarma).length;
     main().innerHTML = cabPagina("Bandeja",
         filas.length ? `<b>${plural(filas.length, "movimiento del banco espera", "movimientos del banco esperan")}</b> tu respuesta por <span class="ct-num">${fmt(sumaMonto(filas))}</span>${viejos ? ` · <span class="bad-txt">${plural(viejos, "lleva", "llevan")} más de 30 días</span>` : ""}. Lo que no contestes no entra al libro; nada se inventa.` : "<b>La bandeja está vacía.</b> Todo lo que trajo el banco tiene su papel en el libro.",
         `<button type="button" class="accion secundaria" id="ct-casar">Casar otra vez</button>`) +
       (S.ia ? franjaIAHTML(S.ia) : "") + (S.jr.instalado || S.jr.err ? `<div id="ct-jr-franja-env">${franjaJornalHTML(filas)}</div>` : "") +
+      // (la Bandeja nueva, c17) lo que entró solo, lo contestado hace poco y lo recordado; y «Decide por grupo»
+      bnFranjaHTML() + bnGruposHTML(filas) +
       (filas.length ? `<section class="ct-card ct-herr" id="ct-bj-herr">
         <div class="ct-herr-fila">
           <label class="ct-campo ct-buscar">Buscar<input id="ct-bj-buscar" type="search" placeholder="Descripción, memo o monto" value="${esc(S.bj.q)}" autocomplete="off"></label>
@@ -2847,12 +2867,17 @@
       finally { S.ocupado = false; }
       // (v5) después de casar, la rutina que registra sola corre otra vez sin esperar su turno, diciendo que viene del banco
       await jornalSolo("banco", true);
+      // (c17) y lo que Edgar dijo que entre solo, también
+      await bandejaSolo(true);
       pintarBandeja();
     });
     // «Proponer ahora» y «Parar» (la franja: la cadena la repinta sola, sin repintar la página)
     wireFranja();
     // (fase 9) «Ver solo la mano de obra», «Ver los repartos» y «Reintentar ahora» de su franja
     wireFranjaJr();
+    // (la Bandeja nueva, c17) «Deshacer», lo recordado y los grupos; y lo de la IA que quedó abierto en lo ya registrado se cierra solo
+    wireBnFranja(); wireBnGrupos(filas);
+    if (bnViva()) bnCerrarIA(S.bn.datos.ia_abiertas);
     // la barra solo filtra lo ya leído: no vuelve a la base y el buscador no pierde el foco
     const herr = (id, ev, f) => { const el = $(id); if (el) el.addEventListener(ev, f); };
     herr("ct-bj-buscar", "input", ev => { S.bj.q = ev.target.value; pintarListaBandeja(); });
@@ -2885,6 +2910,8 @@
     if (S.bj.soloJr) lista = lista.filter(f => !!jrDe(f));
     if (S.filtroCuenta) lista = lista.filter(f => f.cuenta === S.filtroCuenta);
     if (S.bj.motivo) lista = lista.filter(f => f.motivo === S.bj.motivo);
+    // (c17) «Verlos uno por uno»: solo los movimientos de ese grupo
+    if (S.bj.grupo) lista = lista.filter(f => S.bj.grupo.ids.has(f.movimiento_id));
     // (tablero, c16) las fechas y el lado de un enlace del tablero, contados como la base (fn_tablero_por_revisar: un depósito entra, un
     // cargo sale; lo que «llegó su ticket» y lo que el banco quitó no son ni uno ni otro)
     if (S.bj.desde) lista = lista.filter(f => String(f.fecha) >= S.bj.desde);
@@ -2901,7 +2928,10 @@
     const cont = $("ct-bj-lista"); if (!cont) return;
     const lista = filtrarBandeja(), total = (S.bandeja || []).length;
     const n = $("ct-bj-n"); if (n) n.textContent = lista.length === total ? "" : `${lista.length} de ${plural(total, "movimiento", "movimientos")}`;
-    if (!lista.length) { cont.innerHTML = total ? `<section class="ct-card ct-vacio">Nada con ese filtro${S.bj.q ? ` («${esc(S.bj.q)}»)` : ""}.</section>` : ""; return; }
+    // (c17) el grupo que se ve uno por uno, dicho y con «Ver todos»
+    const viendo = S.bj.grupo ? `<div class="ct-bj-rango ct-bn-viendo" id="ct-bn-viendo"><span>Solo los de ${esc(S.bj.grupo.nombre || "ese grupo")}</span><button type="button" class="ct-chip" id="ct-bn-viendo-quitar">Ver todos</button></div>` : "";
+    const quitarViendo = () => { const q = $("ct-bn-viendo-quitar"); if (q) q.addEventListener("click", () => { S.bj.grupo = null; pintarListaBandeja(); }); };
+    if (!lista.length) { cont.innerHTML = total ? `${viendo}<section class="ct-card ct-vacio">Nada con ese filtro${S.bj.q ? ` («${esc(S.bj.q)}»)` : ""}.</section>` : ""; quitarViendo(); return; }
     // la cabecera de columnas (solo la computadora la enseña) dice lo que hay debajo: las del movimiento o, agrupado, las del comercio
     const cab = S.bj.agrupar
       ? `<div class="ct-feed-cab" aria-hidden="true"><span>Comercio</span><span>Movimientos</span><span class="r">Total</span><span></span></div>`
@@ -2912,7 +2942,8 @@
       for (const m of lista) { const k = comercioDe(m.descripcion); if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(m); }
       cuerpo = [...grupos.entries()].sort((a, b) => b[1].length - a[1].length || Math.abs(sumaMonto(b[1])) - Math.abs(sumaMonto(a[1]))).map(([k, ms]) => grupoHTML(k, ms)).join("");
     } else cuerpo = lista.map(movHTML).join("");
-    cont.innerHTML = `<section class="ct-card ct-feed${S.bj.agrupar ? " agrupada" : ""}">${cab}${cuerpo}</section>`;
+    cont.innerHTML = `${viendo}<section class="ct-card ct-feed${S.bj.agrupar ? " agrupada" : ""}">${cab}${cuerpo}</section>`;
+    quitarViendo();
     cont.querySelectorAll(".ct-mov").forEach(card => wireMov(card, lista.find(f => f.movimiento_id === card.dataset.id)));
     // después de «No es eso» el movimiento sigue en la bandeja: su «Según yo» queda a la vista con la cuenta enfocada
     if (S.iaFoco) {
@@ -2938,6 +2969,8 @@
     if (siEs) siEs.addEventListener("click", () => decirPago(card.querySelector(".ct-jr-res"), { movimiento_id: m.movimiento_id, quitar: true }));
     wireRepartirLink(card, m);
     wireIA(card, m);
+    // (la Bandeja nueva, c17) «Así es», «Dímelo» y «Más opciones»
+    wireBn(card, m);
   }
   // (7c) la cadena trae propuestas: se repinta SOLO cada fila cuya propuesta cambió (su chip aparece, su «Según la IA» se llena).
   // La lista, su orden, el desplazamiento y la fila que Edgar tiene a medias (eligió o escribió algo, abrió «Otra cosa…», tiene
@@ -3004,7 +3037,19 @@
     const jr = jrDe(m);
     // (v5) un cheque que pregunta de quién es (sin la propuesta de la IA mientras pregunta), y un pago del que Edgar dijo «no es de la cuadrilla»
     const chq = jr ? null : chqDe(m), dichoNo = !jr && soloV5() && S.jr.solo.dicho.has(m.movimiento_id);
-    return `<article class="ct-mov${m.alarma ? " alarma" : ""}${abierta ? " abierta" : ""}${jr ? " ct-mov-jr" : ""}${chq ? " ct-mov-chq" : ""}" data-id="${id}" data-ia="${esc(claveIA(m))}"${jr ? ` data-jr="1"` : ""}>
+    // (la Bandeja nueva, c17) su tarjeta: UNA recomendación con «Así es» y «Dímelo con tus palabras»
+    const bn = bnDe(m);
+    // lo de siempre: el texto del banco, sus avisos, la IA y sus botones (con la Bandeja nueva, detrás de «Más opciones»)
+    const viejo = `${jr ? jornalHTML(m, jr) : `${chq ? chequeHTML(chq, false) : ""}<p class="ct-texto">${esc(bn ? bnLlano(m.texto) : m.texto)}</p>${nomBandejaHTML(m)}${dichoNo ? `<p class="ct-jr-enlace ct-jr-dicho">Dijiste que no es de la cuadrilla: se clasifica como siempre. <button type="button" class="ct-jr-link" data-jr-quitar>Sí lo es</button></p><div class="ct-jr-res"></div>` : repartirLinkHTML(m)}`}
+        ${jr ? "" : `${m._esStripe ? `<p class="ct-aviso warn ct-aviso-dep">Depósito de Stripe: casa solo con su depósito en «Cobros en línea» (cuando Stripe mande su detalle${(m._stripe || []).length ? ", o con «Es el depósito…» aquí abajo" : ""}). No lo clasifiques ni lo registres aquí: el dinero entraría dos veces. Si es de antes de instalar los cobros en línea, sácalo allí con «Ya está en el libro» y vuelve aquí.</p>` : ""}
+        ${m._stripeFuera ? `<p class="ct-aviso ct-aviso-dep">Depósito de Stripe de fuera de la app (${esc(m._stripeFuera.fuera_motivo || "ya está en el libro")}): regístralo aquí como siempre.</p>` : ""}
+        ${m.posible_duplicado_de ? `<p class="ct-aviso warn">Se parece al del ${fecha(m.duplicado_fecha)} «${esc(m.duplicado_descripcion)}»${m.duplicado_origen ? ` (entró por ${esc(m.duplicado_origen)})` : ""}.</p>` : ""}
+        ${chq ? "" : iaBloqueHTML(m)}
+        <div class="ct-acciones">${nomBotonHTML(m)}${(m._stripe || []).map(q => `<button type="button" class="accion" data-stripe-po="${esc(q.po)}">Es el depósito de Stripe del ${fechaLarga(q.llegada)}: casarlo</button>`).join("")}${ops.map((o, i) => `<button type="button" class="accion${i || (m._stripe || []).length ? " secundaria" : ""}" data-op="${i}">${esc(o.texto)}</button>`).join("")}
+          ${m._esStripe ? "" : `<button type="button" class="accion secundaria ct-otra" data-otra>Otra cosa…</button>`}</div>
+        <div class="ct-form" hidden></div>
+        ${m._esStripe ? `<div class="ct-stripe-res"></div>` : ""}`}`;
+    return `<article class="ct-mov${m.alarma ? " alarma" : ""}${abierta ? " abierta" : ""}${jr ? " ct-mov-jr" : ""}${chq ? " ct-mov-chq" : ""}${bn ? " ct-mov-bn" : ""}" data-id="${id}" data-ia="${esc(claveIA(m))}"${jr ? ` data-jr="1"` : ""}>
       <button type="button" class="ct-mov-fila" aria-expanded="${abierta ? "true" : "false"}" aria-controls="ct-det-${id}">
         <span class="ct-f-main">
           <span class="ct-f-desc" title="${esc(m.descripcion || "")}"><b>${esc(m.descripcion || "(sin descripción)")}</b>${m.memo ? `<small>${esc(m.memo)}</small>` : ""}</span>
@@ -3014,20 +3059,12 @@
         <span class="ct-f-meta">
           <span class="ct-f-fecha ct-num">${fechaLarga(m.fecha)}</span>
           <span class="ct-f-cuenta">${esc(m.cuenta_nombre)}</span>
-          <span class="ct-f-motivo">${jr ? `${pill(`Mano de obra · ${jr.persona}`, "cu")}${pillSolo(jr)}` : `${pill(motivoLlano(m.motivo), m.motivo === "posible_duplicado" || m.motivo === "quitada" ? "warn" : "")}${chq ? pill("¿De quién es?", "cu") : chipIA(m)}`}${m.alarma ? pill("más de 30 días", "bad") : ""}${m._esStripe ? pill("Stripe", "cu") : ""}</span>
+          <span class="ct-f-motivo">${jr ? `${pill(`Mano de obra · ${jr.persona}`, "cu")}${pillSolo(jr)}` : bn ? bnPillHTML(m, bn) : `${pill(motivoLlano(m.motivo), m.motivo === "posible_duplicado" || m.motivo === "quitada" ? "warn" : "")}${chq ? pill("¿De quién es?", "cu") : chipIA(m)}`}${m.alarma ? pill("más de 30 días", "bad") : ""}${m._esStripe ? pill("Stripe", "cu") : ""}</span>
         </span>
       </button>
       <div class="ct-mov-det" id="ct-det-${id}"${abierta ? "" : " hidden"}>
         <div class="ct-meta"><span>hace ${plural(m.dias, "día", "días")}</span>${m.cheque ? `<span>cheque ${esc(m.cheque)}</span>` : ""}${m.tipo_banco ? `<span>${esc(m.tipo_banco)}</span>` : ""}${m.origen ? `<span>entró por ${esc(m.origen)}</span>` : ""}${obra ? pill("obra: " + obra) : ""}</div>
-        ${jr ? jornalHTML(m, jr) : `${chq ? chequeHTML(chq, false) : ""}<p class="ct-texto">${esc(m.texto)}</p>${nomBandejaHTML(m)}${dichoNo ? `<p class="ct-jr-enlace ct-jr-dicho">Dijiste que no es de la cuadrilla: se clasifica como siempre. <button type="button" class="ct-jr-link" data-jr-quitar>Sí lo es</button></p><div class="ct-jr-res"></div>` : repartirLinkHTML(m)}`}
-        ${jr ? "" : `${m._esStripe ? `<p class="ct-aviso warn ct-aviso-dep">Depósito de Stripe: casa solo con su depósito en «Cobros en línea» (cuando Stripe mande su detalle${(m._stripe || []).length ? ", o con «Es el depósito…» aquí abajo" : ""}). No lo clasifiques ni lo registres aquí: el dinero entraría dos veces. Si es de antes de instalar los cobros en línea, sácalo allí con «Ya está en el libro» y vuelve aquí.</p>` : ""}
-        ${m._stripeFuera ? `<p class="ct-aviso ct-aviso-dep">Depósito de Stripe de fuera de la app (${esc(m._stripeFuera.fuera_motivo || "ya está en el libro")}): regístralo aquí como siempre.</p>` : ""}
-        ${m.posible_duplicado_de ? `<p class="ct-aviso warn">Se parece al del ${fecha(m.duplicado_fecha)} «${esc(m.duplicado_descripcion)}»${m.duplicado_origen ? ` (entró por ${esc(m.duplicado_origen)})` : ""}.</p>` : ""}
-        ${chq ? "" : iaBloqueHTML(m)}
-        <div class="ct-acciones">${nomBotonHTML(m)}${(m._stripe || []).map(q => `<button type="button" class="accion" data-stripe-po="${esc(q.po)}">Es el depósito de Stripe del ${fechaLarga(q.llegada)}: casarlo</button>`).join("")}${ops.map((o, i) => `<button type="button" class="accion${i || (m._stripe || []).length ? " secundaria" : ""}" data-op="${i}">${esc(o.texto)}</button>`).join("")}
-          ${m._esStripe ? "" : `<button type="button" class="accion secundaria ct-otra" data-otra>Otra cosa…</button>`}</div>
-        <div class="ct-form" hidden></div>
-        ${m._esStripe ? `<div class="ct-stripe-res"></div>` : ""}`}
+        ${bn ? `${bnHTML(m, bn)}${bnMasHTML(m, bn, viejo)}` : viejo}
       </div>
     </article>`;
   }
@@ -3180,6 +3217,780 @@
       apagados.forEach(b => { b.disabled = false; });
       mostrarErrorForma(card, esFalloDeRed(err) ? "Sin señal: no se guardó. Vuelve a intentarlo con señal." : err.message);
     } finally { S.ocupado = false; }
+  }
+
+  // ============================================================
+  // LA BANDEJA NUEVA (c17) — docs/conta/c17-bandeja.sql
+  //
+  // Edgar no es contable: la tarjeta de un movimiento le dice UNA cosa («Es
+  // un gasto de Material de la obra X: $245.37») con su «Así es». Debajo,
+  // una caja: «¿Qué es? Dímelo con tus palabras». Lo que escribe va a la IA
+  // (la función de borde «contador», acción «dimelo») con lo que la app
+  // sabe, y vuelve UNA propuesta de una lista cerrada, en llano y con
+  // montos, con «Así es» y «No, es otra cosa»; si no la encuentra, dice qué
+  // le falta. La IA propone y nunca registra: «Así es» llama a la base
+  // (fn_bandeja_hacer / fn_bandeja_aprobar), que valida y registra por las
+  // puertas del banco (c6) con sus guardas. Lo de siempre (el texto del
+  // banco, sus botones, «Según la IA / Según yo», «Otra cosa…») queda
+  // detrás de «Más opciones», con las categorías en dos niveles.
+  //   · DECIDIR POR GRUPO: arriba, los comercios con dos o más movimientos:
+  //     una respuesta para todos (fn_bandeja_grupo, solo los que se ven) y,
+  //     si Edgar lo marca, lo siguiente de ese comercio entra solo.
+  //   · «REGISTRADO SOLO»: lo que entró por una regla suya (fn_bandeja_solo
+  //     al abrir la Bandeja, y la tarea de la base), con «Deshacer»
+  //     (fn_bandeja_deshacer). Un depósito, un Zelle a una persona o la
+  //     nómina nunca entran solos: la base no lo deja.
+  //   · «LO QUE RECUERDO»: lo que Edgar dijo de cada comercio o persona
+  //     (fn_bandeja_memoria): solo se PROPONE; entra solo lo que él marque.
+  //   · Sin c17 (la función no existe) nada de esto se pinta y la Bandeja es
+  //     la de antes. La tarjeta de la mano de obra (c10), el cheque que
+  //     pregunta de quién es, el depósito de Stripe y el cargo de Gusto que
+  //     la nómina reconoce siguen con SU tarjeta.
+  // ============================================================
+  const BN_RECORDABLES = ["gasto", "personal", "cobro", "anticipo", "prestamo", "aporte", "traspaso", "cuadrilla", "contratista", "otro_ingreso"];
+  // (de quién se puede recordar algo: un procesador de tarjetas deposita lo de muchos clientes, así que de él no)
+  const BN_CLASES_CLAVE = ["comercio", "zelle_a", "zelle_de", "deposito"];
+  const BN_EN_GRUPO = ["gasto", "personal", "anticipo", "prestamo", "aporte", "traspaso", "cuadrilla", "contratista", "otro_ingreso"];
+  const BN_CAMPOS_MOTIVO = ["p_motivo", "p_notas", "p_partidas.motivo"];
+  const BN_GRUPOS = 6;              // los grupos que se enseñan de entrada (los demás, con «Ver los N grupos»)
+  const BN_SOLO_CADA_MS = 45000;    // la rutina que registra sola no se vuelve a llamar antes (salvo tras «Casar otra vez»)
+  const BN_SOLO_RONDAS = 6;         // con muchos cargos la base corta por reloj: se sigue mientras siga entrando algo
+  const BN_DIAS_SOLOS = 14;
+  const BN_TOPES = [100, 250, 500, 1000, 2500];
+  const MOTIVO_IA_BN = "Edgar lo contestó de otra forma en la Bandeja";
+  const bnViva = () => S.bn.instalado === true && !!S.bn.datos && !S.bn.err;
+  const bnCfg = () => (S.bn.datos && S.bn.datos.config) || {};
+  // la tarjeta nueva de un movimiento, o null si le toca la suya de siempre
+  const bnDe = m => (bnViva() && m && !jrDe(m) && !chqDe(m) && !m._esStripe && !nomDe(m) ? (S.bn.datos.tarjetas[m.movimiento_id] || {}) : null);
+  const bnCats = lado => ((S.bn.datos && S.bn.datos.categorias) || []).filter(g => g.lado === lado || g.lado === "ambos");
+  const bnLado = monto => (num(monto) < 0 ? "gasto" : "ingreso");
+  // el texto del banco sin los nombres de sus funciones (a Edgar no le dicen nada): «… (fn_banco_clasificar)» fuera
+  const bnLlano = t => String(t || "").replace(/\s*\((?:[^()]*\s)?fn_[a-z0-9_]+[^()]*\)/g, "").replace(/\bfn_[a-z0-9_]+\b/g, "").replace(/\s+([.,;:?])/g, "$1").replace(/\s{2,}/g, " ").trim();
+  // un error de la base en llano: los de sus reglas ya vienen escritos para Edgar; uno técnico no se enseña tal cual
+  const bnError = err => esFalloDeRed(err) || !navigator.onLine ? "Sin señal: no se guardó. Vuelve a intentarlo con señal."
+    : err.codigo === "MFA" || err.mfa ? "Falta el código del teléfono: sal y vuelve a entrar con él."
+    : /^(MX\d+|22023|42501)$/.test(String(err.codigo || "")) ? err.message
+    : "La base contestó con un error que no es de las reglas de la Bandeja. Recarga la app; si sigue, avisa.";
+
+  // LO QUE LEE (fn_bandeja_leer, una llamada). Sin c17 la función no existe: se sabe una vez y la Bandeja es la de antes. Sin señal,
+  // lanza (la página lo dice); otro error se apunta y la franja lo dice: las tarjetas salen como antes
+  async function leerBandejaNueva() {
+    if (S.bn.instalado === false) return null;
+    try {
+      const r = await DB._rpc("fn_bandeja_leer", { p: {} });
+      if (!r || typeof r !== "object" || !r.version || !r.tarjetas || typeof r.tarjetas !== "object") { S.bn.instalado = false; S.bn.datos = null; S.bn.err = null; return null; }
+      S.bn.instalado = true; S.bn.datos = r; S.bn.err = null;
+      return r;
+    } catch (err) {
+      if (esFalloDeRed(err)) throw err;
+      S.bn.datos = null;
+      if (faltaC10(err)) { S.bn.instalado = false; S.bn.err = null; return null; }
+      S.bn.err = err;
+      return null;
+    }
+  }
+  // LO QUE YA ME DIJISTE QUE ENTRE SOLO (fn_bandeja_solo): al abrir la Bandeja, antes de leerla. Nunca lanza ni frena la página: lo
+  // que no entre ahora entra en la próxima pasada o en la tarea de la base. `forzar`: tras «Casar otra vez», sin esperar su turno
+  function bandejaSolo(forzar) {
+    const x = S.bn.solo;
+    if (S.bn.instalado === false || !navigator.onLine) return Promise.resolve(null);
+    if (x.promesa) return x.promesa;
+    if (!forzar && x.el && Date.now() - x.el < BN_SOLO_CADA_MS) return Promise.resolve(null);
+    x.promesa = (async () => {
+      const t = { registrados: [], ia: [] };
+      try {
+        await leerMfa();
+        // registrar toca el libro: pide el código del teléfono, como el «Así es» (sin él lo hace la tarea de la base)
+        if (!mfaActivo()) { x.sinCodigo = true; return null; }
+        x.sinCodigo = false;
+        for (let i = 0; i < BN_SOLO_RONDAS; i++) {
+          const r = await DB._rpc("fn_bandeja_solo", { p: { corrio: "pantalla" } });
+          if (!r || typeof r !== "object" || typeof r.encendido !== "boolean") break;
+          const regs = Array.isArray(r.registrados) ? r.registrados : [];
+          t.registrados.push(...regs);
+          t.ia.push(...(Array.isArray(r.propuestas_ia) ? r.propuestas_ia : []));
+          if (r.completo !== false || !regs.length) break;
+        }
+        x.err = null;
+      } catch (err) {
+        // una base sin c17: la función no existe. Se sabe una vez, y todo sigue como antes
+        if (faltaC10(err)) { S.bn.instalado = false; return null; }
+        if (!esFalloDeRed(err)) x.err = err;
+        if (!t.registrados.length) return null;
+      } finally { x.el = Date.now(); x.promesa = null; }
+      if (t.registrados.length) {
+        for (const r of t.registrados) if (r && r.hecho_id) S.bn.nuevos.add(r.hecho_id);
+        S.saldos = null; S.bn.abiertas.solos = true;
+        S.hooks.avisar(`Registrado solo: ${plural(t.registrados.length, "cargo", "cargos")} por ${fmt(t.registrados.reduce((s, r) => s + Math.abs(num(r.monto) || 0), 0))}, de comercios que ya me dijiste. Está en la Bandeja, en «Registrado solo»: ahí se deshace.`);
+        bnCerrarIA(t.ia);
+      }
+      return t;
+    })();
+    return x.promesa;
+  }
+  // lo de la IA (c8) que quedó pendiente en movimientos que la Bandeja ya registró: se cierra por la función de borde «contador» (la
+  // base no deja que esta capa escriba en la de la IA). Lo que no se pueda cerrar ahora se vuelve a intentar al abrir la app otra vez
+  function bnCerrarIA(ids) {
+    const x = S.bn.ia;
+    const lista = [...new Set(Array.isArray(ids) ? ids : [])].filter(id => typeof id === "string" && id && !x.cerrando.has(id) && !x.mal.has(id));
+    if (!lista.length || !mfaActivo() || !navigator.onLine) return Promise.resolve();
+    lista.forEach(id => x.cerrando.add(id));
+    return cerrarIA(lista.map(id => ({ propuesta_id: id, que_hacer: "rechazar" })), MOTIVO_IA_BN)
+      .then(mal => { (mal || []).forEach(p => x.mal.add(p.propuesta_id)); })
+      .catch(() => { lista.forEach(id => x.mal.add(id)); })
+      .finally(() => { lista.forEach(id => x.cerrando.delete(id)); });
+  }
+
+  // ---------- la tarjeta: UNA recomendación y «Dímelo con tus palabras» ----------
+  // la obra que una respuesta puede llevar: null (no lleva) o { pide (hay que decirla), sel (la que trae) }
+  function bnObraDe(p) {
+    const d = p.datos || {};
+    if (p.accion === "contratista" || p.accion === "anticipo") return { pide: true, sel: d.proyecto_id || "" };
+    if (p.accion !== "gasto" && p.accion !== "ia") return null;
+    const r = reglaObra(d.cuenta);
+    return r === "obligatoria" || r === "opcional" || p.pide_obra ? { pide: r === "obligatoria" || !!p.pide_obra, sel: d.proyecto_id || "" } : null;
+  }
+  // los datos que el banco pide para una opción suya y no son el motivo (el capital y el interés de una cuota con su statement)
+  const bnCamposDe = p => (Array.isArray(p.pide) ? p.pide : p.accion === "banco" && p.datos && Array.isArray(p.datos.pide) ? p.datos.pide : [])
+    .filter(c => !BN_CAMPOS_MOTIVO.includes(c));
+  // las obras para elegir: las que están en marcha y, si la que viene elegida ya no lo está, ella también (dicho)
+  function opcionesObraBn(vacio, sel) {
+    const act = obrasActivas(), extra = sel && !act.some(p => p.id === sel) ? (S.proyectos || []).find(p => p.id === sel) : null;
+    return `${vacio == null ? "" : `<option value="">${esc(vacio)}</option>`}${act.map(p => `<option value="${esc(p.id)}"${p.id === sel ? " selected" : ""}>${esc(p.nombre)}</option>`).join("")}${extra ? `<option value="${esc(extra.id)}" selected>${esc(extra.nombre)} (ya no está en marcha)</option>` : ""}`;
+  }
+  // todas las obras (un anticipo, o la devolución de una compra, puede ser de una que todavía no arranca o que ya terminó)
+  function opcionesObraTodas(vacio) {
+    const act = obrasActivas(), otras = (S.proyectos || []).filter(p => !OBRAS_ACTIVAS.includes(p.estado));
+    const ops = ps => ps.map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}</option>`).join("");
+    return `<option value="">${esc(vacio)}</option>${act.length ? `<optgroup label="En marcha">${ops(act)}</optgroup>` : ""}${otras.length ? `<optgroup label="Las demás">${ops(otras)}</optgroup>` : ""}`;
+  }
+  const bnEtiquetaMotivo = a => a === "aporte" ? "¿De dónde salió ese dinero? (queda escrito en el libro)" : a === "otro_ingreso" ? "¿De qué es ese ingreso? (queda escrito en el libro)" : "Por qué (queda escrito en el libro)";
+  // «Recordarlo»: lo próximo de esa contraparte se PROPONE así. Y, solo para los cargos de un comercio, que lo siguiente entre solo
+  function bnRecordarHTML(t, p) {
+    if (!t || !t.clave || !BN_CLASES_CLAVE.includes(t.clase) || !BN_RECORDABLES.includes(p.accion) || p.fuente === "memoria") return "";
+    const solo = t.clase === "comercio" && (p.accion === "gasto" || p.accion === "personal") && bnCfg().solo !== false;
+    return `<div class="ct-bn-rc"><label class="ct-casilla ct-bn-recordar"><input type="checkbox" data-bn-recordar checked> Recordarlo: lo próximo de ${esc(t.nombre || "aquí")} te lo propongo así</label>
+      ${solo ? `<label class="ct-casilla ct-bn-solo"><input type="checkbox" data-bn-solo> Y que lo siguiente de ${esc(t.nombre || "ese comercio")} entre solo (hasta ${esc(fmt(bnCfg().solo_tope))} cada cargo)</label>` : ""}</div>`;
+  }
+  // UNA RESPUESTA en llano, con lo que le falte por decir (la obra, los datos que el banco pide, el porqué escrito) y si se recuerda.
+  // La misma pieza para la recomendación (`tipo` "rec") y para lo que entendió el «Dímelo» ("dim")
+  function bnRespuestaHTML(t, p, tipo) {
+    const ob = bnObraDe(p), campos = bnCamposDe(p), dis = mfaActivo() ? "" : " disabled";
+    // (lo que entendió el «Dímelo» con su obra se aprueba con ella o con otra, no sin obra)
+    const vacio = !ob ? null : ob.pide ? (ob.sel ? null : "Elige la obra…") : tipo === "dim" && ob.sel ? null : "Sin obra";
+    return `<p class="ct-bn-t" data-bn-t>${esc(p.texto || "")}</p>
+      ${p.porque ? `<p class="ct-bn-por">${esc(p.porque)}</p>` : ""}
+      ${ob ? `<label class="ct-campo ct-bn-obra">${ob.pide ? "¿De qué obra?" : "Obra"}<select data-bn-obra${dis}>${opcionesObraBn(vacio, ob.sel)}</select></label>` : ""}
+      ${campos.map(c => campoHTML(c, null, null, `data-bn-campo="${esc(c)}"${dis}`)).join("")}
+      <label class="ct-campo ct-bn-motivo"${p.pide_motivo ? "" : " hidden"}>${esc(bnEtiquetaMotivo(p.accion))}<textarea data-bn-motivo rows="2" maxlength="300"${dis}></textarea></label>
+      ${bnRecordarHTML(t, p)}`;
+  }
+  // lo que Edgar puso en la caja de una respuesta: { obra, hayObra, motivo, campos, recordar, solo } o { error, foco }
+  function bnLeerCaja(bl, p) {
+    const sel = bl.querySelector("[data-bn-obra]"), ob = bnObraDe(p), obra = sel ? sel.value : "";
+    if (sel && ob && ob.pide && !obra) return { error: "Elige antes la obra.", foco: sel };
+    const cm = bl.querySelector(".ct-bn-motivo"), ta = bl.querySelector("[data-bn-motivo]"), pideMotivo = !!(cm && !cm.hidden && ta);
+    const motivo = pideMotivo ? String(ta.value || "").replace(/\s+/g, " ").trim() : "";
+    if (pideMotivo && motivo.length < 3) return { error: "Escríbelo en unas palabras: queda escrito en el libro.", foco: ta };
+    const campos = {};
+    for (const el of bl.querySelectorAll("[data-bn-campo]")) {
+      const c = el.dataset.bnCampo, monto = (CAMPOS[c] || {}).tipo === "monto", v = monto ? String(el.value || "").replace(/[$,\s]/g, "") : String(el.value || "").trim();
+      if (!v || (monto && !/^\d+(\.\d{1,2})?$/.test(v))) return { error: monto ? "Falta un monto (como 123.45): está en el statement del prestamista." : "Falta un dato.", foco: el };
+      campos[c] = v;
+    }
+    const rc = bl.querySelector("[data-bn-recordar]"), so = bl.querySelector("[data-bn-solo]");
+    return { obra, hayObra: !!sel, motivo, campos, recordar: rc ? rc.checked : null, solo: !!(rc && rc.checked && so && so.checked) };
+  }
+  const bnErrorCaja = (bl, v) => { resCaja(bl, "ct-bn-res").innerHTML = `<p class="ct-aviso bad ct-error">${esc(v.error)}</p>`; if (v.foco) v.foco.focus(); };
+  // lo que el «Dímelo» dijo de un movimiento: lo de esta sesión o, si no, lo que quedó guardado en la base
+  const bnDimeloDe = (m, t) => S.bn.dim.get(m.movimiento_id) || (t && t.dimelo) || null;
+  // la píldora de la fila: en una palabra, qué cree la app que es (o que hay que decírselo)
+  function bnPillHTML(m, t) {
+    const rec = t.rec || null, d = bnDimeloDe(m, t);
+    const p = d && d.estado === "pendiente" && d.accion ? d : rec && rec.accion ? rec : null;
+    if (!p) return rec && rec.aviso ? pill(motivoLlano(m.motivo), m.motivo === "posible_duplicado" || m.motivo === "quitada" ? "warn" : "") : pill("¿Qué es?", "warn");
+    const a = p.accion, cuenta = (p.datos || {}).cuenta;
+    const txt = a === "gasto" || a === "ia" ? bnCuentaLlana(cuenta) : a === "banco" ? motivoLlano(m.motivo)
+      : ({ personal: "Personal", cobro: "Cobro de factura", anticipo: "Anticipo de obra", prestamo: "Préstamo", aporte: "Dinero tuyo", traspaso: "Entre tus cuentas", cuadrilla: "Cuadrilla", contratista: "Subcontrato", otro_ingreso: "Otro ingreso" })[a] || "¿Qué es?";
+    return pill(txt, "cu bn");
+  }
+  // el nombre llano de una cuenta: el de su categoría («Material», «Camioneta y gasolina») o, si no tiene, el de la cuenta
+  function bnCuentaLlana(cod) {
+    for (const g of (S.bn.datos && S.bn.datos.categorias) || []) for (const s of g.sub || []) if (s.cuenta === cod && (s.accion === "gasto" || s.accion === "personal")) return s.clave === "retiro" ? "Personal" : s.nombre;
+    return nombreCuenta(cod) || "Gasto";
+  }
+  function bnRecHTML(t, rec) {
+    return `<div class="ct-bn-rec" data-bn-caja="rec">${bnRespuestaHTML(t, rec, "rec")}
+      <div class="ct-acciones"><button type="button" class="accion ct-bn-asi" data-bn-asi${mfaActivo() ? "" : " disabled"}>Así es</button></div></div>`;
+  }
+  // lo que entendió el «Dímelo»: UNA propuesta con «Así es» y «No, es otra cosa», o lo que le falta
+  function bnPropHTML(t, d) {
+    if (!d) return "";
+    if (d.rechazada) return `<p class="ct-nota" data-bn-dim-estado="rechazada">Vale, no es eso. Dímelo de otra forma (la obra, la factura, de quién es…), o elige en «Más opciones».</p>`;
+    if (d.bloqueado) return `<p class="ct-aviso warn" data-bn-dim-estado="bloqueado">La IA llegó a su tope de gasto de este mes y no le puedo preguntar. Elige tú en «Más opciones» (el tope se mira en Conexiones y seguridad).</p>`;
+    if (d.estado !== "pendiente" || !d.accion) return `<div class="ct-bn-falta" data-bn-dim-estado="falta"><p><b>No lo pude dejar listo.</b> ${esc(d.falta || d.porque || "No encontré con qué registrarlo.")}</p></div>`;
+    const dis = mfaActivo() ? "" : " disabled";
+    return `<div class="ct-bn-ia" data-bn-caja="dim" data-bn-dim-estado="pendiente">
+      <p class="ct-bn-ia-h">${pillIA()}<span>Entendí esto</span></p>
+      ${bnRespuestaHTML(t, d, "dim")}
+      ${d.falta ? `<p class="ct-nota ct-bn-falta-n">${esc(d.falta)}</p>` : ""}
+      <div class="ct-acciones"><button type="button" class="accion" data-bn-ia-asi${dis}>Así es</button><button type="button" class="accion secundaria" data-bn-ia-no${dis}>No, es otra cosa</button></div></div>`;
+  }
+  function bnHTML(m, t) {
+    const rec = t.rec || null, d = bnDimeloDe(m, t), dis = mfaActivo() ? "" : " disabled";
+    const frase = S.bn.frases.has(m.movimiento_id) ? S.bn.frases.get(m.movimiento_id) : (d && d.frase) || "";
+    const arriba = rec && rec.accion ? bnRecHTML(t, rec)
+      : rec && rec.aviso ? `<p class="ct-bn-aviso" data-bn-aviso>${esc(rec.aviso)}</p>`
+      : `<p class="ct-bn-sin" data-bn-sin>Todavía no sé qué es ${num(m.monto) > 0 ? "este depósito" : "este cargo"}.</p>`;
+    return `<section class="ct-bn" data-bn>${t.deshecho ? `<p class="ct-nota ct-bn-deshecho" data-bn-deshecho>Deshiciste lo que se había registrado de este movimiento: ya no entra solo, te lo pregunto.</p>` : ""}${arriba}
+      ${bnCfg().dimelo === false ? "" : `<form class="ct-bn-dim" data-bn-dim novalidate>
+        <label class="ct-campo">¿Qué es? Dímelo con tus palabras<textarea name="frase" data-bn-frase rows="2" maxlength="600" placeholder="${esc(num(m.monto) > 0 ? "Ej.: es el pago de la factura de la cocina de la obra de la calle Roble" : "Ej.: material para la obra de la calle Roble")}"${dis}>${esc(frase)}</textarea></label>
+        <div class="ct-acciones"><button type="submit" class="accion secundaria" data-bn-enviar${dis}>${d ? "Enviar otra vez" : "Enviar"}</button></div>
+      </form>
+      <div class="ct-bn-prop" data-bn-prop>${bnPropHTML(t, d)}</div>`}
+      ${mfaActivo() ? "" : `<p class="ct-aviso warn ct-bn-sin-codigo">Primero activa el código del teléfono (Conexiones y seguridad) y entra con él: «Así es» y «Dímelo» lo piden. Mientras tanto, «Más opciones» sigue aquí abajo.</p>`}
+    </section>`;
+  }
+  // «MÁS OPCIONES»: la lista larga, ordenada en dos niveles como la ve Edgar, y debajo lo de siempre (lo que propone el banco, la IA
+  // con «Según yo», «Otra cosa…»)
+  function bnMasHTML(m, t, viejo) {
+    return `<details class="ct-bn-mas" data-bn-mas${S.bn.mas.has(m.movimiento_id) ? " open" : ""}><summary>Más opciones</summary>
+      <div class="ct-bn-mas-c">
+        <form class="ct-bn-cat" data-bn-cat novalidate>
+          <label class="ct-campo">Elige de la lista qué es<select name="bn_cat" data-bn-cat-sel${mfaActivo() ? "" : " disabled"}>${bnCatOpciones(bnLado(m.monto), "", false)}</select></label>
+          <div class="ct-bn-cat-campos" data-bn-cat-campos></div>
+        </form>
+        <div class="ct-bn-viejo"><p class="ct-bn-viejo-h">Lo que dice el banco</p>${viejo}</div>
+      </div></details>`;
+  }
+
+  // ---------- las categorías en dos niveles y lo que pide cada una ----------
+  // la lista: el grupo (Costo de obra, Gastos generales…) y dentro sus categorías. `grupo`: para decidir por grupo (sin el pago de
+  // una factura ni la devolución de una compra, que se contestan de uno en uno). `extra`: una cuenta propuesta que no está en la lista
+  function bnCatOpciones(lado, sel, grupo, extra) {
+    const ops = bnCats(lado).map(g => {
+      const subs = (g.sub || []).filter(s => !grupo || (BN_EN_GRUPO.includes(s.accion) && !(s.accion === "gasto" && !s.cuenta)));
+      return subs.length ? `<optgroup label="${esc(g.nombre)}">${subs.map(s => `<option value="${esc(g.clave)}/${esc(s.clave)}"${`${g.clave}/${s.clave}` === sel ? " selected" : ""}>${esc(s.nombre)}</option>`).join("")}</optgroup>` : "";
+    }).join("");
+    return `<option value="">Elige…</option>${extra ? `<option value="cuenta:${esc(extra)}" selected>${esc(nombreCuenta(extra))}</option>` : ""}${ops}`;
+  }
+  // la categoría elegida («grupo/categoría», o «cuenta:6610»: una cuenta propuesta que no está en la lista)
+  function bnSub(v) {
+    const [a, b] = String(v || "").split("/");
+    if (!b) { const c = /^cuenta:(.+)$/.exec(a || ""); return c ? { clave: "cuenta", nombre: nombreCuenta(c[1]), accion: "gasto", cuenta: c[1], obra: reglaObra(c[1]) === "obligatoria" } : null; }
+    const g = ((S.bn.datos && S.bn.datos.categorias) || []).find(x => x.clave === a);
+    return (g && (g.sub || []).find(s => s.clave === b)) || null;
+  }
+  // la categoría de la lista que corresponde a una respuesta (para dejarla elegida): «grupo/categoría», «cuenta:…» o ""
+  function bnCatDe(p, lado) {
+    if (!p || !p.accion) return "";
+    const d = p.datos || {};
+    for (const g of bnCats(lado)) for (const s of g.sub || []) {
+      if (s.accion !== p.accion) continue;
+      if (p.accion === "gasto" ? s.cuenta === d.cuenta : p.accion === "aporte" ? s.tipo === (d.tipo || "prestamo_accionista") : p.accion === "otro_ingreso" ? s.cuenta === (d.cuenta || "4900") : true) return `${g.clave}/${s.clave}`;
+    }
+    return p.accion === "gasto" && d.cuenta ? `cuenta:${d.cuenta}` : "";
+  }
+  // LO QUE PIDE CADA RESPUESTA de la lista: la obra, la cuenta propia, la persona, el prestamista, las facturas o una línea escrita.
+  // `m`: el movimiento (null al decidir por grupo: la obra puede ser «la del día de la cuadrilla en cada uno»)
+  function bnCamposHTML(s, m) {
+    const a = s.accion, grupo = !m;
+    if (a === "gasto" && !s.cuenta) {
+      const cats = bnCats("gasto").map(g => { const subs = (g.sub || []).filter(x => x.accion === "gasto" && x.cuenta); return subs.length ? `<optgroup label="${esc(g.nombre)}">${subs.map(x => `<option value="${esc(x.cuenta)}">${esc(x.nombre)}</option>`).join("")}</optgroup>` : ""; }).join("");
+      return `<label class="ct-campo">¿De qué era la compra que te devolvieron?<select name="bn_cuenta" required data-falta="Falta decir de qué era la compra."><option value="">Elige…</option>${cats}</select></label>
+        <label class="ct-campo">Obra (si la compra era de una obra)<select name="bn_obra">${opcionesObraTodas("Sin obra")}</select></label>`;
+    }
+    if ((a === "gasto" && s.obra) || a === "contratista") return `<label class="ct-campo">¿De qué obra?<select name="bn_obra"${grupo ? "" : ` required data-falta="Falta la obra."`}>${opcionesObraBn(grupo ? "La del día de cada uno" : "Elige la obra…", "")}</select></label>
+      ${grupo ? `<p class="ct-nota ct-bn-obra-dia">«La del día»: la obra en la que estuvo la cuadrilla el día de cada compra. Si ese día no hubo una sola, ese se queda y te la pregunto.</p>` : ""}`;
+    if (a === "anticipo") return `<label class="ct-campo">¿De qué obra es el anticipo?<select name="bn_obra" required data-falta="Falta la obra.">${opcionesObraTodas("Elige la obra…")}</select></label>`;
+    if (a === "cuadrilla") {
+      const c = (S.bn.datos && S.bn.datos.cuadrilla) || [];
+      return c.length ? `<label class="ct-campo">¿A quién de la cuadrilla?<select name="bn_persona" required data-falta="Falta decir a quién."><option value="">Elige…</option>${c.map(p => `<option value="${esc(p.usuario_id)}">${esc(p.nombre || "")}</option>`).join("")}</select></label>
+          <p class="ct-nota">Se reparte entre las obras según sus horas de esa semana.</p>`
+        : `<p class="ct-aviso warn">El reparto de la mano de obra por horas no está instalado, o no hay nadie de la cuadrilla dado de alta.</p>`;
+    }
+    if (a === "traspaso") {
+      const cs = ((S.bn.datos && S.bn.datos.cuentas_propias) || []).filter(c => !m || c.codigo !== m.cuenta);
+      return `<label class="ct-campo">¿Con cuál de tus cuentas?<select name="bn_cuenta_propia" required data-falta="Falta decir con cuál de tus cuentas."><option value="">Elige…</option>${cs.map(c => `<option value="${esc(c.codigo)}">${esc(c.nombre)}${c.tarjeta ? " (tarjeta)" : ""}</option>`).join("")}</select></label>`;
+    }
+    if (a === "prestamo") {
+      const ps = (S.bn.datos && S.bn.datos.prestamos) || [];
+      return `${ps.length ? `<label class="ct-campo">¿De qué préstamo?<select name="bn_prestamo"><option value="">Otro (escribe abajo de quién)</option>${ps.map(p => `<option value="${esc(p.id)}">${esc(p.prestamista || "")}</option>`).join("")}</select></label>` : ""}
+        <label class="ct-campo">¿Quién te lo prestó?<input name="bn_prestamista" maxlength="80" autocomplete="off" placeholder="El nombre del prestamista"></label>`;
+    }
+    if (a === "aporte" || a === "otro_ingreso") return `<label class="ct-campo">${esc(bnEtiquetaMotivo(a))}<textarea name="bn_motivo" rows="2" maxlength="300" required data-falta="Escríbelo en unas palabras: queda escrito en el libro."></textarea></label>`;
+    if (a === "cobro") return `<div class="ct-bn-fact" data-bn-fact><p class="ct-aviso ct-espera" role="status">Buscando las facturas por cobrar…</p></div>`;
+    return "";
+  }
+  // lo elegido en esos campos, como lo quiere la base: { datos, motivo } o { error }
+  function bnDatosCat(f, s, m) {
+    const v = n => { const el = f.querySelector(`[name="${n}"]`); return el ? String(el.value || "").trim() : ""; };
+    const a = s.accion, d = {};
+    if (a === "gasto") { d.cuenta = s.cuenta || v("bn_cuenta"); if (v("bn_obra")) d.proyecto_id = v("bn_obra"); }
+    else if (a === "contratista" || a === "anticipo") { if (v("bn_obra")) d.proyecto_id = v("bn_obra"); }
+    else if (a === "cuadrilla") d.usuario_id = v("bn_persona");
+    else if (a === "traspaso") d.cuenta = v("bn_cuenta_propia");
+    else if (a === "prestamo") { if (v("bn_prestamo")) d.prestamo_id = v("bn_prestamo"); else if (v("bn_prestamista")) d.prestamista = v("bn_prestamista"); else return { error: "Falta decir quién te lo prestó." }; }
+    else if (a === "aporte") d.tipo = s.tipo;
+    else if (a === "otro_ingreso") d.cuenta = s.cuenta;
+    else if (a === "cobro") { const x = bnFacturasDe(f, m); if (x.error) return x; Object.assign(d, x.datos); }
+    return { datos: d, motivo: v("bn_motivo").replace(/\s+/g, " ") };
+  }
+  // LAS FACTURAS QUE PAGA UN DEPÓSITO, a mano (cuando la app no lo sabe sola): las que tienen saldo en el libro, con su obra. Al
+  // marcarlas se va diciendo cuánto suman y qué pasa con la diferencia: si suman MÁS que el depósito, la diferencia es la comisión
+  // de la tarjeta (el procesador paga neto) o, con una sola factura, un pago parcial
+  const centavos = v => Math.round((num(v) || 0) * 100);
+  async function bnCargarFacturas(caja, m) {
+    let fs;
+    try { fs = await DB._rpc("fn_bandeja_facturas", {}); }
+    catch (err) { caja.innerHTML = `<p class="ct-aviso bad">${esc(bnError(err))}</p>`; return; }
+    if (!caja.isConnected) return;
+    fs = (Array.isArray(fs) ? fs : []).filter(f => num(f.saldo) > 0);
+    if (!fs.length) { caja.innerHTML = `<p class="ct-aviso warn">No hay ninguna factura con saldo por cobrar en el libro. Si todavía no hay factura, elige «Un anticipo de una obra».</p>`; return; }
+    caja.innerHTML = `<fieldset class="ct-bn-fact-l"><legend>¿Qué facturas paga este depósito de ${esc(fmt(m.monto))}?</legend>${fs.map(f => `<label class="ct-casilla ct-bn-fact-it"><input type="checkbox" data-bn-factura="${esc(f.id)}" data-saldo="${esc(f.saldo)}"><span class="ct-bn-fact-n"><b>#${esc(f.num || f.id)}</b> ${esc(f.obra || "")}${f.marcada ? ` ${pill("cobrada en Proyectos", "ok")}` : ""}</span><span class="ct-num">${fmt(f.saldo)}</span></label>`).join("")}</fieldset>
+      <label class="ct-casilla ct-bn-fact-com" data-bn-fact-com hidden><input type="checkbox" data-bn-comision checked> Pagaron con tarjeta: la diferencia es la comisión del procesador</label>
+      <p class="ct-bn-fact-suma" data-bn-fact-suma role="status">Marca la factura (o las facturas) que paga.</p>`;
+    const com = caja.querySelector("[data-bn-fact-com]"), chk = caja.querySelector("[data-bn-comision]"), suma = caja.querySelector("[data-bn-fact-suma]");
+    let antes = 0;
+    const pintar = ev => {
+      const x = bnFacturasDe(caja, m, true);
+      // con una sola factura la diferencia puede ser un pago parcial: la casilla deja decir cuál; de entrada, comisión si es creíble
+      if (x.n === 1 && x.dif > 0 && (antes !== 1 || !(ev && ev.target === chk))) chk.checked = x.dif <= Math.round(x.suma * 0.035 + 30);
+      antes = x.n;
+      com.hidden = !(x.n === 1 && x.dif > 0);
+      const y = bnFacturasDe(caja, m, true);
+      suma.textContent = y.texto; suma.className = `ct-bn-fact-suma${y.error ? " mal" : y.n ? " bien" : ""}`;
+    };
+    caja.addEventListener("change", pintar);
+  }
+  // lo marcado: { datos: { facturas, comision } } o { error }. `decir`: además el texto de la suma (n, suma y dif en centavos)
+  function bnFacturasDe(f, m, decir) {
+    const marc = [...f.querySelectorAll("[data-bn-factura]:checked")], dep = centavos(m.monto);
+    const suma = marc.reduce((s, el) => s + centavos(el.dataset.saldo), 0), dif = suma - dep, n = marc.length;
+    const usd = c => fmt(c / 100), chk = f.querySelector("[data-bn-comision]");
+    const lista = () => marc.map(el => ({ id: el.dataset.bnFactura, monto: (centavos(el.dataset.saldo) / 100).toFixed(2) }));
+    let r;
+    if (!n) r = { error: "Marca la factura (o las facturas) que paga este depósito.", texto: "Marca la factura (o las facturas) que paga." };
+    else if (dif < 0) r = { error: `Faltan ${usd(-dif)}: las facturas marcadas suman ${usd(suma)} y el depósito es de ${usd(dep)}.`, texto: `Suman ${usd(suma)}: faltan ${usd(-dif)} para llegar al depósito. Marca otra factura; si no la hay, no es solo el pago de facturas.` };
+    else if (dif === 0) r = { datos: { facturas: lista() }, texto: `Suman justo el depósito: ${usd(suma)}.` };
+    else if (n === 1 && chk && !chk.checked) r = { datos: { facturas: [{ id: marc[0].dataset.bnFactura, monto: (dep / 100).toFixed(2) }] }, texto: `Pago parcial: a la factura le quedarán ${usd(dif)} por cobrar.` };
+    else r = { datos: { facturas: lista(), comision: (dif / 100).toFixed(2) }, texto: `Suman ${usd(suma)}: el procesador se quedó ${usd(dif)} de comisión y llegaron ${usd(dep)}.` };
+    return decir ? { ...r, n, suma, dif } : r;
+  }
+
+  // ---------- lo que hace cada botón ----------
+  // Una llamada de la Bandeja nueva que toca el libro (fn_bandeja_hacer, _aprobar, _grupo, _deshacer…): con señal y con el código del
+  // teléfono; mientras corre, lo de `cont` se apaga y su caja dice que espera. Devuelve lo que contestó la base, o null si no se
+  // pudo (lo deja dicho en la caja)
+  async function bnRpc(cont, fn, args, espera, boton) {
+    const caja = resCaja(cont, "ct-bn-res");
+    if (S.ocupado) return null;
+    if (!navigator.onLine) { caja.innerHTML = `<p class="ct-aviso bad">Sin señal: no se hizo nada.</p>`; return null; }
+    if (!mfaActivo()) { caja.innerHTML = `<p class="ct-aviso warn">Primero activa el código del teléfono (Conexiones y seguridad) y entra con él: registrar en el libro lo pide.</p>`; return null; }
+    S.ocupado = true;
+    const apagados = [...cont.querySelectorAll("button, select, input, textarea")].filter(b => !b.disabled);
+    apagados.forEach(b => { b.disabled = true; });
+    if (boton) { boton.classList.add("ct-girando"); boton.setAttribute("aria-busy", "true"); }
+    caja.innerHTML = `<p class="ct-aviso ct-espera" role="status">${esc(espera || "Un momento…")}</p>`;
+    const soltar = () => { apagados.forEach(b => { b.disabled = false; }); if (boton) { boton.classList.remove("ct-girando"); boton.removeAttribute("aria-busy"); } };
+    try {
+      const r = await DB._rpc(fn, args);
+      S.ocupado = false; soltar(); caja.innerHTML = "";
+      return r && typeof r === "object" ? r : {};
+    } catch (err) {
+      S.ocupado = false; soltar();
+      caja.innerHTML = `<p class="ct-aviso ${esFalloDeRed(err) ? "bad" : "warn"}">${esc(bnError(err))}</p>`;
+      return null;
+    }
+  }
+  // lo que quedó registrado, en una línea para el aviso
+  function bnResumen(r) {
+    const fc = Array.isArray(r.facturas_cobradas) ? r.facturas_cobradas.length : 0, rc = r.recordado;
+    return `Registrado${r.texto ? `: ${String(r.texto).replace(/\.$/, "")}` : ""}${r.asiento ? ` · asiento ${r.asiento}` : ""}${fc ? ` · ${plural(fc, "factura quedó cobrada", "facturas quedaron cobradas")} en Proyectos` : ""}${rc ? ` · lo recordaré para ${rc.nombre}${rc.solo ? " (lo siguiente entra solo)" : ""}` : ""}${r.nota ? ` · ${r.nota}` : ""}`;
+  }
+  // registrado: se dice, se cierra lo que la IA (c8) tenía abierto para ese movimiento y la Bandeja se pinta otra vez, con LA
+  // TARJETA SIGUIENTE de la lista ya abierta (se contesta una detrás de otra, sin volver a buscar por dónde se iba)
+  async function bnHecho(r, m) {
+    S.saldos = null;
+    S.hooks.avisar(bnResumen(r));
+    if (m) { const l = filtrarBandeja(), i = l.findIndex(f => f.movimiento_id === m.movimiento_id), sig = i >= 0 ? l[i + 1] || l[i - 1] : null; S.bj.abierta = sig ? sig.movimiento_id : null; }
+    const ia = Array.isArray(r.propuestas_ia) ? r.propuestas_ia : [];
+    if (ia.length && ia.length <= 3) await bnCerrarIA(ia); else bnCerrarIA(ia);
+    await pintarBandeja();
+    const c = S.bj.abierta && S.pagina === "bandeja" ? main().querySelector(".ct-mov.abierta") : null;
+    if (c && typeof c.scrollIntoView === "function") c.scrollIntoView({ block: "center" });
+  }
+  // no registrado: la base dice por qué; si pide el porqué escrito (o la obra), su campo sale y se enfoca
+  function bnNoHecho(bl, r) {
+    resCaja(bl, "ct-bn-res").innerHTML = `<p class="ct-aviso warn" data-bn-no-hecho>${esc(r.por_que || "No se registró: sigue en la Bandeja.")}</p>`;
+    if (r.pide_motivo) { const c = bl.querySelector(".ct-bn-motivo"); if (c) { c.hidden = false; const ta = c.querySelector("textarea"); if (ta) ta.focus(); } }
+    else if (r.pide_obra) { const s = bl.querySelector("[data-bn-obra], [name=bn_obra]"); if (s) s.focus(); }
+  }
+  // «ASÍ ES» de la recomendación
+  async function bnAsiRec(card, m, rec) {
+    const bl = card.querySelector('[data-bn-caja="rec"]'), btn = bl.querySelector("[data-bn-asi]"), v = bnLeerCaja(bl, rec);
+    if (v.error) return bnErrorCaja(bl, v);
+    if (rec.accion === "ia") {
+      // la propuesta de la IA (c8) se aprueba por su función de siempre: ella la registra y aprende su regla
+      const cuerpo = { accion: "aprobar", propuesta: (rec.datos || {}).propuesta_id, recordar: true };
+      if (v.obra) cuerpo.proyecto_id = v.obra;
+      return accionIA(bl, cuerpo, r => resumenClasificado(r, true), { boton: btn, espera: "Registrándolo en el libro…", res: "ct-bn-res" });
+    }
+    const datos = { ...(rec.datos || {}) };
+    if (v.hayObra) { if (v.obra) datos.proyecto_id = v.obra; else delete datos.proyecto_id; }
+    if (Object.keys(v.campos).length) datos.campos = v.campos;
+    const op = { fuente: "recomendacion" };
+    if (v.motivo) op.motivo = v.motivo;
+    if (v.recordar != null) { op.recordar = v.recordar; if (v.solo) op.solo = true; }
+    const r = await bnRpc(bl, "fn_bandeja_hacer", { p_movimiento: m.movimiento_id, p_accion: rec.accion, p_datos: datos, p_opciones: op }, "Registrándolo en el libro…", btn);
+    if (!r) return;
+    if (r.hecho !== true) return bnNoHecho(bl, r);
+    await bnHecho(r, m);
+  }
+  // «DÍMELO»: la frase va a la función de borde «contador»; vuelve UNA propuesta ya validada por la base (o lo que falta). No registra nada
+  async function bnDimelo(card, m, t) {
+    const bl = card.querySelector("[data-bn-dim]"), ta = bl.querySelector("[data-bn-frase]"), btn = bl.querySelector("[data-bn-enviar]"), caja = resCaja(bl, "ct-bn-res");
+    const frase = String(ta.value || "").replace(/\s+/g, " ").trim();
+    if (frase.length < 3) { caja.innerHTML = `<p class="ct-aviso bad ct-error">Escribe en una frase qué es este movimiento.</p>`; ta.focus(); return; }
+    if (S.ocupado) return;
+    if (!navigator.onLine) { caja.innerHTML = `<p class="ct-aviso bad">Sin señal: no se preguntó nada.</p>`; return; }
+    if (!mfaActivo()) { caja.innerHTML = `<p class="ct-aviso warn">Primero activa el código del teléfono (Conexiones y seguridad) y entra con él: «Dímelo» lo pide.</p>`; return; }
+    S.ocupado = true; card.dataset.tocada = "1";
+    S.bn.frases.set(m.movimiento_id, frase);
+    const apagados = [...card.querySelectorAll("[data-bn] button, [data-bn] textarea, [data-bn] select, [data-bn] input")].filter(b => !b.disabled);
+    apagados.forEach(b => { b.disabled = true; });
+    btn.classList.add("ct-girando"); btn.setAttribute("aria-busy", "true");
+    caja.innerHTML = `<p class="ct-aviso ct-espera" role="status">Pensando qué es…</p>`;
+    let r = null, mal = null;
+    try { r = await DB._funcion("contador", { accion: "dimelo", movimiento: m.movimiento_id, frase }, 90000); }
+    catch (err) { mal = err; }
+    S.ocupado = false;
+    apagados.forEach(b => { b.disabled = false; });
+    btn.classList.remove("ct-girando"); btn.removeAttribute("aria-busy");
+    if (mal) {
+      caja.innerHTML = mal.codigo === "ACCION" ? `<p class="ct-aviso warn">La función «contador» que está desplegada es anterior al «Dímelo»: hay que volver a desplegarla (Supabase → Edge Functions). Mientras tanto, elige en «Más opciones».</p>` : errorContadorHTML(mal);
+      return;
+    }
+    caja.innerHTML = "";
+    S.bn.dim.set(m.movimiento_id, { ...r, frase });
+    btn.textContent = "Enviar otra vez";
+    const prop = card.querySelector("[data-bn-prop]");
+    prop.innerHTML = bnPropHTML(t, S.bn.dim.get(m.movimiento_id));
+    wireBnProp(card, m, t);
+    if (typeof prop.scrollIntoView === "function") prop.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+  // «ASÍ ES» de lo que entendió el «Dímelo»: la base registra LO QUE GUARDÓ ya validado, con la frase de Edgar como motivo escrito
+  async function bnAsiDim(card, m, d) {
+    const bl = card.querySelector('[data-bn-caja="dim"]'), v = bnLeerCaja(bl, d);
+    if (v.error) return bnErrorCaja(bl, v);
+    const op = {};
+    if (v.obra) op.proyecto_id = v.obra;
+    if (v.motivo) op.motivo = v.motivo;
+    if (Object.keys(v.campos).length) op.campos = v.campos;
+    if (v.recordar != null) { op.recordar = v.recordar; if (v.solo) op.solo = true; }
+    const r = await bnRpc(bl, "fn_bandeja_aprobar", { p_dimelo: d.dimelo_id, p_opciones: op }, "Registrándolo en el libro…", bl.querySelector("[data-bn-ia-asi]"));
+    if (!r) return;
+    if (r.hecho !== true) return bnNoHecho(bl, r);
+    S.bn.dim.delete(m.movimiento_id); S.bn.frases.delete(m.movimiento_id);
+    await bnHecho(r, m);
+  }
+  // «NO, ES OTRA COSA»: la propuesta queda rechazada y el movimiento sigue en la Bandeja, con la caja lista para decirlo de otra forma
+  async function bnNoDim(card, m, t, d) {
+    const bl = card.querySelector('[data-bn-caja="dim"]');
+    const r = await bnRpc(bl, "fn_bandeja_rechazar", { p_dimelo: d.dimelo_id, p_motivo: null }, "Un momento…", bl.querySelector("[data-bn-ia-no]"));
+    if (!r) return;
+    S.bn.dim.set(m.movimiento_id, { rechazada: true, frase: d.frase || "" });
+    card.querySelector("[data-bn-prop]").innerHTML = bnPropHTML(t, S.bn.dim.get(m.movimiento_id));
+    const ta = card.querySelector("[data-bn-frase]"); if (ta) { ta.focus(); ta.select(); }
+  }
+  // al cambiar la obra de una respuesta, su texto se pone al día con lo que dice la base (fn_bandeja_validar: solo lee)
+  function bnAlCambiarObra(bl, m, p) {
+    const sel = bl.querySelector("[data-bn-obra]"), txt = bl.querySelector("[data-bn-t]");
+    if (!sel || !txt || p.accion === "ia" || p.accion === "banco") return;
+    let serie = 0;
+    sel.addEventListener("change", async () => {
+      const n = ++serie, datos = { ...(p.datos || {}) };
+      if (sel.value) datos.proyecto_id = sel.value; else delete datos.proyecto_id;
+      const c = bl.querySelector(".ct-bn-res"); if (c && c.querySelector(".ct-error")) c.innerHTML = "";
+      try {
+        const v = await DB._rpc("fn_bandeja_validar", { p_movimiento: m.movimiento_id, p_accion: p.accion, p_datos: datos });
+        if (n === serie && v && v.texto && txt.isConnected) txt.textContent = v.texto;
+      } catch { /* el texto se queda como estaba: «Así es» manda la obra elegida igual */ }
+    });
+  }
+  function wireBnProp(card, m, t) {
+    const d = bnDimeloDe(m, t), bl = card.querySelector('[data-bn-caja="dim"]');
+    if (!bl || !d) return;
+    wireBnRecordar(bl);
+    bnAlCambiarObra(bl, m, d);
+    const asi = bl.querySelector("[data-bn-ia-asi]"), no = bl.querySelector("[data-bn-ia-no]");
+    if (asi) asi.addEventListener("click", () => bnAsiDim(card, m, d));
+    if (no) no.addEventListener("click", () => bnNoDim(card, m, t, d));
+  }
+  // «que entre solo» solo vale si se recuerda
+  function wireBnRecordar(bl) {
+    const rc = bl.querySelector("[data-bn-recordar]"), so = bl.querySelector("[data-bn-solo]");
+    if (rc && so) rc.addEventListener("change", () => { so.disabled = !rc.checked; if (!rc.checked) so.checked = false; });
+  }
+  // los botones de la tarjeta nueva (los llama wireMov)
+  function wireBn(card, m) {
+    const t = bnDe(m), bl = card.querySelector("[data-bn]");
+    if (!t || !bl) return;
+    // la fila que Edgar empezó a contestar no se repinta debajo de su dedo cuando la IA trae más propuestas
+    const tocar = () => { card.dataset.tocada = "1"; };
+    bl.addEventListener("input", tocar); bl.addEventListener("change", tocar);
+    const rec = t.rec && t.rec.accion ? t.rec : null, cajaRec = bl.querySelector('[data-bn-caja="rec"]');
+    if (rec && cajaRec) {
+      wireBnRecordar(cajaRec);
+      bnAlCambiarObra(cajaRec, m, rec);
+      cajaRec.querySelector("[data-bn-asi]").addEventListener("click", () => bnAsiRec(card, m, rec));
+    }
+    const fd = bl.querySelector("[data-bn-dim]");
+    if (fd) {
+      const ta = fd.querySelector("[data-bn-frase]");
+      ta.addEventListener("input", () => { S.bn.frases.set(m.movimiento_id, ta.value); const c = fd.querySelector(".ct-bn-res"); if (c && c.querySelector(".ct-error")) c.innerHTML = ""; });
+      fd.addEventListener("submit", ev => { ev.preventDefault(); bnDimelo(card, m, t); });
+    }
+    wireBnProp(card, m, t);
+    const mas = card.querySelector("[data-bn-mas]");
+    if (mas) mas.addEventListener("toggle", () => { if (mas.open) S.bn.mas.add(m.movimiento_id); else S.bn.mas.delete(m.movimiento_id); });
+    const fc = card.querySelector("[data-bn-cat]");
+    if (fc) wireBnCat(fc, m, t, card);
+  }
+  // «Elige de la lista qué es» (en «Más opciones»): la categoría trae sus campos y su «Así es»
+  function wireBnCat(f, m, t, card) {
+    const sel = f.querySelector("[data-bn-cat-sel]"), campos = f.querySelector("[data-bn-cat-campos]");
+    sel.addEventListener("change", () => {
+      const s = bnSub(sel.value);
+      card.dataset.tocada = "1";
+      const c = f.querySelector(".ct-bn-res"); if (c) c.innerHTML = "";
+      campos.innerHTML = !s ? "" : `${bnCamposHTML(s, m)}
+        <label class="ct-campo ct-bn-motivo" hidden>${esc(bnEtiquetaMotivo(""))}<textarea data-bn-motivo rows="2" maxlength="300"></textarea></label>
+        ${bnRecordarHTML(t, { accion: s.accion })}
+        <div class="ct-acciones"><button type="submit" class="accion" data-bn-cat-asi>Así es</button></div>`;
+      if (!s) return;
+      wireBnRecordar(campos);
+      const fact = campos.querySelector("[data-bn-fact]"); if (fact) bnCargarFacturas(fact, m);
+    });
+    f.addEventListener("submit", async ev => {
+      ev.preventDefault();
+      const s = bnSub(sel.value), caja = resCaja(f, "ct-bn-res");
+      const mal = (msg, foco) => { caja.innerHTML = `<p class="ct-aviso bad ct-error">${esc(msg)}</p>`; if (foco) foco.focus(); };
+      if (!s) return mal("Elige antes qué es.", sel);
+      const falta = [...f.querySelectorAll("[required]")].find(el => !String(el.value || "").trim());
+      if (falta) return mal(falta.dataset.falta || "Falta un dato.", falta);
+      const x = bnDatosCat(f, s, m);
+      if (x.error) return mal(x.error);
+      const cm = f.querySelector(".ct-bn-motivo"), ta = f.querySelector("[data-bn-motivo]"), escrito = cm && !cm.hidden && ta ? String(ta.value || "").replace(/\s+/g, " ").trim() : "";
+      if (cm && !cm.hidden && escrito.length < 3) return mal("Escríbelo en unas palabras: queda escrito en el libro.", ta);
+      const motivo = x.motivo || escrito, rc = f.querySelector("[data-bn-recordar]"), so = f.querySelector("[data-bn-solo]");
+      const op = { fuente: "mas" };
+      if (motivo) op.motivo = motivo;
+      if (rc) { op.recordar = rc.checked; if (rc.checked && so && so.checked) op.solo = true; }
+      const r = await bnRpc(f, "fn_bandeja_hacer", { p_movimiento: m.movimiento_id, p_accion: s.accion, p_datos: x.datos, p_opciones: op }, "Registrándolo en el libro…", f.querySelector("[data-bn-cat-asi]"));
+      if (!r) return;
+      if (r.hecho !== true) return bnNoHecho(f, r);
+      await bnHecho(r, m);
+    });
+  }
+
+  // ---------- DECIDIR POR GRUPO ----------
+  // los grupos que leyó la base, con los movimientos que siguen en la lista y tienen la tarjeta nueva (los de la mano de obra, un
+  // cheque que pregunta o un depósito de Stripe no entran en un grupo: tienen la suya). Con menos de dos, no hay grupo
+  function bnGrupos(filas) {
+    if (!bnViva()) return [];
+    const porId = new Map((filas || []).map(f => [f.movimiento_id, f]));
+    return (S.bn.datos.grupos || []).map(g => {
+      const ms = (Array.isArray(g.movimientos) ? g.movimientos : []).map(id => porId.get(id)).filter(f => f && bnDe(f));
+      return { ...g, ms, suma: sumaMonto(ms) };
+    }).filter(g => g.clave && g.ms.length >= 2);
+  }
+  function bnGruposHTML(filas) {
+    const gs = bnGrupos(filas);
+    if (!gs.length) return "";
+    const ver = S.bn.verGrupos ? gs : gs.slice(0, BN_GRUPOS), nMov = gs.reduce((s, g) => s + g.ms.length, 0);
+    return `<section class="ct-card ct-bn-grupos" id="ct-bn-grupos">
+      <div class="ct-bn-g-h"><h2>Decide por grupo</h2><p class="ct-sub">${gs.length === 1 ? "Un comercio tiene" : `${gs.length} comercios o personas tienen`} varios movimientos esperando (${nMov} en total): una respuesta vale para todos los suyos.</p></div>
+      ${ver.map(bnGrupoHTML).join("")}
+      ${gs.length > ver.length ? `<div class="ct-acciones"><button type="button" class="accion secundaria chica" id="ct-bn-g-todos">Ver los ${gs.length} grupos</button></div>` : ""}
+    </section>`;
+  }
+  function bnGrupoHTML(g) {
+    const lote = g.clase === "lote", rec = g.rec || null, neg = g.suma < 0, n = g.ms.length, dis = mfaActivo() ? "" : " disabled";
+    const lado = bnLado(g.suma), cat = lote ? "" : bnCatDe(rec, lado), extra = cat.startsWith("cuenta:") ? cat.slice(7) : null;
+    const s = lote ? null : bnSub(cat);
+    return `<details class="ct-bn-g" data-bn-grupo="${esc(g.clave)}"${S.bn.grupoAbierto === g.clave ? " open" : ""}>
+      <summary class="ct-bn-g-cab"><span class="ct-bn-g-n"><b>${esc(g.nombre || "(sin nombre)")}</b><small>${plural(n, "movimiento", "movimientos")}${rec && rec.accion && !lote ? ` · ${esc(s ? (s.clave === "retiro" ? "Personal" : s.nombre) : "sin decidir")}` : lote ? " · el banco ya los reconoce" : " · sin decidir"}</small></span>
+        <span class="ct-num ${neg ? "neg" : "pos"}">${neg ? "−" : "+"}${fmtAbs(g.suma)}</span><span class="ct-f-chev" aria-hidden="true"></span></summary>
+      <div class="ct-bn-g-c">
+        ${rec && rec.texto ? `<p class="ct-bn-t">${esc(rec.texto)}</p>` : `<p class="ct-bn-sin">Todavía no sé qué son. Dímelo una vez y vale para los ${n}.</p>`}
+        ${lote ? "" : `<label class="ct-campo">Son…<select data-bn-g-cat${dis}>${bnCatOpciones(lado, cat, true, extra)}</select></label>
+          <div class="ct-bn-g-campos" data-bn-g-campos>${s ? bnCamposHTML(s, null) : ""}</div>
+          ${g.solo_ok && bnCfg().solo !== false ? `<label class="ct-casilla ct-bn-solo"><input type="checkbox" data-bn-g-solo${g.memoria && g.memoria.solo ? " checked" : ""}${dis}> Y que lo siguiente de ${esc(g.nombre || "ese comercio")} entre solo (hasta ${esc(fmt(bnCfg().solo_tope))} cada cargo)</label>` : ""}`}
+        <label class="ct-campo ct-bn-motivo" hidden>Por qué (queda escrito en el libro)<textarea data-bn-motivo rows="2" maxlength="300"></textarea></label>
+        <div class="ct-acciones"><button type="button" class="accion" data-bn-g-asi${dis}>Así es para los ${n}</button><button type="button" class="accion secundaria" data-bn-g-ver>Verlos uno por uno</button></div>
+      </div></details>`;
+  }
+  function wireBnGrupos(filas) {
+    const cont = $("ct-bn-grupos"); if (!cont) return;
+    const gs = bnGrupos(filas);
+    const todos = $("ct-bn-g-todos"); if (todos) todos.addEventListener("click", () => { S.bn.verGrupos = true; bnRepintarGrupos(); });
+    cont.querySelectorAll("[data-bn-grupo]").forEach(card => {
+      const g = gs.find(x => x.clave === card.dataset.bnGrupo); if (!g) return;
+      card.addEventListener("toggle", () => { if (card.open) S.bn.grupoAbierto = g.clave; else if (S.bn.grupoAbierto === g.clave) S.bn.grupoAbierto = null; });
+      const sel = card.querySelector("[data-bn-g-cat]"), campos = card.querySelector("[data-bn-g-campos]");
+      if (sel) sel.addEventListener("change", () => { const s = bnSub(sel.value); campos.innerHTML = s ? bnCamposHTML(s, null) : ""; const c = card.querySelector(".ct-bn-res"); if (c) c.innerHTML = ""; });
+      card.querySelector("[data-bn-g-asi]").addEventListener("click", () => bnAsiGrupo(card, g));
+      card.querySelector("[data-bn-g-ver]").addEventListener("click", () => {
+        S.bj.grupo = { clave: g.clave, nombre: g.nombre || "", ids: new Set(g.ms.map(m => m.movimiento_id)) };
+        pintarListaBandeja();
+        const l = $("ct-bj-lista"); if (l && typeof l.scrollIntoView === "function") l.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    });
+  }
+  function bnRepintarGrupos() {
+    const viejo = $("ct-bn-grupos"); if (!viejo) return;
+    viejo.outerHTML = bnGruposHTML(S.bandeja); wireBnGrupos(S.bandeja);
+  }
+  // «ASÍ ES PARA LOS N»: una respuesta para todos los que se ven (la base pasa cada uno por sus guardas; el que algo frena se queda
+  // y se dice por qué). Con muchos, la base corta por reloj y dice «sigue»: se la llama otra vez
+  async function bnAsiGrupo(card, g) {
+    const cuerpo = card.querySelector(".ct-bn-g-c"), caja = resCaja(cuerpo, "ct-bn-res"), btn = card.querySelector("[data-bn-g-asi]");
+    const mal = (msg, foco) => { caja.innerHTML = `<p class="ct-aviso bad ct-error">${esc(msg)}</p>`; if (foco) foco.focus(); };
+    const lote = g.clase === "lote", op = { movimientos: g.ms.map(m => m.movimiento_id) };
+    let accion = null, datos = {};
+    if (!lote) {
+      const sel = card.querySelector("[data-bn-g-cat]"), s = bnSub(sel.value);
+      if (!s) return mal("Elige antes qué son.", sel);
+      const falta = [...cuerpo.querySelectorAll("[data-bn-g-campos] [required]")].find(el => !String(el.value || "").trim());
+      if (falta) return mal(falta.dataset.falta || "Falta un dato.", falta);
+      const x = bnDatosCat(cuerpo, s, null);
+      if (x.error) return mal(x.error);
+      accion = s.accion; datos = x.datos;
+      if (x.motivo) op.motivo = x.motivo;
+      const so = card.querySelector("[data-bn-g-solo]");
+      op.recordar = true; if (so) op.solo = so.checked;
+    }
+    const cm = cuerpo.querySelector(".ct-bn-motivo"), ta = cuerpo.querySelector("[data-bn-motivo]");
+    if (cm && !cm.hidden && ta) {
+      const escrito = String(ta.value || "").replace(/\s+/g, " ").trim();
+      if (escrito.length < 3) return mal("Escríbelo en unas palabras: queda escrito en el libro.", ta);
+      op.motivo = escrito;
+    }
+    let hechos = 0, monto = 0, quedan = [], rec = null, contesto = false;
+    const ia = [];
+    for (let i = 0; i < 8; i++) {
+      const r = await bnRpc(cuerpo, "fn_bandeja_grupo", { p_clave: g.clave, p_accion: accion, p_datos: datos, p_opciones: op }, i ? `Registrándolos en el libro… van ${hechos}` : "Registrándolos en el libro…", btn);
+      if (!r) break;
+      contesto = true;
+      hechos += nOk(r.hechos); monto += num(r.monto) || 0; quedan = Array.isArray(r.quedan) ? r.quedan : []; rec = r.recordado || rec;
+      ia.push(...(Array.isArray(r.propuestas_ia) ? r.propuestas_ia : []));
+      if (!r.sigue) break;
+    }
+    if (!contesto && !hechos) return;
+    const porQue = quedan.length ? String(quedan[0].por_que || "falta algo").replace(/\.$/, "") : "";
+    if (!hechos && !rec) {
+      // ninguno entró y nada quedó recordado: se dice por qué, aquí mismo (si pide el porqué escrito, su campo sale)
+      caja.innerHTML = `<p class="ct-aviso warn" data-bn-no-hecho>Ninguno se registró: ${esc(porQue || "siguen en la Bandeja")}.</p>`;
+      if (quedan.some(q => q.pide_motivo) && cm) { cm.hidden = false; if (ta) ta.focus(); }
+      return;
+    }
+    S.saldos = null;
+    S.hooks.avisar(`${g.nombre || "Grupo"}: ${hechos ? `${plural(hechos, "registrado", "registrados")} por ${fmtAbs(monto)}` : "ninguno se registró todavía"}${quedan.length ? ` · ${plural(quedan.length, "se queda", "se quedan")} en la Bandeja (${porQue})` : ""}${rec ? ` · recordado${rec.solo ? ": lo siguiente entra solo" : ""}` : ""}`, !hechos);
+    S.bn.grupoAbierto = null;
+    bnCerrarIA(ia);
+    await pintarBandeja();
+  }
+
+  // ---------- la franja: «Registrado solo», lo contestado hace poco y «Lo que recuerdo» ----------
+  const bnHechoItHTML = r => `<article class="ct-bn-hecho${S.bn.nuevos.has(r.hecho_id) ? " nuevo" : ""}" data-bn-hecho="${esc(r.hecho_id)}">
+      <div class="ct-bn-hecho-cab"><b>${esc(r.descripcion || "(sin descripción)")}</b><span class="ct-num ${num(r.monto) < 0 ? "neg" : "pos"}">${num(r.monto) < 0 ? "−" : "+"}${fmtAbs(r.monto)}</span></div>
+      <p class="ct-sub">${fechaLarga(r.fecha)} · ${esc(r.texto || "")}${r.asiento ? ` · asiento ${esc(r.asiento)}` : ""}</p>
+      <div class="ct-acciones"><button type="button" class="accion secundaria chica" data-bn-deshacer>Deshacer</button></div>
+      <div class="ct-form" hidden></div>
+    </article>`;
+  function bnFranjaHTML() {
+    if (S.bn.instalado === false) return "";
+    if (S.bn.err) return `<section class="ct-card ct-bn-franja" id="ct-bn-franja" role="alert"><p class="ct-aviso warn">Las recomendaciones de la Bandeja («Así es», «Dímelo» y lo que entra solo) no contestaron: ${esc(bnError(S.bn.err))} Mientras tanto, cada movimiento sale con sus opciones de siempre.</p></section>`;
+    if (!bnViva()) return "";
+    const d = S.bn.datos, solos = Array.isArray(d.solos) ? d.solos : [], rec = Array.isArray(d.recientes) ? d.recientes : [], mem = Array.isArray(d.memoria) ? d.memoria : [], x = S.bn.solo;
+    const ult = bnCfg().solo_ultimo, nSolo = mem.filter(r => r.solo).length;
+    const total = solos.reduce((s, r) => s + Math.abs(num(r.monto) || 0), 0), nuevos = solos.filter(r => S.bn.nuevos.has(r.hecho_id)).length;
+    const partes = [
+      d.parcial ? `<p class="ct-nota ct-bn-parcial">Hay tantos movimientos que no me dio tiempo a pensar en todos: a los últimos les falta su recomendación. Contesta algunos y vuelve a abrir la Bandeja.</p>` : "",
+      x.err ? `<p class="ct-aviso warn ct-bn-solo-mal">Lo que entra solo no contestó: ${esc(bnError(x.err))} No frena nada: cada movimiento tiene su «Así es».</p>` : "",
+      ult && ult.error ? `<p class="ct-aviso warn ct-bn-rutina-mal">La tarea de la base que registra sola falló la última vez. No frena nada: lo que tenía que entrar entra al abrir la Bandeja.</p>` : "",
+      x.sinCodigo && nSolo ? `<p class="ct-nota ct-bn-sin-codigo-f">Lo que entra solo espera a que entres con el código del teléfono (o a la tarea de la base, dos veces al día).</p>` : "",
+      solos.length ? `<details class="ct-bn-lista ct-bn-solos" id="ct-bn-solos"${S.bn.abiertas.solos || nuevos ? " open" : ""}>
+        <summary><b>Registrado solo</b> · ${plural(solos.length, "cargo", "cargos")} en los últimos ${BN_DIAS_SOLOS} días · <span class="ct-num">${fmt(total)}</span>${nuevos ? ` ${pill(nuevos === 1 ? "1 nuevo" : `${nuevos} nuevos`, "ok")}` : ""}</summary>
+        <div class="ct-bn-hechos">${solos.map(bnHechoItHTML).join("")}</div>
+        <p class="ct-nota">Entraron solos porque me dijiste que lo de esos comercios entrara así. Si alguno está mal, «Deshacer»: vuelve a la Bandeja y ya no entra solo otra vez.</p>
+      </details>` : "",
+      rec.length ? `<details class="ct-bn-lista ct-bn-recientes" id="ct-bn-recientes"${S.bn.abiertas.recientes ? " open" : ""}>
+        <summary><b>Lo que contestaste estos días</b> · ${plural(rec.length, "movimiento", "movimientos")}</summary>
+        <div class="ct-bn-hechos">${rec.map(bnHechoItHTML).join("")}</div>
+        <p class="ct-nota">Si te equivocaste en alguno, «Deshacer»: lo registrado se reversa (no se borra) y el movimiento vuelve a la Bandeja.</p>
+      </details>` : "",
+      mem.length ? `<details class="ct-bn-lista ct-bn-mem" id="ct-bn-mem"${S.bn.abiertas.mem ? " open" : ""}>
+        <summary><b>Lo que recuerdo</b> · ${plural(mem.length, "comercio o persona", "comercios o personas")}${nSolo ? ` · ${plural(nSolo, "entra solo", "entran solos")}` : ""}</summary>
+        <div class="ct-bn-cfg"><label class="ct-casilla"><input type="checkbox" id="ct-bn-cfg-solo"${bnCfg().solo !== false ? " checked" : ""}> Dejar que entre solo lo que yo marque aquí</label>
+          <label class="ct-campo ct-bn-cfg-tope">Hasta cuánto cada cargo<select id="ct-bn-cfg-tope">${[...new Set(BN_TOPES.concat(num(bnCfg().solo_tope) || []))].sort((a, b) => a - b).map(v => `<option value="${v}"${v === num(bnCfg().solo_tope) ? " selected" : ""}>${esc(fmt(v))}</option>`).join("")}</select></label></div>
+        <ul class="ct-bn-mem-l">${mem.map(r => `<li data-bn-mem="${esc(r.clave)}"><span class="ct-bn-mem-t">${esc(r.texto || r.nombre || "")}</span>
+          <span class="ct-bn-mem-a">${r.clase === "comercio" && ["gasto", "personal"].includes(r.accion) ? `<label class="ct-casilla"><input type="checkbox" data-bn-mem-solo${r.solo ? " checked" : ""}> entra solo</label>` : ""}<button type="button" class="ct-jr-link" data-bn-mem-olvidar>Olvidar</button></span></li>`).join("")}</ul>
+        <p class="ct-nota">Lo que recuerdo solo te lo PROPONGO: tú tocas «Así es». Entra solo únicamente lo que marques, y solo los cargos de comercios: un depósito, un Zelle a una persona o la nómina, nunca.</p>
+      </details>` : ""
+    ].filter(Boolean);
+    return partes.length ? `<section class="ct-card ct-bn-franja" id="ct-bn-franja">${partes.join("")}</section>` : "";
+  }
+  function wireBnFranja() {
+    const fr = $("ct-bn-franja"); if (!fr || !bnViva()) return;
+    const d = S.bn.datos;
+    [["ct-bn-solos", "solos"], ["ct-bn-recientes", "recientes"], ["ct-bn-mem", "mem"]].forEach(([id, k]) => { const det = $(id); if (det) det.addEventListener("toggle", () => { S.bn.abiertas[k] = det.open; }); });
+    fr.querySelectorAll("[data-bn-hecho]").forEach(card => {
+      const h = (d.solos || []).concat(d.recientes || []).find(x => x.hecho_id === card.dataset.bnHecho); if (!h) return;
+      card.querySelector("[data-bn-deshacer]").addEventListener("click", () => {
+        if (!mfaActivo()) { mostrarErrorForma(card, "Deshacer toca el libro: primero activa el código del teléfono (Conexiones y seguridad) y entra con él."); return; }
+        montarForma(card, formaHTML(`Deshacer lo registrado de «${esc(h.descripcion || "")}» (${esc(fmt(h.monto))}): su asiento se reversa (no se borra) y el movimiento vuelve a la Bandeja. Ya no vuelve a entrar solo.`,
+          campoHTML("motivo", "Por qué (queda escrito)", "textarea", "required"), "Deshacer"), v => {
+          if (String(v.motivo || "").length < 3) { mostrarErrorForma(card, "Di por qué en unas palabras (al menos tres letras)."); return; }
+          bnDeshacer(card, h, v.motivo);
+        });
+      });
+    });
+    const mem = $("ct-bn-mem"); if (!mem) return;
+    const guardar = async (fn, p, aviso) => {
+      const r = await bnRpc(mem, fn, { p }, "Guardando…");
+      if (!r) return false;
+      S.hooks.avisar(aviso(r)); S.bn.abiertas.mem = true; S.bn.solo.el = 0;
+      await pintarBandeja();
+      return true;
+    };
+    const cs = $("ct-bn-cfg-solo"), ct = $("ct-bn-cfg-tope");
+    if (cs) cs.addEventListener("change", async () => { const quiere = cs.checked; if (!await guardar("fn_bandeja_config", { solo: quiere }, r => r.solo ? "Encendido: lo que marques entra solo." : "Apagado: nada entra solo; cada movimiento espera tu «Así es».")) cs.checked = !quiere; });
+    if (ct) ct.addEventListener("change", () => guardar("fn_bandeja_config", { solo_tope: Number(ct.value).toFixed(2) }, r => `Entra solo hasta ${fmt(r.solo_tope)} cada cargo.`));
+    mem.querySelectorAll("[data-bn-mem]").forEach(li => {
+      const clave = li.dataset.bnMem, so = li.querySelector("[data-bn-mem-solo]");
+      if (so) so.addEventListener("change", async () => { const quiere = so.checked; if (!await guardar("fn_bandeja_memoria", { clave, solo: quiere }, r => `${r.nombre}: ${r.solo ? "lo siguiente entra solo" : "ya no entra solo; te lo propongo"}.`)) so.checked = !quiere; });
+      li.querySelector("[data-bn-mem-olvidar]").addEventListener("click", () => guardar("fn_bandeja_memoria", { clave, activa: false }, r => `Olvidado: lo de ${r.nombre} te lo vuelvo a preguntar.`));
+    });
+  }
+  async function bnDeshacer(card, h, motivo) {
+    if (S.ocupado) return;
+    if (!navigator.onLine) { mostrarErrorForma(card, "Sin señal: no se hizo nada."); return; }
+    S.ocupado = true;
+    const apagados = [...card.querySelectorAll("button, textarea")].filter(b => !b.disabled);
+    apagados.forEach(b => { b.disabled = true; });
+    try { await DB._rpc("fn_bandeja_deshacer", { p_hecho: h.hecho_id, p_motivo: motivo }); }
+    catch (err) {
+      S.ocupado = false; apagados.forEach(b => { b.disabled = false; });
+      mostrarErrorForma(card, bnError(err));
+      return;
+    }
+    S.ocupado = false; S.saldos = null;
+    S.hooks.avisar("Deshecho: el movimiento volvió a la Bandeja.");
+    // el movimiento vuelve a la Bandeja: su tarjeta queda abierta
+    S.bj.abierta = h.movimiento_id || null;
+    if (S.pagina === "bandeja") await pintarBandeja();
   }
 
   // ============================================================
@@ -3481,12 +4292,12 @@
   // aprobada cuyo asiento ya no vive se caduca, las dos con su motivo. «Ya está rechazada» (o caducada) cuenta como cerrada.
   // Devuelve las que no se pudieron cerrar, con su error
   const MOTIVO_IA = "Es mano de obra: se repartió por sus horas";
-  async function cerrarIA(lista) {
+  async function cerrarIA(lista, motivo) {
     const mal = [];
     for (const p of lista || []) {
       if (!p || !p.propuesta_id) continue;
       const accion = p.que_hacer === "caducar" || p.que_hacer === "rechazar" ? p.que_hacer : p.clase === "pendiente" ? "rechazar" : "caducar";
-      try { await DB._funcion("contador", { accion, propuesta: p.propuesta_id, motivo: MOTIVO_IA }, 30000); }
+      try { await DB._funcion("contador", { accion, propuesta: p.propuesta_id, motivo: motivo || MOTIVO_IA }, 30000); }
       catch (err) {
         if (err.codigo === "MX008" && /ya está/i.test(String(err.message || ""))) continue;
         mal.push({ ...p, err });
@@ -4638,7 +5449,8 @@
   }
   // lo de la IA, fresco, después de una ráfaga (la salud no se vuelve a preguntar: la función acaba de contestar). Sin señal, lanza
   async function refrescarIA() {
-    const ia = await leerContador(S.ia && S.ia.salud ? { salud: S.ia.salud } : null);
+    // (c17) y lo de la Bandeja nueva: la recomendación de un cargo puede ser la propuesta que acaba de llegar (sin c17, nada)
+    const [ia] = await Promise.all([leerContador(S.ia && S.ia.salud ? { salud: S.ia.salud } : null), bnViva() ? leerBandejaNueva() : null]);
     if (ia) S.ia = ia;
     return ia;
   }
@@ -5081,6 +5893,167 @@
     pintarError(err, reintentar, titulo, cuerpo());
   }
 
+  // ============================================================
+  // CUENTAS Y REPORTES EN INGLÉS (c18) — docs/conta/c18-fiscal.sql
+  //
+  // Lo decidió Edgar (21-nov): lo que ve el contador —los nombres de las
+  // cuentas, los estados financieros y el paquete del año— va en INGLÉS,
+  // con las categorías corrientes de un contratista en EE. UU. y cada
+  // cuenta en su línea del formulario de impuestos (1120 o 1120-S, y el
+  // 1125-A del costo). La pantalla le sigue hablando a Edgar en español:
+  // los títulos, los botones y las explicaciones no cambian, y un enlace
+  // deja ver los nombres en español. La base da los nombres y las líneas
+  // (fn_fiscal_leer) y arma el paquete (fn_fiscal_paquete); la forma de la
+  // entidad se elige en UN ajuste (fn_fiscal_forma) y, mientras el contador
+  // no la confirme, el paquete lo avisa. Sin c18 (la función no existe),
+  // los estados salen como antes y el apartado «Para el contador» no está.
+  // ============================================================
+  const fisEn = () => !!(S.fis.datos && S.fis.idioma === "en");
+  const selEn = () => (S.fis.datos ? ",etiqueta_en" : "");
+  async function leerFiscal(forzar) {
+    if (S.fis.instalado === false) return null;
+    if (S.fis.datos && !forzar) return S.fis.datos;
+    try {
+      const r = await DB._rpc("fn_fiscal_leer", {});
+      if (!r || typeof r !== "object" || !r.version || !r.cuentas || typeof r.cuentas !== "object") { S.fis.instalado = false; S.fis.datos = null; return null; }
+      S.fis.instalado = true; S.fis.datos = r;
+      if (!S.fis.elegido) S.fis.idioma = (r.config && r.config.idioma_reportes) === "es" ? "es" : "en";
+      return r;
+    } catch (err) {
+      if (esFalloDeRed(err)) throw err;
+      // sin c18 la función no existe (se sabe una vez); con otro error, los estados salen en español, como antes
+      if (faltaC10(err)) S.fis.instalado = false;
+      S.fis.datos = null;
+      return null;
+    }
+  }
+  // la etiqueta de una fila de un estado: en inglés, la de c18 (la cuenta por su código; la sección y los totales por su clave) o la
+  // que trae la vista; en español, la de siempre
+  function etq(f) {
+    if (!f) return "";
+    if (!fisEn()) return f.etiqueta_es;
+    const d = S.fis.datos, c = f.cuenta && d.cuentas ? d.cuentas[f.cuenta] : null, s = d.secciones || {};
+    if (f.nivel === "cuenta" && c && c.en) return c.en;
+    if (f.nivel === "seccion" && s[f.seccion]) return s[f.seccion];
+    if (f.nivel === "total" && s[f.linea]) return s[f.linea];
+    return f.etiqueta_en || f.etiqueta_es;
+  }
+  // el nombre de una cuenta como lo ve el contador (o el de siempre)
+  const cuentaEn = (cod, nombre) => { const c = fisEn() && S.fis.datos.cuentas ? S.fis.datos.cuentas[cod] : null; return (c && c.en) || nombre; };
+  const totalDe = sec => (fisEn() ? `Total ${etq(sec)}` : `Total ${minus(sec.etiqueta_es)}`);
+  // en la barra de los estados: en qué idioma salen los nombres, y el enlace para verlos en el otro
+  const idiomaHTML = () => (S.fis.datos && S.est.sub !== "paquete" && S.est.sub !== "comparacion" ? `<span class="ct-est-idioma">${fisEn() ? "Los nombres van en inglés, como los ve el contador." : "Los nombres van en español."} <button type="button" class="ct-jr-link" id="ct-est-idioma">${fisEn() ? "Verlos en español" : "Verlos en inglés"}</button></span>` : "");
+  const FIS_FORMAS = { "1120": "Form 1120 (C corporation)", "1120-S": "Form 1120-S (S corporation)" };
+  const fisNum = v => { const n = num(v); return n == null ? "" : fmtNeg(n); };
+  // ---------- «Para el contador»: el paquete del año ----------
+  async function pintarPaquete(corte, mia) {
+    cargandoEn("Armando el paquete con la base…");
+    const anioHoy = Number(hoyMiami().slice(0, 4));
+    if (!S.fis.anio) S.fis.anio = Number(corte && corte.anio) || anioHoy;
+    let p;
+    try {
+      p = await DB._rpc("fn_fiscal_paquete", { p_anio: S.fis.anio, p_forma: null });
+      if (!vivo(mia)) return;
+      if (!p || typeof p !== "object" || !Array.isArray(p.trial_balance)) throw new Error("La base no devolvió el paquete del año.");
+    } catch (err) { if (!vivo(mia)) return; return pintarErrorEst(err); }
+    chipsOcupados(false);
+    S.fis.paquete = p;
+    const cfg = (S.fis.datos && S.fis.datos.config) || {}, ent = p.entity || {}, forma = ent.form || cfg.forma || "1120";
+    const anios = [...new Set([anioHoy, anioHoy - 1, S.fis.anio].concat((S.est.cortes || []).map(c => Number(c.anio)).filter(Boolean)))].sort((a, b) => b - a);
+    const tabla = (cab, filas) => `<div class="ct-tabla-env"><table class="ct-tabla ct-fis-t"><thead><tr>${cab.map((c, i) => `<th${i >= cab.length - 1 && cab.length > 1 ? ` class="r"` : ""}>${esc(c)}</th>`).join("")}</tr></thead><tbody>${filas.join("")}</tbody></table></div>`;
+    const lineas = l => (Array.isArray(l) ? l : []).map(x => `<tr class="ct-fis-l"><td>${esc(x.label || x.line || "")}</td><td class="r ct-num">${fisNum(x.amount)}</td></tr>` +
+      (Array.isArray(x.accounts) ? x.accounts : []).map(a => `<tr class="ct-fis-c"><td><span class="ct-num">${esc(a.account)}</span> ${esc(a.name || "")}</td><td class="r ct-num">${fisNum(a.amount)}</td></tr>`).join(""));
+    const estado = l => (Array.isArray(l) ? l : []).map(x => `<tr class="ct-fis-${esc(x.level || "line")}"><td>${x.account ? `<span class="ct-num">${esc(x.account)}</span> ` : ""}${esc(x.label || "")}</td><td class="r ct-num">${fisNum(x.amount)}</td></tr>`);
+    const tb = (p.trial_balance || []).map(x => `<tr><td><span class="ct-num">${esc(x.account)}</span> ${esc(x.name || "")}</td><td>${esc(x.tax_line || "")}${x.form_1125a_line ? ` · 1125-A ${esc(x.form_1125a_line)}` : ""}</td><td class="r ct-num">${fisNum(x.ending)}</td></tr>`);
+    const det = (id, titulo, cuerpoHTML, abierto) => `<details class="ct-fis-d" data-fis="${id}"${abierto ? " open" : ""}><summary>${esc(titulo)}</summary>${cuerpoHTML}</details>`;
+    cuerpo().innerHTML = `<section class="ct-card ct-fis" id="ct-fis">
+      <div class="ct-cab"><h2>Paquete para el contador</h2>${pill(String(p.fiscal_year || S.fis.anio))}</div>
+      <p class="ct-nota">Lo que se le manda al contador para la declaración del año: en inglés, con cada cuenta en su línea del formulario. No hace falta que lo entiendas: descárgalo y envíaselo.</p>
+      <div class="ct-fis-aj">
+        <label class="ct-campo">Año<select id="ct-fis-anio">${anios.map(a => `<option value="${a}"${a === S.fis.anio ? " selected" : ""}>${a}</option>`).join("")}</select></label>
+        <label class="ct-campo">Formulario de la empresa<select id="ct-fis-forma">${Object.keys(FIS_FORMAS).map(k => `<option value="${k}"${k === forma ? " selected" : ""}>${esc(FIS_FORMAS[k])}</option>`).join("")}</select></label>
+        <label class="ct-casilla ct-fis-conf"><input type="checkbox" id="ct-fis-confirmada"${ent.confirmed ? " checked" : ""}> El contador ya confirmó este formulario</label>
+      </div>
+      ${ent.confirmed ? "" : `<p class="ct-aviso warn" id="ct-fis-pendiente"><b>Pendiente de confirmar con el contador:</b> el paquete sale con el ${esc(FIS_FORMAS[forma] || forma)}. Pregúntale si la empresa presenta el 1120 (C-corp) o el 1120-S (S-corp); si es el otro, cámbialo aquí: los números no cambian, solo en qué línea va cada cuenta.</p>`}
+      <div class="ct-fis-res"></div>
+      <div class="ct-acciones">
+        <button type="button" class="accion" id="ct-fis-imprimir">Imprimir o guardar como PDF</button>
+        <button type="button" class="accion secundaria" id="ct-fis-csv-tb">Descargar la balanza con sus líneas (CSV)</button>
+        <button type="button" class="accion secundaria" id="ct-fis-csv-tax">Descargar el resumen por línea (CSV)</button>
+      </div>
+      ${(Array.isArray(p.warnings) ? p.warnings : []).length ? `<ul class="ct-fis-w" lang="en">${p.warnings.map(w => `<li>${esc(w)}</li>`).join("")}</ul>` : ""}
+      <div class="ct-fis-cuerpo" lang="en">
+        ${det("tax", `Tax return lines — Form ${forma}`, tabla(["Line", "Amount"], lineas(p.tax_lines)), true)}
+        ${det("1125a", "Form 1125-A — Cost of Goods Sold", tabla(["Line", "Amount"], lineas(p.form_1125a)), false)}
+        ${det("is", "Income Statement", tabla(["", "Amount"], estado(p.income_statement)), false)}
+        ${det("bs", "Balance Sheet", tabla(["", "Amount"], estado(p.balance_sheet)), false)}
+        ${det("tb", "Trial Balance, with tax lines", tabla(["Account", "Tax line", "Ending balance"], tb), false)}
+      </div>
+    </section>`;
+    const caja = cuerpo().querySelector(".ct-fis-res");
+    const cambiar = async (pedido, aviso, deshacer) => {
+      if (!mfaActivo()) { caja.innerHTML = `<p class="ct-aviso warn">Primero activa el código del teléfono (Conexiones y seguridad) y entra con él: cambiar esto lo pide.</p>`; deshacer(); return; }
+      if (S.ocupado) { deshacer(); return; }
+      S.ocupado = true; caja.innerHTML = `<p class="ct-aviso ct-espera" role="status">Guardando…</p>`;
+      try { await DB._rpc("fn_fiscal_forma", { p: pedido }); }
+      catch (err) { S.ocupado = false; caja.innerHTML = `<p class="ct-aviso warn">${esc(bnError(err))}</p>`; deshacer(); return; }
+      S.ocupado = false;
+      S.hooks.avisar(aviso);
+      try { await leerFiscal(true); } catch { /* sin señal: lo dirá la pintada */ }
+      pintarEstados();
+    };
+    const selAnio = $("ct-fis-anio"), selForma = $("ct-fis-forma"), conf = $("ct-fis-confirmada");
+    selAnio.addEventListener("change", () => { S.fis.anio = Number(selAnio.value); pintarEstados(); });
+    selForma.addEventListener("change", () => cambiar({ forma: selForma.value }, `El paquete sale ahora con el ${FIS_FORMAS[selForma.value] || selForma.value}. Queda pendiente de que el contador lo confirme.`, () => { selForma.value = forma; }));
+    conf.addEventListener("change", () => { const si = conf.checked; cambiar({ confirmada: si }, si ? "Anotado: el contador confirmó el formulario." : "Anotado: el formulario vuelve a estar pendiente de confirmar.", () => { conf.checked = !si; }); });
+    $("ct-fis-csv-tb").addEventListener("click", () => {
+      const filas = [["Account", "Name", "Category", "Group", "Beginning", "Debits", "Credits", "Ending", `Form ${forma} line`, "Form 1125-A line", "Name (Spanish)"]]
+        .concat((p.trial_balance || []).map(x => [x.account, x.name, x.category, x.group, x.beginning, x.debits, x.credits, x.ending, x.tax_line || "", x.form_1125a_line || "", x.name_es || ""]));
+      if (descargarTexto(csv(filas), `trial-balance-${p.fiscal_year || S.fis.anio}-form-${forma}.csv`)) S.hooks.avisar("Balanza descargada: mándasela al contador.");
+    });
+    $("ct-fis-csv-tax").addEventListener("click", () => {
+      const filas = [["Form", "Line", "Description", "Account", "Account name", "Amount"]];
+      for (const l of (p.tax_lines || []).concat(p.form_1125a || [])) {
+        filas.push([l.form || forma, l.line, l.label, "", "", l.amount]);
+        for (const a of Array.isArray(l.accounts) ? l.accounts : []) filas.push([l.form || forma, l.line, "", a.account, a.name, a.amount]);
+      }
+      if (descargarTexto(csv(filas), `tax-lines-${p.fiscal_year || S.fis.anio}-form-${forma}.csv`)) S.hooks.avisar("Resumen por línea descargado: mándaselo al contador.");
+    });
+    $("ct-fis-imprimir").addEventListener("click", () => {
+      const w = window.open("", "_blank");
+      if (!w) { S.hooks.avisar("El navegador bloqueó la ventana. Permite ventanas emergentes para la app y vuelve a tocar.", true); return; }
+      w.document.open(); w.document.write(paqueteDoc(p)); w.document.close();
+      const imprimir = () => { try { w.focus(); w.print(); } catch { /* nada */ } };
+      if (w.document.readyState === "complete") setTimeout(imprimir, 400); else w.addEventListener("load", () => setTimeout(imprimir, 400));
+      S.hooks.avisar("Elige «Guardar como PDF» y mándaselo al contador");
+    });
+  }
+  // el paquete en una página para imprimir («Guardar como PDF»): un archivo suelto y entero en inglés (es para el contador)
+  function paqueteDoc(p) {
+    const ent = p.entity || {}, n = v => { const x = num(v); return x == null ? "" : fmtNeg(x); };
+    const filasL = l => (Array.isArray(l) ? l : []).map(x => `<tr class="l"><td>${esc(x.label || x.line || "")}</td><td class="r">${n(x.amount)}</td></tr>` +
+      (Array.isArray(x.accounts) ? x.accounts : []).map(a => `<tr class="c"><td>${esc(a.account)} ${esc(a.name || "")}</td><td class="r">${n(a.amount)}</td></tr>`).join("")).join("");
+    const filasE = l => (Array.isArray(l) ? l : []).map(x => `<tr class="${esc(x.level || "line")}"><td>${x.account ? esc(x.account) + " " : ""}${esc(x.label || "")}</td><td class="r">${n(x.amount)}</td></tr>`).join("");
+    return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>${esc(p.title || "Year-End Accounting Package")}</title><style>
+      body{font:13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;color:#1c2430;margin:28px}h1{font-size:20px;margin:0 0 2px}h2{font-size:15px;margin:22px 0 6px;border-bottom:2px solid #B4622D;padding-bottom:3px}
+      p{margin:2px 0}.sub{color:#56606e}.w{margin:10px 0;padding:8px 12px;border:1px solid #E0B458;background:#FFF7E2;border-radius:6px}.w li{margin:3px 0}
+      table{width:100%;border-collapse:collapse}td,th{padding:3px 6px;border-bottom:1px solid #e3e7ec;text-align:left;vertical-align:top}.r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+      tr.l td,tr.section td,tr.total td{font-weight:700}tr.c td:first-child,tr.account td:first-child{padding-left:22px;color:#39424e}tr.total td{border-top:1.5px solid #1c2430}
+      @media print{body{margin:12mm}h2{break-after:avoid}tr{break-inside:avoid}}
+    </style></head><body>
+      <h1>${esc(p.company || "")}</h1><p><b>${esc(p.title || "Year-End Accounting Package")}</b></p>
+      <p class="sub">${esc(p.period_start || "")} to ${esc(p.period_end || "")} · ${esc(p.basis || "")} · Form ${esc(ent.form || "")} (${esc(ent.type || "")})${ent.confirmed ? "" : " — entity type pending confirmation"}</p>
+      ${(Array.isArray(p.warnings) ? p.warnings : []).length ? `<ul class="w">${p.warnings.map(w => `<li>${esc(w)}</li>`).join("")}</ul>` : ""}
+      <h2>Tax return lines — Form ${esc(ent.form || "")}</h2><table><tbody>${filasL(p.tax_lines)}</tbody></table>
+      <h2>Form 1125-A — Cost of Goods Sold</h2><table><tbody>${filasL(p.form_1125a)}</tbody></table>
+      <h2>Income Statement</h2><table><tbody>${filasE(p.income_statement)}</tbody></table>
+      <h2>Balance Sheet</h2><table><tbody>${filasE(p.balance_sheet)}</tbody></table>
+      <h2>Trial Balance</h2><table><thead><tr><th>Account</th><th>Tax line</th><th class="r">Beginning</th><th class="r">Debits</th><th class="r">Credits</th><th class="r">Ending</th></tr></thead><tbody>${(p.trial_balance || []).map(x => `<tr><td>${esc(x.account)} ${esc(x.name || "")}</td><td>${esc(x.tax_line || "")}${x.form_1125a_line ? ` / 1125-A ${esc(x.form_1125a_line)}` : ""}</td><td class="r">${n(x.beginning)}</td><td class="r">${n(x.debits)}</td><td class="r">${n(x.credits)}</td><td class="r">${n(x.ending)}</td></tr>`).join("")}</tbody></table>
+      <h2>Chart of accounts and tax-line mapping</h2><table><thead><tr><th>Account</th><th>Category</th><th>Form 1120</th><th>Form 1120-S</th></tr></thead><tbody>${(p.chart_of_accounts || []).map(x => `<tr><td>${esc(x.account)} ${esc(x.name || "")}</td><td>${esc(x.category || "")}${x.group ? " — " + esc(x.group) : ""}</td><td>${esc(x.form_1120_line || "")}</td><td>${esc(x.form_1120s_line || "")}</td></tr>`).join("")}</tbody></table>
+      <p class="sub" style="margin-top:18px">Generated ${esc(String(p.generated_at || "").slice(0, 10))} from the company's books.</p>
+    </body></html>`;
+  }
+
   // ---------- la barra: qué estado, qué período ----------
   const enBalance = () => S.est.sub === "balance" && !S.est.cuenta && !S.est.asiento;
   function periodosOfrecidos(cortes) {
@@ -5109,9 +6082,10 @@
   function barraHTML(cortes, corte) {
     const { lista, escondidos } = periodosOfrecidos(cortes);
     return `<section class="ct-card ct-est-barra" id="ct-est-barra" aria-busy="false">
-      <div class="ct-chips ct-est-subs" aria-label="Qué estado">${Object.keys(SUBS).map(k => `<button type="button" class="ct-chip" data-sub="${k}" aria-pressed="${k === S.est.sub ? "true" : "false"}">${esc(SUBS[k])}</button>`).join("")}</div>
+      <div class="ct-chips ct-est-subs" aria-label="Qué estado">${Object.keys(SUBS).concat(S.fis.datos ? ["paquete"] : []).map(k => `<button type="button" class="ct-chip" data-sub="${k}" aria-pressed="${k === S.est.sub ? "true" : "false"}">${esc(SUBS[k] || "Para el contador")}</button>`).join("")}</div>
       <div class="ct-chips ct-est-periodos" id="ct-est-periodos" aria-label="Qué período">${lista.map(c => `<button type="button" class="ct-chip chica" data-periodo="${esc(c.periodo)}" aria-pressed="${c.periodo === S.est.periodo ? "true" : "false"}">${esc(nombrePeriodo(c))}</button>`).join("")}${escondidos > 0 || S.est.todos ? `<button type="button" class="ct-chip chica" id="ct-est-mas">${S.est.todos ? "Menos períodos" : "Más períodos"}</button>` : ""}</div>
       <p class="ct-est-ctx" id="ct-est-ctx"><span class="ct-num">${esc(rangoTexto(corte, enBalance()))}</span><span id="ct-est-ctx-n" class="ct-num"></span> ${cortePill(corte)}${S.est.avisoHoy ? `<span class="ct-sub">«Hoy» solo vale para el balance: se enseña el mes completo.</span>` : ""}</p>
+      ${idiomaHTML()}
     </section>`;
   }
   function engancharBarra() {
@@ -5119,6 +6093,8 @@
     b.querySelectorAll("[data-sub]").forEach(x => x.addEventListener("click", () => ir("estados", { sub: x.dataset.sub })));
     b.querySelectorAll("[data-periodo]").forEach(x => x.addEventListener("click", () => ir("estados", { periodo: x.dataset.periodo })));
     const mas = $("ct-est-mas"); if (mas) mas.addEventListener("click", () => { S.est.todos = !S.est.todos; pintarEstados(); });
+    // (c18) los nombres en inglés (como los ve el contador) o en español: se elige aquí, para esta sesión
+    const idi = $("ct-est-idioma"); if (idi) idi.addEventListener("click", () => { S.fis.idioma = fisEn() ? "es" : "en"; S.fis.elegido = true; pintarEstados(); });
     b.querySelectorAll('.ct-chips [aria-pressed="true"]').forEach(x => { if (typeof x.scrollIntoView === "function") x.scrollIntoView({ inline: "nearest", block: "nearest" }); });
     chipsOcupados(true);
   }
@@ -5153,6 +6129,12 @@
       }
     }
     if (mia !== S.est.serie || S.pagina !== "estados") return;
+    // (c18) los nombres en inglés y la línea de cada cuenta: se leen una vez (sin c18, nada, y todo sigue como antes)
+    if (S.fis.instalado !== false && !S.fis.datos) {
+      try { await leerFiscal(); } catch (err) { if (mia !== S.est.serie) return; return pintarError(err, pintarEstados); }
+      if (mia !== S.est.serie || S.pagina !== "estados") return;
+    }
+    if (S.est.sub === "paquete" && !S.fis.datos) S.est.sub = "resultados";
     const corte = resolverPeriodo();
     if (!S.est.cuenta && !S.est.asiento) S.hooks.titulo(KICKER, TITULOS.estados);
     main().innerHTML = cabPagina("Estados financieros", "Cada cifra viene lista de la base y se controla antes de pintarse. Toca una cuenta para bajar a su mayor y a cada asiento.") +
@@ -5162,7 +6144,7 @@
     S.est.avisoHoy = false;
     if (S.est.asiento) return pintarAsiento(S.est.asiento, corte, mia);
     if (S.est.cuenta) return pintarMayor(S.est.cuenta, corte, mia);
-    const pinta = ({ resultados: pintarResultados, balance: pintarBalance, balanza: pintarBalanza, flujo: pintarFlujo, comparacion: pintarComparacion })[S.est.sub] || pintarResultados;
+    const pinta = ({ resultados: pintarResultados, balance: pintarBalance, balanza: pintarBalanza, flujo: pintarFlujo, comparacion: pintarComparacion, paquete: pintarPaquete })[S.est.sub] || pintarResultados;
     return pinta(corte, mia);
   }
 
@@ -5181,7 +6163,7 @@
     try {
       [ctrl, filas] = await Promise.all([
         controlarEstados(periodo, VISTAS_SUB.resultados),
-        DB._leer(`v_resultados?select=nivel,seccion,seccion_orden,linea,linea_orden,orden,cuenta,etiqueta_es,mes,mes_anterior,variacion,variacion_pct,acumulado,acumulado_desde,posteriores,acumulado_ajustado,asientos,desde,hasta,anio,periodo_tipo&periodo=eq.${P()}&order=seccion_orden.asc,linea_orden.asc,orden.asc`)
+        DB._leer(`v_resultados?select=nivel,seccion,seccion_orden,linea,linea_orden,orden,cuenta,etiqueta_es${selEn()},mes,mes_anterior,variacion,variacion_pct,acumulado,acumulado_desde,posteriores,acumulado_ajustado,asientos,desde,hasta,anio,periodo_tipo&periodo=eq.${P()}&order=seccion_orden.asc,linea_orden.asc,orden.asc`)
       ]);
       if (!vivo(mia)) return;
       cotejar(ctrl, { v_resultados: filas.length });
@@ -5211,16 +6193,16 @@
     const tabla = bloques.map(b => {
       if (b.tipo === "total") {
         const perdida = b.f.linea === "utilidad_neta" && num(b.f.mes) < 0;
-        return `<tr class="ct-total${b.f.linea === "utilidad_neta" ? " ct-neto" : ""}"><td>${esc(perdida ? "Pérdida neta" : b.f.etiqueta_es)}</td>${cifras(b.f)}</tr>`;
+        return `<tr class="ct-total${b.f.linea === "utilidad_neta" ? " ct-neto" : ""}"><td>${esc(perdida ? (fisEn() ? "Net Loss" : "Pérdida neta") : etq(b.f))}</td>${cifras(b.f)}</tr>`;
       }
       const sec = b.f;
       const hijas = porClaves(filas.filter(f => f.seccion === sec.seccion && (f.nivel === "linea" || f.nivel === "cuenta")).map(f => ({ ...f, _n: f.nivel === "linea" ? 0 : 1 })), ["linea_orden", "_n", "orden"]);
       const conLinea = new Set(hijas.filter(f => f.nivel === "linea").map(f => f.linea));
-      return `<tr class="ct-sec"><td colspan="${nCols}">${esc(sec.etiqueta_es)}</td></tr>` +
+      return `<tr class="ct-sec"><td colspan="${nCols}">${esc(etq(sec))}</td></tr>` +
         hijas.map(f => f.nivel === "linea"
-          ? `<tr class="ct-linea"><td>${esc(f.etiqueta_es)}</td>${cifras(f)}</tr>`
-          : `<tr class="ct-fila-cuenta${conLinea.has(f.linea) ? " hondo" : ""}"><td>${cuentaBtn(f.cuenta, f.etiqueta_es)}</td>${cifras(f)}</tr>`).join("") +
-        `<tr class="ct-subtotal"><td>Total ${esc(minus(sec.etiqueta_es))}</td>${cifras(sec)}</tr>`;
+          ? `<tr class="ct-linea"><td>${esc(etq(f))}</td>${cifras(f)}</tr>`
+          : `<tr class="ct-fila-cuenta${conLinea.has(f.linea) ? " hondo" : ""}"><td>${cuentaBtn(f.cuenta, etq(f))}</td>${cifras(f)}</tr>`).join("") +
+        `<tr class="ct-subtotal"><td>${esc(totalDe(sec))}</td>${cifras(sec)}</tr>`;
     }).join("");
     const c56 = ctrl.find(f => f.vista === "cuadre: resultado del estado = resultado del balance");
     const franja = c56 && c56.ok === true ? `<div class="ct-cuadre">${ICO.check} Cuadra · la utilidad neta es la misma que trae el balance</div>` : "";
@@ -5252,7 +6234,7 @@
     try {
       [ctrl, filas] = await Promise.all([
         controlarEstados(periodo, VISTAS_SUB.balance),
-        DB._leer(`v_balance_general?select=nivel,seccion,seccion_orden,linea,linea_orden,orden,cuenta,componente,etiqueta_es,saldo,cifra,saldo_ajustado,cifra_ajustada,asientos,cuadra,corte,periodo_tipo&periodo=eq.${P()}&order=seccion_orden.asc,linea_orden.asc,orden.asc`)
+        DB._leer(`v_balance_general?select=nivel,seccion,seccion_orden,linea,linea_orden,orden,cuenta,componente,etiqueta_es${selEn()},saldo,cifra,saldo_ajustado,cifra_ajustada,asientos,cuadra,corte,periodo_tipo&periodo=eq.${P()}&order=seccion_orden.asc,linea_orden.asc,orden.asc`)
       ]);
       if (!vivo(mia)) return;
       cotejar(ctrl, { v_balance_general: filas.length });
@@ -5276,7 +6258,7 @@
     if (q && q.asientos != null) ctxN(` · ${plural(q.asientos, "asiento", "asientos")} al corte`); // v_balance_general cuenta todo el libro hasta el corte
     const celda = f => `<td class="r ct-num${cero(f.cifra)}" data-col="Al corte">${fmtNeg(f.cifra)}</td>${conAjustes ? `<td class="r ct-num${cero(f.cifra_ajustada)}" data-col="Con ajustes">${fmtNeg(f.cifra_ajustada)}</td>` : ""}`;
     const nCols = conAjustes ? 3 : 2;
-    const totalTR = (f, neto) => f ? `<tr class="ct-total${neto ? " ct-neto" : ""}"><td>${esc(f.etiqueta_es)}</td>${celda(f)}</tr>` : "";
+    const totalTR = (f, neto) => f ? `<tr class="ct-total${neto ? " ct-neto" : ""}"><td>${esc(etq(f))}</td>${celda(f)}</tr>` : "";
     const secciones = porClaves(filas.filter(f => f.nivel === "seccion" && nOrd(f.seccion_orden) < 9000), ["seccion_orden"]);
     const pintado = {};
     let tabla = "";
@@ -5284,19 +6266,19 @@
       for (const k of Object.keys(CIERRA)) if (!pintado[k] && nOrd(sec.seccion_orden) >= CIERRA[k]) { tabla += totalTR(total(k)); pintado[k] = true; }
       const det = filas.filter(f => f.seccion === sec.seccion && ["linea", "cuenta", "componente"].includes(f.nivel));
       const lineas = porClaves([...new Map(det.map(f => [f.linea, { linea: f.linea, linea_orden: f.linea_orden }])).values()], ["linea_orden"]);
-      tabla += `<tr class="ct-sec"><td colspan="${nCols}">${esc(sec.etiqueta_es)}</td></tr>`;
+      tabla += `<tr class="ct-sec"><td colspan="${nCols}">${esc(etq(sec))}</td></tr>`;
       for (const l of lineas) {
         const fl = det.find(f => f.nivel === "linea" && f.linea === l.linea);
-        if (fl) tabla += `<tr class="ct-linea"><td>${esc(fl.etiqueta_es)}</td>${celda(fl)}</tr>`;
+        if (fl) tabla += `<tr class="ct-linea"><td>${esc(etq(fl))}</td>${celda(fl)}</tr>`;
         for (const f of porClaves(det.filter(f => f.linea === l.linea && f.nivel !== "linea"), ["orden"])) {
           tabla += f.nivel === "cuenta"
-            ? `<tr class="ct-fila-cuenta${fl ? " hondo" : ""}"><td>${cuentaBtn(f.cuenta, f.etiqueta_es)}</td>${celda(f)}</tr>`
-            : `<tr class="ct-componente"><td>${esc(f.etiqueta_es)}</td>${celda(f)}</tr>`;
+            ? `<tr class="ct-fila-cuenta${fl ? " hondo" : ""}"><td>${cuentaBtn(f.cuenta, etq(f))}</td>${celda(f)}</tr>`
+            : `<tr class="ct-componente"><td>${esc(etq(f))}</td>${celda(f)}</tr>`;
         }
       }
       // el subtotal de la sección, salvo que sea la misma fila que un total que viene enseguida («Capital» → «Total capital»)
       const etSub = `Total ${minus(sec.etiqueta_es)}`;
-      if (!filas.some(f => f.nivel === "total" && String(f.etiqueta_es || "").toLowerCase() === etSub.toLowerCase())) tabla += `<tr class="ct-subtotal"><td>${esc(etSub)}</td>${celda(sec)}</tr>`;
+      if (!filas.some(f => f.nivel === "total" && String(f.etiqueta_es || "").toLowerCase() === etSub.toLowerCase())) tabla += `<tr class="ct-subtotal"><td>${esc(totalDe(sec))}</td>${celda(sec)}</tr>`;
     }
     for (const k of Object.keys(CIERRA)) if (!pintado[k]) tabla += totalTR(total(k));
     tabla += totalTR(tc) + totalTR(tpc, true);
@@ -5323,7 +6305,7 @@
     try {
       [ctrl, filas] = await Promise.all([
         controlarEstados(periodo, VISTAS_SUB.balanza),
-        DB._leer(`v_balanza?select=nivel,orden,cuenta,cuenta_nombre,componente,etiqueta_es,estado,seccion,linea,saldo_inicial,debe,haber,saldo_final,saldo_en_su_lado,asientos,cuadra,desde,hasta,periodo_tipo&periodo=eq.${P()}&order=orden.asc`)
+        DB._leer(`v_balanza?select=nivel,orden,cuenta,cuenta_nombre,componente,etiqueta_es${selEn()},estado,seccion,linea,saldo_inicial,debe,haber,saldo_final,saldo_en_su_lado,asientos,cuadra,desde,hasta,periodo_tipo&periodo=eq.${P()}&order=orden.asc`)
       ]);
       if (!vivo(mia)) return;
       cotejar(ctrl, { v_balanza: filas.length });
@@ -5341,9 +6323,9 @@
     if (t.asientos != null) ctxN(` · ${plural(t.asientos, "asiento", "asientos")} del período`); // v_balanza cuenta los fechados en el período
     const celda = (v, col, extra) => `<td class="r ct-num${extra || ""}${cero(v)}" data-col="${col}">${fmtNeg(v)}</td>`;
     const cifras = f => celda(f.saldo_inicial, "Saldo inicial") + celda(f.debe, "Debe") + celda(f.haber, "Haber") + celda(f.saldo_final, "Saldo final") + celda(f.saldo_en_su_lado, "En su lado", " ct-lado");
-    const tabla = porClaves(filas, ["orden"]).map(f => f.nivel === "total" ? `<tr class="ct-total ct-neto"><td>${esc(f.etiqueta_es || "Totales")}</td>${cifras(f)}</tr>`
-      : f.nivel === "componente" ? `<tr class="ct-componente"><td>${esc(f.etiqueta_es)}</td>${cifras(f)}</tr>`
-      : `<tr class="ct-fila-cuenta"><td>${cuentaBtn(f.cuenta, f.cuenta_nombre || f.etiqueta_es)}</td>${cifras(f)}</tr>`).join("");
+    const tabla = porClaves(filas, ["orden"]).map(f => f.nivel === "total" ? `<tr class="ct-total ct-neto"><td>${esc(fisEn() ? "Totals" : f.etiqueta_es || "Totales")}</td>${cifras(f)}</tr>`
+      : f.nivel === "componente" ? `<tr class="ct-componente"><td>${esc(etq(f))}</td>${cifras(f)}</tr>`
+      : `<tr class="ct-fila-cuenta"><td>${cuentaBtn(f.cuenta, cuentaEn(f.cuenta, f.cuenta_nombre || f.etiqueta_es))}</td>${cifras(f)}</tr>`).join("");
     cuerpo().innerHTML = `<section class="ct-card" id="ct-est-balanza">${cabHTML(H2.balanza)}
       <div class="ct-cuadre">${ICO.check} Cuadra · debe ${fmtNeg(t.debe)} = haber ${fmtNeg(t.haber)} · saldo final ${fmtNeg(t.saldo_final)}</div>
       <div class="ct-kpis">
@@ -5520,7 +6502,7 @@
     try {
       [ctrl, filas] = await Promise.all([
         controlarEstados(periodo, VISTAS_SUB.flujo),
-        DB._leer(`v_flujo_caja?select=metodo,nivel,seccion,seccion_orden,linea,linea_orden,etiqueta_es,importe,asientos,cuadra,desde,hasta,periodo_tipo&periodo=eq.${P()}&order=metodo.asc,seccion_orden.asc,linea_orden.asc`)
+        DB._leer(`v_flujo_caja?select=metodo,nivel,seccion,seccion_orden,linea,linea_orden,etiqueta_es${selEn()},importe,asientos,cuadra,desde,hasta,periodo_tipo&periodo=eq.${P()}&order=metodo.asc,seccion_orden.asc,linea_orden.asc`)
       ]);
       if (!vivo(mia)) return;
       cotejar(ctrl, { v_flujo_caja: filas.length });
@@ -5543,16 +6525,18 @@
     const ini = total("efectivo_inicial"), cam = total("cambio"), fin = total("efectivo_final");
     const subIni = ini && /\(/.test(ini.etiqueta_es || "") ? esc(ini.etiqueta_es.slice(ini.etiqueta_es.indexOf("(") + 1).replace(/\)\s*$/, "")) : "";
     const celda = v => `<td class="r ct-num${cero(v)}" data-col="Importe">${fmtSigno(v)}</td>`;
+    // (c18) el flujo no lleva cuentas ni secciones del paquete: en inglés, la etiqueta que trae la vista
+    const etqF = f => (fisEn() ? f.etiqueta_en || f.etiqueta_es : f.etiqueta_es);
     let tabla = "";
     for (const sec of porClaves(m.filter(f => f.nivel === "seccion" && nOrd(f.seccion_orden) < 9000), ["seccion_orden"])) {
       const lineas = porClaves(m.filter(f => f.nivel === "linea" && f.seccion === sec.seccion && f.linea !== f.seccion), ["linea_orden"]);
       const revela = sec.importe == null; // sin_dinero: se revela, no suma
-      if (!lineas.length) { tabla += `<tr class="ct-subtotal"><td>${esc(sec.etiqueta_es)}</td>${revela ? `<td class="r ct-num">—</td>` : celda(sec.importe)}</tr>`; continue; }
-      tabla += `<tr class="ct-sec"><td colspan="2">${esc(sec.etiqueta_es)}</td></tr>` +
-        lineas.map(f => `<tr${revela ? ` class="ct-componente"` : ""}><td>${esc(f.etiqueta_es)}</td>${celda(f.importe)}</tr>`).join("") +
-        (revela ? "" : `<tr class="ct-subtotal"><td>Total ${esc(minus(sec.etiqueta_es))}</td>${celda(sec.importe)}</tr>`);
+      if (!lineas.length) { tabla += `<tr class="ct-subtotal"><td>${esc(etqF(sec))}</td>${revela ? `<td class="r ct-num">—</td>` : celda(sec.importe)}</tr>`; continue; }
+      tabla += `<tr class="ct-sec"><td colspan="2">${esc(etqF(sec))}</td></tr>` +
+        lineas.map(f => `<tr${revela ? ` class="ct-componente"` : ""}><td>${esc(etqF(f))}</td>${celda(f.importe)}</tr>`).join("") +
+        (revela ? "" : `<tr class="ct-subtotal"><td>Total ${esc(fisEn() ? etqF(sec) : minus(sec.etiqueta_es))}</td>${celda(sec.importe)}</tr>`);
     }
-    for (const t of porClaves(m.filter(f => f.nivel === "total"), ["linea_orden"])) tabla += `<tr class="ct-total${t.linea === "efectivo_final" ? " ct-neto" : ""}"><td>${esc(t.etiqueta_es)}</td>${t.linea === "cambio" ? celda(t.importe) : `<td class="r ct-num${cero(t.importe)}" data-col="Importe">${fmtNeg(t.importe)}</td>`}</tr>`;
+    for (const t of porClaves(m.filter(f => f.nivel === "total"), ["linea_orden"])) tabla += `<tr class="ct-total${t.linea === "efectivo_final" ? " ct-neto" : ""}"><td>${esc(etqF(t))}</td>${t.linea === "cambio" ? celda(t.importe) : `<td class="r ct-num${cero(t.importe)}" data-col="Importe">${fmtNeg(t.importe)}</td>`}</tr>`;
     cuerpo().innerHTML = `<section class="ct-card" id="ct-est-flujo">${cabHTML(H2.flujo)}
       <div class="ct-cuadre">${ICO.check} Cuadra · cambio en el efectivo ${fmtSigno(cam && cam.importe)} = efectivo al final ${fmtNeg(fin && fin.importe)} ${MENOS} al inicio ${fmtNeg(ini && ini.importe)} · igual por los dos métodos</div>
       <div class="ct-chips ct-est-metodos" aria-label="Método">${["directo", "indirecto"].map(k => `<button type="button" class="ct-chip chica" data-metodo="${k}" aria-pressed="${k === S.est.metodo ? "true" : "false"}">${cap(k)}</button>`).join("")}</div>
