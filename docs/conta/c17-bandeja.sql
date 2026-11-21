@@ -2949,9 +2949,15 @@ begin
   if not fn_desde_editor() then
     raise exception using errcode = '42501', message = 'Esto se mira desde el SQL Editor.';
   end if;
+  -- (cron.job solo existe donde hay pg_cron: por eso va con execute. Si falta alguna de las dos, la fila NO empieza por «ok»)
   if exists (select 1 from pg_namespace where nspname = 'cron') then
-    execute $q$ select 'ok: ' || coalesce(string_agg(j.jobname || ' («' || j.schedule || '»)', ', ' order by j.jobname), 'FALTAN las dos tareas')
-                  from cron.job j where j.jobname in ('mxp-bandeja-solo-manana', 'mxp-bandeja-solo-tarde') $q$ into v_cron;
+    begin
+      execute $q$ select case when count(*) = 2 then 'ok: ' else 'FALTA alguna de las dos tareas (vuelve a pegar este archivo): ' end
+                         || coalesce(string_agg(j.jobname || ' («' || j.schedule || '»)', ', ' order by j.jobname), 'no hay ninguna programada')
+                    from cron.job j where j.jobname in ('mxp-bandeja-solo-manana', 'mxp-bandeja-solo-tarde') $q$ into v_cron;
+    exception when others then
+      v_cron := format('no se pudo leer pg_cron (%s): lo que tiene que entrar solo entra igual al abrir la Bandeja', sqlstate);
+    end;
   end if;
   select string_agg(c.control || coalesce(': ' || c.detalle, ''), ' · ') into v_rojo from fn_bandeja_control() c where c.nivel = 'cuadre' and not c.ok;
   select count(*) into v_n from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname like 'fn\_bandeja\_%';
