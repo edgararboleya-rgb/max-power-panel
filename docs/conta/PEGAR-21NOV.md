@@ -14,28 +14,31 @@ y se le da a «Run». Se pueden pegar dos veces: no cambian ningún dato.
 | # | Qué | Filas que salen |
 |---|---|---|
 | 1 | `docs/conta/c17-bandeja.sql` | **8**, todas empiezan por «ok:» |
-| 2 | `docs/conta/c17-pruebas.sql` | **54**, todas en `true` (u «omitida» con su porqué) |
+| 2 | `docs/conta/c17-pruebas.sql` | **68**, todas en `true` (u «omitida» con su porqué) |
 | 3 | `docs/conta/c18-fiscal.sql` | **6**, todas empiezan por «ok:» |
 | 4 | `docs/conta/c18-pruebas.sql` | **13**, todas en `true` |
 | 5 | Volver a desplegar la función `contador` | `?paso=salud` dice `"dimelo": true` y `"max_tokens_dimelo": 16000` |
 | 6 | Publicar la app (v308) | |
 
-Los archivos son los de la **segunda vuelta** (marca `2026112102`): una
-revisión encontró cosas que arreglar antes de que los pegaras, y ya van
-arregladas. Si llegaste a pegar los de la primera (marca `2026112101`), pega
-estos encima: se pueden pegar las veces que haga falta.
+Los archivos son los de la **tercera vuelta** (marca `2026112103`): dos
+revisiones encontraron cosas que arreglar antes de que los pegaras, y ya van
+arregladas (la última, sobre todo, que con la Bandeja llena —unos
+cuatrocientos pendientes— la lectura no cabía en el tiempo que da Supabase).
+Si llegaste a pegar los de una vuelta anterior (marca `2026112101` o
+`2026112102`), pega estos encima: se pueden pegar las veces que haga falta.
+**La función `contador` y la app van con estos**: pega primero el SQL.
 
 ### 1. `c17-bandeja.sql`: lo que tiene que decir
 
-- **`version`:** «ok: 2026112102».
+- **`version`:** «ok: 2026112103».
 - **`tablas`:** «ok: bandeja_config, bandeja_memoria, bandeja_dimelo y
   bandeja_hechos, con RLS».
-- **`funciones`:** «ok: 51 funciones fn_bandeja_*, ninguna SECURITY DEFINER».
+- **`funciones`:** «ok: 56 funciones fn_bandeja_*, ninguna SECURITY DEFINER».
 - **`configuracion`:** «ok: lo de «entra solo» encendido (tope $500.00);
   «Dímelo» encendido (esfuerzo medium)». Encendido no quiere decir que algo
   entre solo: no entra nada hasta que tú marques «que lo siguiente entre solo»
   en un comercio.
-- **`categorias`:** «ok: 8 grupos, 36 categorías».
+- **`categorias`:** «ok: 8 grupos, 37 categorías».
 - **`tareas`:** «ok: mxp-bandeja-solo-manana («18 11 * * *»),
   mxp-bandeja-solo-tarde («54 20 * * *»)». Son las 6:18 de la mañana y las
   3:54 de la tarde de Miami (una hora más en verano). Si esa fila no empezara
@@ -50,9 +53,13 @@ nada»**, dice qué falta. Cópiamelo tal cual: no pasó nada en la base.
 
 ### 2. `c17-pruebas.sql`
 
-Tarda unos segundos (en el banco de pruebas, unos ocho). Salen 54 filas; la última columna tiene que
-ser `true` en todas. Las pruebas montan sus propios movimientos («BDIECISIETE
-…») y los deshacen: al terminar no queda nada (la fila 54 lo comprueba).
+Tarda (en el banco de pruebas, unos quince segundos; con cuatrocientos
+movimientos esperando en la Bandeja, medio minuto: en Supabase será más). Salen
+68 filas; la última columna tiene que ser `true` en todas. Las pruebas montan
+sus propios movimientos («BDIECISIETE …») y los deshacen: al terminar no queda
+nada (la fila 68 lo comprueba). **Valen con la base en uso**: miran solo lo
+suyo, tenga la Bandeja lo que tenga pendiente. Una fila «omitida» dice por qué
+(por ejemplo, que el mes de la prueba ya está cerrado): no es un fallo.
 
 Si el SQL Editor deja de esperar, la corrida sigue. Se lee después con:
 
@@ -62,7 +69,7 @@ select * from pruebas.c17_resultado order by n;
 
 ### 3. `c18-fiscal.sql`: lo que tiene que decir
 
-- **`version`:** «ok: 2026112102».
+- **`version`:** «ok: 2026112103».
 - **`forma`:** «ok: Form 1120 (C-corp), PENDIENTE de confirmar con el CPA (el
   paquete lo avisa)». Es lo esperado: mira «Lo que tienes que hacer tú», abajo.
 - **`lineas`:** «ok: 1120: 36, 1120-S: 36, 1125-A: 5».
@@ -88,7 +95,7 @@ Para comprobarlo, abre `…/functions/v1/contador?paso=salud`: tiene que decir
 `"dimelo": true` y `"max_tokens_dimelo": 16000`. Mientras no la despliegues,
 la caja «Dímelo» contesta «la función que está desplegada es anterior al
 «Dímelo»»; lo demás funciona. **La función y c17 van juntas**: la función
-nueva necesita el c17 de la segunda vuelta (pega primero el SQL).
+nueva necesita el c17 de la tercera vuelta (pega primero el SQL).
 
 ### 6. Publicar
 
@@ -116,17 +123,38 @@ Dime «publica» y sale la v308.
   explica ese depósito, es la nómina), la tarjeta te dice por qué. Si aun así
   es lo que dices, lo escribes ahí y tocas «Así es» otra vez. Nada entra sin
   que lo hayas leído.
+- **Lo que propone la IA de antes** (la que ya proponía una cuenta para cada
+  cargo sin recibo) sale ahora como las demás tarjetas, en llano («Es tuyo, no
+  de la empresa…», «Es un gasto de «Material» de la obra …»), con «Recordarlo»,
+  y su «Así es» queda en «Lo que contestaste estos días» con su «Deshacer».
+- **Lo que escribe la IA lo dice ella:** cuando el «Dímelo» te explica algo o
+  te dice qué le falta, sale como «La IA dice: …», con otra letra. Lo demás lo
+  dice la app.
 - **«Llegó el recibo de un cargo que ya habías registrado»:** si registras una
-  compra y después la cuadrilla sube su recibo, la app lo cambia sola por el
-  recibo (el gasto queda una vez, en la obra del recibo) y te lo dice. Si no
-  sabe de cuál de dos compras iguales es, te las enseña arriba con dos
-  botones: «Es su recibo: cámbialo» y «Es otra compra».
+  compra y después la cuadrilla sube su recibo, la app te lo enseña arriba con
+  dos botones: «Es su recibo: cámbialo» (un toque: el gasto queda una vez, en
+  la obra del recibo) y «Es otra compra». **No cambia nada sola**: lo que tú
+  contestaste solo lo cambias tú. (Si antes de que contestes llega al banco el
+  cargo de verdad de ese recibo y casa con él, el aviso se quita solo.)
 - **«Registrado solo»:** lo que entró así, con «Deshacer». Lo deshecho vuelve
-  a la Bandeja y ya no entra solo; ahí mismo te pregunta si lo de ese comercio
-  deja de entrar solo.
+  a la Bandeja y ya no entra solo.
 - **«Lo que contestaste estos días»:** catorce días, con «Deshacer». Lo que
   contestaste por grupo se deshace entero («Deshacer los 25»), con un solo
   porqué.
+- **Deshacer apaga «que entre solo».** Si deshaces algo de un comercio que
+  tenía «que lo siguiente entre solo» (lo que entró solo, o la respuesta con
+  la que lo pusiste), eso se apaga con ello: lo siguiente de ese comercio te lo
+  propone y espera tu «Así es». La forma te lo dice con una casilla marcada;
+  si la regla estaba bien, la desmarcas y sigue.
+- **Con la Bandeja llena** (cientos de movimientos) abre igual de rápido: sale
+  la lista entera enseguida y las recomendaciones van llegando («Mirándolo…»
+  en la fila mientras tanto). Y al contestar una, sale esa y se abre la
+  siguiente, sin volver a cargar la página.
+- **Mientras la IA piensa un «Dímelo»**, las demás tarjetas se pueden
+  contestar; cuando contesta, te avisa.
+- **«Lo que recuerdo»** enseña también lo que cobra cada procesador de
+  tarjetas según tus cobros («Intuit: el 2.99 % de cada factura»), con su
+  «Olvidar».
 - **En Estados**, los nombres van en inglés (un enlace los pone en español) y
   hay un apartado nuevo, «Para el contador»: el paquete del año, para
   descargar o imprimir. **El de 2026 no es el año entero**: el libro de la app
@@ -169,8 +197,8 @@ Los pagos a la cuadrilla siguen como desde el 15-nov: eso no se tocó.
    avisas a mí.
 4. **Si tienes el recibo de una compra para una obra, súbelo** en vez de
    contestarla en la Bandeja: se casa sola con su cargo y ya trae la obra. Si
-   la contestas y el recibo llega después, no pasa nada: la app lo cambia o te
-   pregunta.
+   la contestas y el recibo llega después, no pasa nada: la app te lo enseña
+   arriba y con un toque («Es su recibo: cámbialo») queda bien.
 5. **Mándale al contador el paquete de 2026 junto con lo de QuickBooks** (enero
    a septiembre): el paquete de la app trae solo de octubre a diciembre.
 

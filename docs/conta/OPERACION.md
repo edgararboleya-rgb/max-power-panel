@@ -192,17 +192,56 @@ arriba.
   Antes de salir todo pasa por la máscara (`fn_bandeja_sin_datos`: correos,
   teléfonos, números de cuenta y de tarjeta, SSN, ITIN y EIN salen tapados), y
   la frase queda guardada ya tapada. Lo que la IA contesta no registra nada:
-  es una propuesta que la base valida y Edgar aprueba.
-- El recibo que llega después de registrar su cargo (c17): la rutina lo cambia
-  sola si no hay duda, y si la hay lo deja arriba en la Bandeja con sus dos
-  botones. Cuántos esperan: `select * from v_bandeja_control where orden = 65;`.
+  es una propuesta que la base valida y Edgar aprueba. (Tercera vuelta) Si el
+  banco mismo dice que el depósito lo manda un prestamista, o el propio Edgar,
+  se le dice a la IA como dato (`prestamista`, `lo_manda_edgar`), y la base no
+  deja registrarlo como el cobro de un cliente sin un porqué leído. Lo que la
+  IA escribe (su explicación, lo que le falta) llega a la tarjeta tapado,
+  corto, sin enlaces y dicho que es suyo («La IA dice: …»).
+- El recibo que llega después de registrar su cargo (c17): la rutina lo mira
+  y NO cambia ninguno sola (tercera vuelta: el banco, c6, no deja volver a
+  clasificar un cargo que tiene un recibo libre de su monto, así que lo
+  cambiado solo no tenía deshacer); lo deja arriba en la Bandeja con sus dos
+  botones («Es su recibo: cámbialo», un toque; «Es otra compra», con su
+  porqué). Cuántos esperan: `select * from v_bandeja_control where orden = 65;`.
+  Si el recibo casa después con su cargo de verdad (o se anula), el de antes
+  deja de esperar solo al abrir la Bandeja o en la tarea (la rutina se lo da a
+  c6 otra vez, que quita la marca).
   El control del banco los dice en rojo («ningún ticket después de
   clasificar») hasta que Edgar conteste: es lo esperado, y la Bandeja y el
   Resumen siguen pintando.
 - Las tarifas de los procesadores de tarjetas (c17), con las que se casa un
   depósito neto con sus facturas: `select tarifas from bandeja_config;`. Las
-  que Edgar confirma con un lote («Así es») quedan marcadas (`veces`) y son
-  las que se usan desde entonces para ese procesador.
+  que Edgar confirma con un lote («Así es») quedan marcadas (`veces`) y se
+  prueban primero; las de fábrica se siguen probando después (un depósito
+  pagado por transferencia, al 1 %, no deja de reconocerse por haber
+  confirmado antes uno de tarjeta). Una tarifa que no estaba en la lista se
+  apunta (`origen: aprendida`). Edgar las ve y las olvida en «Lo que
+  recuerdo»; deshacer el cobro que confirmó una le quita esa vez.
+- Deshacer en la Bandeja (c17): además de des-casar el movimiento, anula el
+  cobro que ese registro creó, deja Proyectos como dice el libro, deshace por
+  c10 el reparto de un pago a la cuadrilla y APAGA «que entre solo» de esa
+  contraparte (la regla sigue recordada: se propone). Para dejarla encendida:
+  la casilla de la forma (o `fn_bandeja_deshacer(<hecho>, '<porqué>', '{"deja_solo": false}')`).
+- Lo que la IA de antes (c8) registra desde la tarjeta nueva: el «Así es» va
+  por su función de siempre (`contador`, «aprobar») y la Bandeja lo anota
+  (`fn_bandeja_anotar`, no toca el libro) para que salga en «Lo que
+  contestaste estos días» y se pueda deshacer; al deshacerlo, la propuesta
+  aprobada vuelve en `ia_caducar` y la pantalla la cierra por la función.
+  Cuáles: `select * from bandeja_hechos where datos ? 'propuesta_ia' order by el desc;`.
+  Y la propuesta pendiente de c8 de un cargo que Edgar registra por otro
+  camino (su grupo, «Más opciones», una regla que entra sola) se cierra por la
+  función de c8 como «rechazada», con el motivo que dice cómo fue: «…de otra
+  forma», «…con la misma categoría que proponía la IA» o «la registró una
+  regla de Edgar». Cuántas de cada: `select motivo_edgar, count(*) from
+  contador_propuestas where estado = 'rechazada' group by 1;`.
+- La Bandeja con cientos de pendientes (c17): `fn_bandeja_leer` recomienda por
+  reloj (2.5 s de fábrica) y por unidades, y devuelve en `faltan` lo que no le
+  dio tiempo; la pantalla lo pide por partes con `{ids}`. Decidir un grupo,
+  deshacer una tanda y la rutina cortan a los 3 s y dicen `sigue`. Cuánto
+  falta ahora mismo: `select jsonb_array_length(fn_bandeja_leer('{}')->'faltan');`
+  (como el dueño). Se mide en el banco con `pruebas/conta/c17-volumen.sh`
+  (400 y 1,000 pendientes, cada llamada por debajo de 0.8 s).
 - Si hiciera falta quitar la Bandeja nueva entera sin tocar datos:
   `drop function if exists public.fn_bandeja_leer(jsonb);` (la app vuelve a la
   Bandeja de antes; lo registrado no cambia). Para volver, se pega c17 otra
