@@ -2584,7 +2584,7 @@ comment on function public.fn_bandeja_config(jsonb) is 'c17: cambia la configura
 --     c10) que corresponde, con las guardas de esa puerta. Devuelve SIEMPRE
 --     un resultado (no lanza por lo que la puerta rechace):
 --       {hecho: true, hecho_id, estado, asiento, texto, facturas_cobradas,
---        recordado, propuestas_ia}
+--        recordado, propuestas_ia, propuestas_ia_iguales}
 --       {hecho: false, por_que, pide_motivo?, freno?, sugerido?, pide_obra?,
 --        campos?, cambio?, resuelto?, dicho?, fuera?}
 --     (cambio: lo que el banco proponía ya es otra cosa; resuelto: casó solo
@@ -2880,6 +2880,7 @@ declare
   v_nuevo  boolean := false;
   v_tanda  uuid;
   v_ia     jsonb;
+  v_ia_ig  jsonb;
   v_mem    jsonb;
   v_tar    jsonb;
   v_nota   text;
@@ -3133,8 +3134,16 @@ begin
     perform set_config('mx_bandeja.escribe', '', true);
   end if;
   -- lo de la IA de c8 que este registro deja abierto: lo cierra la pantalla
-  -- por la función de borde, o la tarea por la puerta de c8
-  select jsonb_agg(q.id order by q.creado_el) into v_ia
+  -- por la función de borde, o la tarea por la puerta de c8. Y, de ellas, las
+  -- que proponían LO MISMO que se acaba de registrar (una sola línea, a esta
+  -- cuenta): c8 solo sabe cerrar una pendiente «rechazándola», pero su nota
+  -- no tiene por qué decir que Edgar contestó otra cosa
+  select jsonb_agg(q.id order by q.creado_el),
+         jsonb_agg(q.id order by q.creado_el)
+           filter (where d->>'cuenta' is not null and p_accion in ('gasto', 'personal', 'contratista')
+                         and case when jsonb_typeof(q.propuesta->'lineas') = 'array' then jsonb_array_length(q.propuesta->'lineas') end = 1
+                         and q.propuesta->'lineas'->0->>'cuenta' = d->>'cuenta')
+    into v_ia, v_ia_ig
     from contador_propuestas q where q.movimiento_id = m.id and q.estado = 'pendiente';
   return jsonb_strip_nulls(jsonb_build_object(
     'hecho', true, 'hecho_id', v_hecho, 'movimiento_id', m.id, 'estado', m.estado, 'asiento_id', m.asiento_id, 'asiento', v_num,
@@ -3142,7 +3151,7 @@ begin
     'facturas_cobradas', (select nullif(jsonb_agg(jsonb_build_object('id', y->'id', 'num', y->'num')), '[]'::jsonb)
                             from jsonb_array_elements(v_marc) y where y->>'que' = 'cobrada'),
     'cobrado_proyectos', (select nullif(sum((y->>'sumado')::numeric), 0) from jsonb_array_elements(v_marc) y),
-    'recordado', v_mem, 'propuestas_ia', v_ia, 'nota', v_nota));
+    'recordado', v_mem, 'propuestas_ia', v_ia, 'propuestas_ia_iguales', v_ia_ig, 'nota', v_nota));
 end $$;
 revoke execute on function public.fn_bandeja_hacer(uuid, text, jsonb, jsonb) from public, anon, service_role;
 grant  execute on function public.fn_bandeja_hacer(uuid, text, jsonb, jsonb) to authenticated;
@@ -3475,6 +3484,8 @@ declare
   v_cta   text;
   v_tope  numeric;
   v_ia    uuid;
+  v_oia   text;
+  v_firme boolean := false;
 begin
   perform fn_bandeja_exigir_dueno();
   select * into m from movimientos_banco where id = p_movimiento;
@@ -3642,12 +3653,14 @@ begin
           v_acc := 'personal';
         else
           v_acc := 'gasto';
-          v_dat := jsonb_strip_nulls(jsonb_build_object(
-                     'cuenta', v_cta,
-                     'proyecto_id', case when nullif(q.propuesta->'lineas'->0->>'proyecto_id', '') is not null
-                                              and coalesce((q.propuesta->'obra'->>'fuerte')::boolean, true)
-                                              and (select k.regla_obra from cuentas k where k.codigo = v_cta) in ('obligatoria', 'opcional')
-                                         then (select pj.id from proyectos pj where pj.id = q.propuesta->'lineas'->0->>'proyecto_id') end));
+          -- (la obra de la propuesta se preselecciona SOLO si es firme —flags.obra_fuerte, lo mismo que mira la tarjeta de c8— y
+          -- sigue en marcha. Una floja, o una que ya se cerró, SE PIDE: sin la obra de Edgar, la puerta de c8 registraría la
+          -- que trae la línea, que no es la que esta tarjeta enseña)
+          v_oia := nullif(q.propuesta->'lineas'->0->>'proyecto_id', '');
+          v_firme := v_oia is not null and coalesce((q.propuesta->'flags'->>'obra_fuerte')::boolean, false)
+                     and (select k.regla_obra from cuentas k where k.codigo = v_cta) in ('obligatoria', 'opcional')
+                     and exists (select 1 from proyectos pj where pj.id = v_oia and pj.estado in ('aprobado', 'ejecucion', 'pausa'));
+          v_dat := jsonb_strip_nulls(jsonb_build_object('cuenta', v_cta, 'proyecto_id', case when v_firme then v_oia end));
         end if;
         v_por := case q.fuente when 'regla' then 'Por una regla que la app ya aprendió de ti.'
                                when 'edgar' then 'Ya lo habías dicho tú.'
@@ -3693,7 +3706,10 @@ begin
   return jsonb_strip_nulls(jsonb_build_object(
     'accion', v_acc, 'datos', case when (v->>'ok')::boolean then v->'datos' else v_dat end, 'texto', v->>'texto',
     'porque', nullif(concat_ws(' ', v_por, case when ob is not null then 'La obra: ' || (ob->>'por') || '.' end), ''),
-    'fuente', v_fte, 'pide_obra', v->'pide_obra', 'propuesta_ia', v_ia,
+    -- (la obra floja de una propuesta de c8, sin otra que poner en su lugar: hay que elegirla)
+    'fuente', v_fte, 'pide_obra', case when v_oia is not null and not v_firme and not (v_dat ? 'proyecto_id') then to_jsonb(true)
+                                       else v->'pide_obra' end,
+    'propuesta_ia', v_ia,
     'pide_motivo', case when v_acc in ('aporte', 'otro_ingreso') or (v_acc = 'personal' and m.monto > 0)
                              or (v_acc = 'banco' and v->'datos'->'pide' ?| array['p_motivo', 'p_notas', 'p_partidas.motivo']) then true end,
     'pide', case when v_acc = 'banco' then (select nullif(jsonb_agg(e), '[]'::jsonb) from jsonb_array_elements_text(coalesce(v->'datos'->'pide', '[]'::jsonb)) e
@@ -3724,7 +3740,8 @@ comment on function public.fn_bandeja_recomendar(uuid, jsonb) is 'c17: LA recome
 -- cada gasto de obra va a la del día de la cuadrilla (Edgar lo eligió así
 -- para el grupo); el que no tenga una sola, se queda. Devuelve {clave,
 -- tanda, hechos, monto, quedan: [{movimiento_id, por_que}], recordado,
--- propuestas_ia, sigue (cortó por reloj: llámala otra vez, con su tanda)}.
+-- propuestas_ia, propuestas_ia_iguales (de esas, las que proponían lo mismo
+-- que se registró), sigue (cortó por reloj: llámala otra vez, con su tanda)}.
 -- Lo ya mirado en una llamada anterior de la misma tanda (registrado, o
 -- frenado) no se vuelve a mirar: la pantalla quita de «movimientos» los que
 -- ya le contestaron.
@@ -3749,6 +3766,7 @@ declare
   v_hechos jsonb := '[]'::jsonb;
   v_quedan jsonb := '[]'::jsonb;
   v_ia     jsonb := '[]'::jsonb;
+  v_ia_ig  jsonb := '[]'::jsonb;
   v_mem    jsonb;
   v_monto  numeric := 0;
   v_sigue  boolean := false;
@@ -3822,6 +3840,7 @@ begin
       v_hechos := v_hechos || jsonb_build_object('movimiento_id', m.id, 'hecho_id', r->>'hecho_id', 'monto', m.monto, 'texto', r->>'texto');
       v_monto := v_monto + m.monto;
       v_ia := v_ia || coalesce(r->'propuestas_ia', '[]'::jsonb);
+      v_ia_ig := v_ia_ig || coalesce(r->'propuestas_ia_iguales', '[]'::jsonb);
     else
       v_quedan := v_quedan || jsonb_strip_nulls(jsonb_build_object('movimiento_id', m.id, 'por_que', r->>'por_que',
                                                                   'pide_obra', r->'pide_obra', 'pide_motivo', r->'pide_motivo'));
@@ -3833,7 +3852,8 @@ begin
   end if;
   return jsonb_strip_nulls(jsonb_build_object(
     'clave', p_clave, 'tanda', v_tanda, 'hechos', jsonb_array_length(v_hechos), 'monto', v_monto, 'registrados', v_hechos, 'quedan', v_quedan,
-    'recordado', v_mem, 'propuestas_ia', nullif(v_ia, '[]'::jsonb), 'sigue', case when v_sigue then true end));
+    'recordado', v_mem, 'propuestas_ia', nullif(v_ia, '[]'::jsonb), 'propuestas_ia_iguales', nullif(v_ia_ig, '[]'::jsonb),
+    'sigue', case when v_sigue then true end));
 end $$;
 revoke execute on function public.fn_bandeja_grupo(text, text, jsonb, jsonb) from public, anon, service_role;
 grant  execute on function public.fn_bandeja_grupo(text, text, jsonb, jsonb) to authenticated;
@@ -3863,6 +3883,11 @@ comment on function public.fn_bandeja_grupo(text, text, jsonb, jsonb) is 'c17: u
 -- vuelta a «como Edgar lo dijo». «Es otra compra» solo existe mientras el
 -- cargo sigue registrado como él lo dejó: por eso la pregunta se hace ANTES
 -- de tocar nada, y lo que Edgar contestó no lo cambia nadie más que él.
+-- Y LO QUE YA NO ESPERA: si el recibo casó después con SU cargo de verdad
+-- (llegó al banco y c6 lo casó, o el recibo se anuló), el cargo de antes
+-- seguía diciendo «llegó su recibo» hasta el siguiente «Casar» de su cuenta:
+-- salía arriba con un «Es su recibo» que ya no podía ser. Ahora esos se le
+-- dan a c6 otra vez, que quita la marca.
 -- p: {ms (el reloj: 1.5 s de fábrica)}. Devuelve {esperan (cuántos tienen su
 -- recibo esperando la respuesta de Edgar)}. La llama fn_bandeja_solo (al
 -- abrir la Bandeja y en la tarea de la base); corre aunque lo de «entra
@@ -3881,26 +3906,29 @@ begin
   perform fn_bandeja_quien();
   v_fin := clock_timestamp() + make_interval(secs => least(greatest(coalesce(fn_bandeja_num(p->>'ms'), 1500), 50), 20000) / 1000.0);
   for r in
-    select distinct mb.id
+    select distinct mb.id, x.libre
       from bandeja_hechos h
       join movimientos_banco mb on mb.id = h.movimiento_id
+     -- (barato: una línea libre de un recibo por ese monto en su cuenta, de esos días; si puede ser SU recibo lo decide c6)
+     cross join lateral (select exists (select 1 from asiento_lineas l join asientos a on a.id = l.asiento_id
+                                         where l.cuenta = mb.cuenta and l.monto = mb.monto and a.origen_tabla = 'recibos'
+                                           and a.fecha_contable between mb.fecha - 70 and mb.fecha + 35
+                                           and a.camino not in ('reverso', 'reverso_automatico')
+                                           and not exists (select 1 from asientos z where z.reversa_a = a.id)
+                                           and not exists (select 1 from banco_casado_lineas bl
+                                                            where bl.asiento_id = l.asiento_id and bl.orden = l.orden and bl.vigente)) as libre) x
      where h.deshecho_el is null and h.accion in ('gasto', 'personal', 'contratista')
        and mb.estado = 'casado' and mb.casado_clase = 'clasificado' and mb.asiento_id is not distinct from h.asiento_id
        and mb.monto < 0 and mb.fecha >= fn_fecha_miami(now()) - 120
-       -- (barato: una línea libre de un recibo por ese monto en su cuenta, de esos días; si puede ser SU recibo lo decide c6)
-       and exists (select 1 from asiento_lineas l join asientos a on a.id = l.asiento_id
-                    where l.cuenta = mb.cuenta and l.monto = mb.monto and a.origen_tabla = 'recibos'
-                      and a.fecha_contable between mb.fecha - 70 and mb.fecha + 35
-                      and a.camino not in ('reverso', 'reverso_automatico')
-                      and not exists (select 1 from asientos z where z.reversa_a = a.id)
-                      and not exists (select 1 from banco_casado_lineas bl
-                                       where bl.asiento_id = l.asiento_id and bl.orden = l.orden and bl.vigente))
+       -- (o el que ya decía «llegó su recibo» y ya no tiene ninguno libre: su recibo casó con otro cargo, o se anuló)
+       and (x.libre or mb.propuesta->>'motivo' = 'llego_su_ticket')
      order by mb.id loop
     exit when v_k > 0 and clock_timestamp() > v_fin;
     v_k := v_k + 1;
     select * into m from movimientos_banco where id = r.id;
-    -- (c6 ya lo tiene mirado y a la vista: no se le pide otra vez)
-    if m.propuesta->>'motivo' is distinct from 'llego_su_ticket' then
+    -- (c6 ya lo tiene mirado y a la vista: no se le pide otra vez… salvo que el recibo que esperaba ya no esté libre: entonces c6 lo
+    -- mira de nuevo y quita la marca, o la deja si el suyo es un recibo de otro total o repartido)
+    if m.propuesta->>'motivo' is distinct from 'llego_su_ticket' or not r.libre then
       begin
         perform fn_banco_casar(r.id);
       exception when others then
@@ -4018,7 +4046,7 @@ begin
 end $$;
 revoke execute on function public.fn_bandeja_solo(jsonb) from public, anon, service_role;
 grant  execute on function public.fn_bandeja_solo(jsonb) to authenticated;
-comment on function public.fn_bandeja_solo(jsonb) is 'c17: LA RUTINA QUE REGISTRA SOLA (una regla de Edgar, no la IA): primero mira los recibos que llegaron después de registrar su cargo (y cambia solo los de evidencia fuerte); después, los cargos de un comercio con regla «que entre solo» de algo personal o de un gasto que no lleva obra, descritos por el banco como cuando se puso la regla, hasta el tope, que c6 da por «sin ticket», sin sospecha de duplicado, nunca deshechos, y que la puerta de c6 hoy no frena. Nunca un depósito, un Zelle, un cheque, el cajero, la nómina, un traspaso ni un costo de obra. Corta por reloj (3 s de fábrica).';
+comment on function public.fn_bandeja_solo(jsonb) is 'c17: LA RUTINA QUE REGISTRA SOLA (una regla de Edgar, no la IA): primero mira si llegó el recibo de algún cargo que ya estaba registrado (no cambia ninguno: esperan arriba la respuesta de Edgar); después, los cargos de un comercio con regla «que entre solo» de algo personal o de un gasto que no lleva obra, descritos por el banco como cuando se puso la regla, hasta el tope, que c6 da por «sin ticket», sin sospecha de duplicado, nunca deshechos, y que la puerta de c6 hoy no frena. Nunca un depósito, un Zelle, un cheque, el cajero, la nómina, un traspaso ni un costo de obra. Corta por reloj (3 s de fábrica).';
 
 -- LA TAREA SIN PANTALLA (pg_cron, o el SQL Editor; sin API): corre la
 -- rutina EN NOMBRE DEL DUEÑO que encendió lo de solo (el mecanismo de c10,
@@ -4127,12 +4155,13 @@ end $$;
 --     («la cuenta 1234-5678-90», «ACCT 123456»). Con cinco cifras o más: «va
 --     a la cuenta 5100» es una cuenta del plan, no la del banco;
 --   · una tarjeta escrita en grupos (4-4-4-4, o 4-6-5), con espacio, guion
---     o punto;
+--     o punto (o en renglones: un salto de línea vale como un espacio);
 --   · un SSN o un ITIN (3-2-4) con guion, espacio o punto, aunque vaya
 --     pegado a su etiqueta («SSN123-45-6789»); un EIN (2-7) con guion o
 --     espacio;
 --   · un teléfono de siete dígitos con guion o punto (555-0142), o con un
---     espacio si va detrás de «tel», «cel» o «llama». Un espacio suelto no:
+--     espacio o todo seguido si va detrás de «tel», «cel» o «llama»
+--     («tel 5550142»). Un espacio suelto no:
 --     «la factura 103 2640.80» son un número de factura y su monto, y
 --     tapados la IA perdía los dos;
 --   · y antes de nada, los guiones que no son el del teclado (pegados de un
@@ -4158,12 +4187,12 @@ begin
   end if;
   v := translate(v, U&'\2010\2011\2012\2013\2014\2015\2212', '-------');
   v := regexp_replace(v, '(\m(?:cuenta|cta|acct|account|routing|aba|iban|tarjeta|card|ssn|itin|ein|tin|seguro social|social security|licencia|license|pasaporte|passport)\M(?:\s+(?:n[uú]mero|num|no|n[º°]))?[\s#:.]*)([A-Z]{0,2}[0-9][0-9 .-]{3,}[0-9])\M', '\1[número]', 'gi');
-  v := regexp_replace(v, '\m[0-9]{4}([ .-][0-9]{4}){3}\M', '[número]', 'g');
-  v := regexp_replace(v, '\m[0-9]{4}[ .-][0-9]{6}[ .-][0-9]{5}\M', '[número]', 'g');
-  v := regexp_replace(v, '(^|[^0-9])[0-9]{3}[-. ][0-9]{2}[-. ][0-9]{4}(?![0-9])', '\1[número]', 'g');
-  v := regexp_replace(v, '\m[0-9]{2}[- ][0-9]{7}\M', '[número]', 'g');
+  v := regexp_replace(v, '\m[0-9]{4}([\s.-][0-9]{4}){3}\M', '[número]', 'g');
+  v := regexp_replace(v, '\m[0-9]{4}[\s.-][0-9]{6}[\s.-][0-9]{5}\M', '[número]', 'g');
+  v := regexp_replace(v, '(^|[^0-9])[0-9]{3}[-.\s][0-9]{2}[-.\s][0-9]{4}(?![0-9])', '\1[número]', 'g');
+  v := regexp_replace(v, '\m[0-9]{2}[-\s][0-9]{7}\M', '[número]', 'g');
   v := fn_contador_sin_datos(v);
-  v := regexp_replace(v, '(\m(?:tel|tel[eé]fono|cel|celular|m[oó]vil|phone|llama|ll[aá]mame|llamar)\M[\s#:.]*(?:al\s+)?)[0-9]{3} [0-9]{4}\M(?![.,][0-9])', '\1[teléfono]', 'gi');
+  v := regexp_replace(v, '(\m(?:tel|tel[eé]fono|cel|celular|m[oó]vil|phone|llama|ll[aá]mame|llamar)\M[\s#:.]*(?:al\s+)?)[0-9]{3} ?[0-9]{4}\M(?![.,][0-9])', '\1[teléfono]', 'gi');
   return regexp_replace(v, '\m[0-9]{3}[.-][0-9]{4}\M(?![.,][0-9])', '[teléfono]', 'g');
 end $$;
 revoke execute on function public.fn_bandeja_sin_datos(text) from public, anon, authenticated, service_role;
@@ -4508,7 +4537,9 @@ begin
           fn_bandeja_sin_datos_jsonb(p_entrada), p_salida,
           case when v_est = 'pendiente' then v_acc end, case when v_est = 'pendiente' then v_dat end,
           case when v_est = 'pendiente' then v->>'texto' end, v_exp, v_falta, v_rec, v_est, coalesce(v_cent, 0),
-          coalesce(p_usage, '{}'::jsonb) || jsonb_strip_nulls(jsonb_build_object('error', left(p_error, 300))), p_dueno);
+          -- (falta_de_la_ia se guarda aquí: la tarjeta lo sigue diciendo —«La IA dice»— cuando la Bandeja se lee otra vez)
+          coalesce(p_usage, '{}'::jsonb) || jsonb_strip_nulls(jsonb_build_object('error', left(p_error, 300),
+                                                                                 'falta_de_la_ia', case when v_de_ia then true end)), p_dueno);
   perform set_config('mx_bandeja.escribe', '', true);
   return jsonb_strip_nulls(jsonb_build_object(
     'dimelo_id', v_id, 'movimiento_id', p_movimiento, 'estado', v_est, 'accion', case when v_est = 'pendiente' then v_acc end,
@@ -4828,6 +4859,8 @@ begin
       end if;
       select jsonb_strip_nulls(jsonb_build_object('dimelo_id', q.id, 'estado', q.estado, 'frase', q.frase, 'accion', q.accion, 'datos', q.datos,
                                                   'texto', q.texto, 'porque', q.porque, 'falta', q.falta, 'recordar', q.recordar,
+                                                  -- (lo que le falta lo escribió la IA, no la base: la tarjeta lo dice)
+                                                  'falta_de_la_ia', case when q.uso->>'falta_de_la_ia' = 'true' then true end,
                                                   'pide_obra', case when q.estado = 'pendiente' and q.falta is not null then true end))
         into dim
         from bandeja_dimelo q

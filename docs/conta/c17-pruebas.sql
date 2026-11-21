@@ -1,6 +1,6 @@
 -- =====================================================================
 -- c17-pruebas.sql — la Bandeja nueva se prueba a sí misma
--- (c17-bandeja.sql). 21-nov-2026 (tercera vuelta: 67 pruebas).
+-- (c17-bandeja.sql). 21-nov-2026 (tercera vuelta: 68 pruebas).
 --
 -- Se pega en el SQL Editor DESPUÉS de c17-bandeja.sql (o, en el banco:
 --   PGPASSWORD=editor_sql psql -h 127.0.0.1 -p 5433 -U editor_sql -d <bd> -1 \
@@ -102,7 +102,8 @@
 -- 28 lo que el banco pide para una opción (el capital y el interés de una
 --    cuota), por el «Dímelo»; y una opción que no se le enseñó a la IA, no;
 -- 29 lo de la IA (c8) que un registro deja abierto: se devuelve, se lee y
---    el control avisa hasta que se cierra;
+--    el control avisa hasta que se cierra; y la que proponía lo mismo que
+--    se registró se dice aparte (una tarjeta y un grupo);
 -- (segunda vuelta: una prueba por cada arreglo de la revisión)
 -- 30 EL FRENO: la frase que Edgar le dijo a la IA no es un motivo (el recibo
 --    ya subido): frena en llano, con su huella; sin ella, no;
@@ -163,7 +164,9 @@
 -- 65 la propuesta de la IA de antes (c8) en la tarjeta nueva: en llano,
 --    aprobada por su camino, anotada y con su «Deshacer»;
 -- 66 deshacer apaga «que lo siguiente entre solo» de ese comercio;
--- 67 nada queda, y los controles de c3, c6 y c8 siguen como estaban.
+-- 67 el recibo que esperaba la respuesta de Edgar y después casa con su
+--    cargo de verdad: deja de esperar (y lo de Edgar sigue como lo dejó);
+-- 68 nada queda, y los controles de c3, c6 y c8 siguen como estaban.
 -- =====================================================================
 create temp table if not exists _pruebas(n int, prueba text, esperado text, obtenido text, ok boolean);
 truncate _pruebas;
@@ -1669,8 +1672,10 @@ end $$;
 do $$
 declare
   v_obt text; m uuid; r jsonb; l jsonb; l2 jsonb; v_prop uuid; a text; b text; c text; d text;
-  v_nom text := 'lo de la IA (c8) que un registro deja abierto: el cargo tenía una propuesta de la IA pendiente y Edgar lo contestó de otra forma; «Así es» devuelve esa propuesta para que la pantalla la cierre, leer la sigue dando mientras siga abierta y el control avisa; cerrada por la puerta de c8, deja de salir y el aviso se apaga';
-  v_esp text := 'al registrar: la devuelve | al leer: la da | el control: avisa | cerrada: ya no sale, y el aviso se apaga';
+  m2 uuid; m3 uuid; m4 uuid; r2 jsonb; rg jsonb; v_p2 uuid; v_p3 uuid; v_p4 uuid; e text;
+  v_nom text := 'lo de la IA (c8) que un registro deja abierto: el cargo tenía una propuesta de la IA pendiente y Edgar lo contestó de otra forma; «Así es» devuelve esa propuesta para que la pantalla la cierre, leer la sigue dando mientras siga abierta y el control avisa; cerrada por la puerta de c8, deja de salir y el aviso se apaga. (tercera vuelta) Y si Edgar registró LO MISMO que proponía la IA por otro camino (su grupo, «Más opciones»), la base lo dice aparte (propuestas_ia_iguales): c8 solo sabe cerrar una pendiente «rechazándola», pero la nota no dirá que él contestó otra cosa';
+  v_esp text := 'al registrar: la devuelve | al leer: la da | el control: avisa | cerrada: ya no sale, y el aviso se apaga | '
+                'lo mismo que proponía: una tarjeta, dicha como igual; la que era otra cosa, no; en un grupo, solo la que coincide';
 begin
   if pg_temp.b17_omitir(29, v_nom, v_esp) then return; end if;
   begin
@@ -1681,6 +1686,30 @@ begin
     returning id into v_prop;
     r := pg_temp.b17_hacer(m, 'gasto', '{"cuenta":"6500"}', '{"fuente":"mas"}');
     a := case when (r->>'hecho')::boolean and r->'propuestas_ia' ? v_prop::text then 'la devuelve' else 'NO: ' || left(r::text, 200) end;
+    -- (tercera vuelta) la que proponía lo mismo que se registra: una tarjeta, y un grupo de dos (una coincide, la otra no)
+    m2 := pg_temp.b17_mov('B17-29B', -31.07, 'BDIECISIETE COSAS 89');
+    insert into contador_propuestas (movimiento_id, fuente, propuesta, estado)
+    values (m2, 'edgar', '{"lineas": [{"cuenta": "6300"}], "motivo": "c17-pruebas: la misma cuenta", "confianza": 1}', 'pendiente')
+    returning id into v_p2;
+    r2 := pg_temp.b17_hacer(m2, 'gasto', '{"cuenta":"6300"}', '{"fuente":"mas"}');
+    m3 := pg_temp.b17_mov('B17-29C', -15.49, 'BDIECISIETE PELIS 01');
+    m4 := pg_temp.b17_mov('B17-29D', -15.49, 'BDIECISIETE PELIS 02', null, null, pg_temp.b17_d() - 1);
+    insert into contador_propuestas (movimiento_id, fuente, propuesta, estado)
+    values (m3, 'edgar', '{"lineas": [{"cuenta": "3200"}], "motivo": "c17-pruebas: es suyo", "confianza": 1}', 'pendiente')
+    returning id into v_p3;
+    insert into contador_propuestas (movimiento_id, fuente, propuesta, estado)
+    values (m4, 'edgar', '{"lineas": [{"cuenta": "6500"}], "motivo": "c17-pruebas: otra cosa", "confianza": 1}', 'pendiente')
+    returning id into v_p4;
+    rg := pg_temp.b17_grupo('C:BDIECISIETE PELIS', 'personal', '{}', jsonb_build_object('recordar', false, 'movimientos', jsonb_build_array(m3, m4)));
+    e := case when (r2->>'hecho')::boolean and r2->'propuestas_ia' ? v_p2::text and r2->'propuestas_ia_iguales' ? v_p2::text
+                   and not coalesce(r->'propuestas_ia_iguales' ? v_prop::text, false)
+                   and (rg->>'hechos')::int = 2 and rg->'propuestas_ia' ? v_p3::text and rg->'propuestas_ia' ? v_p4::text
+                   and rg->'propuestas_ia_iguales' ? v_p3::text and not (rg->'propuestas_ia_iguales' ? v_p4::text)
+              then 'una tarjeta, dicha como igual; la que era otra cosa, no; en un grupo, solo la que coincide'
+              else 'NO: ' || left(coalesce(r2::text, 'nulo') || ' / ' || coalesce(rg::text, 'nulo'), 500) end;
+    perform fn_contador_rechazar(v_p2, pg_temp.b17('dueno')::uuid, 'c17-pruebas: registrado igual en la Bandeja');
+    perform fn_contador_rechazar(v_p3, pg_temp.b17('dueno')::uuid, 'c17-pruebas: registrado igual en la Bandeja');
+    perform fn_contador_rechazar(v_p4, pg_temp.b17('dueno')::uuid, 'c17-pruebas: ya se registró desde la Bandeja');
     perform pg_temp.b17_ser('dueno');
     l := fn_bandeja_leer();
     perform pg_temp.b17_ser('editor');
@@ -1692,7 +1721,7 @@ begin
     perform pg_temp.b17_ser('editor');
     d := case when not (l2->'ia_abiertas' ? v_prop::text) and exists (select 1 from fn_bandeja_control() k where k.orden = 90 and k.ok)
               then 'ya no sale, y el aviso se apaga' else 'SIGUE' end;
-    v_obt := format('al registrar: %s | al leer: %s | el control: %s | cerrada: %s', a, b, c, d);
+    v_obt := format('al registrar: %s | al leer: %s | el control: %s | cerrada: %s | lo mismo que proponía: %s', a, b, c, d, e);
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
@@ -1985,7 +2014,7 @@ end $$;
 do $$
 declare
   v_obt text; m1 uuid; m2 uuid; ma uuid; mb uuid; s1 jsonb; s2 jsonb; l jsonb; l2 jsonb; f jsonb; f2 jsonb; o1 jsonb; o2 jsonb;
-  r1 jsonb; r2 jsonb; r3 jsonb; r4 jsonb;
+  r1 jsonb; r2 jsonb; r3 jsonb; r4 jsonb; v_cl1 int;
   v_nom text := 'EL RECIBO QUE LLEGA DESPUÉS con dos cargos iguales registrados y un solo recibo: nada se cambia solo (cuál de los dos es el suyo no lo sabe nadie más que Edgar). La Bandeja enseña los dos arriba, cada uno con lo que se registró y dos respuestas en llano: «Es otra compra» (queda dos veces a sabiendas: la puerta pide el porqué, y solo vale escrito DESPUÉS de leerlo, con su huella) y «Es su recibo» (se cambia por él: el gasto queda una vez, en la obra del recibo). Contestados, no queda nada esperando y el banco está en verde';
   v_esp text := 'la rutina: nada cambia solo, 2 esperan | la Bandeja: los 2, con lo registrado y sus dos respuestas, sin jerga | '
                 '«es otra compra», sin porqué: lo pide | un porqué sin haberlo leído: no | con su porqué, leído: queda | '
@@ -2005,6 +2034,8 @@ begin
     perform pg_temp.b17_hacer(m2, 'gasto', '{"cuenta":"5100","proyecto_id":"b17-prueba-b"}');
     perform pg_temp.b17_recibo(-1700361, 'b17-prueba-a', 64.37, 'ZZ BDIECISIETE MADERAS');
     s1 := pg_temp.b17_solo();
+    -- (los dos, como Edgar los dejó: registrados por él, ninguno cambiado por el recibo)
+    select count(*) into v_cl1 from movimientos_banco mb2 where mb2.id in (m1, m2) and mb2.casado_clase = 'clasificado';
     l := pg_temp.b17_leer();
     f := l->'recibos'->0;
     ma := (f->>'movimiento_id')::uuid;
@@ -2022,7 +2053,7 @@ begin
     r1 := pg_temp.b17_hacer((f2->>'movimiento_id')::uuid, 'banco', jsonb_build_object('opcion', o2->'opcion', 'huella', o2->>'huella'), '{"fuente":"mas"}');
     v_obt := format('la rutina: %s, %s esperan | la Bandeja: %s | «es otra compra», sin porqué: %s | un porqué sin haberlo leído: %s | '
                     'con su porqué, leído: %s | %s | «es su recibo»: %s | esperando: %s | el banco: %s',
-      case when not (s1->'recibos' ? 'cambiados') and (select count(*) from movimientos_banco mb2 where mb2.id in (m1, m2) and mb2.casado_clase = 'clasificado') >= 0
+      case when not (s1->'recibos' ? 'cambiados') and v_cl1 = 2
            then 'nada cambia solo' else 'CAMBIA' end, s1->'recibos'->>'esperan',
       case when jsonb_array_length(l->'recibos') = 2
                 and (select count(*) from jsonb_array_elements(l->'recibos') x
@@ -3327,7 +3358,7 @@ do $$
 declare
   v_obt text; m uuid; m2 uuid; k jsonb; k2 jsonb; r jsonb; a text; b text; c text; d text;
   v_nom text := 'LA MÁSCARA del «Dímelo» (2), lo que antes pasaba entero hacia la IA: un número detrás de la palabra que dice lo que es (cuenta, acct, tarjeta, ssn, ein…) aunque sea corto o lleve guiones; una tarjeta escrita con puntos; un SSN con puntos, pegado a su etiqueta o con el guion de un PDF; un EIN con espacio; un teléfono con un guion que no es el del teclado. Y NO tapa lo que no es un dato de nadie: «la factura 103 2640.80» (antes salía «[teléfono].80»), una cuenta contable, tres montos, los cuatro últimos de una tarjeta. EL CORREO de quien paga por Zelle: c6 lo deja normalizado («JPEREZ OBRAS EXAMPLE COM») y salía como el nombre de la contraparte; ahora ese nombre sale de la descripción ya tapada, y en «lo que Edgar ya enseñó» lo recordado de ese pagador va sin su nombre';
-  v_esp text := 'tapa: cuenta con guiones, cuenta de 7, acct de 6, tarjeta con puntos, ssn con puntos, ssn pegado, ssn con guion de PDF, ein con espacio, teléfono con guion de PDF, tel de 7 con espacio | '
+  v_esp text := 'tapa: cuenta con guiones, cuenta de 7, acct de 6, tarjeta con puntos, ssn con puntos, ssn pegado, ssn con guion de PDF, ein con espacio, teléfono con guion de PDF, tel de 7 con espacio, tel de 7 seguido, tarjeta en renglones | '
                 'deja: la factura y su monto, la cuenta contable, tres montos, los cuatro últimos | el correo de quien paga: tapado en el nombre y en la descripción | '
                 'lo ya enseñado: sin el nombre de ese pagador';
 begin
@@ -3344,11 +3375,14 @@ begin
       case when fn_bandeja_sin_datos(U&'ssn 123\201345\20136789') !~ '6789' then 'ssn con guion de PDF' end,
       case when fn_bandeja_sin_datos('ein 12 3456789') !~ '3456789' then 'ein con espacio' end,
       case when fn_bandeja_sin_datos(U&'tel 305\2011555\20110142') !~ '0142' then 'teléfono con guion de PDF' end,
-      case when fn_bandeja_sin_datos('tel 555 0142') !~ '0142' then 'tel de 7 con espacio' end);
+      case when fn_bandeja_sin_datos('tel 555 0142') !~ '0142' then 'tel de 7 con espacio' end,
+      case when fn_bandeja_sin_datos('mi tel 5550142, llámame') !~ '0142' then 'tel de 7 seguido' end,
+      case when fn_bandeja_sin_datos(E'la tarjeta 4111\n1111\n1111\n1111') !~ '1111' then 'tarjeta en renglones' end);
     b := concat_ws(', ',
       case when fn_bandeja_sin_datos('es la factura 103 2640.80') = 'es la factura 103 2640.80' then 'la factura y su monto' end,
       case when fn_bandeja_sin_datos('va a la cuenta 5100 de material') = 'va a la cuenta 5100 de material' then 'la cuenta contable' end,
-      case when fn_bandeja_sin_datos('pagaron 500 1200 y 300') = 'pagaron 500 1200 y 300' then 'tres montos' end,
+      case when fn_bandeja_sin_datos('pagaron 500 1200 y 300') = 'pagaron 500 1200 y 300'
+                and fn_bandeja_sin_datos('el cheque 5550142 de la obra') = 'el cheque 5550142 de la obra' then 'tres montos' end,
       case when fn_bandeja_sin_datos('la tarjeta que termina en 1007') = 'la tarjeta que termina en 1007' then 'los cuatro últimos' end);
     m := pg_temp.b17_mov('B17-63A', pg_temp.b17_mas_que_todo(100800.19), 'ZELLE PAYMENT FROM JPEREZ.OBRAS@EXAMPLE.COM 7781');
     k := fn_bandeja_dimelo_contexto(m, pg_temp.b17('dueno')::uuid, 'es un anticipo de la obra A');
@@ -3391,7 +3425,10 @@ begin
       case when g->>'estado' = 'pendiente' and g->>'porque' = 'Mira [enlace] y [enlace] para verificar tu cuenta. Oficina.' then 'sin enlaces'
            else 'NO: ' || left(g::text, 300) end,
       case when g2->>'estado' = 'sin_propuesta' and g2->>'falta' !~* '(https?:|www\.|example)' and g2->>'falta' ~ '\[enlace\]' and length(g2->>'falta') <= 200
-                and (g2->>'falta_de_la_ia')::boolean then 'sin enlaces, 200 letras como mucho, marcado como de la IA' else 'NO: ' || left(g2::text, 300) end,
+                and (g2->>'falta_de_la_ia')::boolean
+                -- (y sigue marcado al leer la Bandeja otra vez: la tarjeta lo dice con la voz de la IA, no con la de la app)
+                and (pg_temp.b17_leer(pg_temp.b17_entre('B17-64'))->'tarjetas'->(m::text)->'dimelo'->>'falta_de_la_ia')::boolean
+           then 'sin enlaces, 200 letras como mucho, marcado como de la IA' else 'NO: ' || left(g2::text, 300) end,
       case when (select string_agg(coalesce(q.porque, '') || coalesce(q.falta, ''), ' ') from bandeja_dimelo q where q.movimiento_id = m) !~* '(https?:|www\.|example\.)'
            then 'guardado igual' else 'GUARDADO CON ENLACES' end);
     raise exception using errcode = 'MXT00';
@@ -3406,10 +3443,11 @@ end $$;
 -- 65. LA PROPUESTA DE LA IA DE ANTES (c8) en la tarjeta nueva: dicha en llano, aprobada por su camino y con su rastro.
 do $$
 declare
-  v_obt text; m uuid; m2 uuid; m3 uuid; v_prop uuid; v_prop2 uuid; rec jsonb; rec2 jsonb; rec3 jsonb; x jsonb; a jsonb; a2 jsonb; u jsonb; l jsonb; l2 jsonb;
+  v_obt text; m uuid; m2 uuid; m3 uuid; m4 uuid; m5 uuid; m6 uuid; rec4 jsonb; rec5 jsonb; rec6 jsonb; g text; v_prop6 uuid; v_prop uuid; v_prop2 uuid; rec jsonb; rec2 jsonb; rec3 jsonb; x jsonb; a jsonb; a2 jsonb; u jsonb; l jsonb; l2 jsonb;
   b text; c text; d text; e text; f text; v_n0 int;
   v_nom text := 'LA PROPUESTA DE LA IA DE ANTES (c8) en la tarjeta nueva. Antes salía como la acción «ia»: «Es un gasto de «Es mío…»» y el motivo crudo de c8 (códigos de cuenta, «confianza alta»), sin «Recordarlo», y su «Así es» no dejaba rastro en la Bandeja (ni «Deshacer»). Ahora se dice como las demás: un gasto de su categoría, o «es tuyo» si va al retiro del dueño, con un porqué fijo en llano y la propuesta de la que sale; repartida entre varias cuentas, se dice y se manda a «Más opciones». Se aprueba por SU camino (la función de borde: fn_contador_aprobar) y la Bandeja ANOTA lo registrado (fn_bandeja_anotar: sale en lo contestado, se recuerda si Edgar quiere y se puede deshacer; dos veces no anota dos veces). Deshecho, la propuesta de c8 queda sin asiento vivo: se devuelve para que la pantalla la cierre';
   v_esp text := 'un gasto: «Camioneta y gasolina», en llano y con su propuesta | lo tuyo: «es tuyo» | repartida: se dice, a «Más opciones» | '
+                'la obra: la firme, puesta; la floja y la de una obra cerrada, se piden | '
                 'aprobada por c8: el libro, sin rastro todavía | anotada: en lo contestado, recordada, y una sola vez | '
                 'deshecha: vuelve a la Bandeja y devuelve la propuesta para cerrarla | cerrada por c8: su control, como estaba';
 begin
@@ -3427,9 +3465,36 @@ begin
     m3 := pg_temp.b17_mov('B17-65C', -91.23, 'BDIECISIETE VARIOS 12');
     insert into contador_propuestas (movimiento_id, fuente, propuesta, estado)
     values (m3, 'edgar', '{"lineas": [{"cuenta": "6300", "monto": "50.00"}, {"cuenta": "6500", "monto": "41.23"}], "motivo": "c17-pruebas", "confianza": 1}', 'pendiente');
+    -- LA OBRA de la propuesta: firme (flags.obra_fuerte) y en marcha, puesta; floja, o de una obra que ya se cerró, se pide (sin
+    -- la obra de Edgar la puerta de c8 registraría la de la línea: la tarjeta no puede enseñar otra cosa que la que entra)
+    m4 := pg_temp.b17_mov('B17-65D', -80.17, 'BDIECISIETE FERRE 31');
+    insert into contador_propuestas (movimiento_id, fuente, propuesta, estado)
+    values (m4, 'edgar', '{"lineas": [{"cuenta": "5100", "proyecto_id": "b17-prueba-a"}], "motivo": "c17-pruebas", "confianza": 0.9, "flags": {"obra_propuesta": true, "obra_fuerte": true}, "obra": {"proyecto_id": "b17-prueba-a", "confianza": 0.9}}', 'pendiente');
+    m5 := pg_temp.b17_mov('B17-65E', -70.19, 'BDIECISIETE FERRE 32');
+    insert into contador_propuestas (movimiento_id, fuente, propuesta, estado)
+    values (m5, 'edgar', '{"lineas": [{"cuenta": "5100", "proyecto_id": "b17-prueba-a"}], "motivo": "c17-pruebas", "confianza": 0.9, "flags": {"obra_propuesta": true}, "obra": {"proyecto_id": "b17-prueba-a", "confianza": 0.6}}', 'pendiente');
+    m6 := pg_temp.b17_mov('B17-65F', -60.23, 'BDIECISIETE FERRE 33');
+    insert into contador_propuestas (movimiento_id, fuente, propuesta, estado)
+    values (m6, 'edgar', '{"lineas": [{"cuenta": "5100", "proyecto_id": "b17-prueba-b"}], "motivo": "c17-pruebas", "confianza": 0.9, "flags": {"obra_propuesta": true, "obra_fuerte": true}, "obra": {"proyecto_id": "b17-prueba-b", "confianza": 0.9}}', 'pendiente')
+    returning id into v_prop6;
     rec := pg_temp.b17_rec(m);
     rec2 := pg_temp.b17_rec(m2);
     rec3 := pg_temp.b17_rec(m3);
+    rec4 := pg_temp.b17_rec(m4);
+    rec5 := pg_temp.b17_rec(m5);
+    rec6 := pg_temp.b17_rec(m6);
+    g := case when rec4->>'accion' = 'gasto' and rec4->'datos'->>'proyecto_id' = 'b17-prueba-a' and rec4->>'porque' like '%La obra la propone ella: mírala.'
+                   and not coalesce((rec4->>'pide_obra')::boolean, false) and rec4->>'texto' like '%de la obra B17 PRUEBA Obra A%'
+                   -- (si ese día la cuadrilla estuvo en una sola obra, la tarjeta pone ESA —es un hecho—, nunca la floja de la IA)
+                   and rec5->>'accion' = 'gasto' and rec5 ? 'propuesta_ia' and rec5->>'porque' not like '%La obra la propone ella%'
+                   and coalesce(rec5->'datos'->>'proyecto_id', '') <> 'b17-prueba-a'
+                   and ((rec5->>'pide_obra')::boolean or rec5->>'porque' like '%La obra: %')
+                   and rec6->>'accion' = 'gasto' and coalesce(rec6->'datos'->>'proyecto_id', '') <> 'b17-prueba-b'
+                   and ((rec6->>'pide_obra')::boolean or rec6->>'porque' like '%La obra: %')
+              then 'la firme, puesta; la floja y la de una obra cerrada, se piden'
+              else 'NO: ' || left(coalesce(rec4::text, 'nulo') || ' / ' || coalesce(rec5::text, 'nulo') || ' / ' || coalesce(rec6::text, 'nulo'), 600) end;
+    -- (la de la obra cerrada pone en rojo el control de c8 —su cuadre 64— hasta que se cierra: aquí, rechazada)
+    perform fn_contador_rechazar(v_prop6, pg_temp.b17('dueno')::uuid, 'c17-pruebas: la obra ya se cerró');
     b := case when rec->>'accion' = 'gasto' and rec->'datos'->>'cuenta' = '6300' and rec->>'fuente' = 'ia' and rec->>'propuesta_ia' = v_prop::text
                    and rec->>'texto' = 'Es un gasto de «Camioneta y gasolina»: $45.13.' and (rec->>'texto') || coalesce(rec->>'porque', '') !~* '(6300|auto and truck|confianza|R7)'
               then '«Camioneta y gasolina», en llano y con su propuesta' else 'NO: ' || left(coalesce(rec::text, 'nulo'), 300) end;
@@ -3452,7 +3517,7 @@ begin
                    and u->'ia_caducar' ? v_prop::text and l2->'ia_caducar' ? v_prop::text
               then 'vuelve a la Bandeja y devuelve la propuesta para cerrarla' else 'NO: ' || left(u::text, 300) end;
     perform fn_contador_caducar(v_prop, pg_temp.b17('dueno')::uuid, 'c17-pruebas: se deshizo en la Bandeja');
-    v_obt := format('un gasto: %s | lo tuyo: %s | repartida: %s | aprobada por c8: %s | anotada: %s | deshecha: %s | cerrada por c8: %s', b, c, d, e,
+    v_obt := format('un gasto: %s | lo tuyo: %s | repartida: %s | la obra: %s | aprobada por c8: %s | anotada: %s | deshecha: %s | cerrada por c8: %s', b, c, d, g, e,
       case when (a->>'hecho')::boolean and a->>'hecho_id' = a2->>'hecho_id' and (select count(*) from bandeja_hechos h where h.movimiento_id = m) = 1
                 and l->'recientes' @> jsonb_build_array(jsonb_build_object('hecho_id', a->>'hecho_id', 'clave', 'C:BDIECISIETE COSAS'))
                 and a->'recordado'->>'clave' = 'C:BDIECISIETE COSAS' and a->>'texto' = 'Es un gasto de «Camioneta y gasolina»: $45.13.'
@@ -3529,7 +3594,56 @@ begin
   insert into _pruebas values (66, v_nom, v_esp, v_obt, v_obt = v_esp);
 end $$;
 
--- 67. Nada queda, y los demás controles siguen como estaban.
+-- 67. EL RECIBO QUE ESPERABA y después casa con SU cargo de verdad: deja de esperar.
+do $$
+declare
+  v_obt text; m1 uuid; m2 uuid; s1 jsonb; s2 jsonb; l1 jsonb; l2 jsonb; a text; b text; c text; d text;
+  v_nom text := 'EL RECIBO QUE ESPERABA y después casa con su cargo de verdad. Un cargo se registra en la Bandeja («es mío») y dos días después la cuadrilla sube el recibo de OTRA compra por el mismo monto con esa tarjeta: como nada se cambia solo, sale arriba con «Es su recibo» / «Es otra compra». Antes de que Edgar conteste llega al banco el cargo de verdad de ese recibo y c6 lo casa con él. El cargo de antes seguía diciendo «llegó su recibo» (y su «Es su recibo» ya no podía ser: el banco contestaba que esa línea casa con otro movimiento) hasta el siguiente «Casar» de su cuenta. Ahora la Bandeja se lo da a c6 otra vez al abrirse: deja de esperar, lo de Edgar sigue como él lo dejó y el gasto del recibo está una sola vez';
+  v_esp text := 'llega el recibo: 1 espera, arriba, y nada cambia | llega su cargo de verdad: casa con el recibo | '
+                'la Bandeja lo mira otra vez: 0 esperan, arriba nada, sin marca | lo de Edgar: sigue siendo suyo (3200 53.19) y el recibo, una vez';
+begin
+  if pg_temp.b17_omitir(67, v_nom, v_esp) then return; end if;
+  begin
+    perform pg_temp.b17_montar();
+    perform pg_temp.b17_tarjeta();
+    m1 := pg_temp.b17_mov('B17-67A', -53.19, 'ZZ BDIECISIETE GASOLINA 0077', null, '2100-9917', pg_temp.b17_d() - 2);
+    perform pg_temp.b17_hacer(m1, 'personal', '{}', '{"fuente":"mas"}');
+    perform pg_temp.b17_recibo(-1700671, 'b17-prueba-a', 53.19, 'ZZ BDIECISIETE GASOLINA');
+    s1 := pg_temp.b17_solo();
+    l1 := pg_temp.b17_leer(pg_temp.b17_entre('B17-67'));
+    a := case when (s1->'recibos'->>'esperan')::int = 1 and l1->'recibos' @> jsonb_build_array(jsonb_build_object('movimiento_id', m1))
+                   and (select mb.casado_clase from movimientos_banco mb where mb.id = m1) = 'clasificado'
+              then '1 espera, arriba, y nada cambia' else 'NO: ' || left(s1::text || ' / ' || coalesce((l1->'recibos')::text, 'nulo'), 400) end;
+    -- el cargo de verdad de ese recibo llega al banco: c6 lo casa con él («primero casar»)
+    m2 := pg_temp.b17_mov('B17-67B', -53.19, 'ZZ BDIECISIETE GASOLINA 0077', null, '2100-9917');
+    b := case when (select mb.estado || '/' || coalesce(mb.casado_clase, '') from movimientos_banco mb where mb.id = m2) = 'casado/recibo'
+              then 'casa con el recibo' else 'NO CASÓ: ' || coalesce((select mb.estado || '/' || coalesce(mb.casado_clase, '') || ' ' || coalesce(mb.propuesta->>'motivo', '')
+                                                                    from movimientos_banco mb where mb.id = m2), 'nulo') end;
+    s2 := pg_temp.b17_solo();
+    l2 := pg_temp.b17_leer(pg_temp.b17_entre('B17-67'));
+    c := case when (s2->'recibos'->>'esperan')::int = 0 and not (l2->'recibos' @> jsonb_build_array(jsonb_build_object('movimiento_id', m1)))
+                   and (select mb.propuesta->>'motivo' from movimientos_banco mb where mb.id = m1) is distinct from 'llego_su_ticket'
+                   and not exists (select 1 from fn_bandeja_control() k where not k.ok and k.detalle like '%BDIECISIETE GASOLINA%')
+              then '0 esperan, arriba nada, sin marca'
+              else 'SIGUE ESPERANDO: ' || left(s2::text || ' / ' || coalesce((l2->'recibos')::text, 'nulo'), 400) end;
+    d := case when (select mb.casado_clase from movimientos_banco mb where mb.id = m1) = 'clasificado'
+                   and (select sum(al.monto) from asiento_lineas al where al.asiento_id = (select mb.asiento_id from movimientos_banco mb where mb.id = m1)
+                                                                  and al.cuenta = '3200') = 53.19
+                   and (select count(*) from bandeja_hechos h where h.movimiento_id = m1 and h.deshecho_el is null) = 1
+                   and (select sum(al.monto) from asiento_lineas al join asientos x on x.id = al.asiento_id
+                         where al.proyecto_id = 'b17-prueba-a' and al.monto in (53.19, -53.19) and x.origen_tabla = 'recibos') = 53.19
+              then 'sigue siendo suyo (3200 53.19) y el recibo, una vez' else 'CAMBIÓ' end;
+    v_obt := format('llega el recibo: %s | llega su cargo de verdad: %s | la Bandeja lo mira otra vez: %s | lo de Edgar: %s', a, b, c, d);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.b17_ser('editor');
+  insert into _pruebas values (67, v_nom, v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 68. Nada queda, y los demás controles siguen como estaban.
 do $$
 declare
   v_obt text;
@@ -3542,7 +3656,7 @@ begin
       case when pg_temp.b17_rojos() = pg_temp.b17('rojos_antes') then 'igual que antes' else 'CAMBIARON: ' || pg_temp.b17_rojos() end);
   exception when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (67, 'nada queda de las pruebas: lo recordado, las propuestas, lo registrado, los asientos, los movimientos del banco y la configuración están como antes; y los controles de c3, c6 y c8 no cambiaron',
+  insert into _pruebas values (68, 'nada queda de las pruebas: lo recordado, las propuestas, lo registrado, los asientos, los movimientos del banco y la configuración están como antes; y los controles de c3, c6 y c8 no cambiaron',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
