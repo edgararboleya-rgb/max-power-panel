@@ -3810,7 +3810,7 @@
     if (!gs.length) return "";
     const ver = S.bn.verGrupos ? gs : gs.slice(0, BN_GRUPOS), nMov = gs.reduce((s, g) => s + g.ms.length, 0);
     return `<section class="ct-card ct-bn-grupos" id="ct-bn-grupos">
-      <div class="ct-bn-g-h"><h2>Decide por grupo</h2><p class="ct-sub">${gs.length === 1 ? "Un comercio tiene" : `${gs.length} comercios o personas tienen`} varios movimientos esperando (${nMov} en total): una respuesta vale para todos los suyos.</p></div>
+      <div class="ct-bn-g-h"><h2>Decide por grupo</h2><p class="ct-sub">${gs.length === 1 ? `Hay un grupo con varios movimientos esperando (${nMov}): una respuesta vale para todos.` : `Hay ${gs.length} grupos con varios movimientos esperando (${nMov} en total): una respuesta vale para todos los de cada grupo.`}</p></div>
       ${ver.map(bnGrupoHTML).join("")}
       ${gs.length > ver.length ? `<div class="ct-acciones"><button type="button" class="accion secundaria chica" id="ct-bn-g-todos">Ver los ${gs.length} grupos</button></div>` : ""}
     </section>`;
@@ -6081,10 +6081,12 @@
   }
   function barraHTML(cortes, corte) {
     const { lista, escondidos } = periodosOfrecidos(cortes);
+    // (c18) «Para el contador» es del año entero y elige su año él mismo: los períodos de la barra no van con él
+    const periodos = S.est.sub === "paquete" ? "" : `<div class="ct-chips ct-est-periodos" id="ct-est-periodos" aria-label="Qué período">${lista.map(c => `<button type="button" class="ct-chip chica" data-periodo="${esc(c.periodo)}" aria-pressed="${c.periodo === S.est.periodo ? "true" : "false"}">${esc(nombrePeriodo(c))}</button>`).join("")}${escondidos > 0 || S.est.todos ? `<button type="button" class="ct-chip chica" id="ct-est-mas">${S.est.todos ? "Menos períodos" : "Más períodos"}</button>` : ""}</div>
+      <p class="ct-est-ctx" id="ct-est-ctx"><span class="ct-num">${esc(rangoTexto(corte, enBalance()))}</span><span id="ct-est-ctx-n" class="ct-num"></span> ${cortePill(corte)}${S.est.avisoHoy ? `<span class="ct-sub">«Hoy» solo vale para el balance: se enseña el mes completo.</span>` : ""}</p>`;
     return `<section class="ct-card ct-est-barra" id="ct-est-barra" aria-busy="false">
       <div class="ct-chips ct-est-subs" aria-label="Qué estado">${Object.keys(SUBS).concat(S.fis.datos ? ["paquete"] : []).map(k => `<button type="button" class="ct-chip" data-sub="${k}" aria-pressed="${k === S.est.sub ? "true" : "false"}">${esc(SUBS[k] || "Para el contador")}</button>`).join("")}</div>
-      <div class="ct-chips ct-est-periodos" id="ct-est-periodos" aria-label="Qué período">${lista.map(c => `<button type="button" class="ct-chip chica" data-periodo="${esc(c.periodo)}" aria-pressed="${c.periodo === S.est.periodo ? "true" : "false"}">${esc(nombrePeriodo(c))}</button>`).join("")}${escondidos > 0 || S.est.todos ? `<button type="button" class="ct-chip chica" id="ct-est-mas">${S.est.todos ? "Menos períodos" : "Más períodos"}</button>` : ""}</div>
-      <p class="ct-est-ctx" id="ct-est-ctx"><span class="ct-num">${esc(rangoTexto(corte, enBalance()))}</span><span id="ct-est-ctx-n" class="ct-num"></span> ${cortePill(corte)}${S.est.avisoHoy ? `<span class="ct-sub">«Hoy» solo vale para el balance: se enseña el mes completo.</span>` : ""}</p>
+      ${periodos}
       ${idiomaHTML()}
     </section>`;
   }

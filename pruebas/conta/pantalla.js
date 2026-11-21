@@ -3823,8 +3823,8 @@ async function escenaF19(b, errs) {
     ok('Con c17, al abrir la Bandeja: primero la rutina de lo que entra solo (fn_bandeja_solo, como «pantalla») y después UNA lectura de fn_bandeja_leer',
       ls.includes('fn_bandeja_solo') && cuantas(n0, 'fn_bandeja_leer') === 1 && ls.indexOf('fn_bandeja_solo') < ls.indexOf('fn_bandeja_leer') && ultima(n0, 'fn_bandeja_solo').args.p.corrio === 'pantalla', ls.filter(f => f.startsWith('fn_bandeja')).join(','));
     const gruposTxt = await plano(q, '#ct-bn-grupos');
-    ok('«Decide por grupo»: los dos lotes que el banco ya reconoce (las cuotas del préstamo y los intereses de la tarjeta) y los dos comercios con varios cargos (Home Depot y Netflix), cada uno con cuántos son y su total',
-      (await q.locator('[data-bn-grupo]').count()) === 4 && /Cuotas de préstamos.*2 movimientos.*1,200\.00/.test(gruposTxt) && /Intereses de la tarjeta.*59\.70/.test(gruposTxt) && /HOME DEPOT.*3 movimientos.*Material.*1,655\.02/.test(gruposTxt) && /NETFLIX.*2 movimientos.*Personal.*30\.98/.test(gruposTxt), gruposTxt.slice(0, 200));
+    ok('«Decide por grupo»: dice cuántos grupos y cuántos movimientos son, y enseña los dos lotes que el banco ya reconoce (las cuotas del préstamo y los intereses de la tarjeta) y los dos comercios con varios cargos (Home Depot y Netflix), cada uno con cuántos son y su total',
+      (await q.locator('[data-bn-grupo]').count()) === 4 && /Hay 4 grupos con varios movimientos esperando \(9 en total\): una respuesta vale para todos los de cada grupo\./.test(gruposTxt) && /Cuotas de préstamos.*2 movimientos.*1,200\.00/.test(gruposTxt) && /Intereses de la tarjeta.*59\.70/.test(gruposTxt) && /HOME DEPOT.*3 movimientos.*Material.*1,655\.02/.test(gruposTxt) && /NETFLIX.*2 movimientos.*Personal.*30\.98/.test(gruposTxt), gruposTxt.slice(0, 200));
     ok('…y sin franja todavía: nada entró solo, nada contestado, nada recordado', (await q.locator('#ct-bn-franja').count()) === 0);
     const pildora = async k => (await q.locator(`.ct-mov[data-id="${ID[k]}"] .ct-f-motivo .ct-pill`).first().textContent()).trim();
     ok('Cada fila dice en una palabra qué cree la app que es: «Personal» (Netflix), «Material» (Home Depot), «Préstamo» (OnDeck), «Cobro de factura» (Intuit) y «¿Qué es?» donde no lo sabe (el cajero)',
@@ -4169,8 +4169,8 @@ async function escenaF19(b, errs) {
     t = await cuerpoTxt();
     let l = ultima(n0, 'fn_fiscal_paquete');
     if (w === 1280) {
-      ok('«Para el contador»: pide a la base el paquete del año (fn_fiscal_paquete) y lo enseña EN INGLÉS —las líneas del formulario con sus cuentas («Line 1a — Gross receipts or sales»), el 1125-A, los estados y la balanza con la línea de cada cuenta—, con las explicaciones para Edgar en español',
-        !!l && l.args.p_anio === F19.fiscal.anio && t.includes(P.tax_lines[0].label) && /Form 1125-A — Cost of Goods Sold/.test(t) && /Trial Balance, with tax lines/.test(t) && /Tax return lines — Form 1120/.test(t) && /Lo que se le manda al contador/.test(t) && (await q.locator('.ct-fis-cuerpo').getAttribute('lang')) === 'en', t.slice(0, 200));
+      ok('«Para el contador»: pide a la base el paquete del año (fn_fiscal_paquete) y lo enseña EN INGLÉS —las líneas del formulario con sus cuentas («Line 1a — Gross receipts or sales»), el 1125-A, los estados y la balanza con la línea de cada cuenta—, con las explicaciones para Edgar en español; y sin los períodos de la barra (el paquete es del año entero y elige su año él mismo)',
+        !!l && l.args.p_anio === F19.fiscal.anio && (await q.locator('#ct-est-periodos').count()) === 0 && (await q.locator('#ct-est-ctx').count()) === 0 && (await q.locator('#ct-fis-anio').count()) === 1 && (await q.locator('.ct-est-subs [data-sub="paquete"]').getAttribute('aria-pressed')) === 'true' && t.includes(P.tax_lines[0].label) && /Form 1125-A — Cost of Goods Sold/.test(t) && /Trial Balance, with tax lines/.test(t) && /Tax return lines — Form 1120/.test(t) && /Lo que se le manda al contador/.test(t) && (await q.locator('.ct-fis-cuerpo').getAttribute('lang')) === 'en', t.slice(0, 200));
       ok('…y AVISA de lo que falta por confirmar: en español para Edgar («Pendiente de confirmar con el contador… 1120 (C-corp) o el 1120-S (S-corp)») y en inglés dentro del paquete («ENTITY TYPE PENDING CONFIRMATION…»)',
         /Pendiente de confirmar con el contador/.test(await plano(q, '#ct-fis-pendiente')) && /ENTITY TYPE PENDING CONFIRMATION/.test(await plano(q, '.ct-fis-w')) && (await q.locator('#ct-fis-forma').inputValue()) === '1120' && !(await q.locator('#ct-fis-confirmada').isChecked()));
       const [bajada] = await Promise.all([q.waitForEvent('download', { timeout: 8000 }), q.locator('#ct-fis-csv-tb').click()]);
@@ -4197,7 +4197,7 @@ async function escenaF19(b, errs) {
       ok('En el teléfono (390 px), «Para el contador» cabe sin desplazar a los lados: el año, el formulario, el aviso, las descargas y las tablas', a.doc <= a.ven + 1 && await q.locator('#ct-fis-pendiente').isVisible() && await q.locator('#ct-fis-imprimir').isVisible(), JSON.stringify(a));
       await ve(q, 'estados', { sub: 'resultados', periodo: '2026-10' });
       const a2 = await q.evaluate(() => ({ doc: document.documentElement.scrollWidth, ven: window.innerWidth }));
-      ok('…y el estado de resultados en inglés, también', a2.doc <= a2.ven + 1 && (await cuerpoTxt()).includes(FL.secciones.costo), JSON.stringify(a2));
+      ok('…y el estado de resultados en inglés, también (con sus períodos otra vez en la barra)', a2.doc <= a2.ven + 1 && (await cuerpoTxt()).includes(FL.secciones.costo) && (await q.locator('#ct-est-periodos [data-periodo]').count()) > 0 && (await q.locator('#ct-est-ctx').count()) === 1, JSON.stringify(a2));
       await foto(q, 'f19-390-paquete');
     }
     await cx.close();
