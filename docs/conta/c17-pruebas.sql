@@ -1,6 +1,6 @@
 -- =====================================================================
 -- c17-pruebas.sql — la Bandeja nueva se prueba a sí misma
--- (c17-bandeja.sql). 21-nov-2026 (segunda vuelta: 53 pruebas).
+-- (c17-bandeja.sql). 21-nov-2026 (segunda vuelta: 54 pruebas).
 --
 -- Se pega en el SQL Editor DESPUÉS de c17-bandeja.sql (o, en el banco:
 --   PGPASSWORD=editor_sql psql -h 127.0.0.1 -p 5433 -U editor_sql -d <bd> -1 \
@@ -128,7 +128,9 @@
 -- 51 leer: los grupos dicen lo que sus tarjetas, los depósitos uno a uno,
 --    el tope, y lo del control a la vista;
 -- 52 el pago a un subcontratista lleva a quién se le paga;
--- 53 nada queda, y los controles de c3, c6 y c8 siguen como estaban.
+-- 53 lo ya contestado, tocado otra vez (dos pestañas, la contestación que
+--    se perdió por el camino): no entra dos veces y la base dice «fuera»;
+-- 54 nada queda, y los controles de c3, c6 y c8 siguen como estaban.
 -- =====================================================================
 create temp table if not exists _pruebas(n int, prueba text, esperado text, obtenido text, ok boolean);
 truncate _pruebas;
@@ -532,7 +534,9 @@ declare
                 -- COBRA el procesador, las plataformas de uso mixto, y quién paga por un canal (nunca el canal)
                 'comercio C:HOME DEPOT | comercio C:LOWES | comercio C:LOWES | comercio C:ZZ LUMBER CO | comercio C:PAYPAL ZZTIENDA | '
                 'comercio C:INTUIT COMISIONES | comercio C:INTUIT QUICKBOOKS | comercio C:GOOGLE ADS | comercio C:GOOGLE YOUTUBE | '
-                'comercio C:MICROSOFT XBOX | deposito D:ZZ PEREZ FAMILY | deposito -';
+                'comercio C:MICROSOFT XBOX | deposito D:ZZ PEREZ FAMILY | deposito -'
+                -- (y el nombre de una persona o de una empresa, como se escribe: las siglas se quedan en mayúsculas)
+                ' | nombres: ZZ Juan Perez · ZZ Bdiecisiete Alfa LLC';
 begin
   begin
     perform pg_temp.b17_ser('dueno');
@@ -565,6 +569,8 @@ begin
                            (25, 'MICROSOFT*XBOX GAME PASS', -16.99, 'DEBIT', null),
                            (26, 'REAL TIME PAYMENT CREDIT RECD FROM ABA/CONTR BNF=ZZ PEREZ FAMILY TRUST', 8000.00, 'CREDIT', null),
                            (27, 'FEDWIRE CREDIT VIA ZZ BANK NA REF 123', 2750.00, 'CREDIT', null)) as t(n, d, m, t, q)) x;
+    v_obt := v_obt || ' | nombres: ' || (fn_bandeja_contraparte('ZELLE PAYMENT TO ZZ JUAN PEREZ JPM99ABC', null, -500.00, 'DEBIT', null)->>'nombre')
+             || ' · ' || (fn_bandeja_contraparte('ZELLE PAYMENT FROM ZZ BDIECISIETE ALFA LLC 123456', null, 3200.50, 'CREDIT', null)->>'nombre');
     perform pg_temp.b17_ser('editor');
   exception when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
@@ -2600,7 +2606,35 @@ begin
   insert into _pruebas values (52, v_nom, v_esp, v_obt, v_obt = v_esp);
 end $$;
 
--- 53. Nada queda, y los demás controles siguen como estaban.
+-- 53. LO YA CONTESTADO, tocado otra vez.
+do $$
+declare
+  v_obt text; m uuid; r1 jsonb; r2 jsonb;
+  v_nom text := 'LO YA CONTESTADO, TOCADO OTRA VEZ (la contestación de la base se perdió por el camino y Edgar vuelve a tocar «Así es», o lo tenía abierto en otra pestaña): no entra dos veces, y la base lo dice con «fuera» y en llano, para que la pantalla vuelva a leer la Bandeja en vez de decir «no se guardó»';
+  v_esp text := 'la primera: hecho | la segunda: no, fuera, en llano | asientos del movimiento: 1 | su rastro: 1';
+begin
+  if pg_temp.b17_omitir(53, v_nom, v_esp) then return; end if;
+  begin
+    perform pg_temp.b17_montar();
+    m := pg_temp.b17_mov('B17-53A', -41.07, 'ZZ BDIECISIETE PAPELERIA 0011 OCALA FL');
+    r1 := pg_temp.b17_hacer(m, 'gasto', '{"cuenta":"6500"}');
+    r2 := pg_temp.b17_hacer(m, 'gasto', '{"cuenta":"6500"}');
+    v_obt := format('la primera: %s | la segunda: %s | asientos del movimiento: %s | su rastro: %s',
+      case when (r1->>'hecho')::boolean then 'hecho' else 'NO: ' || left(r1::text, 200) end,
+      case when not (r2->>'hecho')::boolean and (r2->>'fuera')::boolean and r2->>'por_que' like 'Ese movimiento ya no está en la Bandeja%'
+                and r2->>'por_que' !~ '(fn_|MX[0-9]|casado|pendiente)' then 'no, fuera, en llano' else 'NO: ' || left(r2::text, 200) end,
+      (select count(*) from asientos a where a.origen_tabla = 'movimientos_banco' and a.origen_id = m::text),
+      (select count(*) from bandeja_hechos h where h.movimiento_id = m));
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.b17_ser('editor');
+  insert into _pruebas values (53, v_nom, v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 54. Nada queda, y los demás controles siguen como estaban.
 do $$
 declare
   v_obt text;
@@ -2613,7 +2647,7 @@ begin
       case when pg_temp.b17_rojos() = pg_temp.b17('rojos_antes') then 'igual que antes' else 'CAMBIARON: ' || pg_temp.b17_rojos() end);
   exception when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (53, 'nada queda de las pruebas: lo recordado, las propuestas, lo registrado, los asientos, los movimientos del banco y la configuración están como antes; y los controles de c3, c6 y c8 no cambiaron',
+  insert into _pruebas values (54, 'nada queda de las pruebas: lo recordado, las propuestas, lo registrado, los asientos, los movimientos del banco y la configuración están como antes; y los controles de c3, c6 y c8 no cambiaron',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 

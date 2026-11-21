@@ -936,7 +936,10 @@ begin
     return jsonb_strip_nulls(jsonb_build_object(
       'clase', case when p_monto < 0 then 'zelle_a' else 'zelle_de' end,
       'clave', case when v_n is not null then 'Z' || case when p_monto < 0 then '>' else '<' end || ':' || v_n end,
-      'nombre', coalesce(initcap(v_n), 'Zelle')));
+      -- (el nombre como se escribe: «Zz Alfa Holdings Llc» no; las siglas —LLC, INC, lo que no lleva vocales— se quedan en mayúsculas)
+      'nombre', coalesce((select string_agg(case when t.w ~ '^(LLC|INC|CORP|LLP|PLLC|LP|PA|USA|DBA)$' or t.w !~ '[AEIOUY]' then t.w else initcap(t.w) end,
+                                            ' ' order by t.i)
+                            from unnest(r) with ordinality as t(w, i)), 'Zelle')));
   end if;
   if fn_banco_dice_nomina(v, p_memo) then
     return jsonb_build_object('clase', 'nomina', 'nombre', 'Nómina');
@@ -1777,7 +1780,9 @@ begin
   end if;
   -- (un cargo ya registrado cuyo recibo llegó después se contesta con las opciones que c6 le puso: «es su recibo» o «es otra compra»)
   if m.estado <> 'pendiente' and not (coalesce(p_accion, '') = 'banco' and m.estado = 'casado' and m.propuesta->>'motivo' = 'llego_su_ticket') then
-    return jsonb_build_object('ok', false, 'falta', 'Ese movimiento ya no está en la Bandeja.');
+    -- (fuera: ya no espera respuesta —se registró desde otra pestaña, o la contestación de antes se perdió por el camino—; la
+    -- pantalla no lo da por «no guardado»: vuelve a leer la Bandeja)
+    return jsonb_build_object('ok', false, 'fuera', true, 'falta', 'Ese movimiento ya no está en la Bandeja: ya estaba contestado.');
   end if;
   v_usd := fn_bandeja_usd(abs(m.monto));
   case coalesce(p_accion, '')
@@ -2222,8 +2227,12 @@ comment on function public.fn_bandeja_config(jsonb) is 'c17: cambia la configura
 --     un resultado (no lanza por lo que la puerta rechace):
 --       {hecho: true, hecho_id, estado, asiento, texto, facturas_cobradas,
 --        recordado, propuestas_ia}
---       {hecho: false, por_que, pide_motivo?, freno?, pide_obra?, campos?,
---        cambio?, resuelto?}
+--       {hecho: false, por_que, pide_motivo?, freno?, sugerido?, pide_obra?,
+--        campos?, cambio?, resuelto?, dicho?, fuera?}
+--     (cambio: lo que el banco proponía ya es otra cosa; resuelto: casó solo
+--     con lo que ya estaba en el libro; dicho: c10 apuntó de quién es el
+--     pago y ahora toca repartirlo; fuera: ya no espera respuesta. En los
+--     cuatro la pantalla vuelve a leer la Bandeja en vez de insistir.)
 --     y nada queda a medias: lo que la puerta rechaza se deshace entero.
 --     p_opciones: {fuente (recomendacion | dimelo | grupo | solo | mas),
 --     motivo (lo que Edgar escribió), visto (la huella del freno que vio),
@@ -2515,7 +2524,7 @@ begin
   v := fn_bandeja_validar(p_movimiento, p_accion, p_datos);
   if not coalesce((v->>'ok')::boolean, false) then
     return jsonb_strip_nulls(jsonb_build_object('hecho', false, 'movimiento_id', p_movimiento, 'por_que', v->>'falta',
-                                                'pide_obra', v->'pide_obra', 'cambio', v->'cambio'));
+                                                'pide_obra', v->'pide_obra', 'cambio', v->'cambio', 'fuera', v->'fuera'));
   end if;
   d := v->'datos';
   select * into m from movimientos_banco where id = p_movimiento;

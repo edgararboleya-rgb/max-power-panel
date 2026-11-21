@@ -481,14 +481,15 @@ end $$;
 -- 11. EL AÑO PARCIAL.
 do $$
 declare
-  v_obt text; v_esp text; p1 jsonb; p2 jsonb; v_a1 int; v_d date; v_a2 int; a text; b text;
+  v_obt text; v_esp text; p1 jsonb; p2 jsonb; p0 jsonb; v_a1 int; v_d date; v_a2 int; a text; b text; c text;
 begin
   -- el primer año que la app lleva, y desde qué día; y un año posterior que ya esté en los períodos (entero)
   select extract(year from min(p.desde))::int, min(p.desde) into v_a1, v_d from periodos p where p.tipo = 'mes';
   select min(p.anio) into v_a2 from periodos p where p.tipo = 'anio' and p.anio > v_a1;
   v_esp := case when v_d > make_date(v_a1, 1, 1) then 'el primer año: parcial, desde el arranque del libro, dicho arriba y sin «Year-End»'
                 else 'el primer año: entero (el libro empieza el 1 de enero)' end
-           || ' | ' || case when v_a2 is null then 'no hay otro año en los períodos' else 'un año entero: «Year-End», sin aviso de parcial' end;
+           || ' | ' || case when v_a2 is null then 'no hay otro año en los períodos' else 'un año entero: «Year-End», sin aviso de parcial' end
+           || ' | un año de antes del libro: vacío, dicho arriba y sin «Year-End»';
   begin
     perform pg_temp.f18_ser('dueno');
     p1 := fn_fiscal_paquete(v_a1);
@@ -508,12 +509,19 @@ begin
                      and not exists (select 1 from jsonb_array_elements_text(p2->'warnings') w where w ~ 'PARTIAL YEAR')
                 then 'un año entero: «Year-End», sin aviso de parcial' else 'un año entero: DICE PARCIAL' end;
     end if;
+    -- un año que la app no lleva (el anterior al primero): ceros, pero dicho
+    p0 := fn_fiscal_paquete(v_a1 - 1);
+    c := case when not (p0->>'in_books')::boolean and p0->>'title' !~ 'Year-End' and p0->>'title' ~ 'no books'
+                   and p0->'warnings'->>0 ~ ('^NO BOOKS FOR ' || (v_a1 - 1)::text) and p0->'warnings'->>0 ~ 'EMPTY'
+                   and (p1->>'in_books')::boolean
+              then 'un año de antes del libro: vacío, dicho arriba y sin «Year-End»'
+              else 'un año de antes del libro: NO LO DICE (' || left(p0->>'title', 80) || ' · ' || left(coalesce(p0->'warnings'->>0, ''), 80) || ')' end;
     perform pg_temp.f18_ser('editor');
-    v_obt := a || ' | ' || b;
+    v_obt := a || ' | ' || b || ' | ' || c;
   exception when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
   perform pg_temp.f18_ser('editor');
-  insert into _pruebas values (11, 'EL AÑO PARCIAL: si el libro de la app empieza dentro del año (2026: el 1 de octubre; de enero a septiembre está QuickBooks), el paquete NO presenta esos meses como el año: «partial_year», el período desde el arranque del libro, el título sin «Year-End» y el PRIMER aviso («PARTIAL YEAR…: … is NOT included here»); un año que la app lleva entero sale como siempre',
+  insert into _pruebas values (11, 'EL AÑO PARCIAL: si el libro de la app empieza dentro del año (2026: el 1 de octubre; de enero a septiembre está QuickBooks), el paquete NO presenta esos meses como el año: «partial_year», el período desde el arranque del libro, el título sin «Year-End» y el PRIMER aviso («PARTIAL YEAR…: … is NOT included here»); un año que la app lleva entero sale como siempre; y un año que la app NO lleva (de antes de su libro) sale vacío diciéndolo («in_books» en falso, «NO BOOKS FOR…»), no como un cierre en ceros',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 

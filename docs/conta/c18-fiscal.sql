@@ -638,7 +638,9 @@ comment on function public.fn_fiscal_leer() is 'c18: lo que la pantalla necesita
 --     el 1 de octubre; de enero a septiembre está QuickBooks), el paquete lo
 --     dice ARRIBA (partial_year, period_start = el arranque del libro, el
 --     título sin «Year-End» y el primer aviso): tres meses no se presentan
---     como el año.
+--     como el año. Y un año que la app NO lleva (anterior a su libro) sale
+--     vacío y lo dice (in_books: false, su título y su aviso): ceros con
+--     el título de un cierre no son el cierre de ese año.
 --   · EL 1125-A lleva su línea 1 (el inventario al inicio) y «Purchases» es
 --     lo comprado: el material gastado más lo que subió el inventario; así
 --     1 + 2 + 3 + 5 − 7 es el costo de ventas de los libros (form_1125a_check).
@@ -659,6 +661,8 @@ declare
   v_x      text;
   v_desde  date;
   v_parc   boolean;
+  v_hay    boolean;
+  v_libro  date;
   v_cap    jsonb;
   v_l      jsonb;
   v_m2     jsonb;
@@ -866,7 +870,15 @@ begin
   select coalesce(min(r.acumulado_desde), make_date(p_anio, 1, 1)) into v_desde from v_resultados r where r.periodo = v_per;
   v_desde := greatest(v_desde, make_date(p_anio, 1, 1));
   v_parc := v_desde > make_date(p_anio, 1, 1);
+  -- EL AÑO QUE LA APP NO LLEVA (anterior a su libro, o que todavía no existe): el paquete sale vacío, y lo dice; ceros con el
+  -- título de un cierre de año no son el cierre de ese año
+  v_hay := exists (select 1 from periodos p where p.tipo = 'anio' and p.anio = p_anio);
+  select min(p.desde) into v_libro from periodos p where p.tipo = 'mes';
   -- los avisos, en inglés (es lo que lee el CPA)
+  if not v_hay then
+    v_avisos := v_avisos || format('NO BOOKS FOR %s IN THIS SYSTEM: this accounting system has no records for that year%s. This package is EMPTY; the records for %s are in the prior accounting system (QuickBooks).',
+                                   p_anio, coalesce(format(' (its books start on %s)', v_libro), ''), p_anio);
+  end if;
   if v_parc then
     v_avisos := v_avisos || format('PARTIAL YEAR: the books in this system start on %s (opening balances as of %s, carried over from the prior accounting system). The income statement and the tax-line amounts cover %s to %s only; activity from %s to %s is in the prior system (QuickBooks) and is NOT included here.',
                                    v_desde, v_desde - 1, v_desde, make_date(p_anio, 12, 31), make_date(p_anio, 1, 1), v_desde - 1);
@@ -906,10 +918,11 @@ begin
                                  cfg.formas_anio, p_anio);
   return jsonb_build_object(
     'company', 'Max Power Electrical Solutions, Inc.',
-    'title', case when v_parc then format('Accounting Package — %s (partial year: %s to %s)', p_anio, v_desde, make_date(p_anio, 12, 31))
+    'title', case when not v_hay then format('Accounting Package — %s (no books for this year in this system)', p_anio)
+                  when v_parc then format('Accounting Package — %s (partial year: %s to %s)', p_anio, v_desde, make_date(p_anio, 12, 31))
                   else format('Year-End Accounting Package — %s', p_anio) end,
     'fiscal_year', p_anio, 'period_start', v_desde, 'period_end', make_date(p_anio, 12, 31),
-    'partial_year', v_parc, 'books_start', v_desde,
+    'partial_year', v_parc, 'books_start', case when v_hay then v_desde else v_libro end, 'in_books', v_hay,
     'entity', jsonb_build_object('form', v_forma, 'type', case v_forma when '1120' then 'C corporation' else 'S corporation' end,
                                  'confirmed', cfg.confirmada and v_forma = cfg.forma, 'note', cfg.nota),
     'basis', 'Accrual basis, per books',
