@@ -650,8 +650,10 @@ prueba; `c18-fiscal.sql` no cambió (sigue con la marca `2026112201`).
 ## La sexta vuelta (22-nov, marca 2026112203)
 
 Lo que salió el día que la Bandeja nueva se estrenó con la base de verdad.
-`c18-fiscal.sql` no cambió; `c6` tampoco (no hay que volver a pegarlo); la
-pantalla (`js/conta.js`) tampoco: no hay nada que publicar.
+`c18-fiscal.sql` no cambió; `c6` tampoco (no hay que volver a pegarlo). La
+pantalla (`js/conta.js`) no cambió en la sexta vuelta, pero SÍ en su segunda
+pasada (la 6b, más abajo): hay que publicar la app. La función `contador` no
+se toca.
 
 - **Una línea de crédito no es un préstamo a plazo.** Un mismo prestamista
   puede tener las dos cosas, y el banco las escribe casi igual (el nombre del
@@ -692,7 +694,8 @@ pantalla (`js/conta.js`) tampoco: no hay nada que publicar.
   dice, y se estrecha antes el del préstamo por su puerta de c6
   (`fn_prestamo_guardar` con su `id` y el `descriptor` nuevo), para que solo
   case con sus cuotas. Y lo que el banco escriba de una tercera forma no se
-  le supone ni al préstamo ni a la línea: se avisa.
+  le supone ni al préstamo ni a la línea: se avisa (desde la 6b, también si
+  es un depósito, y sin decir «todavía no está dado de alta»).
 - **La pregunta con botones iguales.** Un pago a un préstamo por más que su
   cuota trae de c6 dos respuestas igual de válidas del MISMO préstamo («la
   cuota y lo demás a capital» y «con el capital y el interés de su estado de
@@ -721,30 +724,124 @@ pantalla (`js/conta.js`) tampoco: no hay nada que publicar.
   de alta. La semilla da de alta la tarjeta de la empresa si la plantilla no
   la trae.
 
+### La segunda pasada (6b, 22-nov; la marca sigue siendo 2026112203)
+
+La sexta vuelta se revisó antes de publicarla. La revisión la aprobó y dejó
+nueve cosas menores; esta pasada las cierra para que se pegue una sola vez.
+Cambian `c17-bandeja.sql` (una función más: 60), sus pruebas y, esta vez sí,
+la pantalla (`js/conta.js`).
+
+- **La coma decimal.** Un monto que Edgar escribe en una casilla de la
+  Bandeja (los intereses de un pago de la línea; el capital y el interés de
+  una cuota «con lo que dice su estado de cuenta») se leía quitándole las
+  comas sin mirar: «6,50» entraba como $650.00 de intereses y «61,37» se
+  rechazaba sin decir por qué. Ahora una coma que no es de miles no se lee:
+  «Escribe los centavos con punto, como 61.37.» «61.37», «$61.37» y
+  «1,000.00» siguen valiendo. Lo comprueba la pantalla (`montoEscrito`, antes
+  de llamar) y otra vez la base (`fn_bandeja_monto_escrito`, en
+  `fn_bandeja_validar`): la pantalla publicada de antes quita las comas antes
+  de mandar, así que hasta publicar la app la comprobación de la base no ve
+  la coma.
+- **El pago de la línea por «Dímelo».** Lo que la IA entendía («es el pago de
+  la línea») quedaba como una propuesta que no se podía aprobar: ni la caja
+  pintaba la casilla de los intereses ni la base los pasaba. Ahora
+  `fn_bandeja_dimelo_guardar` dice qué pide (`pide`) también para el pago de
+  una línea, `fn_bandeja_leer` lo sigue diciendo cuando la propuesta viene en
+  su tarjeta, y `fn_bandeja_aprobar` pasa los intereses (`campos`). La frase
+  de la tarjeta dice «Pon abajo cuánto de este pago fueron intereses…» (antes
+  «Dime cuánto…», que invitaba a contestarlo en esa caja). **Queda para
+  cuando se vuelva a desplegar la función `contador`:** la regla 7 de sus
+  instrucciones le manda a la IA contestar «falta: ese préstamo hay que darlo
+  de alta» a todo cargo hacia un prestamista sin una opción de cuota; para el
+  pago de una línea ya dada de alta eso no es verdad (el dato que recibe sí
+  lo dice bien). La recomendación de la tarjeta, con su casilla, no depende
+  de la IA.
+- **Lo que el banco escribe de una tercera forma.** Si ese prestamista ya
+  tiene algo dado de alta (un préstamo y una línea, dos préstamos, o solo una
+  línea) y el texto no casa con ninguno, `fn_bandeja_prestamista` lo dice
+  (`otra_forma`, y `tiene`: lo que tiene, en llano). Ni el cargo ni —esto es
+  lo nuevo— el depósito se recomiendan: sale un aviso sin «Así es» («… tiene
+  un préstamo y una línea de crédito dados de alta y el banco escribe este
+  depósito de otra forma: no lo contestes y avisa a quien te lleva la app»).
+  Antes el depósito salía como «dinero de un préstamo de … (todavía no está
+  dado de alta)» con su «Así es», e iba a la cuenta de los préstamos sin alta,
+  que puede ser la de un préstamo que sí lo está (y el cuadre de préstamos del
+  banco se ponía rojo). Como dinero de un préstamo ya no se registra desde la
+  Bandeja: tampoco eligiendo el préstamo en la lista, ni si lo propone la IA.
+  El control ya no manda a «dar de alta» nada por ello. Con UN solo préstamo
+  de ese prestamista y ninguna línea, todo sigue como antes (es ese préstamo).
+- **Los cargos de una línea, de uno en uno.** Con dos pagos de la línea
+  esperando salía un grupo «una respuesta vale para todos», que no podía
+  registrar ninguno (cada pago lleva sus intereses). Ya no entran en ningún
+  grupo. Y la tarjeta de un movimiento de la línea lo dice (`linea`) y dice
+  que no se recuerda (`no_recordar`): la pantalla no ofrece «Recordarlo»
+  (salía marcada y no guardaba nada), y la base no recuerda nada de un
+  movimiento de la línea, sea cual sea la respuesta.
+- **Las frases fijas de la pantalla** («Más opciones») ya no dicen «es la
+  cuota de un préstamo» de lo de una línea: «es un pago de tu línea de
+  crédito» o «es dinero de tu línea de crédito», según el signo. La fila dice
+  «Línea de crédito».
+- **«Con lo que dice su estado de cuenta».** Lo que quedaba escrito al
+  registrar con ese botón («Registrado: …», «Lo que contestaste estos días»)
+  era la pregunta. Ahora dice lo que entró: «Es un pago a …: $… ($… bajan la
+  deuda y $… son intereses, según su estado de cuenta).»
+- **No se sabe todavía con qué texto deposita ese prestamista un préstamo a
+  plazo.** Los tres textos vistos son nombres de 16 letras del emisor del
+  pago: uno para la cuota del préstamo, otro para el pago de la línea y otro
+  para lo que ENTRA. Puede que este último sea el de todo lo que ese
+  prestamista deposita, no solo el de la línea: si fuera así, el dinero de un
+  préstamo nuevo (o de una renovación) saldría como «dinero de tu línea de
+  crédito», y desde la Bandeja no hay forma de mandarlo a un préstamo (la
+  línea manda aunque en la lista se elija el préstamo): solo desde el SQL
+  Editor. No se cambió nada: los movimientos del banco no llegan tan atrás
+  como para verlo, y se le pregunta a Edgar cómo llegó el dinero de su
+  préstamo a plazo. Si llegó con ese mismo texto, en otra ronda: que elegir un
+  préstamo en la lista valga con un porqué escrito.
+- **El volumen.** El criterio «la Bandeja entera en N llamadas o menos» de
+  `c17-volumen.sh` dependía de la carga de la máquina (cada llamada recomienda
+  lo que le cabe en su reloj): con el mismo código, 1,000 pendientes pedían de
+  8 a 13 llamadas según la corrida. El margen pasa de 4 y 10 a 6 y 14, y queda
+  escrito; lo que se exige de verdad (ninguna llamada pasa de 0.8 s, cada
+  tarjeta una vez, nada queda por pedir) no cambia.
+- **El SQL de datos de la línea** (fuera del repositorio) para también si
+  algún movimiento de la línea ya se contestó de otra forma (como dinero o
+  como la cuota del préstamo a plazo, como un gasto, o se ignoró): antes daba
+  «ok» y dejaba la deuda de la línea corta y la del préstamo larga.
+
 ## Las pruebas
 
-- `docs/conta/c17-pruebas.sql`: 83 filas (sobre la base limpia, con la semilla
+- `docs/conta/c17-pruebas.sql`: 85 filas (sobre la base limpia, con la semilla
   f19, con mil pendientes y —sexta vuelta— sobre un clon «como producción»:
   con un préstamo del prestamista de verdad dado de alta con descriptor ancho
   y saldo en su cuenta, y con él estrechado y la línea dada de alta). La 82 es
   la línea de crédito de punta a punta; la 83, la pregunta con botones
-  iguales y las huellas. La 81 («nada queda») corre la última.
+  iguales y las huellas; (6b) la 84, la segunda pasada de la línea (la coma
+  decimal, el «Dímelo», de uno en uno y sin recordar, y lo que el banco
+  escribe de otra forma); la 85, «con lo que dice su estado de cuenta». La 81
+  («nada queda») corre la última.
 - `docs/conta/c18-pruebas.sql`: 15 filas.
 - `pruebas/conta/c17-volumen.sh`: la Bandeja con 400 y con 1,000 pendientes,
-  como el dueño por la API, cada llamada por debajo de 0.8 s.
+  como el dueño por la API, cada llamada por debajo de 0.8 s (el número de
+  llamadas para leerla entera depende de la carga de la máquina: va con
+  margen, 6 y 14, y lo dice).
 - `pruebas/conta/c18-volumen.sh` (cuarta vuelta): el paquete del año sobre el
   libro de volumen de c4 (quince meses, 250 por mes), como el dueño por la
   API, por debajo de 0.8 s; la balanza de los dos ejercicios suma 0 y es la
   de c4, y el Schedule L es el balance.
 - `pruebas/conta/bandeja-e2e.mjs`: la función de borde de verdad contra el
-  banco de pruebas y el simulador de la IA, 41 comprobaciones (la frase tapada,
+  banco de pruebas y el simulador de la IA, 43 comprobaciones (la frase tapada,
   la lista cerrada, la inyección en la frase y en la descripción del banco con
   una acción válida —queda como propuesta: ni en el libro ni en la memoria sin
   el toque de Edgar—, el freno por un recibo ya subido, la opción que cambia,
   el tope, el esquema; tercera vuelta, el prestamista dicho a la IA, la
   máscara con saltos de línea, el carácter nulo, los enlaces y la frase como
-  ejemplo del porqué; y, cuarta, el cargo hacia un prestamista).
-- `pruebas/conta/pantalla.js`: 236 comprobaciones de esta escena, con la base
+  ejemplo del porqué; cuarta, el cargo hacia un prestamista; y, 6b, el pago de
+  una línea de crédito por el «Dímelo»: la propuesta dice qué pide y se
+  aprueba con sus intereses, nunca con coma decimal).
+- `pruebas/conta/pantalla.js`: 242 comprobaciones de esta escena (6b: seis
+  más, las de la línea de crédito, con un guion nuevo de la base simulada:
+  la casilla de los intereses y la coma decimal, sin «Recordarlo» y sin
+  grupo, el «Dímelo» con su casilla, y las frases fijas), con la base
   simulada sacada del banco (`f19-capturar.js` → `pantalla-f19.json`, semilla
   `f19-semilla.sql`; las lecturas por partes, con `f19-parte.js`, que el
   capturador comprueba contra la base). Solo esa escena:
@@ -752,6 +849,25 @@ pantalla (`js/conta.js`) tampoco: no hay nada que publicar.
 
 ## Lo que queda pendiente
 
+- **(6b) La regla 7 de las instrucciones de la IA** (`supabase/functions/contador`,
+  que no se tocó): a todo cargo hacia un prestamista sin una opción de cuota le
+  manda contestar «falta: ese préstamo hay que darlo de alta». Para el pago de
+  una línea de crédito ya dada de alta eso no es verdad (el dato que recibe sí
+  dice que es un pago de la línea y que se registra con la recomendación de su
+  tarjeta). Hay que cambiarla la próxima vez que se despliegue la función: si
+  el movimiento trae `prestamista.linea`, la respuesta es `prestamo` (la base
+  pide entonces los intereses). Mientras tanto, si la IA contesta eso, la
+  tarjeta lo enseña como suyo («La IA dice…») debajo de la recomendación, que
+  es la que vale.
+- **(6b) Con qué texto deposita ese prestamista un préstamo a plazo**: no se
+  sabe (está en «La segunda pasada»). Si es el mismo que el de los desembolsos
+  de la línea, hace falta que elegir un préstamo en la lista valga con un
+  porqué escrito.
+- **(6b) Lo que el banco escribe de otra forma de un prestamista con algo dado
+  de alta** no se puede registrar como dinero de un préstamo desde la Bandeja:
+  se avisa, y se arregla desde el SQL Editor (ensanchar el descriptor de la
+  línea o del préstamo, o dar de alta lo nuevo). Lo demás (un gasto, un
+  ingreso…) frena y pide su porqué, como siempre.
 - **Confirmar con el contador** si la empresa presenta el 1120 o el 1120-S.
 - **Dar de alta un préstamo** sigue siendo por el SQL Editor
   (`fn_prestamo_guardar`, con su contrato). La Bandeja registra el dinero que

@@ -17,9 +17,12 @@ El 22-nov estrenaste la Bandeja nueva. Dos cosas salieron ese día:
    libro no tiene ningún préstamo. Ya usan un prestamista inventado y no
    dependen de lo que tu libro tenga.
 
+Antes de dártelo se revisó otra vez, y de esa revisión salieron unos retoques
+que ya van dentro (están abajo, en «Lo que vas a ver»).
+
 No se toca nada de lo que ya contestaste. **No hay que volver a pegar c6 ni
-c18, ni desplegar la función `contador`, ni publicar la app**: solo cambia
-`c17-bandeja.sql`.
+c18, ni desplegar la función `contador`.** Cambian `c17-bandeja.sql` y la
+pantalla: **la app la publico yo** (se actualiza sola al abrirla).
 
 Hazlo en este orden. Cada cosa se pega entera en el SQL Editor de Supabase y
 se le da a «Run». Todo se puede pegar dos veces.
@@ -27,30 +30,33 @@ se le da a «Run». Todo se puede pegar dos veces.
 | # | Qué | Filas que salen |
 |---|---|---|
 | 1 | `docs/conta/c17-bandeja.sql` | **8**, todas empiezan por «ok:» |
-| 2 | `docs/conta/c17-pruebas.sql` | **83**, todas en `true` (u «omitida» con su porqué) |
+| 2 | `docs/conta/c17-pruebas.sql` | **85**, todas en `true` (u «omitida» con su porqué) |
 | 3 | El SQL de tu línea de crédito (**te lo paso por el chat**: nombra cosas tuyas y no va en el repositorio) | **7**, todas empiezan por «ok:» |
 
-**Hasta pegar el paso 3, no contestes las tarjetas de ese prestamista** (el
-pago de la línea y sus desembolsos): todavía dicen lo de antes.
+**Hasta pegar el paso 3 y hasta que yo te diga que la app ya está publicada,
+no contestes las tarjetas de ese prestamista** (el pago de la línea y sus
+desembolsos): todavía dicen lo de antes.
 
 ### 1. `c17-bandeja.sql`: lo que tiene que decir
 
 Lo mismo que el 22-nov, con dos cambios:
 
 - **`version`:** «ok: 2026112203».
-- **`funciones`:** «ok: 59 funciones fn_bandeja_*, ninguna SECURITY DEFINER».
+- **`funciones`:** «ok: 60 funciones fn_bandeja_*, ninguna SECURITY DEFINER».
 
 La fila **`siguiente`** sigue diciendo «vuelve a desplegar la función
-«contador» y publica la app»: es la de siempre. **Esta vez no hace falta
-ninguna de las dos cosas.**
+«contador» y publica la app»: es la de siempre. **Esta vez la función no hay
+que desplegarla, y la app la publico yo.**
 
 ### 2. `c17-pruebas.sql`
 
-Salen 83 filas; la última columna tiene que ser `true` en todas. Las nuevas
-son la 82 (la línea de crédito, de punta a punta) y la 83 (la pregunta con
-botones iguales). Como siempre, montan lo suyo («BDIECISIETE…», un
-prestamista inventado que se llama «Zzlend») y lo deshacen: no queda nada (lo
-comprueba la fila 81). Si el SQL Editor deja de esperar:
+Salen 85 filas; la última columna tiene que ser `true` en todas. Las nuevas
+son la 82 (la línea de crédito, de punta a punta), la 83 (la pregunta con
+botones iguales), la 84 (los retoques de la línea) y la 85 (el pago
+registrado «con lo que dice su estado de cuenta»). Como siempre, montan lo
+suyo («BDIECISIETE…», un prestamista inventado que se llama «Zzlend») y lo
+deshacen: no queda nada (lo comprueba la fila 81). Si el SQL Editor deja de
+esperar:
 
 ```sql
 select * from pruebas.c17_resultado order by n;
@@ -69,10 +75,13 @@ Hace tres cosas, y **no registra nada en el libro**:
    esperan, para que sus tarjetas se pongan al día en el momento.
 
 Si algo no está como se espera, **para sin tocar nada** y sale un error que
-empieza por «NO se aplicó, no se tocó nada»: cópiamelo tal cual. Las 7 filas
-dicen qué hizo y cuántas tarjetas esperan de cada clase (cuotas del préstamo,
-pagos de la línea, desembolsos de la línea). Si alguna fila empieza por
-«OJO:», cópiamela y no contestes esas tarjetas.
+empieza por «NO se aplicó, no se tocó nada»: cópiamelo tal cual. Para, por
+ejemplo, si el pago de la línea o alguno de sus desembolsos ya se contestó de
+otra forma (como dinero o como la cuota del préstamo, o como un gasto): eso
+se deshace antes en la Bandeja («Lo que contestaste estos días» → «Deshacer»)
+y se pega otra vez. Las 7 filas dicen qué hizo y cuántas tarjetas esperan de
+cada clase (cuotas del préstamo, pagos de la línea, desembolsos de la línea).
+Si alguna fila empieza por «OJO:», cópiamela y no contestes esas tarjetas.
 
 ## Lo que vas a ver en la Bandeja
 
@@ -87,17 +96,32 @@ pagos de la línea, desembolsos de la línea). Si alguna fila empieza por
   línea de crédito…»), con la respuesta ya escrita debajo: tocas «Así es»
   otra vez y entra.
 - **Un pago de la línea** (dinero que sale): «Es un pago a tu línea de crédito
-  de …: $…. Dime cuánto de este pago fueron intereses…», con una casilla
+  de …: $…. Pon abajo cuánto de este pago fueron intereses…», con una casilla
   («Interés, según el statement»). Pones lo que diga el prestamista de ese
   pago (en su página, cada pago trae cuánto fue a la deuda y cuánto de
   intereses) y tocas «Así es». Lo demás baja lo que debes. **Si ese pago no
   tuvo intereses, pon 0.** Sin ese número no se registra.
+- **Los centavos, con punto.** En esa casilla escribe «61.37», no «61,37». Si
+  pones coma, la app no lo toma y te lo dice («Escribe los centavos con punto,
+  como 61.37»). «1,000.00» y «$61.37» sí valen.
+- **Cada pago de la línea se contesta por separado**, aunque haya varios
+  esperando: cada uno lleva sus intereses. No salen juntos en «Decide por
+  grupo», y su tarjeta no trae la casilla «Recordarlo» (la app ya los
+  reconoce sola).
+- **Si lo dices con tus palabras** («es el pago de la línea»), lo que la app
+  entiende trae la misma casilla de los intereses: se ponen ahí y «Así es».
+  Si en vez de eso te contesta que «ese préstamo hay que darlo de alta», no
+  le hagas caso: la línea ya está dada de alta; contéstalo arriba, en la
+  tarjeta, con su casilla.
 - **Si te equivocas con los intereses**: «Lo que contestaste estos días» →
   «Deshacer», y la tarjeta vuelve con la misma pregunta.
 - **Un pago a un préstamo que no es su cuota de siempre** (la cuota y algo
   más): ya no pregunta «¿De cuál es?» con dos botones iguales. Dice «su cuota
   de $… y $… más. ¿Cómo lo registro?» y los botones dicen cada uno lo suyo:
-  «La cuota y $… más a la deuda» o «Con lo que dice su estado de cuenta».
+  «La cuota y $… más a la deuda» o «Con lo que dice su estado de cuenta». Con
+  este último pones tú cuánto bajó la deuda y cuánto fueron intereses, y lo
+  que queda escrito dice justo eso («Es un pago a …: $… ($… bajan la deuda y
+  $… son intereses, según su estado de cuenta)»).
 
 ## Cómo saber que quedó bien
 
@@ -108,11 +132,26 @@ lo más probable es un pago con los intereses mal puestos, o que la línea ya
 debía algo antes del 1 de octubre (eso estaría en QuickBooks, y se arregla en
 la apertura, no en la Bandeja).
 
+## Una cosa que necesito que me digas
+
+Cuando te depositaron el dinero del préstamo a plazo, **¿con qué nombre salió
+en el banco?** Lo dice el estado de cuenta del banco de ese mes, en el
+depósito. Hoy la app toma por «dinero de la línea» todo lo que ese prestamista
+deposita con el nombre que usa para los desembolsos de la línea. Si el dinero
+del préstamo llegó con ese mismo nombre, el día que te den otro préstamo (o
+te lo renueven) la app lo propondría como dinero de la línea, y habría que
+arreglarlo antes. No hay nada que hacer hoy: solo dímelo.
+
 ## Si algo sale mal
 
 - **Un rojo en `control`**, una fila en `false` o un «OJO:»: cópiamelo. No
   toques nada más.
-- **Una tarjeta de ese prestamista que diga otra cosa** («Parece la cuota de
-  un préstamo de … que todavía no está dado de alta», «…el banco lo escribe
-  distinto de como quedó apuntado»): el banco escribió ese movimiento de una
-  forma nueva. No la contestes; dímelo.
+- **Una tarjeta de ese prestamista que diga «… tiene un préstamo y una línea
+  de crédito dados de alta y el banco escribe este depósito (o este cargo) de
+  otra forma: no lo contestes y avisa a quien te lleva la app»**: el banco
+  escribió ese movimiento de una forma nueva, y la app no sabe si es del
+  préstamo o de la línea. No trae «Así es», y tampoco se deja registrar como
+  dinero de un préstamo eligiéndolo en la lista. No la contestes de ninguna
+  otra forma; dímelo y lo dejo reconocido.
+- **Cualquier otra tarjeta de ese prestamista que no diga lo de arriba**:
+  tampoco la contestes; dímelo.
