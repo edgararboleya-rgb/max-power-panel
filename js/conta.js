@@ -2483,7 +2483,13 @@
     const cerca = q => cent(q.monto) === cent(m.monto) && Math.abs(diasEntre(q.llegada, m.fecha)) <= 5;
     m._stripeFuera = dep ? (S.stripePayouts || []).find(q => q.estado_pantalla === "fuera" && cerca(q)) || null : null;
     if (m._stripeFuera) dep = false;
-    m.opciones = (Array.isArray(m.opciones) ? m.opciones : []).filter(o => !(o && o.args && esStripe(o.args.p_cuenta)) && !(dep && opcionDeCobro(o)));
+    // (quinta vuelta) CADA OPCIÓN LLEVA SU NÚMERO EN LA LISTA DE LA BASE (_n), puesto ANTES de quitar las que la pantalla no pinta. La
+    // tarjeta nueva manda ese número a la base (fn_bandeja_validar y fn_bandeja_hacer, con la huella de ESA opción): contado sobre la
+    // lista ya recortada, cada botón de «Lo que dice el banco» quedaba corrido un puesto cuando se escondía una opción (las que nombran
+    // la cuenta de Stripe), y lo que se enseñaba y se registraba era la opción de al lado
+    const todas = Array.isArray(m.opciones) ? m.opciones : [];
+    todas.forEach((o, i) => { if (o && typeof o === "object" && o._n === undefined) o._n = i; });
+    m.opciones = todas.filter(o => !(o && o.args && esStripe(o.args.p_cuenta)) && !(dep && opcionDeCobro(o)));
     if (dep) { m.opciones = []; m.texto = TEXTO_DEP; }
     m._esStripe = dep;
     m._stripe = dep ? (S.stripePayouts || []).filter(q => q.estado_pantalla === "asentado" && cerca(q)) : [];
@@ -3152,7 +3158,7 @@
         ${jr ? "" : `${m._esStripe ? `<p class="ct-aviso warn ct-aviso-dep">Depósito de Stripe: casa solo con su depósito en «Cobros en línea» (cuando Stripe mande su detalle${(m._stripe || []).length ? ", o con «Es el depósito…» aquí abajo" : ""}). No lo clasifiques ni lo registres aquí: el dinero entraría dos veces. Si es de antes de instalar los cobros en línea, sácalo allí con «Ya está en el libro» y vuelve aquí.</p>` : ""}
         ${m._stripeFuera ? `<p class="ct-aviso ct-aviso-dep">Depósito de Stripe de fuera de la app (${esc(m._stripeFuera.fuera_motivo || "ya está en el libro")}): regístralo aquí como siempre.</p>` : ""}
         ${m.posible_duplicado_de ? `<p class="ct-aviso warn">Se parece al del ${fecha(m.duplicado_fecha)} «${esc(m.duplicado_descripcion)}»${m.duplicado_origen && !bn ? ` (entró por ${esc(m.duplicado_origen)})` : ""}.</p>` : ""}
-        ${chq ? "" : iaBloqueHTML(m)}
+        ${chq ? "" : !(bn && bn.sabe) ? iaBloqueHTML(m) : iaMira(m) ? bnSinIAHTML(m, bn) : ""}
         <div class="ct-acciones">${nomBotonHTML(m)}${(m._stripe || []).map(q => `<button type="button" class="accion" data-stripe-po="${esc(q.po)}">Es el depósito de Stripe del ${fechaLarga(q.llegada)}: casarlo</button>`).join("")}${ops.map((o, i) => bn ? bnBotonBancoHTML(o, i, bn) : `<button type="button" class="accion${i || (m._stripe || []).length ? " secundaria" : ""}" data-op="${i}">${esc(o.texto)}</button>`).join("")}
           ${m._esStripe ? "" : `<button type="button" class="accion secundaria ct-otra" data-otra>Otra cosa…</button>`}</div>
         <div class="ct-form" hidden></div>
@@ -3237,10 +3243,14 @@
   // «Otra cosa…»: lo que la base acepta aunque no lo haya propuesto
   function abrirOtra(card, m) {
     const f = card.querySelector(".ct-form");
+    // (quinta vuelta) en la tarjeta nueva, de un dinero que la app sabe de quién es (`sabe`: un prestamista, o Edgar) no se ofrece
+    // clasificarlo a una cuenta ni pasarlo entre cuentas por la puerta de antes (entraba de un toque, sin el freno de la Bandeja: la
+    // cuota de un préstamo, entera a «Intereses»): eso se contesta en la lista de arriba, que frena y pide el porqué
+    const tb = bnDe(m), sabe = !!(tb && tb.sabe);
     f.hidden = false;
-    f.innerHTML = `<div class="ct-otra-menu"><p class="ct-form-t">¿Qué es este movimiento?</p><div class="ct-acciones">
-      <button type="button" class="accion secundaria" data-que="clasificar">Un gasto o un costo: clasificarlo a una cuenta</button>
-      <button type="button" class="accion secundaria" data-que="transferencia">Dinero entre cuentas propias</button>
+    f.innerHTML = `<div class="ct-otra-menu"><p class="ct-form-t">¿Qué es este movimiento?</p>${sabe ? `<p class="ct-nota" data-bn-otra-sabe>«Un gasto o un costo» y «Dinero entre cuentas propias» no salen aquí: ${tb.sabe === "edgar" ? "el banco dice que este dinero lo mandaste tú" : num(m.monto) < 0 ? "el banco dice que este dinero va a un prestamista" : "el banco dice que este dinero lo deposita un prestamista"}. Si de verdad es eso, elígelo arriba, en la lista: ahí te pregunto por qué.</p>` : ""}<div class="ct-acciones">
+      ${sabe ? "" : `<button type="button" class="accion secundaria" data-que="clasificar">Un gasto o un costo: clasificarlo a una cuenta</button>
+      <button type="button" class="accion secundaria" data-que="transferencia">Dinero entre cuentas propias</button>`}
       <button type="button" class="accion secundaria" data-que="partida">Una partida en tránsito del 30-sep</button>
       <button type="button" class="accion secundaria" data-que="asiento">Ya está en el libro: casarlo con su asiento</button>
       <button type="button" class="accion secundaria" data-que="ignorar">No es del libro: ignorarlo</button>
@@ -3250,6 +3260,8 @@
   }
   const grupoCuenta = t => ({ activo: "Activo", pasivo: "Pasivo", capital: "Capital", ingreso: "Ingresos", costo: "Costo de obra", gasto: "Gastos", otro_ingreso: "Otros ingresos", otro_gasto: "Otros gastos" })[t] || t;
   async function formaOtra(card, m, que) {
+    // (quinta vuelta: por si el botón llegara a pintarse) lo de un prestamista, o de Edgar, no se clasifica ni se traspasa por aquí
+    if ((que === "clasificar" || que === "transferencia") && (bnDe(m) || {}).sabe) return;
     if (que === "clasificar") {
       const orden = ["costo", "gasto", "otro_gasto", "activo", "pasivo", "capital", "otro_ingreso", "ingreso"];
       const grupos = orden.map(t => {
@@ -3397,6 +3409,8 @@
   const bnOpcionLlana = t => String(t || "")
     .replace(/\s*\(→\s*\d{4}(?:-\d+)?\)/g, "").replace(/\s·\s*\d{4}(?:-\d+)?(?![\d-])/g, "")
     .replace(/\bA \d{4}(?:-\d+)? \(([^()]+)\)/g, "A $1")
+    // (quinta vuelta) «Fue un pago a la tarjeta desde 1010» → «…desde Banco operativo»
+    .replace(/\bdesde (\d{4}(?:-\d+)?)(?![\d-])/g, (todo, cod) => { const nom = nombreCuenta(cod); return nom && nom !== cod ? `desde ${nom}` : todo; })
     .replace(/\(([a-z0-9]+(?:-[a-z0-9]+)+)\)/g, (todo, id) => { const p = (S.proyectos || []).find(x => x.id === id); return p && p.nombre ? `(${p.nombre})` : todo; })
     .replace(/\s{2,}/g, " ").trim().replace(BN_MONTO_SUELTO, bnMontoSuelto);
   // (cuarta vuelta) un monto que el banco escribe sin formato («quedarían 650.75 por cobrar») sale como los demás («$650.75»); un
@@ -3455,14 +3469,36 @@
       ? (num(m.monto) > 0 ? "El banco dice que este dinero lo deposita un prestamista: es una deuda, no el pago de un cliente. Si no es eso, elígelo arriba, en la lista." : "El banco dice que este dinero va a un prestamista: es la cuota de un préstamo. Si no es eso, elígelo arriba, en la lista.")
     : t.sabe === "edgar" ? "El banco dice que este dinero lo mandaste tú: es dinero tuyo a la empresa, no el pago de un cliente. Si no es eso, elígelo arriba, en la lista."
     : bnLlano(m.texto);
+  // (quinta vuelta) LA IA DE ANTES Y «SEGÚN YO» NO SE PINTAN EN UN MOVIMIENTO DEL QUE LA APP SABE DE QUIÉN ES (`sabe`: el banco mismo nombra
+  // a un prestamista, o dice que el dinero lo mandó Edgar). La IA de antes propone una cuenta de gasto para todo cargo sin recibo: la
+  // cuota de un préstamo sin dar de alta salía, debajo de «No es un gasto entero… espera aquí», con «Según la IA · Intereses · ✓ Así es»,
+  // que la registraba ENTERA como gasto por su puerta (sin el freno de la Bandeja) y aprendía la regla para las cuotas siguientes; y
+  // «Según yo → Clasificar» hacía lo mismo. En esos movimientos lo que no sea lo que dice el banco se contesta en la lista de arriba,
+  // que pasa por la Bandeja: frena, y pide el porqué después de leerlo
+  const bnSinIAHTML = (m, t) => `<p class="ct-nota ct-bn-sin-ia" data-bn-sin-ia>${t.sabe === "prestamista" && num(m.monto) < 0
+      ? "Aquí no salen ni la propuesta de la IA ni «Según yo»: registrarían este cargo entero como un gasto, y es la cuota de un préstamo (una parte baja la deuda y otra son intereses). Si de verdad es otra cosa, elígelo arriba, en la lista: ahí te pregunto por qué."
+      : "Aquí no salen ni la propuesta de la IA ni «Según yo»: este dinero no es un gasto ni el pago de un cliente. Si de verdad es otra cosa, elígelo arriba, en la lista: ahí te pregunto por qué."}</p>`;
   // un botón de lo que propone el banco: NINGUNO es el botón principal (la suposición del banco no es la respuesta: la respuesta va
   // arriba, con su «Así es»); el que la Bandeja sabe registrar va por ella (data-bn-op) y los demás, por el camino de antes (data-op:
   // lo que registren queda anotado después); y de un dinero que la app sabe que NO es de un cliente no se ofrece cobrarlo como tal
+  // (quinta vuelta) `i` es el lugar del botón en la lista que se pinta (la de m.opciones, ya sin las que la pantalla esconde): con él
+  // busca su opción el camino de antes (data-op). Por la Bandeja va el NÚMERO DE LA OPCIÓN EN LA BASE (o._n: lo pone prepararMov), que
+  // es con el que la base guarda su huella (t.ops) y con el que valida y registra
   function bnBotonBancoHTML(o, i, t) {
     if (!o || (t.sabe && o.llamar === "fn_banco_cobrar")) return "";
-    const porLaBandeja = BN_PUERTAS.includes(o.llamar) && Array.isArray(t.ops) && !!t.ops[i];
-    return `<button type="button" class="accion secundaria" ${porLaBandeja ? `data-bn-op="${i}"` : `data-op="${i}"`}>${esc(bnOpcionLlana(o.texto))}</button>`;
+    const n = bnNumOpcion(o, i), porLaBandeja = BN_PUERTAS.includes(o.llamar) && Array.isArray(t.ops) && !!t.ops[n];
+    return `<button type="button" class="accion secundaria" ${porLaBandeja ? `data-bn-op="${n}"` : `data-op="${i}"`}>${esc(bnOpcionLlana(o.texto))}</button>`;
   }
+  const bnNumOpcion = (o, i) => (o && Number.isInteger(o._n) ? o._n : i);
+  // la opción del banco que en la base lleva ese número (no «la que está en ese lugar de la lista pintada»)
+  const bnOpcionN = (m, n) => (Array.isArray(m.opciones) ? m.opciones : []).find((o, i) => bnNumOpcion(o, i) === Number(n)) || null;
+  // EL SEGUNDO CANDADO de «el botón que toco es lo que se registra»: la base devuelve, con lo validado, la opción que validó (su puerta y
+  // sus argumentos, tal cual los guarda el banco); si no es la del botón tocado, no se enseña ninguna caja. (Una base con la c17 de
+  // antes no la devuelve: vale el candado de la huella.) Los nulos no cuentan: la base no los manda
+  const bnCanon = v => (Array.isArray(v) ? `[${v.map(bnCanon).join(",")}]`
+    : v && typeof v === "object" ? `{${Object.keys(v).filter(k => v[k] != null).sort().map(k => `${JSON.stringify(k)}:${bnCanon(v[k])}`).join(",")}}`
+    : JSON.stringify(v == null ? null : v));
+  const bnMismaOpcion = (ob, o) => !ob || (!!o && ob.llamar === o.llamar && bnCanon(ob.args || {}) === bnCanon(o.args || {}));
   // lo que quedó después de una llamada por el camino de antes que NO dejó nada en el libro (se ignoró, es un repetido, sigue
   // esperando), en llano (sin «casado», sin número de asiento)
   const BN_ESTADO_LLANO = { casado: "quedó registrado", en_transito: "quedó registrado (su otro lado llegará solo)", ignorado: "quedó fuera del libro, con tu motivo", duplicado: "quedó como repetido: no cuenta", pendiente: "sigue en la Bandeja" };
@@ -3636,6 +3672,10 @@
     // (lo que la tarjeta enseña sigue siendo verdad si no decía nada y sigue sin decir nada)
     if (!(t.rec && (t.rec.accion || t.rec.aviso))) return;
     bl.insertAdjacentHTML("afterbegin", `<p class="ct-nota ct-bn-ya" data-bn-ya role="status">Ya sé qué es lo de ${esc(t.nombre || "este comercio")} (me lo acabas de decir). <button type="button" class="ct-jr-link" data-bn-ya-ver>Ver lo que te propongo ahora</button></p>`);
+    // (quinta vuelta) lo que decía que seguía mirando ya no es verdad: su párrafo se quita y la píldora de la fila se pone al día (lo
+    // que Edgar está escribiendo no se toca). Antes quedaban las dos cosas a la vez: «Ya sé qué es…» y «estoy mirando… Te lo digo en un momento»
+    const pe = bl.querySelector("[data-bn-pensando]"); if (pe) pe.remove();
+    const pm = card.querySelector(".ct-mov-fila .ct-f-motivo"); if (pm) pm.innerHTML = `${bnPillHTML(m, t)}${m.alarma ? pill("más de 30 días", "bad") : ""}`;
     bl.querySelector("[data-bn-ya-ver]").addEventListener("click", () => {
       delete card.dataset.tocada;
       const f = card.querySelector(".ct-form"); if (f) { f.hidden = true; f.innerHTML = ""; }
@@ -3691,6 +3731,29 @@
     const env = $("ct-bn-franja-env"); if (!env) return;
     if (!forzar && (env.querySelector(".ct-form:not([hidden])") || env.contains(document.activeElement))) return;
     env.innerHTML = bnFranjaHTML(); wireBnFranja();
+  }
+  // (quinta vuelta) LO QUE EDGAR MIRA NO SE MUEVE CUANDO CRECE LO DE ARRIBA. La relectura por detrás repinta la franja unos segundos
+  // después de cada respuesta: «Lo que contestaste estos días» gana un renglón (o se abre sola, tras decidir un grupo) y todo lo de
+  // debajo baja. Que eso no se notara dependía del navegador (el «anclaje» de Chromium, que no actúa con la página arriba del todo, y
+  // que el Safari del iPhone no trae): en la computadora la primera decisión por grupo dejaba «Decide por grupo» fuera de la ventana,
+  // y en el teléfono la tarjeta que Edgar leía bajaba 150 px justo cuando iba a tocar su «Así es». Ahora se mide dónde estaba lo que
+  // se mira (la tarjeta abierta, los grupos, la barra o la lista: lo primero de eso que esté a la vista y no sea de la franja) y, si
+  // el repintado lo movió, la página se desplaza lo mismo: se queda donde estaba, con anclaje del navegador o sin él
+  function bnAncla() {
+    const alto = window.innerHeight || document.documentElement.clientHeight || 0, env = $("ct-bn-franja-env");
+    const ve = el => { if (!el || (env && env.contains(el))) return false; const c = el.getBoundingClientRect(); return c.height > 0 && c.bottom > 0 && c.top < alto; };
+    const ab = main().querySelector(".ct-mov.abierta");
+    if (ve(ab)) { const id = ab.dataset.id; return () => [...main().querySelectorAll(".ct-mov")].find(c => c.dataset.id === id) || null; }
+    for (const id of ["ct-bn-grupos", "ct-bj-herr-env", "ct-bj-lista"]) if (ve($(id))) return () => $(id);
+    return null;
+  }
+  function bnQuieto(pintar) {
+    const de = bnAncla(), a0 = de ? de() : null, y0 = a0 ? a0.getBoundingClientRect().top : null;
+    pintar();
+    const a1 = de ? de() : null;
+    if (!a1 || y0 == null || typeof window.scrollBy !== "function") return;
+    const dy = a1.getBoundingClientRect().top - y0;
+    if (Math.abs(dy) >= 1) window.scrollBy(0, dy);
   }
   // LO CONTESTADO SALE DE LA PANTALLA SIN RELEER NI REPINTAR LA BANDEJA (antes cada «Así es» la leía y la pintaba entera: con cientos de
   // pendientes eran segundos, y una veintena de peticiones, por respuesta). Sale su tarjeta, se abre la siguiente (`abrir`), y la cuenta
@@ -3787,7 +3850,7 @@
     const igual = filas.length === hay.length && filas.every((f, i) => hay[i].movimiento_id === f.movimiento_id && S.bj.firmas.get(f.movimiento_id) === firmaMov(f));
     if (igual) {
       S.bn.sinRecibos = leido.reciboTarde && !((S.bn.datos && S.bn.datos.recibos) || []).length;
-      pintarCadena(false); refrescarFranjaJr(); bnRepintarFranja(); bnRepintarGrupos(); bnRefrescarTarjetas(pedidos);
+      bnQuieto(() => { pintarCadena(false); refrescarFranjaJr(); bnRepintarFranja(); bnRepintarGrupos(); bnRefrescarTarjetas(pedidos); });
       bnCerrarLoDeLaIA();
       return;
     }
@@ -3990,7 +4053,7 @@
   const BN_PILL_BANCO = { fn_prestamo_cuota: "Cuota de un préstamo", fn_banco_cobrar: "Cobro de un cliente", fn_banco_pagar_proveedor: "Pago a un proveedor", fn_banco_casar_con: "Ya está en el libro" };
   const BN_PILL_MOTIVO = { interes_tarjeta: "Intereses de la tarjeta", cargo_banco: "Cargo del banco", interes: "Intereses del banco", cuota_prestamo: "Cuota de un préstamo", cobro_que_lo_nombra: "Cobro de un cliente", deposito_cobro: "Cobro de un cliente", deposito_otro_cobro: "Cobro de un cliente", deposito_sin_cobro: "Cobro de un cliente", reembolso_proveedor: "Devolución de una compra", pago_proveedor: "Pago a un proveedor", deuda_propia: "Pago de una deuda", varios_candidatos: "Ya está en el libro" };
   function bnPillBanco(m, p) {
-    const d = p.datos || {}, o = (Array.isArray(m.opciones) ? m.opciones : [])[d.opcion] || {}, ll = d.llamar || o.llamar || "", mot = String(m.motivo || "");
+    const d = p.datos || {}, o = bnOpcionN(m, d.opcion) || {}, ll = d.llamar || o.llamar || "", mot = String(m.motivo || "");
     if (ll === "fn_banco_transferencia" || /^transferencia_|^otro_lado_|^abono_tarjeta$/.test(mot)) {
       const propias = (S.bn.datos && S.bn.datos.cuentas_propias) || [], esTarjeta = cod => !!(propias.find(c => c.codigo === cod) || {}).tarjeta;
       return mot === "abono_tarjeta" || esTarjeta((o.args || {}).p_cuenta) || esTarjeta(m.cuenta) ? "Pago de la tarjeta" : "Entre tus cuentas";
@@ -4304,7 +4367,8 @@
   }
   async function bnOtraVez(r, m) {
     S.saldos = null;
-    S.hooks.avisar(r.fuera ? "Ya estaba contestado: la Bandeja se puso al día." : r.por_que || "La Bandeja se puso al día.", !(r.resuelto || r.fuera));
+    // (quinta vuelta) `anotado`: la respuesta quedó guardada y no era de registrar («Es otro movimiento»): se dice como un aviso corriente
+    S.hooks.avisar(r.fuera ? "Ya estaba contestado: la Bandeja se puso al día." : r.por_que || "La Bandeja se puso al día.", !(r.resuelto || r.fuera || r.anotado));
     if (m) {
       S.bj.abierta = m.movimiento_id;
       // (la propuesta guardada del «Dímelo» caducó: se pregunta otra vez con lo que el banco diga ahora)
@@ -4342,8 +4406,9 @@
   // llano y con su monto (fn_bandeja_validar: solo lee; si lo que el banco proponía cambió desde que se pintó, lo dice y la tarjeta
   // se pone al día), y lo enseña con su «Así es» en la forma de la tarjeta
   async function bnAbrirOpcion(card, m, t, i) {
-    const f = card.querySelector(".ct-form"), huella = (t.ops || [])[i];
-    if (!f || !huella) return;
+    // (quinta vuelta) `i`: el número de la opción EN LA BASE; `o`: la opción de ese botón
+    const f = card.querySelector(".ct-form"), huella = (t.ops || [])[i], o = bnOpcionN(m, i);
+    if (!f || !huella || !o) return;
     card.dataset.tocada = "1";
     const cerrar = () => { f.hidden = true; f.innerHTML = ""; };
     f.hidden = false;
@@ -4357,8 +4422,10 @@
       f.innerHTML = `<p class="ct-aviso warn" data-bn-no-hecho>${esc((v && v.falta) || "Eso ya no se puede registrar así: mira lo que dice ahora la tarjeta.")}</p>`;
       return;
     }
+    // (quinta vuelta) lo que la base validó tiene que ser la opción de ESTE botón: si no, ninguna caja (la Bandeja se lee otra vez)
+    if (!bnMismaOpcion(v.opcion_banco, o)) return bnOtraVez({ cambio: true, por_que: "Lo que el banco proponía para este movimiento cambió desde que lo viste: mira lo que propone ahora." }, m);
     const pide = v.datos && Array.isArray(v.datos.pide) ? v.datos.pide : [];
-    bnOpcionCaja(f, m, t, { accion: "banco", datos: { opcion: i, huella }, texto: v.texto || bnOpcionLlana(((m.opciones || [])[i] || {}).texto), pide }, "mas", cerrar);
+    bnOpcionCaja(f, m, t, { accion: "banco", datos: { opcion: i, huella }, texto: v.texto || bnOpcionLlana(o.texto), pide }, "mas", cerrar);
   }
   // «ASÍ ES» de la recomendación
   async function bnAsiRec(card, m, rec) {
@@ -4541,7 +4608,7 @@
       const soltar = () => { caja.innerHTML = ""; bots.forEach(x => x.setAttribute("aria-pressed", "false")); };
       bots.forEach(b => b.addEventListener("click", () => {
         const o = t.rec.elige[Number(b.dataset.bnEligeOp)]; if (!o) return;
-        const o6 = (Array.isArray(m.opciones) ? m.opciones : [])[Number(o.opcion)] || {};
+        const o6 = bnOpcionN(m, o.opcion) || {};
         tocar();
         bots.forEach(x => x.setAttribute("aria-pressed", String(x === b)));
         bnOpcionCaja(caja, m, t, { accion: "banco", datos: { opcion: Number(o.opcion), huella: o.huella }, texto: o.texto || "", pide: Array.isArray(o6.pide) ? o6.pide : [] }, "recomendacion", soltar);

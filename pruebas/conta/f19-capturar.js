@@ -543,6 +543,97 @@ guiones.prestamista = guion('prestamista', `
   if (!car || !tc || tc.sabe !== 'prestamista' || !tc.rec || tc.rec.accion || !/cuota de un préstamo/i.test(tc.rec.aviso || '') || tc.rec.pill !== 'Cuota de un préstamo') throw new Error('guion prestamista: el cargo hacia el prestamista debía avisarse (es su cuota), sin recomendar un gasto: ' + JSON.stringify(tc).slice(0, 500));
   if (b.resp.hecho !== false || b.resp.propio !== true || !b.resp.freno || b.resp.pide_motivo !== true || !/cuota de un préstamo/.test(b.resp.por_que || '')) throw new Error('guion prestamista: registrarlo como un gasto debía frenar (propio): ' + JSON.stringify(b.resp).slice(0, 400));
 }
+// (quinta vuelta) EL BOTÓN QUE SE TOCA ES LO QUE SE REGISTRA. El dinero que sale a una cuenta que la app no conoce (cd1): el banco
+// guarda cinco opciones y la PRIMERA nombra la cuenta de paso de Stripe, que la pantalla esconde: sus botones quedaban corridos un
+// puesto respecto de la base (tocar «Para Edgar…» validaba y registraba «A Reserva de impuestos»). Se captura lo que la base contesta
+// a la opción «Para Edgar…» POR SU NÚMERO EN LA BASE: validarla (la distribución al dueño), registrarla (la puerta pide su porqué) y
+// registrarla con el porqué leído. Y, aparte (boton_otra), lo que contesta a la opción de al lado («A Reserva…»): con eso pantalla.js
+// prueba el segundo candado (si la base valida OTRA opción que la del botón tocado, no se enseña ninguna caja)
+const N_OPCION = (clave, donde) => `select (z.n - 1)::text into t from movimientos_banco mb, jsonb_array_elements(mb.propuesta->'opciones') with ordinality z(o, n)
+   where mb.id = pg_temp.mov('${clave}') and ${donde} order by z.n limit 1;
+  if t is null then raise exception 'f19-capturar: el movimiento ${clave} no trae la opción que el guion busca'; end if;`;
+const OPCION_DE = clave => `jsonb_build_object('opcion', %2$s, 'huella', fn_bandeja_leer()->'tarjetas'->%3$L->'ops'->>%2$s)`;
+guiones.boton_corrido = guion('boton_corrido', `
+  ${N_OPCION('cd1', "z.o->>'texto' ~ '^Para Edgar'")}
+  perform pg_temp.paso('inicio', format('select jsonb_build_object(''opcion'', %s)', t));
+  perform pg_temp.paso('validar', format($q$select fn_bandeja_validar(%1$L, 'banco', ${OPCION_DE('cd1')})$q$, pg_temp.mov('cd1'), t, pg_temp.mov('cd1')::text));
+  r := pg_temp.paso('hacer', format($q$select fn_bandeja_hacer(%1$L, 'banco', ${OPCION_DE('cd1')}, '{"fuente":"mas"}')$q$, pg_temp.mov('cd1'), t, pg_temp.mov('cd1')::text));
+  perform pg_temp.paso('hacer_motivo', format($q$select fn_bandeja_hacer(%1$L, 'banco', ${OPCION_DE('cd1')},
+         jsonb_build_object('fuente', 'mas', 'motivo', 'es mi cuenta personal de siempre', 'visto', %4$L))$q$, pg_temp.mov('cd1'), t, pg_temp.mov('cd1')::text, r->>'freno'));`);
+guiones.boton_otra = guion('boton_otra', `
+  ${N_OPCION('cd1', "z.o->'args'->>'p_cuenta' = '1030'")}
+  perform pg_temp.paso('inicio', format('select jsonb_build_object(''opcion'', %s)', t));
+  perform pg_temp.paso('validar', format($q$select fn_bandeja_validar(%1$L, 'banco', ${OPCION_DE('cd1')})$q$, pg_temp.mov('cd1'), t, pg_temp.mov('cd1')::text));`);
+{
+  const [a, v, h, hm] = guiones.boton_corrido, [oa, ov] = guiones.boton_otra, fila = FILA0.has(ids.cd1) ? JSON.parse(FILA0.get(ids.cd1)) : null, N = a.resp.opcion, M = oa.resp.opcion;
+  if (!fila || !Array.isArray(fila.opciones) || fila.opciones.length < 4 || (fila.opciones[0].args || {}).p_cuenta !== '1020' || !/^Para Edgar/.test(fila.opciones[N].texto) || N < 2)
+    throw new Error('guion boton_corrido: el dinero a una cuenta que la app no conoce debía traer primero la opción de la cuenta de Stripe (la que la pantalla esconde) y después «Para Edgar…»: ' + JSON.stringify(fila && fila.opciones.map(o => o.texto)).slice(0, 500));
+  if (v.resp.ok !== true || !/^Es tuyo, no de la empresa: \$300\.00/.test(v.resp.texto || '') || !v.resp.opcion_banco || v.resp.opcion_banco.llamar !== fila.opciones[N].llamar
+      || JSON.stringify(v.resp.opcion_banco.args) !== JSON.stringify(fila.opciones[N].args))
+    throw new Error('guion boton_corrido: la opción «Para Edgar…» debía validarse como el retiro del dueño y devolver la opción que validó: ' + JSON.stringify(v.resp).slice(0, 500));
+  if (h.resp.hecho !== false || h.resp.pide_motivo !== true || !h.resp.freno || hm.resp.hecho !== true || !/^Es tuyo, no de la empresa/.test(hm.resp.texto || '') || hm.despues.ids.includes(ids.cd1))
+    throw new Error('guion boton_corrido: registrarla debía pedir su porqué y, con el porqué leído, entrar: ' + JSON.stringify([h.resp, hm.resp]).slice(0, 500));
+  if (M === N || ov.resp.ok !== true || !/Reserva de impuestos/.test(ov.resp.texto || '') || (ov.resp.opcion_banco.args || {}).p_cuenta !== '1030')
+    throw new Error('guion boton_otra: la opción de al lado debía ser el traspaso a la reserva: ' + JSON.stringify(ov.resp).slice(0, 400));
+}
+// (quinta vuelta) «ES OTRO MOVIMIENTO» POR LA BANDEJA: dos peajes iguales el mismo día; el segundo sale como posible duplicado. El botón
+// del banco «Es otro movimiento» no registra nada: deja dicho que los dos cuentan. La Bandeja lo dice (anotado, cambio) y la tarjeta
+// se lee otra vez (antes: «No se registró: sigue en la Bandeja.», con la respuesta guardada y la tarjeta preguntando lo mismo)
+guiones.duplicado = guion('duplicado', `
+  perform pg_temp.llega('pj1', 2, -6.50, 'SUNPASS ZZ TOLL 0042 OCALA FL');
+  perform pg_temp.llega('pj2', 2, -6.50, 'SUNPASS ZZ TOLL 0042 OCALA FL');
+  ${N_OPCION('pj2', "z.o->>'llamar' = 'fn_banco_duplicado' and z.o->'args'->>'p_es_el_mismo' = 'false'")}
+  perform pg_temp.paso('inicio', format('select jsonb_build_object(''opcion'', %s)', t));
+  perform pg_temp.paso('validar', format($q$select fn_bandeja_validar(%1$L, 'banco', ${OPCION_DE('pj2')})$q$, pg_temp.mov('pj2'), t, pg_temp.mov('pj2')::text));
+  perform pg_temp.paso('hacer', format($q$select fn_bandeja_hacer(%1$L, 'banco', ${OPCION_DE('pj2')}, '{"fuente":"mas"}')$q$, pg_temp.mov('pj2'), t, pg_temp.mov('pj2')::text));`, true);
+{
+  const [a, v, h] = guiones.duplicado, nuevas = a.despues.nuevas || [], dup = nuevas.find(x => x.posible_duplicado_de), t0 = dup && a.despues.leer.tarjetas[dup.movimiento_id];
+  const f2 = dup && (h.despues.nuevas || []).find(x => x.movimiento_id === dup.movimiento_id), t2 = dup && h.despues.leer.tarjetas[dup.movimiento_id];
+  if (!dup || !t0 || !t0.rec || !/^Se parece a otro movimiento/.test(t0.rec.aviso || '') || !(dup.opciones || []).some(o => o.llamar === 'fn_banco_duplicado'))
+    throw new Error('guion duplicado: el segundo peaje debía salir como posible duplicado, con sus dos botones: ' + JSON.stringify([dup && dup.opciones, t0]).slice(0, 500));
+  if (v.resp.ok !== true || !/^Es otro movimiento/.test(v.resp.texto || '') || h.resp.hecho !== false || h.resp.cambio !== true || h.resp.anotado !== true || !/^Anotado: es otro movimiento/.test(h.resp.por_que || ''))
+    throw new Error('guion duplicado: «Es otro movimiento» debía quedar anotado y decirlo (cambio, anotado): ' + JSON.stringify([v.resp, h.resp]).slice(0, 400));
+  if (!f2 || f2.motivo === 'posible_duplicado' || (f2.opciones || []).some(o => o.llamar === 'fn_banco_duplicado') || !t2 || (t2.rec && /^Se parece a otro movimiento/.test(t2.rec.aviso || '')))
+    throw new Error('guion duplicado: después, el banco ya no debía preguntar si es el mismo: ' + JSON.stringify([f2 && f2.motivo, t2]).slice(0, 400));
+}
+// (quinta vuelta) EL COBRO ANOTADO «DEPOSITADO NETO DE SU COMISIÓN» NO SE RECOMIENDA SI NO LO DEPOSITA UN PROCESADOR: un cheque anotado
+// a mano por la ZZ-104 y, después, el Zelle de otra persona por un 2 % menos. El banco lo propone primero («depositado neto de 29.00 de
+// comisión»); la tarjeta PREGUNTA (con el cobro que podría ser y cuánto le falta), y el botón del banco, validado, dice sus montos
+guiones.cobro_anotado = guion('cobro_anotado', `
+  r := pg_temp.pedir($q$select fn_cobro_registrar(jsonb_build_object('fecha', (fn_fecha_miami(now()) - 3)::text, 'monto', '1450.75', 'medio', 'cheque', 'cuenta', '1010',
+         'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -1900004, 'monto', '1450.75'))))$q$, 'dueno');
+  if r ? 'ERROR' then raise exception 'f19-capturar: el cobro anotado no entró: %', r; end if;
+  perform pg_temp.llega('zc1', 1, 1421.75, 'ZELLE PAYMENT FROM ZZ PERSONA NUEVA 5544');
+  ${N_OPCION('zc1', "z.o->>'llamar' = 'fn_banco_casar_con' and z.o->'args'->'p_con' ? 'comision'")}
+  perform pg_temp.paso('inicio', format('select jsonb_build_object(''opcion'', %s)', t));
+  perform pg_temp.paso('validar', format($q$select fn_bandeja_validar(%1$L, 'banco', ${OPCION_DE('zc1')})$q$, pg_temp.mov('zc1'), t, pg_temp.mov('zc1')::text));`, true);
+{
+  const [a, v] = guiones.cobro_anotado, f = (a.despues.nuevas || []).find(x => x.motivo === 'deposito_otro_cobro'), t = f && a.despues.leer.tarjetas[f.movimiento_id];
+  if (!f || a.resp.opcion !== 0 || !t || !t.rec || t.rec.accion || t.rec.pill !== '¿Cobro que anotaste?'
+      || !/^Este depósito \(\$1,421\.75\) puede ser el del cobro de \$1,450\.75 que anotaste el .*: le faltarían \$29\.00\./.test(t.rec.aviso || ''))
+    throw new Error('guion cobro_anotado: el Zelle al que le falta poco respecto de un cheque anotado debía PREGUNTAR (no recomendar casarlo): ' + JSON.stringify([f && f.motivo, a.resp, t]).slice(0, 600));
+  if (v.resp.ok !== true || !/llegaron \$1,421\.75, y los \$29\.00 que faltan se registran como la comisión del procesador de tarjetas\.$/.test(v.resp.texto || ''))
+    throw new Error('guion cobro_anotado: el botón «depositado neto» debía decir sus montos: ' + JSON.stringify(v.resp).slice(0, 400));
+}
+// (quinta vuelta) UN ABONO EN LA TARJETA (la devolución de una compra, que el banco no dice que sea un pago): el banco ofrece «Fue un
+// pago a la tarjeta desde <cuenta>» por cada cuenta propia, también desde la de paso de Stripe (que la pantalla esconde): otro caso de
+// botones corridos; y sus botones decían la cuenta por su código («desde 1010»)
+guiones.abono = guion('abono', `
+  ${DUENO_ES}
+  perform fn_banco_importar_filas(jsonb_build_object('origen', 'plaid', 'cuenta', '2100-2013', 'nombre', 'Plaid · f19-capturar · ab1',
+    'filas', jsonb_build_array(jsonb_build_object('id', 'ZZ19-ab1', 'fecha', (fn_fecha_miami(now()) - 1)::text, 'plaid_monto', '-45.10',
+             'descripcion', 'ZZ FERRETERIA DEL NORTE #6341 OCALA FL', 'tipo', 'CREDIT', 'pendiente', false))));
+  perform fn_banco_casar((select m.id from movimientos_banco m where m.id_externo = 'ZZ19-ab1' order by m.importado_el desc limit 1));
+  ${NADIE_ES}
+  insert into public.f19_semilla (clave, movimiento, nota)
+  select 'ab1', m.id, 'un abono en la tarjeta' from movimientos_banco m where m.id_externo = 'ZZ19-ab1' order by m.importado_el desc limit 1;
+  perform pg_temp.paso('inicio', 'select null::jsonb');`, true);
+{
+  const [a] = guiones.abono, f = (a.despues.nuevas || []).find(x => x.motivo === 'abono_tarjeta'), t = f && a.despues.leer.tarjetas[f.movimiento_id];
+  const ops = (f && f.opciones) || [];
+  if (!f || !t || ops.length < 3 || !ops.every(o => o.llamar === 'fn_banco_transferencia' && /desde \d{4}/.test(o.texto)) || (ops[1].args || {}).p_cuenta !== '1020' || (t.ops || []).length !== ops.length)
+    throw new Error('guion abono: el abono en la tarjeta debía traer «Fue un pago a la tarjeta desde <cuenta>» por cada cuenta propia, con la de Stripe en medio: ' + JSON.stringify([f && f.motivo, ops.map(o => o.texto)]).slice(0, 500));
+}
 console.log(`  ${Object.keys(guiones).length} guiones: ${Object.entries(guiones).map(([k, v]) => `${k} (${v.length})`).join(', ')}`);
 
 // (cuarta vuelta) LO QUE SE REGISTRA POR EL CAMINO DE ANTES dentro de «Más opciones» («Otra cosa… → clasificarlo a una cuenta»: la

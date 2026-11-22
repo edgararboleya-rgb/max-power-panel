@@ -3271,6 +3271,15 @@ function b19Rpc(fn, a) {
     if (!t || !Array.isArray(t.ops) || t.ops[Number(d.opcion)] !== d.huella || Number(d.opcion) !== 0) return b19Falta('validar una opción del banco que no es la primera de ese movimiento, o con otra huella');
     return b19PasoG('validar') || b19Falta('el guion del botón del banco ya había pasado por validar');
   }
+  // (quinta vuelta) el botón de una opción del banco POR SU NÚMERO EN LA BASE (cd1: la pantalla esconde la primera opción, la de la
+  // cuenta de Stripe), «Es otro movimiento» y el cobro anotado «depositado neto». boton_otra: la base contesta con la opción DE AL LADO
+  // de la que se le pide (lo que pasaría si su lista cambiara sin cambiar la huella que la pantalla trae): el segundo candado
+  if (fn === 'fn_bandeja_validar' && a.p_accion === 'banco' && ['boton_corrido', 'boton_otra', 'duplicado', 'cobro_anotado'].includes(B19.guion)) {
+    const G = F19.guiones[B19.guion], t = b19Leer().tarjetas[a.p_movimiento];
+    if (B19.guion !== 'boton_otra' && (!t || !Array.isArray(t.ops) || Number(d.opcion) !== G[0].resp.opcion || t.ops[Number(d.opcion)] !== d.huella))
+      return b19Falta(`${B19.guion}: se capturó la opción ${G[0].resp.opcion} de ese movimiento, con su huella (llegó la ${d.opcion})`);
+    return b19PasoG('validar') || b19Falta(`el guion ${B19.guion} ya había pasado por validar`);
+  }
   if (fn === 'fn_bandeja_validar') return a.p_movimiento === F19.ids.hd3 && a.p_accion === 'gasto' && d.proyecto_id === 'oficina-nch-7xq2' ? F19.validar : { ok: false, falta: 'f19: sin capturar' };
   if (fn === 'fn_bandeja_solo') {
     // (segunda vuelta) el recibo que llegó después: la rutina lo mira (tercera vuelta: no cambia ninguno; los deja todos a la vista)
@@ -3295,6 +3304,16 @@ function b19Rpc(fn, a) {
       const t = b19Leer().tarjetas[a.p_movimiento];
       if (!t || !Array.isArray(t.ops) || t.ops[0] !== d.huella || Number(d.opcion) !== 0 || op.fuente !== 'mas') return b19Falta('boton_banco: se capturó la primera opción de ese movimiento, por «Más opciones»');
       return b19PasoG('hacer') || b19Falta('el guion del botón del banco no iba por registrar');
+    }
+    // (quinta vuelta) la opción «Para Edgar…» de cd1 por su número en la base: el primer «Así es» va sin porqué (la puerta lo pide) y el
+    // segundo, con el porqué escrito y la huella del freno leído; y «Es otro movimiento» (queda anotado: no se registra nada)
+    if ((B19.guion === 'boton_corrido' || B19.guion === 'duplicado') && a.p_accion === 'banco') {
+      const G = F19.guiones[B19.guion], t = b19Leer().tarjetas[a.p_movimiento];
+      if (!t || !Array.isArray(t.ops) || Number(d.opcion) !== G[0].resp.opcion || t.ops[Number(d.opcion)] !== d.huella || op.fuente !== 'mas')
+        return b19Falta(`${B19.guion}: se capturó la opción ${G[0].resp.opcion} de ese movimiento, con su huella y por «Más opciones» (llegó la ${d.opcion})`);
+      if (pg && pg.paso === 'hacer') return op.motivo || op.visto ? b19Falta(`${B19.guion}: el primer «Así es» va sin porqué`) : b19PasoG('hacer');
+      if (pg && pg.paso === 'hacer_motivo') return op.motivo === 'es mi cuenta personal de siempre' && op.visto === G[2].resp.freno ? b19PasoG('hacer_motivo') : b19Falta('boton_corrido: el segundo «Así es» lleva el porqué escrito y la huella del freno que se leyó');
+      return b19Falta(`el guion ${B19.guion} ya había terminado`);
     }
     // (cuarta vuelta) deshacer para corregir: el «Así es» de antes (con «Recordarlo»)
     if ((B19.guion === 'deshecha' || B19.guion === 'olvida') && a.p_movimiento === F19.ids.ww1 && a.p_accion === 'gasto' && pg && pg.paso === 'hacer') return b19PasoG('hacer');
@@ -4425,7 +4444,12 @@ async function escenaF19(b, errs) {
     l = ultima(n0, 'fn_bandeja_hacer');
     ok('(segunda vuelta) «Cuadrilla» + la persona en un Zelle: la base apunta de quién es el pago y AVISA en vez de registrar («…Es solo un aviso: se puede repartir igual.»): la tarjeta ya no se queda repitiendo lo mismo sin nada que tocar; el aviso se dice y la Bandeja se lee otra vez, con ESA tarjeta abierta (pasa a ser la de la mano de obra, con su «Así es»)',
       !!l && l.args.p_accion === 'cuadrilla' && l.args.p_datos.usuario_id === F19.leer.cuadrilla[0].usuario_id && cuantas(n0, 'fn_bandeja_hacer') === 1 && cuantas(n0, 'fn_bandeja_leer') === 1
-      && (await tostada(q)) === F19.sueltas.mas_cuadrilla.resp.por_que && /Es solo un aviso: se puede repartir igual\./.test(await tostada(q)) && (await q.locator('.ct-mov.abierta').getAttribute('data-id')) === ID.zp1, await tostada(q));
+      // (quinta vuelta) lo que c10 contesta aquí depende del DÍA DE LA SEMANA en que se capturó la base simulada (las horas de la semilla
+      // van «hace 6 días» y el Zelle «hace 4»: solo capturando en viernes o sábado caen en la semana que c10 mira, y dice «…Es solo un
+      // aviso: se puede repartir igual.»; los demás días dice que no hay horas en esa semana y que se elijan otras fechas). Las dos son
+      // la misma cosa para la pantalla: la base apunta de quién es, no registra, lo dice, y la tarjeta se lee otra vez
+      && (await tostada(q)) === F19.sueltas.mas_cuadrilla.resp.por_que && /Es solo un aviso: se puede repartir igual\.|no tiene horas reportadas del .* Elige otras fechas/.test(await tostada(q)) && F19.sueltas.mas_cuadrilla.resp.dicho === true
+      && (await q.locator('.ct-mov.abierta').getAttribute('data-id')) === ID.zp1, await tostada(q));
     await reinicio(q);
     c = await fila(q, ID.zp1);
     await c.locator('[data-bn-mas] > summary').click(); await q.waitForTimeout(150);
@@ -4841,6 +4865,94 @@ async function escenaF19(b, errs) {
         && (await q.locator(`.ct-mov[data-id="${zf.movimiento_id}"]`).count()) === 0 && (await hz.count()) === 1 && (await hz.locator('[data-bn-deshacer]').count()) === 1, `${await tostada(q)} · ${JSON.stringify(BB[3].resp)}`);
     }
 
+    // -- (quinta vuelta · bloquea) EL BOTÓN DEL BANCO QUE SE TOCA ES LO QUE SE VALIDA Y SE REGISTRA --
+    await conGuion(q, 'boton_corrido', false);
+    {
+      const BC = F19.guiones.boton_corrido, N = BC[0].resp.opcion, M = F19.guiones.boton_otra[0].resp.opcion, f0 = F19.bandeja.find(f => f.movimiento_id === ID.cd1), tcd = F19.leer.tarjetas[ID.cd1];
+      c = await fila(q, ID.cd1);
+      await c.locator('[data-bn-mas] > summary').click(); await q.waitForTimeout(150);
+      const bots = await c.locator('.ct-bn-viejo .ct-acciones [data-bn-op]').evaluateAll(bs => bs.map(x => ({ n: Number(x.dataset.bnOp), t: x.textContent.trim() })));
+      const de = re => (bots.find(x => re.test(x.t)) || {}).n;
+      ok('(quinta vuelta) CADA BOTÓN DE «LO QUE DICE EL BANCO» LLEVA EL NÚMERO DE SU OPCIÓN EN LA BASE, no su lugar en la lista pintada. El dinero a una cuenta que la app no conoce trae cinco opciones del banco y la PRIMERA nombra la cuenta de paso de Stripe, que la pantalla esconde: se pintan cuatro botones, y antes iban numerados 0-3 (cada uno, corrido un puesto respecto de la base: tocar «Para Edgar…» validaba y registraba «A Reserva de impuestos», y tocar «A Reserva…», la cuenta de Stripe). Ahora «Para Edgar…» lleva el ' + N + ', «A Reserva de impuestos» el ' + M + ', ninguno el 0 y ninguno nombra la cuenta de Stripe',
+        f0.opciones.length === 5 && f0.opciones[0].args.p_cuenta === '1020' && /^Para Edgar/.test(f0.opciones[N].texto) && f0.opciones[M].args.p_cuenta === '1030' && bots.length === 4 && new Set(bots.map(x => x.n)).size === 4
+        && bots.every(x => x.n >= 1 && !!f0.opciones[x.n] && !!tcd.ops[x.n]) && de(/^Para Edgar/) === N && de(/^A Reserva de impuestos/) === M && !bots.some(x => /Stripe|1020/.test(x.t)) && (await c.locator('.ct-bn-viejo [data-op]').count()) === 0, JSON.stringify(bots));
+      n0 = llamadas.length;
+      await c.locator('.ct-bn-viejo [data-bn-op]', { hasText: /^Para Edgar/ }).click(); await esperarLlamada(q, n0, 'fn_bandeja_validar'); await pintado(q); await q.waitForTimeout(200);
+      l = ultima(n0, 'fn_bandeja_validar');
+      ok('…al tocar «Para Edgar (¿su cuenta personal? ····4456…): distribución», lo que se le pregunta a la base es ESA opción (su número en la base y su huella) y la caja dice lo que el botón decía: «Es tuyo, no de la empresa: $300.00 que salen como retiro tuyo.» (antes: «Es dinero que pasaste a tu cuenta Reserva de impuestos: $300.00 (un traspaso, no un gasto).»)',
+        !!l && l.args.p_accion === 'banco' && l.args.p_datos.opcion === N && l.args.p_datos.huella === tcd.ops[N] && BC[1].resp.opcion_banco.llamar === f0.opciones[N].llamar
+        && (await c.locator('.ct-form [data-bn-caja="op"] [data-bn-t]').textContent()).trim() === BC[1].resp.texto && /^Es tuyo, no de la empresa: \$300\.00/.test(BC[1].resp.texto)
+        && !/Reserva|Stripe|traspaso/.test(await plano(q, `.ct-mov[data-id="${ID.cd1}"] .ct-form`)), `${JSON.stringify(l && l.args.p_datos)} · ${await plano(q, `.ct-mov[data-id="${ID.cd1}"] .ct-form`)}`.slice(0, 300));
+      n0 = llamadas.length;
+      await tocar(q, c.locator('.ct-form [data-bn-op-asi]')); await q.waitForTimeout(350);
+      const pideMot = await c.locator('.ct-form [data-bn-motivo]').isVisible();
+      await c.locator('.ct-form [data-bn-motivo]').fill('es mi cuenta personal de siempre');
+      await tocar(q, c.locator('.ct-form [data-bn-op-asi]')); await q.waitForTimeout(350);
+      const hs = desde(n0).filter(x => x.fn === 'fn_bandeja_hacer');
+      ok('…y «Así es» registra ESA opción: la puerta pide su porqué, y con él escrito queda «Registrado: Es tuyo, no de la empresa: $300.00…» (fn_bandeja_hacer las dos veces con el número de la base y su huella; la segunda, con la huella del freno leído). Antes quedaba en el libro un traspaso a la reserva',
+        pideMot && hs.length === 2 && hs.every(x => x.args.p_accion === 'banco' && x.args.p_datos.opcion === N && x.args.p_datos.huella === tcd.ops[N] && x.args.p_opciones.fuente === 'mas')
+        && hs[1].args.p_opciones.visto === BC[2].resp.freno && BC[3].resp.hecho === true && /^Registrado: Es tuyo, no de la empresa: \$300\.00/.test(await tostada(q)) && (await q.locator(`.ct-mov[data-id="${ID.cd1}"]`).count()) === 0,
+        `${hs.length} · ${JSON.stringify(hs.map(x => x.args.p_datos.opcion))} · ${await tostada(q)}`);
+    }
+    await conGuion(q, 'boton_otra', false);
+    {
+      c = await fila(q, ID.cd1);
+      await c.locator('[data-bn-mas] > summary').click(); await q.waitForTimeout(150);
+      n0 = llamadas.length;
+      await c.locator('.ct-bn-viejo [data-bn-op]', { hasText: /^Para Edgar/ }).click(); await esperarLlamada(q, n0, 'fn_bandeja_validar'); await q.waitForTimeout(400); await pintado(q); await q.waitForTimeout(300);
+      ok('…EL SEGUNDO CANDADO: si lo que la base valida NO es la opción del botón tocado (aquí contesta con la de al lado, el traspaso a la reserva: la base devuelve la puerta y los argumentos de lo que validó), la pantalla NO enseña ninguna caja con «Así es»: dice que lo que el banco proponía cambió y lee la Bandeja otra vez',
+        F19.guiones.boton_otra[1].resp.opcion_banco.args.p_cuenta === '1030' && (await q.locator('.ct-form [data-bn-caja="op"]').count()) === 0 && cuantas(n0, 'fn_bandeja_hacer') === 0
+        && /^Lo que el banco proponía para este movimiento cambió desde que lo viste/.test(await tostada(q)) && cuantas(n0, 'fn_bandeja_leer') >= 1 && (await q.locator(`.ct-mov[data-id="${ID.cd1}"]`).count()) === 1, `${await tostada(q)} · ${desde(n0).map(x => x.fn).join(',')}`.slice(0, 300));
+    }
+
+    // -- (quinta vuelta) EL ABONO EN LA TARJETA: sus botones, con su número de la base y sin códigos de cuenta --
+    await conGuion(q, 'abono', false);
+    {
+      const ab = F19.guiones.abono[0].despues.nuevas.find(x => x.motivo === 'abono_tarjeta'), tab = F19.guiones.abono[0].despues.leer.tarjetas[ab.movimiento_id];
+      c = await fila(q, ab.movimiento_id);
+      await c.locator('[data-bn-mas] > summary').click(); await q.waitForTimeout(150);
+      const bots = await c.locator('.ct-bn-viejo .ct-acciones [data-bn-op]').evaluateAll(bs => bs.map(x => ({ n: Number(x.dataset.bnOp), t: x.textContent.trim() })));
+      const n1030 = ab.opciones.findIndex(o => o.args.p_cuenta === '1030'), n1010 = ab.opciones.findIndex(o => o.args.p_cuenta === '1010');
+      ok('(quinta vuelta) EL ABONO EN LA TARJETA (el banco ofrece «Fue un pago a la tarjeta desde <cuenta>» por cada cuenta propia; la de paso de Stripe, en medio, no se pinta): cada botón lleva el número de SU opción en la base («…desde Reserva de impuestos», el ' + n1030 + ': antes llevaba el 1, que en la base es «desde la cuenta de Stripe», y eso era lo que se enseñaba y se registraba), y dice la cuenta por su nombre («desde Banco operativo», no «desde 1010»)',
+        ab.opciones.length === 3 && ab.opciones[1].args.p_cuenta === '1020' && bots.length === 2 && (bots.find(x => /desde Reserva de impuestos/.test(x.t)) || {}).n === n1030 && (bots.find(x => /desde Banco operativo/.test(x.t)) || {}).n === n1010
+        && !!tab.ops[n1030] && !bots.some(x => /desde \d{4}|Stripe/.test(x.t)) && ab.opciones.every(o => /desde \d{4}/.test(o.texto)), JSON.stringify(bots));
+    }
+
+    // -- (quinta vuelta · importa) «ES OTRO MOVIMIENTO», POR LA BANDEJA --
+    await conGuion(q, 'duplicado', false);
+    {
+      const DU = F19.guiones.duplicado, dup = DU[0].despues.nuevas.find(x => x.posible_duplicado_de);
+      c = await fila(q, dup.movimiento_id);
+      const antesD = await plano(q, `.ct-mov[data-id="${dup.movimiento_id}"] [data-bn]`);
+      await c.locator('[data-bn-mas] > summary').click(); await q.waitForTimeout(150);
+      n0 = llamadas.length;
+      await c.locator('.ct-bn-viejo [data-bn-op]', { hasText: 'Es otro movimiento' }).click(); await esperarLlamada(q, n0, 'fn_bandeja_validar'); await pintado(q); await q.waitForTimeout(200);
+      const cajaD = (await c.locator('.ct-form [data-bn-caja="op"] [data-bn-t]').textContent()).trim();
+      await tocar(q, c.locator('.ct-form [data-bn-op-asi]')); await esperarLlamada(q, n0, 'fn_bandeja_hacer'); await q.waitForTimeout(500); await pintado(q); await q.waitForTimeout(300);
+      const c2 = q.locator(`.ct-mov[data-id="${dup.movimiento_id}"]`), despuesD = await plano(q, `.ct-mov[data-id="${dup.movimiento_id}"]`);
+      ok('(quinta vuelta) «ES OTRO MOVIMIENTO» (dos peajes iguales el mismo día: el segundo sale como posible duplicado y la tarjeta manda a contestarlo en «Más opciones»): un toque y su «Así es», y la pantalla dice lo que pasó —«Anotado: es otro movimiento, distinto del que ya estaba, y los dos cuentan. Ahora dime qué es.»— y LA TARJETA SE PONE AL DÍA: sigue en la Bandeja, abierta, ya sin «Se parece a otro movimiento…» ni sus dos botones. Antes la respuesta quedaba guardada, pero la caja decía «No se registró: sigue en la Bandeja.» y la tarjeta seguía preguntando lo mismo',
+        /^Se parece a otro movimiento que ya está/.test(antesD) && /^Es otro movimiento, distinto del que ya estaba/.test(cajaD) && cuantas(n0, 'fn_bandeja_hacer') === 1 && DU[2].resp.anotado === true
+        && /^Anotado: es otro movimiento, distinto del que ya estaba, y los dos cuentan\. Ahora dime qué es\.$/.test(await tostada(q)) && (await c2.count()) === 1 && (await q.locator(`.ct-mov.abierta[data-id="${dup.movimiento_id}"]`).count()) === 1
+        && !/Se parece a otro movimiento|No se registró|Es otro movimiento|Es el mismo/.test(despuesD), `${await tostada(q)} · ${despuesD.slice(0, 240)}`);
+    }
+
+    // -- (quinta vuelta · importa) EL COBRO ANOTADO «DEPOSITADO NETO DE SU COMISIÓN» NO SE RECOMIENDA SI NO LO DEPOSITA UN PROCESADOR --
+    await conGuion(q, 'cobro_anotado', false);
+    {
+      const CA = F19.guiones.cobro_anotado, zc = CA[0].despues.nuevas.find(x => x.motivo === 'deposito_otro_cobro'), tz = CA[0].despues.leer.tarjetas[zc.movimiento_id];
+      c = await fila(q, zc.movimiento_id);
+      const pillZ = (await q.locator(`.ct-mov[data-id="${zc.movimiento_id}"] .ct-f-motivo .ct-pill`).first().textContent()).trim();
+      ok('(quinta vuelta) EL ZELLE AL QUE LE FALTA POCO RESPECTO DE UN CHEQUE QUE EDGAR ANOTÓ: para el banco es «el cobro anotado, depositado neto de su comisión» (le vale con que falte hasta un 3.5 %), y la cuarta vuelta lo recomendaba arriba con su «Así es» («Es el depósito de un cobro que ya estaba anotado…», sin decir la comisión): un toque casaba el Zelle de otra persona con el cobro del cheque. Ahora la tarjeta NO lleva «Así es»: pregunta, con los montos («Este depósito ($1,421.75) puede ser el del cobro de $1,450.75 que anotaste…: le faltarían $29.00… no viene de un procesador de tarjetas…») y su fila dice «¿Cobro que anotaste?»',
+        (await c.locator('[data-bn-aviso]').textContent()).trim() === tz.rec.aviso && (await c.locator('[data-bn-asi]').count()) === 0 && pillZ === '¿Cobro que anotaste?' && sinJerga(tz.rec.aviso)
+        && /no viene de un procesador de tarjetas/.test(tz.rec.aviso), `${pillZ} · ${await plano(q, `.ct-mov[data-id="${zc.movimiento_id}"] [data-bn]`)}`.slice(0, 300));
+      await c.locator('[data-bn-mas] > summary').click(); await q.waitForTimeout(150);
+      n0 = llamadas.length;
+      await c.locator(`.ct-bn-viejo [data-bn-op="${CA[0].resp.opcion}"]`).click(); await esperarLlamada(q, n0, 'fn_bandeja_validar'); await pintado(q); await q.waitForTimeout(200);
+      ok('…y en «Más opciones», el botón del banco («…depositado neto de $29.00 de comisión») enseña antes de registrar nada cuánto llegó y cuánto iría a comisiones: «…llegaron $1,421.75, y los $29.00 que faltan se registran como la comisión del procesador de tarjetas.» (antes, la misma frase que la del cobro «anotado por otro monto», sin un solo monto de más)',
+        (await c.locator('.ct-form [data-bn-caja="op"] [data-bn-t]').textContent()).trim() === CA[1].resp.texto && /llegaron \$1,421\.75, y los \$29\.00 que faltan se registran como la comisión/.test(CA[1].resp.texto) && cuantas(n0, 'fn_bandeja_hacer') === 0,
+        await plano(q, `.ct-mov[data-id="${zc.movimiento_id}"] .ct-form`));
+    }
+
     // -- (DL2 · S4 · S1) LO QUE EL BANCO DICE DE UN PRESTAMISTA --
     await conGuion(q, 'prestamista', false);
     {
@@ -4871,7 +4983,29 @@ async function escenaF19(b, errs) {
       const kw = await fila(q, ID.kl1);
       await kw.locator('[data-bn-mas] > summary').click(); await q.waitForTimeout(150);
       await kw.locator('[data-bn-cat-sel]').selectOption('otros/intereses'); await q.waitForTimeout(150);
-      ok('…(un comercio corriente, con la misma respuesta, sí ofrece «Recordarlo»: lo que cambia es que el banco nombra a un prestamista)', (await kw.locator('[data-bn-cat] [data-bn-recordar]').count()) === 1);
+      ok('…(un comercio corriente, con la misma respuesta, sí ofrece «Recordarlo»: lo que cambia es que el banco nombra a un prestamista)', (await kw.locator('[data-bn-cat] [data-bn-recordar]').count()) === 1);      {
+        // (quinta vuelta) LA IA DE ANTES (c8) SEGUÍA DENTRO DE LA TARJETA, SIN EL FRENO DE LA BANDEJA. La base simulada de esta escena no
+        // trae viva la IA de antes: se pone aquí, como la deja la pantalla cuando c8 contesta (sin propuestas: «Según yo» sale igual)
+        await conGuion(q, 'prestamista', false);
+        await q.evaluate(() => { const s = window.MXP_CONTA._estado; window.__ia0 = s.ia;
+          s.ia = { estado: { pendientes_sin_propuesta: 0 }, err: null, rojo: [], bandeja: new Map(), cuentas: [{ codigo: '7100', nombre: 'Intereses', tipo: 'otro_gasto', regla_obra: 'ninguna' }] }; });
+        const cc = await fila(q, car.movimiento_id);
+        await cc.locator('[data-bn-mas] > summary').click(); await q.waitForTimeout(150);
+        await cc.locator('[data-otra]').click(); await q.waitForTimeout(150);
+        const menu = await plano(q, `.ct-mov[data-id="${car.movimiento_id}"] .ct-otra-menu`);
+        const sinIA = await cc.locator('[data-bn-sin-ia]').count() ? (await cc.locator('[data-bn-sin-ia]').first().textContent()).trim() : '(sin la nota)';
+        const kq = await fila(q, ID.kl1);
+        await kq.locator('[data-bn-mas] > summary').click(); await q.waitForTimeout(150);
+        await kq.locator('[data-otra]').click(); await q.waitForTimeout(150);
+        ok('(quinta vuelta) EN LA CUOTA DE UN PRESTAMISTA, «MÁS OPCIONES» YA NO TIENE NINGÚN CAMINO QUE LA REGISTRE COMO GASTO SIN EL FRENO DE LA BANDEJA. Antes, debajo de «No es un gasto entero… espera aquí», seguían «Según la IA» (con una propuesta de la IA de antes, su «✓ Así es» registraba la cuota ENTERA como gasto por su puerta y aprendía la regla para las siguientes) y «Según yo → Clasificar»; y «Otra cosa… → clasificarlo a una cuenta» la mandaba a «Intereses» de un toque. Ahora no se pintan (se dice por qué: «…es la cuota de un préstamo…: elígelo arriba, en la lista: ahí te pregunto por qué»), y «Otra cosa…» no ofrece ni clasificarlo ni pasarlo entre cuentas. En un comercio corriente siguen los dos',
+          car.motivo === 'sin_ticket' && tc.sabe === 'prestamista' && (await cc.locator('.ct-ia, [data-ia-asi], [data-ia-clasificar]').count()) === 0
+          && /^Aquí no salen ni la propuesta de la IA ni «Según yo»: registrarían este cargo entero como un gasto, y es la cuota de un préstamo/.test(sinIA)
+          && (await cc.locator('.ct-otra-menu [data-que="clasificar"], .ct-otra-menu [data-que="transferencia"]').count()) === 0 && (await cc.locator('.ct-otra-menu [data-que]').count()) === 3
+          && /el banco dice que este dinero va a un prestamista\. Si de verdad es eso, elígelo arriba, en la lista/.test(menu)
+          && (await kq.locator('.ct-ia [data-ia-clasificar]').count()) === 1 && (await kq.locator('[data-bn-sin-ia]').count()) === 0 && (await kq.locator('.ct-otra-menu [data-que]').count()) === 5,
+          `${sinIA.slice(0, 120)} · ${menu.slice(0, 200)} · la IA en el comercio: ${await kq.locator('.ct-ia [data-ia-clasificar]').count()} · sus «Otra cosa»: ${await kq.locator('.ct-otra-menu [data-que]').count()}`);
+        await q.evaluate(() => { window.MXP_CONTA._estado.ia = window.__ia0; });
+      }
     }
 
     // -- (P5) LO QUE SE REGISTRA POR EL CAMINO DE ANTES QUEDA ANOTADO EN LA BANDEJA --
@@ -4919,7 +5053,12 @@ async function escenaF19(b, errs) {
       const pills2 = await Promise.all(otras.map(id => q.locator(`.ct-mov[data-id="${id}"] .ct-f-motivo .ct-pill`).first().textContent().then(x => x.trim())));
       ok('…cuando llega lo nuevo: las cerradas ya dicen «Material»; y la abierta, que Edgar tenía A MEDIAS (escribiendo en «Dímelo»), NO se repinta debajo de su dedo: sale arriba la nota «Ya sé qué es lo de HOME DEPOT (me lo acabas de decir). Ver lo que te propongo ahora», y lo que escribía sigue (antes esa tarjeta se quedaba con lo de antes, y tenía que explicar otra vez lo que la app acababa de decir que recordaría)',
         pills2.every(x => x === 'Material') && (await ab.locator('[data-bn-ya]').count()) === 1 && /^Ya sé qué es lo de HOME DEPOT \(me lo acabas de decir\)\. Ver lo que te propongo ahora$/.test((await plano(q, '#ct-bj-lista .ct-mov.abierta [data-bn-ya]')))
-        && (await ab.locator('[data-bn-frase]').inputValue()) === 'madera para la casa' && (await ab.locator('[data-bn-mirando]').count()) === 1, `${pills2.join(',')} · ${await plano(q, '#ct-bj-lista .ct-mov.abierta [data-bn]').then(x => x.slice(0, 160))}`);
+        && (await ab.locator('[data-bn-frase]').inputValue()) === 'madera para la casa' && (await ab.locator('[data-bn-asi]').count()) === 0, `${pills2.join(',')} · ${await plano(q, '#ct-bj-lista .ct-mov.abierta [data-bn]').then(x => x.slice(0, 160))}`);
+      {
+        const pillAb = (await q.locator(`.ct-mov[data-id="${abId}"] .ct-f-motivo .ct-pill`).first().textContent()).trim();
+        ok('(quinta vuelta) …y con la nota ya NO se queda debajo «Me acabas de decir… estoy mirando… Te lo digo en un momento» ni la píldora «Mirándolo…» en su fila (las dos cosas a la vez, y la segunda ya no llegaba sola): el párrafo se quita y la píldora dice lo que la app propone ahora',
+          (await ab.locator('[data-bn-mirando], [data-bn-pensando]').count()) === 0 && pillAb === 'Material' && !/estoy mirando/.test(await plano(q, '#ct-bj-lista .ct-mov.abierta [data-bn]')), `${pillAb} · ${await plano(q, '#ct-bj-lista .ct-mov.abierta [data-bn]').then(x => x.slice(0, 200))}`);
+      }
       await ab.locator('[data-bn-ya-ver]').click(); await q.waitForTimeout(200);
       const ab2 = q.locator(`#ct-bj-lista .ct-mov[data-id="${abId}"]`);
       ok('…«Ver lo que te propongo ahora» pinta esa tarjeta con lo recordado («Es un gasto de «Material»… · Ya me lo dijiste antes: HOME DEPOT → Material…») y lo que llevaba escrito en «Dímelo» sigue en su caja',
@@ -5231,6 +5370,26 @@ async function escenaF19(b, errs) {
         antes.abierta === ID.zp1 && despues.abierta === ID.zp1 && despues.abiertaTop > despues.alto && despues.top < despues.alto - 80 && despues.bottom > 80
         && /^Cuotas de préstamos: 2 registrados por \$1,200\.00/.test(await tostada(q)) && (await q.locator('[data-bn-grupo="M:cuota_prestamo"]').count()) === 0, JSON.stringify({ antes, despues }));
     }
+    await cx.close();
+  }
+  // -- (quinta vuelta · importa) …Y SE QUEDA SIN DEPENDER DEL NAVEGADOR: en la computadora desde arriba de la página (Chromium no «ancla»
+  //    con la página arriba del todo) y en el teléfono SIN anclaje (el Safari del iPhone no lo trae: aquí, `overflow-anchor: none`).
+  //    La decisión abre sola «Lo que contestaste estos días», que va ENCIMA de «Decide por grupo», y la franja crece por detrás --
+  for (const [w, sinAncla] of [[1280, false], [390, true], [390, false]]) {
+    const { cx, q } = await abrirCtx(w);
+    b19Reset(); await ve(q, 'bandeja');
+    if (sinAncla) await q.addStyleTag({ content: '* { overflow-anchor: none !important; }' });
+    // (y: lo que la página se desplazó: lo mismo que creció lo de arriba; top: dónde queda «Decide por grupo» en la ventana)
+    const medir = () => q.evaluate(() => { const gr = document.getElementById('ct-bn-grupos');
+      return { y: Math.round(window.scrollY), top: Math.round(gr.getBoundingClientRect().top), alto: window.innerHeight, lista: !!document.querySelector('#ct-bn-recientes [data-bn-hecho]') }; });
+    if (w < 700) await q.evaluate(() => document.getElementById('ct-bn-grupos').scrollIntoView({ block: 'start' }));
+    const g = q.locator('[data-bn-grupo="M:cuota_prestamo"]');
+    await g.locator('summary').first().click(); await q.waitForTimeout(200);
+    const antes = await medir(), n4 = llamadas.length;
+    await g.locator('[data-bn-g-asi]').click(); await esperarLlamada(q, n4, 'fn_bandeja_grupo'); await pintado(q); await q.waitForTimeout(900);
+    const despues = await medir();
+    ok(`(quinta vuelta) DESPUÉS DE DECIDIR UN GRUPO LA PANTALLA SE QUEDA DONDE ESTABA, ${w === 1280 ? 'en la computadora y desde arriba de la página (1280 px: ahí el navegador no «ancla»; antes «Decide por grupo» bajaba lo que crecía la franja y quedaba fuera de la ventana)' : sinAncla ? 'en el teléfono SIN el anclaje del navegador (390 px con overflow-anchor: none, como el Safari del iPhone: antes los grupos bajaban pantalla y media)' : 'y con el anclaje del navegador no se compensa dos veces (390 px, Chromium tal cual)'}: la franja de arriba crece por detrás («Lo que contestaste estos días» se abre sola con lo recién registrado) y «Decide por grupo» no se mueve de donde Edgar lo tenía`,
+      despues.y > antes.y + 40 && !antes.lista && despues.lista && Math.abs(despues.top - antes.top) <= 2 && despues.top < despues.alto - 80 && /^Cuotas de préstamos: 2 registrados/.test(await tostada(q)), JSON.stringify({ antes, despues }));
     await cx.close();
   }
 
