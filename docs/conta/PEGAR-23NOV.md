@@ -108,6 +108,11 @@ Si alguna fila empieza por «OJO:», cópiamela y no contestes esas tarjetas.
   esperando: cada uno lleva sus intereses. No salen juntos en «Decide por
   grupo», y su tarjeta no trae la casilla «Recordarlo» (la app ya los
   reconoce sola).
+- **Los desembolsos de la línea sí se ven juntos** en «Decide por grupo»
+  (por ejemplo «… · 2 depósitos · se contestan de uno en uno»). La frase de
+  ese bloque habla de facturas porque es la de cualquier depósito repetido;
+  no le hagas caso: cada renglón dice «Es dinero de tu línea de crédito…» y
+  se contesta uno a uno con «Así es».
 - **Si lo dices con tus palabras** («es el pago de la línea»), lo que la app
   entiende trae la misma casilla de los intereses: se ponen ahí y «Así es».
   Si en vez de eso te contesta que «ese préstamo hay que darlo de alta», no
@@ -146,6 +151,9 @@ arreglarlo antes. No hay nada que hacer hoy: solo dímelo.
 
 - **Un rojo en `control`**, una fila en `false` o un «OJO:»: cópiamelo. No
   toques nada más.
+- **Cualquier error en rojo al pegar** (empiece o no por «PEGAR-ondeck NO se
+  aplicó»): cópiamelo tal cual. Ese pegado es de una pieza: si sale un error,
+  no se cambió nada.
 - **Una tarjeta de ese prestamista que diga «… tiene un préstamo y una línea
   de crédito dados de alta y el banco escribe este depósito (o este cargo) de
   otra forma: no lo contestes y avisa a quien te lleva la app»**: el banco
