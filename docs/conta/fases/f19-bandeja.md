@@ -27,9 +27,11 @@ Edgar): está contado al final, en «La segunda vuelta». La tercera (marca
 la Bandeja llena la lectura no cabía en el corte de la API: «La tercera
 vuelta». La cuarta (22-nov, marca `2026112201`) arregló lo que encontró la
 tercera revisión: «La cuarta vuelta». La quinta (22-nov, marca `2026112202`
-en c17; c18 no cambió), lo que encontró la cuarta: «La quinta vuelta».
+en c17; c18 no cambió), lo que encontró la cuarta: «La quinta vuelta». La
+sexta (22-nov, marca `2026112203` en c17; c18 no cambió), lo que salió al
+estrenarla con la base de verdad: «La sexta vuelta».
 
-### `docs/conta/c17-bandeja.sql` (marca 2026112202)
+### `docs/conta/c17-bandeja.sql` (marca 2026112203)
 
 Se pega después de c1…c16. Necesita c1, c2, c3, c6 y c8; c10 es opcional (sin
 él no hay «pago a la cuadrilla»). No cambia ninguna tabla ni función de otra
@@ -645,10 +647,88 @@ prueba; `c18-fiscal.sql` no cambió (sigue con la marca `2026112201`).
   operativo», sin el código. Y el aviso con «Deshacer» de la app de siempre
   ya no se quita por tocar su texto.
 
+## La sexta vuelta (22-nov, marca 2026112203)
+
+Lo que salió el día que la Bandeja nueva se estrenó con la base de verdad.
+`c18-fiscal.sql` no cambió; `c6` tampoco (no hay que volver a pegarlo); la
+pantalla (`js/conta.js`) tampoco: no hay nada que publicar.
+
+- **Una línea de crédito no es un préstamo a plazo.** Un mismo prestamista
+  puede tener las dos cosas, y el banco las escribe casi igual (el nombre del
+  prestamista con dos cifras detrás, distintas para la cuota del préstamo,
+  para el pago de la línea y para sus desembolsos) y sin ningún número de
+  cuenta. Con el préstamo dado de alta por un descriptor ancho (solo el nombre
+  del prestamista), todo era «del préstamo»: el pago de la línea salía como
+  su cuota con un abono a capital, y el desembolso de la línea como dinero de
+  ese préstamo, a su cuenta. c6 solo reconoce una deuda propia por su número
+  (que aquí el banco no escribe) y su tabla `prestamos` es para lo que tiene
+  cuotas: una línea ahí rompería el saldo que llevan las cuotas.
+  Ahora la línea se da de alta en la Bandeja, desde el SQL Editor, con
+  `fn_bandeja_linea({nombre, descriptor, cuenta, cuenta_interes})` (queda en
+  `bandeja_config.lineas`; no es de la API). Desde entonces:
+  - lo que el banco escribe como lo de la línea es de la línea, antes que
+    cualquier préstamo (`fn_bandeja_prestamista`: `por: 'linea'`), también
+    si en la lista se elige a mano el préstamo a plazo del mismo prestamista
+    (es el único que sale en «¿De qué préstamo?»);
+  - su **desembolso** se recomienda como «Es dinero de tu línea de crédito de
+    …» y sube la deuda de la línea (2510);
+  - su **pago** se recomienda como «Es un pago a tu línea de crédito de …» y
+    pide una cosa: cuánto de ese pago fueron intereses (lo dice el estado de
+    cuenta de la línea; 0 si no hubo). Lo demás baja la deuda (2510) y los
+    intereses van a su gasto (7100), en un solo asiento, por la puerta de c6
+    (`fn_banco_clasificar` con dos líneas). Sin ese dato no se registra. Así
+    el saldo de la línea en el libro es, después de cada pago, lo que el
+    prestamista dice que se debe;
+  - con facturas por cobrar mayores que el desembolso, c6 frena (como con
+    cualquier depósito de un prestamista): la tarjeta lo dice sin mandar a
+    cobrar la factura y deja la respuesta escrita; se confirma y entra;
+  - registrar ese pago como un gasto entero frena (como la cuota de un
+    préstamo); nada de ello se «recuerda» (ya se reconoce, y la clave de su
+    contraparte puede ser la de las cuotas del préstamo); lo deshecho SÍ se
+    propone otra vez (se deshace para corregir los intereses); y el control
+    no manda a dar de alta ningún préstamo por ello.
+  La línea **no se da de alta** si el banco ya escribió algún movimiento que
+  casa a la vez con ella y con el descriptor de un préstamo dado de alta: lo
+  dice, y se estrecha antes el del préstamo por su puerta de c6
+  (`fn_prestamo_guardar` con su `id` y el `descriptor` nuevo), para que solo
+  case con sus cuotas. Y lo que el banco escriba de una tercera forma no se
+  le supone ni al préstamo ni a la línea: se avisa.
+- **La pregunta con botones iguales.** Un pago a un préstamo por más que su
+  cuota trae de c6 dos respuestas igual de válidas del MISMO préstamo («la
+  cuota y lo demás a capital» y «con el capital y el interés de su estado de
+  cuenta»). La tarjeta preguntaba «puede ser de más de uno. ¿De cuál es?» con
+  dos botones iguales (el nombre del préstamo, dos veces). Ahora dice «Es un
+  pago a … : su cuota de … y … más… ¿Cómo lo registro?» y cada botón dice lo
+  que lo distingue («La cuota y $700.00 más a la deuda», «Con lo que dice su
+  estado de cuenta»).
+- **Dos opciones distintas no comparten huella.** La huella de una opción del
+  banco miraba su puerta y sus argumentos; esas dos opciones llaman a la
+  misma puerta con los mismos argumentos (lo que cambia es lo que la opción
+  PIDE), así que tenían la misma: la del primer botón valía para el segundo.
+  Ahora la huella cuenta también los datos que la opción pide. La de una
+  opción que no pide ningún dato es la de siempre (lo ya registrado y lo
+  deshecho siguen valiendo).
+- **Las pruebas no dependen de los préstamos que tenga la base.**
+  `c17-pruebas.sql` usaba un prestamista de verdad como «el que no está dado
+  de alta»: en una base que sí lo tenía, seis pruebas daban rojo; y otra
+  esperaba el capital de una cuota en la cuenta de largo plazo, que es donde
+  cae solo si la corriente no tiene saldo en el libro. Ahora el prestamista de
+  las pruebas (y el de la semilla y el de la pantalla) es inventado
+  («Zzlend»: c17 lo trae en su lista de marcas solo para eso) y la cuota se
+  mira en la deuda del préstamo, sea cual sea de sus dos cuentas. Se corren
+  también sobre un clon «como producción»: con un préstamo de ese prestamista
+  dado de alta con descriptor ancho, y con él ya estrechado y la línea dada
+  de alta. La semilla da de alta la tarjeta de la empresa si la plantilla no
+  la trae.
+
 ## Las pruebas
 
-- `docs/conta/c17-pruebas.sql`: 81 filas (sobre la base limpia, con la semilla
-  f19 y con mil pendientes).
+- `docs/conta/c17-pruebas.sql`: 83 filas (sobre la base limpia, con la semilla
+  f19, con mil pendientes y —sexta vuelta— sobre un clon «como producción»:
+  con un préstamo del prestamista de verdad dado de alta con descriptor ancho
+  y saldo en su cuenta, y con él estrechado y la línea dada de alta). La 82 es
+  la línea de crédito de punta a punta; la 83, la pregunta con botones
+  iguales y las huellas. La 81 («nada queda») corre la última.
 - `docs/conta/c18-pruebas.sql`: 15 filas.
 - `pruebas/conta/c17-volumen.sh`: la Bandeja con 400 y con 1,000 pendientes,
   como el dueño por la API, cada llamada por debajo de 0.8 s.
