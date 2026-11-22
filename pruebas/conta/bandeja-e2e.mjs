@@ -49,6 +49,11 @@
        sale vacía y nada se recuerda; LA MÁSCARA (3): el teléfono escrito
        3 + 7, el internacional, el correo partido y la cuenta con el banco
        en medio no salen ni en lo que escribe el banco ni en la frase;
+     · (sexta vuelta, 6b) EL PAGO DE UNA LÍNEA DE CRÉDITO por el «Dímelo»: a
+       la IA se le dice que es un pago de la línea; lo que propone queda
+       como propuesta diciendo qué pide (los intereses); sin ellos, o con
+       coma decimal, no entra; con ellos entra a la línea y a su gasto, y
+       nada se recuerda;
      · lo que no contesta (una negativa, un JSON roto, un corte, una caída con
        su reintento) queda «sin propuesta» con su porqué; el tope del mes
        gastado: bloqueado y ni una llamada; la llave que no vale y sin llave;
@@ -570,6 +575,33 @@ let dZelle = null;
   ok('B17-41 LA MÁSCARA (3): un teléfono escrito 3 + 7 (con guion o con espacio), uno internacional, un correo partido y una cuenta con el banco en medio no salen hacia la IA ni en la descripción, ni en la nota del banco, ni en la frase',
      r.estado === 200 && !/5550142|1234 5678|1234567|example\.com/i.test(todo) && /\[teléfono\]/.test(msg.lo_que_dice_edgar ?? '') && /\[número\]/.test(msg.lo_que_dice_edgar ?? ''),
      { frase: msg.lo_que_dice_edgar, desc: msg.movimiento?.descripcion, memo: msg.movimiento?.memo ?? msg.movimiento?.nota });
+}
+
+// ---- 8e. (sexta vuelta, 6b) el pago de una LÍNEA DE CRÉDITO por el «Dímelo» ---------------
+{
+  // (la línea, dada de alta desde el SQL Editor, con un prestamista inventado que no es de la lista de marcas: lo demás no cambia)
+  q(`select fn_bandeja_linea('{"nombre": "ZZ Banco", "descriptor": "\\\\mZZBANCO LINEA\\\\M"}') is not null`);
+  const N = sembrar([{ clave: 'linea', monto: -1000.21, desc: 'ACH ZZBANCO LINEA PAGO 4411' }]);
+  const a0 = nAsientos();
+  const r = await dimelo(N.linea, 'es el pago del PRÉSTAMO de la línea de crédito');
+  const ps = await peticiones(-1);
+  const msg = JSON.parse(ps[0]?.cuerpo?.messages?.[0]?.content ?? '{}');
+  const sin = aprobar(r.j?.dimelo_id);
+  const coma = aprobar(r.j?.dimelo_id, { campos: { p_interes: '61,37' } });
+  ok('B17-42 EL PAGO DE UNA LÍNEA DE CRÉDITO POR EL «DÍMELO»: a la IA se le dice que es un pago de la línea (dada de alta); lo que propone queda como propuesta DICIENDO QUÉ PIDE (los intereses de ese pago: la pantalla pinta la casilla) y con la frase «Pon abajo cuánto…»; aprobarla sin los intereses, o con ellos escritos con coma decimal («61,37»), no registra nada y lo dice (antes quedaba como una propuesta que nunca se podía aprobar, y «6,50» habría entrado como $650.00)',
+     msg.movimiento?.prestamista?.linea === true && /^Este dinero salió hacia la línea de crédito de ZZ Banco/.test(msg.movimiento?.lo_que_dice_el_banco ?? '')
+     && r.j?.estado === 'pendiente' && r.j.accion === 'prestamo' && JSON.stringify(r.j.pide) === '["p_interes"]'
+     && /^Es un pago a tu línea de crédito de ZZ Banco: \$1,000\.21\. Pon abajo cuánto de este pago fueron intereses/.test(r.j.texto ?? '')
+     && sin?.hecho === false && JSON.stringify(sin.campos) === '["p_interes"]' && /^Falta decir cuánto de este pago fueron intereses/.test(sin.por_que ?? '')
+     && coma?.hecho === false && coma.por_que === 'Escribe los centavos con punto, como 61.37.'
+     && nAsientos() === a0 && estadoMov(N.linea) === 'pendiente', { r: r.j, sin, coma, mov: msg.movimiento });
+  const a = aprobar(r.j?.dimelo_id, { campos: { p_interes: '61.37' }, recordar: true });
+  const lin = q(`select string_agg(l.cuenta || ' ' || l.monto, ', ' order by l.cuenta) from asiento_lineas l where l.asiento_id = ${lit(a?.asiento_id ?? '00000000-0000-4000-8000-000000000000')}`);
+  const mem = q(`select count(*) from bandeja_memoria where nombre ~* 'ZZBANCO' or clave ~* 'ZZBANCO'`);
+  ok('B17-43 y aprobada CON sus intereses entra por la puerta del banco: lo que baja la deuda a la línea (2510) y los intereses a su gasto (7100), el texto registrado dice el reparto, y nada se recuerda de un movimiento de la línea (aunque la casilla viniera marcada)',
+     a?.hecho === true && lin === '1010 -1000.21, 2510 938.84, 7100 61.37' && mem === '0' && a.recordado === undefined
+     && a.texto === 'Es un pago a tu línea de crédito de ZZ Banco: $1,000.21 ($938.84 bajan lo que debes en la línea y $61.37 son intereses).'
+     && dimeloDe(r.j?.dimelo_id)?.estado === 'aprobada', { a, lin, mem });
 }
 
 // ---- 9. el cierre ----------------------------------------------------------------

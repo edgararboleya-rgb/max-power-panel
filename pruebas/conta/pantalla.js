@@ -3317,6 +3317,12 @@ function b19Rpc(fn, a) {
     }
     // (cuarta vuelta) deshacer para corregir: el «Así es» de antes (con «Recordarlo»)
     if ((B19.guion === 'deshecha' || B19.guion === 'olvida') && a.p_movimiento === F19.ids.ww1 && a.p_accion === 'gasto' && pg && pg.paso === 'hacer') return b19PasoG('hacer');
+    // (sexta vuelta, 6b) el pago de una línea de crédito por su recomendación: con los intereses que se capturaron, y sin «recordar»
+    if (B19.guion === 'linea' && a.p_accion === 'prestamo') {
+      if (!(d.campos && d.campos.p_interes === '61.37') || d.linea !== true || op.fuente !== 'recomendacion' || 'recordar' in op || 'solo' in op)
+        return b19Falta('linea: se capturó el pago con 61.37 de intereses, por la recomendación y sin «recordar»');
+      return b19PasoG('hacer') || b19Falta('el guion de la línea ya había registrado ese pago');
+    }
     // (cuarta vuelta) lo que sale hacia un prestamista, registrado como un gasto: frena (el freno es de la Bandeja)
     if (B19.guion === 'prestamista' && a.p_accion === 'gasto' && pg && pg.paso === 'gasto_freno') {
       if (op.recordar || op.motivo || d.cuenta !== '7100') return b19Falta('prestamista: se capturó el gasto de intereses, sin recordar y sin porqué');
@@ -3398,6 +3404,8 @@ function b19Rpc(fn, a) {
     if (!c || !c.aprobar) return b19Falta('aprobar ' + a.p_dimelo);
     // (segunda vuelta) la puerta del banco frena también lo que entendió el «Dímelo»: solo entra con su porqué y la huella de ESE freno
     if (c.aprobar_freno && !(op.motivo && op.visto === c.aprobar_freno.freno)) return c.aprobar_freno;
+    // (sexta vuelta, 6b) lo que entendió el «Dímelo» del pago de una línea se aprueba CON sus intereses (los que se capturaron), y sin «recordar»
+    if (k === 'linea' && (!(op.campos && op.campos.p_interes === '12.50') || 'recordar' in op)) return b19Falta('linea: se capturó aprobarla con 12.50 de intereses y sin «recordar»');
     B19.despues = c.aprobar.despues;
     return c.aprobar.resp;
   }
@@ -5006,6 +5014,87 @@ async function escenaF19(b, errs) {
           `${sinIA.slice(0, 120)} · ${menu.slice(0, 200)} · la IA en el comercio: ${await kq.locator('.ct-ia [data-ia-clasificar]').count()} · sus «Otra cosa»: ${await kq.locator('.ct-otra-menu [data-que]').count()}`);
         await q.evaluate(() => { window.MXP_CONTA._estado.ia = window.__ia0; });
       }
+    }
+
+    // -- (sexta vuelta, 6b) LA LÍNEA DE CRÉDITO, APARTE DEL PRÉSTAMO: de uno en uno, con sus intereses (con punto), y sin «Recordarlo» --
+    await conGuion(q, 'linea', false);
+    {
+      const LN = F19.guiones.linea, nv = LN[0].despues.nuevas, p1 = nv.find(x => Number(x.monto) === -1000), p2 = nv.find(x => Number(x.monto) === -500), ds = nv.find(x => Number(x.monto) === 3000);
+      const t1 = LN[0].despues.leer.tarjetas[p1.movimiento_id], td = LN[0].despues.leer.tarjetas[ds.movimiento_id], DL = F19.dimelo.linea, COMA = 'Escribe los centavos con punto, como 61.37.';
+      const sel = id => `.ct-mov[data-id="${id}"]`, pillDe = async id => (await q.locator(`${sel(id)} .ct-f-motivo .ct-pill`).first().textContent()).trim();
+      const error = async caja => (await caja.locator('.ct-bn-res .ct-error').count()) ? (await caja.locator('.ct-bn-res .ct-error').first().textContent()).trim() : '(sin error)';
+      const enGrupos = (await q.locator('#ct-bn-grupos').count()) ? await plano(q, '#ct-bn-grupos') : '';
+      const pill1 = await pillDe(p1.movimiento_id), pillD = await pillDe(ds.movimiento_id);
+      c = await fila(q, p1.movimiento_id);
+      let rec1 = c.locator('[data-bn-caja="rec"]');
+      ok('(sexta vuelta, 6b) EL PAGO DE UNA LÍNEA DE CRÉDITO dada de alta: la tarjeta dice «Es un pago a tu línea de crédito de ZZ Banco: $1,000.00. Pon abajo cuánto de este pago fueron intereses…» (antes «Dime cuánto…», que invitaba a contestarlo en la caja del «Dímelo»), con la casilla «Interés, según el statement» y la fila dice «Línea de crédito»; NO ofrece «Recordarlo» (la base dice que de ese movimiento no se recuerda nada: antes la casilla salía marcada y no guardaba nada); y con DOS pagos de la línea esperando NO sale un grupo «una respuesta vale para todos» en «Decide por grupo» (cada pago lleva sus intereses)',
+        (await rec1.locator('[data-bn-t]').textContent()).trim() === t1.rec.texto && /^Es un pago a tu línea de crédito de ZZ Banco: \$1,000\.00\. Pon abajo cuánto de este pago fueron intereses/.test(t1.rec.texto) && sinJerga(t1.rec.texto)
+        && pill1 === 'Línea de crédito' && (await rec1.locator('[data-bn-campo="p_interes"]').count()) === 1 && /Interés, según el statement/.test(await plano(q, `${sel(p1.movimiento_id)} [data-bn-caja="rec"]`))
+        && (await rec1.locator('[data-bn-recordar], [data-bn-solo]').count()) === 0 && t1.no_recordar === true && t1.linea === true
+        && !/ZZBANCO/i.test(enGrupos) && (await q.locator(sel(p2.movimiento_id)).count()) === 1, `${pill1} · ${await plano(q, `${sel(p1.movimiento_id)} [data-bn-caja="rec"]`)} · grupos: ${enGrupos.slice(0, 160)}`.slice(0, 520));
+      n0 = llamadas.length;
+      await rec1.locator('[data-bn-campo="p_interes"]').fill('61,37'); await tocar(q, rec1.locator('[data-bn-asi]'));
+      const e1 = await error(rec1);
+      await rec1.locator('[data-bn-campo="p_interes"]').fill('6,50'); await tocar(q, rec1.locator('[data-bn-asi]'));
+      const e2 = await error(rec1);
+      ok('(6b) LOS INTERESES ESCRITOS CON COMA DECIMAL NO SE LEEN: con «61,37» y con «6,50» la tarjeta dice «Escribe los centavos con punto, como 61.37.» y no llama a la base (antes las comas se quitaban sin mirar: «6,50» entraba como $650.00 de intereses y «61,37» se rechazaba sin decir por qué); el pago sigue en la Bandeja',
+        e1 === COMA && e2 === COMA && cuantas(n0, 'fn_bandeja_hacer') === 0 && (await q.locator(sel(p1.movimiento_id)).count()) === 1 && await rec1.locator('[data-bn-campo="p_interes"]').evaluate(e => e === document.activeElement), `${e1} · ${e2}`);
+      await c.locator('[data-bn-mas] > summary').click(); await q.waitForTimeout(150);
+      const bancoP = await plano(q, `${sel(p1.movimiento_id)} .ct-bn-viejo .ct-texto`);
+      await rec1.locator('[data-bn-campo="p_interes"]').fill('61.37');
+      n0 = llamadas.length;
+      await tocar(q, rec1.locator('[data-bn-asi]'));
+      l = ultima(n0, 'fn_bandeja_hacer');
+      ok('…y con «61.37» entra: «Así es» manda el pago de la línea con sus intereses (acción «prestamo», campos.p_interes), sin «recordar», y el aviso dice lo que entró («Registrado: Es un pago a tu línea de crédito de ZZ Banco: $1,000.00 ($938.63 bajan lo que debes en la línea y $61.37 son intereses).»); en «Más opciones», lo que dice el banco de ese pago es «…es un pago de tu línea de crédito» (antes «es la cuota de un préstamo»)',
+        !!l && l.args.p_accion === 'prestamo' && l.args.p_datos.campos.p_interes === '61.37' && l.args.p_datos.linea === true && !('recordar' in l.args.p_opciones) && cuantas(n0, 'fn_bandeja_hacer') === 1
+        && (await tostada(q)) === `Registrado: ${LN[1].resp.texto.replace(/\.$/, '')}` && /\$938\.63 bajan lo que debes en la línea y \$61\.37 son intereses/.test(LN[1].resp.texto) && (await q.locator(sel(p1.movimiento_id)).count()) === 0
+        && /^El banco lo escribe como lo de tu línea de crédito: es un pago de tu línea de crédito\./.test(bancoP) && !/cuota de un préstamo/.test(bancoP), `${await tostada(q)} · ${bancoP}`.slice(0, 400));
+      // (el segundo pago, por el «Dímelo»)
+      c = await fila(q, p2.movimiento_id);
+      n0 = llamadas.length;
+      await c.locator('[data-bn-frase]').fill(DL.frase);
+      await c.locator('[data-bn-enviar]').click(); await esperarLlamada(q, n0, 'contador:dimelo'); await pintado(q); await q.waitForTimeout(200);
+      let dim = c.locator('[data-bn-caja="dim"]');
+      const dim1 = { texto: (await dim.locator('[data-bn-t]').textContent()).trim(), casilla: await dim.locator('[data-bn-campo="p_interes"]').count(), recordar: await dim.locator('[data-bn-recordar]').count() };
+      // (la Bandeja leída otra vez —otra pestaña, o al volver—: la propuesta guardada viene en su tarjeta y sigue diciendo qué pide)
+      B19.despues = LN[2].despues; B19.pasoG = 3;
+      await q.evaluate(() => { const st = window.MXP_CONTA._estado; st.bn.dim.clear(); st.bn.frases.clear(); st.bj.abierta = null; });
+      await ve(q, 'bandeja');
+      c = await fila(q, p2.movimiento_id); dim = c.locator('[data-bn-caja="dim"]');
+      const dim2 = { texto: (await dim.locator('[data-bn-t]').count()) ? (await dim.locator('[data-bn-t]').textContent()).trim() : '(sin propuesta)', casilla: await dim.locator('[data-bn-campo="p_interes"]').count(), recordar: await dim.locator('[data-bn-recordar]').count() };
+      ok('(6b) EL PAGO DE LA LÍNEA POR «DÍMELO CON TUS PALABRAS»: lo que la base guardó dice qué pide (los intereses), y la caja de «Entendí esto» pinta la casilla «Interés, según el statement», sin «Recordarlo»; también cuando la Bandeja se lee otra vez y la propuesta viene en su tarjeta (antes quedaba como una propuesta que no se podía aprobar: sin casilla, cada «Así es» contestaba «Falta decir cuánto de este pago fueron intereses»)',
+        JSON.stringify(DL.guardado.pide) === '["p_interes"]' && dim1.texto === DL.guardado.texto && /Pon abajo cuánto de este pago fueron intereses/.test(dim1.texto) && dim1.casilla === 1 && dim1.recordar === 0
+        && dim2.texto === DL.guardado.texto && dim2.casilla === 1 && dim2.recordar === 0, JSON.stringify([dim1, dim2]).slice(0, 500));
+      n0 = llamadas.length;
+      await dim.locator('[data-bn-campo="p_interes"]').fill('12,50'); await tocar(q, dim.locator('[data-bn-ia-asi]'));
+      const e3 = await error(dim), sinLlamar = cuantas(n0, 'fn_bandeja_aprobar') === 0;
+      await dim.locator('[data-bn-campo="p_interes"]').fill('12.50');
+      await tocar(q, dim.locator('[data-bn-ia-asi]'));
+      l = ultima(n0, 'fn_bandeja_aprobar');
+      ok('…con «12,50» dice cómo escribirlo y no aprueba nada; con «12.50», «Así es» aprueba la propuesta CON sus intereses (fn_bandeja_aprobar con campos.p_interes) y entra: «Registrado: Es un pago a tu línea de crédito de ZZ Banco: $500.00 ($487.50 bajan lo que debes en la línea y $12.50 son intereses).»',
+        e3 === COMA && sinLlamar && !!l && l.args.p_dimelo === DL.guardado.dimelo_id && l.args.p_opciones.campos.p_interes === '12.50' && !('recordar' in l.args.p_opciones) && cuantas(n0, 'fn_bandeja_aprobar') === 1
+        && (await tostada(q)) === `Registrado: ${DL.aprobar.resp.texto.replace(/\.$/, '')}` && /\$487\.50 bajan lo que debes en la línea y \$12\.50 son intereses/.test(DL.aprobar.resp.texto) && (await q.locator(sel(p2.movimiento_id)).count()) === 0,
+        `${e3} · ${JSON.stringify(l && l.args.p_opciones)} · ${await tostada(q)}`.slice(0, 400));
+      // (el desembolso, y lo que dicen las frases fijas de «Más opciones» con la IA de antes viva)
+      await conGuion(q, 'linea', false);
+      await q.evaluate(() => { const st = window.MXP_CONTA._estado; window.__ia0 = st.ia;
+        st.ia = { estado: { pendientes_sin_propuesta: 0 }, err: null, rojo: [], bandeja: new Map(), cuentas: [{ codigo: '7100', nombre: 'Intereses', tipo: 'otro_gasto', regla_obra: 'ninguna' }] }; });
+      c = await fila(q, ds.movimiento_id);
+      const recD = { texto: (await c.locator('[data-bn-caja="rec"] [data-bn-t]').textContent()).trim(), recordar: await c.locator('[data-bn-caja="rec"] [data-bn-recordar]').count() };
+      await c.locator('[data-bn-mas] > summary').click(); await q.waitForTimeout(150);
+      const bancoD = await plano(q, `${sel(ds.movimiento_id)} .ct-bn-viejo .ct-texto`);
+      c = await fila(q, p1.movimiento_id);
+      await c.locator('[data-bn-mas] > summary').click(); await q.waitForTimeout(150);
+      const sinIA = (await c.locator('[data-bn-sin-ia]').count()) ? (await c.locator('[data-bn-sin-ia]').first().textContent()).trim() : '(sin la nota)';
+      await c.locator('[data-otra]').click(); await q.waitForTimeout(150);
+      const menu = await plano(q, `${sel(p1.movimiento_id)} .ct-otra-menu`);
+      ok('(6b) UN DESEMBOLSO DE LA LÍNEA dice «Es dinero de tu línea de crédito de ZZ Banco: $3,000.00. Sube lo que debes en la línea…», su fila dice «Línea de crédito» y tampoco ofrece «Recordarlo»; y LAS FRASES FIJAS de «Más opciones» hablan de la línea, no de «la cuota de un préstamo»: del depósito, «…es dinero de tu línea de crédito (una deuda), no el pago de un cliente»; del pago, «Aquí no salen ni la propuesta de la IA ni «Según yo»: registrarían este cargo entero como un gasto, y es un pago de tu línea de crédito (una parte baja lo que debes y otra son intereses)…», y «Otra cosa…» dice «el banco dice que este dinero va a tu línea de crédito»',
+        recD.texto === td.rec.texto && /^Es dinero de tu línea de crédito de ZZ Banco: \$3,000\.00\. Sube lo que debes en la línea/.test(recD.texto) && recD.recordar === 0 && pillD === 'Línea de crédito'
+        && /^El banco lo escribe como lo de tu línea de crédito: es dinero de tu línea de crédito \(una deuda\), no el pago de un cliente\./.test(bancoD)
+        && /^Aquí no salen ni la propuesta de la IA ni «Según yo»: registrarían este cargo entero como un gasto, y es un pago de tu línea de crédito \(una parte baja lo que debes y otra son intereses\)/.test(sinIA) && !/cuota de un préstamo/.test(sinIA)
+        && /el banco dice que este dinero va a tu línea de crédito\. Si de verdad es eso, elígelo arriba, en la lista/.test(menu) && (await c.locator('.ct-otra-menu [data-que="clasificar"], .ct-otra-menu [data-que="transferencia"]').count()) === 0,
+        `${pillD} · ${recD.texto.slice(0, 80)} · ${bancoD.slice(0, 120)} · ${sinIA.slice(0, 160)} · ${menu.slice(0, 160)}`);
+      await q.evaluate(() => { window.MXP_CONTA._estado.ia = window.__ia0; });
     }
 
     // -- (P5) LO QUE SE REGISTRA POR EL CAMINO DE ANTES QUEDA ANOTADO EN LA BANDEJA --

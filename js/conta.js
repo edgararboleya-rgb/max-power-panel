@@ -3191,6 +3191,12 @@
     p_capital: { tipo: "monto", etiqueta: "Capital, según el statement del prestamista" },
     p_interes: { tipo: "monto", etiqueta: "Interés, según el statement" }
   };
+  // (sexta vuelta, 6b) UN MONTO ESCRITO EN UNA CASILLA de la Bandeja (los intereses de un pago de la línea, el capital y el interés de
+  // una cuota): «61.37», «$61.37» y «1,000.00» valen; una coma que NO es de miles («61,37», «6,5») no se lee (antes las comas se
+  // quitaban sin mirar: «6,50» entraba como $650.00 de intereses). Devuelve el texto limpio, o null si trae esa coma. La base lo
+  // comprueba otra vez (fn_bandeja_monto_escrito)
+  const montoEscrito = s => { const t = String(s == null ? "" : s).replace(/[$\s]/g, ""); return t.includes(",") && !/^\d{1,3}(,\d{3})+(\.\d{1,2})?$/.test(t) ? null : t.replace(/,/g, ""); };
+  const MONTO_CON_PUNTO = "Escribe los centavos con punto, como 61.37.";
   function campoHTML(nombre, etiqueta, tipo, extra = "") {
     const c = CAMPOS[nombre] || {};
     const et = etiqueta || c.etiqueta || nombre, t = tipo || c.tipo || "texto";
@@ -3230,6 +3236,8 @@
     if (!pide.length) return llamar(card, m, o.llamar, { ...(o.args || {}) });
     montarForma(card, formaHTML(esc(o.texto), pide.map(p => campoHTML(p, null, null, "required")), "Confirmar"), v => {
       const args = { ...(o.args || {}) };
+      // (6b) un monto con coma decimal no se manda: se pide con punto
+      if (pide.some(p => (CAMPOS[p] || {}).tipo === "monto" && montoEscrito(v[p]) == null)) return mostrarErrorForma(card, MONTO_CON_PUNTO);
       for (const p of pide) {
         if (p === "p_partidas.motivo") {
           const prev = args.p_partidas;
@@ -3248,7 +3256,7 @@
     // cuota de un préstamo, entera a «Intereses»): eso se contesta en la lista de arriba, que frena y pide el porqué
     const tb = bnDe(m), sabe = !!(tb && tb.sabe);
     f.hidden = false;
-    f.innerHTML = `<div class="ct-otra-menu"><p class="ct-form-t">¿Qué es este movimiento?</p>${sabe ? `<p class="ct-nota" data-bn-otra-sabe>«Un gasto o un costo» y «Dinero entre cuentas propias» no salen aquí: ${tb.sabe === "edgar" ? "el banco dice que este dinero lo mandaste tú" : num(m.monto) < 0 ? "el banco dice que este dinero va a un prestamista" : "el banco dice que este dinero lo deposita un prestamista"}. Si de verdad es eso, elígelo arriba, en la lista: ahí te pregunto por qué.</p>` : ""}<div class="ct-acciones">
+    f.innerHTML = `<div class="ct-otra-menu"><p class="ct-form-t">¿Qué es este movimiento?</p>${sabe ? `<p class="ct-nota" data-bn-otra-sabe>«Un gasto o un costo» y «Dinero entre cuentas propias» no salen aquí: ${tb.sabe === "edgar" ? "el banco dice que este dinero lo mandaste tú" : tb.linea ? (num(m.monto) < 0 ? "el banco dice que este dinero va a tu línea de crédito" : "el banco dice que este dinero viene de tu línea de crédito") : num(m.monto) < 0 ? "el banco dice que este dinero va a un prestamista" : "el banco dice que este dinero lo deposita un prestamista"}. Si de verdad es eso, elígelo arriba, en la lista: ahí te pregunto por qué.</p>` : ""}<div class="ct-acciones">
       ${sabe ? "" : `<button type="button" class="accion secundaria" data-que="clasificar">Un gasto o un costo: clasificarlo a una cuenta</button>
       <button type="button" class="accion secundaria" data-que="transferencia">Dinero entre cuentas propias</button>`}
       <button type="button" class="accion secundaria" data-que="partida">Una partida en tránsito del 30-sep</button>
@@ -3469,7 +3477,10 @@
   // lo que dice el banco de ese movimiento, sin jerga; y si la app SABE de quién es ese dinero (el banco mismo nombra a un
   // prestamista, o dice que lo mandó Edgar: lo dice la base, `sabe`), eso en vez de la suposición del banco («¿es una parte de una
   // factura…?»), que es justo lo que no es
-  const bnTextoBanco = (m, t) => t.sabe === "prestamista"
+  // (6b) y si es de una línea de crédito dada de alta (`linea`), lo dice así: un pago de la línea, o dinero de la línea
+  const bnTextoBanco = (m, t) => t.sabe === "prestamista" && t.linea
+      ? (num(m.monto) > 0 ? "El banco lo escribe como lo de tu línea de crédito: es dinero de tu línea de crédito (una deuda), no el pago de un cliente. Si no es eso, elígelo arriba, en la lista." : "El banco lo escribe como lo de tu línea de crédito: es un pago de tu línea de crédito. Si no es eso, elígelo arriba, en la lista.")
+    : t.sabe === "prestamista"
       ? (num(m.monto) > 0 ? "El banco dice que este dinero lo deposita un prestamista: es una deuda, no el pago de un cliente. Si no es eso, elígelo arriba, en la lista." : "El banco dice que este dinero va a un prestamista: es la cuota de un préstamo. Si no es eso, elígelo arriba, en la lista.")
     : t.sabe === "edgar" ? "El banco dice que este dinero lo mandaste tú: es dinero tuyo a la empresa, no el pago de un cliente. Si no es eso, elígelo arriba, en la lista."
     : bnLlano(m.texto);
@@ -3479,7 +3490,9 @@
   // que la registraba ENTERA como gasto por su puerta (sin el freno de la Bandeja) y aprendía la regla para las cuotas siguientes; y
   // «Según yo → Clasificar» hacía lo mismo. En esos movimientos lo que no sea lo que dice el banco se contesta en la lista de arriba,
   // que pasa por la Bandeja: frena, y pide el porqué después de leerlo
-  const bnSinIAHTML = (m, t) => `<p class="ct-nota ct-bn-sin-ia" data-bn-sin-ia>${t.sabe === "prestamista" && num(m.monto) < 0
+  const bnSinIAHTML = (m, t) => `<p class="ct-nota ct-bn-sin-ia" data-bn-sin-ia>${t.sabe === "prestamista" && t.linea && num(m.monto) < 0
+      ? "Aquí no salen ni la propuesta de la IA ni «Según yo»: registrarían este cargo entero como un gasto, y es un pago de tu línea de crédito (una parte baja lo que debes y otra son intereses). Si de verdad es otra cosa, elígelo arriba, en la lista: ahí te pregunto por qué."
+      : t.sabe === "prestamista" && num(m.monto) < 0
       ? "Aquí no salen ni la propuesta de la IA ni «Según yo»: registrarían este cargo entero como un gasto, y es la cuota de un préstamo (una parte baja la deuda y otra son intereses). Si de verdad es otra cosa, elígelo arriba, en la lista: ahí te pregunto por qué."
       : "Aquí no salen ni la propuesta de la IA ni «Según yo»: este dinero no es un gasto ni el pago de un cliente. Si de verdad es otra cosa, elígelo arriba, en la lista: ahí te pregunto por qué."}</p>`;
   // un botón de lo que propone el banco: NINGUNO es el botón principal (la suposición del banco no es la respuesta: la respuesta va
@@ -3965,7 +3978,8 @@
     return r === "obligatoria" || r === "opcional" || p.pide_obra ? { pide: r === "obligatoria" || !!p.pide_obra, sel: d.proyecto_id || "" } : null;
   }
   // los datos que el banco pide para una opción suya y no son el motivo (el capital y el interés de una cuota con su statement)
-  const bnCamposDe = p => (Array.isArray(p.pide) ? p.pide : p.accion === "banco" && p.datos && Array.isArray(p.datos.pide) ? p.datos.pide : [])
+  // (6b) y los intereses del pago de una línea de crédito (acción «prestamo»)
+  const bnCamposDe = p => (Array.isArray(p.pide) ? p.pide : (p.accion === "banco" || p.accion === "prestamo") && p.datos && Array.isArray(p.datos.pide) ? p.datos.pide : [])
     .filter(c => !BN_CAMPOS_MOTIVO.includes(c));
   // las obras para elegir: las que están en marcha y, si la que viene elegida ya no lo está, ella también (dicho)
   function opcionesObraBn(vacio, sel) {
@@ -3996,6 +4010,9 @@
   function bnRecordarHTML(t, p, monto, marcada = true) {
     if (!t || !t.clave || !BN_CLASES_CLAVE.includes(t.clase) || !BN_RECORDABLES.includes(p.accion) || p.fuente === "memoria") return "";
     if (t.sabe === "prestamista" && BN_NO_A_PRESTAMISTA.includes(p.accion)) return "";
+    // (6b) ni en lo de una línea de crédito dada de alta: la base dice que de ese movimiento no se recuerda nada (`no_recordar`). Antes la
+    // casilla salía marcada y no guardaba nada
+    if (t.no_recordar) return "";
     return `<div class="ct-bn-rc"><label class="ct-casilla ct-bn-recordar"><input type="checkbox" data-bn-recordar${marcada ? " checked" : ""}> Recordarlo: lo próximo de ${esc(t.nombre || "aquí")} te lo propongo así</label>
       ${bnSoloVale(t, p.accion, (p.datos || {}).cuenta, monto) ? bnSoloHTML(t.nombre, false, !marcada) : ""}</div>`;
   }
@@ -4030,7 +4047,9 @@
     if (pideMotivo && motivo.length < 3) return { error: "Escríbelo en unas palabras: queda escrito en el libro.", foco: ta };
     const campos = {};
     for (const el of bl.querySelectorAll("[data-bn-campo]")) {
-      const c = el.dataset.bnCampo, monto = (CAMPOS[c] || {}).tipo === "monto", v = monto ? String(el.value || "").replace(/[$,\s]/g, "") : String(el.value || "").trim();
+      const c = el.dataset.bnCampo, monto = (CAMPOS[c] || {}).tipo === "monto", v = monto ? montoEscrito(el.value) : String(el.value || "").trim();
+      // (6b) con coma decimal no se lee (ni se le quita la coma): se dice cómo escribirlo
+      if (monto && v == null) return { error: MONTO_CON_PUNTO, foco: el };
       if (!v || (monto && !/^\d+(\.\d{1,2})?$/.test(v))) return { error: monto ? "Falta un monto (como 123.45): está en el statement del prestamista." : "Falta un dato.", foco: el };
       campos[c] = v;
     }
@@ -4049,6 +4068,7 @@
     if (!p) return t.pensando ? pill("Mirándolo…", "") : rec && rec.pill ? pill(rec.pill, "cu bn") : rec && rec.aviso && !rec.deshecha ? pill(motivoLlano(m.motivo), m.motivo === "posible_duplicado" || m.motivo === "quitada" ? "warn" : "") : pill("¿Qué es?", "warn");
     const a = p.accion, cuenta = (p.datos || {}).cuenta;
     const txt = a === "gasto" || a === "ia" ? bnCuentaLlana(cuenta) : a === "banco" ? bnPillBanco(m, p)
+      : a === "prestamo" && (p.datos || {}).linea ? "Línea de crédito"
       : ({ personal: "Personal", cobro: "Cobro de factura", anticipo: "Anticipo de obra", prestamo: "Préstamo", aporte: "Dinero tuyo", traspaso: "Entre tus cuentas", cuadrilla: "Cuadrilla", contratista: "Subcontrato", otro_ingreso: "Otro ingreso" })[a] || "¿Qué es?";
     return pill(txt, "cu bn");
   }

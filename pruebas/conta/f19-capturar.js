@@ -68,6 +68,11 @@
         («Otra cosa…») y ANOTADO después por la Bandeja (fuente «mas»), y
         deshecho; y el paquete del AÑO SIGUIENTE (la balanza con el renglón
         del resultado de años anteriores y sus totales en cero);
+        (sexta vuelta, 6b) y el guion de LA LÍNEA DE CRÉDITO: se da de alta
+        una línea de un prestamista inventado y llegan dos pagos y un
+        desembolso; el primer pago se registra con sus intereses y el segundo
+        por el «Dímelo» (lo que la base guarda dice qué pide, y se aprueba
+        con ellos);
      3. revisa que en lo capturado no salga ningún nombre de la semilla de
         siempre (los ids de obra de 02-semilla.sql son inventados y ya son
         públicos: se quitan antes de revisar);
@@ -751,6 +756,45 @@ const dimelo = {};
   const [g] = pedir([guardar(ids.lg1, frase, ia)]);
   if (sano(g, 'dimelo larga').estado !== 'pendiente' || !/^[A-Z]{40,}$/.test(leer.tarjetas[ids.lg1].nombre || '')) throw new Error('dimelo: el comercio de nombre largo debía quedar con su propuesta pendiente: ' + JSON.stringify([g, leer.tarjetas[ids.lg1]]).slice(0, 300));
   dimelo.larga = { movimiento: ids.lg1, frase, ia, guardado: g };
+}
+{
+  // (h) (sexta vuelta, 6b) LA LÍNEA DE CRÉDITO EN LA PANTALLA. En un guion (una transacción que se deshace): se da de alta una línea
+  // de crédito de un prestamista inventado («ZZ Banco», que no es de la lista de marcas: lo demás de la semilla no cambia) y llegan
+  // dos pagos suyos y un desembolso. La tarjeta del pago dice que es de la línea (`linea`), que no se recuerda (`no_recordar`) y pide
+  // sus intereses; los dos pagos NO forman un grupo; el primero se registra con «Así es» y sus intereses; y el segundo por el
+  // «Dímelo»: lo que la base guarda dice qué pide (los intereses), también cuando la Bandeja se lee otra vez, y se aprueba con ellos
+  const frase = 'es el pago de la linea de credito', ia = { accion: 'prestamo', prestamista: 'ZZ Banco', recordar: true, explicacion: 'Dices que es el pago de la línea de crédito.' };
+  const guardarFmt = `select fn_bandeja_dimelo_guardar(%1$L, '${DUENO}', ${dolar(frase)}, false,
+    (select jsonb_build_object('movimiento', k->'movimiento', 'lo_que_dice_edgar', k->'frase') from (select fn_bandeja_dimelo_contexto(%1$L, '${DUENO}', ${dolar(frase)}) as k) z),
+    '{}'::jsonb, ${j(ia)}, 'claude-opus-5-5', 'medium', 'f19-capturar', ${j(U)})`;
+  guiones.linea = guion('linea', `
+    perform fn_bandeja_linea('{"nombre": "ZZ Banco", "descriptor": "\\\\mZZBANCO LINEA\\\\M"}');
+    perform pg_temp.llega('ln1', 2, -1000.00, 'ACH ZZBANCO LINEA PAGO ZZ31');
+    perform pg_temp.llega('ln2', 1, -500.00, 'ACH ZZBANCO LINEA PAGO ZZ32');
+    perform pg_temp.llega('ln3', 1, 3000.00, 'ACH ZZBANCO LINEA ADVANCE ZZ33');
+    perform pg_temp.paso('inicio', 'select null::jsonb');
+    r := pg_temp.pedir(format('select fn_bandeja_recomendar(%L)', pg_temp.mov('ln1')), 'dueno');
+    perform pg_temp.paso('hacer', format($q$select fn_bandeja_hacer(%L, 'prestamo', %L::jsonb, '{"fuente":"recomendacion"}')$q$, pg_temp.mov('ln1'),
+              (r->'datos') || '{"campos":{"p_interes":"61.37"}}'::jsonb));
+    r := pg_temp.paso('guardar', format(${dolar(guardarFmt)}, pg_temp.mov('ln2')), 'editor');
+    perform pg_temp.paso('aprobar', format($q$select fn_bandeja_aprobar(%L, '{"campos":{"p_interes":"12.50"}}'::jsonb)$q$, r->>'dimelo_id'));`, true);
+  const [a, h, g, ap] = guiones.linea, nuevas = a.despues.nuevas || [], de = n => nuevas.find(x => Number(x.monto) === n);
+  const p1 = de(-1000), p2 = de(-500), ds = de(3000), t1 = p1 && a.despues.leer.tarjetas[p1.movimiento_id], td = ds && a.despues.leer.tarjetas[ds.movimiento_id];
+  if (!p1 || !p2 || !ds || !t1 || t1.linea !== true || t1.no_recordar !== true || t1.sabe !== 'prestamista' || !t1.rec || t1.rec.accion !== 'prestamo'
+      || JSON.stringify(t1.rec.pide) !== '["p_interes"]' || !/^Es un pago a tu línea de crédito de ZZ Banco: \$1,000\.00\. Pon abajo cuánto de este pago fueron intereses/.test(t1.rec.texto || ''))
+    throw new Error('guion linea: el pago de la línea debía decirse de la línea (linea, no_recordar), recomendarse y pedir sus intereses: ' + JSON.stringify(t1).slice(0, 600));
+  if ((a.despues.leer.grupos || LEER0.grupos || []).some(x => (x.movimientos || []).some(id => id === p1.movimiento_id || id === p2.movimiento_id)))
+    throw new Error('guion linea: los dos pagos de la línea no debían formar un grupo: ' + JSON.stringify(a.despues.leer.grupos).slice(0, 500));
+  if (!td || td.linea !== true || !td.rec || td.rec.accion !== 'prestamo' || !/^Es dinero de tu línea de crédito de ZZ Banco: \$3,000\.00/.test(td.rec.texto || ''))
+    throw new Error('guion linea: el desembolso debía recomendarse como dinero de la línea: ' + JSON.stringify(td).slice(0, 400));
+  if (h.resp.hecho !== true || h.resp.texto !== 'Es un pago a tu línea de crédito de ZZ Banco: $1,000.00 ($938.63 bajan lo que debes en la línea y $61.37 son intereses).' || h.resp.recordado)
+    throw new Error('guion linea: el pago con sus intereses debía registrarse, y sin recordar nada: ' + JSON.stringify(h.resp).slice(0, 400));
+  const dg = g.despues.leer.tarjetas[p2.movimiento_id].dimelo;
+  if (g.resp.estado !== 'pendiente' || g.resp.accion !== 'prestamo' || JSON.stringify(g.resp.pide) !== '["p_interes"]' || !dg || JSON.stringify(dg.pide) !== '["p_interes"]')
+    throw new Error('guion linea: lo que entendió el «Dímelo» del pago de la línea debía quedar pendiente diciendo qué pide, también al leer otra vez: ' + JSON.stringify([g.resp, dg]).slice(0, 600));
+  if (ap.resp.hecho !== true || !/\$487\.50 bajan lo que debes en la línea y \$12\.50 son intereses/.test(ap.resp.texto || ''))
+    throw new Error('guion linea: aprobada con sus intereses debía registrarse: ' + JSON.stringify(ap.resp).slice(0, 400));
+  dimelo.linea = { movimiento: p2.movimiento_id, frase, ia, guardado: g.resp, aprobar: { resp: ap.resp, despues: ap.despues } };
 }
 console.log(`  «Dímelo»: ${Object.keys(dimelo).length} casos`);
 
