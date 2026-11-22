@@ -190,8 +190,13 @@ arriba.
   sus clientes, de la cuadrilla y de los subcontratistas (sin ellos no puede
   decir de quién es un pago), más lo que Edgar ya enseñó de cada comercio.
   Antes de salir todo pasa por la máscara (`fn_bandeja_sin_datos`: correos,
-  teléfonos, números de cuenta y de tarjeta, SSN, ITIN y EIN salen tapados), y
-  la frase queda guardada ya tapada. Lo que la IA contesta no registra nada:
+  teléfonos, números de cuenta y de tarjeta, SSN, ITIN y EIN salen tapados
+  cuando van escritos como tales: con su palabra delante —«cel», «tlf»,
+  «cuenta»…— o con su forma —diez cifras de teléfono, un internacional con su
+  «+», una tarjeta en grupos—; lo que no se distingue de un número cualquiera
+  NO se tapa: siete cifras sueltas sin «tel» o «cel» delante, o un número de
+  cuenta sin la palabra «cuenta». Las sumas que Edgar escribe —«la 1103+1104»,
+  «2640.80+1450.75»— van enteras), y la frase queda guardada ya tapada. Lo que la IA contesta no registra nada:
   es una propuesta que la base valida y Edgar aprueba. (Tercera vuelta) Si el
   banco mismo dice que el depósito lo manda un prestamista, o el propio Edgar,
   se le dice a la IA como dato (`prestamista`, `lo_manda_edgar`), y la base no

@@ -26,9 +26,10 @@ Edgar): está contado al final, en «La segunda vuelta». La tercera (marca
 `2026112103`) arregló lo que encontró la segunda revisión, sobre todo que con
 la Bandeja llena la lectura no cabía en el corte de la API: «La tercera
 vuelta». La cuarta (22-nov, marca `2026112201`) arregló lo que encontró la
-tercera revisión: «La cuarta vuelta».
+tercera revisión: «La cuarta vuelta». La quinta (22-nov, marca `2026112202`
+en c17; c18 no cambió), lo que encontró la cuarta: «La quinta vuelta».
 
-### `docs/conta/c17-bandeja.sql` (marca 2026112201)
+### `docs/conta/c17-bandeja.sql` (marca 2026112202)
 
 Se pega después de c1…c16. Necesita c1, c2, c3, c6 y c8; c10 es opcional (sin
 él no hay «pago a la cuadrilla»). No cambia ninguna tabla ni función de otra
@@ -335,7 +336,14 @@ Se pega después de c4. No renombra nada: el inglés va al lado.
   los números y los montos de las facturas, y los nombres de las obras, de sus
   clientes, de la cuadrilla y de los subcontratistas (sin eso no puede decir
   de quién es un pago). No salen correos, teléfonos, números de cuenta, de
-  tarjeta ni de identificación fiscal: la máscara los tapa.
+  tarjeta ni de identificación fiscal cuando van escritos como tales (con su
+  palabra delante —«cel», «tlf», «cuenta»…— o con su forma: diez cifras de
+  teléfono, un internacional con su «+», una tarjeta en grupos, un SSN): la
+  máscara los tapa. Lo que no se distingue de un número cualquiera NO se
+  tapa: siete cifras sueltas sin «tel» o «cel» delante, o un número de cuenta
+  sin la palabra «cuenta». (Quinta vuelta) Las sumas que Edgar escribe —«la
+  1103+1104», «2640.80+1450.75»— van enteras: antes la regla del teléfono
+  internacional se comía la segunda mitad.
 
 ## El mapeo en inglés
 
@@ -565,9 +573,70 @@ Lo que encontró la tercera revisión y cómo quedó. Cada cosa tiene su prueba.
   verdad; el depósito del procesador sin facturas que cuadren dice de quién
   es; el Resumen cuenta los cargos cuyo recibo llegó después.
 
+## La quinta vuelta (22-nov, marca 2026112202)
+
+Lo que encontró la cuarta revisión y cómo quedó. Tres de sus hallazgos eran
+cosas que la cuarta vuelta había roto al arreglar otras. Cada cosa tiene su
+prueba; `c18-fiscal.sql` no cambió (sigue con la marca `2026112201`).
+
+- **El botón del banco que se toca es lo que se registra.** En «Más opciones
+  → Lo que dice el banco» la pantalla esconde las opciones que nombran la
+  cuenta de paso de Stripe y numeraba los botones sobre la lista ya recortada;
+  desde que esos botones van por la Bandeja, ese número viajaba a la base, que
+  lo cuenta sobre su lista entera: cada botón quedaba corrido un puesto (tocar
+  «Para Edgar…: distribución» enseñaba y registraba «A Reserva de impuestos»).
+  Ahora cada opción lleva su número de la base desde que se lee
+  (`prepararMov`), y hay un segundo candado: `fn_bandeja_validar` devuelve la
+  opción que validó (`opcion_banco`: su puerta y sus argumentos) y la pantalla
+  no enseña ninguna caja si no es la del botón tocado.
+- **El cobro anotado «depositado neto de su comisión» es una suposición del
+  banco.** Le vale con que a un depósito le falte hasta un 3.5 % respecto de
+  un cobro anotado sin depositar: no mira quién deposita. La cuarta vuelta lo
+  recomendaba arriba con su «Así es»: con un cheque anotado a mano y el Zelle
+  de otra persona por un poco menos, un toque casaba el Zelle con el cobro del
+  cheque y mandaba la diferencia a comisiones. Ahora se recomienda solo si lo
+  deposita un procesador de tarjetas y lo que falta es una de sus tarifas; si
+  no, la tarjeta sigue su orden de siempre y, si nada lo explica, pregunta
+  diciendo el cobro que podría ser y cuánto le falta. Los dos botones del
+  banco («depositado neto» y «anotado por otro monto: corrígelo») dicen cada
+  uno lo suyo con sus montos (decían la misma frase), y lo deshecho de este
+  tipo no se propone otra vez.
+- **«Es otro movimiento»** (el posible duplicado que no lo es) dejaba la
+  respuesta guardada, pero la Bandeja contestaba «No se registró: sigue en la
+  Bandeja.» y la tarjeta seguía preguntando lo mismo. Ahora lo dice
+  («Anotado: es otro movimiento… Ahora dime qué es.») y la tarjeta se pone al
+  día.
+- **La IA de antes ya no está dentro de la tarjeta cuando la app sabe de
+  quién es el dinero.** El freno del prestamista cubría la lista, el «Dímelo»,
+  los grupos, la rutina y los botones del banco, pero en «Más opciones»
+  seguían «Según la IA» (su «✓ Así es» registraba la cuota entera como gasto
+  por la puerta de c8, que además aprendía la regla para las siguientes),
+  «Según yo» y «Otra cosa… → clasificarlo a una cuenta». En un movimiento que
+  el banco dice de un prestamista (o de Edgar) ya no se pintan: se contesta
+  en la lista, que frena y pide el porqué después de leerlo. La propuesta de
+  c8 de ese cargo NO se cierra: c8 vuelve a proponer todo cargo sin propuesta
+  pendiente, así que cerrarla solo haría que la IA la propusiera (y la
+  cobrara) otra vez en cada ráfaga; queda pendiente y sin pintar.
+- **Después de decidir un grupo, la pantalla se queda donde estaba sin
+  depender del navegador.** La relectura por detrás repinta la franja de
+  arriba («Lo que contestaste estos días» crece, o se abre sola) y todo lo de
+  debajo bajaba; que no se notara era cosa del «anclaje» de Chromium, que no
+  actúa con la página arriba del todo y que el Safari del iPhone no trae.
+  Ahora la pantalla mide dónde estaba lo que Edgar mira (la tarjeta abierta,
+  o los grupos) y se desplaza lo que creció lo de arriba (`bnQuieto`).
+- **Menores**: la máscara del «Dímelo» ya no se come las sumas que Edgar
+  escribe («la 1103+1104») ni un monto detrás de «cel», y tapa un teléfono
+  pegado de WhatsApp (espacios de ancho cero, cifras anchas) y el que lleva
+  «tlf»; al aprobar una propuesta del «Dímelo», la huella de un freno ya no
+  trae como porqué la frase de antes; la opción del banco que se quedó vieja
+  (su factura ya se cobró por otro lado) se dice en llano en vez de dar por
+  buena la caja; los botones del abono en la tarjeta dicen la cuenta por su
+  nombre («desde Banco operativo»); y «Ya sé qué es lo de X» ya no deja debajo
+  «estoy mirando…».
+
 ## Las pruebas
 
-- `docs/conta/c17-pruebas.sql`: 78 filas (sobre la base limpia, con la semilla
+- `docs/conta/c17-pruebas.sql`: 81 filas (sobre la base limpia, con la semilla
   f19 y con mil pendientes).
 - `docs/conta/c18-pruebas.sql`: 15 filas.
 - `pruebas/conta/c17-volumen.sh`: la Bandeja con 400 y con 1,000 pendientes,
@@ -584,7 +653,7 @@ Lo que encontró la tercera revisión y cómo quedó. Cada cosa tiene su prueba.
   el tope, el esquema; tercera vuelta, el prestamista dicho a la IA, la
   máscara con saltos de línea, el carácter nulo, los enlaces y la frase como
   ejemplo del porqué; y, cuarta, el cargo hacia un prestamista).
-- `pruebas/conta/pantalla.js`: 223 comprobaciones de esta escena, con la base
+- `pruebas/conta/pantalla.js`: 236 comprobaciones de esta escena, con la base
   simulada sacada del banco (`f19-capturar.js` → `pantalla-f19.json`, semilla
   `f19-semilla.sql`; las lecturas por partes, con `f19-parte.js`, que el
   capturador comprueba contra la base). Solo esa escena:
@@ -619,10 +688,28 @@ Lo que encontró la tercera revisión y cómo quedó. Cada cosa tiene su prueba.
   modelo) y la lista entera de cuentas de «Otra cosa…». Es la misma pieza que
   usa quien no tiene c17, con sus comprobaciones. Desde la cuarta vuelta lo
   que se registra por ahí queda anotado en la Bandeja, y los botones de lo
-  que propone el banco van por la capa; lo que queda es el lenguaje de esas
-  dos piezas. Del texto del banco solo se dijo en llano el más frecuente (el
+  que propone el banco van por la capa. Pero esas dos piezas registran por
+  las puertas de c8 y de c6, SIN el freno de la Bandeja (solo se anotan
+  después): por eso, desde la quinta vuelta, no se pintan en un movimiento
+  del que la app sabe de quién es (un prestamista, o Edgar). En los demás
+  movimientos siguen ahí, con su lenguaje, y lo que registren no pasa por
+  ningún freno de esta capa (los de c6 y c8 sí). Del texto del banco solo se dijo en llano el más frecuente (el
   del cargo sin recibo): los demás salen sin nombres de funciones, pero con
   sus palabras.
+- **(Quinta vuelta) Lo que la cuarta revisión encontró y no se tocó**: el
+  cheque devuelto contestado por la Bandeja deja el libro bien, pero en
+  Proyectos la factura sigue marcada cobrada (pide diseñar cómo se deshace);
+  el pago que llega a la tarjeta antes que su cargo del banco pregunta entre
+  todas las cuentas propias, también la de paso de Stripe; con un préstamo
+  dado de alta, otro cargo que lleve el nombre entero del prestamista (su
+  seguro, una comisión) recibe el aviso de «cuota» cada mes y lo que Edgar
+  conteste no se recuerda; si la IA propone «un gasto» para la cuota de un
+  prestamista, esa propuesta queda pendiente debajo del aviso (cada «Así es»
+  frena); el aviso con «Deshacer» de la app de siempre (el de Proyectos) se
+  quita si el toque cae en su texto; y en el teléfono el renglón nuevo de la
+  balanza del paquete cae en la primera columna. Y de las pruebas: la base
+  simulada de la escena depende del día de la semana en que se captura (el
+  Zelle de la cuadrilla), y la comprobación ya vale con las dos respuestas.
 - **La IA de antes sigue proponiendo sola** (su cadena, al abrir la Bandeja,
   si su interruptor está encendido) cargos que la Bandeja nueva ya recomienda
   por el nombre o por lo recordado. La cuarta vuelta solo la dejó discreta y
