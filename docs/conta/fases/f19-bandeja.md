@@ -17,17 +17,18 @@ porque son la 17 y la 18 de la base; sus archivos de prueba llevan «f19».
 - 21-nov: los nombres de las cuentas, los estados y el paquete del año (lo que
   ve el contador), en inglés; la pantalla le sigue hablando en español.
 
-## Lo construido (21-nov)
+## Lo construido (21 y 22-nov)
 
-El mismo día hubo tres vueltas. La primera construyó las dos capas y la
+El 21 hubo tres vueltas. La primera construyó las dos capas y la
 pantalla. La segunda (marca `2026112102`) arregló lo que encontró una revisión
 de tres lentes (el dinero y el libro, la IA y la seguridad, la pantalla y
 Edgar): está contado al final, en «La segunda vuelta». La tercera (marca
 `2026112103`) arregló lo que encontró la segunda revisión, sobre todo que con
 la Bandeja llena la lectura no cabía en el corte de la API: «La tercera
-vuelta».
+vuelta». La cuarta (22-nov, marca `2026112201`) arregló lo que encontró la
+tercera revisión: «La cuarta vuelta».
 
-### `docs/conta/c17-bandeja.sql` (marca 2026112103)
+### `docs/conta/c17-bandeja.sql` (marca 2026112201)
 
 Se pega después de c1…c16. Necesita c1, c2, c3, c6 y c8; c10 es opcional (sin
 él no hay «pago a la cuadrilla»). No cambia ninguna tabla ni función de otra
@@ -84,7 +85,15 @@ capa. Ninguna función es SECURITY DEFINER.
   de tarjetas; lo que Edgar ya dijo de esa contraparte; las facturas que
   explican el depósito; la propuesta pendiente de la IA (c8); y lo que sugiere
   la descripción entera del banco. Un gasto de obra propone la obra en la que
-  estuvo la cuadrilla ese día, si fue una sola.
+  estuvo la cuadrilla ese día, si fue una sola. (Cuarta vuelta) La primera
+  opción del banco solo se da por buena si es la ÚNICA de su puerta que no
+  pide un porqué (`fn_bandeja_opcion_cero`); con dos o más igual de válidas
+  (el pago de una tarjeta, con dos tarjetas del mismo banco) **pregunta
+  cuál** (`fn_bandeja_elige`: `{aviso, elige, pill}`), y una opción que el
+  banco marca «con su motivo» no se recomienda nunca. Lo que **sale hacia un
+  prestamista** se avisa (es su cuota) antes que lo recordado o el nombre. Y
+  lo que Edgar **deshizo** de ese movimiento no se le propone otra vez
+  (`{aviso, deshecha}`): se pregunta.
 - **¿Qué facturas paga este depósito?** (`fn_bandeja_cobro_de`) busca entre
   TODAS las que tienen saldo, no entre las doce más cercanas; solo contesta si
   la respuesta es única; y un depósito de un procesador de tarjetas se casa
@@ -101,18 +110,41 @@ capa. Ninguna función es SECURITY DEFINER.
   un comercio, con una regla de Edgar que dice «que entre solo», de algo
   personal o de un gasto que **no lleva obra**, hasta el tope (500 de
   fábrica), sin otra explicación del banco, sin sospecha de duplicado, nunca
-  deshecho, y sin que la puerta, hoy, lo frene. Antes de eso arregla lo que
-  ya está dos veces (`fn_bandeja_recibos`, abajo). La pantalla la llama al
-  abrir la Bandeja; pg_cron, dos veces al día (`mxp-bandeja-solo-manana` y
-  `mxp-bandeja-solo-tarde`).
+  deshecho, y sin que la puerta, hoy, lo frene. (Cuarta vuelta) Solo toma lo
+  que el banco trajo DESPUÉS de que Edgar pusiera la regla
+  (`bandeja_memoria.solo_desde`): los cargos de ese comercio que ya esperaban
+  siguen esperando su «Así es». Antes de registrar, mira los recibos que
+  llegaron después (`fn_bandeja_recibos`, abajo: no cambia nada). La pantalla
+  la llama al abrir la Bandeja; pg_cron, dos veces al día
+  (`mxp-bandeja-solo-manana` y `mxp-bandeja-solo-tarde`).
 - **`fn_bandeja_recibos`**: el recibo que llega DESPUÉS de registrar su cargo
-  deja el gasto dos veces. Si es uno solo, del mismo monto y sin otro cargo
-  que pueda ser el suyo, cambia lo registrado por el recibo por la puerta del
-  banco (el gasto queda una vez, en la obra del recibo). Si no, lo deja a la
-  vista para que Edgar diga «es su recibo» o «es otra compra».
+  deja el gasto dos veces. **No cambia nada sola** (tercera vuelta: el banco
+  no deja volver atrás un cambio así): le da cada uno de esos cargos a c6 para
+  que lo mire otra vez, y cuenta los que esperan. Cada uno sale arriba de la
+  Bandeja con sus dos respuestas, «Es su recibo: cámbialo» y «Es otra compra»
+  (lo que Edgar contestó solo lo cambia él). Si el cargo de verdad de ese
+  recibo llega y casa con él, o si de dos cargos iguales el otro ya dijo «es
+  su recibo» (cuarta vuelta: `fn_bandeja_hacer` lo mira en esa misma
+  llamada), el que ya no tiene un recibo libre deja de esperar.
 - **`fn_bandeja_deshacer`** deshace con su motivo lo que la Bandeja registró:
-  el asiento se reversa, el movimiento vuelve a la Bandeja y ya no entra solo;
-  si registró un cobro, lo anula y deja Proyectos como estaba.
+  lo des-casa por la puerta del banco (el pago a la cuadrilla, por la de
+  c10), el asiento se reversa, el movimiento vuelve a la Bandeja y ya no
+  entra solo. Si ese registro CREÓ un cobro, lo anula; un cobro que ya estaba
+  anotado y con el que el depósito solo se casó, se queda (y «Cobrado» de su
+  obra no baja: cuarta vuelta). **Proyectos queda como dice el libro** en ese
+  momento, no como estaba antes de ese registro (con dos pagos a cuenta de
+  una factura, deshacer el primero no la deja en cero). «Que lo siguiente
+  entre solo» de esa contraparte se apaga, salvo `{deja_solo: false}`; y con
+  `{olvida: true}` (cuarta vuelta) lo recordado de ella se da de baja en la
+  misma llamada. La tarifa del procesador que ese cobro confirmó pierde esa
+  vez.
+- **`fn_bandeja_anotar`** no toca el libro: deja en el rastro de la Bandeja
+  lo que quedó registrado por otro camino, para que salga en «Lo que
+  contestaste estos días», se pueda deshacer y se recuerde. Lo que la IA de
+  antes (c8) registró al aprobar su propuesta desde la tarjeta nueva (tercera
+  vuelta) y, con `{fuente: "mas"}` (cuarta), lo que Edgar registra por el
+  camino de antes dentro de «Más opciones»: «Según yo», «Otra cosa…» y las
+  opciones del banco cuya puerta no es de las ocho de la lista.
 - **El «Dímelo»**: `fn_bandeja_dimelo_contexto` y `fn_bandeja_dimelo_guardar`
   las llama solo la función de borde (no están en la API). La primera arma lo
   que se le da a la IA, ya tapado por la máscara (`fn_bandeja_sin_datos`: la
@@ -130,7 +162,11 @@ capa. Ninguna función es SECURITY DEFINER.
   por movimiento en el banco de pruebas (diez veces más en producción), así que
   va POR RELOJ y por unidades (tercera vuelta): lo que no da tiempo vuelve en
   `faltan`, con su tarjeta «pensando», y la pantalla lo pide con `{ids}`. Trae
-  las tarjetas, los grupos de cargos (con la
+  las tarjetas (cuarta vuelta: cada una con la huella de cada opción del
+  banco —`ops`: con ella los botones de «Más opciones» registran por esta
+  capa lo que Edgar leyó—, lo que la app sabe de ese dinero —`sabe`: lo manda
+  un prestamista, o el propio Edgar— y la obra del día de esa compra,
+  `obra_dia`), los grupos de cargos (con la
   recomendación de sus tarjetas si coinciden; «mezclado» si no), los depósitos
   de un mismo pagador (uno a uno), lo registrado cuyo recibo llegó después, lo
   que entró solo, lo contestado en catorce días con sus tandas, lo recordado y
@@ -149,7 +185,7 @@ las instrucciones). La salida es un JSON con esquema: la acción sale de la
 lista. La función no registra nada: guarda lo que la IA contestó y devuelve lo
 que la base validó.
 
-### `docs/conta/c18-fiscal.sql` (marca 2026112103)
+### `docs/conta/c18-fiscal.sql` (marca 2026112201)
 
 Se pega después de c4. No renombra nada: el inglés va al lado.
 
@@ -171,21 +207,49 @@ Se pega después de c4. No renombra nada: el inglés va al lado.
   (`partial_year`, el período desde el arranque del libro, el título sin
   «Year-End» y el primer aviso: en 2026 el libro empieza el 1 de octubre; lo
   de antes está en QuickBooks), y **uno que no lleva sale vacío y lo dice**
-  (`in_books` en falso).
-- `fn_fiscal_control`: cuatro cuadres y dos avisos.
+  (`in_books` en falso). (Cuarta vuelta) **La balanza es la de los libros
+  también desde el segundo ejercicio**: el libro no postea asientos de
+  cierre, así que el resultado de los años anteriores va en un renglón aparte
+  (`level: "component"`, sin `account`, con su línea y su nota), y
+  `trial_balance_totals` trae sus totales, que suman 0. **El Schedule L es el
+  balance**: las reclasificaciones de presentación del balance (los anticipos
+  y saldos a favor de clientes, un banco en rojo…) van en sus líneas L
+  (`schedule_l.reclassifications`) y el activo de las líneas L es el del
+  balance general. Y el paquete lee cada vista de los estados UNA vez (antes
+  la balanza, unas siete): con el año entero y el volumen de Edgar pasaba de
+  0.8 s en el banco; ahora, 0.3.
+- `fn_fiscal_control`: cinco cuadres (el 36, nuevo: la balanza del paquete
+  suma 0 y es la de los libros) y tres avisos (el 37, nuevo: el activo del
+  Schedule L es el del balance general).
 
 ### La pantalla (`js/conta.js`, `css/conta.css`)
 
 - **La tarjeta** dice UNA cosa con su «Así es». Debajo, «¿Qué es? Dímelo con
   tus palabras». Lo de antes (el texto del banco, sus botones, «Según la IA /
   Según yo», «Otra cosa…») queda detrás de «Más opciones», con las categorías
-  en dos niveles.
+  en dos niveles. (Cuarta vuelta) Si el banco lo reconoce de varias formas
+  igual de válidas, la tarjeta **pregunta cuál**: un botón por opción, y la
+  tocada se enseña entera con su «Así es». Y dentro de «Más opciones» los
+  botones de «Lo que dice el banco» ya no registran de un toque ni llaman a
+  la puerta del banco: el toque enseña en llano lo que se va a registrar
+  (`fn_bandeja_validar`) y «Así es» lo registra por `fn_bandeja_hacer`, con la
+  huella de lo leído (el freno de la capa, Proyectos al día, su rastro y su
+  «Deshacer»); ninguno es el botón principal, y de un dinero que la app sabe
+  que viene de un prestamista o del propio Edgar no se ofrece cobrarlo. Lo
+  que siga por el camino de antes («Otra cosa…», «Según yo», el «Así es» de
+  la IA de antes) queda anotado después (`fn_bandeja_anotar`).
   Después de «Así es», la tarjeta siguiente de la lista queda abierta: se
   contesta una detrás de otra. (Tercera vuelta) El cuerpo de una tarjeta se
   pinta al abrirla, y la Bandeja no se relee ni se repinta después de cada
   respuesta: sale la tarjeta contestada y, por detrás, se leen las tarjetas de
   ese comercio y lo demás. Lo que la base todavía no ha recomendado dice
-  «Mirándolo…» y llega solo.
+  «Mirándolo…» y llega solo. (Cuarta vuelta) Si la respuesta dejó algo
+  recordado, las demás tarjetas de ese comercio dicen «Mirándolo…» en ese
+  momento y se piden solo ellas, sin esperar a lo demás; en la que Edgar ya
+  tiene a medias sale una nota («Ya sé qué es lo de X… Ver lo que te propongo
+  ahora») en vez de repintarla. Un fallo de la relectura de detrás que no sea
+  un cuadre en rojo no tapa la página: se dice en la franja y se intenta otra
+  vez.
 - **Cuando el banco frena**, la tarjeta lo dice arriba del campo del porqué
   (con las palabras de la base) y el siguiente «Así es» manda el porqué con la
   huella de ese freno. Si la base contesta que la tarjeta ya no es la que se
@@ -197,7 +261,12 @@ Se pega después de c4. No renombra nada: el inglés va al lado.
 - **«Decide por grupo»**, arriba: los comercios con varios CARGOS (cada grupo
   enseña sus movimientos; si sus tarjetas no dicen lo mismo, no propone nada)
   y los lotes que el banco ya reconoce. Los depósitos de un mismo pagador van
-  juntos a la vista, sin una respuesta para todos.
+  juntos a la vista, sin una respuesta para todos. (Cuarta vuelta) Con «la del
+  día de cada uno», la lista dice junto a cada compra a qué obra va (o que se
+  queda); el titular del grupo sigue a lo elegido en la lista; el aviso dice
+  como qué se registraron; y después de decidir un grupo la pantalla se queda
+  en los grupos. Con la Bandeja nueva, la franja de la IA de antes va debajo,
+  en una línea discreta y sin botón principal.
 - **La franja**: lo del control de la Bandeja que Edgar tiene que saber;
   «Llegó el recibo de un cargo que ya habías registrado» (con «Es su recibo:
   cámbialo» y «Es otra compra»: nada se cambia solo); «Registrado solo» y
@@ -209,10 +278,17 @@ Se pega después de c4. No renombra nada: el inglés va al lado.
 - **El rojo del banco por un recibo que llegó después** (el cuadre «ningún
   ticket después de clasificar») ya no tapa la Bandeja ni el Resumen: esos
   cargos salen arriba con sus dos respuestas.
+- **El aviso** (el de toda la app): tocarlo lo quita y nada más; el toque no
+  pasa a lo que tapa (en la tercera vuelta pasaba, y podía pulsar un «Así es»
+  que no se veía). En el teléfono, dentro de Contabilidad, va arriba, sobre
+  el membrete; en la computadora, de ancho un párrafo como mucho.
 - **Estados**: con c18 los nombres van en inglés (un enlace los pone en
   español para esa sesión) y hay un apartado más, «Para el contador», que pasa
   el control de los estados como las demás pestañas y dice arriba, en español,
-  si el año es parcial o si la app no lo lleva.
+  si el año es parcial o si la app no lo lleva. (Cuarta vuelta) La balanza
+  del paquete trae el renglón que no es una cuenta y sus totales, y los dos
+  CSV llevan arriba los avisos del paquete. En el teléfono los apartados van
+  en dos renglones.
 - **Sin c17 o sin c18** nada de esto se pinta: la pantalla lo pregunta una vez
   por sesión y sigue como antes.
 - La tarjeta de la mano de obra (c10), el cheque que pregunta de quién es, el
@@ -425,22 +501,90 @@ Lo que encontró la segunda revisión y cómo quedó. Cada cosa tiene su prueba.
 - **Las pruebas de c17 valen con la base en uso**: cada una mira solo sus
   movimientos, así que se pueden correr en producción con la Bandeja llena.
 
+## La cuarta vuelta (22-nov, marca 2026112201)
+
+Lo que encontró la tercera revisión y cómo quedó. Cada cosa tiene su prueba.
+
+- **La primera opción del banco ya no se da por hecha.** Con dos tarjetas del
+  mismo banco dadas de alta, el pago de una desde el banco salía afirmado con
+  la primera que el banco ordena («Es el pago de tu tarjeta … Blue»), y
+  cuando después llegaba el abono a la otra, «Es el pago de esta tarjeta»:
+  dos «Así es» a dos frases seguras dejaban el pago dos veces en el banco del
+  libro, con todos los controles en verde. Ahora la primera opción se
+  recomienda solo si es la única de su puerta que no pide un porqué; con
+  varias, la tarjeta pregunta cuál; el abono en la tarjeta que no dice que es
+  un pago se propone como la devolución de una compra (o se pregunta); y el
+  abono que sí lo es no se recomienda si hay un pago por ese monto,
+  registrado hace poco como el de OTRA tarjeta, que sigue sin llegar a ella.
+- **«Más opciones» se saltaba la capa.** Los botones de «Lo que dice el
+  banco», «Según yo» y «Otra cosa…» llamaban directo a las puertas de antes:
+  sin el freno del prestamista, sin dejar Proyectos al día, sin rastro ni
+  «Deshacer». Ahora las opciones del banco entran por `fn_bandeja_hacer` (con
+  su huella) después de enseñar qué se registra; lo demás queda anotado con
+  `fn_bandeja_anotar`; y del depósito de un prestamista (o de Edgar) no se
+  ofrece cobrarlo.
+- **Lo que sale hacia un prestamista** es la cuota de un préstamo: la tarjeta
+  lo avisa, registrarlo como un gasto, algo personal o un pago por trabajo
+  frena (el freno es de esta capa y pide su porqué leído), no se recuerda ni
+  entra solo, y a la IA se le dice qué hacer con ello (regla 7 de sus
+  instrucciones). El desembolso de un préstamo tampoco entra como dinero del
+  dueño ni como un traspaso sin su porqué.
+- **La caja del porqué ya no sale escrita** con lo que Edgar dijo en el
+  «Dímelo» antes de leer el freno (un segundo toque levantaba cualquier
+  freno): la base lo devuelve como `ejemplo` y la pantalla lo deja en gris.
+  Solo va escrito (`sugerido`) lo que el banco mismo dice: el nombre del
+  prestamista.
+- **La máscara** tapa además un correo partido por un espacio o un salto de
+  línea alrededor de la arroba.
+- **«Que entre solo» no barre lo que ya esperaba**: la rutina solo toma lo
+  importado después de poner la regla (`solo_desde`), y «dudosa» ya no es un
+  motivo que entre solo.
+- **Deshacer**: el cobro que ya estaba anotado se queda y «Cobrado» de su
+  obra no baja; lo deshecho no se recomienda otra vez en la tarjeta que
+  vuelve; la forma ofrece «y olvida lo que te dije de X»; y la pantalla va a
+  la tarjeta que volvió.
+- **El recibo que llega después, en el otro orden**: de dos cargos iguales
+  con un recibo, «es su recibo» en el primero ya no deja al segundo arriba
+  diciendo que su gasto está dos veces, con dos botones que fallaban.
+- **Lo que explico se ve en la siguiente del mismo comercio**: mirándolo en
+  el momento, sin esperar a la relectura entera y sin tirarla por otra
+  respuesta.
+- **Después de decidir un grupo, la pantalla se queda en los grupos**; el
+  titular sigue a la lista, el aviso dice como qué, la obra de cada compra se
+  ve antes de confirmar, y lo que falta se dice una vez.
+- **El aviso no deja pasar los toques** ni tapa las acciones en el teléfono.
+- **La balanza del paquete cuadra desde el segundo ejercicio**, el Schedule L
+  da el mismo activo que el balance, el paquete cabe en el tope de la casa
+  con el año entero (lo mide `pruebas/conta/c18-volumen.sh`) y sus avisos
+  viajan en los dos CSV.
+- **Textos**: sin el tipo del banco ni «entró por plaid» en la tarjeta, sin
+  el número del asiento en los avisos, «se anula (queda escrito que se
+  anuló)» en vez de «se reversa», los montos con su formato, el texto del
+  cargo sin recibo sin «puente» ni «casa sola», y un corte de la API dice que
+  no se guardó nada. El aviso del préstamo sin dar de alta dice qué hacer de
+  verdad; el depósito del procesador sin facturas que cuadren dice de quién
+  es; el Resumen cuenta los cargos cuyo recibo llegó después.
+
 ## Las pruebas
 
-- `docs/conta/c17-pruebas.sql`: 68 filas (sobre la base limpia, con la semilla
-  f19 y con cuatrocientos pendientes).
-- `docs/conta/c18-pruebas.sql`: 13 filas.
+- `docs/conta/c17-pruebas.sql`: 78 filas (sobre la base limpia, con la semilla
+  f19 y con mil pendientes).
+- `docs/conta/c18-pruebas.sql`: 15 filas.
 - `pruebas/conta/c17-volumen.sh`: la Bandeja con 400 y con 1,000 pendientes,
   como el dueño por la API, cada llamada por debajo de 0.8 s.
+- `pruebas/conta/c18-volumen.sh` (cuarta vuelta): el paquete del año sobre el
+  libro de volumen de c4 (quince meses, 250 por mes), como el dueño por la
+  API, por debajo de 0.8 s; la balanza de los dos ejercicios suma 0 y es la
+  de c4, y el Schedule L es el balance.
 - `pruebas/conta/bandeja-e2e.mjs`: la función de borde de verdad contra el
-  banco de pruebas y el simulador de la IA, 38 comprobaciones (la frase tapada,
+  banco de pruebas y el simulador de la IA, 41 comprobaciones (la frase tapada,
   la lista cerrada, la inyección en la frase y en la descripción del banco con
   una acción válida —queda como propuesta: ni en el libro ni en la memoria sin
   el toque de Edgar—, el freno por un recibo ya subido, la opción que cambia,
-  el tope, el esquema; y, tercera vuelta, el prestamista dicho a la IA, la
+  el tope, el esquema; tercera vuelta, el prestamista dicho a la IA, la
   máscara con saltos de línea, el carácter nulo, los enlaces y la frase como
-  sugerencia del porqué).
-- `pruebas/conta/pantalla.js`: 186 comprobaciones de esta escena, con la base
+  ejemplo del porqué; y, cuarta, el cargo hacia un prestamista).
+- `pruebas/conta/pantalla.js`: 223 comprobaciones de esta escena, con la base
   simulada sacada del banco (`f19-capturar.js` → `pantalla-f19.json`, semilla
   `f19-semilla.sql`; las lecturas por partes, con `f19-parte.js`, que el
   capturador comprueba contra la base). Solo esa escena:
@@ -452,7 +596,10 @@ Lo que encontró la segunda revisión y cómo quedó. Cada cosa tiene su prueba.
 - **Dar de alta un préstamo** sigue siendo por el SQL Editor
   (`fn_prestamo_guardar`, con su contrato). La Bandeja registra el dinero que
   entra como deuda y el control avisa (70) hasta que se dé de alta; sin eso
-  sus cuotas no se reparten entre capital e intereses.
+  sus cuotas no se reparten entre capital e intereses (esperan en la Bandeja,
+  y se dice: aviso 75). El aviso ya dice qué hacer («pídeselo a quien te
+  lleva la app»), pero sigue fijo y no se puede esconder: lo que lo quita es
+  construir el alta en la pantalla.
 - **Una factura de antes del corte que no está en el libro** no se puede
   cobrar desde la Bandeja: la IA la ve en su contexto y contesta «falta» con
   lo que hay que hacer.
@@ -470,9 +617,22 @@ Lo que encontró la segunda revisión y cómo quedó. Cada cosa tiene su prueba.
 - **Dentro de «Más opciones» sigue la Bandeja de antes** con su lenguaje: el
   bloque «Según la IA / Según yo» (con los códigos de cuenta y el nombre del
   modelo) y la lista entera de cuentas de «Otra cosa…». Es la misma pieza que
-  usa quien no tiene c17, con sus comprobaciones; la tercera vuelta solo quitó
-  los códigos de los botones de lo que propone el banco. La tarjeta nueva ya
-  dice arriba, en llano, lo que propone la IA de antes.
+  usa quien no tiene c17, con sus comprobaciones. Desde la cuarta vuelta lo
+  que se registra por ahí queda anotado en la Bandeja, y los botones de lo
+  que propone el banco van por la capa; lo que queda es el lenguaje de esas
+  dos piezas. Del texto del banco solo se dijo en llano el más frecuente (el
+  del cargo sin recibo): los demás salen sin nombres de funciones, pero con
+  sus palabras.
+- **La IA de antes sigue proponiendo sola** (su cadena, al abrir la Bandeja,
+  si su interruptor está encendido) cargos que la Bandeja nueva ya recomienda
+  por el nombre o por lo recordado. La cuarta vuelta solo la dejó discreta y
+  debajo de los grupos.
+- **El gasto de una llamada a la IA que la función corta por tiempo** (los 60
+  o 90 s) no se apunta contra el tope: no hay respuesta con su uso. Apuntar
+  una estimación mezclaría gasto real y supuesto en el tope; lo que lo
+  arregla es leer la respuesta por partes (streaming), que cambia la llamada
+  que comparte la ráfaga de c8 y su simulador.
+- **El grupo no tiene caja de «Dímelo»**: se elige de su lista.
 - **Un anticipo no suma en «Cobrado» de Proyectos**: Proyectos no lleva
   anticipos, y sumarlo ahí lo contaría dos veces cuando se marque cobrada la
   factura que lo absorba.

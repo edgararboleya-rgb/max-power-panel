@@ -206,7 +206,9 @@ arriba.
   porqué). Cuántos esperan: `select * from v_bandeja_control where orden = 65;`.
   Si el recibo casa después con su cargo de verdad (o se anula), el de antes
   deja de esperar solo al abrir la Bandeja o en la tarea (la rutina se lo da a
-  c6 otra vez, que quita la marca).
+  c6 otra vez, que quita la marca). Y de dos cargos iguales con UN recibo, en
+  cuanto Edgar dice «es su recibo» en uno, el otro deja de esperar en esa
+  misma llamada (cuarta vuelta).
   El control del banco los dice en rojo («ningún ticket después de
   clasificar») hasta que Edgar conteste: es lo esperado, y la Bandeja y el
   Resumen siguen pintando.
@@ -219,10 +221,30 @@ arriba.
   apunta (`origen: aprendida`). Edgar las ve y las olvida en «Lo que
   recuerdo»; deshacer el cobro que confirmó una le quita esa vez.
 - Deshacer en la Bandeja (c17): además de des-casar el movimiento, anula el
-  cobro que ese registro creó, deja Proyectos como dice el libro, deshace por
+  cobro que ese registro creó (uno que ya estaba anotado se queda, y «Cobrado»
+  de su obra no baja), deja Proyectos como dice el libro, deshace por
   c10 el reparto de un pago a la cuadrilla y APAGA «que entre solo» de esa
   contraparte (la regla sigue recordada: se propone). Para dejarla encendida:
   la casilla de la forma (o `fn_bandeja_deshacer(<hecho>, '<porqué>', '{"deja_solo": false}')`).
+  Para olvidar además lo recordado de esa contraparte (cuarta vuelta): la
+  otra casilla de la forma, «Y olvida lo que te dije de …» (o `'{"olvida": true}'`).
+  Lo deshecho no se le recomienda otra vez en la tarjeta que vuelve.
+- «Que entre solo» desde cuándo (c17, cuarta vuelta): la rutina solo toma lo
+  que el banco trajo después de poner la regla. Cuándo se puso cada una:
+  `select nombre, solo_desde from bandeja_memoria where solo order by solo_desde;`.
+- Lo que el banco dice de un prestamista (c17, cuarta vuelta): el dinero que
+  SALE hacia uno es la cuota de un préstamo. La tarjeta lo avisa y espera;
+  registrarlo como un gasto, algo personal o un pago por trabajo frena y pide
+  su porqué, y no se recuerda ni entra solo. Mientras el préstamo no esté
+  dado de alta (`fn_prestamo_guardar`, con su contrato) la Bandeja lo dice
+  arriba (avisos 70 y 75 de lo que lee la pantalla). Cuáles esperan:
+  `select m.fecha, m.monto, m.descripcion from movimientos_banco m where m.estado = 'pendiente' and m.monto < 0 and fn_bandeja_prestamista(m.desc_norm) is not null;`.
+- Lo que se registra por el camino de antes dentro de «Más opciones» (c17,
+  cuarta vuelta): los botones de lo que propone el banco entran por
+  `fn_bandeja_hacer` (acción «banco», con la huella de la opción); «Otra
+  cosa…», «Según yo» y el «Así es» de la IA de antes registran por su puerta
+  de siempre y la Bandeja lo anota después (`fn_bandeja_anotar` con
+  `{"fuente": "mas"}`). Cuáles: `select * from bandeja_hechos where fuente = 'mas' order by el desc;`.
 - Lo que la IA de antes (c8) registra desde la tarjeta nueva: el «Así es» va
   por su función de siempre (`contador`, «aprobar») y la Bandeja lo anota
   (`fn_bandeja_anotar`, no toca el libro) para que salga en «Lo que
@@ -251,3 +273,10 @@ arriba.
   `select forma, confirmada, confirmada_el from fiscal_config;`. El control de
   las dos capas: `select * from v_bandeja_control;` y
   `select * from fn_fiscal_control();`.
+- La balanza del paquete (c18, cuarta vuelta): el libro no postea asientos de
+  cierre, así que desde el segundo año el paquete trae un renglón que no es
+  una cuenta (el resultado de los años anteriores) y sus totales, que suman 0.
+  Lo vigila el cuadre 36 de `fn_fiscal_control()`; el aviso 37 dice si el
+  activo del Schedule L deja de ser el del balance general. Cuánto tarda el
+  paquete con el año entero se mide en el banco con
+  `pruebas/conta/c18-volumen.sh` (por debajo de 0.8 s).

@@ -14,26 +14,29 @@ y se le da a «Run». Se pueden pegar dos veces: no cambian ningún dato.
 | # | Qué | Filas que salen |
 |---|---|---|
 | 1 | `docs/conta/c17-bandeja.sql` | **8**, todas empiezan por «ok:» |
-| 2 | `docs/conta/c17-pruebas.sql` | **68**, todas en `true` (u «omitida» con su porqué) |
+| 2 | `docs/conta/c17-pruebas.sql` | **78**, todas en `true` (u «omitida» con su porqué) |
 | 3 | `docs/conta/c18-fiscal.sql` | **6**, todas empiezan por «ok:» |
-| 4 | `docs/conta/c18-pruebas.sql` | **13**, todas en `true` |
+| 4 | `docs/conta/c18-pruebas.sql` | **15**, todas en `true` (u «omitida» con su porqué) |
 | 5 | Volver a desplegar la función `contador` | `?paso=salud` dice `"dimelo": true` y `"max_tokens_dimelo": 16000` |
 | 6 | Publicar la app (v308) | |
 
-Los archivos son los de la **tercera vuelta** (marca `2026112103`): dos
-revisiones encontraron cosas que arreglar antes de que los pegaras, y ya van
-arregladas (la última, sobre todo, que con la Bandeja llena —unos
-cuatrocientos pendientes— la lectura no cabía en el tiempo que da Supabase).
-Si llegaste a pegar los de una vuelta anterior (marca `2026112101` o
-`2026112102`), pega estos encima: se pueden pegar las veces que haga falta.
+Los archivos son los de la **cuarta vuelta** (22-nov, marca `2026112201`):
+tres revisiones encontraron cosas que arreglar antes de que los pegaras, y ya
+van arregladas (la última, sobre todo: con dos tarjetas del mismo banco la
+Bandeja daba por hecho a cuál iba un pago; los botones de antes, dentro de
+«Más opciones», registraban sin pasar por la Bandeja nueva; y la balanza del
+paquete del contador no cuadraba desde el segundo año).
+Si llegaste a pegar los de una vuelta anterior (marca `2026112101`,
+`2026112102` o `2026112103`), pega estos encima: se pueden pegar las veces
+que haga falta.
 **La función `contador` y la app van con estos**: pega primero el SQL.
 
 ### 1. `c17-bandeja.sql`: lo que tiene que decir
 
-- **`version`:** «ok: 2026112103».
+- **`version`:** «ok: 2026112201».
 - **`tablas`:** «ok: bandeja_config, bandeja_memoria, bandeja_dimelo y
   bandeja_hechos, con RLS».
-- **`funciones`:** «ok: 56 funciones fn_bandeja_*, ninguna SECURITY DEFINER».
+- **`funciones`:** «ok: 58 funciones fn_bandeja_*, ninguna SECURITY DEFINER».
 - **`configuracion`:** «ok: lo de «entra solo» encendido (tope $500.00);
   «Dímelo» encendido (esfuerzo medium)». Encendido no quiere decir que algo
   entre solo: no entra nada hasta que tú marques «que lo siguiente entre solo»
@@ -53,11 +56,11 @@ nada»**, dice qué falta. Cópiamelo tal cual: no pasó nada en la base.
 
 ### 2. `c17-pruebas.sql`
 
-Tarda (en el banco de pruebas, unos quince segundos; con cuatrocientos
-movimientos esperando en la Bandeja, medio minuto: en Supabase será más). Salen
-68 filas; la última columna tiene que ser `true` en todas. Las pruebas montan
-sus propios movimientos («BDIECISIETE …») y los deshacen: al terminar no queda
-nada (la fila 68 lo comprueba). **Valen con la base en uso**: miran solo lo
+Tarda (en el banco de pruebas, unos veinte segundos; con cientos de
+movimientos esperando en la Bandeja, cerca de un minuto: en Supabase será
+más). Salen 78 filas; la última columna tiene que ser `true` en todas. Las
+pruebas montan sus propios movimientos («BDIECISIETE …») y los deshacen: al
+terminar no queda nada (la fila 78 lo comprueba). **Valen con la base en uso**: miran solo lo
 suyo, tenga la Bandeja lo que tenga pendiente. Una fila «omitida» dice por qué
 (por ejemplo, que el mes de la prueba ya está cerrado): no es un fallo.
 
@@ -69,7 +72,7 @@ select * from pruebas.c17_resultado order by n;
 
 ### 3. `c18-fiscal.sql`: lo que tiene que decir
 
-- **`version`:** «ok: 2026112103».
+- **`version`:** «ok: 2026112201».
 - **`forma`:** «ok: Form 1120 (C-corp), PENDIENTE de confirmar con el CPA (el
   paquete lo avisa)». Es lo esperado: mira «Lo que tienes que hacer tú», abajo.
 - **`lineas`:** «ok: 1120: 36, 1120-S: 36, 1125-A: 5».
@@ -82,8 +85,10 @@ select * from pruebas.c17_resultado order by n;
 
 ### 4. `c18-pruebas.sql`
 
-Salen 13 filas, todas en `true`. También queda en
-`pruebas.c18_resultado`.
+Salen 15 filas, todas en `true`. También queda en
+`pruebas.c18_resultado`. La 13 (la balanza del segundo año) sale «omitida» si
+el año que viene todavía no está entre los períodos de la base: no es un
+fallo.
 
 ### 5. Volver a desplegar la función `contador`
 
@@ -95,7 +100,9 @@ Para comprobarlo, abre `…/functions/v1/contador?paso=salud`: tiene que decir
 `"dimelo": true` y `"max_tokens_dimelo": 16000`. Mientras no la despliegues,
 la caja «Dímelo» contesta «la función que está desplegada es anterior al
 «Dímelo»»; lo demás funciona. **La función y c17 van juntas**: la función
-nueva necesita el c17 de la tercera vuelta (pega primero el SQL).
+nueva necesita el c17 de la cuarta vuelta (pega primero el SQL). Si ya la
+habías desplegado con una vuelta anterior, despliégala otra vez: sus
+instrucciones cambiaron (lo que sale hacia un prestamista).
 
 ### 6. Publicar
 
@@ -112,7 +119,12 @@ Dime «publica» y sale la v308.
 - **«Más opciones»** guarda la lista larga: las categorías ordenadas en dos
   niveles (Costo de obra, Gastos generales, Otros gastos, Personal; Cobro de
   obra, Otros ingresos, Préstamo o aporte, Entre tus cuentas) y los botones de
-  antes.
+  antes. Esos botones ya no registran de un toque: te enseñan lo que se va a
+  registrar, con su «Así es», y lo que registres por ahí también queda en «Lo
+  que contestaste estos días», con su «Deshacer».
+- **Si el banco no sabe cuál** (el pago de una tarjeta, y tienes dos del mismo
+  banco), la tarjeta te lo pregunta: «¿De cuál es?», con un botón por cada
+  una. No da ninguna por buena.
 - **Arriba, «Decide por grupo»:** los comercios con varios cargos. Una
   respuesta vale para todos los suyos, y cada grupo te enseña lo que lleva
   dentro. Si sus movimientos no son lo mismo (el permiso y la luz de la
@@ -146,6 +158,17 @@ Dime «publica» y sale la v308.
   la que lo pusiste), eso se apaga con ello: lo siguiente de ese comercio te lo
   propone y espera tu «Así es». La forma te lo dice con una casilla marcada;
   si la regla estaba bien, la desmarcas y sigue.
+- **Deshacer para corregir.** Lo que deshaces no te lo vuelve a proponer en
+  esa tarjeta: te pregunta. Y la forma de «Deshacer» trae otra casilla, sin
+  marcar: «Y olvida lo que te dije de …». Márcala si lo que estaba mal era la
+  categoría de ese comercio; si solo te equivocaste en ese cargo, déjala.
+- **«Que entre solo» vale desde que lo marcas**: los cargos de ese comercio
+  que ya estaban esperando siguen esperando tu «Así es»; entran solos los que
+  traiga el banco después.
+- **Lo que sale hacia un prestamista** (la cuota diaria o semanal de un
+  préstamo) no es un gasto entero: la tarjeta te lo dice y, mientras el
+  préstamo no esté dado de alta, ese cargo espera. Si lo pones como un gasto,
+  te frena y te pide por qué.
 - **Con la Bandeja llena** (cientos de movimientos) abre igual de rápido: sale
   la lista entera enseguida y las recomendaciones van llegando («Mirándolo…»
   en la fila mientras tanto). Y al contestar una, sale esa y se abre la
@@ -155,6 +178,8 @@ Dime «publica» y sale la v308.
 - **«Lo que recuerdo»** enseña también lo que cobra cada procesador de
   tarjetas según tus cobros («Intuit: el 2.99 % de cada factura»), con su
   «Olvidar».
+- **El aviso que sale al registrar algo** (el recuadro oscuro): tocarlo lo
+  quita, y nada más. En el teléfono sale arriba, para no tapar los botones.
 - **En Estados**, los nombres van en inglés (un enlace los pone en español) y
   hay un apartado nuevo, «Para el contador»: el paquete del año, para
   descargar o imprimir. **El de 2026 no es el año entero**: el libro de la app
