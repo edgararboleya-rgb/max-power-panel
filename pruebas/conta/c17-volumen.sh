@@ -41,8 +41,9 @@
 #      reloj de producción: cada llamada no más de 0,8 s, «sigue» hasta
 #      terminar, todo en UNA tanda; y DESHACER esa tanda igual.
 #   4. LA RUTINA QUE REGISTRA SOLA con una regla «que entre solo» en el
-#      comercio de gasolina con más cargos: cada llamada no más de 0,8 s
-#      hasta que dice «completo».
+#      comercio de gasolina con más cargos: los que ya esperaban cuando se
+#      puso la regla NO entran solos (cuarta vuelta); los 25 que llegan
+#      después, sí: cada llamada no más de 0,8 s hasta que dice «completo».
 #   5. EL CONTROL de la capa: no más de 0,8 s y ningún cuadre en rojo.
 # Lo de 3 y 4 se deshace (cada medición va en una transacción que no se
 # confirma): la Bandeja sigue llena para la medición siguiente.
@@ -264,17 +265,35 @@ end $$;
 SQL
 
 # LA RUTINA QUE REGISTRA SOLA: una regla «que entre solo» en el comercio de gasolina con más cargos.
+# (Cuarta vuelta) «Que lo SIGUIENTE entre solo» es lo que el banco trae DESPUÉS de poner la regla: los demás cargos de ese
+# comercio que ya esperaban en la Bandeja NO entran solos (se mide: 0); después llegan 25 cargos más de ese comercio, como los
+# trae Plaid, y esos sí: la rutina se mide con ellos, con la Bandeja llena.
 cat > "$TMP/solo.sql" <<'SQL'
 do $$
 declare
   c_ms constant int := current_setting('vol.ms')::int;
   l jsonb; g jsonb; r jsonb; s jsonb; t0 timestamptz; v_ms int; v_peor int := 0; v_k int := 0; v_reg int := 0; v_uno uuid;
+  v_antes int; v_desc text; v_cta text; v_mov uuid; i int;
 begin
   l := fn_bandeja_leer('{"ms": 4000}');
   select y into g from jsonb_array_elements(l->'grupos') y
    where y->>'clase' = 'comercio' and y->'rec'->>'accion' = 'gasto' and y->'rec'->'datos'->>'cuenta' = '6300' order by (y->>'n')::int desc limit 1;
   v_uno := (g->'movimientos'->>0)::uuid;
   r := fn_bandeja_hacer(v_uno, 'gasto', '{"cuenta": "6300"}', '{"recordar": true, "solo": true, "fuente": "mas"}');
+  -- los que ya esperaban: ninguno entra solo
+  s := fn_bandeja_solo(jsonb_build_object('ms', 4000));
+  v_antes := jsonb_array_length(s->'registrados');
+  -- y llegan 25 más de ese comercio
+  select mb.descripcion, mb.cuenta into v_desc, v_cta from movimientos_banco mb where mb.id = v_uno;
+  for i in 1 .. 25 loop
+    perform fn_banco_importar_filas(jsonb_build_object(
+      'origen', 'plaid', 'cuenta', v_cta, 'nombre', 'Plaid · c17-volumen · solo-' || i,
+      'filas', jsonb_build_array(jsonb_build_object(
+                 'id', 'ZZV17-SOLO-' || i, 'fecha', greatest(fn_fecha_miami(now()) - 1, date_trunc('month', fn_fecha_miami(now()))::date)::text,
+                 'plaid_monto', (20 + i * 1.37)::numeric(14,2)::text, 'descripcion', v_desc, 'tipo', 'DEBIT', 'pendiente', false))));
+    select m.id into v_mov from movimientos_banco m where m.id_externo = 'ZZV17-SOLO-' || i order by m.importado_el desc limit 1;
+    perform fn_banco_casar(v_mov);
+  end loop;
   loop
     t0 := clock_timestamp();
     s := fn_bandeja_solo(jsonb_build_object('ms', c_ms));
@@ -282,7 +301,8 @@ begin
     v_k := v_k + 1; v_peor := greatest(v_peor, v_ms); v_reg := v_reg + jsonb_array_length(s->'registrados');
     exit when coalesce((s->>'completo')::boolean, true) or v_k >= 60;
   end loop;
-  raise notice 'R grupo=% R n=% R llamadas=% R peor=% R registrados=% R completo=%', replace(g->>'clave', ' ', '_'), (g->>'n')::int, v_k, v_peor, v_reg, s->>'completo';
+  raise notice 'R grupo=% R n=% R llamadas=% R peor=% R registrados=% R completo=% R antes=%', replace(g->>'clave', ' ', '_'), (g->>'n')::int, v_k, v_peor, v_reg,
+               s->>'completo', v_antes;
 end $$;
 SQL
 
@@ -326,8 +346,10 @@ mide_todo() {  # mide_todo <cuántos, para decirlo> <llamadas de leer que se adm
   echo "== $1. La rutina que registra sola, con una regla en el comercio de gasolina con más cargos ($PROD_RELOJ_HACER ms)"
   pide "$f-solo.out" "set local vol.ms = '$PROD_RELOJ_HACER'; set local statement_timeout = 0; $(cat "$TMP/solo.sql")"
   if [ -z "$(dato "$f-solo.out" llamadas)" ]; then echo "FALLA: la rutina no terminó: $(grep -m1 -iE 'error|cancel' "$f-solo.out" | cut -c1-200)"; malos=1; else
-    echo "     ($(dato "$f-solo.out" grupo | tr '_' ' '), $(dato "$f-solo.out" n) cargos: $(dato "$f-solo.out" llamadas) llamadas, la peor de $(dato "$f-solo.out" peor) ms; entraron solos $(dato "$f-solo.out" registrados))"
-    revisa "la rutina termina («completo») y registra los demás cargos de ese comercio que no pasan del tope" "true" "$(dato "$f-solo.out" completo)"
+    echo "     ($(dato "$f-solo.out" grupo | tr '_' ' '), $(dato "$f-solo.out" n) cargos que ya esperaban y 25 que llegan después: $(dato "$f-solo.out" llamadas) llamadas, la peor de $(dato "$f-solo.out" peor) ms; entraron solos $(dato "$f-solo.out" registrados))"
+    revisa "los cargos de ese comercio que ya esperaban cuando se puso la regla NO entran solos" "0" "$(dato "$f-solo.out" antes)"
+    revisa "la rutina termina («completo»)" "true" "$(dato "$f-solo.out" completo)"
+    revisa "y registra los 25 que llegaron después" "25" "$(dato "$f-solo.out" registrados)"
     [ "$(dato "$f-solo.out" registrados)" -ge 1 ] && [ "$(dato "$f-solo.out" peor)" -le "$PROD_LLAMADA_MS" ] \
       && echo "ok   ninguna llamada de la rutina pasa de $PROD_LLAMADA_MS ms ($(dato "$f-solo.out" peor))" \
       || { echo "FALLA: la rutina: $(dato "$f-solo.out" registrados) registrados, una llamada de $(dato "$f-solo.out" peor) ms (tope $PROD_LLAMADA_MS)"; malos=1; }
