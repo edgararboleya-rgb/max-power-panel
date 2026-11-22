@@ -68,6 +68,9 @@
    que le falta): la base lo quita antes de que Edgar lo lea. El simulador
    NO mira «prestamista» ni «lo_manda_edgar» al cobrar una factura: es la
    IA que no hace caso de esa instrucción (la base frena al aprobar).
+   (Cuarta vuelta) INTERESES → gasto 7100: la IA que tampoco hace caso de
+   la regla de lo que SALE hacia un prestamista (es la cuota de un
+   préstamo); la base frena al aprobar.
 
    QUÉ CONTESTA (por palabras clave en el mensaje del usuario, en mayúsculas;
    la primera que casa manda):
@@ -310,6 +313,8 @@ function dimeloPorLaFrase(msg, sistema = '') {
                             explicacion: 'La factura menos lo que llegó es la comisión.' });
   }
   if (frase.includes('INVENTA')) return con({ accion: 'borrar', explicacion: 'Una acción que no está en la lista.' });
+  // (cuarta vuelta) la IA que NO hace caso de la regla de la cuota de un préstamo: «son los intereses» → un gasto de Intereses
+  if (frase.includes('INTERESES')) return con({ accion: 'gasto', cuenta: '7100', explicacion: 'Dices que son intereses: van a Intereses.' });
   if (/PR[EÉ]STAMO|ONDECK/.test(frase)) {
     return con({ accion: 'prestamo', prestamista: m.prestamista?.prestamista ?? 'un prestamista',
                  explicacion: 'Dices que es dinero de un préstamo, y el banco nombra a un prestamista.' });

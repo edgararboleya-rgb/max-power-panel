@@ -42,6 +42,13 @@
        gasto de la llamada se anota igual; LOS ENLACES de lo que la IA
        escribe no llegan a Edgar; y la devolución de algo suyo (personal en
        un depósito) con el freno del banco y la caja del porqué rellena;
+     · (cuarta vuelta) LO QUE SALE HACIA UN PRESTAMISTA (la cuota de un
+       préstamo): a la IA se le dice a quién va y lo que es, las
+       instrucciones traen su regla, y si aun así contesta «un gasto de
+       Intereses», al aprobar la base FRENA (su huella), la caja del porqué
+       sale vacía y nada se recuerda; LA MÁSCARA (3): el teléfono escrito
+       3 + 7, el internacional, el correo partido y la cuenta con el banco
+       en medio no salen ni en lo que escribe el banco ni en la frase;
      · lo que no contesta (una negativa, un JSON roto, un corte, una caída con
        su reintento) queda «sin propuesta» con su porqué; el tope del mes
        gastado: bloqueado y ni una llamada; la llave que no vale y sin llave;
@@ -530,6 +537,39 @@ let dZelle = null;
      r.j?.estado === 'pendiente' && r.j.accion === 'personal' && /^Es la devolución de algo tuyo/.test(r.j.texto ?? '')
      && a?.hecho === false && a.pide_motivo === true && typeof a.freno === 'string' && /lo de la tele/.test(a.sugerido ?? '')
      && b?.hecho === true && lin === '1010 45.07, 3200 -45.07', { r, a, b, lin });
+}
+
+// ---- 8d. (cuarta vuelta) lo que SALE hacia un prestamista, y la máscara (3) -----------
+{
+  // (a) LA CUOTA de un préstamo que todavía no está dado de alta: la tarjeta avisa; a la IA se le dice; y si no hace caso, la base frena
+  const N = sembrar([{ clave: 'cuota', monto: -612.33, desc: 'ORIG CO NAME:ONDECK CAPITAL ORIG ID:1234567890 CO ENTRY DESCR:PAYMENT' }]);
+  const a0 = nAsientos();
+  const r = await dimelo(N.cuota, 'son los INTERESES de SIEMPRE');
+  const ps = await peticiones(-1);
+  const p = ps[0]?.cuerpo ?? {};
+  const msg = JSON.parse(p.messages?.[0]?.content ?? '{}');
+  const sistema = String(p.system?.[0]?.text ?? '');
+  ok('B17-39 LO QUE SALE HACIA UN PRESTAMISTA va a la IA como dato: el movimiento dice a quién va («prestamista»: OnDeck), lo que dice el banco no es «sin ticket: di de qué es» sino que es la cuota de un préstamo, y las instrucciones traen su regla (la opción del banco que sea la cuota o «falta»; nunca un gasto)',
+     msg.movimiento?.prestamista?.prestamista === 'OnDeck' && /^Este dinero salió hacia OnDeck, un prestamista: es la cuota de un préstamo/.test(msg.movimiento?.lo_que_dice_el_banco ?? '')
+     && /«dinero que salió» y trae «prestamista»/.test(sistema) && /es la CUOTA de un préstamo/.test(sistema) && /No lo propongas como gasto/.test(sistema), { mov: msg.movimiento });
+  const a = aprobar(r.j?.dimelo_id, { recordar: true, solo: true });
+  const mem = q(`select count(*) from bandeja_memoria where nombre ~* 'ONDECK' and activa`);
+  ok('B17-40 y si la IA no hace caso y propone «un gasto de Intereses» con «recordarlo» (queda como propuesta: la cuenta existe), al aprobar la base FRENA: nada entra, dice en llano que ese dinero va a un prestamista y que es la cuota de un préstamo, con su huella y pidiendo el porqué; la caja no sale rellena con la frase (va de ejemplo), y nada se recuerda',
+     r.j?.estado === 'pendiente' && r.j.accion === 'gasto' && a?.hecho === false && a.pide_motivo === true && typeof a.freno === 'string' && a.propio === true
+     && /^El banco dice que este dinero va a OnDeck, un prestamista: es la cuota de un préstamo/.test(a.por_que ?? '')
+     && a.sugerido === undefined && /INTERESES/.test(a.ejemplo ?? '')
+     && nAsientos() === a0 && estadoMov(N.cuota) === 'pendiente' && mem === '0', { r, a, mem });
+}
+{
+  // (b) LA MÁSCARA (3): los teléfonos y las cuentas que todavía pasaban, en lo que escribe el banco (descripción y nota) y en la frase
+  const N = sembrar([{ clave: 'tel', monto: -310.74, desc: 'Zelle payment to ZZ Juan Perez 305-5550142 JPM99', memo: 'cel 305 5550142 / tel +52 55 1234 5678 zz.juan@ example.com' }]);
+  const r = await dimelo(N.tel, 'es el pago a juan de la CUADRILLA, su cel es 305-5550142 y su cuenta de chase 1234567');
+  const ps = await peticiones(-1);
+  const todo = JSON.stringify(ps[0]?.cuerpo ?? {});
+  const msg = JSON.parse(ps[0]?.cuerpo?.messages?.[0]?.content ?? '{}');
+  ok('B17-41 LA MÁSCARA (3): un teléfono escrito 3 + 7 (con guion o con espacio), uno internacional, un correo partido y una cuenta con el banco en medio no salen hacia la IA ni en la descripción, ni en la nota del banco, ni en la frase',
+     r.estado === 200 && !/5550142|1234 5678|1234567|example\.com/i.test(todo) && /\[teléfono\]/.test(msg.lo_que_dice_edgar ?? '') && /\[número\]/.test(msg.lo_que_dice_edgar ?? ''),
+     { frase: msg.lo_que_dice_edgar, desc: msg.movimiento?.descripcion, memo: msg.movimiento?.memo ?? msg.movimiento?.nota });
 }
 
 // ---- 9. el cierre ----------------------------------------------------------------

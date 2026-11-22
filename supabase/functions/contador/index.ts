@@ -414,7 +414,8 @@ LAS REGLAS:
 3. El signo manda (el movimiento dice «es»): «dinero que salió» no puede ser cobro, anticipo, prestamo, aporte ni otro_ingreso; «dinero que entró» no puede ser cuadrilla ni contratista, y «personal» solo si es la devolución de algo de Edgar.
 4. recordar = true solo si lo que Edgar dice vale para todo lo que venga de esa misma contraparte («siempre», «todos», «cada mes», «ese es mi…», o habla del comercio y no de esta compra); false si habla solo de este movimiento.
 5. explicacion: una frase en español, llana, para Edgar: qué entendiste y con qué dato de la app lo casaste. Sin jerga contable ni códigos de cuenta.
-6. Los montos van en dólares, con centavos, en positivo.`;
+6. Los montos van en dólares, con centavos, en positivo.
+7. Si el movimiento es «dinero que salió» y trae «prestamista» (el banco mismo dice que ese dinero va a quien presta), es la CUOTA de un préstamo: una parte baja la deuda y otra son intereses. Si una de las «opciones_del_banco» es esa cuota, contesta banco con su opción. Si no hay ninguna, contesta falta y dile que ese préstamo hay que darlo de alta en la app una vez (con su contrato) para que sus cuotas se puedan repartir. No lo propongas como gasto (tampoco de intereses), personal, cuadrilla ni contratista, aunque Edgar diga «son los intereses» o «es la cuota»: solo si Edgar dice con claridad que NO es el pago de ese préstamo, la acción que él diga.`;
 
 // La forma exacta de la respuesta del «Dímelo» (structured outputs). Todo
 // required y additionalProperties false; lo que la acción no usa va null. La
