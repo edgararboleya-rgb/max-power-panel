@@ -191,7 +191,15 @@
 --    lo que te dije»;
 -- 77 la obra del día de cada compra de un grupo, el depósito de un procesador
 --    sin facturas que cuadren, y el aviso del préstamo sin dar de alta;
--- 78 nada queda, y los controles de c3, c6 y c8 siguen como estaban.
+-- (22-nov, quinta vuelta: lo que encontró la cuarta revisión)
+-- 78 el cobro anotado «depositado neto de su comisión»: se recomienda solo
+--    de un procesador y con su tarifa; si no, se pregunta; y los dos botones
+--    del banco dicen cada uno lo suyo, con sus montos (la 71: lo deshecho no
+--    se propone otra vez);
+-- 79 «es otro movimiento» por la Bandeja: anotado, dicho, y la tarjeta al día;
+-- 80 la máscara no se come las sumas; la huella de un freno no trae el
+--    porqué; y la opción del banco que se quedó vieja se dice en llano;
+-- 81 nada queda, y los controles de c3, c6 y c8 siguen como estaban.
 -- =====================================================================
 create temp table if not exists _pruebas(n int, prueba text, esperado text, obtenido text, ok boolean);
 truncate _pruebas;
@@ -501,7 +509,7 @@ do $$
 declare
   v_obt text;
   v_esp text := 'nada falta | 4 tablas con RLS | 1 vista | funciones sin comentario c17: ninguna | ninguna SECURITY DEFINER | '
-                'configuración: 1 fila | marca 2026112201';
+                'configuración: 1 fila | marca 2026112202';
 begin
   begin
     perform pg_temp.b17_ser('editor');
@@ -3937,10 +3945,11 @@ end $$;
 -- 71. DESHACER EL DEPÓSITO DE UN COBRO QUE YA ESTABA ANOTADO: «Cobrado» de la obra no baja.
 do $$
 declare
-  v_obt text; m uuid; rec jsonb; r jsonb; d jsonb; r2 jsonb; x jsonb; a text; b text; c text; e text; v_c6 text;
+  v_obt text; m uuid; rec jsonb; r jsonb; d jsonb; r2 jsonb; x jsonb; a text; b text; c text; e text; f text; v_c6 text;
   v_nom text := 'DESHACER EL DEPÓSITO DE UN COBRO QUE YA ESTABA ANOTADO (un cobro con tarjeta que Edgar apuntó entero; el procesador lo deposita neto de su comisión): se recomienda arriba lo que YA ESTÁ en el libro (casarlo con ese cobro; el banco lo llama «otro cobro» y antes ese caso no tenía recomendación), y al casarlo Proyectos queda al día (la factura cobrada y «Cobrado» de la obra con ese dinero). Al DESHACER ese casado el cobro sigue vivo y la factura sigue cobrada: antes se le restaba igual a «Cobrado» lo que el registro le había sumado, y al tocar «Así es» otra vez ya no se sumaba (la factura ya estaba marcada): «Cobrado» y «Falta» de la obra quedaban mal sin ningún control en rojo. Ahora a «Cobrado» se le resta solo lo que la factura DEJA de estar cobrada en Proyectos';
-  v_esp text := 'el banco: deposito_otro_cobro | se recomienda: el depósito del cobro que ya estaba anotado | al casarlo: cobrada, Cobrado 1533.71 | '
-                'deshecho (el cobro sigue): cobrada, Cobrado 1533.71, el depósito vuelve | otra vez «Así es»: cobrada, Cobrado 1533.71';
+  v_esp text := 'el banco: deposito_otro_cobro | se recomienda: el depósito del cobro que ya estaba anotado, con lo que llega y lo que va a comisiones | al casarlo: cobrada, Cobrado 1533.71 | '
+                'deshecho (el cobro sigue): cobrada, Cobrado 1533.71, el depósito vuelve | lo deshecho: no se propone otra vez | '
+                'otra vez, por «Más opciones»: cobrada, Cobrado 1533.71';
 begin
   if pg_temp.b17_omitir(71, v_nom, v_esp) then return; end if;
   begin
@@ -3957,7 +3966,10 @@ begin
     v_c6 := (select mb.propuesta->>'motivo' from movimientos_banco mb where mb.id = m);
     rec := pg_temp.b17_rec(m);
     e := case when rec->>'accion' = 'banco' and rec->'datos'->>'llamar' = 'fn_banco_casar_con' and rec->>'fuente' = 'banco'
-                   and rec->>'texto' like 'Es el depósito de un cobro que ya estaba anotado%' then 'el depósito del cobro que ya estaba anotado'
+                   and rec->>'texto' like 'Es el depósito de un cobro que ya estaba anotado%'
+                   -- (quinta vuelta) y dice cuánto llega y cuánto va a comisiones (antes, solo «el del … por $1,533.71»)
+                   and rec->>'texto' like '%por $1,533.71): llegaron $1,487.85, y los $45.86 que faltan se registran como la comisión del procesador de tarjetas.'
+              then 'el depósito del cobro que ya estaba anotado, con lo que llega y lo que va a comisiones'
               else 'NO: ' || left(coalesce(rec::text, 'nulo'), 400) end;
     r := pg_temp.b17_hacer(m, rec->>'accion', rec->'datos');
     a := (select case when f.pagada then 'cobrada' else 'POR COBRAR' end from facturas f where f.id = -1700711)
@@ -3971,12 +3983,19 @@ begin
          || case when (select mb.estado from movimientos_banco mb where mb.id = m) = 'pendiente' and not (d ? 'cobro_anulado')
                       and (select count(*) from cobros k join aplicaciones_cobro ap on ap.cobro_id = k.id where ap.factura_id = -1700711 and k.estado = 'vigente') = 1
                  then ', el depósito vuelve' else ', NO: ' || left(d::text, 200) end;
+    -- (quinta vuelta) LO DESHECHO NO SE PROPONE OTRA VEZ, tampoco cuando viene del banco: la tarjeta que vuelve pregunta, y la
+    -- opción sigue en «Más opciones» (se registra por su huella, como un botón de «Lo que dice el banco»)
     rec := pg_temp.b17_rec(m);
-    r2 := pg_temp.b17_hacer(m, rec->>'accion', rec->'datos');
+    f := case when rec->>'deshecha' = 'true' and rec->>'accion' is null and rec->>'fuente' = 'banco'
+                   and rec->>'aviso' like 'Lo habías registrado así: «Es el depósito de un cobro que ya estaba anotado%no te lo propongo otra vez%'
+              then 'no se propone otra vez' else 'SE PROPONE: ' || left(coalesce(rec::text, 'nulo'), 300) end;
+    r2 := pg_temp.b17_hacer(m, 'banco', jsonb_build_object('opcion', 0, 'huella',
+            fn_bandeja_opcion_huella((select mb.propuesta->'opciones'->0 from movimientos_banco mb where mb.id = m))), '{"fuente": "mas"}');
     c := (select case when f.pagada then 'cobrada' else 'POR COBRAR' end from facturas f where f.id = -1700711)
          || ', Cobrado ' || (select fp.cobrado from finanzas_proyecto fp where fp.proyecto_id = 'b17-prueba-a')
          || case when (r2->>'hecho')::boolean then '' else ' (NO ENTRA: ' || left(r2::text, 300) || ' / ' || left(coalesce(rec::text, 'nulo'), 300) || ')' end;
-    v_obt := format('el banco: %s | se recomienda: %s | al casarlo: %s | deshecho (el cobro sigue): %s | otra vez «Así es»: %s', v_c6, e, a, b, c);
+    v_obt := format('el banco: %s | se recomienda: %s | al casarlo: %s | deshecho (el cobro sigue): %s | lo deshecho: %s | otra vez, por «Más opciones»: %s',
+                    v_c6, e, a, b, f, c);
     raise exception using errcode = 'MXT00';
   exception
     when sqlstate 'MXT00' then null;
@@ -4362,7 +4381,176 @@ begin
   insert into _pruebas values (77, v_nom, v_esp, v_obt, v_obt = v_esp);
 end $$;
 
--- 78. Nada queda, y los demás controles siguen como estaban.
+-- 78. EL COBRO ANOTADO «DEPOSITADO NETO DE SU COMISIÓN» es una suposición del banco: se recomienda solo de un procesador y con su tarifa.
+do $$
+declare
+  v_obt text; m uuid; m2 uuid; m3 uuid; rec jsonb; rec2 jsonb; rec3 jsonb; x jsonb; v0 jsonb; v1 jsonb; o0 jsonb; o1 jsonb; i0 int; i1 int;
+  a text; b text; c text; e text; v_c6 text;
+  v_nom text := 'EL COBRO ANOTADO «DEPOSITADO NETO DE SU COMISIÓN» (quinta vuelta). Para el banco vale con que a un depósito le falte hasta un 3.5 % más 0.30 respecto de un cobro anotado sin depositar: no mira quién deposita ni si el cobro fue con tarjeta. La cuarta vuelta lo recomendaba arriba, con su «Así es» («Es el depósito de un cobro que ya estaba anotado (el del … por $1,000.00)», sin decir la comisión): con un CHEQUE anotado a mano y el ZELLE de otra persona por un poco menos, un toque casaba ese Zelle con el cobro del cheque y mandaba 20.00 a comisiones. Ahora: (a) ese Zelle NO se recomienda: la tarjeta pregunta, diciendo el cobro que podría ser y cuánto le falta; (b) los dos botones del banco («depositado neto» y «anotado por otro monto: corrígelo») dicen cada uno lo suyo, con sus montos (antes, la misma frase), y la validación devuelve la opción que validó (su puerta y sus argumentos: el segundo candado de la pantalla); (c) el depósito de un procesador al que le falta algo que no es ninguna de sus tarifas, tampoco: pregunta; (d) el de un procesador con su tarifa (2.99 %) sí se recomienda, diciendo cuánto llega y cuánto va a comisiones';
+  v_esp text := 'el banco: deposito_otro_cobro | el Zelle al que le falta poco: pregunta, con los montos | los botones del banco: cada uno dice lo suyo, con sus montos | '
+                'un procesador, con otra diferencia: pregunta | un procesador, con su tarifa: se recomienda, con los montos';
+begin
+  if pg_temp.b17_omitir(78, v_nom, v_esp) then return; end if;
+  begin
+    perform pg_temp.b17_montar();
+    perform pg_temp.b17_factura(-1700781, 'B17-78A', 'b17-prueba-a', 1000.00);
+    perform pg_temp.b17_ser('dueno');
+    x := fn_cobro_registrar(jsonb_build_object('fecha', pg_temp.b17_d()::text, 'monto', '1000.00', 'medio', 'cheque', 'cuenta', pg_temp.b17('banco'),
+           'aplicaciones', jsonb_build_array(jsonb_build_object('factura_id', -1700781, 'monto', '1000.00'))));
+    perform pg_temp.b17_ser('editor');
+    -- (a) el Zelle de otra persona, por 20.00 menos
+    m := pg_temp.b17_mov('B17-78M', 980.00, 'ZELLE PAYMENT FROM ZZ PERSONA NUEVA BDIECISIETE 5544');
+    v_c6 := (select mb.propuesta->>'motivo' from movimientos_banco mb where mb.id = m);
+    rec := pg_temp.b17_rec(m);
+    a := case when rec->>'accion' is null and rec->>'pill' = '¿Cobro que anotaste?' and rec->>'fuente' = 'banco'
+                   and rec->>'aviso' like 'Este depósito ($980.00) puede ser el del cobro de $1,000.00 que anotaste el %: le faltarían $20.00.%no viene de un procesador de tarjetas%'
+              then 'pregunta, con los montos' else 'NO: ' || left(coalesce(rec::text, 'nulo'), 400) end;
+    -- (b) las dos lecturas del banco, validadas como las valida un botón de «Lo que dice el banco»
+    select t.n - 1, t.o into i0, o0 from movimientos_banco mb, jsonb_array_elements(mb.propuesta->'opciones') with ordinality t(o, n)
+     where mb.id = m and t.o->>'llamar' = 'fn_banco_casar_con' and t.o->'args'->'p_con' ? 'comision' limit 1;
+    select t.n - 1, t.o into i1, o1 from movimientos_banco mb, jsonb_array_elements(mb.propuesta->'opciones') with ordinality t(o, n)
+     where mb.id = m and t.o->>'llamar' = 'fn_banco_casar_con' and t.o->'args'->'p_con'->>'corrige' = 'true' limit 1;
+    perform pg_temp.b17_ser('dueno');
+    v0 := fn_bandeja_validar(m, 'banco', jsonb_build_object('opcion', i0, 'huella', fn_bandeja_opcion_huella(o0)));
+    v1 := fn_bandeja_validar(m, 'banco', jsonb_build_object('opcion', i1, 'huella', fn_bandeja_opcion_huella(o1)));
+    perform pg_temp.b17_ser('editor');
+    b := case when (v0->>'ok')::boolean and (v1->>'ok')::boolean and v0->>'texto' <> v1->>'texto'
+                   and v0->>'texto' like 'Es el depósito de un cobro que ya estaba anotado (el del % por $1,000.00): llegaron $980.00, y los $20.00 que faltan se registran como la comisión del procesador de tarjetas.'
+                   and v1->>'texto' like 'Es el cobro que anotaste el % por $1,000.00, pero al banco llegaron $980.00: el cobro se corrige a $980.00 (%), y a su factura (#B17-78A) le quedan $20.00 por cobrar.'
+                   and v0->'opcion_banco'->>'llamar' = 'fn_banco_casar_con' and v0->'opcion_banco'->'args' = o0->'args'
+                   and v1->'opcion_banco'->'args' = o1->'args' and v1->'datos'->'pide' ? 'p_motivo'
+              then 'cada uno dice lo suyo, con sus montos' else 'NO: ' || left(coalesce(v0::text, 'nulo'), 400) || ' / ' || left(coalesce(v1::text, 'nulo'), 400) end;
+    -- (c) un procesador, pero lo que falta (21.00: el 2.1 %) no es ninguna de sus tarifas
+    m2 := pg_temp.b17_mov('B17-78N', 979.00, 'INTUIT 78787878 DEPOSIT BDIECISIETE');
+    rec2 := pg_temp.b17_rec(m2);
+    c := case when rec2->>'accion' is null and rec2->>'pill' = '¿Cobro que anotaste?'
+                   and rec2->>'aviso' like 'Este depósito de % ($979.00) puede ser el del cobro de $1,000.00 que anotaste el %, pero los $21.00 que le faltan no cuadran con lo que % suele quedarse por un cobro así.%'
+              then 'pregunta' else 'NO: ' || left(coalesce(rec2::text, 'nulo'), 400) end;
+    -- (d) un procesador y su tarifa (el 2.99 %: 29.90)
+    m3 := pg_temp.b17_mov('B17-78P', 970.10, 'INTUIT 78787879 DEPOSIT BDIECISIETE');
+    rec3 := pg_temp.b17_rec(m3);
+    e := case when rec3->>'accion' = 'banco' and rec3->'datos'->>'llamar' = 'fn_banco_casar_con'
+                   and rec3->>'texto' like '%por $1,000.00): llegaron $970.10, y los $29.90 que faltan se registran como la comisión del procesador de tarjetas.'
+              then 'se recomienda, con los montos' else 'NO: ' || left(coalesce(rec3::text, 'nulo'), 400) end;
+    v_obt := format('el banco: %s | el Zelle al que le falta poco: %s | los botones del banco: %s | un procesador, con otra diferencia: %s | '
+                    'un procesador, con su tarifa: %s', v_c6, a, b, c, e);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.b17_ser('editor');
+  insert into _pruebas values (78, v_nom, v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 79. «ES OTRO MOVIMIENTO» (el posible duplicado que no lo es), por la Bandeja: queda anotado, se dice y la tarjeta se pone al día.
+do $$
+declare
+  v_obt text; m uuid; m2 uuid; m3 uuid; m4 uuid; rec jsonb; rec2 jsonb; r jsonb; r2 jsonb; r3 jsonb; o jsonb; i int; a text; b text; c text; e text; f text;
+  v_nom text := '«ES OTRO MOVIMIENTO», POR LA BANDEJA (quinta vuelta). Dos cargos iguales el mismo día (dos peajes): el segundo sale como «posible duplicado» y la tarjeta manda a contestarlo en «Más opciones». Desde que los botones del banco pasan por esta capa, «Es otro movimiento» dejaba la respuesta guardada en la base, pero contestaba «No se registró: sigue en la Bandeja.» y la tarjeta seguía preguntando lo mismo con los mismos dos botones (un segundo «Así es» daba «Esa opción ya no está…»). Ahora la capa dice lo que pasó («Anotado: es otro movimiento…», con `anotado` y `cambio`: la pantalla lee la tarjeta otra vez), el banco deja de preguntar y la tarjeta pasa a proponer lo normal; la misma respuesta una segunda vez dice que lo que el banco proponía cambió (no «no se registró»). «Es el mismo» sigue registrándose de un toque';
+  v_esp text := 'el segundo: se pregunta si es el mismo | «es otro»: anotado, y la tarjeta se pone al día | en la base: los dos cuentan, y ya no se pregunta | '
+                'el mismo toque otra vez: dice que cambió | «es el mismo»: se registra';
+begin
+  if pg_temp.b17_omitir(79, v_nom, v_esp) then return; end if;
+  begin
+    perform pg_temp.b17_montar();
+    m := pg_temp.b17_mov('B17-79A', -6.50, 'SUNPASS ZZ TOLL 0042 OCALA FL BDIECISIETE');
+    m2 := pg_temp.b17_mov('B17-79B', -6.50, 'SUNPASS ZZ TOLL 0042 OCALA FL BDIECISIETE');
+    rec := pg_temp.b17_rec(m2);
+    a := case when (select mb.posible_duplicado_de is not null and mb.duplicado is null from movimientos_banco mb where mb.id = m2)
+                   and rec->>'aviso' like 'Se parece a otro movimiento que ya está.%' then 'se pregunta si es el mismo'
+              else 'NO: ' || left(coalesce(rec::text, 'nulo'), 300) end;
+    select t.n - 1, t.o into i, o from movimientos_banco mb, jsonb_array_elements(mb.propuesta->'opciones') with ordinality t(o, n)
+     where mb.id = m2 and t.o->>'llamar' = 'fn_banco_duplicado' and t.o->'args'->>'p_es_el_mismo' = 'false' limit 1;
+    r := pg_temp.b17_hacer(m2, 'banco', jsonb_build_object('opcion', i, 'huella', fn_bandeja_opcion_huella(o)), '{"fuente": "mas"}');
+    b := case when r->>'hecho' = 'false' and r->>'cambio' = 'true' and r->>'anotado' = 'true'
+                   and r->>'por_que' = 'Anotado: es otro movimiento, distinto del que ya estaba, y los dos cuentan. Ahora dime qué es.'
+              then 'anotado, y la tarjeta se pone al día' else 'NO: ' || left(coalesce(r::text, 'nulo'), 300) end;
+    rec2 := pg_temp.b17_rec(m2);
+    c := case when (select mb.duplicado = 'no_es_el_mismo' and mb.estado = 'pendiente' and mb.propuesta->>'motivo' is distinct from 'posible_duplicado'
+                      from movimientos_banco mb where mb.id = m2)
+                   and coalesce(rec2->>'aviso', '') not like 'Se parece a otro movimiento%'
+                   and not exists (select 1 from bandeja_hechos h where h.movimiento_id = m2)
+              then 'los dos cuentan, y ya no se pregunta' else 'NO: ' || left(coalesce(rec2::text, 'nulo'), 300) end;
+    -- (el mismo toque otra vez, con la huella de antes: lo que el banco proponía cambió)
+    r2 := pg_temp.b17_hacer(m2, 'banco', jsonb_build_object('opcion', i, 'huella', fn_bandeja_opcion_huella(o)), '{"fuente": "mas"}');
+    e := case when r2->>'hecho' = 'false' and r2->>'cambio' = 'true' and coalesce(r2->>'por_que', '') not like 'No se registró%' then 'dice que cambió'
+              else 'NO: ' || left(coalesce(r2::text, 'nulo'), 300) end;
+    -- («es el mismo», en otro par: se registra y queda en lo contestado)
+    m3 := pg_temp.b17_mov('B17-79C', -7.25, 'SUNPASS ZZ TOLL 0043 OCALA FL BDIECISIETE');
+    m4 := pg_temp.b17_mov('B17-79D', -7.25, 'SUNPASS ZZ TOLL 0043 OCALA FL BDIECISIETE');
+    select t.n - 1, t.o into i, o from movimientos_banco mb, jsonb_array_elements(mb.propuesta->'opciones') with ordinality t(o, n)
+     where mb.id = m4 and t.o->>'llamar' = 'fn_banco_duplicado' and t.o->'args'->>'p_es_el_mismo' = 'true' limit 1;
+    r3 := pg_temp.b17_hacer(m4, 'banco', jsonb_build_object('opcion', i, 'huella', fn_bandeja_opcion_huella(o)), '{"fuente": "mas"}');
+    f := case when (r3->>'hecho')::boolean and (select mb.estado <> 'pendiente' from movimientos_banco mb where mb.id = m4) then 'se registra'
+              else 'NO: ' || left(coalesce(r3::text, 'nulo'), 300) end;
+    v_obt := format('el segundo: %s | «es otro»: %s | en la base: %s | el mismo toque otra vez: %s | «es el mismo»: %s', a, b, c, e, f);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.b17_ser('editor');
+  insert into _pruebas values (79, v_nom, v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 80. TRES COSAS MENORES: la máscara no se come las sumas (y tapa lo pegado de WhatsApp), la huella de un freno no trae el porqué, y la opción que se quedó vieja.
+do $$
+declare
+  v_obt text; m uuid; m5 uuid; m6 uuid; g jsonb; q jsonb; q2 jsonb; q3 jsonb; v jsonb; rec jsonb; r jsonb; o jsonb; i int; a text; b text; c text; t text; mal text := '';
+  v_nom text := 'TRES COSAS MENORES (quinta vuelta). (1) LA MÁSCARA del «Dímelo»: la regla del teléfono internacional tapaba cualquier «+» pegado a tres cifras, o sea las SUMAS que Edgar escribe («paga la 1103+1104», «son 2640.80+1450.75», «la tarifa es 2.99 %+0.30»): la IA perdía la segunda factura o el segundo monto; y «cel 1199.00» (un monto) salía tapado. Ahora las sumas y los montos van enteros, los internacionales de verdad siguen tapados, y además se tapa un teléfono pegado de WhatsApp (con espacios de ancho cero, o con cifras anchas) y el que lleva «tlf» o «telf». (2) LA HUELLA DE UN FRENO NO TRAE EL PORQUÉ: al aprobar una propuesta del «Dímelo» de «es dinero mío» para el depósito de un prestamista, una segunda llamada con SOLO la huella del freno (sin porqué escrito) lo levantaba con «Edgar dijo: «…»» (la frase de antes); ahora frena otra vez, y con el porqué escrito después de leerlo, entra. (3) LA OPCIÓN DEL BANCO QUE SE QUEDÓ VIEJA: un depósito que el banco propone como una parte de una factura y, después, otro que la paga entera; registrado ese, el botón del primero («Parte de la factura #…») ya no vale: antes la caja lo daba por bueno y «Así es» soltaba el texto crudo de la puerta («…tiene abiertos 0.00 en 1110…»); ahora la validación lo dice en llano y no hay caja';
+  v_esp text := 'la máscara: las sumas y los montos, enteros; los teléfonos, tapados | solo la huella, sin porqué: frena otra vez; con el porqué leído: entra | '
+                'la factura que ya se cobró: se dice en llano, sin caja';
+begin
+  if pg_temp.b17_omitir(80, v_nom, v_esp) then return; end if;
+  begin
+    perform pg_temp.b17_montar();
+    -- (1) la máscara
+    foreach t in array array['paga la 1103+1104', 'son 2640.80+1450.75', 'la tarifa es 2.99 %+0.30', 'compre un cel 1199.00 con la tarjeta'] loop
+      if fn_bandeja_sin_datos(t) is distinct from t then mal := mal || format(' [SE TAPA: %s → %s]', t, fn_bandeja_sin_datos(t)); end if;
+    end loop;
+    foreach t in array array['llama al +52 55 1234 5678 ya', 'su cel +53 5 2345678', 'es +13055550142', '(+34 600 123 456)', E'cel 305​555​0142',
+                             E'cel ３０５ 555 0142', 'tlf 5550142', 'telf 305 555 0142'] loop
+      if fn_bandeja_sin_datos(t) !~ '\[teléfono\]' or fn_bandeja_sin_datos(t) ~ '[0-9]{4}' then mal := mal || format(' [PASA: %s → %s]', t, fn_bandeja_sin_datos(t)); end if;
+    end loop;
+    a := case when mal = '' then 'las sumas y los montos, enteros; los teléfonos, tapados' else 'NO:' || left(mal, 500) end;
+    -- (2) el depósito de un prestamista, la IA dice «es dinero mío», y la segunda llamada trae solo la huella del freno
+    m := pg_temp.b17_mov('B17-80A', pg_temp.b17_mas_que_todo(25000.80), 'ORIG CO NAME:ONDECK CAPITAL ORIG ID:9000017800 CO ENTRY DESCR:FUNDING BDIECISIETE');
+    g := pg_temp.b17_dimelo(m, 'es dinero mio que meti', '{"accion": "aporte", "tipo": "prestamo_accionista", "explicacion": "Dinero del dueño."}');
+    q := pg_temp.b17_aprobar((g->>'dimelo_id')::uuid);
+    q2 := pg_temp.b17_aprobar((g->>'dimelo_id')::uuid, jsonb_build_object('visto', q->>'freno'));
+    q3 := pg_temp.b17_aprobar((g->>'dimelo_id')::uuid, jsonb_build_object('visto', q2->>'freno', 'motivo', 'c17-pruebas: lo metí yo desde mi préstamo personal'));
+    b := case when g->>'estado' = 'pendiente' and q->>'hecho' = 'false' and (q->>'propio')::boolean and q ? 'freno'
+                   and q2->>'hecho' = 'false' and (q2->>'pide_motivo')::boolean and q2->>'freno' = q->>'freno'
+              then 'frena otra vez' else 'NO: ' || left(coalesce(q::text, 'nulo'), 250) || ' / ' || left(coalesce(q2::text, 'nulo'), 250) end
+         || '; con el porqué leído: ' || case when (q3->>'hecho')::boolean then 'entra' else 'NO: ' || left(coalesce(q3::text, 'nulo'), 300) end;
+    -- (3) un depósito que el banco propone como UNA PARTE de una factura; después otro depósito la paga entera: la opción del
+    --     primero se quedó vieja (c6 no rehace sus opciones hasta el siguiente «Casar»)
+    perform pg_temp.b17_factura(-1700801, 'B17-80F', 'b17-prueba-a', 1450.80);
+    m6 := pg_temp.b17_mov('B17-80D', 800.80, 'ZELLE PAYMENT FROM ZZ CLIENTE OCHENTA BDIECISIETE 222');
+    select t2.n - 1, t2.o into i, o from movimientos_banco mb, jsonb_array_elements(mb.propuesta->'opciones') with ordinality t2(o, n)
+     where mb.id = m6 and t2.o->>'llamar' = 'fn_banco_cobrar' and t2.o->'args'->'p_aplicaciones'->0->>'factura_id' = '-1700801' limit 1;
+    m5 := pg_temp.b17_mov('B17-80C', 1450.80, 'ZELLE PAYMENT FROM ZZ CLIENTE OCHENTA BDIECISIETE 111');
+    rec := pg_temp.b17_rec(m5);
+    r := pg_temp.b17_hacer(m5, rec->>'accion', rec->'datos');
+    perform pg_temp.b17_ser('dueno');
+    v := fn_bandeja_validar(m6, 'banco', jsonb_build_object('opcion', i, 'huella', fn_bandeja_opcion_huella(o)));
+    perform pg_temp.b17_ser('editor');
+    c := case when (r->>'hecho')::boolean and i is not null and v->>'ok' = 'false' and not (v ? 'texto') and not (v ? 'opcion_banco')
+                   and v->>'falta' like 'La factura #B17-80F ya quedó cobrada: lo que el banco proponía aquí se quedó viejo.%'
+                   and v->>'falta' !~ '1110|abiertos|aplicación'
+              then 'se dice en llano, sin caja' else 'NO: ' || left(coalesce(r::text, 'nulo'), 200) || ' / ' || coalesce(i::text, 'sin opción') || ' / ' || left(coalesce(v::text, 'nulo'), 300) end;
+    v_obt := format('la máscara: %s | solo la huella, sin porqué: %s | la factura que ya se cobró: %s', a, b, c);
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.b17_ser('editor');
+  insert into _pruebas values (80, v_nom, v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 81. Nada queda, y los demás controles siguen como estaban.
 do $$
 declare
   v_obt text;
@@ -4375,7 +4563,7 @@ begin
       case when pg_temp.b17_rojos() = pg_temp.b17('rojos_antes') then 'igual que antes' else 'CAMBIARON: ' || pg_temp.b17_rojos() end);
   exception when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
   end;
-  insert into _pruebas values (78, 'nada queda de las pruebas: lo recordado, las propuestas, lo registrado, los asientos, los movimientos del banco y la configuración están como antes; y los controles de c3, c6 y c8 no cambiaron',
+  insert into _pruebas values (81, 'nada queda de las pruebas: lo recordado, las propuestas, lo registrado, los asientos, los movimientos del banco y la configuración están como antes; y los controles de c3, c6 y c8 no cambiaron',
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 

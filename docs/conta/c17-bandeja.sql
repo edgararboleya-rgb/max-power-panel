@@ -1,6 +1,6 @@
 -- =====================================================================
 -- c17-bandeja.sql — LA BANDEJA NUEVA (Fase 7, «Dímelo con tus palabras»).
--- 22-nov-2026 (cuarta vuelta, tras la tercera revisión: marca 2026112201).
+-- 22-nov-2026 (quinta vuelta, tras la cuarta revisión: marca 2026112202).
 -- Se pega en el SQL Editor de Supabase DESPUÉS de c1…c16 (pide c1, c2, c3, c6 y c8;
 -- c10 y lo demás, si están, se usan). No cambia ninguna capa anterior: no
 -- toca sus tablas, sus funciones ni sus permisos; todo lo de aquí se llama
@@ -74,6 +74,20 @@
 --     La caja del porqué sale con la frase que Edgar le dijo a la IA solo
 --     cuando esa frase contesta al freno (el flojo: «podría ser una parte
 --     de una factura», o lo que lleva siempre su línea); en los demás, vacía.
+--     (Quinta vuelta) Lo que dentro de la tarjeta nueva NO pasa por esta capa
+--     —la propuesta de la IA de antes (c8), «Según yo» y «Otra cosa… →
+--     clasificarlo a una cuenta»: los registran c8 y c6 por sus puertas y
+--     aquí solo se anotan después— ya no se pinta en un movimiento del que
+--     la app sabe de quién es (un prestamista, o Edgar: `sabe`): eso se
+--     contesta en la lista, que sí frena. La validación de una opción de c6
+--     devuelve además la opción que validó (su puerta y sus argumentos): la
+--     pantalla la compara con el botón que Edgar tocó. El depósito casado
+--     con un cobro anotado «neto de su comisión» se recomienda solo si lo
+--     deposita un procesador de tarjetas y lo que falta es una de sus
+--     tarifas (si no, se pregunta), se dice siempre con sus montos, y
+--     deshecho no se propone otra vez. Y «Es otro movimiento» (el posible
+--     duplicado que no lo es) queda anotado y se dice, en vez de «no se
+--     registró».
 --   · LA PRIMERA OPCIÓN DEL BANCO NO SE DA POR HECHA (cuarta vuelta). Lo que
 --     c6 «ya reconoce» se recomienda solo si su primera opción es la ÚNICA
 --     de su puerta que no pide un porqué. Con dos o más igual de válidas (el
@@ -346,7 +360,7 @@ end $$;
 create or replace function public.fn_bandeja_version() returns bigint
 language sql immutable
 set search_path = public, pg_temp
-as $$ select 2026112201::bigint $$;
+as $$ select 2026112202::bigint $$;
 revoke execute on function public.fn_bandeja_version() from public, anon, service_role;
 grant  execute on function public.fn_bandeja_version() to authenticated;
 comment on function public.fn_bandeja_version() is 'c17: la marca de la versión pegada de c17-bandeja.sql.';
@@ -2033,6 +2047,22 @@ begin
                     coalesce(v_nom, 'tu otra cuenta'));
     elsif coalesce(x->>'cobro', '') ~ c_uuid then
       select c.fecha, c.monto into v_f, v_num from cobros c where c.id = (x->>'cobro')::uuid;
+      -- (quinta vuelta) EL COBRO ANOTADO POR OTRO MONTO se dice CON SUS MONTOS. Antes las dos lecturas de c6 («depositado neto de su
+      -- comisión» y «anotado por otro monto: corrígelo») decían la misma frase, sin decir que la diferencia iba a comisiones
+      if x ? 'comision' then
+        return format('Es el depósito de un cobro que ya estaba anotado (el del %s por %s): llegaron %s, y los %s que faltan se registran como '
+                      'la comisión del procesador de tarjetas.', fn_bandeja_dia(v_f), fn_bandeja_usd(v_num), v_usd,
+                      fn_bandeja_usd(coalesce(fn_bandeja_num(x->>'comision'), v_num - abs(p_monto))));
+      elsif x->>'corrige' = 'true' then
+        select a.factura_id, fc.num, coalesce(fc.saldo_cxc, 0) + a.monto - abs(p_monto) as queda, a.es_retencion into r
+          from aplicaciones_cobro a left join facturas_cobro fc on fc.id = a.factura_id
+         where a.cobro_id = (x->>'cobro')::uuid
+         limit 1;
+        return format('Es el cobro que anotaste el %s por %s, pero al banco llegaron %s: el cobro se corrige a %s (el anotado se anula y se '
+                      'registra el bueno con este depósito)%s.', fn_bandeja_dia(v_f), fn_bandeja_usd(v_num), v_usd, v_usd,
+                      case when r.factura_id is not null and not coalesce(r.es_retencion, false) and r.queda > 0
+                           then format(', y a su factura (#%s) le quedan %s por cobrar', r.num, fn_bandeja_usd(r.queda)) else '' end);
+      end if;
       return format('Es el depósito de un cobro que ya estaba anotado (el del %s por %s).', fn_bandeja_dia(v_f), fn_bandeja_usd(v_num));
     elsif x ? 'partida_apertura' then
       return 'Es algo que venía de QuickBooks, de antes del 1 de octubre: ya está contado en el saldo con que arrancó la app.';
@@ -2436,6 +2466,19 @@ begin
         v_cambio := true;
       elsif not (coalesce(v_op->>'llamar', '') = any (fn_bandeja_puertas())) then
         v_falta := 'Esa opción se contesta en «Más opciones».';
+      elsif v_op->>'llamar' = 'fn_banco_cobrar' and jsonb_typeof(v_op->'args'->'p_aplicaciones') = 'array'
+            and exists (select 1
+                          from jsonb_array_elements(v_op->'args'->'p_aplicaciones') y
+                          join facturas_cobro fc on fc.id = case when y->>'factura_id' ~ '^-?[0-9]{1,18}$' then (y->>'factura_id')::bigint end
+                         where coalesce(fc.saldo_cxc, 0) + coalesce(fc.saldo_retencion, 0) <= 0) then
+        -- (quinta vuelta) LA OPCIÓN SE QUEDÓ VIEJA: c6 no rehace sus opciones hasta el siguiente «Casar», y esa factura ya quedó
+        -- cobrada por otro lado (otra respuesta de esta misma sesión). Antes la caja la daba por buena («Es el cobro de la factura
+        -- #…») y al tocar «Así es» salía el texto crudo de la puerta («…tiene abiertos 0.00 en 1110 y esta aplicación le cobra…»)
+        v_falta := format('La factura #%s ya quedó cobrada: lo que el banco proponía aquí se quedó viejo. Dime abajo qué es este depósito, o '
+                          'elígelo en la lista.',
+                          (select fc.num from jsonb_array_elements(v_op->'args'->'p_aplicaciones') y
+                             join facturas_cobro fc on fc.id = case when y->>'factura_id' ~ '^-?[0-9]{1,18}$' then (y->>'factura_id')::bigint end
+                            where coalesce(fc.saldo_cxc, 0) + coalesce(fc.saldo_retencion, 0) <= 0 limit 1));
       else
         o := jsonb_strip_nulls(jsonb_build_object(
                'opcion', v_i, 'llamar', v_op->>'llamar', 'huella', fn_bandeja_opcion_huella(v_op),
@@ -2449,11 +2492,16 @@ begin
   end case;
   return jsonb_strip_nulls(jsonb_build_object(
     'ok', v_falta is null, 'accion', p_accion, 'datos', o, 'texto', v_texto, 'falta', v_falta, 'pide_obra', case when v_pide then true end,
-    'cambio', case when v_cambio then true end));
+    'cambio', case when v_cambio then true end,
+    -- (quinta vuelta) LA OPCIÓN DEL BANCO QUE SE VALIDÓ, tal cual la guarda c6 (su puerta y sus argumentos): la pantalla la compara
+    -- con el botón que Edgar tocó y, si no es la misma, no enseña la caja (el segundo candado de «el botón que toco es lo que se
+    -- registra»; el primero es el número de la opción EN LA BASE, que la pantalla ya no cuenta sobre su lista recortada)
+    'opcion_banco', case when p_accion = 'banco' and v_falta is null
+                         then jsonb_build_object('llamar', v_op->>'llamar', 'args', coalesce(v_op->'args', '{}'::jsonb)) end));
 end $$;
 revoke execute on function public.fn_bandeja_validar(uuid, text, jsonb) from public, anon, service_role;
 grant  execute on function public.fn_bandeja_validar(uuid, text, jsonb) to authenticated;
-comment on function public.fn_bandeja_validar(uuid, text, jsonb) is 'c17: valida una acción de la lista cerrada para un movimiento pendiente contra las cuentas, las obras, las facturas y los montos de la base: {ok, accion, datos, texto llano, falta, pide_obra, cambio}. No escribe nada. Otra acción, 22023.';
+comment on function public.fn_bandeja_validar(uuid, text, jsonb) is 'c17: valida una acción de la lista cerrada para un movimiento pendiente contra las cuentas, las obras, las facturas y los montos de la base: {ok, accion, datos, texto llano, falta, pide_obra, cambio, opcion_banco (de una opción de c6: su puerta y sus argumentos)}. No escribe nada. Otra acción, 22023.';
 
 
 -- ---------------------------------------------------------------------
@@ -2970,6 +3018,8 @@ declare
   v_fac    text[];
   v_hay    text;
   p        text;
+  v_dup0   text;
+  v_prop0  jsonb;
   c_regla  constant text := '^(MX[0-9A-Z]+|22023|22007|23514)$';
   c_expl   constant text := '(propone un cobro o una factura que explica este depósito|Este depósito lo explica)';
 begin
@@ -2995,6 +3045,8 @@ begin
   c := fn_bandeja_contraparte(m.desc_norm, m.memo, m.monto, m.tipo_banco, m.cheque);
   v_antes := m.estado <> 'pendiente';   -- (un cargo ya registrado cuyo recibo llegó después)
   v_as0 := m.asiento_id;
+  v_dup0 := m.duplicado::text;
+  v_prop0 := m.propuesta;
   -- ¿c6 no tenía otra explicación para este movimiento? (lo que guardó la última vez que lo miró)
   v_c6 := coalesce(m.propuesta->>'motivo', 'sin_propuesta');
   v_libre := v_c6 in ('sin_ticket', 'clasificar', 'dudosa', 'sin_propuesta')
@@ -3199,9 +3251,20 @@ begin
   end if;
   select * into m from movimientos_banco where id = p_movimiento;
   if m.estado = 'pendiente' then
-    -- la puerta no lo registró y lo dice (el pago a la cuadrilla que pide decidir algo)
+    -- (quinta vuelta) LA PUERTA CORRIÓ Y EL MOVIMIENTO SIGUE ESPERANDO PORQUE ESO ES LO QUE ESA RESPUESTA HACE: «Es otro movimiento»
+    -- (el posible duplicado que no lo es) no registra nada; deja dicho que los dos cuentan y c6 pasa a proponer lo normal. Antes la
+    -- respuesta quedaba guardada, pero esta capa contestaba «No se registró: sigue en la Bandeja.» y la tarjeta seguía preguntando
+    -- lo mismo, con los mismos dos botones (un segundo toque daba «Esa opción ya no está…»). Ahora lo dice (`anotado`) y la tarjeta
+    -- se pone al día (`cambio`: la pantalla la lee otra vez)
+    if p_accion = 'banco' and d->>'llamar' = 'fn_banco_duplicado' and m.duplicado::text is distinct from v_dup0 then
+      return jsonb_build_object('hecho', false, 'movimiento_id', m.id, 'cambio', true, 'anotado', true,
+                                'por_que', 'Anotado: es otro movimiento, distinto del que ya estaba, y los dos cuentan. Ahora dime qué es.');
+    end if;
+    -- la puerta no lo registró y lo dice (el pago a la cuadrilla que pide decidir algo); y si al llamarla cambió lo que el banco
+    -- propone para ese movimiento, la tarjeta que se ve ya no vale (`cambio`)
     return jsonb_strip_nulls(jsonb_build_object(
       'hecho', false, 'movimiento_id', m.id, 'dicho', case when p_accion = 'cuadrilla' then true end,
+      'cambio', case when p_accion = 'banco' and m.propuesta is distinct from v_prop0 then true end,
       'por_que', coalesce(v_res->>'por_que', v_res->>'nota', 'No se registró: sigue en la Bandeja.')));
   end if;
   -- UNA SOLA APP: si quedó casado con un cobro, lo que ese cobro deja dicho
@@ -3822,6 +3885,10 @@ declare
   v_varias boolean;
   v_otra  text;
   v_of    date;
+  v_neto  boolean := false;
+  v_netok boolean := false;
+  v_cf    date;
+  v_cm    numeric;
   c_tr    constant text[] := array['transferencia_otro_lado', 'cobro_que_lo_nombra', 'otro_lado_clasificado'];
 begin
   perform fn_bandeja_exigir_dueno();
@@ -3840,6 +3907,19 @@ begin
   v_cero := case when v_n > 0 then fn_bandeja_opcion_cero(ops) end;
   v_unica := coalesce(v_cero = 'unica', false);
   v_varias := coalesce(v_cero = 'varias', false);
+  -- (quinta vuelta) EL COBRO ANOTADO «DEPOSITADO NETO DE SU COMISIÓN» ES UNA SUPOSICIÓN DE c6, NO UNA CERTEZA. Para c6 vale con que
+  -- al depósito le falte hasta un 3.5 % más 0.30 respecto de un cobro anotado sin depositar de los últimos 30 días: no mira quién
+  -- deposita ni si el cobro fue con tarjeta. La cuarta vuelta lo recomendaba arriba, con su «Así es»: con un cheque anotado a mano y
+  -- el Zelle de OTRA persona por un poco menos, un toque casaba ese Zelle con el cobro del cheque y mandaba la diferencia a
+  -- comisiones (y el cheque, al llegar, ya no tenía con qué casar). Ahora se recomienda solo si lo deposita un PROCESADOR DE
+  -- TARJETAS y lo que falta es lo que ese procesador se queda por un cobro así (una de sus tarifas: fn_bandeja_tarifa); si no, la
+  -- tarjeta sigue su orden de siempre (lo recordado, las facturas) y, si nada lo explica, PREGUNTA (el aviso de abajo)
+  v_neto := m.monto > 0 and v_mot = 'deposito_otro_cobro' and ops->0->>'llamar' = 'fn_banco_casar_con'
+            and coalesce(ops->0->'args'->'p_con' ? 'comision', false);
+  if v_neto then
+    select k.fecha, k.monto into v_cf, v_cm from cobros k where k.id::text = ops->0->'args'->'p_con'->>'cobro';
+    v_netok := v_proc is not null and v_cm is not null and fn_bandeja_tarifa(v_proc, array[v_cm], v_cm - m.monto) is not null;
+  end if;
   -- Lo que se contesta en otra parte, o en «Más opciones»: se dice en llano.
   if m.posible_duplicado_de is not null and m.duplicado is null then
     return jsonb_build_object('fuente', 'banco',
@@ -3924,7 +4004,8 @@ begin
       -- DINERO DEL PROPIO EDGAR: nunca el cobro de un cliente, aunque una factura tenga ese mismo monto
       v_acc := 'aporte'; v_dat := jsonb_build_object('tipo', 'prestamo_accionista'); v_fte := 'banco';
       v_por := 'El banco dice que este dinero lo mandaste tú: es dinero tuyo a la empresa, no el pago de un cliente.';
-    elsif v_mot in ('deposito_cobro', 'deposito_cobros', 'deposito_otro_cobro') and (v_unica or v_varias) and ops->0->>'llamar' = 'fn_banco_casar_con' then
+    elsif v_mot in ('deposito_cobro', 'deposito_cobros', 'deposito_otro_cobro') and (v_unica or v_varias) and ops->0->>'llamar' = 'fn_banco_casar_con'
+          and (not v_neto or v_netok) then
       -- UN COBRO QUE YA ESTABA ANOTADO y espera su depósito (por ese monto, o neto de la comisión del procesador: c6 ya lo
       -- calculó): es lo que ya está en el libro. Pero si además una factura por cobrar tiene ese mismo monto, hay dos lecturas
       -- (casarlo con el cobro, o cobrar esa otra factura: el dinero quedaría dos veces): no se recomienda ninguna
@@ -3996,11 +4077,12 @@ begin
                                        case when coalesce((cb->'tarifa'->>'fijo')::numeric, 0) > 0
                                             then ' más ' || fn_bandeja_usd((cb->'tarifa'->>'fijo')::numeric) else '' end)
                          else '.' end;
-      elsif v_n = 1 and v_unica and v_mot in ('deposito_cobro', 'deposito_otro_cobro', 'deposito_sin_cobro', 'reembolso_proveedor', 'varios_candidatos') then
+      elsif v_n = 1 and v_unica and not v_neto
+            and v_mot in ('deposito_cobro', 'deposito_otro_cobro', 'deposito_sin_cobro', 'reembolso_proveedor', 'varios_candidatos') then
         -- (la única opción de c6, si no pide un porqué: el cobro que ya estaba anotado, la retención de una factura, el reembolso de
         -- un proveedor)
         v_acc := 'banco'; v_dat := jsonb_build_object('opcion', 0); v_fte := 'banco';
-      elsif c->>'clase' = 'procesador' then
+      elsif c->>'clase' = 'procesador' and not v_neto then
         -- (cuarta vuelta) EL DEPÓSITO DE UN PROCESADOR DE TARJETAS sin facturas que cuadren: se dice lo que es y cómo contestarlo
         -- (antes, «Todavía no sé qué es este depósito», sin decir ni de quién era)
         return jsonb_build_object('fuente', 'app', 'pill', 'Cobros con tarjeta',
@@ -4097,6 +4179,19 @@ begin
       end if;
     end if;
   end if;
+  if v_acc is null and v_neto then
+    -- (quinta vuelta) nada más lo explica: se PREGUNTA, diciendo el cobro anotado que podría ser y cuánto le falta
+    return jsonb_build_object('fuente', 'banco', 'pill', '¿Cobro que anotaste?',
+      'aviso', case when v_proc is not null
+        then format('Este depósito de %s (%s) puede ser el del cobro de %s que anotaste el %s, pero los %s que le faltan no cuadran con lo '
+                    'que %s suele quedarse por un cobro así. Si es ese cobro, elígelo en «Más opciones»; si no, dime abajo qué es.',
+                    c->>'nombre', fn_bandeja_usd(m.monto), fn_bandeja_usd(v_cm), fn_bandeja_dia(v_cf), fn_bandeja_usd(v_cm - m.monto),
+                    c->>'nombre')
+        else format('Este depósito (%s) puede ser el del cobro de %s que anotaste el %s: le faltarían %s. Así llega un pago con tarjeta, '
+                    'cuando el procesador se queda su comisión; pero este depósito no viene de un procesador de tarjetas, así que puede '
+                    'ser otra cosa. Si es ese cobro, elígelo en «Más opciones»; si no, dime abajo qué es.',
+                    fn_bandeja_usd(m.monto), fn_bandeja_usd(v_cm), fn_bandeja_dia(v_cf), fn_bandeja_usd(v_cm - m.monto)) end);
+  end if;
   if v_acc is null then
     return null;
   end if;
@@ -4134,6 +4229,19 @@ begin
      order by hh.deshecho_el desc limit 1;
     if found then
       return jsonb_build_object('fuente', v_fte, 'deshecha', true,
+        'aviso', format('Lo habías registrado así: «%s» Como lo deshiciste, no te lo propongo otra vez: dime qué es de verdad aquí abajo, '
+                        'o elígelo en «Más opciones».', h.texto));
+    end if;
+  elsif v_acc = 'banco' and v->'datos'->>'llamar' = 'fn_banco_casar_con' and coalesce(ops->0->'args'->'p_con' ? 'cobro', false) then
+    -- (quinta vuelta) y EL DEPÓSITO CASADO CON UN COBRO ANOTADO que Edgar deshizo («no era ese depósito»): la tarjeta que volvía
+    -- le proponía otra vez lo mismo (lo que viene del banco no entraba en «no te lo propongo otra vez»). La misma opción (su huella)
+    -- deshecha en este movimiento ya no se recomienda: sigue en «Más opciones», si de verdad era
+    select hh.texto into h
+      from bandeja_hechos hh
+     where hh.movimiento_id = m.id and hh.deshecho_el is not null and hh.accion = 'banco' and hh.datos->>'huella' = v->'datos'->>'huella'
+     order by hh.deshecho_el desc limit 1;
+    if found then
+      return jsonb_build_object('fuente', 'banco', 'deshecha', true,
         'aviso', format('Lo habías registrado así: «%s» Como lo deshiciste, no te lo propongo otra vez: dime qué es de verdad aquí abajo, '
                         'o elígelo en «Más opciones».', h.texto));
     end if;
@@ -4655,6 +4763,9 @@ begin
     return fn_contador_sin_datos(v);
   end if;
   v := translate(v, U&'\2010\2011\2012\2013\2014\2015\2212', '-------');
+  -- (quinta vuelta) lo que no se ve y parte un número pegado de WhatsApp (los espacios de ancho cero) se quita, y las cifras anchas
+  -- (０-９) pasan a las de siempre: con ellos en medio, un teléfono salía entero aunque llevara «cel» delante
+  v := translate(v, U&'\200B\200C\200D\2060\FEFF\FF10\FF11\FF12\FF13\FF14\FF15\FF16\FF17\FF18\FF19', '0123456789');
   -- (cuarta vuelta) los espacios de no separación, los saltos de línea y los espacios repetidos, a UN espacio
   v := regexp_replace(translate(v, U&'\00A0\2007\202F', '   '), '\s+', ' ', 'g');
   -- un correo partido junto a su arroba (por un espacio, o por el salto de línea que acaba de volverse espacio)
@@ -4663,11 +4774,15 @@ begin
   -- (cuarta vuelta) la cuenta con el banco en medio, y las otras palabras de una cuenta («mi cuenta de chase 1234567», «CHK …», «SAV XXXXX…»)
   v := regexp_replace(v, '(\m(?:cuenta|cta|acct|account|checking|chk|savings|sav|cheques|ahorros?)\M(?:\s+(?:de|del|en)\s+\w+){0,2}[\s#:.]*(?:x+)?)([0-9][0-9 .-]{3,}[0-9])\M', '\1[número]', 'gi');
   -- detrás de la palabra que dice que es un teléfono: cualquier tira de cifras y separadores con siete cifras o más
-  v := regexp_replace(v, '(\m(?:tel|tel[eé]fono|cel|celular|m[oó]vil|phone|whatsapp|wsp|llama|ll[aá]mame|llamar)\M[\s#:.]*(?:(?:al|es|de \w+)\s+)?)\+?[0-9(][0-9 ()./+-]{5,}[0-9]', '\1[teléfono]', 'gi');
+  -- (quinta vuelta: «tlf» y «telf» también; y un monto con sus dos decimales no es un teléfono: «compré un cel 1199.00 con la tarjeta»)
+  v := regexp_replace(v, '(\m(?:tel|telf|tlf|tel[eé]fono|cel|celular|m[oó]vil|phone|whatsapp|wsp|llama|ll[aá]mame|llamar)\M[\s#:.]*(?:(?:al|es|de \w+)\s+)?)(?![0-9]{1,6}[.,][0-9]{2}(?![0-9]))\+?[0-9(][0-9 ()./+-]{5,}[0-9]', '\1[teléfono]', 'gi');
   -- diez cifras en 3 + 7 («305-5550142», «305 5550142»); 3-3-4 con espacios alrededor del guion, o con barra; y el internacional
   v := regexp_replace(v, '\m\(?[0-9]{3}\)?[ ./-]{1,3}[0-9]{7}\M', '[teléfono]', 'g');
   v := regexp_replace(v, '\m\(?[0-9]{3}\)?\s*[-/]\s*[0-9]{3}\s*[-/]\s*[0-9]{4}\M', '[teléfono]', 'g');
-  v := regexp_replace(v, '\+[0-9]{1,3}(?:[ .-]?[0-9]{1,4}){2,5}\M', '[teléfono]', 'g');
+  -- (quinta vuelta) el internacional: el «+» no va pegado a una cifra ni a una letra (ni a un %, un punto o una coma) y detrás lleva
+  -- de 8 a 15 cifras. Antes tapaba cualquier «+» pegado a tres cifras: las SUMAS que Edgar escribe («paga la 1103+1104», «son
+  -- 2640.80+1450.75», «2.99 %+0.30») perdían su segunda mitad camino de la IA
+  v := regexp_replace(v, '(^|[^[:alnum:]%.,])\+(?=(?:[ .-]?[0-9]){8,15}(?![0-9]))[0-9]{1,3}(?:[ .-]?[0-9]{1,4}){2,5}\M', '\1[teléfono]', 'g');
   -- la licencia de conducir de Florida (una letra y doce cifras en grupos), con su palabra o sin ella
   v := regexp_replace(v, '\m[A-Z][0-9]{3}-[0-9]{3}-[0-9]{2}-[0-9]{3}-[0-9]\M', '[número]', 'gi');
   v := regexp_replace(v, '\m[0-9]{4}([\s.-][0-9]{4}){3}\M', '[número]', 'g');
@@ -5098,9 +5213,13 @@ begin
                        then jsonb_build_object('proyecto_id', btrim(op->>'proyecto_id')) else '{}'::jsonb end
               || case when q.accion = 'banco' and jsonb_typeof(op->'campos') = 'object'
                       then jsonb_build_object('campos', op->'campos') else '{}'::jsonb end;
+  -- (quinta vuelta) la frase que Edgar escribió ANTES de ver un freno no es su respuesta a ese freno: si la llamada trae la huella
+  -- de un freno leído (`visto`), el porqué es el que él escriba, o ninguno (antes, con dinero suyo, otro ingreso o la devolución de
+  -- algo suyo, una segunda llamada con solo la huella levantaba el freno del prestamista con «Edgar dijo: «…»»)
   v_mot := coalesce(nullif(btrim(coalesce(op->>'motivo', '')), ''),
-                    case when q.accion in ('aporte', 'otro_ingreso')
-                              or (q.accion = 'personal' and (select mb.monto from movimientos_banco mb where mb.id = q.movimiento_id) > 0)
+                    case when not (op ? 'visto')
+                              and (q.accion in ('aporte', 'otro_ingreso')
+                                   or (q.accion = 'personal' and (select mb.monto from movimientos_banco mb where mb.id = q.movimiento_id) > 0))
                          then 'Edgar dijo: «' || q.frase || '»' end);
   r := fn_bandeja_hacer(q.movimiento_id, q.accion, d, jsonb_strip_nulls(jsonb_build_object(
          'fuente', 'dimelo', 'dimelo_id', q.id, 'motivo', v_mot, 'visto', op->>'visto',
