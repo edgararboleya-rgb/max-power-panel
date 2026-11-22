@@ -633,6 +633,17 @@ prueba; `c18-fiscal.sql` no cambió (sigue con la marca `2026112201`).
   buena la caja; los botones del abono en la tarjeta dicen la cuenta por su
   nombre («desde Banco operativo»); y «Ya sé qué es lo de X» ya no deja debajo
   «estoy mirando…».
+- **Al integrar (lo que encontró la revisión de la quinta vuelta)**: el
+  arreglo de la máscara convertía en cifras lo que no se ve (`translate`
+  empareja por puesto: «1103» con un espacio de ancho cero detrás llegaba a
+  la IA como «11030», y así quedaba en la frase guardada y en la descripción
+  del asiento). Ahora lo que no se ve se borra, las cifras anchas pasan a las
+  suyas y un emoji compuesto queda entero; la prueba 80 compara el texto
+  exacto. La máscara vuelve a tapar el teléfono escrito de dos en dos con
+  puntos detrás de «cel» o «tel» y el internacional cuyo «+» va pegado a una
+  letra o a una coma. Los botones del pago de la tarjeta dicen «Desde Banco
+  operativo», sin el código. Y el aviso con «Deshacer» de la app de siempre
+  ya no se quita por tocar su texto.
 
 ## Las pruebas
 
@@ -705,11 +716,31 @@ prueba; `c18-fiscal.sql` no cambió (sigue con la marca `2026112201`).
   seguro, una comisión) recibe el aviso de «cuota» cada mes y lo que Edgar
   conteste no se recuerda; si la IA propone «un gasto» para la cuota de un
   prestamista, esa propuesta queda pendiente debajo del aviso (cada «Así es»
-  frena); el aviso con «Deshacer» de la app de siempre (el de Proyectos) se
-  quita si el toque cae en su texto; y en el teléfono el renglón nuevo de la
+  frena); y en el teléfono el renglón nuevo de la
   balanza del paquete cae en la primera columna. Y de las pruebas: la base
   simulada de la escena depende del día de la semana en que se captura (el
   Zelle de la cuadrilla), y la comprobación ya vale con las dos respuestas.
+- **(Revisión de la quinta vuelta) Lo que quedó como menor**:
+  - La cuota de un prestamista sin alta deja su propuesta de la IA de antes
+    pendiente y sin pintar; a los 7 días «Qué atender» pide contestarla en
+    la Bandeja (alarma 71), donde ya no hay botón para eso.
+  - El freno de la IA de antes en la cuota de un prestamista vive en la
+    pantalla y cuelga de `sabe`: si la lectura de la Bandeja nueva falla (la
+    página lo avisa y vuelve a las tarjetas de antes), si falla el filtro
+    previo de prestamistas, o en la tarjeta provisional de un movimiento
+    recién llegado, vuelven «Según la IA · ✓ Así es» y «Según yo». Es la
+    pantalla de hoy en producción; el candado de verdad iría en la función
+    `contador` o en c8.
+  - Con un préstamo dado de alta, otro cargo con el nombre entero del
+    prestamista pierde también «Según yo» y «Otra cosa… → clasificar».
+  - Deshacer un «Anotado por otro monto: corrígelo» solo des-casa el
+    depósito: la corrección se queda (el libro cuadra) y el aviso no lo dice.
+  - Una factura cobrada en parte en la misma sesión: la opción vieja del
+    banco que la cobraba entera se sigue validando (no entra nada al libro,
+    pero «Así es» suelta el texto crudo de la puerta).
+  - En el pago de la tarjeta, la pregunta «¿Desde cuál de tus cuentas?»
+    sigue ofreciendo la cuenta de paso de Stripe, y los botones de «¿Cobro
+    que anotaste?» llevan la fecha como la escribe el banco (2026-11-18).
 - **La IA de antes sigue proponiendo sola** (su cadena, al abrir la Bandeja,
   si su interruptor está encendido) cargos que la Bandeja nueva ya recomienda
   por el nombre o por lo recordado. La cuarta vuelta solo la dejó discreta y

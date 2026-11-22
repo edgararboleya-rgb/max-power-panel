@@ -4764,8 +4764,12 @@ begin
   end if;
   v := translate(v, U&'\2010\2011\2012\2013\2014\2015\2212', '-------');
   -- (quinta vuelta) lo que no se ve y parte un número pegado de WhatsApp (los espacios de ancho cero) se quita, y las cifras anchas
-  -- (０-９) pasan a las de siempre: con ellos en medio, un teléfono salía entero aunque llevara «cel» delante
-  v := translate(v, U&'\200B\200C\200D\2060\FEFF\FF10\FF11\FF12\FF13\FF14\FF15\FF16\FF17\FF18\FF19', '0123456789');
+  -- (０-９) pasan a las de siempre: con ellos en medio, un teléfono salía entero aunque llevara «cel» delante.
+  -- translate() empareja por PUESTO: las diez cifras anchas van primero (pasan a 0-9) y lo que no se ve va detrás, sin pareja, para
+  -- que se BORRE (puesto delante, se volvía cifras: «1103» + ancho cero salía «11030»). La unión de los emojis (U+200D) solo se
+  -- quita pegada a una cifra: en medio de un emoji compuesto (🤷‍♂️) se queda
+  v := translate(v, U&'\FF10\FF11\FF12\FF13\FF14\FF15\FF16\FF17\FF18\FF19\200B\200C\2060\FEFF', '0123456789');
+  v := regexp_replace(v, U&'([0-9])\200D+|\200D+(?=[0-9])', '\1', 'g');
   -- (cuarta vuelta) los espacios de no separación, los saltos de línea y los espacios repetidos, a UN espacio
   v := regexp_replace(translate(v, U&'\00A0\2007\202F', '   '), '\s+', ' ', 'g');
   -- un correo partido junto a su arroba (por un espacio, o por el salto de línea que acaba de volverse espacio)
@@ -4775,14 +4779,14 @@ begin
   v := regexp_replace(v, '(\m(?:cuenta|cta|acct|account|checking|chk|savings|sav|cheques|ahorros?)\M(?:\s+(?:de|del|en)\s+\w+){0,2}[\s#:.]*(?:x+)?)([0-9][0-9 .-]{3,}[0-9])\M', '\1[número]', 'gi');
   -- detrás de la palabra que dice que es un teléfono: cualquier tira de cifras y separadores con siete cifras o más
   -- (quinta vuelta: «tlf» y «telf» también; y un monto con sus dos decimales no es un teléfono: «compré un cel 1199.00 con la tarjeta»)
-  v := regexp_replace(v, '(\m(?:tel|telf|tlf|tel[eé]fono|cel|celular|m[oó]vil|phone|whatsapp|wsp|llama|ll[aá]mame|llamar)\M[\s#:.]*(?:(?:al|es|de \w+)\s+)?)(?![0-9]{1,6}[.,][0-9]{2}(?![0-9]))\+?[0-9(][0-9 ()./+-]{5,}[0-9]', '\1[teléfono]', 'gi');
+  v := regexp_replace(v, '(\m(?:tel|telf|tlf|tel[eé]fono|cel|celular|m[oó]vil|phone|whatsapp|wsp|llama|ll[aá]mame|llamar)\M[\s#:.]*(?:(?:al|es|de \w+)\s+)?)(?![0-9]{1,6}[.,][0-9]{2}(?![0-9]|[.,-][0-9]))\+?[0-9(][0-9 ()./+-]{5,}[0-9]', '\1[teléfono]', 'gi');
   -- diez cifras en 3 + 7 («305-5550142», «305 5550142»); 3-3-4 con espacios alrededor del guion, o con barra; y el internacional
   v := regexp_replace(v, '\m\(?[0-9]{3}\)?[ ./-]{1,3}[0-9]{7}\M', '[teléfono]', 'g');
   v := regexp_replace(v, '\m\(?[0-9]{3}\)?\s*[-/]\s*[0-9]{3}\s*[-/]\s*[0-9]{4}\M', '[teléfono]', 'g');
-  -- (quinta vuelta) el internacional: el «+» no va pegado a una cifra ni a una letra (ni a un %, un punto o una coma) y detrás lleva
-  -- de 8 a 15 cifras. Antes tapaba cualquier «+» pegado a tres cifras: las SUMAS que Edgar escribe («paga la 1103+1104», «son
+  -- (quinta vuelta) el internacional: el «+» no va pegado a una cifra y detrás lleva de 8 a 15 cifras (pegado a una letra, a una
+  -- coma o a un punto sí es un teléfono: «x+52 1 55 1234 5678», «,+52 55 1234 5678»). Antes tapaba cualquier «+» pegado a tres cifras: las SUMAS que Edgar escribe («paga la 1103+1104», «son
   -- 2640.80+1450.75», «2.99 %+0.30») perdían su segunda mitad camino de la IA
-  v := regexp_replace(v, '(^|[^[:alnum:]%.,])\+(?=(?:[ .-]?[0-9]){8,15}(?![0-9]))[0-9]{1,3}(?:[ .-]?[0-9]{1,4}){2,5}\M', '\1[teléfono]', 'g');
+  v := regexp_replace(v, '(^|[^0-9])\+(?=(?:[ .-]?[0-9]){8,15}(?![0-9]))[0-9]{1,3}(?:[ .-]?[0-9]{1,4}){2,5}\M', '\1[teléfono]', 'g');
   -- la licencia de conducir de Florida (una letra y doce cifras en grupos), con su palabra o sin ella
   v := regexp_replace(v, '\m[A-Z][0-9]{3}-[0-9]{3}-[0-9]{2}-[0-9]{3}-[0-9]\M', '[número]', 'gi');
   v := regexp_replace(v, '\m[0-9]{4}([\s.-][0-9]{4}){3}\M', '[número]', 'g');

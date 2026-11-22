@@ -4513,6 +4513,21 @@ begin
                              E'cel ３０５ 555 0142', 'tlf 5550142', 'telf 305 555 0142'] loop
       if fn_bandeja_sin_datos(t) !~ '\[teléfono\]' or fn_bandeja_sin_datos(t) ~ '[0-9]{4}' then mal := mal || format(' [PASA: %s → %s]', t, fn_bandeja_sin_datos(t)); end if;
     end loop;
+    foreach t in array array['cel 55.12.34.56.78', 'tel 600.12.34.56', 'x+52 1 55 1234 5678', ',+52 55 1234 5678'] loop
+      if fn_bandeja_sin_datos(t) !~ '\[teléfono\]' then mal := mal || format(' [PASA: %s → %s]', t, fn_bandeja_sin_datos(t)); end if;
+    end loop;
+    -- (integración) el texto EXACTO que sale: lo que no se ve se borra sin dejar cifra, las cifras anchas pasan a las suyas, y un
+    -- emoji compuesto no gana nada (antes el translate convertía el ancho cero en «0»: «1103» + ancho cero salía «11030»)
+    for a, b in select x.e, x.s from (values
+        (U&'es el pago de la factura 1103\200B y la 1104', 'es el pago de la factura 1103 y la 1104'),
+        (U&'me pago 500\200B dolares de la obra', 'me pago 500 dolares de la obra'),
+        (U&'me dio \FF11\FF12\FF10\FF10 de anticipo', 'me dio 1200 de anticipo'),
+        (U&'\FEFFes gasolina', 'es gasolina'),
+        (U&'la 1103\200D\2060 y la 1104', 'la 1103 y la 1104'),
+        (U&'no se \+01F937\200D\2642\FE0F', U&'no se \+01F937\200D\2642\FE0F'),
+        ('compre un cel 1199.00 con la tarjeta', 'compre un cel 1199.00 con la tarjeta')) x(e, s) loop
+      if fn_bandeja_sin_datos(a) is distinct from b then mal := mal || format(' [CAMBIA: %s → %s]', a, fn_bandeja_sin_datos(a)); end if;
+    end loop;
     a := case when mal = '' then 'las sumas y los montos, enteros; los teléfonos, tapados' else 'NO:' || left(mal, 500) end;
     -- (2) el depósito de un prestamista, la IA dice «es dinero mío», y la segunda llamada trae solo la huella del freno
     m := pg_temp.b17_mov('B17-80A', pg_temp.b17_mas_que_todo(25000.80), 'ORIG CO NAME:ONDECK CAPITAL ORIG ID:9000017800 CO ENTRY DESCR:FUNDING BDIECISIETE');

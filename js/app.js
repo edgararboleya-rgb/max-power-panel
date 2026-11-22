@@ -186,8 +186,9 @@
     if (!$t) {
       $t = document.createElement("div");
       $t.id = "toast";
-      // tocar el aviso lo quita y nada más: el toque no pasa a lo que tapa (su botón «Deshacer» sigue siendo un botón)
-      $t.addEventListener("click", ev => { if (ev.target.closest(".toast-deshacer")) return; clearTimeout($t._timer); $t.hidden = true; });
+      // tocar el aviso lo quita y nada más: el toque no pasa a lo que tapa (su botón «Deshacer» sigue siendo un botón, y un aviso
+      // que lo lleva no se quita por tocar su texto: el «Deshacer» tiene que seguir ahí sus segundos)
+      $t.addEventListener("click", ev => { if (ev.target.closest(".toast-deshacer") || $t.querySelector(".toast-deshacer")) return; clearTimeout($t._timer); $t.hidden = true; });
       document.body.appendChild($t);
     }
     $t.textContent = msg;

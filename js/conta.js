@@ -3409,6 +3409,8 @@
   const bnOpcionLlana = t => String(t || "")
     .replace(/\s*\(→\s*\d{4}(?:-\d+)?\)/g, "").replace(/\s·\s*\d{4}(?:-\d+)?(?![\d-])/g, "")
     .replace(/\bA \d{4}(?:-\d+)? \(([^()]+)\)/g, "A $1")
+    // (al integrar la quinta vuelta) «Desde 1010 (Banco operativo)» → «Desde Banco operativo», como «A …» (los botones del pago de la tarjeta)
+    .replace(/\b([Dd]esde) \d{4}(?:-\d+)? \(([^()]+)\)/g, "$1 $2")
     // (quinta vuelta) «Fue un pago a la tarjeta desde 1010» → «…desde Banco operativo»
     .replace(/\bdesde (\d{4}(?:-\d+)?)(?![\d-])/g, (todo, cod) => { const nom = nombreCuenta(cod); return nom && nom !== cod ? `desde ${nom}` : todo; })
     .replace(/\(([a-z0-9]+(?:-[a-z0-9]+)+)\)/g, (todo, id) => { const p = (S.proyectos || []).find(x => x.id === id); return p && p.nombre ? `(${p.nombre})` : todo; })
