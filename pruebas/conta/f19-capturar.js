@@ -531,8 +531,8 @@ guiones.olvida = guion('olvida', `
 // pero la app SABE que es de un prestamista (`sabe`): «Más opciones» no ofrece cobrarlo; (b) un CARGO hacia él es la cuota de un
 // préstamo: la tarjeta lo avisa, y registrarlo como un gasto frena (el freno es de esta capa: «propio») y no se recuerda
 guiones.prestamista = guion('prestamista', `
-  perform pg_temp.llega('od2', 2, 4000.00, 'ORIG CO NAME:ONDECK CAPITAL ORIG ID:1234567890 DESC DATE:ZZ21');
-  perform pg_temp.llega('oc1', 1, -412.33, 'ORIG CO NAME:ONDECK CAPITAL ORIG ID:1234567890 DESC DATE:ZZ22 DAILY PMT');
+  perform pg_temp.llega('od2', 2, 4000.00, 'ORIG CO NAME:ZZLEND CAPITAL ORIG ID:1234567890 DESC DATE:ZZ21');
+  perform pg_temp.llega('oc1', 1, -412.33, 'ORIG CO NAME:ZZLEND CAPITAL ORIG ID:1234567890 DESC DATE:ZZ22 DAILY PMT');
   perform pg_temp.paso('inicio', 'select null::jsonb');
   perform pg_temp.paso('gasto_freno', format($q$select fn_bandeja_hacer(%L, 'gasto', '{"cuenta":"7100"}', '{"fuente":"mas"}')$q$, pg_temp.mov('oc1')));`, true);
 {

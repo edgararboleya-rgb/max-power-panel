@@ -315,7 +315,7 @@ function dimeloPorLaFrase(msg, sistema = '') {
   if (frase.includes('INVENTA')) return con({ accion: 'borrar', explicacion: 'Una acción que no está en la lista.' });
   // (cuarta vuelta) la IA que NO hace caso de la regla de la cuota de un préstamo: «son los intereses» → un gasto de Intereses
   if (frase.includes('INTERESES')) return con({ accion: 'gasto', cuenta: '7100', explicacion: 'Dices que son intereses: van a Intereses.' });
-  if (/PR[EÉ]STAMO|ONDECK/.test(frase)) {
+  if (/PR[EÉ]STAMO|ZZLEND/.test(frase)) {
     return con({ accion: 'prestamo', prestamista: m.prestamista?.prestamista ?? 'un prestamista',
                  explicacion: 'Dices que es dinero de un préstamo, y el banco nombra a un prestamista.' });
   }

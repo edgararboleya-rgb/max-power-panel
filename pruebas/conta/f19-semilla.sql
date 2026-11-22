@@ -3,8 +3,9 @@
 -- INGLÉS (c18) para pruebas/conta/pantalla.js. SOLO PARA EL BANCO DE
 -- PRUEBAS: NO se pega en Supabase. Todo inventado («ZZ …»): ni un nombre,
 -- ni un monto, ni un número de verdad. Las marcas de comercios corrientes
--- (Home Depot, Netflix, Klarna, DoorDash, Wawa, Intuit, OnDeck) son las que
--- la Bandeja tiene que reconocer por su nombre.
+-- (Home Depot, Netflix, Klarna, DoorDash, Wawa, Intuit) son las que la
+-- Bandeja tiene que reconocer por su nombre; «Zzlend» es el prestamista
+-- inventado que c17 trae en su lista de marcas para las pruebas.
 --
 -- Se pega como editor_sql (el SQL Editor) sobre un clon de g16a con las
 -- capas del árbol encima (c3, c6, c10, c15, c16, c17 y c18: lo hace
@@ -28,7 +29,7 @@
 --   · LOS MOVIMIENTOS DEL BANCO que esperan en la Bandeja (por Plaid, c6):
 --     cuatro cargos de Home Depot (dos el día de una sola obra), dos de
 --     Netflix, Klarna, DoorDash, gasolina, un permiso del condado, el
---     depósito de un prestamista (OnDeck), el depósito del procesador
+--     depósito de un prestamista (Zzlend), el depósito del procesador
 --     (Intuit) con dos facturas y su comisión, el Zelle de una LLC, un
 --     depósito en efectivo por el cajero, un depósito sin nombre, un Zelle
 --     a una persona, las dos cuotas del préstamo, dos cargos de intereses
@@ -152,7 +153,7 @@ select pg_temp.s19_mov('kl1', 3,   -45.00,  'KLARNA 8J2 PAYMENT') is not null;
 select pg_temp.s19_mov('dd1', 3,   -32.18,  'DOORDASH*ZZ BURGER') is not null;
 select pg_temp.s19_mov('ww1', 5,   -62.00,  'WAWA 5234 OCALA FL') is not null;
 select pg_temp.s19_mov('pm1', 6,  -350.00,  'MARION COUNTY BOCC PERMITS') is not null;
-select pg_temp.s19_mov('od1', 8, 25000.00,  'ORIG CO NAME:ONDECK CAPITAL ORIG ID:1234567890 DESC DATE:ZZ19') is not null;
+select pg_temp.s19_mov('od1', 8, 25000.00,  'ORIG CO NAME:ZZLEND CAPITAL ORIG ID:1234567890 DESC DATE:ZZ19') is not null;
 -- (lo que llega es el neto: Intuit se queda el 2.99 % de CADA factura: $124.99 de la ZZ-101 y $218.86 de la ZZ-102)
 select pg_temp.s19_mov('in1', 7, 11156.15,  'INTUIT 77788899 DEPOSIT') is not null;
 select pg_temp.s19_mov('zl1', 7,  2640.80,  'ZELLE PAYMENT FROM ZZ ALFA HOLDINGS LLC 123456') is not null;
@@ -162,6 +163,10 @@ select pg_temp.s19_mov('zp1', 4,  -500.00,  'ZELLE PAYMENT TO ZZ JUAN PRUEBA JPM
 select pg_temp.s19_mov('cu1', 10, -600.00,  'ACH ZZCAPITAL PAYMENT 0001') is not null;
 select pg_temp.s19_mov('cu2', 3,  -600.00,  'ACH ZZCAPITAL PAYMENT 0002') is not null;
 select pg_temp.s19_mov('fe1', 2,   -88.40,  'ZZ FERRETERIA CENTRAL 0042') is not null;
+-- (sexta vuelta) LA TARJETA DE LA EMPRESA (la de la cuenta 2100-2013 del plan): si la plantilla no la trae dada de alta, se da
+-- de alta aquí (la semilla no depende de cómo se armó la plantilla: sin ella, la línea siguiente paraba la semilla entera)
+select case when exists (select 1 from tarjetas t where t.cuenta = '2100-2013') then true
+            else fn_tarjeta_alta('2013', '2100-2013', 'f19-semilla: la tarjeta de la empresa') is not null end as tarjeta_empresa;
 select pg_temp.s19_mov('it1', 11,  -31.56,  'INTEREST CHARGE ON PURCHASES', '2100-2013') is not null;
 select pg_temp.s19_mov('it2', 2,   -28.14,  'INTEREST CHARGE ON PURCHASES', '2100-2013') is not null;
 

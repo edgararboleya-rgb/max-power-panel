@@ -4032,7 +4032,7 @@ async function escenaF19(b, errs) {
       && /ZZ MADERAS DEL SUR.*2 movimientos · sin decidir.*128\.74/.test(gruposTxt) && /ZZ FERRETERIA CENTRAL.*2 movimientos · hay cosas distintas.*501\.00/.test(gruposTxt) && (await q.locator('#ct-bn-g-todos').textContent()).trim() === 'Ver los 7 grupos', gruposTxt.slice(0, 260));
     ok('…y sin franja todavía: nada entró solo, nada contestado, nada recordado', (await q.locator('#ct-bn-franja').count()) === 0);
     const pildora = async k => (await q.locator(`.ct-mov[data-id="${ID[k]}"] .ct-f-motivo .ct-pill`).first().textContent()).trim();
-    ok('Cada fila dice en una palabra qué cree la app que es: «Personal» (Netflix), «Material» (Home Depot), «Préstamo» (OnDeck), «Cobro de factura» (Intuit) y «¿Qué es?» donde no lo sabe (el cajero)',
+    ok('Cada fila dice en una palabra qué cree la app que es: «Personal» (Netflix), «Material» (Home Depot), «Préstamo» (Zzlend), «Cobro de factura» (Intuit) y «¿Qué es?» donde no lo sabe (el cajero)',
       await pildora('nf1') === 'Personal' && await pildora('hd1') === 'Material' && await pildora('od1') === 'Préstamo' && await pildora('in1') === 'Cobro de factura' && await pildora('at1') === '¿Qué es?',
       [await pildora('nf1'), await pildora('hd1'), await pildora('od1'), await pildora('in1'), await pildora('at1')].join(' | '));
 
@@ -4093,12 +4093,12 @@ async function escenaF19(b, errs) {
     // -- el prestamista, el procesador de tarjetas y el Zelle de una LLC --
     await reinicio(q);
     c = await fila(q, ID.od1);
-    ok('EL PRESTAMISTA: su depósito se recomienda como «dinero de un préstamo de OnDeck… Es una deuda, no el pago de un cliente», diciendo que ese préstamo todavía no está dado de alta (lo que el banco suponía queda en «Más opciones»)',
-      /^Es dinero de un préstamo de OnDeck: \$25,000\.00\. Es una deuda, no el pago de un cliente\. \(Ese préstamo todavía no está dado de alta en la app\.\)$/.test((await c.locator('[data-bn-t]').textContent()).trim()) && /un prestamista/.test(await plano(q, `.ct-mov[data-id="${ID.od1}"] .ct-bn-por`)));
+    ok('EL PRESTAMISTA: su depósito se recomienda como «dinero de un préstamo de Zzlend… Es una deuda, no el pago de un cliente», diciendo que ese préstamo todavía no está dado de alta (lo que el banco suponía queda en «Más opciones»)',
+      /^Es dinero de un préstamo de Zzlend: \$25,000\.00\. Es una deuda, no el pago de un cliente\. \(Ese préstamo todavía no está dado de alta en la app\.\)$/.test((await c.locator('[data-bn-t]').textContent()).trim()) && /un prestamista/.test(await plano(q, `.ct-mov[data-id="${ID.od1}"] .ct-bn-por`)));
     n0 = llamadas.length;
     await tocar(q, c.locator('[data-bn-asi]'));
     l = ultima(n0, 'fn_bandeja_hacer');
-    ok('…«Así es» lo manda como «prestamo» con su prestamista (nunca como el cobro de una factura)', !!l && l.args.p_accion === 'prestamo' && /OnDeck/.test(l.args.p_datos.prestamista || '') && cuantas(n0, 'fn_banco_cobrar') === 0 && (await esta(q, 'od1')) === 0);
+    ok('…«Así es» lo manda como «prestamo» con su prestamista (nunca como el cobro de una factura)', !!l && l.args.p_accion === 'prestamo' && /Zzlend/.test(l.args.p_datos.prestamista || '') && cuantas(n0, 'fn_banco_cobrar') === 0 && (await esta(q, 'od1')) === 0);
     ok('(segunda vuelta) …y LO DEL CONTROL de la Bandeja se ve en la app, en llano: registrado un préstamo sin dar de alta, la franja lo avisa y (cuarta vuelta) dice qué hacer DE VERDAD: en la app no hay dónde darlo de alta («…todavía no está dado de alta en la app. Darlo de alta no se hace desde aquí: pídeselo a quien te lleva la app… Mientras tanto no se pierde nada: sus cuotas se te preguntan una a una…»), sin nombres de funciones ni de vistas',
       (await q.locator('#ct-bn-franja [data-bn-control="70"]').count()) === 1 && /todavía no está dado de alta en la app\. Darlo de alta no se hace desde aquí: pídeselo a quien te lleva la app \(una vez, con su contrato\)\. Mientras tanto no se pierde nada: sus cuotas se te preguntan una a una/.test(await plano(q, '#ct-bn-franja [data-bn-control="70"]')) && sinJerga(await plano(q, '#ct-bn-franja [data-bn-control="70"]')), await plano(q, '#ct-bn-franja').then(t => t.slice(0, 200)));
     await reinicio(q);
@@ -4960,14 +4960,14 @@ async function escenaF19(b, errs) {
       c = await fila(q, dep.movimiento_id);
       await c.locator('[data-bn-mas] > summary').click(); await q.waitForTimeout(150);
       const cobros = dep.opciones.filter(o => o.llamar === 'fn_banco_cobrar').length;
-      ok('(cuarta vuelta) EL DEPÓSITO DE UN PRESTAMISTA CON FACTURAS MAYORES ABIERTAS: arriba «Es dinero de un préstamo de OnDeck: $4,000.00…», y en «Más opciones» el banco YA NO ofrece cobrarlo («Parte de la factura #ZZ-102…: quedarían…» registraba de un toque el préstamo como el pago de un cliente): la app sabe que es de un prestamista, no pinta ningún botón de cobro y «Lo que dice el banco» lo dice en vez de preguntar si es un pago parcial',
-        cobros >= 3 && cobros === dep.opciones.length && /^Es dinero de un préstamo de OnDeck: \$4,000\.00/.test((await c.locator('[data-bn-caja="rec"] [data-bn-t]').textContent()).trim())
+      ok('(cuarta vuelta) EL DEPÓSITO DE UN PRESTAMISTA CON FACTURAS MAYORES ABIERTAS: arriba «Es dinero de un préstamo de Zzlend: $4,000.00…», y en «Más opciones» el banco YA NO ofrece cobrarlo («Parte de la factura #ZZ-102…: quedarían…» registraba de un toque el préstamo como el pago de un cliente): la app sabe que es de un prestamista, no pinta ningún botón de cobro y «Lo que dice el banco» lo dice en vez de preguntar si es un pago parcial',
+        cobros >= 3 && cobros === dep.opciones.length && /^Es dinero de un préstamo de Zzlend: \$4,000\.00/.test((await c.locator('[data-bn-caja="rec"] [data-bn-t]').textContent()).trim())
         && (await c.locator('.ct-bn-viejo [data-op], .ct-bn-viejo [data-bn-op]').count()) === 0 && !/Parte de la factura|pago parcial/.test(await plano(q, `.ct-mov[data-id="${dep.movimiento_id}"] .ct-bn-viejo`))
         && /^El banco dice que este dinero lo deposita un prestamista: es una deuda, no el pago de un cliente\./.test(await plano(q, `.ct-mov[data-id="${dep.movimiento_id}"] .ct-bn-viejo .ct-texto`)) && /pago parcial/.test(dep.texto) && await c.locator('[data-otra]').isVisible(),
         await plano(q, `.ct-mov[data-id="${dep.movimiento_id}"] .ct-bn-viejo`));
       c = await fila(q, car.movimiento_id);
       const pillCar = (await q.locator(`.ct-mov[data-id="${car.movimiento_id}"] .ct-f-motivo .ct-pill`).first().textContent()).trim();
-      ok('(cuarta vuelta) LO QUE SALE HACIA UN PRESTAMISTA ES LA CUOTA DE UN PRÉSTAMO: la tarjeta no recomienda un gasto (ni por el nombre ni por lo recordado): lo avisa en llano («Parece la cuota de un préstamo de OnDeck que todavía no está dado de alta… No es un gasto entero: una parte baja la deuda y otra son intereses…»), sin «Así es», y la fila dice «Cuota de un préstamo»',
+      ok('(cuarta vuelta) LO QUE SALE HACIA UN PRESTAMISTA ES LA CUOTA DE UN PRÉSTAMO: la tarjeta no recomienda un gasto (ni por el nombre ni por lo recordado): lo avisa en llano («Parece la cuota de un préstamo de Zzlend que todavía no está dado de alta… No es un gasto entero: una parte baja la deuda y otra son intereses…»), sin «Así es», y la fila dice «Cuota de un préstamo»',
         (await c.locator('[data-bn-aviso]').textContent()).trim() === tc.rec.aviso && (await c.locator('[data-bn-asi]').count()) === 0 && pillCar === 'Cuota de un préstamo' && sinJerga(tc.rec.aviso), `${pillCar} · ${await plano(q, `.ct-mov[data-id="${car.movimiento_id}"] [data-bn]`)}`.slice(0, 260));
       await c.locator('[data-bn-mas] > summary').click(); await q.waitForTimeout(150);
       await c.locator('[data-bn-cat-sel]').selectOption('otros/intereses'); await q.waitForTimeout(150);

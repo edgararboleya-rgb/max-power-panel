@@ -247,7 +247,7 @@ function sembrar(filas, cuenta = '1010') {
 const M = sembrar([
   { clave: 'zelle', monto: Number(F_LIBRE.saldo), desc: 'ZELLE PAYMENT FROM ZZ ALFA HOLDINGS LLC 123456', memo: 'zz.alfa@example.com 305-555-0199' },
   { clave: 'intuit', monto: NETO, desc: 'INTUIT 77788899 DEPOSIT' },
-  { clave: 'ondeck', monto: 25000.0, desc: 'ORIG CO NAME:ONDECK CAPITAL ORIG ID:1234567890 DESC DATE:1107' },
+  { clave: 'ondeck', monto: 25000.0, desc: 'ORIG CO NAME:ZZLEND CAPITAL ORIG ID:1234567890 DESC DATE:1107' },
   { clave: 'cajero', monto: 800.13, desc: 'ATM CASH DEPOSIT 1234 MAIN ST' },
   { clave: 'hd', monto: -245.37, desc: 'THE HOME DEPOT #6341 OCALA FL' },
   { clave: 'kl', monto: -45.13, desc: 'KLARNA 8J2 PAYMENT' },
@@ -542,21 +542,21 @@ let dZelle = null;
 // ---- 8d. (cuarta vuelta) lo que SALE hacia un prestamista, y la máscara (3) -----------
 {
   // (a) LA CUOTA de un préstamo que todavía no está dado de alta: la tarjeta avisa; a la IA se le dice; y si no hace caso, la base frena
-  const N = sembrar([{ clave: 'cuota', monto: -612.33, desc: 'ORIG CO NAME:ONDECK CAPITAL ORIG ID:1234567890 CO ENTRY DESCR:PAYMENT' }]);
+  const N = sembrar([{ clave: 'cuota', monto: -612.33, desc: 'ORIG CO NAME:ZZLEND CAPITAL ORIG ID:1234567890 CO ENTRY DESCR:PAYMENT' }]);
   const a0 = nAsientos();
   const r = await dimelo(N.cuota, 'son los INTERESES de SIEMPRE');
   const ps = await peticiones(-1);
   const p = ps[0]?.cuerpo ?? {};
   const msg = JSON.parse(p.messages?.[0]?.content ?? '{}');
   const sistema = String(p.system?.[0]?.text ?? '');
-  ok('B17-39 LO QUE SALE HACIA UN PRESTAMISTA va a la IA como dato: el movimiento dice a quién va («prestamista»: OnDeck), lo que dice el banco no es «sin ticket: di de qué es» sino que es la cuota de un préstamo, y las instrucciones traen su regla (la opción del banco que sea la cuota o «falta»; nunca un gasto)',
-     msg.movimiento?.prestamista?.prestamista === 'OnDeck' && /^Este dinero salió hacia OnDeck, un prestamista: es la cuota de un préstamo/.test(msg.movimiento?.lo_que_dice_el_banco ?? '')
+  ok('B17-39 LO QUE SALE HACIA UN PRESTAMISTA va a la IA como dato: el movimiento dice a quién va («prestamista»: Zzlend), lo que dice el banco no es «sin ticket: di de qué es» sino que es la cuota de un préstamo, y las instrucciones traen su regla (la opción del banco que sea la cuota o «falta»; nunca un gasto)',
+     msg.movimiento?.prestamista?.prestamista === 'Zzlend' && /^Este dinero salió hacia Zzlend, un prestamista: es la cuota de un préstamo/.test(msg.movimiento?.lo_que_dice_el_banco ?? '')
      && /«dinero que salió» y trae «prestamista»/.test(sistema) && /es la CUOTA de un préstamo/.test(sistema) && /No lo propongas como gasto/.test(sistema), { mov: msg.movimiento });
   const a = aprobar(r.j?.dimelo_id, { recordar: true, solo: true });
-  const mem = q(`select count(*) from bandeja_memoria where nombre ~* 'ONDECK' and activa`);
+  const mem = q(`select count(*) from bandeja_memoria where nombre ~* 'ZZLEND' and activa`);
   ok('B17-40 y si la IA no hace caso y propone «un gasto de Intereses» con «recordarlo» (queda como propuesta: la cuenta existe), al aprobar la base FRENA: nada entra, dice en llano que ese dinero va a un prestamista y que es la cuota de un préstamo, con su huella y pidiendo el porqué; la caja no sale rellena con la frase (va de ejemplo), y nada se recuerda',
      r.j?.estado === 'pendiente' && r.j.accion === 'gasto' && a?.hecho === false && a.pide_motivo === true && typeof a.freno === 'string' && a.propio === true
-     && /^El banco dice que este dinero va a OnDeck, un prestamista: es la cuota de un préstamo/.test(a.por_que ?? '')
+     && /^El banco dice que este dinero va a Zzlend, un prestamista: es la cuota de un préstamo/.test(a.por_que ?? '')
      && a.sugerido === undefined && /INTERESES/.test(a.ejemplo ?? '')
      && nAsientos() === a0 && estadoMov(N.cuota) === 'pendiente' && mem === '0', { r, a, mem });
 }
@@ -589,8 +589,8 @@ let dZelle = null;
   ok('B17-24 lo de la IA no está en la API (ni authenticated, ni anon, ni service_role lo ejecutan), ninguna función de la capa es SECURITY DEFINER, y la llave de prueba no aparece en ninguna respuesta de la función ni en ninguna tabla',
      api === 'ninguna' && def === '0' && enTablas === '0' && respuestas.every((t) => !t.includes(LLAVE) && !t.includes(LLAVE_MALA)) && !salidaFn.includes(LLAVE), { api, def, enTablas });
   const aviso = q(`select coalesce((select detalle from fn_bandeja_control() where orden = 70 and not ok), 'no avisa')`);
-  ok('B17-25 y el control avisa de lo que queda por hacer a mano: el préstamo de OnDeck que entró todavía no está dado de alta (sus cuotas no se podrán repartir entre capital e intereses hasta entonces)',
-     /OnDeck|ONDECK/i.test(aviso) && /da de alta/.test(aviso), aviso);
+  ok('B17-25 y el control avisa de lo que queda por hacer a mano: el préstamo de Zzlend que entró todavía no está dado de alta (sus cuotas no se podrán repartir entre capital e intereses hasta entonces)',
+     /Zzlend|ZZLEND/i.test(aviso) && /da de alta/.test(aviso), aviso);
 }
 
 console.error = errorOriginal;
