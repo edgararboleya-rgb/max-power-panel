@@ -1,6 +1,6 @@
 -- =====================================================================
 -- c18-pruebas.sql — la contabilidad en inglés y su mapeo fiscal se prueban
--- a sí mismos (c18-fiscal.sql). 21-nov-2026 (segunda vuelta: 13 pruebas).
+-- a sí mismos (c18-fiscal.sql). 22-nov-2026 (cuarta vuelta: 15 pruebas).
 --
 -- Se pega en el SQL Editor DESPUÉS de c18-fiscal.sql (o, en el banco:
 --   PGPASSWORD=editor_sql psql -h 127.0.0.1 -p 5433 -U editor_sql -d <bd> -1 \
@@ -39,7 +39,16 @@
 --    arriba (el título, el período y el primer aviso); un año entero, no;
 -- 12 EL 1125-A: «Purchases» es lo comprado (lo gastado más lo que subió el
 --    inventario) y sus líneas dan el costo de ventas de los libros;
--- 13 nada queda.
+-- (cuarta vuelta)
+-- 13 LA BALANZA DEL SEGUNDO EJERCICIO: trae el renglón de los resultados de
+--    años anteriores (el libro no los cierra con un asiento), sus totales
+--    suman 0 y son los de c4, el paquete lo explica y el control lo mira;
+-- 14 EL SCHEDULE L ES EL BALANCE: los anticipos y saldos a favor de clientes
+--    (y las demás reclasificaciones de presentación del balance) van en sus
+--    líneas L, y el activo de las líneas L es el del balance general;
+-- 15 nada queda.
+-- (Lo que tarda el paquete con el año entero lo mide
+--  pruebas/conta/c18-volumen.sh: no más de 0.8 s por llamada.)
 -- =====================================================================
 create temp table if not exists _pruebas(n int, prueba text, esperado text, obtenido text, ok boolean);
 truncate _pruebas;
@@ -78,6 +87,16 @@ end $$;
 create or replace function pg_temp.f18_linea(p jsonb, p_que text, p_linea text) returns numeric language sql as $$
   select coalesce((select (x->>'amount')::numeric from jsonb_array_elements(p->p_que) x where x->>'line' = p_linea), 0)
 $$;
+-- (cuarta vuelta) el activo (o el pasivo) de las líneas L de un paquete SIN las reclasificaciones de presentación del balance:
+-- lo que mueve un asiento de prueba, tenga la base lo que tenga (si una cuenta de efectivo está en rojo, un depósito de prueba
+-- la saca del rojo y su reclasificación desaparece: las líneas L, que ahora son el balance, cambian por las dos cosas)
+create or replace function pg_temp.f18_l(p jsonb, p_lado text) returns numeric language sql as $$
+  select (p->'schedule_l'->>p_lado)::numeric
+         - coalesce((select sum((r->>'amount')::numeric)
+                       from jsonb_array_elements(coalesce(p->'schedule_l'->'reclassifications', '[]'::jsonb)) r
+                       join fiscal_lineas l on l.forma = p->'entity'->>'form' and l.linea = r->>'line'
+                      where case p_lado when 'assets' then l.orden between 200 and 289 else l.orden between 290 and 339 end), 0)
+$$;
 create or replace function pg_temp.f18_conteos() returns text language sql as $$
   select format('config %s · lineas %s · cuentas %s · asientos %s · plan %s',
                 (select md5(to_jsonb(g)::text) from fiscal_config g where g.id = 1), (select count(*) from fiscal_lineas),
@@ -90,7 +109,7 @@ insert into _f18 values ('antes', pg_temp.f18_conteos());
 do $$
 declare
   v_obt text;
-  v_esp text := 'nada falta | 3 tablas con RLS | 1 vista | funciones sin comentario c18: ninguna | ninguna SECURITY DEFINER | configuración: 1 fila | marca 2026112103';
+  v_esp text := 'nada falta | 3 tablas con RLS | 1 vista | funciones sin comentario c18: ninguna | ninguna SECURITY DEFINER | configuración: 1 fila | marca 2026112201';
 begin
   begin
     perform pg_temp.f18_ser('editor');
@@ -467,8 +486,8 @@ begin
     p1 := fn_fiscal_paquete(v_anio);
     s1 := fn_fiscal_paquete(v_anio, '1120-S');
     a := format('activo +%s = pasivo +%s y capital +%s, %s',
-                (p1->'schedule_l'->>'assets')::numeric - (p0->'schedule_l'->>'assets')::numeric,
-                (p1->'schedule_l'->>'liabilities')::numeric - (p0->'schedule_l'->>'liabilities')::numeric,
+                pg_temp.f18_l(p1, 'assets') - pg_temp.f18_l(p0, 'assets'),
+                pg_temp.f18_l(p1, 'liabilities') - pg_temp.f18_l(p0, 'liabilities'),
                 (p1->'schedule_l'->>'equity')::numeric - (p0->'schedule_l'->>'equity')::numeric,
                 case when (p1->'schedule_l'->>'balanced')::boolean and (p0->'schedule_l'->>'balanced')::boolean then 'cuadra' else 'NO CUADRA' end);
     b := format('+%s, %s', pg_temp.f18_linea(p1, 'tax_lines', 'L25') - pg_temp.f18_linea(p0, 'tax_lines', 'L25'),
@@ -589,14 +608,141 @@ begin
     v_esp, v_obt, v_obt = v_esp);
 end $$;
 
--- 13. Nada queda.
+-- 13. LA BALANZA DEL SEGUNDO EJERCICIO.
+do $$
+declare
+  v_obt text; v_esp text; p0 jsonb; p1 jsonb; q1 jsonb; s1 jsonb; a text; b text; c text; d text; e text; v_a1 int; v_a2 int; k record;
+  v_nom text := 'LA BALANZA DEL SEGUNDO EJERCICIO: el libro no postea asientos de cierre; c4 lleva el resultado de los años anteriores en renglones aparte de su balanza y con ellos su total da 0. El paquete tomaba solo las cuentas: desde el segundo ejercicio la «Trial Balance» que se le manda al contador sumaba distinto de cero por todo el resultado anterior, sin renglón ni aviso. Con un resultado de 700.13 posteado en un año, la balanza del año SIGUIENTE trae ese renglón (con su etiqueta en inglés y la línea de las utilidades retenidas), sus totales suman 0 y son los de c4, el paquete lo explica arriba, y el control tiene su cuadre';
+begin
+  v_a1 := extract(year from pg_temp.f18('d')::date)::int;
+  select min(p.anio) into v_a2 from periodos p where p.tipo = 'anio' and p.anio = v_a1 + 1;
+  v_esp := 'las cuentas solas ya no suman 0 (+700.13) | el renglón de los resultados de años anteriores: -700.13, en inglés, a la línea L25 (L24 en el 1120-S) | '
+           'los totales: inicial 0.00, final 0.00, debe = haber, cuadra, y son los de c4 | las utilidades retenidas del año siguiente (L25): +700.13 | '
+           'el año del resultado: sin ese renglón de más, y cuadra | arriba lo explica | el control: verde';
+  if v_a2 is null then
+    insert into _pruebas values (13, v_nom, v_esp, 'omitida: el año siguiente al de la prueba todavía no está en los períodos de esta base', null);
+    return;
+  end if;
+  if exists (select 1 from fiscal_cuentas f where f.fijada and f.codigo in ('1010', '4900', '3900')) then
+    insert into _pruebas values (13, v_nom, v_esp, 'omitida: alguna de las cuentas de la prueba tiene su línea cambiada a mano (fijada)', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.f18_ser('dueno');
+    perform fn_fiscal_forma('{"forma": "1120", "confirmada": false}');
+    p0 := fn_fiscal_paquete(v_a2);
+    perform pg_temp.f18_ser('editor');
+    perform fn_postear(jsonb_build_object('fecha', pg_temp.f18('d'), 'descripcion', 'c18-pruebas: un resultado del año (se deshace)',
+      'lineas', jsonb_build_array(jsonb_build_object('cuenta', '1010', 'monto', '700.13'), jsonb_build_object('cuenta', '4900', 'monto', '-700.13'))));
+    perform pg_temp.f18_ser('dueno');
+    p1 := fn_fiscal_paquete(v_a2);
+    s1 := fn_fiscal_paquete(v_a2, '1120-S');
+    q1 := fn_fiscal_paquete(v_a1);
+    select * into k from v_balanza b where b.periodo = v_a2::text and b.nivel = 'total';
+    a := format('las cuentas solas ya no suman 0 (+%s)',
+                (select coalesce(sum((x->>'ending')::numeric), 0) from jsonb_array_elements(p1->'trial_balance') x where x ? 'account')
+                - (select coalesce(sum((x->>'ending')::numeric), 0) from jsonb_array_elements(p0->'trial_balance') x where x ? 'account'));
+    b := format('el renglón de los resultados de años anteriores: %s, %s',
+                (select coalesce(sum((x->>'ending')::numeric), 0) from jsonb_array_elements(p1->'trial_balance') x where x->>'level' = 'component')
+                - (select coalesce(sum((x->>'ending')::numeric), 0) from jsonb_array_elements(p0->'trial_balance') x where x->>'level' = 'component'),
+                case when (select bool_and(x->>'name' ~ '^Prior-year results|^Closed-year results' and x->>'tax_line' = 'L25' and not (x ? 'account') and x->>'note' ~ 'Not a ledger account')
+                             from jsonb_array_elements(p1->'trial_balance') x where x->>'level' = 'component')
+                          and (select bool_and(x->>'tax_line' = 'L24') from jsonb_array_elements(s1->'trial_balance') x where x->>'level' = 'component')
+                     then 'en inglés, a la línea L25 (L24 en el 1120-S)' else 'NO: ' || left((select jsonb_agg(x) from jsonb_array_elements(p1->'trial_balance') x where x->>'level' = 'component')::text, 300) end);
+    c := format('los totales: inicial %s, final %s, %s, %s, %s', p1->'trial_balance_totals'->>'beginning', p1->'trial_balance_totals'->>'ending',
+                case when (p1->'trial_balance_totals'->>'debits')::numeric = (p1->'trial_balance_totals'->>'credits')::numeric then 'debe = haber' else 'DEBE <> HABER' end,
+                case when (p1->'trial_balance_totals'->>'balanced')::boolean then 'cuadra' else 'NO CUADRA' end,
+                case when k.cuadra and k.saldo_inicial = (p1->'trial_balance_totals'->>'beginning')::numeric and k.saldo_final = (p1->'trial_balance_totals'->>'ending')::numeric
+                          and k.debe = (p1->'trial_balance_totals'->>'debits')::numeric and k.haber = (p1->'trial_balance_totals'->>'credits')::numeric
+                          and (select sum((x->>'ending')::numeric) from jsonb_array_elements(p1->'trial_balance') x) = 0
+                     then 'y son los de c4' else 'y NO SON LOS DE c4' end);
+    d := format('las utilidades retenidas del año siguiente (L25): +%s', pg_temp.f18_linea(p1, 'tax_lines', 'L25') - pg_temp.f18_linea(p0, 'tax_lines', 'L25'));
+    e := case when (q1->'trial_balance_totals'->>'balanced')::boolean
+                   and (select count(*) from jsonb_array_elements(q1->'trial_balance') x where x->>'level' = 'component')
+                       = (select count(*) from v_balanza b where b.periodo = v_a1::text and b.nivel = 'componente')
+              then 'el año del resultado: sin ese renglón de más, y cuadra' else 'el año del resultado: NO: ' || (q1->'trial_balance_totals')::text end;
+    v_obt := format('%s | %s | %s | %s | %s | %s | el control: %s', a, b, c, d, e,
+      case when exists (select 1 from jsonb_array_elements_text(p1->'warnings') w where w ~ '^NO CLOSING ENTRIES ARE POSTED' and w ~ 'line 25')
+                and exists (select 1 from jsonb_array_elements_text(s1->'warnings') w where w ~ '^NO CLOSING ENTRIES ARE POSTED' and w ~ 'line 24')
+           then 'arriba lo explica' else 'ARRIBA NO LO DICE' end,
+      case when exists (select 1 from fn_fiscal_control() z where z.orden = 36 and z.ok and z.nivel = 'cuadre') then 'verde' else 'ROJO o no está' end);
+    perform pg_temp.f18_ser('editor');
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.f18_ser('editor');
+  insert into _pruebas values (13, v_nom, v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 14. EL SCHEDULE L ES EL BALANCE: los anticipos y saldos a favor de clientes.
+do $$
+declare
+  v_obt text; p0 jsonb; p1 jsonb; s1 jsonb; a text; b text; c text;
+  v_anio int := extract(year from pg_temp.f18('d')::date)::int;
+  v_nom text := 'EL SCHEDULE L ES EL BALANCE: cuando un cliente tiene dinero a su favor (un anticipo sin factura), el balance de c4 deja las cuentas por cobrar en bruto y presenta ese saldo como un pasivo («Customer deposits and credit balances»); el Schedule L usaba el saldo neto de la cuenta y el contador veía dos totales de activo distintos en el mismo paquete, sin nota. Con un anticipo de 555.14 de una obra, las líneas L llevan esa reclasificación, dicha en su renglón con la etiqueta del balance (2a: se suma de vuelta, la línea no baja; 18: otros pasivos circulantes), el activo de las líneas L es el del balance general (antes y después: las demás reclasificaciones de presentación del balance van igual), y el paquete las lista';
+  v_esp text := 'las cuentas por cobrar (L2a): la cuenta baja 555.14 y el saldo a favor se suma de vuelta (+555.14): la línea no cambia (+0.00) | '
+                'otros pasivos circulantes (L18): el saldo a favor de clientes, +555.14 | el paquete lo lista | '
+                'el activo de las líneas L es el del balance general, antes y después, y cuadra | en el 1120-S, igual';
+begin
+  if exists (select 1 from fiscal_cuentas f where f.fijada and f.codigo in ('1010', '1110')) then
+    insert into _pruebas values (14, v_nom, v_esp, 'omitida: alguna de las cuentas de la prueba tiene su línea cambiada a mano (fijada)', null);
+    return;
+  end if;
+  begin
+    perform pg_temp.f18_ser('dueno');
+    perform fn_fiscal_forma('{"forma": "1120", "confirmada": false}');
+    p0 := fn_fiscal_paquete(v_anio);
+    perform pg_temp.f18_ser('editor');
+    insert into proyectos (id, tipo, nombre, cliente, estado)
+    values ('f18-prueba-a', 'residencial', 'F18 PRUEBA Obra A', 'ZZ Fdieciocho Alfa LLC', 'ejecucion') on conflict (id) do nothing;
+    perform fn_postear(jsonb_build_object('fecha', pg_temp.f18('d'), 'descripcion', 'c18-pruebas: el anticipo de un cliente (se deshace)',
+      'lineas', jsonb_build_array(jsonb_build_object('cuenta', '1010', 'monto', '555.14'),
+                                  jsonb_build_object('cuenta', '1110', 'monto', '-555.14', 'proyecto_id', 'f18-prueba-a'))));
+    perform pg_temp.f18_ser('dueno');
+    p1 := fn_fiscal_paquete(v_anio);
+    s1 := fn_fiscal_paquete(v_anio, '1120-S');
+    a := format('las cuentas por cobrar (L2a): la cuenta baja 555.14 y el saldo a favor se suma de vuelta (+%s): la línea no cambia (+%s)',
+                (select coalesce(sum((x->>'amount')::numeric), 0) from jsonb_array_elements(p1->'tax_lines') t, jsonb_array_elements(t->'accounts') x
+                  where t->>'line' = 'L2a' and not (x ? 'account') and x->>'name' ~ '^Add back: customer deposits and credit balances')
+                - (select coalesce(sum((x->>'amount')::numeric), 0) from jsonb_array_elements(p0->'tax_lines') t, jsonb_array_elements(t->'accounts') x
+                    where t->>'line' = 'L2a' and not (x ? 'account') and x->>'name' ~ '^Add back: customer deposits and credit balances'),
+                pg_temp.f18_linea(p1, 'tax_lines', 'L2a') - pg_temp.f18_linea(p0, 'tax_lines', 'L2a'));
+    b := format('otros pasivos circulantes (L18): el saldo a favor de clientes, +%s',
+                (select coalesce(sum((x->>'amount')::numeric), 0) from jsonb_array_elements(p1->'tax_lines') t, jsonb_array_elements(t->'accounts') x
+                  where t->>'line' = 'L18' and not (x ? 'account') and x->>'name' ~ '^Customer deposits and credit balances')
+                - (select coalesce(sum((x->>'amount')::numeric), 0) from jsonb_array_elements(p0->'tax_lines') t, jsonb_array_elements(t->'accounts') x
+                    where t->>'line' = 'L18' and not (x ? 'account') and x->>'name' ~ '^Customer deposits and credit balances'));
+    c := case when p1->'schedule_l'->'reclassifications' @> '[{"line": "L2a"}, {"line": "L18"}]' then 'el paquete lo lista' else 'EL PAQUETE NO LO LISTA' end;
+    v_obt := format('%s | %s | %s | %s | en el 1120-S, %s', a, b, c,
+      case when (p0->'schedule_l'->>'matches_balance_sheet')::boolean and (p1->'schedule_l'->>'matches_balance_sheet')::boolean
+                and (p1->'schedule_l'->>'balanced')::boolean
+                and (p1->'schedule_l'->>'assets')::numeric = (select (x->>'amount')::numeric from jsonb_array_elements(p1->'balance_sheet') x where x->>'label' = 'Total assets')
+           then 'el activo de las líneas L es el del balance general, antes y después, y cuadra'
+           else 'NO: ' || (p0->'schedule_l')::text || ' → ' || (p1->'schedule_l')::text end,
+      case when (s1->'schedule_l'->>'balanced')::boolean and (s1->'schedule_l'->>'matches_balance_sheet')::boolean
+                and (s1->'schedule_l'->>'assets')::numeric = (p1->'schedule_l'->>'assets')::numeric
+                and s1->'schedule_l'->'reclassifications' = p1->'schedule_l'->'reclassifications'
+           then 'igual' else 'NO: ' || (s1->'schedule_l')::text end);
+    perform pg_temp.f18_ser('editor');
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.f18_ser('editor');
+  insert into _pruebas values (14, v_nom, v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 15. Nada queda.
 do $$
 declare
   v_obt text;
 begin
   perform pg_temp.f18_ser('editor');
   v_obt := case when pg_temp.f18_conteos() = pg_temp.f18('antes') then 'igual que antes' else 'CAMBIÓ: ' || pg_temp.f18_conteos() end;
-  insert into _pruebas values (13, 'nada queda de las pruebas: la configuración, el catálogo, el mapeo, los asientos y el plan de cuentas están como antes',
+  insert into _pruebas values (15, 'nada queda de las pruebas: la configuración, el catálogo, el mapeo, los asientos y el plan de cuentas están como antes',
     'igual que antes', v_obt, v_obt = 'igual que antes');
 end $$;
 

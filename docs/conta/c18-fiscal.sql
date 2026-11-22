@@ -2,7 +2,7 @@
 -- c18-fiscal.sql — LA CONTABILIDAD EN INGLÉS para el contador (CPA):
 -- nombres estándar de contratista en EE. UU., categorías, y cada cuenta
 -- mapeada a su línea del Form 1120 (C-corp), del 1120-S (S-corp) y del
--- 1125-A (costo de ventas). 21-nov-2026. Se pega en el SQL Editor DESPUÉS
+-- 1125-A (costo de ventas). 22-nov-2026. Se pega en el SQL Editor DESPUÉS
 -- de c4-estados.sql (pide c1, c2 y c4); va detrás de c17 en el orden de
 -- pegado, pero no depende de ella. No cambia ninguna capa anterior.
 --
@@ -69,7 +69,18 @@
 --                      línea con la mitad que no se deduce; y en un año
 --                      parcial el M-2 no dice «saldo al inicio del año: 0»:
 --                      dice que ese saldo no está en este sistema y cuál fue
---                      el de apertura.)
+--                      el de apertura.
+--                      Cuarta vuelta, marca 2026112201: la balanza trae
+--                      también los renglones que c4 lleva fuera de las
+--                      cuentas —el resultado de los años anteriores, que el
+--                      libro no cierra con un asiento— y sus totales: desde
+--                      el segundo ejercicio no sumaba 0 y nada lo decía; las
+--                      líneas L llevan las reclasificaciones de presentación
+--                      del balance (los saldos a favor de clientes, al
+--                      pasivo), como el balance; y cada vista de
+--                      c4 se lee UNA vez —con el año entero el paquete
+--                      tardaba lo que el corte de la API—. Lo mide
+--                      pruebas/conta/c18-volumen.sh.)
 --   fn_fiscal_forma, fn_fiscal_cuenta   lo que se cambia, con rastro de
 --                      quién y cuándo.
 --   fn_fiscal_control, fn_fiscal_pegado
@@ -148,7 +159,7 @@ end $$;
 create or replace function public.fn_fiscal_version() returns bigint
 language sql immutable
 set search_path = public, pg_temp
-as $$ select 2026112103::bigint $$;
+as $$ select 2026112201::bigint $$;
 revoke execute on function public.fn_fiscal_version() from public, anon, service_role;
 grant  execute on function public.fn_fiscal_version() to authenticated;
 comment on function public.fn_fiscal_version() is 'c18: la marca de la versión pegada de c18-fiscal.sql.';
@@ -662,6 +673,28 @@ comment on function public.fn_fiscal_leer() is 'c18: lo que la pantalla necesita
 --     enero no está en este sistema: el renglón lo dice, y el de los asientos
 --     directos se llama por lo que es (el saldo de apertura traído del
 --     sistema anterior, que incluye el resultado de enero al arranque).
+-- (Cuarta vuelta, 22-nov)
+--   · LA BALANZA CUADRA TAMBIÉN DESDE EL SEGUNDO EJERCICIO. El libro no
+--     postea asientos de cierre: c4 lleva el resultado de los años anteriores
+--     en renglones aparte de su balanza (nivel «componente») y con ellos su
+--     total da 0. El paquete tomaba solo las cuentas: la «Trial Balance» del
+--     segundo año sumaba distinto de cero por todo el resultado anterior, y
+--     3900 salía con una cifra que no era la del Schedule L ni la del M-2,
+--     sin renglón ni aviso. Ahora esos renglones van en trial_balance (level
+--     «component», con la etiqueta en inglés de c4 y la línea de las
+--     utilidades retenidas), trial_balance_totals trae las sumas y
+--     «balanced» (suma 0 y es la de c4), un aviso lo explica («NO CLOSING
+--     ENTRIES ARE POSTED…») y el control tiene su cuadre (36).
+--   · EL SCHEDULE L ES EL BALANCE: las líneas L llevan las reclasificaciones
+--     de presentación que hace el balance de c4 (los anticipos y saldos a
+--     favor de clientes, que van al pasivo —2a y 18—; un proveedor o una
+--     tarjeta con saldo a favor; una cuenta de efectivo en rojo; un pasivo
+--     con saldo deudor), cada una dicha en su renglón. schedule_l las lista
+--     (reclassifications) y dice si su activo es el del balance general
+--     (matches_balance_sheet); si algo más los separa, el paquete lo avisa
+--     con la diferencia.
+--   · CADA VISTA DE c4 SE LEE UNA VEZ (antes, la balanza unas siete): con el
+--     año entero y el volumen de Edgar tardaba lo que el corte de la API.
 create or replace function public.fn_fiscal_paquete(p_anio int, p_forma text default null) returns jsonb
 language plpgsql stable
 set search_path = public, pg_temp
@@ -670,7 +703,14 @@ declare
   cfg      fiscal_config;
   v_forma  text;
   v_per    text := p_anio::text;
+  v_bal    jsonb;   -- (cuarta vuelta) la balanza de c4 del año, leída UNA vez
+  v_ctas   jsonb;   --   sus cuentas, con el nombre en inglés y las líneas de cada una
+  v_res    jsonb;   --   su estado de resultados
+  v_bgl    jsonb;   --   su balance general
   v_tb     jsonb;
+  v_tbt    jsonb;
+  v_rcl    jsonb;
+  v_act    numeric;
   v_is     jsonb;
   v_bs     jsonb;
   v_tax    jsonb;
@@ -704,59 +744,107 @@ begin
   if v_forma not in ('1120', '1120-S') then
     raise exception using errcode = '22023', message = 'La forma es «1120» (C-corp) o «1120-S» (S-corp).';
   end if;
+  v_lret := case v_forma when '1120' then 'L25' else 'L24' end;
+  -- (cuarta vuelta) CADA VISTA DE c4 SE LEE UNA VEZ. Antes la balanza se leía unas siete veces, el estado de resultados dos y el
+  -- balance general dos: con el año entero y el volumen de Edgar el paquete tardaba lo que el corte de la API (0.8 s en el banco
+  -- de pruebas, que son los 8 s de producción). Lo demás sale de estas tres lecturas
+  select coalesce(jsonb_agg(jsonb_build_object('nivel', b.nivel, 'orden', b.orden, 'cuenta', b.cuenta, 'etiqueta', coalesce(b.etiqueta_en, b.etiqueta_es),
+                                               'ini', b.saldo_inicial, 'debe', b.debe, 'haber', b.haber, 'fin', b.saldo_final, 'cuadra', b.cuadra)),
+                  '[]'::jsonb)
+    into v_bal
+    from v_balanza b where b.periodo = v_per;
+  select coalesce(jsonb_agg(jsonb_build_object('nivel', r.nivel, 'seccion', r.seccion, 'cuenta', r.cuenta, 'linea', r.linea, 'etiqueta_en', r.etiqueta_en,
+                                               'etiqueta_es', r.etiqueta_es, 'mes', r.mes, 'so', r.seccion_orden, 'lo', r.linea_orden, 'o', r.orden,
+                                               'desde', r.acumulado_desde)), '[]'::jsonb)
+    into v_res
+    from v_resultados r where r.periodo = v_per;
+  select coalesce(jsonb_agg(jsonb_build_object('nivel', g.nivel, 'seccion', g.seccion, 'cuenta', g.cuenta, 'linea', g.linea, 'componente', g.componente,
+                                               'etiqueta_en', g.etiqueta_en, 'etiqueta_es', g.etiqueta_es, 'cifra', g.cifra, 'cuadra', g.cuadra,
+                                               'so', g.seccion_orden, 'lo', g.linea_orden, 'o', g.orden)), '[]'::jsonb)
+    into v_bgl
+    from v_balance_general g where g.periodo = v_per;
+  -- las cuentas de la balanza, con su nombre en inglés y sus líneas (la de la forma pedida, y la del 1125-A)
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'codigo', v.codigo, 'nombre_en', v.nombre_en, 'nombre', v.nombre, 'tipo', v.tipo, 'seccion_en', v.seccion_en, 'grupo_en', v.grupo_en,
+           'linea', case v_forma when '1120' then v.linea_1120 else v.linea_1120s end, 'linea_1125a', v.linea_1125a, 'nota_en', v.nota_en,
+           'mapeada', v.mapeada, 'ini', b.ini, 'debe', b.debe, 'haber', b.haber, 'fin', b.fin) order by v.codigo), '[]'::jsonb)
+    into v_ctas
+    from jsonb_to_recordset(v_bal) as b(nivel text, cuenta text, ini numeric, debe numeric, haber numeric, fin numeric)
+    join v_fiscal_cuentas v on v.codigo = b.cuenta
+   where b.nivel = 'cuenta';
   -- la balanza del año, por cuenta, con su nombre en inglés y su línea
   select coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
-           'account', b.cuenta, 'name', v.nombre_en, 'name_es', v.nombre, 'category', v.seccion_en, 'group', v.grupo_en,
-           'beginning', b.saldo_inicial, 'debits', b.debe, 'credits', b.haber, 'ending', b.saldo_final,
-           'tax_line', case v_forma when '1120' then v.linea_1120 else v.linea_1120s end, 'form_1125a_line', v.linea_1125a,
-           'note', v.nota_en)) order by b.cuenta), '[]'::jsonb)
+           'account', k.codigo, 'name', k.nombre_en, 'name_es', k.nombre, 'category', k.seccion_en, 'group', k.grupo_en,
+           'beginning', k.ini, 'debits', k.debe, 'credits', k.haber, 'ending', k.fin,
+           'tax_line', k.linea, 'form_1125a_line', k.linea_1125a, 'note', k.nota_en)) order by k.codigo), '[]'::jsonb)
     into v_tb
-    from v_balanza b
-    join v_fiscal_cuentas v on v.codigo = b.cuenta
-   where b.periodo = v_per and b.nivel = 'cuenta';
+    from jsonb_to_recordset(v_ctas) as k(codigo text, nombre_en text, nombre text, seccion_en text, grupo_en text, linea text, linea_1125a text,
+                                         nota_en text, ini numeric, debe numeric, haber numeric, fin numeric);
+  -- (cuarta vuelta) LO QUE c4 LLEVA FUERA DE LAS CUENTAS. El libro no postea asientos de cierre: c4 lleva el resultado de los
+  -- años anteriores en renglones aparte de su balanza («arrastre», «por cerrar») y con ellos su total da 0. El paquete tomaba
+  -- solo las cuentas: desde el segundo ejercicio la «Trial Balance» que se le manda al contador sumaba distinto de cero por todo
+  -- el resultado anterior, sin renglón ni aviso que lo explicara. Ahora esos renglones van en la balanza (con su etiqueta en
+  -- inglés, la de c4, y la línea de las utilidades retenidas) y el paquete trae sus totales y dice si cuadra
+  select v_tb || coalesce(jsonb_agg(jsonb_build_object(
+           'level', 'component', 'name', b.etiqueta, 'category', 'Equity', 'beginning', b.ini, 'debits', b.debe, 'credits', b.haber, 'ending', b.fin,
+           'tax_line', v_lret,
+           'note', 'Not a ledger account: the books do not post a year-end closing entry, so prior-year results are carried on this line. It is '
+                   'part of retained earnings (see the Schedule L retained earnings line and the M-2 reconciliation).') order by b.orden), '[]'::jsonb)
+    into v_tb
+    from jsonb_to_recordset(v_bal) as b(nivel text, orden int, etiqueta text, ini numeric, debe numeric, haber numeric, fin numeric)
+   where b.nivel = 'componente';
+  select jsonb_build_object('beginning', coalesce(sum((x->>'beginning')::numeric), 0), 'debits', coalesce(sum((x->>'debits')::numeric), 0),
+                            'credits', coalesce(sum((x->>'credits')::numeric), 0), 'ending', coalesce(sum((x->>'ending')::numeric), 0))
+    into v_tbt
+    from jsonb_array_elements(v_tb) x;
+  -- (cuadra: suma 0 al inicio y al final, debe = haber, y es la de c4: sus totales, renglón a renglón)
+  v_tbt := v_tbt || jsonb_build_object('label', 'Totals', 'balanced',
+             (v_tbt->>'beginning')::numeric = 0 and (v_tbt->>'ending')::numeric = 0 and (v_tbt->>'debits')::numeric = (v_tbt->>'credits')::numeric
+             and coalesce((select bool_and(coalesce(b.cuadra, false) and b.ini = (v_tbt->>'beginning')::numeric and b.fin = (v_tbt->>'ending')::numeric
+                                           and b.debe = (v_tbt->>'debits')::numeric and b.haber = (v_tbt->>'credits')::numeric)
+                             from jsonb_to_recordset(v_bal) as b(nivel text, ini numeric, debe numeric, haber numeric, fin numeric, cuadra boolean)
+                            where b.nivel = 'total'), jsonb_array_length(v_tb) = 0));
   -- el estado de resultados: las secciones y los totales de c4 con la etiqueta de un contratista; las cuentas, con su nombre estándar
   select coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
            'level', case r.nivel when 'seccion' then 'section' when 'cuenta' then 'account' when 'total' then 'total' else r.nivel end,
            'section', r.seccion, 'account', r.cuenta,
-           'label', case when r.nivel = 'cuenta' then coalesce(v.nombre_en, r.etiqueta_en, r.etiqueta_es)
+           'label', case when r.nivel = 'cuenta' then coalesce(k.nombre_en, r.etiqueta_en, r.etiqueta_es)
                          else coalesce(case r.linea when 'ingresos' then 'Income' when 'costo' then 'Cost of Goods Sold (Job Costs)'
                                                     when 'utilidad_bruta' then 'Gross Profit' when 'gastos' then 'Operating Expenses'
                                                     when 'utilidad_operacion' then 'Operating Income' when 'otros_ingresos' then 'Other Income'
                                                     when 'otros_gastos' then 'Other Expense'
                                                     when 'utilidad_neta' then case when coalesce(r.mes, 0) < 0 then 'Net Loss' else 'Net Income' end end,
                                        r.etiqueta_en, r.etiqueta_es) end,
-           'amount', r.mes)) order by r.seccion_orden, r.linea_orden, r.orden), '[]'::jsonb)
-    into v_is
-    from v_resultados r
-    left join v_fiscal_cuentas v on v.codigo = r.cuenta
-   where r.periodo = v_per;
+           'amount', r.mes)) order by r.so, r.lo, r.o, r.cuenta), '[]'::jsonb),
+         min(r.desde)
+    into v_is, v_desde
+    from jsonb_to_recordset(v_res) as r(nivel text, seccion text, cuenta text, linea text, etiqueta_en text, etiqueta_es text, mes numeric,
+                                        so int, lo int, o int, desde date)
+    left join v_fiscal_cuentas k on k.codigo = r.cuenta;
   -- el balance general al cierre del año (las etiquetas en inglés de c4; las cuentas, con su nombre estándar)
   select coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
            'level', case g.nivel when 'seccion' then 'section' when 'linea' then 'line' when 'cuenta' then 'account'
                                  when 'componente' then 'component' when 'total' then 'total' else g.nivel end,
            'section', g.seccion, 'account', g.cuenta,
-           'label', case when g.nivel = 'cuenta' then coalesce(v.nombre_en, g.etiqueta_en, g.etiqueta_es) else coalesce(g.etiqueta_en, g.etiqueta_es) end,
-           'amount', g.cifra, 'balanced', case when g.linea = 'cuadra' then g.cuadra end)) order by g.seccion_orden, g.linea_orden, g.orden), '[]'::jsonb)
+           'label', case when g.nivel = 'cuenta' then coalesce(k.nombre_en, g.etiqueta_en, g.etiqueta_es) else coalesce(g.etiqueta_en, g.etiqueta_es) end,
+           'amount', g.cifra, 'balanced', case when g.linea = 'cuadra' then g.cuadra end)) order by g.so, g.lo, g.o, g.cuenta), '[]'::jsonb)
     into v_bs
-    from v_balance_general g
-    left join v_fiscal_cuentas v on v.codigo = g.cuenta
-   where g.periodo = v_per;
+    from jsonb_to_recordset(v_bgl) as g(nivel text, seccion text, cuenta text, linea text, etiqueta_en text, etiqueta_es text, cifra numeric,
+                                        cuadra boolean, so int, lo int, o int)
+    left join v_fiscal_cuentas k on k.codigo = g.cuenta;
   -- EL AÑO PARCIAL: desde cuándo lleva la app el libro de ese año
-  select coalesce(min(r.acumulado_desde), make_date(p_anio, 1, 1)) into v_desde from v_resultados r where r.periodo = v_per;
-  v_desde := greatest(v_desde, make_date(p_anio, 1, 1));
+  v_desde := greatest(coalesce(v_desde, make_date(p_anio, 1, 1)), make_date(p_anio, 1, 1));
   v_parc := v_desde > make_date(p_anio, 1, 1);
   -- el resumen por línea del formulario: lo del año de las cuentas de resultados (en su signo de presentación: un ingreso y un
   -- gasto, en positivo) y el saldo al cierre de las de balance (un activo en positivo; un pasivo y el capital, en positivo)
   with mov as (
-    select v.codigo, v.nombre_en, v.tipo, case v_forma when '1120' then v.linea_1120 else v.linea_1120s end as linea,
-           case when v.tipo in ('ingreso', 'otro_ingreso') then -(b.saldo_final - b.saldo_inicial)
-                when v.tipo in ('costo', 'gasto', 'otro_gasto') then b.saldo_final - b.saldo_inicial
-                when v.tipo = 'activo' then b.saldo_final
-                when v.codigo = '3200' then b.saldo_final - b.saldo_inicial
-                else -b.saldo_final end as monto
-      from v_balanza b
-      join v_fiscal_cuentas v on v.codigo = b.cuenta
-     where b.periodo = v_per and b.nivel = 'cuenta')
+    select k.codigo, k.nombre_en, k.tipo, k.linea,
+           case when k.tipo in ('ingreso', 'otro_ingreso') then -(k.fin - k.ini)
+                when k.tipo in ('costo', 'gasto', 'otro_gasto') then k.fin - k.ini
+                when k.tipo = 'activo' then k.fin
+                when k.codigo = '3200' then k.fin - k.ini
+                else -k.fin end as monto
+      from jsonb_to_recordset(v_ctas) as k(codigo text, nombre_en text, tipo text, linea text, ini numeric, fin numeric))
   select coalesce(jsonb_agg(jsonb_build_object(
            'form', v_forma, 'line', l.linea, 'label', l.etiqueta_en, 'amount', t.monto,
            'accounts', t.cuentas) order by l.orden), '[]'::jsonb)
@@ -767,7 +855,7 @@ begin
             from mov m where m.monto <> 0 group by m.linea) t on t.linea = l.linea
    where l.forma = v_forma
      -- (las utilidades retenidas no son el saldo del mayor de la 3900: van abajo, del balance de c4)
-     and l.linea <> case v_forma when '1120' then 'L25' else 'L24' end;
+     and l.linea <> v_lret;
   -- LAS COMIDAS (6350): en los libros, al 100 %; se deduce la mitad. En su línea, la cuenta dice cuánto de cada cosa
   select (a->>'amount')::numeric into v_meals
     from jsonb_array_elements(v_tax) t, jsonb_array_elements(t->'accounts') a where a->>'account' = '6350' limit 1;
@@ -788,19 +876,18 @@ begin
   -- EL CAPITAL DEL SCHEDULE L, como el balance de c4: sus renglones del capital al cierre del año. Las utilidades retenidas son
   -- todo el capital que no es capital social ni aportaciones (la 3900, los resultados de años anteriores, el del año y, restando,
   -- las distribuciones): así las líneas L de activo son las de pasivo y capital cuando el balance de c4 cuadra
-  v_lret := case v_forma when '1120' then 'L25' else 'L24' end;
   select jsonb_build_object(
            'total', coalesce(max(g.cifra) filter (where g.linea = 'total_capital'), 0),
            'stock', coalesce(sum(g.cifra) filter (where g.nivel = 'linea' and g.linea = 'capital_social'), 0),
            'paid_in', coalesce(sum(g.cifra) filter (where g.nivel = 'linea' and g.linea = 'aportaciones'), 0),
            'net_income', coalesce(sum(g.cifra) filter (where g.nivel = 'linea' and g.linea = 'resultado_ejercicio'), 0),
            'components', coalesce(jsonb_agg(jsonb_build_object('name', coalesce(g.etiqueta_en, g.etiqueta_es), 'amount', g.cifra)
-                                            order by g.linea_orden)
+                                            order by g.lo)
                                     filter (where g.nivel = 'linea' and g.seccion = 'capital'
                                               and g.linea not in ('capital_social', 'aportaciones') and coalesce(g.cifra, 0) <> 0), '[]'::jsonb))
     into v_cap
-    from v_balance_general g
-   where g.periodo = v_per and (g.seccion = 'capital' or g.linea = 'total_capital');
+    from jsonb_to_recordset(v_bgl) as g(nivel text, seccion text, linea text, etiqueta_en text, etiqueta_es text, cifra numeric, lo int)
+   where g.seccion = 'capital' or g.linea = 'total_capital';
   if (v_cap->>'total')::numeric - (v_cap->>'stock')::numeric - (v_cap->>'paid_in')::numeric <> 0 then
     select coalesce(jsonb_agg(x.t order by x.o), '[]'::jsonb) into v_tax
       from (select t, (select l.orden from fiscal_lineas l where l.forma = v_forma and l.linea = t->>'line') as o
@@ -813,6 +900,50 @@ begin
                    l.orden
               from fiscal_lineas l where l.forma = v_forma and l.linea = v_lret) x;
   end if;
+  -- (cuarta vuelta) LAS RECLASIFICACIONES DE PRESENTACIÓN DEL BALANCE. El balance de c4 no presenta un saldo contrario dentro de su
+  -- renglón: lo que los clientes tienen a su favor (un anticipo) va al pasivo («Customer deposits and credit balances») y las
+  -- cuentas por cobrar quedan en bruto; igual un proveedor o una tarjeta con saldo a favor, una cuenta de efectivo en rojo, un
+  -- pasivo con saldo deudor. El Schedule L usaba el saldo neto de cada cuenta: el contador veía dos totales de activo distintos en
+  -- el mismo paquete, sin nota. Ahora las líneas L llevan esas mismas reclasificaciones, cada una dicha en su renglón con la
+  -- etiqueta de c4: lo que sale de un renglón del balance va a la línea L de las cuentas de ese renglón, y lo que entra en un
+  -- renglón sin cuentas, a la línea L que le toca (los saldos a favor de clientes, el sobregiro y la caja en rojo, a «otros
+  -- pasivos circulantes»; los saldos deudores de proveedores, tarjetas, nómina e impuestos, a «otros activos circulantes»; lo del
+  -- accionista, a su línea). El Schedule L es el balance
+  select coalesce(jsonb_agg(jsonb_build_object('line', z.l, 'name', z.etiqueta, 'amount', z.cifra) order by z.so, z.lo, z.o), '[]'::jsonb)
+    into v_rcl
+    from (select g.so, g.lo, g.o, g.cifra, coalesce(g.etiqueta_en, g.etiqueta_es) as etiqueta,
+                 coalesce((select mode() within group (order by k.linea)
+                             from jsonb_to_recordset(v_bgl) as a(nivel text, seccion text, linea text, cuenta text)
+                             join jsonb_to_recordset(v_ctas) as k(codigo text, linea text) on k.codigo = a.cuenta
+                            where a.nivel = 'cuenta' and a.seccion = g.seccion and a.linea = g.linea and k.linea like 'L%'),
+                          case when g.linea in ('anticipos_clientes', 'sobregiro_bancario', 'caja_en_rojo', 'otros_pasivos') then 'L18'
+                               when g.linea = 'prestamo_accionista' then 'L19'
+                               when g.linea in ('saldos_a_favor', 'impuestos_a_favor', 'otros_saldos_deudores') then 'L6'
+                               when g.linea = 'accionista_por_cobrar' then 'L7'
+                               when g.seccion = 'activo_circulante' then 'L6'
+                               when g.seccion in ('activo_fijo', 'otros_activos') then 'L14'
+                               when g.seccion = 'pasivo_largo_plazo' then 'L20'
+                               else 'L18' end) as l
+            from jsonb_to_recordset(v_bgl) as g(nivel text, seccion text, linea text, componente text, etiqueta_en text, etiqueta_es text,
+                                                cifra numeric, so int, lo int, o int)
+           where g.nivel = 'componente' and g.componente like 'reclasif\_%' and coalesce(g.cifra, 0) <> 0) z;
+  if jsonb_array_length(v_rcl) > 0 then
+    select coalesce(jsonb_agg(x.t order by x.o), '[]'::jsonb) into v_tax
+      from (select case when r.l is not null
+                        then jsonb_set(jsonb_set(y.t, '{amount}', to_jsonb((y.t->>'amount')::numeric + r.s)), '{accounts}', (y.t->'accounts') || r.e)
+                        else y.t end as t,
+                   (select l.orden from fiscal_lineas l where l.forma = v_forma and l.linea = y.t->>'line') as o
+              from jsonb_array_elements(v_tax) y(t)
+              left join (select e->>'line' as l, sum((e->>'amount')::numeric) as s, jsonb_agg(e - 'line') as e
+                           from jsonb_array_elements(v_rcl) e group by e->>'line') r on r.l = y.t->>'line'
+            union all
+            -- (la línea que todavía no estaba: ninguna cuenta con saldo va a ella)
+            select jsonb_build_object('form', v_forma, 'line', l.linea, 'label', l.etiqueta_en, 'amount', r.s, 'accounts', r.e), l.orden
+              from fiscal_lineas l
+              join (select e->>'line' as l, sum((e->>'amount')::numeric) as s, jsonb_agg(e - 'line') as e
+                      from jsonb_array_elements(v_rcl) e group by e->>'line') r on r.l = l.linea
+             where l.forma = v_forma and not exists (select 1 from jsonb_array_elements(v_tax) z where z->>'line' = l.linea)) x;
+  end if;
   -- ¿cuadran las líneas L? (activo = pasivo + capital, por el orden del catálogo: 200–289 activo, 290–339 pasivo, 340–369 capital)
   select jsonb_build_object(
            'assets', coalesce(sum((t->>'amount')::numeric) filter (where l.orden between 200 and 289), 0),
@@ -822,13 +953,19 @@ begin
     from jsonb_array_elements(v_tax) t
     join fiscal_lineas l on l.forma = v_forma and l.linea = t->>'line'
    where l.linea like 'L%';
-  v_l := v_l || jsonb_build_object('liabilities_and_equity', (v_l->>'liabilities')::numeric + (v_l->>'equity')::numeric,
-                                   'balanced', (v_l->>'assets')::numeric = (v_l->>'liabilities')::numeric + (v_l->>'equity')::numeric);
+  -- (y su total de activo es el del balance general del mismo paquete: si no, se dice)
+  select max(g.cifra) into v_act from jsonb_to_recordset(v_bgl) as g(linea text, cifra numeric) where g.linea = 'total_activo';
+  v_l := v_l || jsonb_strip_nulls(jsonb_build_object(
+           'liabilities_and_equity', (v_l->>'liabilities')::numeric + (v_l->>'equity')::numeric,
+           'balanced', (v_l->>'assets')::numeric = (v_l->>'liabilities')::numeric + (v_l->>'equity')::numeric,
+           'reclassifications', nullif(v_rcl, '[]'::jsonb),
+           'total_assets_per_balance_sheet', v_act,
+           'matches_balance_sheet', case when v_act is not null then (v_l->>'assets')::numeric = v_act end));
   -- la conciliación de las utilidades retenidas (los renglones del Schedule M-2), según libros
-  select jsonb_build_object('dist', coalesce(sum(b.saldo_final - b.saldo_inicial) filter (where b.cuenta like '3200%'), 0),
-                            'otros', coalesce(-sum(b.saldo_final - b.saldo_inicial) filter (where b.cuenta like '3900%'), 0))
+  select jsonb_build_object('dist', coalesce(sum(k.fin - k.ini) filter (where k.codigo like '3200%'), 0),
+                            'otros', coalesce(-sum(k.fin - k.ini) filter (where k.codigo like '3900%'), 0))
     into v_m2
-    from v_balanza b where b.periodo = v_per and b.nivel = 'cuenta' and (b.cuenta like '3200%' or b.cuenta like '3900%');
+    from jsonb_to_recordset(v_ctas) as k(codigo text, ini numeric, fin numeric) where k.codigo like '3200%' or k.codigo like '3900%';
   v_m2 := jsonb_build_object(
     'basis', 'Per books',
     'ending', (v_cap->>'total')::numeric - (v_cap->>'stock')::numeric - (v_cap->>'paid_in')::numeric,
@@ -865,25 +1002,23 @@ begin
                             order by l.orden), '[]'::jsonb)
     into v_cogs
     from fiscal_lineas l
-    join (select v.linea_1125a as linea,
-                 sum(case when v.tipo = 'activo' then b.saldo_final else b.saldo_final - b.saldo_inicial end) as monto,
-                 jsonb_agg(jsonb_build_object('account', v.codigo, 'name', v.nombre_en,
-                                              'amount', case when v.tipo = 'activo' then b.saldo_final else b.saldo_final - b.saldo_inicial end)
-                           order by v.codigo) as cuentas
-            from v_balanza b
-            join v_fiscal_cuentas v on v.codigo = b.cuenta
-           where b.periodo = v_per and b.nivel = 'cuenta' and v.linea_1125a is not null
-             and (case when v.tipo = 'activo' then b.saldo_final else b.saldo_final - b.saldo_inicial end) <> 0
-           group by v.linea_1125a) t on t.linea = l.linea
+    join (select k.linea_1125a as linea,
+                 sum(case when k.tipo = 'activo' then k.fin else k.fin - k.ini end) as monto,
+                 jsonb_agg(jsonb_build_object('account', k.codigo, 'name', k.nombre_en,
+                                              'amount', case when k.tipo = 'activo' then k.fin else k.fin - k.ini end)
+                           order by k.codigo) as cuentas
+            from jsonb_to_recordset(v_ctas) as k(codigo text, nombre_en text, tipo text, linea_1125a text, ini numeric, fin numeric)
+           where k.linea_1125a is not null
+             and (case when k.tipo = 'activo' then k.fin else k.fin - k.ini end) <> 0
+           group by k.linea_1125a) t on t.linea = l.linea
    where l.forma = '1125-A';
   -- el inventario (las cuentas de activo con línea del 1125-A): al inicio (línea 1) y al cierre (línea 7); y «Purchases» (línea
   -- 2) es lo COMPRADO: el material gastado más lo que subió el inventario. Así 1 + 2 + 3 + 5 − 7 es el costo de ventas de los libros
-  select coalesce(sum(b.saldo_inicial), 0), coalesce(sum(b.saldo_final), 0) into v_inv0, v_inv1
-    from v_balanza b join v_fiscal_cuentas v on v.codigo = b.cuenta
-   where b.periodo = v_per and b.nivel = 'cuenta' and v.tipo = 'activo' and v.linea_1125a is not null;
-  select coalesce(sum(b.saldo_final - b.saldo_inicial), 0) into v_cogsb
-    from v_balanza b join v_fiscal_cuentas v on v.codigo = b.cuenta
-   where b.periodo = v_per and b.nivel = 'cuenta' and v.tipo = 'costo';
+  select coalesce(sum(k.ini) filter (where k.tipo = 'activo' and k.linea_1125a is not null), 0),
+         coalesce(sum(k.fin) filter (where k.tipo = 'activo' and k.linea_1125a is not null), 0),
+         coalesce(sum(k.fin - k.ini) filter (where k.tipo = 'costo'), 0)
+    into v_inv0, v_inv1, v_cogsb
+    from jsonb_to_recordset(v_ctas) as k(tipo text, linea_1125a text, ini numeric, fin numeric);
   if v_inv0 <> 0 or v_inv1 <> 0 then
     select coalesce(jsonb_agg(x.t order by x.o), '[]'::jsonb) into v_cogs
       from (select case when t->>'line' = '2' and v_inv1 - v_inv0 <> 0
@@ -938,19 +1073,29 @@ begin
   elsif v_forma <> cfg.forma then
     v_avisos := v_avisos || format('This package was prepared for Form %s on request; the confirmed form on file is Form %s.', v_forma, cfg.forma);
   end if;
-  select string_agg(v.codigo || ' ' || v.nombre_en, '; ' order by v.codigo) into v_x
-    from v_fiscal_cuentas v
-   where not v.mapeada and exists (select 1 from v_balanza b where b.periodo = v_per and b.nivel = 'cuenta' and b.cuenta = v.codigo
-                                      and (b.debe <> 0 or b.haber <> 0 or b.saldo_final <> 0));
+  select string_agg(k.codigo || ' ' || k.nombre_en, '; ' order by k.codigo) into v_x
+    from jsonb_to_recordset(v_ctas) as k(codigo text, nombre_en text, mapeada boolean, debe numeric, haber numeric, fin numeric)
+   where not k.mapeada and (k.debe <> 0 or k.haber <> 0 or k.fin <> 0);
   if v_x is not null then
     v_avisos := v_avisos || ('Accounts with activity and no specific tax-line mapping (a default line by account type was used): ' || v_x || '.');
   end if;
   if exists (select 1 from jsonb_array_elements(v_bs) x where x->>'balanced' = 'false') then
     v_avisos := v_avisos || 'The balance sheet does not balance for this period: do not rely on this package until the books are corrected.'::text;
   end if;
+  if not (v_tbt->>'balanced')::boolean then
+    v_avisos := v_avisos || format('The trial balance in this package does not balance or does not match the books (beginning %s, debits %s, credits %s, ending %s): do not rely on this package until it is corrected.',
+                                   v_tbt->>'beginning', v_tbt->>'debits', v_tbt->>'credits', v_tbt->>'ending');
+  end if;
   if not (v_l->>'balanced')::boolean then
     v_avisos := v_avisos || format('Schedule L lines do not balance in this summary (assets %s; liabilities and equity %s): do not rely on the Schedule L lines until the books are corrected.',
                                    v_l->>'assets', v_l->>'liabilities_and_equity');
+  elsif (v_l->>'matches_balance_sheet') = 'false' then
+    v_avisos := v_avisos || format('Schedule L total assets (%s) differ from total assets on the balance sheet (%s) by %s: a balance-sheet presentation item is not reflected in the Schedule L lines. Use the balance sheet presentation.',
+                                   v_l->>'assets', v_act, (v_l->>'assets')::numeric - v_act);
+  end if;
+  if exists (select 1 from jsonb_array_elements(v_tb) x where x->>'level' = 'component') then
+    v_avisos := v_avisos || format('NO CLOSING ENTRIES ARE POSTED: prior-year results are carried on a separate trial-balance line (not a ledger account) instead of being closed to account 3900. Retained earnings for Schedule L (%s) and the M-2 reconciliation include that line.',
+                                   case v_forma when '1120' then 'line 25' else 'line 24' end);
   end if;
   if not (v_chk->>'matches')::boolean then
     v_avisos := v_avisos || format('Form 1125-A lines do not add up to cost of goods sold per books (%s vs %s): an inventory or cost account may be missing its 1125-A line.',
@@ -977,7 +1122,7 @@ begin
     'basis', 'Accrual basis, per books',
     'generated_at', now(),
     'warnings', to_jsonb(v_avisos),
-    'trial_balance', v_tb, 'income_statement', v_is, 'balance_sheet', v_bs, 'tax_lines', v_tax, 'form_1125a', v_cogs,
+    'trial_balance', v_tb, 'trial_balance_totals', v_tbt, 'income_statement', v_is, 'balance_sheet', v_bs, 'tax_lines', v_tax, 'form_1125a', v_cogs,
     'schedule_l', v_l, 'retained_earnings', v_m2, 'form_1125a_check', v_chk,
     'chart_of_accounts', (select coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
                                    'account', v.codigo, 'name', v.nombre_en, 'name_es', v.nombre, 'category', v.seccion_en, 'group', v.grupo_en,
@@ -987,7 +1132,7 @@ begin
 end $$;
 revoke execute on function public.fn_fiscal_paquete(int, text) from public, anon, service_role;
 grant  execute on function public.fn_fiscal_paquete(int, text) to authenticated;
-comment on function public.fn_fiscal_paquete(int, text) is 'c18: el paquete de fin de año en inglés para el CPA: la balanza, el estado de resultados, el balance general y el resumen por línea del Form 1120 o del 1120-S (con el capital del Schedule L como el balance de c4 y la conciliación de utilidades retenidas) y el 1125-A (con su línea 1), con el plan de cuentas mapeado a las dos formas y sus avisos (el año parcial, las comidas que solo se deducen a la mitad, el tipo de entidad pendiente de confirmar). Sale de las vistas de c4; solo lee; no calcula el impuesto.';
+comment on function public.fn_fiscal_paquete(int, text) is 'c18: el paquete de fin de año en inglés para el CPA: la balanza (con los renglones que c4 lleva fuera de las cuentas —el resultado de años anteriores por cerrar— y sus totales: suma 0 y es la de c4), el estado de resultados, el balance general y el resumen por línea del Form 1120 o del 1120-S (con el capital del Schedule L como el balance de c4, sus reclasificaciones de presentación —los saldos a favor de clientes, al pasivo— y la conciliación de utilidades retenidas) y el 1125-A (con su línea 1), con el plan de cuentas mapeado a las dos formas y sus avisos (el año parcial, las comidas que solo se deducen a la mitad, el tipo de entidad pendiente de confirmar). Sale de las vistas de c4, leída cada una una vez; solo lee; no calcula el impuesto.';
 
 
 -- ---------------------------------------------------------------------
@@ -998,7 +1143,13 @@ returns table (orden int, control text, nivel text, ok boolean, filas bigint, es
 language sql stable
 set search_path = public, pg_temp
 as $$
-  with ve as (select current_user not in ('authenticated', 'anon', 'service_role') or coalesce(es_dueno(), false) as si)
+  with ve as (select current_user not in ('authenticated', 'anon', 'service_role') or coalesce(es_dueno(), false) as si),
+       -- (cuarta vuelta) el paquete del año en curso y del anterior, si la app los lleva: UNA vez cada uno, para los cuadres 35 y 36
+       pq as materialized (
+         select p.anio, fn_fiscal_paquete(p.anio) as p
+           from periodos p, ve
+          where ve.si and current_user <> 'service_role' and p.tipo = 'anio'
+            and p.anio between extract(year from fn_fecha_miami(now()))::int - 1 and extract(year from fn_fecha_miami(now()))::int)
   select z.orden, z.control, z.nivel, z.ok, z.filas, z.esperadas, z.detalle
     from ve
     cross join lateral (
@@ -1030,11 +1181,25 @@ as $$
       select 35, 'fiscal: el Schedule L cuadra (activo = pasivo y capital)', 'cuadre', t.n = 0, t.n, 0,
              case when t.n > 0 then t.d || ' → mira primero si el balance general de Estados cuadra; si cuadra, alguna cuenta de balance tiene una línea que no es del Schedule L (fn_fiscal_cuenta)' end
         from (select count(*) as n, left(string_agg(format('%s: activo %s, pasivo y capital %s', y.anio, y.s->>'assets', y.s->>'liabilities_and_equity'), '; '), 600) as d
-                from (select p.anio, fn_fiscal_paquete(p.anio)->'schedule_l' as s
-                        from periodos p
-                       where ve.si and current_user <> 'service_role' and p.tipo = 'anio'
-                         and p.anio between extract(year from fn_fecha_miami(now()))::int - 1 and extract(year from fn_fecha_miami(now()))::int) y
+                from (select pq.anio, pq.p->'schedule_l' as s from pq) y
                where not coalesce((y.s->>'balanced')::boolean, false)) t
+      union all
+      -- 36 (cuarta vuelta): la balanza del paquete suma 0 y es la de c4 (con sus renglones de los resultados de años anteriores)
+      select 36, 'fiscal: la balanza del paquete suma 0 y es la de los libros', 'cuadre', t.n = 0, t.n, 0,
+             case when t.n > 0 then t.d || ' → la balanza de Estados (c4) lleva renglones que el paquete no trae, o no cuadra: no se manda hasta revisarlo' end
+        from (select count(*) as n, left(string_agg(format('%s: inicial %s, debe %s, haber %s, final %s', y.anio, y.t->>'beginning', y.t->>'debits',
+                                                           y.t->>'credits', y.t->>'ending'), '; '), 600) as d
+                from (select pq.anio, pq.p->'trial_balance_totals' as t from pq) y
+               where not coalesce((y.t->>'balanced')::boolean, false)) t
+      union all
+      -- 37 (aviso, cuarta vuelta): el activo del Schedule L es el del balance general del mismo paquete (las líneas L llevan las
+      -- reclasificaciones de presentación del balance; si algo más los separa, el paquete lo dice arriba y aquí se avisa)
+      select 37, 'fiscal: el activo del Schedule L es el del balance general', 'aviso', t.n = 0, t.n, 0,
+             case when t.n > 0 then t.d || ' → el balance presenta algo que las líneas L no recogen: el paquete lo dice arriba; para el Schedule L vale la presentación del balance' end
+        from (select count(*) as n, left(string_agg(format('%s: activo de las líneas L %s, del balance %s', y.anio, y.s->>'assets',
+                                                           y.s->>'total_assets_per_balance_sheet'), '; '), 600) as d
+                from (select pq.anio, pq.p->'schedule_l' as s from pq) y
+               where (y.s->>'matches_balance_sheet') = 'false') t
       union all
       -- 40 (aviso): cuentas imputables sin su fila de mapeo (salen con la línea de bulto de su tipo)
       select 40, 'fiscal: cada cuenta tiene su línea propia', 'aviso', t.n = 0, t.n, 0,
@@ -1052,7 +1217,7 @@ as $$
 $$;
 revoke execute on function public.fn_fiscal_control() from public, anon, service_role;
 grant  execute on function public.fn_fiscal_control() to authenticated;
-comment on function public.fn_fiscal_control() is 'c18: el control del mapeo fiscal: la configuración, que cada línea existe en su catálogo, que el costo va al costo de ventas y que las líneas del Schedule L cuadran (cuadres); las cuentas sin línea propia y el tipo de entidad sin confirmar (avisos).';
+comment on function public.fn_fiscal_control() is 'c18: el control del mapeo fiscal: la configuración, que cada línea existe en su catálogo, que el costo va al costo de ventas, que las líneas del Schedule L cuadran y que la balanza del paquete suma 0 y es la de los libros (cuadres); el activo del Schedule L distinto del balance, las cuentas sin línea propia y el tipo de entidad sin confirmar (avisos).';
 
 create or replace function public.fn_fiscal_pegado() returns table (que text, detalle text)
 language plpgsql stable
