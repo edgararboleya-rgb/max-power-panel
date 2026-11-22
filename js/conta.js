@@ -3409,8 +3409,10 @@
   const bnOpcionLlana = t => String(t || "")
     .replace(/\s*\(→\s*\d{4}(?:-\d+)?\)/g, "").replace(/\s·\s*\d{4}(?:-\d+)?(?![\d-])/g, "")
     .replace(/\bA \d{4}(?:-\d+)? \(([^()]+)\)/g, "A $1")
-    // (al integrar la quinta vuelta) «Desde 1010 (Banco operativo)» → «Desde Banco operativo», como «A …» (los botones del pago de la tarjeta)
-    .replace(/\b([Dd]esde) \d{4}(?:-\d+)? \(([^()]+)\)/g, "$1 $2")
+    // (al integrar la quinta vuelta) «Desde 1010 (Banco operativo)» → «Desde Banco operativo» (los botones del pago de la tarjeta), solo si
+    // lo de entre paréntesis ES el nombre de esa cuenta: «desde 1010 (con su motivo)» lo deja a la regla de abajo
+    .replace(/\b([Dd]esde) (\d{4}(?:-\d+)?) \(([^()]+)\)/g, (todo, d, cod, nom) =>
+      String(nombreCuenta(cod) || "").trim().toLowerCase() === nom.trim().toLowerCase() ? `${d} ${nom}` : todo)
     // (quinta vuelta) «Fue un pago a la tarjeta desde 1010» → «…desde Banco operativo»
     .replace(/\bdesde (\d{4}(?:-\d+)?)(?![\d-])/g, (todo, cod) => { const nom = nombreCuenta(cod); return nom && nom !== cod ? `desde ${nom}` : todo; })
     .replace(/\(([a-z0-9]+(?:-[a-z0-9]+)+)\)/g, (todo, id) => { const p = (S.proyectos || []).find(x => x.id === id); return p && p.nombre ? `(${p.nombre})` : todo; })
