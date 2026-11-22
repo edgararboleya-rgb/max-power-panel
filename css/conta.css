@@ -11,6 +11,12 @@
 #conta-raiz { display: grid; gap: .8rem; }
 /* El botón flotante de la app tapa la esquina de las tarjetas: en la contabilidad no hace falta */
 body[data-vista="conta"] .fab { display: none; }
+/* (la Bandeja nueva, cuarta vuelta) EL AVISO, EN EL TELÉFONO, ARRIBA: abajo quedaba justo encima del menú, donde quedan los botones
+   («Así es», «Así es para los N») de la tarjeta o del grupo que se acaba de contestar, y los tapaba hasta 14 s. Arriba tapa el
+   membrete, que no tiene nada que tocar. (Tocarlo lo quita y el toque no pasa a lo que tapa: css/styles.css y avisar, en js/app.js) */
+@media (max-width: 767px) {
+  body[data-vista="conta"] #toast, body[data-vista="conta"].con-menu #toast { top: calc(8px + env(safe-area-inset-top, 0px)); bottom: auto; }
+}
 #conta-raiz .ct-num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
 /* ---- pestañas: teléfono e iPad (nueve desde la fase 8, deslizan con tope); en la computadora las esconde el CSS y las enseña el lateral de la app ----
@@ -1906,3 +1912,31 @@ body[data-vista="conta"] .fab { display: none; }
 #conta-raiz .ct-fis-t tr.ct-fis-total td { border-top: 1.5px solid var(--mp-ink); }
 #conta-raiz .ct-fis-t td.r, #conta-raiz .ct-fis-t th.r { text-align: right; white-space: nowrap; }
 @media (min-width: 700px) { #conta-raiz .ct-fis-aj { grid-template-columns: 10rem minmax(0, 20rem) minmax(0, 1fr); } }
+
+/* ---- (la Bandeja nueva, cuarta vuelta, 22-nov-2026) ----
+   «¿Cuál es?»: las opciones entre las que el banco no sabe elegir (botones secundarios, del mismo tamaño que un dedo) y debajo la
+   caja de la elegida, con su «Así es»; la misma caja para un botón de «Lo que dice el banco» (dentro de la forma de la tarjeta) */
+#conta-raiz .ct-bn-elige { display: grid; gap: .5rem; padding: .7rem .8rem .75rem; border-radius: 12px; border: 1px solid var(--mp-line); border-left: 4px solid var(--cu); background: var(--mp-card); min-width: 0; }
+#conta-raiz .ct-bn-elige > * { min-width: 0; }
+#conta-raiz .ct-bn-elige-ops .accion { flex: 1 1 9rem; justify-content: center; text-align: center; min-height: var(--tap); overflow-wrap: anywhere; }
+#conta-raiz .ct-bn-elige-ops .accion[aria-pressed="true"] { border-color: var(--cu); box-shadow: inset 0 0 0 2px var(--cu); font-weight: 800; }
+#conta-raiz .ct-bn-elige-caja:empty { display: none; }
+#conta-raiz .ct-form > .ct-bn-op { margin-top: .2rem; }
+/* la nota de una tarjeta a medias cuya recomendación cambió por algo que Edgar acaba de decir */
+#conta-raiz .ct-bn-ya { margin: 0 0 .5rem; padding: .5rem .7rem; border-radius: 10px; border: 1px solid var(--mp-line); border-left: 4px solid var(--mp-blue); background: var(--mp-sky-1); color: var(--mp-ink); font-size: .9rem; line-height: 1.4; }
+/* el grupo: a qué obra va cada compra (en su renglón de la lista, y en una línea) */
+#conta-raiz .ct-bn-gm-d small.ct-bn-gm-obra { color: var(--cu-dark); font-weight: 700; }
+#conta-raiz .ct-bn-gm-d small[hidden] { display: none; }
+#conta-raiz .ct-bn-g-obras { margin: 0; font-size: .86rem; line-height: 1.4; color: var(--mp-ink); }
+#conta-raiz .ct-bn-g-obras[hidden] { display: none; }
+#conta-raiz .ct-bn-olvida { font-size: .88rem; font-weight: 600; line-height: 1.35; align-items: flex-start; }
+/* la franja de la IA de antes, con la Bandeja nueva: una línea discreta debajo de «Decide por grupo», sin botón principal */
+#conta-raiz .ct-ia-franja.ct-ia-discreta { border-left-width: 2px; padding-top: .45rem; padding-bottom: .45rem; box-shadow: none; background: transparent; gap: .3rem .7rem; }
+#conta-raiz .ct-ia-discreta .ct-ia-f-txt { font-size: .82rem; color: var(--mp-ink-3); }
+#conta-raiz .ct-ia-discreta .ct-ia-f-txt b, #conta-raiz .ct-ia-discreta .ct-ia-f-txt .ct-num { color: var(--mp-ink-2); }
+#conta-raiz .ct-ia-discreta .ct-ia-f-acc { flex: 0 0 auto; }
+#conta-raiz .ct-ia-discreta .ct-ia-f-acc .accion { flex: none; min-height: 36px; padding: .3rem .8rem; font-size: .82rem; }
+/* «Para el contador»: la balanza entera (el renglón que no es una cuenta) */
+#conta-raiz .ct-fis-t tr.ct-fis-comp td { font-style: italic; }
+/* los apartados de los Estados, en el teléfono, en dos renglones: con «Para el contador» el último quedaba fuera de la fila */
+@media (max-width: 767px) { #conta-raiz .ct-est-subs { flex-wrap: wrap; overflow-x: visible; } }

@@ -53,6 +53,21 @@
         una decisión por grupo que dejó «que entre solo» (se apaga, o no, si
         Edgar lo dice) y que el cargo siguiente espera; y la tarifa de un
         procesador que se olvida;
+        (cuarta vuelta) seis guiones más —el recibo que llega después EN EL
+        OTRO ORDEN («es su recibo» en la primera de dos compras iguales: la
+        otra deja de esperar); el pago de la tarjeta con UNA SEGUNDA TARJETA
+        del mismo banco dada de alta (la tarjeta pregunta cuál: «elige»); un
+        botón de «Lo que dice el banco» validado y registrado POR LA BANDEJA
+        (el Zelle que paga entera una factura sin marcar: queda cobrada en
+        Proyectos); deshacer para corregir (lo deshecho no se propone otra
+        vez) y deshacer olvidando lo recordado; y el depósito y el cargo de
+        un PRESTAMISTA (el cargo, registrado como un gasto, frena)—; un guion
+        puede cambiar la fila de un movimiento que ya esperaba, así que con
+        «conFilas» cada paso guarda las filas de la Bandeja que son nuevas o
+        distintas de las del principio; lo registrado por el camino de antes
+        («Otra cosa…») y ANOTADO después por la Bandeja (fuente «mas»), y
+        deshecho; y el paquete del AÑO SIGUIENTE (la balanza con el renglón
+        del resultado de años anteriores y sus totales en cero);
      3. revisa que en lo capturado no salga ningún nombre de la semilla de
         siempre (los ids de obra de 02-semilla.sql son inventados y ya son
         públicos: se quitan antes de revisar);
@@ -122,7 +137,7 @@ begin
   perform set_config('request.jwt.claim.sub', '${DUENO}', true);
   perform fn_banco_importar_filas(jsonb_build_object('origen', 'plaid', 'cuenta', '1010', 'nombre', 'Plaid · f19-capturar · ' || p_clave,
     'filas', jsonb_build_array(jsonb_build_object('id', 'ZZ19-' || p_clave, 'fecha', (fn_fecha_miami(now()) - p_dias)::text, 'plaid_monto', (-p_monto)::text,
-             'descripcion', p_desc, 'tipo', 'DEBIT', 'pendiente', false))));
+             'descripcion', p_desc, 'tipo', case when p_monto > 0 then 'CREDIT' else 'DEBIT' end, 'pendiente', false))));
   select m.id into v_mov from movimientos_banco m where m.id_externo = 'ZZ19-' || p_clave order by m.importado_el desc limit 1;
   perform fn_banco_casar(v_mov);
   perform set_config('request.jwt.claims', '', true);
@@ -133,15 +148,18 @@ end $f$;
 -- (segunda vuelta) UN GUION: varios pasos seguidos en la misma transacción, cada uno con lo que contesta la base y cómo queda la
 -- Bandeja después (lo que lee la pantalla, los movimientos que siguen esperando y si el control del banco dice que hay un gasto dos
 -- veces por un recibo que llegó después)
-create temp table _guion (n serial, paso text, resp jsonb, leer jsonb, ids jsonb, rojo57 text) on commit drop;
+create temp table _guion (n serial, paso text, resp jsonb, leer jsonb, ids jsonb, rojo57 text, filas jsonb) on commit drop;
 create or replace function pg_temp.paso(p_nombre text, p_sql text, p_quien text default 'dueno') returns jsonb language plpgsql as $f$
-declare r jsonb; l jsonb; i jsonb; k text;
+declare r jsonb; l jsonb; i jsonb; k text; f jsonb;
 begin
   r := pg_temp.pedir(p_sql, p_quien);
   l := pg_temp.pedir('select fn_bandeja_leer()', 'dueno');
   i := pg_temp.pedir($q$select coalesce(jsonb_agg(b.movimiento_id order by b.fecha, b.movimiento_id), '[]'::jsonb) from v_banco_bandeja b where b.movimiento_id in (select movimiento from public.f19_semilla)$q$, 'dueno');
   k := pg_temp.pedir($q$select to_jsonb((select x.detalle from fn_banco_control('hoy', array['v_banco_bandeja']) x where x.vista = 'cuadre: ningún ticket después de clasificar' and not x.ok))$q$, 'dueno') #>> '{}';
-  insert into _guion (paso, resp, leer, ids, rojo57) values (p_nombre, r, l, i, k);
+  -- (cuarta vuelta) las filas de la Bandeja de ese momento: un guion puede cambiar lo que el banco propone para un movimiento que
+  -- ya esperaba (con una segunda tarjeta dada de alta, el pago de la tarjeta pasa a tener tres opciones)
+  f := pg_temp.pedir($q$select coalesce(jsonb_agg(to_jsonb(b) order by b.alarma desc, b.fecha, b.movimiento_id), '[]'::jsonb) from v_banco_bandeja b where b.movimiento_id in (select movimiento from public.f19_semilla)$q$, 'dueno');
+  insert into _guion (paso, resp, leer, ids, rojo57, filas) values (p_nombre, r, l, i, k, f);
   return r;
 end $f$;
 create or replace function pg_temp.mov(k text) returns uuid language sql as $f$ select movimiento from public.f19_semilla where clave = k $f$;`;
@@ -153,11 +171,13 @@ function pedir(ordenes) {
 }
 // un guion: el cuerpo es plpgsql (declarados: r, r2 jsonb; t text) que va llamando a pg_temp.paso(nombre, sql[, quien]); devuelve
 // [{paso, resp, despues: {ids, leer, rojo57}}]
-function guion(nombre, cuerpo) {
+// `conFilas`: (cuarta vuelta) cada paso lleva además las filas de la Bandeja de ese momento (despues.filas), cuando el guion cambia
+// lo que el banco propone para un movimiento que ya esperaba
+function guion(nombre, cuerpo, conFilas) {
   // (tercera vuelta) y las filas de los movimientos que LLEGARON durante el guion (pg_temp.llega): no están en la Bandeja del
   // principio, y la pantalla las necesita para pintarlos
   const sql = ['begin;', AYUDA, `do $g$\ndeclare r jsonb; r2 jsonb; t text;\nbegin\n${cuerpo}\nend $g$;`,
-    `select coalesce(jsonb_agg(jsonb_build_object('paso', paso, 'resp', resp, 'leer', leer, 'ids', ids, 'rojo57', rojo57) order by n), '[]'::jsonb)::text from _guion;`,
+    `select coalesce(jsonb_agg(jsonb_build_object('paso', paso, 'resp', resp, 'leer', leer, 'ids', ids, 'rojo57', rojo57${conFilas ? ", 'filas', filas" : ''}) order by n), '[]'::jsonb)::text from _guion;`,
     `select coalesce(pg_temp.pedir($q$select coalesce(jsonb_agg(to_jsonb(b) order by b.fecha, b.movimiento_id), '[]'::jsonb) from v_banco_bandeja b
        where b.movimiento_id in (select s.movimiento from public.f19_semilla s where s.clave not in (${Object.keys(ids).map(k => `'${k}'`).join(', ')}))$q$, 'dueno'), '[]'::jsonb)::text;`,
     'rollback;'].join('\n');
@@ -165,7 +185,10 @@ function guion(nombre, cuerpo) {
   const pasos = JSON.parse(out[out.length - 2]), nuevas = sano(JSON.parse(out[out.length - 1]), `guion ${nombre}: las filas que llegaron`);
   if (!pasos.length) throw new Error(`guion ${nombre}: no dejó ningún paso`);
   return pasos.map(p => { if (p.resp && p.resp.ERROR && !/^MX/.test(p.resp.ERROR)) throw new Error(`guion ${nombre}, ${p.paso}: ${p.resp.ERROR}: ${p.resp.message}`);
-    return { paso: p.paso, resp: p.resp, despues: { ids: p.ids, leer: resto(p.leer), rojo57: p.rojo57, ...(nuevas.length ? { nuevas } : {}) } }; });
+    // (con `conFilas`, «nuevas» son las filas de ESE paso que no estaban al principio o que ya no son iguales: pantalla.js las pone
+    // encima de las del principio)
+    const distintas = conFilas ? sano(p.filas, `guion ${nombre}, ${p.paso}: las filas`).filter(f => JSON.stringify(f) !== FILA0.get(f.movimiento_id)) : nuevas;
+    return { paso: p.paso, resp: p.resp, despues: { ids: p.ids, leer: resto(p.leer), rojo57: p.rojo57, ...(distintas.length ? { nuevas: distintas } : {}) } }; });
 }
 const j = v => `${dolar(JSON.stringify(v))}::jsonb`;
 const sano = (r, que) => { if (r && r.ERROR) throw new Error(`${que}: la base contestó ${r.ERROR}: ${r.message}`); return r; };
@@ -201,6 +224,8 @@ const [bandeja, leer, facturas, cuentas, proyectos, validar] = pedir([FILAS, LEE
   { sql: `select jsonb_agg(jsonb_build_object('id', p.id, 'nombre', p.nombre, 'estado', p.estado) order by p.nombre) from proyectos p` },
   { sql: `select fn_bandeja_validar('${ids.hd3}', 'gasto', ${j({ cuenta: '5100', proyecto_id: 'oficina-nch-7xq2' })})` }]).map((r, i) => sano(r, 'lo del principio ' + i));
 LEER0 = leer;
+// (las filas del principio, para saber cuáles cambia un guion)
+const FILA0 = new Map(bandeja.map(f => [f.movimiento_id, JSON.stringify(f)]));
 const rec = k => { const t = leer.tarjetas[ids[k]]; if (!t || !t.rec || !t.rec.accion) throw new Error(`la semilla ya no deja una recomendación para «${k}»: ${JSON.stringify(t)}`); return t.rec; };
 const sinRec = k => { const t = leer.tarjetas[ids[k]]; if (!t || (t.rec && t.rec.accion)) throw new Error(`«${k}» no debía traer recomendación: ${JSON.stringify(t)}`); };
 // lo que la semilla tiene que dejar (si cambia, las comprobaciones de la pantalla dejarían de valer: falla aquí)
@@ -417,7 +442,124 @@ guiones.fuera = guion('fuera', `
   perform pg_temp.paso('hacer', format($q$select fn_bandeja_hacer(%L, 'gasto', '{"cuenta":"6300"}', '{"fuente":"recomendacion","recordar":true}')$q$, pg_temp.mov('ww1')));
   perform pg_temp.paso('otra_vez', format($q$select fn_bandeja_hacer(%L, 'gasto', '{"cuenta":"6300"}', '{"fuente":"recomendacion","recordar":true}')$q$, pg_temp.mov('ww1')));`);
 if (guiones.fuera[0].resp.hecho !== true || guiones.fuera[1].resp.fuera !== true) throw new Error('guion fuera: la segunda vez debía decir «fuera»: ' + JSON.stringify(guiones.fuera[1].resp));
+// ---------- (cuarta vuelta) LO QUE ENCONTRÓ LA TERCERA REVISIÓN ----------
+const DUENO_ES = `perform set_config('request.jwt.claims', json_build_object('sub', '${DUENO}', 'role', 'authenticated', 'aal', 'aal2')::text, true);
+  perform set_config('request.jwt.claim.sub', '${DUENO}', true);`;
+const NADIE_ES = `perform set_config('request.jwt.claims', '', true);
+  perform set_config('request.jwt.claim.sub', '', true);`;
+// EL RECIBO QUE LLEGA DESPUÉS, EN EL OTRO ORDEN: de las dos compras iguales con UN recibo, «es su recibo» en la PRIMERA (el botón
+// principal de la tarjeta de arriba). Antes la segunda seguía arriba diciendo que su gasto estaba dos veces (ya no era verdad), con
+// dos botones que fallaban. Ahora la base lo mira en esa misma llamada: solo queda esperando la compra suelta
+guiones.recibos2 = guion('recibos2', `
+  perform pg_temp.pedir(format($q$select fn_bandeja_hacer(%L, 'gasto', '{"cuenta":"5100","proyecto_id":"oficina-nch-7xq2"}', '{"fuente":"mas"}')$q$, pg_temp.mov(k))) from unnest(array['rc1','rc2','rc3']) k;
+  insert into recibos (id, proyecto_id, ruta, total, proveedor, notas, estado, autor_id, creado, fecha, categoria, num_recibo, metodo_pago, ultimos4)
+  overriding system value values
+    (-1900021, 'casa-perez-k3m9', 'recibos/f19/1900021.jpg', 64.37, 'ZZ MADERAS DEL SUR', 'f19-capturar', 'leido', '${DUENO}', now(), fn_fecha_miami(now()) - 5, 'material', 'ZZ19-R1', 'credito', '9919'),
+    (-1900023, 'casa-perez-k3m9', 'recibos/f19/1900023.jpg', 77.31, 'ZZ ELECTRICA TOTAL', 'f19-capturar', 'leido', '${DUENO}', now(), fn_fecha_miami(now()) - 4, 'material', 'ZZ19-R3', 'credito', '9919');
+  perform fn_puentes_correr();
+  perform pg_temp.paso('inicio', 'select null::jsonb');
+  perform pg_temp.paso('solo', $q$select fn_bandeja_solo('{"corrio":"pantalla"}')$q$);
+  perform pg_temp.paso('recibo', $q$select fn_bandeja_hacer((fn_bandeja_leer()->'recibos'->0->>'movimiento_id')::uuid, 'banco',
+         (select jsonb_build_object('opcion', o->'opcion', 'huella', o->>'huella') from jsonb_array_elements(fn_bandeja_leer()->'recibos'->0->'opciones') o where o->>'es' = 'recibo'),
+         '{"fuente":"mas"}')$q$);
+  perform pg_temp.paso('recibo_suelto', $q$select fn_bandeja_hacer((fn_bandeja_leer()->'recibos'->0->>'movimiento_id')::uuid, 'banco',
+         (select jsonb_build_object('opcion', o->'opcion', 'huella', o->>'huella') from jsonb_array_elements(fn_bandeja_leer()->'recibos'->0->'opciones') o where o->>'es' = 'recibo'),
+         '{"fuente":"mas"}')$q$);`);
+{
+  const g = Object.fromEntries(guiones.recibos2.map(p => [p.paso, p])), rs = p => (g[p].despues.leer.recibos || LEER0.recibos || []);
+  if (rs('solo').length !== 3 || rs('solo')[0].monto !== rs('solo')[1].monto) throw new Error('guion recibos2: se esperaban los tres esperando, primero las dos compras iguales: ' + JSON.stringify(rs('solo').map(x => x.monto)));
+  if (g.recibo.resp.hecho !== true || rs('recibo').length !== 1 || rs('recibo')[0].monto === rs('solo')[0].monto || !g.recibo.despues.rojo57)
+    throw new Error('guion recibos2: tras «es su recibo» en la primera de las dos iguales debía quedar esperando SOLO la compra suelta (la otra igual ya no tiene recibo libre): ' + JSON.stringify(rs('recibo').map(x => [x.descripcion, x.monto])));
+  if (g.recibo_suelto.resp.hecho !== true || rs('recibo_suelto').length || g.recibo_suelto.despues.rojo57) throw new Error('guion recibos2: el último «es su recibo» debía dejar el banco en verde: ' + JSON.stringify(g.recibo_suelto.resp).slice(0, 300));
+}
+// EL BANCO LO RECONOCE DE VARIAS FORMAS IGUAL DE VÁLIDAS: con una segunda tarjeta del mismo banco dada de alta, el pago de la tarjeta
+// desde el banco ya no se da por hecho con la primera opción (antes: «Es el pago de tu tarjeta Amex Business Blue», la que el banco
+// ordena primero). La tarjeta PREGUNTA cuál; la elegida se registra por su huella
+guiones.elige = guion('elige', `
+  perform fn_tarjeta_alta('2009', '2100-2009', 'f19-capturar: la segunda tarjeta del mismo banco');
+  ${DUENO_ES}
+  perform fn_banco_casar(pg_temp.mov('tj1'));
+  ${NADIE_ES}
+  perform pg_temp.paso('inicio', 'select null::jsonb');
+  perform pg_temp.paso('hacer', format($q$select fn_bandeja_hacer(%L, 'banco',
+         (select jsonb_build_object('opcion', o->'opcion', 'huella', o->>'huella') from jsonb_array_elements(fn_bandeja_leer()->'tarjetas'->%L->'rec'->'elige') o where o->>'boton' ~ 'Gold'),
+         '{"fuente":"recomendacion"}')$q$, pg_temp.mov('tj1'), pg_temp.mov('tj1')::text));`, true);
+{
+  const [a, b] = guiones.elige, t = a.despues.leer.tarjetas[ids.tj1], f = (a.despues.nuevas || []).find(x => x.movimiento_id === ids.tj1);
+  if (!t || !t.rec || t.rec.accion || !Array.isArray(t.rec.elige) || t.rec.elige.length < 2 || t.rec.pill !== 'Pago de la tarjeta' || !/¿De cuál es\?$/.test(t.rec.aviso || '')
+      || !t.rec.elige.every(o => o.huella && o.boton && o.texto) || !t.rec.elige.some(o => /Gold/.test(o.boton)) || !t.rec.elige.some(o => /Blue/.test(o.boton)))
+    throw new Error('guion elige: con dos tarjetas del mismo banco, el pago de la tarjeta debía PREGUNTAR cuál (elige), no recomendar la primera: ' + JSON.stringify(t).slice(0, 600));
+  if (!f || (f.opciones || []).length < 2 || (t.ops || []).length !== f.opciones.length) throw new Error('guion elige: la fila del pago de la tarjeta debía traer las opciones del banco y la tarjeta sus huellas: ' + JSON.stringify([f && f.opciones, t.ops]).slice(0, 400));
+  if (b.resp.hecho !== true || !/Amex Business Gold/.test(b.resp.texto || '') || b.despues.ids.includes(ids.tj1)) throw new Error('guion elige: la opción elegida (la Gold) debía registrarse: ' + JSON.stringify(b.resp).slice(0, 300));
+}
+// UN BOTÓN DE «LO QUE DICE EL BANCO» POR LA BANDEJA: llega el Zelle que paga ENTERA una factura sin marcar en Proyectos. La opción
+// del banco («Factura #ZZ-104…») se valida (lo que se va a registrar, en llano) y se registra por fn_bandeja_hacer: la factura queda
+// COBRADA EN PROYECTOS y el registro en «Lo que contestaste estos días» (por la puerta de antes, de un toque, nada de eso pasaba)
+guiones.boton_banco = guion('boton_banco', `
+  perform pg_temp.llega('zf1', 2, 1450.75, 'ZELLE PAYMENT FROM ZZ CLIENTE TALLER 778899');
+  perform pg_temp.paso('inicio', 'select null::jsonb');
+  perform pg_temp.paso('validar', format($q$select fn_bandeja_validar(%L, 'banco', jsonb_build_object('opcion', 0, 'huella', fn_bandeja_leer()->'tarjetas'->%L->'ops'->>0))$q$, pg_temp.mov('zf1'), pg_temp.mov('zf1')::text));
+  perform pg_temp.paso('hacer', format($q$select fn_bandeja_hacer(%L, 'banco', jsonb_build_object('opcion', 0, 'huella', fn_bandeja_leer()->'tarjetas'->%L->'ops'->>0), '{"fuente":"mas"}')$q$, pg_temp.mov('zf1'), pg_temp.mov('zf1')::text));
+  perform pg_temp.paso('proyectos', $q$select jsonb_build_object('pagada', f.pagada, 'cobrado', f.cobrado) from facturas f where f.id = -1900004$q$, 'editor');`, true);
+{
+  const [a, v, h, pr] = guiones.boton_banco, mov = a.despues.ids.find(id => !Object.values(ids).includes(id)), fila = (a.despues.nuevas || []).find(x => x.movimiento_id === mov);
+  const o0 = fila && (fila.opciones || [])[0];
+  if (!fila || !o0 || o0.llamar !== 'fn_banco_cobrar' || !/ZZ-104/.test(o0.texto || '')) throw new Error('guion boton_banco: el Zelle que paga la ZZ-104 debía traer esa factura como primera opción del banco: ' + JSON.stringify(fila && fila.opciones).slice(0, 400));
+  if (v.resp.ok !== true || !/ZZ-104/.test(v.resp.texto || '') || /\b\d{4}\b/.test(String(v.resp.texto).replace(/\$[\d,.]+/g, '').replace(/#[A-Z0-9-]+/g, ''))) throw new Error('guion boton_banco: la opción debía validarse en llano: ' + JSON.stringify(v.resp).slice(0, 300));
+  if (h.resp.hecho !== true || (h.resp.facturas_cobradas || []).length !== 1 || !(h.despues.leer.recientes || []).some(r => r.hecho_id === h.resp.hecho_id) || pr.resp.pagada !== true || Number(pr.resp.cobrado) !== 1450.75)
+    throw new Error('guion boton_banco: por la Bandeja, la factura debía quedar cobrada en Proyectos y el registro en lo contestado: ' + JSON.stringify([h.resp, pr.resp]).slice(0, 500));
+}
+// DESHACER PARA CORREGIR: lo que Edgar deshace no se le recomienda otra vez en la tarjeta que vuelve (se pregunta); y si lo dice
+// («y olvida lo que te dije de X»), lo recordado de ese comercio se da de baja en la misma llamada
+const WAWA_ASI = `r := pg_temp.paso('hacer', format($q$select fn_bandeja_hacer(%L, 'gasto', '{"cuenta":"6300"}', '{"fuente":"recomendacion","recordar":true}')$q$, pg_temp.mov('ww1')));`;
+guiones.deshecha = guion('deshecha', `
+  ${WAWA_ASI}
+  perform pg_temp.paso('deshacer', format($q$select fn_bandeja_deshacer(%L, 'me equivoqué de categoría')$q$, r->>'hecho_id'));`);
+guiones.olvida = guion('olvida', `
+  ${WAWA_ASI}
+  perform pg_temp.paso('deshacer', format($q$select fn_bandeja_deshacer(%L, 'no es gasolina: es comida', '{"olvida": true}')$q$, r->>'hecho_id'));`);
+{
+  const [a, b] = guiones.deshecha, [, c] = guiones.olvida, t = b.despues.leer.tarjetas[ids.ww1], t2 = c.despues.leer.tarjetas[ids.ww1];
+  const mem = l => (l.memoria || LEER0.memoria || []).find(x => x.clave === 'C:WAWA');
+  if (a.resp.hecho !== true || !(a.resp.recordado || {}).nombre || !mem(a.despues.leer)) throw new Error('guion deshecha: el «Así es» debía dejar recordado el comercio: ' + JSON.stringify(a.resp).slice(0, 300));
+  if (b.resp.deshecho !== true || b.resp.olvidado || !mem(b.despues.leer) || !t || !t.rec || t.rec.deshecha !== true || t.rec.accion || !/no te lo propongo otra vez/.test(t.rec.aviso || ''))
+    throw new Error('guion deshecha: lo deshecho no debía recomendarse otra vez en la tarjeta que vuelve (y lo recordado seguir): ' + JSON.stringify([b.resp, t]).slice(0, 600));
+  if (c.resp.deshecho !== true || c.resp.olvidado !== 'WAWA' || mem(c.despues.leer)) throw new Error('guion olvida: con «olvida» lo recordado de ese comercio debía darse de baja: ' + JSON.stringify(c.resp).slice(0, 300));
+  if (!t2 || (t2.rec && t2.rec.fuente === 'memoria')) throw new Error('guion olvida: la tarjeta que vuelve no debía recomendar nada de lo recordado: ' + JSON.stringify(t2).slice(0, 300));
+}
+// LO QUE EL BANCO DICE DE UN PRESTAMISTA: (a) un depósito suyo con facturas mayores abiertas: el banco propone «parte de la factura…»,
+// pero la app SABE que es de un prestamista (`sabe`): «Más opciones» no ofrece cobrarlo; (b) un CARGO hacia él es la cuota de un
+// préstamo: la tarjeta lo avisa, y registrarlo como un gasto frena (el freno es de esta capa: «propio») y no se recuerda
+guiones.prestamista = guion('prestamista', `
+  perform pg_temp.llega('od2', 2, 4000.00, 'ORIG CO NAME:ONDECK CAPITAL ORIG ID:1234567890 DESC DATE:ZZ21');
+  perform pg_temp.llega('oc1', 1, -412.33, 'ORIG CO NAME:ONDECK CAPITAL ORIG ID:1234567890 DESC DATE:ZZ22 DAILY PMT');
+  perform pg_temp.paso('inicio', 'select null::jsonb');
+  perform pg_temp.paso('gasto_freno', format($q$select fn_bandeja_hacer(%L, 'gasto', '{"cuenta":"7100"}', '{"fuente":"mas"}')$q$, pg_temp.mov('oc1')));`, true);
+{
+  const [a, b] = guiones.prestamista, nuevas = a.despues.nuevas || [], dep = nuevas.find(x => Number(x.monto) > 0), car = nuevas.find(x => Number(x.monto) < 0);
+  const td = dep && a.despues.leer.tarjetas[dep.movimiento_id], tc = car && a.despues.leer.tarjetas[car.movimiento_id];
+  if (!dep || !td || td.sabe !== 'prestamista' || !(dep.opciones || []).some(o => o.llamar === 'fn_banco_cobrar') || !td.rec || td.rec.accion !== 'prestamo')
+    throw new Error('guion prestamista: el depósito del prestamista debía traer opciones de cobro del banco, saberse de un prestamista y recomendarse como préstamo: ' + JSON.stringify([dep && dep.opciones, td]).slice(0, 600));
+  if (!car || !tc || tc.sabe !== 'prestamista' || !tc.rec || tc.rec.accion || !/cuota de un préstamo/i.test(tc.rec.aviso || '') || tc.rec.pill !== 'Cuota de un préstamo') throw new Error('guion prestamista: el cargo hacia el prestamista debía avisarse (es su cuota), sin recomendar un gasto: ' + JSON.stringify(tc).slice(0, 500));
+  if (b.resp.hecho !== false || b.resp.propio !== true || !b.resp.freno || b.resp.pide_motivo !== true || !/cuota de un préstamo/.test(b.resp.por_que || '')) throw new Error('guion prestamista: registrarlo como un gasto debía frenar (propio): ' + JSON.stringify(b.resp).slice(0, 400));
+}
 console.log(`  ${Object.keys(guiones).length} guiones: ${Object.entries(guiones).map(([k, v]) => `${k} (${v.length})`).join(', ')}`);
+
+// (cuarta vuelta) LO QUE SE REGISTRA POR EL CAMINO DE ANTES dentro de «Más opciones» («Otra cosa… → clasificarlo a una cuenta»: la
+// puerta de siempre del banco) y la Bandeja ANOTA después (fn_bandeja_anotar con {fuente: "mas"}: no toca el libro): queda en «Lo que
+// contestaste estos días», con su texto llano, y se puede deshacer
+const masViejo = (() => {
+  const [cl, sinRastro, an, l, q, des] = pedir([
+    { sql: `select fn_banco_clasificar('${ids.kl1}', '[{"cuenta": "6500"}]'::jsonb, null)` },
+    { quien: 'editor', sql: `select to_jsonb((select count(*) from bandeja_hechos h where h.movimiento_id = '${ids.kl1}'))` },
+    { sql: `select fn_bandeja_anotar('${ids.kl1}', ${j({ fuente: 'mas' })})` }, LEER, IDS,
+    { sql: `select fn_bandeja_deshacer((select h.id from bandeja_hechos h where h.movimiento_id = '${ids.kl1}' and h.deshecho_el is null), 'no era eso')` }]);
+  sano(cl, 'el camino de antes: clasificar'); sano(an, 'el camino de antes: anotar'); sano(des, 'el camino de antes: deshacer');
+  if (Number(sinRastro) !== 0 || an.hecho !== true || an.recordado || !/^Es un gasto de «Oficina y software»: \$45\.00\.$/.test(an.texto || '') || !(l.recientes || []).some(h => h.hecho_id === an.hecho_id) || q.includes(ids.kl1) || des.deshecho !== true)
+    throw new Error('el camino de antes: clasificar no debía dejar rastro en la Bandeja, y anotarlo sí (en llano, y con su «Deshacer»): ' + JSON.stringify([sinRastro, an, des]).slice(0, 500));
+  return { movimiento: ids.kl1, clasificar: cl, anotar: an, despues: { ids: q, leer: resto(l) } };
+})();
+console.log('  el camino de antes («Otra cosa…»), anotado por la Bandeja');
 
 // LA CADENA de lo que entra solo (una sola transacción: cada paso ve lo del anterior)
 const cadena = (() => {
@@ -591,7 +733,17 @@ const fiscal = (() => {
       throw new Error(`fiscal: las comidas debían salir en la línea ${linea} con su nota y su aviso: ` + JSON.stringify(a));
   }
   if (!etq || Object.keys(etq).length < 5) throw new Error('fiscal: las vistas de los estados debían traer sus nombres en inglés: ' + JSON.stringify(etq));
-  return { anio, leer: l, paquete: p, a_1120s: { resp: f, leer: l2, paquete: p2 }, confirmada: { resp: c, leer: l3, paquete: p3 }, fuera: { anio: anio - 1, paquete: pf }, etiquetas: etq };
+  // (cuarta vuelta) LA BALANZA DEL SEGUNDO EJERCICIO: el libro no postea asientos de cierre, así que en el año siguiente el resultado
+  // de este va en un renglón aparte de la balanza (no es una cuenta), con él la balanza suma 0 y es la de los estados, y el paquete
+  // lo explica arriba. Y la balanza de este año, con sus totales
+  const [ps] = pedir([{ sql: `select fn_fiscal_paquete(${anio + 1}, null)` }]);
+  sano(ps, 'fiscal siguiente');
+  const comp = (ps.trial_balance || []).filter(x => !x.account), tt = ps.trial_balance_totals || {}, suma = k => (ps.trial_balance || []).reduce((s2, x) => s2 + Math.round(Number(x[k] || 0) * 100), 0);
+  if (!comp.length || !comp.every(x => x.level === 'component' && x.name && x.note && x.tax_line) || tt.balanced !== true || suma('ending') !== 0 || suma('beginning') !== 0 || Number(tt.ending) !== 0
+      || !(ps.warnings || []).some(w => /^NO CLOSING ENTRIES ARE POSTED/.test(w)) || (ps.trial_balance || []).filter(x => x.account).reduce((s2, x) => s2 + Math.round(Number(x.ending || 0) * 100), 0) === 0)
+    throw new Error('fiscal: el paquete del año siguiente debía traer el renglón del resultado de años anteriores (sin él las cuentas no suman 0), sus totales en cero y su aviso: ' + JSON.stringify([comp, tt]).slice(0, 600));
+  if (!p.trial_balance_totals || p.trial_balance_totals.balanced !== true || (p.trial_balance || []).some(x => !x.account)) throw new Error('fiscal: la balanza del primer año debía cuadrar sin renglones de más: ' + JSON.stringify(p.trial_balance_totals));
+  return { anio, leer: l, paquete: p, a_1120s: { resp: f, leer: l2, paquete: p2 }, confirmada: { resp: c, leer: l3, paquete: p3 }, fuera: { anio: anio - 1, paquete: pf }, siguiente: { anio: anio + 1, paquete: ps }, etiquetas: etq };
 })();
 console.log('  lo fiscal: el paquete con el 1120, con el 1120-S y confirmado');
 
@@ -600,7 +752,7 @@ const out = {
   que: 'La base simulada de la Bandeja nueva (c17) y de las cuentas en inglés (c18), sacada del banco de pruebas por pruebas/conta/f19-capturar.js: cada respuesta es la que dio la base, como el dueño.',
   capturado: psql('select fn_fecha_miami(now())').trim(), plantilla: PLANTILLA,
   huellas: { 'docs/conta/c17-bandeja.sql': huella('docs/conta/c17-bandeja.sql'), 'docs/conta/c18-fiscal.sql': huella('docs/conta/c18-fiscal.sql'), [SEMILLA]: huella(SEMILLA) },
-  dueno: DUENO, ids, propuesta_ia: propIA, cuentas, proyectos, bandeja, leer, facturas, validar, sueltas, grupo_depositos: grupoDep, guiones, cadena, dimelo, ia_aprobar: iaAprobar, ia_mas: iaMas, partes, fiscal
+  dueno: DUENO, ids, propuesta_ia: propIA, cuentas, proyectos, bandeja, leer, facturas, validar, sueltas, grupo_depositos: grupoDep, guiones, cadena, dimelo, ia_aprobar: iaAprobar, ia_mas: iaMas, mas_viejo: masViejo, partes, fiscal
 };
 const texto = JSON.stringify(out, null, 1);
 const sinIds = texto.replace(/casa-perez-k3m9|oficina-nch-7xq2|taller-ruiz-5b2n/g, '');

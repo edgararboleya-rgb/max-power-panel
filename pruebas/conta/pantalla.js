@@ -3215,7 +3215,9 @@ const llamadas = [], lecturas = []; // lecturas: cada GET a /rest/v1/<vista>?…
 // (segunda vuelta) y la contestación de una llamada que se PIERDE por el camino (la base la aplicó; la pantalla no la recibe)
 // (tercera vuelta) la Bandeja leída POR PARTES (lo que no dio tiempo vuelve en «faltan»), y lo que tarda en contestar una parte
 // (fn_bandeja_leer con {ids}) o el «Dímelo» (para mirar la pantalla mientras tanto)
-Object.assign(estado, { c17: false, c17Bloqueado: false, c17FnVieja: false, c18: false, c17Corta: null, c17Partes: false, c17ParteMs: 0, c17DimeloMs: 0, c17Apagada: false });
+// (cuarta vuelta) una función de la base que falla UNA vez con el corte por tiempo de la API (c17Falla: {fn, veces}), y lo que tarda
+// en contestar un «Así es» (c17HacerMs), para mirar la pantalla mientras tanto
+Object.assign(estado, { c17: false, c17Bloqueado: false, c17FnVieja: false, c18: false, c17Corta: null, c17Partes: false, c17ParteMs: 0, c17DimeloMs: 0, c17Apagada: false, c17Falla: null, c17HacerMs: 0 });
 // ---- (fase 19) LA BANDEJA NUEVA (c17) Y LAS CUENTAS EN INGLÉS (c18): la base simulada es la del banco ----
 // No hay una mentira escrita a mano para lo que la base contesta: pantalla-f19.json lo saca f19-capturar.js del banco de pruebas
 // (un clon de g16a con las capas del árbol, c17, c18 y f19-semilla.sql; cada respuesta, como el dueño). Aquí solo se lleva la
@@ -3230,9 +3232,9 @@ const sha1corto = f => require('crypto').createHash('sha1').update(fs.readFileSy
 const F19_VIEJA = Object.keys(F19.huellas).filter(f => F19.huellas[f] !== sha1corto(f));
 // (segunda vuelta) LOS GUIONES (F19.guiones): varios pasos seguidos del banco en una sola transacción (el recibo que llega después,
 // la tanda de un grupo, lo ya contestado). b19Guion(nombre) pone la escena al principio de uno; cada llamada que le toca avanza un paso
-const B19 = { despues: null, paso: 0, llega: false, fiscal: 'inicio', guion: null, pasoG: 0, rechazadas: new Set(), aprobada: null, extra: null };
-function b19Reset() { B19.despues = null; B19.aprobada = null; B19.extra = null; B19.paso = 0; B19.llega = false; B19.fiscal = 'inicio'; B19.guion = null; B19.pasoG = 0; B19.rechazadas.clear(); estado.c17Bloqueado = false; estado.c17FnVieja = false; estado.c17Corta = null;
-  estado.c17Partes = false; estado.c17ParteMs = 0; estado.c17DimeloMs = 0; estado.c17Apagada = false; }
+const B19 = { despues: null, paso: 0, llega: false, fiscal: 'inicio', guion: null, pasoG: 0, rechazadas: new Set(), aprobada: null, extra: null, clasificado: null };
+function b19Reset() { B19.despues = null; B19.aprobada = null; B19.extra = null; B19.clasificado = null; B19.paso = 0; B19.llega = false; B19.fiscal = 'inicio'; B19.guion = null; B19.pasoG = 0; B19.rechazadas.clear(); estado.c17Bloqueado = false; estado.c17FnVieja = false; estado.c17Corta = null;
+  estado.c17Partes = false; estado.c17ParteMs = 0; estado.c17DimeloMs = 0; estado.c17Apagada = false; estado.c17Falla = null; estado.c17HacerMs = 0; }
 function b19Guion(nombre) { const g = F19.guiones[nombre]; B19.guion = nombre; B19.pasoG = 0; B19.despues = null; if (g[0].paso === 'inicio') { B19.despues = g[0].despues; B19.pasoG = 1; } }
 const b19PasoG = nombre => { const g = F19.guiones[B19.guion], p = g && g[B19.pasoG]; if (!p || p.paso !== nombre) return null; B19.pasoG += 1; B19.despues = p.despues; return p.resp; };
 const NO_FN = fn => ({ status: 404, error: { code: 'PGRST202', message: `Could not find the function public.${fn} in the schema cache`, details: null, hint: null } });
@@ -3240,7 +3242,11 @@ const b19Falta = que => ({ status: 400, error: { code: 'F19', message: `pantalla
 const b19Leer = () => ({ ...F19.leer, ...(B19.despues ? B19.despues.leer : {}) });
 // (las filas de después: las de la cadena vienen enteras; las de un guion, las del principio que siguen y las que llegaron en él)
 // (B19.extra: un movimiento que LLEGA del banco por otro lado mientras Edgar contesta: lo trae la lectura siguiente)
-const b19Filas = () => (!B19.despues ? F19.bandeja : B19.despues.filas || F19.bandeja.concat(B19.despues.nuevas || []).filter(f => B19.despues.ids.includes(f.movimiento_id))).concat(B19.extra || []);
+// (cuarta vuelta) «nuevas» trae también las filas que un guion CAMBIÓ (con una segunda tarjeta dada de alta, el pago de la tarjeta pasa
+// a tener tres opciones del banco): van en lugar de las del principio
+const b19Filas = () => { if (!B19.despues) return F19.bandeja.concat(B19.extra || []); if (B19.despues.filas) return B19.despues.filas.concat(B19.extra || []);
+  const nuevas = B19.despues.nuevas || [], cambian = new Set(nuevas.map(f => f.movimiento_id));
+  return F19.bandeja.filter(f => !cambian.has(f.movimiento_id)).concat(nuevas).filter(f => B19.despues.ids.includes(f.movimiento_id)).concat(B19.extra || []); };
 const mismos = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every(x => b.includes(x));
 // las propuestas de la IA de antes (c8) que la escena aprueba por su puerta y la Bandeja anota
 const b19IA = () => [F19.ia_aprobar, ...Object.values(F19.ia_mas || {})];
@@ -3259,11 +3265,17 @@ function b19Rpc(fn, a) {
     return Array.isArray(p.ids) ? parteDe(b19Leer(), p.ids) : b19Leer();
   }
   if (fn === 'fn_bandeja_facturas') return F19.facturas;
+  // (cuarta vuelta) un botón de «Lo que dice el banco»: la base dice en llano qué es esa opción (por su huella), antes de registrar nada
+  if (fn === 'fn_bandeja_validar' && B19.guion === 'boton_banco' && a.p_accion === 'banco') {
+    const t = b19Leer().tarjetas[a.p_movimiento];
+    if (!t || !Array.isArray(t.ops) || t.ops[Number(d.opcion)] !== d.huella || Number(d.opcion) !== 0) return b19Falta('validar una opción del banco que no es la primera de ese movimiento, o con otra huella');
+    return b19PasoG('validar') || b19Falta('el guion del botón del banco ya había pasado por validar');
+  }
   if (fn === 'fn_bandeja_validar') return a.p_movimiento === F19.ids.hd3 && a.p_accion === 'gasto' && d.proyecto_id === 'oficina-nch-7xq2' ? F19.validar : { ok: false, falta: 'f19: sin capturar' };
   if (fn === 'fn_bandeja_solo') {
     // (segunda vuelta) el recibo que llegó después: la rutina lo mira (tercera vuelta: no cambia ninguno; los deja todos a la vista)
     // (tercera vuelta) y el cargo que llega después de deshacer la decisión que puso «que entre solo»: espera
-    if (B19.guion === 'recibos' || (B19.guion === 'tanda_solo' && B19.llega)) { const r = b19PasoG('solo'); if (r) { B19.llega = false; return r; } }
+    if (B19.guion === 'recibos' || B19.guion === 'recibos2' || (B19.guion === 'tanda_solo' && B19.llega)) { const r = b19PasoG('solo'); if (r) { B19.llega = false; return r; } }
     // el cargo que llega después de la regla «que entre solo» (la cadena: «llega» y «entra_solo»); y, tercera vuelta, el que llega
     // después de deshacer lo que entró solo («llega2» y «no_entra»: la regla se apagó)
     if (B19.llega && F19.cadena[B19.paso] && /^llega/.test(F19.cadena[B19.paso].paso)) { const sig = F19.cadena[B19.paso].paso === 'llega' ? 'entra_solo' : 'no_entra'; B19.paso += 1; B19.llega = false; return b19Paso(sig); }
@@ -3272,7 +3284,26 @@ function b19Rpc(fn, a) {
   if (fn === 'fn_bandeja_hacer') {
     const g = B19.guion ? F19.guiones[B19.guion] : null, pg = g && g[B19.pasoG];
     // (segunda vuelta) «Llegó su recibo»: qué cargo y qué botón, por la huella de la opción que la pantalla leyó
-    if (B19.guion === 'recibos' && a.p_accion === 'banco') {
+    // (cuarta vuelta) «¿cuál es?»: la opción elegida, por su huella (la de la tarjeta Gold: la que se capturó)
+    if (B19.guion === 'elige' && a.p_movimiento === F19.ids.tj1 && a.p_accion === 'banco') {
+      const o = (b19Leer().tarjetas[F19.ids.tj1].rec.elige || []).find(x => x.huella === d.huella && Number(x.opcion) === Number(d.opcion));
+      if (!o || !/Gold/.test(o.boton) || op.fuente !== 'recomendacion') return b19Falta('elige: solo se capturó la opción de la tarjeta Gold, por la recomendación');
+      return b19PasoG('hacer') || b19Falta('el guion de «¿cuál es?» ya había registrado');
+    }
+    // (cuarta vuelta) un botón de «Lo que dice el banco», por la Bandeja (con la huella de lo que se leyó y «mas»)
+    if (B19.guion === 'boton_banco' && a.p_accion === 'banco') {
+      const t = b19Leer().tarjetas[a.p_movimiento];
+      if (!t || !Array.isArray(t.ops) || t.ops[0] !== d.huella || Number(d.opcion) !== 0 || op.fuente !== 'mas') return b19Falta('boton_banco: se capturó la primera opción de ese movimiento, por «Más opciones»');
+      return b19PasoG('hacer') || b19Falta('el guion del botón del banco no iba por registrar');
+    }
+    // (cuarta vuelta) deshacer para corregir: el «Así es» de antes (con «Recordarlo»)
+    if ((B19.guion === 'deshecha' || B19.guion === 'olvida') && a.p_movimiento === F19.ids.ww1 && a.p_accion === 'gasto' && pg && pg.paso === 'hacer') return b19PasoG('hacer');
+    // (cuarta vuelta) lo que sale hacia un prestamista, registrado como un gasto: frena (el freno es de la Bandeja)
+    if (B19.guion === 'prestamista' && a.p_accion === 'gasto' && pg && pg.paso === 'gasto_freno') {
+      if (op.recordar || op.motivo || d.cuenta !== '7100') return b19Falta('prestamista: se capturó el gasto de intereses, sin recordar y sin porqué');
+      return pg.resp;
+    }
+    if ((B19.guion === 'recibos' || B19.guion === 'recibos2') && a.p_accion === 'banco') {
       const r = (b19Leer().recibos || []).find(x => x.movimiento_id === a.p_movimiento), o = r && (r.opciones || []).find(x => x.huella === d.huella && Number(x.opcion) === Number(d.opcion));
       if (!o || !pg) return b19Falta(`recibos: ${a.p_movimiento} con esa opción no está en lo que la pantalla leyó`);
       const quiere = o.es === 'otra' ? (op.motivo ? 'otra_visto' : 'otra_freno') : pg.paso === 'recibo_suelto' ? 'recibo_suelto' : 'recibo';
@@ -3317,11 +3348,19 @@ function b19Rpc(fn, a) {
     // (tercera vuelta) lo que la IA de antes registró y la Bandeja anotó: deshecho, vuelve a la Bandeja y trae la propuesta para caducarla
     const ia = b19IA().find(x => x.anotar.hecho_id === a.p_hecho);
     if (ia) { B19.despues = { ids: F19.bandeja.map(f => f.movimiento_id), leer: ia.deshacer.leer }; return ia.deshacer.resp; }
+    // (cuarta vuelta) deshacer para corregir: sin «olvida» (lo deshecho no se propone otra vez) y con ella (lo recordado se da de baja)
+    if (B19.guion === 'deshecha' || B19.guion === 'olvida') {
+      if ((op.olvida === true) !== (B19.guion === 'olvida') || 'deja_solo' in op) return b19Falta(`deshacer en el guion «${B19.guion}» con otras opciones: ${JSON.stringify(op)}`);
+      return b19PasoG('deshacer') || b19Falta('el guion ya había deshecho');
+    }
     if (op.deja_solo === false) return b19Falta('deshacer con deja_solo: false no se capturó en la cadena');
     return b19Paso('deshacer') || b19Falta('deshacer fuera de la cadena');
   }
   // (tercera vuelta) lo que la IA de antes (c8) registró al aprobar su propuesta, anotado en la Bandeja (y lo que se recuerda con ello)
   if (fn === 'fn_bandeja_anotar') {
+    // (cuarta vuelta) lo que se registró por el camino de antes dentro de «Más opciones» («Otra cosa… → clasificarlo»), anotado
+    if (op.fuente === 'mas' && a.p_movimiento === F19.mas_viejo.movimiento && B19.clasificado === a.p_movimiento) { B19.despues = F19.mas_viejo.despues; return F19.mas_viejo.anotar; }
+    if (op.fuente === 'mas') return { hecho: false, movimiento_id: a.p_movimiento, por_que: 'Ese movimiento no quedó registrado.' };
     const ia = b19IA().find(x => x.movimiento === a.p_movimiento && B19.aprobada === x.propuesta);
     if (!ia) return b19Falta('fn_bandeja_anotar de un movimiento que la IA de antes no acaba de aprobar');
     B19.despues = ia.despues;
@@ -3377,7 +3416,8 @@ function f19Rpc(fn, a) {
   const f = F19.fiscal, de = B19.fiscal === 'inicio' ? f : f[B19.fiscal];
   if (fn === 'fn_fiscal_leer') return de.leer;
   // (segunda vuelta) un año que la app no lleva: el paquete sale vacío y lo dice
-  if (fn === 'fn_fiscal_paquete') return Number(a.p_anio) === f.fuera.anio ? f.fuera.paquete : de.paquete;
+  // (cuarta vuelta) y el del año siguiente: la balanza del segundo ejercicio (con el renglón del resultado de años anteriores)
+  if (fn === 'fn_fiscal_paquete') return Number(a.p_anio) === f.fuera.anio ? f.fuera.paquete : Number(a.p_anio) === f.siguiente.anio ? f.siguiente.paquete : de.paquete;
   if (fn === 'fn_fiscal_forma') {
     const p = a.p || {};
     if (p.forma === '1120-S') { B19.fiscal = 'a_1120s'; return f.a_1120s.resp; }
@@ -3511,6 +3551,8 @@ function rpc(fn, a, auth) {
   // (fase 9) las funciones de c10: sin c10 pegado, PostgREST no las encuentra
   if (C10_FN[fn]) return estado.c10 ? C10_FN[fn](a) : { status: 404, error: { code: 'PGRST202', message: `Could not find the function public.${fn} in the schema cache`, details: null, hint: null } };
   if (estado.fallar && /^fn_banco_(casar_con|clasificar|transferencia|ignorar|duplicado)$/.test(fn)) return { error: { code: 'MX008', message: 'La base dijo que no (prueba)' } };
+  // (fase 19, cuarta vuelta) «Otra cosa… → clasificarlo a una cuenta» en la tarjeta nueva: lo que contestó la puerta de siempre del banco
+  if (estado.c17 && fn === 'fn_banco_clasificar' && a.p_movimiento === F19.mas_viejo.movimiento) { B19.clasificado = a.p_movimiento; return F19.mas_viejo.clasificar; }
   if (fn === 'fn_banco_control') {
     const hoy = hoyMiami(), desde = hoy.slice(0, 8) + '01';
     const cuenta = v => v === 'v_banco_bandeja' ? tabla('v_banco_bandeja', new URLSearchParams()).filter(f => f.fecha <= hoy).length
@@ -3800,6 +3842,11 @@ async function simular(ctx, rol) {
       const r = rpc(fn, args, req.headers()['authorization'] || '');
       // (fase 19, segunda vuelta) la contestación que se pierde: la base ya hizo lo suyo y a la pantalla no le llega nada
       if (estado.c17Corta && estado.c17Corta === fn) { estado.c17Corta = null; return route.abort('failed'); }
+      // (fase 19, cuarta vuelta) el corte por tiempo de la API en una función (57014), las veces que se pidan
+      if (estado.c17Falla && estado.c17Falla.fn === fn && estado.c17Falla.veces > 0) { estado.c17Falla.veces -= 1;
+        return route.fulfill({ status: 500, headers: CORS, contentType: 'application/json', body: JSON.stringify({ code: '57014', message: 'canceling statement due to statement timeout', details: null, hint: null }) }); }
+      // (fase 19, cuarta vuelta) un «Así es» que tarda en contestar
+      if (fn === 'fn_bandeja_hacer' && estado.c17HacerMs && !(r && r.error)) return new Promise(listo => setTimeout(listo, estado.c17HacerMs)).then(() => route.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify(r) }));
       if (r && r.error) return route.fulfill({ status: r.status || 400, headers: CORS, contentType: 'application/json', body: JSON.stringify(r.error) });
       if (r === null) return route.fulfill({ status: 204, headers: CORS });
       // (fase 19, tercera vuelta) una parte de la Bandeja nueva que tarda en llegar: la pantalla ya está pintada con lo que hay
@@ -3869,6 +3916,14 @@ const espiar = pg => pg.evaluate(() => { window.__pag = window.__pag || []; wind
 // lotes del banco, la cadena de lo que entra solo (la regla, el cargo que llega, «Registrado solo», «Deshacer», apagarlo, olvidarlo)
 // y el teléfono a 390 px; y con c18, los estados con los nombres en inglés (y el enlace para verlos en español), «Para el contador»
 // con su aviso de «pendiente de confirmar», el cambio al 1120-S, la confirmación y las descargas.
+// (Cuarta vuelta, 22-nov) Una comprobación por arreglo de lo que encontró la tercera revisión: el aviso de la app (un toque en él no
+// llega a lo que tapa; arriba en el teléfono; un párrafo de ancho en la computadora), el pago de la tarjeta con dos tarjetas del mismo
+// banco (se pregunta cuál), los botones de «Lo que dice el banco» por la Bandeja (y lo del camino de antes, anotado), el depósito y el
+// cargo de un prestamista, lo recordado que se ve en la tarjeta siguiente del mismo comercio («Mirándolo…» y solo ellas), la pantalla
+// que se queda en los grupos, el recibo en el otro orden, un fallo de la relectura que no tapa la página, deshacer para corregir (y
+// olvidar lo recordado), la obra de cada compra del grupo, la franja de la IA de antes debajo y discreta, la tarjeta sin jerga; y en
+// lo fiscal, la balanza con sus totales y con el renglón de los años anteriores (el segundo ejercicio), los avisos del paquete en los
+// CSV y los apartados de los estados en dos renglones en el teléfono.
 async function escenaF19(b, errs) {
   const ID = F19.ids, T0 = F19.leer.tarjetas;
   const conCodigo = si => { estado.mfaFactores = si ? [{ id: 'f-1', friendly_name: 'Teléfono de Edgar', factor_type: 'totp', status: 'verified' }] : []; estado.sesionAal = si ? 'aal2' : undefined; };
@@ -3887,6 +3942,24 @@ async function escenaF19(b, errs) {
   const ultima = (n0, fn) => desde(n0).filter(l => l.fn === fn).pop();
   const cuantas = (n0, fn) => desde(n0).filter(l => l.fn === fn).length;
   const tostada = q => plano(q, '#toast');
+  // (cuarta vuelta) UN TOQUE EN EL CENTRO DEL AVISO CON UN BOTÓN DE VERDAD DEBAJO: el «Así es» de la tarjeta abierta de `k`, llevado
+  // (desplazando la página: el aviso no se mueve) a donde está el aviso. Devuelve dónde se tocó, qué había arriba y debajo, y qué pasó
+  const toqueEnAviso = async (q, k, tactil) => {
+    const cw = await fila(q, ID[k]);
+    const pos = await q.evaluate(id => {
+      const av = document.getElementById('toast'), t = av.getBoundingClientRect(), b = document.querySelector(`.ct-mov[data-id="${id}"] [data-bn-asi]`);
+      const y0 = t.top + t.height / 2, r0 = b.getBoundingClientRect();
+      window.scrollBy(0, (r0.top + r0.height / 2) - y0);
+      const r = b.getBoundingClientRect(), x = Math.round(Math.max(t.left + 8, Math.min(t.right - 8, r.left + r.width / 2))), y = Math.round(y0), pila = document.elementsFromPoint(x, y);
+      return { x, y, ancho: Math.round(t.width), arribaPx: Math.round(t.top), abajoPx: Math.round(t.bottom), ven: [window.innerWidth, window.innerHeight], debajo: r.left <= x && x <= r.right && r.top <= y && y <= r.bottom,
+        arriba: pila[0] ? pila[0].id || String(pila[0].className) : '', enLaPila: pila.includes(b), toques: getComputedStyle(av).pointerEvents };
+    }, ID[k]);
+    const nT = llamadas.length;
+    if (tactil) await q.touchscreen.tap(pos.x, pos.y); else await q.mouse.click(pos.x, pos.y);
+    await q.waitForTimeout(500);
+    const tras = await q.evaluate(() => ({ oculto: document.getElementById('toast').hidden, dialogos: document.querySelectorAll('dialog[open]').length }));
+    return { pos, tras, llamo: desde(nT).map(x => x.fn), sigue: (await esta(q, k)) === 1 && (await cw.locator('[data-bn-asi]').count()) === 1 };
+  };
   // la Bandeja otra vez como al principio (la base de mentira y lo que la pantalla recuerda de la sesión)
   // (la base simulada vuelve al principio: lo que la página recuerda de esta sesión —las propuestas de la IA de antes que ya cerró— también)
   const reinicio = async q => { b19Reset(); await q.evaluate(() => { const s = window.MXP_CONTA._estado; s.bn.dim.clear(); s.bn.frases.clear(); s.bn.mas.clear(); s.bn.grupoAbierto = null; s.bj.abierta = null; s.bj.grupo = null;
@@ -3964,8 +4037,8 @@ async function escenaF19(b, errs) {
     ok('«Así es»: UNA llamada a fn_bandeja_hacer con el movimiento, la acción «gasto», su cuenta y «recomendación · recordar» (la base valida y registra por la puerta del banco)',
       cuantas(n0, 'fn_bandeja_hacer') === 1 && l.args.p_movimiento === ID.ww1 && l.args.p_accion === 'gasto' && l.args.p_datos.cuenta === '6300' && l.args.p_opciones.fuente === 'recomendacion' && l.args.p_opciones.recordar === true && l.args.p_opciones.solo === undefined && /aal2/.test(Buffer.from(l.auth.split('.')[1] || '', 'base64url').toString()),
       JSON.stringify(l && l.args).slice(0, 200));
-    ok('…el aviso dice lo que quedó («Registrado: Es un gasto de «Camioneta y gasolina»: $62.00 · asiento … · lo recordaré para WAWA») y el cargo sale de la Bandeja',
-      /^Registrado: Es un gasto de «Camioneta y gasolina»: \$62\.00 · asiento 2026-\d+ · lo recordaré para WAWA$/.test(await tostada(q)) && (await esta(q, 'ww1')) === 0, await tostada(q));
+    ok('…el aviso dice lo que quedó, en llano («Registrado: Es un gasto de «Camioneta y gasolina»: $62.00 · lo recordaré para WAWA»; cuarta vuelta: sin el número del asiento, que a Edgar no le dice nada) y el cargo sale de la Bandeja',
+      /^Registrado: Es un gasto de «Camioneta y gasolina»: \$62\.00 · lo recordaré para WAWA$/.test(await tostada(q)) && (await esta(q, 'ww1')) === 0, await tostada(q));
     ok('…y la tarjeta SIGUIENTE de la lista queda abierta (se contesta una detrás de otra, sin volver a buscar)',
       (await q.locator('.ct-mov.abierta').count()) === 1 && (await q.locator('.ct-mov.abierta').getAttribute('data-id')) === F19.bandeja[F19.bandeja.findIndex(f => f.movimiento_id === ID.ww1) + 1].movimiento_id, await q.locator('.ct-mov.abierta .ct-f-desc b').textContent().catch(() => 'ninguna'));
     ok('…y en la franja aparece «Lo que contestaste estos días» (con «Deshacer») y «Lo que recuerdo»',
@@ -4007,8 +4080,8 @@ async function escenaF19(b, errs) {
     await tocar(q, c.locator('[data-bn-asi]'));
     l = ultima(n0, 'fn_bandeja_hacer');
     ok('…«Así es» lo manda como «prestamo» con su prestamista (nunca como el cobro de una factura)', !!l && l.args.p_accion === 'prestamo' && /OnDeck/.test(l.args.p_datos.prestamista || '') && cuantas(n0, 'fn_banco_cobrar') === 0 && (await esta(q, 'od1')) === 0);
-    ok('(segunda vuelta) …y LO DEL CONTROL de la Bandeja se ve en la app, en llano: registrado un préstamo sin dar de alta, la franja lo avisa («…todavía no está dado de alta en la app. Hay que darlo de alta una vez, con su contrato…»), sin nombres de funciones ni de vistas',
-      (await q.locator('#ct-bn-franja [data-bn-control="70"]').count()) === 1 && /todavía no está dado de alta en la app\. Hay que darlo de alta una vez, con su contrato/.test(await plano(q, '#ct-bn-franja [data-bn-control="70"]')) && sinJerga(await plano(q, '#ct-bn-franja [data-bn-control="70"]')), await plano(q, '#ct-bn-franja').then(t => t.slice(0, 200)));
+    ok('(segunda vuelta) …y LO DEL CONTROL de la Bandeja se ve en la app, en llano: registrado un préstamo sin dar de alta, la franja lo avisa y (cuarta vuelta) dice qué hacer DE VERDAD: en la app no hay dónde darlo de alta («…todavía no está dado de alta en la app. Darlo de alta no se hace desde aquí: pídeselo a quien te lleva la app… Mientras tanto no se pierde nada: sus cuotas se te preguntan una a una…»), sin nombres de funciones ni de vistas',
+      (await q.locator('#ct-bn-franja [data-bn-control="70"]').count()) === 1 && /todavía no está dado de alta en la app\. Darlo de alta no se hace desde aquí: pídeselo a quien te lleva la app \(una vez, con su contrato\)\. Mientras tanto no se pierde nada: sus cuotas se te preguntan una a una/.test(await plano(q, '#ct-bn-franja [data-bn-control="70"]')) && sinJerga(await plano(q, '#ct-bn-franja [data-bn-control="70"]')), await plano(q, '#ct-bn-franja').then(t => t.slice(0, 200)));
     await reinicio(q);
     c = await fila(q, ID.in1);
     const recI = T0[ID.in1].rec;
@@ -4044,9 +4117,9 @@ async function escenaF19(b, errs) {
     let la = ultima(n0, 'fn_bandeja_anotar');
     ok('…«Así es» la aprueba por SU función de siempre (la función «contador», «aprobar» con esa propuesta: ella registra, aprende su regla y cuenta su acierto), no por fn_bandeja_hacer',
       !!l && l.args.propuesta === F19.propuesta_ia && l.args.recordar === true && !('proyecto_id' in l.args) && cuantas(n0, 'contador:aprobar') === 1 && cuantas(n0, 'fn_bandeja_hacer') === 0 && (await esta(q, 'fe1')) === 0, await tostada(q));
-    ok('(tercera vuelta) …y DESPUÉS la Bandeja ANOTA ese registro (fn_bandeja_anotar con el movimiento y lo que Edgar dejó en «Recordarlo»: no toca el libro): el aviso es el de cualquier «Así es» («Registrado: Es un gasto de «Herramienta menor y uniformes»: $88.40 · asiento … · lo recordaré para ZZ FERRETERIA CENTRAL»), no el de la IA de antes («Así es: en el libro · regla nueva…»)',
+    ok('(tercera vuelta) …y DESPUÉS la Bandeja ANOTA ese registro (fn_bandeja_anotar con el movimiento y lo que Edgar dejó en «Recordarlo»: no toca el libro): el aviso es el de cualquier «Así es» («Registrado: Es un gasto de «Herramienta menor y uniformes»: $88.40 · lo recordaré para ZZ FERRETERIA CENTRAL»), no el de la IA de antes («Así es: en el libro · regla nueva…»)',
       !!la && cuantas(n0, 'fn_bandeja_anotar') === 1 && la.args.p_movimiento === ID.fe1 && la.args.p_opciones.recordar === true && la.args.p_opciones.solo === false && desde(n0).findIndex(x => x.fn === 'contador:aprobar') < desde(n0).findIndex(x => x.fn === 'fn_bandeja_anotar')
-      && /^Registrado: Es un gasto de «Herramienta menor y uniformes»: \$88\.40 · asiento 2026-\d+ · lo recordaré para ZZ FERRETERIA CENTRAL$/.test(await tostada(q)), await tostada(q));
+      && /^Registrado: Es un gasto de «Herramienta menor y uniformes»: \$88\.40 · lo recordaré para ZZ FERRETERIA CENTRAL$/.test(await tostada(q)), await tostada(q));
     const hIA = q.locator(`#ct-bn-recientes [data-bn-hecho="${IA1.anotar.hecho_id}"]`);
     ok('…y esa respuesta QUEDA EN «LO QUE CONTESTASTE ESTOS DÍAS» con su «Deshacer», y en «Lo que recuerdo» (antes no dejaba rastro en la Bandeja: con el mismo botón, unas respuestas se podían deshacer y otras no)',
       (await hIA.count()) === 1 && (await hIA.locator('[data-bn-deshacer]').count()) === 1 && /Herramienta menor y uniformes/.test(await hIA.textContent()) && /Lo que recuerdo · 1 comercio o persona/.test(await plano(q, '#ct-bn-mem > summary')), await plano(q, '#ct-bn-recientes').then(t => t.slice(0, 200)));
@@ -4071,7 +4144,7 @@ async function escenaF19(b, errs) {
     l = ultima(n0, 'contador:aprobar'); la = ultima(n0, 'fn_bandeja_anotar');
     ok('…«Así es» con «que lo siguiente entre solo»: aprobada por su función y anotada con recordar y solo; la Bandeja lo recuerda («…lo recordaré para ZZ CINE CLUB (lo siguiente entra solo)»)',
       !!l && l.args.propuesta === IA2.propuesta && !!la && la.args.p_movimiento === ID.ia2 && la.args.p_opciones.recordar === true && la.args.p_opciones.solo === true && (await esta(q, 'ia2')) === 0
-      && /^Registrado: Es tuyo, no de la empresa: \$17\.99 que salen como retiro tuyo \(no es un gasto del negocio\) · asiento 2026-\d+ · lo recordaré para ZZ CINE CLUB \(lo siguiente entra solo\)$/.test(await tostada(q)), await tostada(q));
+      && /^Registrado: Es tuyo, no de la empresa: \$17\.99 que salen como retiro tuyo \(no es un gasto del negocio\) · lo recordaré para ZZ CINE CLUB \(lo siguiente entra solo\)$/.test(await tostada(q)), await tostada(q));
     await reinicio(q);
     c = await fila(q, ID.ia3);
     const obrasIA = await c.locator('[data-bn-caja="rec"] [data-bn-obra] option').evaluateAll(os => os.map(o => o.value));
@@ -4081,9 +4154,9 @@ async function escenaF19(b, errs) {
     n0 = llamadas.length;
     await tocar(q, c.locator('[data-bn-asi]'));
     l = ultima(n0, 'contador:aprobar'); la = ultima(n0, 'fn_bandeja_anotar');
-    ok('…«Así es» manda a la IA de antes LA OBRA QUE SE VE en la tarjeta (sin ella, su puerta pondría la de su propuesta), la Bandeja lo anota, y por detrás solo se relee la otra tarjeta de esa ferretería',
+    ok('…«Así es» manda a la IA de antes LA OBRA QUE SE VE en la tarjeta (sin ella, su puerta pondría la de su propuesta), la Bandeja lo anota, y (cuarta vuelta) como quedó recordado, la otra tarjeta de esa ferretería se pide EN EL MOMENTO (ella sola: {ids}) y, por detrás, solo las listas de la franja (sin tarjetas)',
       !!l && l.args.propuesta === IA3.propuesta && l.args.proyecto_id === 'oficina-nch-7xq2' && !!la && la.args.p_movimiento === ID.ia3 && (await esta(q, 'ia3')) === 0 && /^Registrado: Es un gasto de «Material» de la obra ZZ Oficina Norte: \$412\.60/.test(await tostada(q))
-      && cuantas(n0, 'fn_bandeja_leer') === 1 && mismos(ultima(n0, 'fn_bandeja_leer').args.p.ids, [ID.fe1]) && (await q.locator('[data-bn-grupo="C:ZZ FERRETERIA CENTRAL"]').count()) === 0, `${await tostada(q)} · ${JSON.stringify(desde(n0).filter(x => x.fn === 'fn_bandeja_leer').map(x => x.args))}`);
+      && cuantas(n0, 'fn_bandeja_leer') === 2 && mismos(desde(n0).filter(x => x.fn === 'fn_bandeja_leer')[0].args.p.ids, [ID.fe1]) && JSON.stringify(ultima(n0, 'fn_bandeja_leer').args.p) === '{"ids":[]}' && (await q.locator('[data-bn-grupo="C:ZZ FERRETERIA CENTRAL"]').count()) === 0, `${await tostada(q)} · ${JSON.stringify(desde(n0).filter(x => x.fn === 'fn_bandeja_leer').map(x => x.args))}`);
 
     // -- «DÍMELO CON TUS PALABRAS» --
     await reinicio(q);
@@ -4184,8 +4257,9 @@ async function escenaF19(b, errs) {
     c = await fila(q, ID.dp1);
     await c.locator('[data-bn-mas] > summary').click(); await q.waitForTimeout(150);
     const grupos = sel => sel.locator('optgroup').evaluateAll(gs => gs.map(g => g.label));
-    ok('«Más opciones» de un depósito: la lista en dos niveles (Cobro de obra · Otros ingresos · Préstamo o aporte · Entre tus cuentas) y, debajo, «Lo que dice el banco» con sus botones de siempre',
-      JSON.stringify(await grupos(c.locator('[data-bn-cat-sel]'))) === JSON.stringify(['Cobro de obra', 'Otros ingresos', 'Préstamo o aporte', 'Entre tus cuentas']) && await c.locator('.ct-bn-viejo .ct-texto').isVisible() && (await c.locator('.ct-bn-viejo [data-op]').count()) >= 1 && await c.locator('[data-otra]').isVisible(),
+    ok('«Más opciones» de un depósito: la lista en dos niveles (Cobro de obra · Otros ingresos · Préstamo o aporte · Entre tus cuentas) y, debajo, «Lo que dice el banco» con sus botones (cuarta vuelta: los que la Bandeja sabe registrar van por ella —data-bn-op—, y NINGUNO es el botón principal: la suposición del banco no es la respuesta)',
+      JSON.stringify(await grupos(c.locator('[data-bn-cat-sel]'))) === JSON.stringify(['Cobro de obra', 'Otros ingresos', 'Préstamo o aporte', 'Entre tus cuentas']) && await c.locator('.ct-bn-viejo .ct-texto').isVisible() && (await c.locator('.ct-bn-viejo [data-bn-op]').count()) === F19.bandeja.find(f => f.movimiento_id === ID.dp1).opciones.length
+      && (await c.locator('.ct-bn-viejo [data-op]').count()) === 0 && (await c.locator('.ct-bn-viejo .ct-acciones > .accion:not(.secundaria)').count()) === 0 && await c.locator('[data-otra]').isVisible(),
       JSON.stringify(await grupos(c.locator('[data-bn-cat-sel]'))));
     n0 = llamadas.length;
     await c.locator('[data-bn-cat-sel]').selectOption('cobro/factura'); await esperarLlamada(q, n0, 'fn_bandeja_facturas'); await q.waitForTimeout(300);
@@ -4292,11 +4366,11 @@ async function escenaF19(b, errs) {
     ok('(segunda vuelta) «Lo que dice el banco» no enseña órdenes de SQL a medias: de «…desde el SQL Editor (select fn_…(\'{…}\'); …)» no queda ni la orden ni su paréntesis roto (antes se quitaba solo el nombre de la función y quedaba «select (\'4456\', …);»)',
       /Dinero a la cuenta ····4456, que no conozco/.test(viejoCd) && !/select|fn_|SQL Editor|\(\s*'|\{"|;\)/.test(viejoCd) && /select fn_/.test(F19.bandeja.find(f => f.movimiento_id === ID.cd1).texto), viejoCd.slice(0, 700));
     {
-      const ops = (await c.locator('.ct-bn-viejo [data-op]').allTextContents()).map(x => x.trim()), crudas = F19.bandeja.find(f => f.movimiento_id === ID.cd1).opciones.map(o => o.texto);
+      const ops = (await c.locator('.ct-bn-viejo [data-op], .ct-bn-viejo [data-bn-op]').allTextContents()).map(x => x.trim()), crudas = F19.bandeja.find(f => f.movimiento_id === ID.cd1).opciones.map(o => o.texto);
       const it = await fila(q, ID.it1); await it.locator('[data-bn-mas] > summary').click(); await q.waitForTimeout(150);
-      const opsIt = (await it.locator('.ct-bn-viejo [data-op]').allTextContents()).map(x => x.trim());
+      const opsIt = (await it.locator('.ct-bn-viejo [data-op], .ct-bn-viejo [data-bn-op]').allTextContents()).map(x => x.trim());
       const dp = await fila(q, ID.zl1); await dp.locator('[data-bn-mas] > summary').click(); await q.waitForTimeout(150);
-      const opsZl = (await dp.locator('.ct-bn-viejo [data-op]').allTextContents()).map(x => x.trim());
+      const opsZl = (await dp.locator('.ct-bn-viejo [data-op], .ct-bn-viejo [data-bn-op]').allTextContents()).map(x => x.trim());
       const sinCodigo = t => !/\b\d{4}(-\d{4})?\b/.test(String(t).replace(/····\d{4}/g, '').replace(/#[A-Z0-9-]+/g, '').replace(/\d[\d,]*\.\d\d/g, ''));
       ok('(tercera vuelta) LOS BOTONES DE «LO QUE DICE EL BANCO» (dentro de «Más opciones») YA NO TRAEN CÓDIGOS DE CUENTA: «Intereses · 7100» es «Intereses»; «A 1030 (Reserva de impuestos)» es «A Reserva de impuestos»; «…distribución · 3200 (con su motivo)» pierde el código; y la obra de una factura sale por su nombre («Factura #ZZ-103 (ZZ Patio Sur)»), no por su clave',
         crudas.filter(t => /\b(1030|3200|1130|2900)\b/.test(t)).length === 4 && ops.length === 4 && ops.every(sinCodigo) && ops.includes('A Reserva de impuestos (con su motivo)') && ops.some(t => /^Para Edgar \(¿su cuenta personal\? ····4456, sin dar de alta\): distribución \(con su motivo\)$/.test(t))
@@ -4329,8 +4403,10 @@ async function escenaF19(b, errs) {
     ok('…«Así es» NO manda la frase como motivo (ni huella): la puerta del banco frena, nada se registra, y la tarjeta dice por qué («El banco no dice que esto sea un traspaso… Si de verdad es un traspaso, escribe por qué.») y enseña dónde contestarle',
       !!l && !('motivo' in l.args.p_opciones) && !('visto' in l.args.p_opciones) && (await esta(q, 'tr1')) === 1 && (await c.locator('[data-bn-caja="dim"] [data-bn-freno]').textContent()).trim() === D.traspaso.aprobar_freno.por_que
       && /El banco no dice que esto sea un traspaso entre tus cuentas/.test(D.traspaso.aprobar_freno.por_que) && sinJerga(D.traspaso.aprobar_freno.por_que) && await c.locator('[data-bn-caja="dim"] [data-bn-motivo]').isVisible(), JSON.stringify(l && l.args.p_opciones));
-    ok('(tercera vuelta) …y la caja del porqué sale YA ESCRITA con lo que Edgar había dicho (la base lo devuelve como sugerencia: no tiene que escribirlo otra vez; lo lee junto al freno, lo cambia si quiere y vuelve a tocar). La frase sola no levanta el freno: hace falta ese segundo toque, con la huella',
-      D.traspaso.aprobar_freno.sugerido === D.traspaso.frase && (await c.locator('[data-bn-caja="dim"] [data-bn-motivo]').inputValue()) === D.traspaso.frase && cuantas(n0, 'fn_bandeja_aprobar') === 1, await c.locator('[data-bn-caja="dim"] [data-bn-motivo]').inputValue());
+    ok('(cuarta vuelta) …y LA CAJA DEL PORQUÉ SALE VACÍA: lo que Edgar dijo en «Dímelo» ANTES de leer este freno no es su respuesta al freno (antes salía ya escrito, y un segundo toque sin leer levantaba cualquier freno). La base lo devuelve como «ejemplo» (no «sugerido») y la pantalla lo deja en gris, de recordatorio («Antes dijiste: «…». Si aun así es eso, escribe aquí por qué.»)',
+      D.traspaso.aprobar_freno.ejemplo === D.traspaso.frase && !('sugerido' in D.traspaso.aprobar_freno) && (await c.locator('[data-bn-caja="dim"] [data-bn-motivo]').inputValue()) === ''
+      && (await c.locator('[data-bn-caja="dim"] [data-bn-motivo]').getAttribute('placeholder')) === `Antes dijiste: «${D.traspaso.frase}». Si aun así es eso, escribe aquí por qué.` && cuantas(n0, 'fn_bandeja_aprobar') === 1,
+      `${await c.locator('[data-bn-caja="dim"] [data-bn-motivo]').inputValue()} · ${await c.locator('[data-bn-caja="dim"] [data-bn-motivo]').getAttribute('placeholder')}`);
     await c.locator('[data-bn-caja="dim"] [data-bn-motivo]').fill('es el apartado de los impuestos del trimestre');
     n0 = llamadas.length;
     await tocar(q, c.locator('[data-bn-ia-asi]'));
@@ -4416,12 +4492,13 @@ async function escenaF19(b, errs) {
     l = ultima(n0, 'fn_bandeja_grupo');
     ok('…«Así es para los 4»: una llamada con la acción, la cuenta, sus cuatro movimientos y «recordar»; entran los dos del día de una sola obra y los otros dos se quedan (el aviso, corto: lo que se quedó queda escrito en el grupo)',
       !!l && cuantas(n0, 'fn_bandeja_grupo') === 1 && l.args.p_clave === 'C:HOME DEPOT' && l.args.p_accion === 'gasto' && l.args.p_datos.cuenta === '5100' && !('proyecto_id' in l.args.p_datos) && l.args.p_opciones.movimientos.length === 4 && l.args.p_opciones.recordar === true && !('solo' in l.args.p_opciones) && !('motivo' in l.args.p_opciones)
-      && /^HOME DEPOT: 2 registrados por \$334\.47 · 2 se quedan \(está dicho en el grupo\) · recordado$/.test(await tostada(q)) && (await esta(q, 'hd1')) + (await esta(q, 'hd2')) === 0 && (await esta(q, 'hd3')) + (await esta(q, 'hd4')) === 2, await tostada(q));
-    ok('(tercera vuelta) …sin leer la Bandeja entera otra vez ni repintarla: salen las dos tarjetas registradas y, por detrás, UNA lectura por partes de las tarjetas de ese comercio (las que quedan) y la de los movimientos del banco',
-      cuantas(n0, 'fn_bandeja_leer') === 1 && mismos(ultima(n0, 'fn_bandeja_leer').args.p.ids, [ID.hd3, ID.hd4]) && (await q.locator('#ct-bj-lista .ct-mov').count()) === F19.bandeja.length - 2, JSON.stringify(desde(n0).filter(x => x.fn === 'fn_bandeja_leer').map(x => x.args)));
-    ok('(tercera vuelta) EL GRUPO QUE NO ENTRÓ ENTERO SIGUE, Y DICE QUÉ FALTA: queda abierto con sus dos movimientos, con lo que se quedó escrito dentro («2 quedaron registrados. 2 se quedaron sin registrar: Falta decir de qué obra es… Elige aquí abajo la obra para todos, o «Verlos uno por uno».») y ya NO ofrece «la del día de cada uno», que no puede avanzar: pide una obra para los dos',
-      await g.evaluate(d => d.open) && (await g.locator('[data-bn-g-lista] li').count()) === 2 && /^2 quedaron registrados\. 2 se quedaron sin registrar: Falta decir de qué obra es: «Material» va siempre a una obra\. Elige aquí abajo la obra para todos, o «Verlos uno por uno»\.$/.test((await g.locator('[data-bn-g-quedo]').textContent()).trim())
-      && /les falta la obra/.test(await g.locator('.ct-bn-t').textContent()) && (await g.locator('[name="bn_obra"][required]').count()) === 1 && /Elige la obra…/.test(await g.locator('[name="bn_obra"] option').first().textContent()) && (await g.locator('[data-bn-g-falta-obra]').count()) === 1 && (await g.locator('[data-bn-g-asi]').textContent()).trim() === 'Así es para los 2',
+      && /^HOME DEPOT: 2 registrados por \$334\.47 como «Material» · 2 se quedan \(está dicho en el grupo\) · recordado$/.test(await tostada(q)) && (await esta(q, 'hd1')) + (await esta(q, 'hd2')) === 0 && (await esta(q, 'hd3')) + (await esta(q, 'hd4')) === 2, await tostada(q));
+    ok('(tercera vuelta) …sin leer la Bandeja entera otra vez ni repintarla: salen las dos tarjetas registradas; (cuarta vuelta) las tarjetas de ese comercio que quedan se piden EN EL MOMENTO (ellas solas: quedó recordado) y, por detrás, las listas de la franja (sin tarjetas) y los movimientos del banco',
+      cuantas(n0, 'fn_bandeja_leer') === 2 && mismos(desde(n0).filter(x => x.fn === 'fn_bandeja_leer')[0].args.p.ids, [ID.hd3, ID.hd4]) && JSON.stringify(ultima(n0, 'fn_bandeja_leer').args.p) === '{"ids":[]}' && (await q.locator('#ct-bj-lista .ct-mov').count()) === F19.bandeja.length - 2, JSON.stringify(desde(n0).filter(x => x.fn === 'fn_bandeja_leer').map(x => x.args)));
+    ok('(tercera vuelta) EL GRUPO QUE NO ENTRÓ ENTERO SIGUE, Y DICE QUÉ FALTA: queda abierto con sus dos movimientos, con lo que se quedó escrito dentro y ya NO ofrece «la del día de cada uno», que no puede avanzar: pide una obra para los dos. (Cuarta vuelta) QUE FALTA LA OBRA SE DICE UNA VEZ (antes, tres seguidas): lo dice el titular del grupo, que viene de la base («…A estos les falta la obra: ese día la cuadrilla no estuvo en una sola. Elige la obra para todos, o contéstalos uno por uno.»); lo que se quedó solo se cuenta («2 quedaron registrados. 2 se quedaron sin registrar: lo que les falta está aquí abajo.») y la nota de debajo de la lista de obras ya no lo repite',
+      await g.evaluate(d => d.open) && (await g.locator('[data-bn-g-lista] li').count()) === 2 && /^2 quedaron registrados\. 2 se quedaron sin registrar: lo que les falta está aquí abajo\.$/.test((await g.locator('[data-bn-g-quedo]').textContent()).trim())
+      && /les falta la obra/.test(await g.locator('.ct-bn-t').textContent()) && ((await plano(q, '[data-bn-grupo="C:HOME DEPOT"] .ct-bn-g-c')).match(/falta la obra|Falta decir de qué obra/g) || []).length === 1
+      && (await g.locator('[name="bn_obra"][required]').count()) === 1 && /Elige la obra…/.test(await g.locator('[name="bn_obra"] option').first().textContent()) && (await g.locator('[data-bn-g-falta-obra]').count()) === 0 && (await g.locator('[data-bn-g-asi]').textContent()).trim() === 'Así es para los 2',
       (await plano(q, '[data-bn-grupo="C:HOME DEPOT"] .ct-bn-g-c')).slice(0, 300));
     await q.locator('#ct-bn-mem').evaluate(d => { d.open = true; }); await q.waitForTimeout(150);
     ok('(tercera vuelta) …y en «Lo que recuerdo», lo de Home Depot (que va a una obra) NO ofrece la casilla «entra solo» —la base la rechazaría: qué obra fue no lo sabe una regla— y lo dice («lo de una obra no entra solo»)',
@@ -4438,7 +4515,7 @@ async function escenaF19(b, errs) {
     await tocar(q, g.locator('[data-bn-g-asi]'));
     l = ultima(n0, 'fn_bandeja_grupo');
     ok('…con la obra elegida para los dos, entran: el grupo desaparece y sus tarjetas salen de la lista',
-      !!l && l.args.p_datos.proyecto_id === 'oficina-nch-7xq2' && mismos(l.args.p_opciones.movimientos, [ID.hd3, ID.hd4]) && /^HOME DEPOT: 2 registrados por \$1,396\.75 · recordado · Se deshacen juntos en «Lo que contestaste estos días»\.$/.test(await tostada(q))
+      !!l && l.args.p_datos.proyecto_id === 'oficina-nch-7xq2' && mismos(l.args.p_opciones.movimientos, [ID.hd3, ID.hd4]) && /^HOME DEPOT: 2 registrados por \$1,396\.75 como «Material» · recordado · Se deshacen juntos en «Lo que contestaste estos días»\.$/.test(await tostada(q))
       && (await q.locator('[data-bn-grupo="C:HOME DEPOT"]').count()) === 0 && (await esta(q, 'hd3')) + (await esta(q, 'hd4')) === 0, await tostada(q));
     // -- (segunda vuelta) LOS GRUPOS: uno mezclado, los depósitos de uno en uno, y deshacer una decisión entera --
     await reinicio(q);
@@ -4487,7 +4564,7 @@ async function escenaF19(b, errs) {
         !!l && l.args.p_accion === 'gasto' && l.args.p_datos.cuenta === '6400' && mismos(l.args.p_opciones.movimientos, [ID.fe1, ID.ia3]) && rz.length === 2
         && !!igual && igual.args.motivo === 'Edgar lo registró en la Bandeja con la misma categoría que proponía la IA (por otro camino)'
         && !!otra && otra.args.motivo === 'Edgar lo contestó de otra forma en la Bandeja'
-        && /^ZZ FERRETERIA CENTRAL: 2 registrados por \$501\.00 · recordado · Se deshacen juntos en «Lo que contestaste estos días»\.$/.test(await tostada(q))
+        && /^ZZ FERRETERIA CENTRAL: 2 registrados por \$501\.00 como «Herramienta menor y uniformes» · recordado · Se deshacen juntos en «Lo que contestaste estos días»\.$/.test(await tostada(q))
         && (await esta(q, 'fe1')) + (await esta(q, 'ia3')) === 0 && (await q.locator('[data-bn-grupo="C:ZZ FERRETERIA CENTRAL"]').count()) === 0,
         `${await tostada(q)} · ${JSON.stringify(rz.map(x => x.args.motivo))}`);
     }
@@ -4500,7 +4577,7 @@ async function escenaF19(b, errs) {
     await dosToques(q, g.locator('[data-bn-g-asi]'));
     const TA = F19.guiones.tanda[0].resp;
     ok('(segunda vuelta) Home Depot, «Así es para los 4» con UNA obra para todos (y dos toques seguidos: una sola llamada): entran los cuatro, y el aviso dice dónde se deshacen juntos',
-      cuantas(n0, 'fn_bandeja_grupo') === 1 && ultima(n0, 'fn_bandeja_grupo').args.p_datos.proyecto_id === 'oficina-nch-7xq2' && /^HOME DEPOT: 4 registrados por \$1,731\.22 · recordado · Se deshacen juntos en «Lo que contestaste estos días»\.$/.test(await tostada(q)) && (await esta(q, 'hd1')) + (await esta(q, 'hd2')) + (await esta(q, 'hd3')) + (await esta(q, 'hd4')) === 0, await tostada(q));
+      cuantas(n0, 'fn_bandeja_grupo') === 1 && ultima(n0, 'fn_bandeja_grupo').args.p_datos.proyecto_id === 'oficina-nch-7xq2' && /^HOME DEPOT: 4 registrados por \$1,731\.22 como «Material» · recordado · Se deshacen juntos en «Lo que contestaste estos días»\.$/.test(await tostada(q)) && (await esta(q, 'hd1')) + (await esta(q, 'hd2')) + (await esta(q, 'hd3')) + (await esta(q, 'hd4')) === 0, await tostada(q));
     const td = q.locator(`#ct-bn-recientes [data-bn-tanda="${TA.tanda}"]`);
     ok('…«Lo que contestaste estos días» (ya desplegado) enseña ESA DECISIÓN como una sola cosa («HOME DEPOT → «Material»» · 4 movimientos que contestaste de una vez · $1,731.22) con «Deshacer los 4», y dentro cada movimiento con su «Deshacer»',
       await q.locator('#ct-bn-recientes').evaluate(d => d.open) && (await td.count()) === 1 && /HOME DEPOT → «Material».*1,731\.22/.test(await td.locator('.ct-bn-hecho-cab').first().textContent()) && /4 movimientos que contestaste de una vez/.test(await td.textContent()) && (await td.locator('[data-bn-tanda-deshacer]').textContent()).trim() === 'Deshacer los 4'
@@ -4509,7 +4586,7 @@ async function escenaF19(b, errs) {
     n0 = llamadas.length;
     const tdf = td.locator('> .ct-form');
     await tdf.locator('button[type="submit"]').click(); await q.waitForTimeout(150);
-    ok('…«Deshacer los 4» pide UN porqué para todos: sin él no llama a nada (y, como ese comercio no tiene una regla «que entre solo», no pregunta por ella)', cuantas(n0, 'fn_bandeja_deshacer_tanda') === 0 && /sus asientos se reversan \(no se borran\) y vuelven todos a la Bandeja/.test(await tdf.textContent()) && (await tdf.locator('[name="deja_solo"]').count()) === 0);
+    ok('…«Deshacer los 4» pide UN porqué para todos: sin él no llama a nada (y, como ese comercio no tiene una regla «que entre solo», no pregunta por ella)', cuantas(n0, 'fn_bandeja_deshacer_tanda') === 0 && /lo registrado se anula \(queda escrito que se anuló\) y vuelven todos a la Bandeja/.test(await tdf.textContent()) && !/asiento|reversa/.test(await tdf.textContent()) && (await tdf.locator('[name="deja_solo"]').count()) === 0);
     await tdf.locator('textarea[name="motivo"]').fill('me equivoqué de obra');
     await tdf.locator('button[type="submit"]').click(); await esperarLlamada(q, n0, 'fn_bandeja_deshacer_tanda'); await pintado(q); await q.waitForTimeout(200);
     l = ultima(n0, 'fn_bandeja_deshacer_tanda');
@@ -4531,7 +4608,7 @@ async function escenaF19(b, errs) {
     await tocar(q, g.locator('[data-bn-g-asi]'));
     l = ultima(n0, 'fn_bandeja_grupo');
     ok('Netflix, «Así es para los 2» con «Y que lo siguiente de NETFLIX entre solo» marcado: la llamada lleva «personal», sus dos movimientos, recordar y solo',
-      !!l && l.args.p_clave === 'C:NETFLIX' && l.args.p_accion === 'personal' && l.args.p_opciones.solo === true && l.args.p_opciones.recordar === true && l.args.p_opciones.movimientos.length === 2 && /^NETFLIX: 2 registrados por \$30\.98 · recordado: lo siguiente entra solo · Se deshacen juntos en «Lo que contestaste estos días»\.$/.test(await tostada(q)), await tostada(q));
+      !!l && l.args.p_clave === 'C:NETFLIX' && l.args.p_accion === 'personal' && l.args.p_opciones.solo === true && l.args.p_opciones.recordar === true && l.args.p_opciones.movimientos.length === 2 && /^NETFLIX: 2 registrados por \$30\.98 como «Es mío, no de la empresa» · recordado: lo siguiente entra solo · Se deshacen juntos en «Lo que contestaste estos días»\.$/.test(await tostada(q)), await tostada(q));
     ok('…la franja lo dice: «Lo que recuerdo · 1 comercio o persona · 1 entra solo» y «Lo que contestaste estos días · 2 movimientos»; todavía nada «Registrado solo»',
       /1 comercio o persona · 1 entra solo/.test(await plano(q, '#ct-bn-mem > summary')) && /2 movimientos/.test(await plano(q, '#ct-bn-recientes > summary')) && (await q.locator('#ct-bn-solos').count()) === 0);
     // llega otro cargo de Netflix: al abrir la Bandeja, la rutina lo registra sola
@@ -4547,7 +4624,8 @@ async function escenaF19(b, errs) {
     await h.locator('[data-bn-deshacer]').click(); await q.waitForTimeout(150);
     n0 = llamadas.length;
     await h.locator('.ct-form button[type="submit"]').click(); await q.waitForTimeout(150);
-    ok('«Deshacer» pide por qué (queda escrito): sin motivo no llama a nada', cuantas(n0, 'fn_bandeja_deshacer') === 0 && /reversa \(no se borra\)/.test(await h.locator('.ct-form').textContent()));
+    ok('«Deshacer» pide por qué (queda escrito): sin motivo no llama a nada; y (cuarta vuelta) lo dice en llano («lo registrado se anula (queda escrito que se anuló)», el monto con su signo de verdad: «−$15.49»), sin «asiento» ni «se reversa»',
+      cuantas(n0, 'fn_bandeja_deshacer') === 0 && /\(−\$15\.49\): lo registrado se anula \(queda escrito que se anuló\)/.test(await h.locator('.ct-form').textContent()) && !/asiento|reversa/.test(await h.locator('.ct-form').textContent()), (await h.locator('.ct-form').textContent()).slice(0, 200));
     ok('(segunda vuelta) …y, como ese cargo entró solo por una regla que sigue encendida, PREGUNTA si lo de ese comercio deja de entrar solo («Y que lo siguiente de NETFLIX deje de entrar solo…», marcado)',
       await h.locator('.ct-form [name="deja_solo"]').isChecked() && /Y que lo siguiente de NETFLIX deje de entrar solo \(te lo propongo y tú tocas «Así es»\)/.test(await h.locator('.ct-form .ct-bn-deja-solo').textContent()));
     await h.locator('.ct-form textarea[name="motivo"]').fill('no era mío: fue una compra de la oficina');
@@ -4556,7 +4634,7 @@ async function escenaF19(b, errs) {
     l = ultima(n0, 'fn_bandeja_deshacer');
     c = q.locator(`.ct-mov[data-id="${nf3}"]`);
     ok('…con el motivo (y dos toques seguidos): UNA llamada a fn_bandeja_deshacer con ese registro; el cargo vuelve a la Bandeja con su tarjeta abierta y dicho que ya no entra solo; «Registrado solo» queda vacío',
-      !!l && cuantas(n0, 'fn_bandeja_deshacer') === 1 && l.args.p_hecho === solo1.hecho_id && l.args.p_motivo === 'no era mío: fue una compra de la oficina' && (await c.count()) === 1 && (await c.locator('.ct-mov-fila').getAttribute('aria-expanded')) === 'true' && /ya no entra solo, te lo pregunto/.test(await c.locator('[data-bn-deshecho]').textContent()) && (await q.locator('#ct-bn-solos').count()) === 0);
+      !!l && cuantas(n0, 'fn_bandeja_deshacer') === 1 && l.args.p_hecho === solo1.hecho_id && l.args.p_motivo === 'no era mío: fue una compra de la oficina' && (await c.count()) === 1 && (await c.locator('.ct-mov-fila').getAttribute('aria-expanded')) === 'true' && /Como lo deshiciste, no te lo propongo otra vez/.test(await c.locator('[data-bn-deshecha]').textContent()) && (await q.locator('#ct-bn-solos').count()) === 0);
     ok('(tercera vuelta) …y, con la casilla marcada, LA REGLA LA APAGA LA BASE en esa misma llamada (sin opciones: es lo de fábrica; ninguna llamada aparte a lo recordado, que podía fallar y dejarla encendida), y el aviso lo dice («Deshecho… Y lo de NETFLIX ya no entra solo: te lo propongo.»)',
       !!l && !('p_opciones' in l.args) && cuantas(n0, 'fn_bandeja_memoria') === 0 && F19.cadena.find(p => p.paso === 'deshacer').resp.solo_apagado === 'NETFLIX' && /^Deshecho: el movimiento volvió a la Bandeja\. Y lo de NETFLIX ya no entra solo: te lo propongo\.$/.test(await tostada(q)), await tostada(q));
     // llega OTRO cargo de Netflix después de deshacer: la regla está apagada, así que espera
@@ -4678,6 +4756,281 @@ async function escenaF19(b, errs) {
       !!l && l.args.p.proc === 'INTUIT' && Number(l.args.p.pct) === 2.99 && l.args.p_todo === true && /^Olvidada esa tarifa de Intuit: la vuelvo a aprender del próximo cobro que confirmes\.$/.test(await tostada(q)) && (await q.locator('#ct-bn-tarifas').count()) === 0, await tostada(q));
     await reinicio(q);
 
+    // ============ (cuarta vuelta, 22-nov-2026) LO QUE ENCONTRÓ LA TERCERA REVISIÓN, en la computadora ============
+    {
+      // -- EL AVISO: en la computadora, de ancho un párrafo como mucho; y un clic en él no pulsa lo que tapa --
+      const largo = 'HOME DEPOT: 2 registrados por $334.47 como «Material» · 2 se quedan (está dicho en el grupo) · recordado. Y este aviso sigue un poco más, bastante más, para medir su ancho en la computadora, donde antes cruzaba la pantalla de lado a lado por encima del menú.';
+      await q.evaluate(t => window.MXP_CONTA._estado.hooks.avisar(t), largo); await q.waitForTimeout(200);
+      const r = await toqueEnAviso(q, 'ww1', false);
+      ok('(cuarta vuelta) EL AVISO, EN LA COMPUTADORA, YA NO CRUZA TODA LA PANTALLA: un aviso largo ocupa como mucho un párrafo de ancho (44rem) y parte en renglones',
+        r.pos.ancho <= 44 * 16 + 2 && r.pos.ancho < r.pos.ven[0] * 0.7, JSON.stringify(r.pos));
+      ok('(cuarta vuelta) UN CLIC EN EL AVISO, CON UN «ASÍ ES» DEBAJO, NO REGISTRA NADA (computadora, donde el aviso sigue abajo): el clic se queda en el aviso, lo quita, y no llama a ninguna función de la base. En la tercera vuelta el aviso dejaba pasar el toque (pointer-events: none) y pulsaba el botón tapado',
+        r.pos.debajo && r.pos.enLaPila && r.pos.arriba === 'toast' && r.pos.toques !== 'none' && r.tras.oculto === true && r.llamo.length === 0 && r.sigue, `${JSON.stringify(r.pos)} · ${JSON.stringify(r.tras)} · ${r.llamo.join(',')}`);
+      await q.evaluate(() => window.scrollTo(0, 0));
+    }
+
+    // -- LA TARJETA, SIN JERGA: ni el tipo del banco ni por dónde entró; «Lo que dice el banco», en llano --
+    await reinicio(q);
+    c = await fila(q, ID.ww1);
+    await c.locator('[data-bn-mas] > summary').click(); await q.waitForTimeout(150);
+    {
+      const meta = await plano(q, `.ct-mov[data-id="${ID.ww1}"] .ct-meta`), viejoW = await plano(q, `.ct-mov[data-id="${ID.ww1}"] .ct-bn-viejo .ct-texto`), crudo = F19.bandeja.find(f => f.movimiento_id === ID.ww1);
+      ok('(cuarta vuelta) LA TARJETA NUEVA YA NO ENSEÑA EL TIPO DEL BANCO NI POR DÓNDE ENTRÓ («hace 6 días · DEBIT · entró por plaid» es ahora «hace 6 días»); y «Lo que dice el banco» sale sin su jerga («Sin ticket ni asiento… entra por su puente y casa sola» → «No tiene recibo ni nada en el libro que lo explique… súbela a su obra: este cargo queda registrado solo con ella»)',
+        crudo.tipo_banco === 'DEBIT' && crudo.origen === 'plaid' && /^hace \d+ días?$/.test(meta) && /puente y casa sola/.test(crudo.texto)
+        && viejoW === 'No tiene recibo ni nada en el libro que lo explique. Si tienes la foto del recibo, súbela a su obra: este cargo queda registrado solo con ella. Si no, di de qué es.', `${meta} · ${viejoW}`);
+    }
+
+    {
+      // -- (P12b) el depósito del procesador sin facturas que cuadren: dice de quién es y qué hacer --
+      const ci = await fila(q, ID.in2);
+      ok('(cuarta vuelta) UN DEPÓSITO DEL PROCESADOR DE TARJETAS SIN FACTURAS QUE CUADREN ya no dice solo «Todavía no sé qué es este depósito»: dice de quién es y qué hacer («Es un depósito de Intuit Payments (QuickBooks): lo que tus clientes pagaron con tarjeta… No encuentro qué facturas paga. Márcalas en «Más opciones» («El pago de una factura»), o dímelo abajo.»), y su fila dice «Cobros con tarjeta»',
+        (await ci.locator('[data-bn-aviso]').textContent()).trim() === T0[ID.in2].rec.aviso && /^Es un depósito de Intuit Payments \(QuickBooks\)/.test(T0[ID.in2].rec.aviso) && /No encuentro qué facturas paga\. Márcalas en «Más opciones»/.test(T0[ID.in2].rec.aviso)
+        && (await pildora('in2')) === 'Cobros con tarjeta' && (await ci.locator('[data-bn-sin]').count()) === 0, `${await pildora('in2')} · ${await plano(q, `.ct-mov[data-id="${ID.in2}"] [data-bn-aviso]`)}`);
+    }
+
+    // -- (DL1) EL BANCO LO RECONOCE DE VARIAS FORMAS IGUAL DE VÁLIDAS: se pregunta cuál --
+    await conGuion(q, 'elige', false);
+    {
+      const EL = F19.guiones.elige[0].despues.leer.tarjetas[ID.tj1].rec, gold = EL.elige.find(o => /Gold/.test(o.boton));
+      c = await fila(q, ID.tj1);
+      ok('(cuarta vuelta) EL PAGO DE LA TARJETA CON DOS TARJETAS DEL MISMO BANCO: la tarjeta YA NO DA POR HECHA la primera opción del banco (antes: «Es el pago de tu tarjeta Amex Business Blue», con su «Así es»: dos «Así es» seguidos dejaban el pago dos veces en el libro). PREGUNTA cuál («Es el pago de una de tus tarjetas ($430.89), pero el banco no dice de cuál. ¿De cuál es?») con un botón por tarjeta, ninguno principal y sin «Así es» todavía; la píldora de la fila dice «Pago de la tarjeta»',
+        T0[ID.tj1].rec.accion === 'banco' && !EL.accion && EL.elige.length === 3 && (await c.locator('[data-bn-elige-t]').textContent()).trim() === EL.aviso
+        && JSON.stringify((await c.locator('[data-bn-elige-op]').allTextContents()).map(x => x.trim())) === JSON.stringify(EL.elige.map(o => o.boton)) && (await c.locator('[data-bn-elige-op]:not(.secundaria)').count()) === 0
+        && (await c.locator('[data-bn-asi], [data-bn-op-asi]').count()) === 0 && (await pildora('tj1')) === 'Pago de la tarjeta' && sinJerga(await c.locator('[data-bn]').innerText()),
+        `${await plano(q, `.ct-mov[data-id="${ID.tj1}"] [data-bn-elige]`)} · ${await pildora('tj1')}`);
+      n0 = llamadas.length;
+      await tocar(q, c.locator('[data-bn-elige-op]', { hasText: 'Amex Business Gold' }));
+      ok('…tocar una NO registra nada: la marca y enseña ENTERO lo que se va a registrar («Es el pago de tu tarjeta Amex Business Gold: $430.89 (sale del banco y baja lo que debes en la tarjeta).») con su «Así es» y «No es esa»',
+        desde(n0).filter(x => x.fn !== 'fn_estuve').length === 0 && (await c.locator('[data-bn-elige-caja] [data-bn-t]').textContent()).trim() === gold.texto && (await c.locator('[data-bn-elige-op][aria-pressed="true"]').textContent()).trim() === 'Amex Business Gold'
+        && (await c.locator('[data-bn-op-asi]').textContent()).trim() === 'Así es' && (await c.locator('[data-bn-op-no]').textContent()).trim() === 'No es esa', desde(n0).map(x => x.fn).join(','));
+      await tocar(q, c.locator('[data-bn-op-no]'));
+      const sinCaja = (await c.locator('[data-bn-op-asi]').count()) === 0 && (await c.locator('[data-bn-elige-op][aria-pressed="true"]').count()) === 0;
+      await tocar(q, c.locator('[data-bn-elige-op]', { hasText: 'Amex Business Gold' }));
+      n0 = llamadas.length;
+      await tocar(q, c.locator('[data-bn-op-asi]'));
+      l = ultima(n0, 'fn_bandeja_hacer');
+      ok('…«No es esa» la suelta (sin llamar a nada); y «Así es» registra LA ELEGIDA por la Bandeja, con SU opción y SU huella (fn_bandeja_hacer, «banco», recomendación): la Gold, no la primera que ordena el banco',
+        sinCaja && !!l && cuantas(n0, 'fn_bandeja_hacer') === 1 && l.args.p_movimiento === ID.tj1 && l.args.p_accion === 'banco' && l.args.p_datos.opcion === gold.opcion && l.args.p_datos.huella === gold.huella && gold.opcion !== 0
+        && l.args.p_opciones.fuente === 'recomendacion' && /^Registrado: Es el pago de tu tarjeta Amex Business Gold: \$430\.89/.test(await tostada(q)) && (await esta(q, 'tj1')) === 0, `${JSON.stringify(l && l.args).slice(0, 220)} · ${await tostada(q)}`);
+    }
+
+    // -- (DL2 · P5) LOS BOTONES DE «LO QUE DICE EL BANCO», POR LA BANDEJA --
+    await conGuion(q, 'boton_banco', false);
+    {
+      const BB = F19.guiones.boton_banco, zf = BB[0].despues.nuevas[0], tz = BB[0].despues.leer.tarjetas[zf.movimiento_id];
+      c = await fila(q, zf.movimiento_id);
+      await c.locator('[data-bn-mas] > summary').click(); await q.waitForTimeout(150);
+      const bots = (await c.locator('.ct-bn-viejo .ct-acciones > .accion').allTextContents()).map(x => x.trim());
+      ok('(cuarta vuelta) «MÁS OPCIONES → LO QUE DICE EL BANCO»: sus botones ya no son el botón principal (la suposición del banco no es la respuesta: antes el primero salía en azul) y traen los montos con su formato («quedarían $5,869.00 por cobrar», no «quedarían 5869.00»)',
+        zf.opciones[0].llamar === 'fn_banco_cobrar' && bots[0] === 'Factura #ZZ-104 (ZZ Taller Tres)' && (await c.locator('.ct-bn-viejo .ct-acciones > .accion:not(.secundaria)').count()) === 0
+        && (await c.locator('.ct-bn-viejo [data-bn-op]').count()) === zf.opciones.length && (await c.locator('.ct-bn-viejo [data-op]').count()) === 0 && bots.some(t => /quedarían \$5,869\.00 por cobrar$/.test(t)) && !bots.some(t => /quedarían \d/.test(t)), bots.slice(0, 3).join(' | '));
+      n0 = llamadas.length;
+      await c.locator('.ct-bn-viejo [data-bn-op="0"]').click(); await esperarLlamada(q, n0, 'fn_bandeja_validar'); await pintado(q); await q.waitForTimeout(200);
+      l = ultima(n0, 'fn_bandeja_validar');
+      ok('…y YA NO REGISTRAN DE UN TOQUE: el toque le pregunta a la base qué es esa opción (fn_bandeja_validar con la opción y SU HUELLA: solo lee) y lo enseña en llano («Es el cobro de la factura #ZZ-104 de ZZ Taller Tres ($1,450.75).») con «Así es» y «Cancelar». Ninguna llamada a la puerta del banco (antes: fn_banco_cobrar directo, «Hecho: casado · asiento…»)',
+        !!l && l.args.p_accion === 'banco' && l.args.p_datos.opcion === 0 && l.args.p_datos.huella === tz.ops[0] && cuantas(n0, 'fn_banco_cobrar') === 0 && cuantas(n0, 'fn_bandeja_hacer') === 0
+        && (await c.locator('.ct-form [data-bn-caja="op"] [data-bn-t]').textContent()).trim() === BB[1].resp.texto && (await c.locator('.ct-form [data-bn-op-no]').textContent()).trim() === 'Cancelar' && (await q.locator(`.ct-mov[data-id="${zf.movimiento_id}"]`).count()) === 1,
+        `${desde(n0).map(x => x.fn).join(',')} · ${await plano(q, `.ct-mov[data-id="${zf.movimiento_id}"] .ct-form`)}`);
+      n0 = llamadas.length;
+      await tocar(q, c.locator('.ct-form [data-bn-op-asi]')); await q.waitForTimeout(350);
+      l = ultima(n0, 'fn_bandeja_hacer');
+      const hz = q.locator(`#ct-bn-recientes [data-bn-hecho="${BB[2].resp.hecho_id}"]`);
+      ok('…«Así es» lo registra POR LA BANDEJA (fn_bandeja_hacer, «banco», con la huella de lo leído y «mas»; nunca la puerta del banco directa): LA FACTURA QUEDA COBRADA EN PROYECTOS (lo dice el aviso —«1 factura quedó cobrada en Proyectos»— y la base: pagada, cobrado 1,450.75; por el botón de antes quedaba «cobrada en el libro y sin marcar en la app») y el registro sale en «Lo que contestaste estos días» con su «Deshacer»',
+        !!l && cuantas(n0, 'fn_bandeja_hacer') === 1 && cuantas(n0, 'fn_banco_cobrar') === 0 && l.args.p_movimiento === zf.movimiento_id && l.args.p_accion === 'banco' && l.args.p_datos.opcion === 0 && l.args.p_datos.huella === tz.ops[0] && l.args.p_opciones.fuente === 'mas'
+        && /^Registrado: Es el cobro de la factura #ZZ-104 de ZZ Taller Tres \(\$1,450\.75\) · 1 factura quedó cobrada en Proyectos$/.test(await tostada(q)) && BB[3].resp.pagada === true && Number(BB[3].resp.cobrado) === 1450.75
+        && (await q.locator(`.ct-mov[data-id="${zf.movimiento_id}"]`).count()) === 0 && (await hz.count()) === 1 && (await hz.locator('[data-bn-deshacer]').count()) === 1, `${await tostada(q)} · ${JSON.stringify(BB[3].resp)}`);
+    }
+
+    // -- (DL2 · S4 · S1) LO QUE EL BANCO DICE DE UN PRESTAMISTA --
+    await conGuion(q, 'prestamista', false);
+    {
+      const PR = F19.guiones.prestamista, dep = PR[0].despues.nuevas.find(x => Number(x.monto) > 0), car = PR[0].despues.nuevas.find(x => Number(x.monto) < 0), tc = PR[0].despues.leer.tarjetas[car.movimiento_id];
+      c = await fila(q, dep.movimiento_id);
+      await c.locator('[data-bn-mas] > summary').click(); await q.waitForTimeout(150);
+      const cobros = dep.opciones.filter(o => o.llamar === 'fn_banco_cobrar').length;
+      ok('(cuarta vuelta) EL DEPÓSITO DE UN PRESTAMISTA CON FACTURAS MAYORES ABIERTAS: arriba «Es dinero de un préstamo de OnDeck: $4,000.00…», y en «Más opciones» el banco YA NO ofrece cobrarlo («Parte de la factura #ZZ-102…: quedarían…» registraba de un toque el préstamo como el pago de un cliente): la app sabe que es de un prestamista, no pinta ningún botón de cobro y «Lo que dice el banco» lo dice en vez de preguntar si es un pago parcial',
+        cobros >= 3 && cobros === dep.opciones.length && /^Es dinero de un préstamo de OnDeck: \$4,000\.00/.test((await c.locator('[data-bn-caja="rec"] [data-bn-t]').textContent()).trim())
+        && (await c.locator('.ct-bn-viejo [data-op], .ct-bn-viejo [data-bn-op]').count()) === 0 && !/Parte de la factura|pago parcial/.test(await plano(q, `.ct-mov[data-id="${dep.movimiento_id}"] .ct-bn-viejo`))
+        && /^El banco dice que este dinero lo deposita un prestamista: es una deuda, no el pago de un cliente\./.test(await plano(q, `.ct-mov[data-id="${dep.movimiento_id}"] .ct-bn-viejo .ct-texto`)) && /pago parcial/.test(dep.texto) && await c.locator('[data-otra]').isVisible(),
+        await plano(q, `.ct-mov[data-id="${dep.movimiento_id}"] .ct-bn-viejo`));
+      c = await fila(q, car.movimiento_id);
+      const pillCar = (await q.locator(`.ct-mov[data-id="${car.movimiento_id}"] .ct-f-motivo .ct-pill`).first().textContent()).trim();
+      ok('(cuarta vuelta) LO QUE SALE HACIA UN PRESTAMISTA ES LA CUOTA DE UN PRÉSTAMO: la tarjeta no recomienda un gasto (ni por el nombre ni por lo recordado): lo avisa en llano («Parece la cuota de un préstamo de OnDeck que todavía no está dado de alta… No es un gasto entero: una parte baja la deuda y otra son intereses…»), sin «Así es», y la fila dice «Cuota de un préstamo»',
+        (await c.locator('[data-bn-aviso]').textContent()).trim() === tc.rec.aviso && (await c.locator('[data-bn-asi]').count()) === 0 && pillCar === 'Cuota de un préstamo' && sinJerga(tc.rec.aviso), `${pillCar} · ${await plano(q, `.ct-mov[data-id="${car.movimiento_id}"] [data-bn]`)}`.slice(0, 260));
+      await c.locator('[data-bn-mas] > summary').click(); await q.waitForTimeout(150);
+      await c.locator('[data-bn-cat-sel]').selectOption('otros/intereses'); await q.waitForTimeout(150);
+      const sinRecordar = (await c.locator('[data-bn-cat] [data-bn-recordar], [data-bn-cat] [data-bn-solo]').count()) === 0;
+      n0 = llamadas.length;
+      await tocar(q, c.locator('[data-bn-cat-asi]'));
+      l = ultima(n0, 'fn_bandeja_hacer');
+      ok('…y si Edgar lo elige de la lista como un gasto («Intereses»), la tarjeta NO ofrece «Recordarlo» ni «que entre solo» (de un prestamista la base no recuerda un gasto), y «Así es» FRENA: la Bandeja dice que es la cuota de un préstamo y pide el porqué; nada se registra ni se recuerda (antes entraba al primer toque: el capital entero como gasto, y lo siguiente de ese prestamista, solo)',
+        sinRecordar && !!l && l.args.p_accion === 'gasto' && l.args.p_datos.cuenta === '7100' && !('recordar' in l.args.p_opciones) && !('solo' in l.args.p_opciones) && PR[1].resp.propio === true
+        && (await c.locator('[data-bn-cat] [data-bn-freno]').textContent()).trim() === PR[1].resp.por_que && await c.locator('[data-bn-cat] [data-bn-motivo]').isVisible() && (await c.locator('[data-bn-cat] [data-bn-motivo]').inputValue()) === ''
+        && (await q.locator(`.ct-mov[data-id="${car.movimiento_id}"]`).count()) === 1 && (await q.locator('#ct-bn-mem').count()) === 0, `${JSON.stringify(l && l.args.p_opciones)} · ${await plano(q, `.ct-mov[data-id="${car.movimiento_id}"] [data-bn-cat]`)}`.slice(0, 400));
+      // (y un comercio corriente SÍ lo ofrece: la diferencia es el prestamista)
+      const kw = await fila(q, ID.kl1);
+      await kw.locator('[data-bn-mas] > summary').click(); await q.waitForTimeout(150);
+      await kw.locator('[data-bn-cat-sel]').selectOption('otros/intereses'); await q.waitForTimeout(150);
+      ok('…(un comercio corriente, con la misma respuesta, sí ofrece «Recordarlo»: lo que cambia es que el banco nombra a un prestamista)', (await kw.locator('[data-bn-cat] [data-bn-recordar]').count()) === 1);
+    }
+
+    // -- (P5) LO QUE SE REGISTRA POR EL CAMINO DE ANTES QUEDA ANOTADO EN LA BANDEJA --
+    await reinicio(q);
+    {
+      const MV = F19.mas_viejo;
+      c = await fila(q, ID.kl1);
+      await c.locator('[data-bn-mas] > summary').click(); await q.waitForTimeout(150);
+      await c.locator('[data-otra]').click(); await q.waitForTimeout(100);
+      await c.locator('[data-que="clasificar"]').click(); await q.waitForTimeout(100);
+      await c.locator('.ct-form select[name="cuenta"]').selectOption('6500');
+      await q.evaluate(id => { document.querySelector(`.ct-mov[data-id="${id}"]`).dataset.pruebaViva = '1'; }, ID.hd1);
+      n0 = llamadas.length;
+      await c.locator('.ct-form button[type="submit"]').click(); await esperarLlamada(q, n0, 'fn_bandeja_anotar'); await pintado(q); await q.waitForTimeout(300);
+      l = ultima(n0, 'fn_bandeja_anotar');
+      const fnsV = desde(n0).map(x => x.fn), hv = q.locator(`#ct-bn-recientes [data-bn-hecho="${MV.anotar.hecho_id}"]`);
+      ok('(cuarta vuelta) LO QUE SE REGISTRA POR EL CAMINO DE ANTES («Más opciones → Otra cosa… → clasificarlo a una cuenta»: la puerta de siempre del banco) QUEDA ANOTADO EN LA BANDEJA: después de fn_banco_clasificar, fn_bandeja_anotar con {fuente: «mas»} (no toca el libro). El aviso es el de cualquier «Así es», en llano («Registrado: Es un gasto de «Oficina y software»: $45.00»; antes «Hecho: casado · asiento…»), la tarjeta sale SIN repintar la página (antes se leía y se pintaba entera) y el registro queda en «Lo que contestaste estos días» con su «Deshacer» (antes no dejaba rastro en la Bandeja)',
+        fnsV.indexOf('fn_banco_clasificar') >= 0 && fnsV.indexOf('fn_banco_clasificar') < fnsV.indexOf('fn_bandeja_anotar') && !!l && l.args.p_movimiento === ID.kl1 && l.args.p_opciones.fuente === 'mas'
+        && (await tostada(q)) === 'Registrado: Es un gasto de «Oficina y software»: $45.00' && (await esta(q, 'kl1')) === 0 && (await q.locator(`.ct-mov[data-id="${ID.hd1}"][data-prueba-viva="1"]`).count()) === 1
+        && (await hv.count()) === 1 && (await hv.locator('[data-bn-deshacer]').count()) === 1 && !/asiento/.test(await plano(q, '#ct-bn-recientes')), `${fnsV.filter(f => /clasificar|anotar/.test(f)).join(',')} · ${await tostada(q)}`);
+    }
+
+    // -- (P2) LO QUE EXPLICO SE VE EN LA TARJETA SIGUIENTE DEL MISMO COMERCIO --
+    await reinicio(q);
+    {
+      g = q.locator('[data-bn-grupo="C:HOME DEPOT"]');
+      await g.locator('summary').first().click(); await q.waitForTimeout(120);
+      await g.locator('[data-bn-g-ver]').click(); await pintado(q); await q.waitForTimeout(150);
+      const hermanos = [ID.hd2, ID.hd3, ID.hd4], DP = F19.sueltas.asi_hd_dia.despues.leer.tarjetas;
+      c = await fila(q, ID.hd1);
+      estado.c17ParteMs = 1800;
+      n0 = llamadas.length;
+      await c.locator('[data-bn-asi]').click(); await esperarLlamada(q, n0, 'fn_bandeja_leer'); await q.waitForTimeout(450);
+      const ab = q.locator('#ct-bj-lista .ct-mov.abierta'), abId = await ab.getAttribute('data-id');
+      const pills = await Promise.all(hermanos.map(id => q.locator(`.ct-mov[data-id="${id}"] .ct-f-motivo .ct-pill`).first().textContent().then(x => x.trim())));
+      const primera = desde(n0).filter(x => x.fn === 'fn_bandeja_leer')[0];
+      ok('(cuarta vuelta) LO QUE EXPLICO SE VE EN LA SIGUIENTE DEL MISMO COMERCIO («Verlos uno por uno»): contestada una de Home Depot con «Recordarlo», las demás YA NO ENSEÑAN LO DE ANTES mientras se miran (aquí la base tarda 1.8 s): sus filas dicen «Mirándolo…» y la que se abre, «Me acabas de decir qué es lo de HOME DEPOT: estoy mirando si este cargo es lo mismo…», sin «Así es» de lo de antes. Y se piden SOLO ellas ({ids}), en el momento, sin esperar a la relectura entera ni al control del banco (antes la siguiente se abría con la recomendación de antes y cambiaba sola segundos después)',
+        F19.sueltas.asi_hd_dia.resp.recordado.clave === 'C:HOME DEPOT' && hermanos.includes(abId) && pills.every(x => x === 'Mirándolo…') && (await ab.locator('[data-bn-mirando]').count()) === 1 && (await ab.locator('[data-bn-asi]').count()) === 0
+        && /^Me acabas de decir qué es lo de HOME DEPOT: estoy mirando si este cargo es lo mismo\./.test((await ab.locator('[data-bn-mirando]').textContent()).trim()) && !!primera && mismos(primera.args.p.ids, hermanos),
+        `${pills.join(',')} · ${await plano(q, '#ct-bj-lista .ct-mov.abierta [data-bn]').then(x => x.slice(0, 120))} · ${JSON.stringify(primera && primera.args)}`);
+      // Edgar empieza a escribir en esa tarjeta antes de que llegue lo nuevo
+      await ab.locator('[data-bn-frase]').fill('madera para la casa');
+      await q.waitForTimeout(2000); await pintado(q); await q.waitForTimeout(200);
+      const otras = hermanos.filter(id => id !== abId);
+      const pills2 = await Promise.all(otras.map(id => q.locator(`.ct-mov[data-id="${id}"] .ct-f-motivo .ct-pill`).first().textContent().then(x => x.trim())));
+      ok('…cuando llega lo nuevo: las cerradas ya dicen «Material»; y la abierta, que Edgar tenía A MEDIAS (escribiendo en «Dímelo»), NO se repinta debajo de su dedo: sale arriba la nota «Ya sé qué es lo de HOME DEPOT (me lo acabas de decir). Ver lo que te propongo ahora», y lo que escribía sigue (antes esa tarjeta se quedaba con lo de antes, y tenía que explicar otra vez lo que la app acababa de decir que recordaría)',
+        pills2.every(x => x === 'Material') && (await ab.locator('[data-bn-ya]').count()) === 1 && /^Ya sé qué es lo de HOME DEPOT \(me lo acabas de decir\)\. Ver lo que te propongo ahora$/.test((await plano(q, '#ct-bj-lista .ct-mov.abierta [data-bn-ya]')))
+        && (await ab.locator('[data-bn-frase]').inputValue()) === 'madera para la casa' && (await ab.locator('[data-bn-mirando]').count()) === 1, `${pills2.join(',')} · ${await plano(q, '#ct-bj-lista .ct-mov.abierta [data-bn]').then(x => x.slice(0, 160))}`);
+      await ab.locator('[data-bn-ya-ver]').click(); await q.waitForTimeout(200);
+      const ab2 = q.locator(`#ct-bj-lista .ct-mov[data-id="${abId}"]`);
+      ok('…«Ver lo que te propongo ahora» pinta esa tarjeta con lo recordado («Es un gasto de «Material»… · Ya me lo dijiste antes: HOME DEPOT → Material…») y lo que llevaba escrito en «Dímelo» sigue en su caja',
+        (await ab2.locator('[data-bn-caja="rec"] [data-bn-t]').textContent()).trim() === DP[abId].rec.texto && /^Ya me lo dijiste antes: HOME DEPOT → Material/.test((await ab2.locator('.ct-bn-por').first().textContent()).trim())
+        && (await ab2.locator('[data-bn-frase]').inputValue()) === 'madera para la casa' && (await ab2.locator('[data-bn-ya]').count()) === 0, await plano(q, `#ct-bj-lista .ct-mov[data-id="${abId}"] [data-bn]`).then(x => x.slice(0, 200)));
+      estado.c17ParteMs = 0;
+    }
+
+    // -- (P12a) «ESPERA UN MOMENTO…» SE QUITA, Y LA TARJETA QUE EDGAR ABRIÓ MIENTRAS TANTO SIGUE ABIERTA --
+    await reinicio(q);
+    {
+      estado.c17HacerMs = 1300;
+      const cA = await fila(q, ID.ww1);
+      n0 = llamadas.length;
+      await cA.locator('[data-bn-asi]').click(); await q.waitForTimeout(150);
+      const cB = await fila(q, ID.iq1);
+      await cB.locator('[data-bn-asi]').click(); await q.waitForTimeout(200);
+      const espera = (await cB.locator('[data-bn-espera]').count()) === 1 && cuantas(n0, 'fn_bandeja_hacer') === 1;
+      await q.waitForTimeout(1600); await pintado(q); await q.waitForTimeout(200);
+      ok('(cuarta vuelta) UN «ASÍ ES» MIENTRAS OTRO ESTÁ EN CAMINO dice «Espera un momento: estoy terminando lo anterior.» (y no llama a nada); y al terminar lo anterior ESA NOTA SE QUITA (antes se quedaba escrita cuando ya no había nada que esperar) y la tarjeta que Edgar abrió mientras tanto SIGUE ABIERTA (antes se le cerraba para abrir «la siguiente» de la contestada)',
+        espera && (await esta(q, 'ww1')) === 0 && (await cB.locator('[data-bn-espera]').count()) === 0 && (await q.locator('#ct-bj-lista .ct-mov.abierta').getAttribute('data-id')) === ID.iq1 && cuantas(n0, 'fn_bandeja_hacer') === 1 && !(await cB.locator('[data-bn-asi]').isDisabled()),
+        `${espera} · abierta ${await q.locator('#ct-bj-lista .ct-mov.abierta').getAttribute('data-id').catch(() => 'ninguna')}`);
+      estado.c17HacerMs = 0;
+    }
+
+    // -- (P7) UN FALLO DE LA RELECTURA DE DETRÁS QUE NO ES UN CUADRE NO TAPA LA PÁGINA --
+    await reinicio(q);
+    {
+      c = await fila(q, ID.ww1);
+      estado.c17Falla = { fn: 'fn_banco_control', veces: 1 };
+      n0 = llamadas.length;
+      await tocar(q, c.locator('[data-bn-asi]')); await esperarLlamada(q, n0, 'fn_banco_control'); await q.waitForTimeout(500);
+      const sig = q.locator('#ct-bj-lista .ct-mov.abierta');
+      ok('(cuarta vuelta) UN FALLO DE LA RELECTURA DE DETRÁS QUE NO ES UN CUADRE (aquí, el control del banco cortado por tiempo: 57014) YA NO TAPA LA PÁGINA: antes toda la Bandeja se cambiaba por el rojo «La base no contestó bien · canceling statement due to statement timeout · Reintentar» mientras Edgar ya estaba en la tarjeta siguiente, y lo contestado sí se había guardado. Ahora la página sigue como está y la franja lo dice en llano («No pude poner la Bandeja al día (lo que contestaste sí se guardó). Lo intento otra vez en un momento.»)',
+        estado.c17Falla.veces === 0 && (await q.locator('.ct-rojo').count()) === 0 && (await esta(q, 'ww1')) === 0 && (await sig.count()) === 1 && (await q.locator('#ct-bj-lista .ct-mov').count()) === F19.bandeja.length - 1
+        && (await plano(q, '#ct-bn-franja [data-bn-detras-mal]')) === 'No pude poner la Bandeja al día (lo que contestaste sí se guardó). Lo intento otra vez en un momento.' && !/statement|timeout|La base no contestó/.test(await plano(q, '#conta-raiz')),
+        await plano(q, '#ct-bn-franja').then(x => x.slice(0, 200)));
+      n0 = llamadas.length;
+      await q.waitForTimeout(1500); await esperarLlamada(q, n0, 'fn_banco_control'); await pintado(q); await q.waitForTimeout(500);
+      ok('…y lo intenta otra vez sola (a los pocos segundos): con la relectura hecha, la nota se va y la franja queda al día («Lo que contestaste estos días · 1 movimiento»)',
+        cuantas(n0, 'fn_banco_control') === 1 && (await q.locator('[data-bn-detras-mal]').count()) === 0 && (await q.locator('.ct-rojo').count()) === 0 && /Lo que contestaste estos días · 1 movimiento/.test(await plano(q, '#ct-bn-recientes > summary')), await plano(q, '#ct-bn-franja').then(x => x.slice(0, 160)));
+      estado.c17Falla = null;
+    }
+
+    // -- (P8) DESHACER PARA CORREGIR --
+    for (const guion of ['deshecha', 'olvida']) {
+      await conGuion(q, guion, false);
+      const G = F19.guiones[guion];
+      c = await fila(q, ID.ww1);
+      await tocar(q, c.locator('[data-bn-asi]'));
+      await q.locator('#ct-bn-recientes').evaluate(d => { d.open = true; }); await q.waitForTimeout(100);
+      const hw = q.locator(`#ct-bn-recientes [data-bn-hecho="${G[0].resp.hecho_id}"]`);
+      await hw.locator('[data-bn-deshacer]').click(); await q.waitForTimeout(150);
+      if (guion === 'deshecha') ok('(cuarta vuelta) DESHACER PARA CORREGIR: la forma de «Deshacer» ofrece, sin marcar, «Y olvida lo que te dije de WAWA: lo próximo de ahí te lo vuelvo a preguntar» (de ese comercio hay algo recordado; antes había que encontrar «Olvidar» en «Lo que recuerdo» para que no lo siguiera proponiendo)',
+        (await hw.locator('.ct-form [name="olvida"]').count()) === 1 && !(await hw.locator('.ct-form [name="olvida"]').isChecked()) && /^Y olvida lo que te dije de WAWA: lo próximo de ahí te lo vuelvo a preguntar$/.test((await hw.locator('.ct-form .ct-bn-olvida').textContent()).trim())
+        && (await hw.locator('.ct-form [name="deja_solo"]').count()) === 0, await plano(q, '#ct-bn-recientes .ct-form'));
+      await hw.locator('.ct-form textarea[name="motivo"]').fill(guion === 'olvida' ? 'no es gasolina: es comida' : 'me equivoqué de categoría');
+      if (guion === 'olvida') await hw.locator('.ct-form [name="olvida"]').check();
+      await q.evaluate(() => window.scrollTo(0, 0));
+      n0 = llamadas.length;
+      await hw.locator('.ct-form button[type="submit"]').click(); await esperarLlamada(q, n0, 'fn_bandeja_leer'); await pintado(q); await q.waitForTimeout(400);
+      l = ultima(n0, 'fn_bandeja_deshacer');
+      const cw = q.locator(`.ct-mov[data-id="${ID.ww1}"]`), vista = await cw.evaluate(e => { const r = e.getBoundingClientRect(); return { arriba: Math.round(r.top), alto: window.innerHeight, y: Math.round(window.scrollY) }; });
+      if (guion === 'deshecha') ok('…sin marcarla: fn_bandeja_deshacer sin opciones. LA TARJETA QUE VUELVE NO RECOMIENDA OTRA VEZ LO QUE EDGAR ACABA DE DESHACER (antes volvía con su «Así es» grande: «Es un gasto de «Camioneta y gasolina»… Ya me lo dijiste antes»): pregunta («Lo habías registrado así: «…» Como lo deshiciste, no te lo propongo otra vez: dime qué es de verdad aquí abajo, o elígelo en «Más opciones».»), sin «Así es», con la píldora «¿Qué es?»; y LA PANTALLA VA A ELLA (antes se quedaba arriba, con la tarjeta varias pantallas más abajo)',
+        !!l && !('p_opciones' in l.args) && l.args.p_motivo === 'me equivoqué de categoría' && (await cw.locator('.ct-mov-fila').getAttribute('aria-expanded')) === 'true' && (await cw.locator('[data-bn-deshecha]').textContent()).trim() === G[1].despues.leer.tarjetas[ID.ww1].rec.aviso
+        && (await cw.locator('[data-bn-asi]').count()) === 0 && (await cw.locator('[data-bn-deshecho]').count()) === 0 && (await pildora('ww1')) === '¿Qué es?' && vista.y > 200 && vista.arriba >= 0 && vista.arriba < vista.alto - 100
+        && /^Deshecho: el movimiento volvió a la Bandeja\.$/.test(await tostada(q)), `${JSON.stringify(vista)} · ${await pildora('ww1')} · ${await tostada(q)}`);
+      else ok('…y MARCÁNDOLA: fn_bandeja_deshacer con {olvida: true} (la base da de baja lo recordado de ese comercio en la misma llamada); el aviso lo dice («Deshecho: el movimiento volvió a la Bandeja. Y olvidé lo que me dijiste de WAWA: te lo vuelvo a preguntar.»), «Lo que recuerdo» ya no lo trae y la tarjeta que vuelve no propone nada de lo recordado',
+        !!l && JSON.stringify(l.args.p_opciones) === '{"olvida":true}' && G[1].resp.olvidado === 'WAWA' && /^Deshecho: el movimiento volvió a la Bandeja\. Y olvidé lo que me dijiste de WAWA: te lo vuelvo a preguntar\.$/.test(await tostada(q))
+        && (await q.locator('[data-bn-mem="C:WAWA"]').count()) === 0 && !/Ya me lo dijiste antes/.test(await plano(q, `.ct-mov[data-id="${ID.ww1}"] [data-bn]`)) && vista.arriba >= 0 && vista.arriba < vista.alto - 100,
+        `${JSON.stringify(l && l.args.p_opciones)} · ${await tostada(q)} · ${await plano(q, `.ct-mov[data-id="${ID.ww1}"] [data-bn]`).then(x => x.slice(0, 120))}`);
+    }
+
+    // -- (P9 · DL8) EL GRUPO: el titular sigue a la lista, y a qué obra va cada compra antes de confirmar --
+    await reinicio(q);
+    {
+      g = q.locator('[data-bn-grupo="C:HOME DEPOT"]');
+      await g.locator('summary').first().click(); await q.waitForTimeout(150);
+      const obrasG = (await g.locator('[data-bn-gm-obra]').allTextContents()).map(x => x.trim()), dia = [ID.hd1, ID.hd2, ID.hd3, ID.hd4].map(id => T0[id].obra_dia || null);
+      ok('(cuarta vuelta) A QUÉ OBRA VA CADA COMPRA, ANTES DE CONFIRMAR: con «La del día de cada uno», la lista del grupo dice junto a cada movimiento la obra que le toca («a ZZ Casa Roble (donde estuvo la cuadrilla ese día)») o que se queda («se queda: ese día la cuadrilla no estuvo en una sola obra»), y una línea lo resume. Antes cada compra se registraba en «la obra del día» sin que el grupo dijera cuál era',
+        dia.filter(Boolean).length === 2 && dia.filter(x => x === 'ZZ Casa Roble').length === 2 && obrasG.filter(x => x === 'a ZZ Casa Roble (donde estuvo la cuadrilla ese día)').length === 2 && obrasG.filter(x => x === 'se queda: ese día la cuadrilla no estuvo en una sola obra').length === 2
+        && await g.locator('[data-bn-g-lista]').evaluate(d => d.open) && (await plano(q, '[data-bn-grupo="C:HOME DEPOT"] [data-bn-g-obras]')) === 'Con «la del día»: 2 a ZZ Casa Roble; 2 se quedan (ese día la cuadrilla no estuvo en una sola obra) y te los pregunto después. Cada uno está en la lista de arriba.',
+        `${obrasG.join(' | ')} · ${await plano(q, '[data-bn-grupo="C:HOME DEPOT"] [data-bn-g-obras]')}`);
+      await g.locator('[name="bn_obra"]').selectOption('oficina-nch-7xq2'); await q.waitForTimeout(100);
+      const obrasG2 = (await g.locator('[data-bn-gm-obra]').allTextContents()).map(x => x.trim());
+      const tit0 = (await g.locator('[data-bn-g-t]').textContent()).trim();
+      await g.locator('[data-bn-g-cat]').selectOption('personal/retiro'); await q.waitForTimeout(100);
+      const tit1 = (await g.locator('[data-bn-g-t]').textContent()).trim(), sinObras = (await g.locator('[data-bn-gm-obra]:not([hidden])').count()) === 0;
+      await g.locator('[data-bn-g-cat]').selectOption('costo/material'); await q.waitForTimeout(100);
+      ok('…con una obra elegida para todos, cada uno dice esa («a ZZ Oficina Norte») y la línea de «la del día» se va. Y (cuarta vuelta) EL TITULAR DEL GRUPO SIGUE A LA LISTA: con «Es mío, no de la empresa» elegido ya no dice «Son «Material»…» (el botón registraba lo de la lista): dice «Vas a registrar los 4 como «Es mío, no de la empresa»: $1,731.22.»; y al volver a «Material», lo que proponía',
+        obrasG2.every(x => x === 'a ZZ Oficina Norte') && obrasG2.length === 4 && /^Son «Material»\./.test(tit0) && tit1 === 'Vas a registrar los 4 como «Es mío, no de la empresa»: $1,731.22.' && sinObras
+        && (await g.locator('[data-bn-g-t]').textContent()).trim() === tit0, `${obrasG2.join(' | ')} · ${tit1}`);
+      const gm = q.locator('[data-bn-grupo="C:ZZ MADERAS DEL SUR"]');
+      await gm.locator('summary').first().click(); await q.waitForTimeout(150);
+      ok('(cuarta vuelta) …y el grupo que no se sabe qué es ya no dice «Dímelo una vez…» (el grupo no tiene caja de «Dímelo»): «Todavía no sé qué son. Elígelo una vez aquí abajo y vale para los 2.»',
+        (await gm.locator('[data-bn-g-t]').textContent()).trim() === 'Todavía no sé qué son. Elígelo una vez aquí abajo y vale para los 2.' && (await gm.locator('[data-bn-dim], [data-bn-frase]').count()) === 0);
+    }
+
+    // -- (P6) LA FRANJA DE LA IA DE ANTES, DISCRETA Y DEBAJO DE «DECIDE POR GRUPO» --
+    {
+      estado.c8 = true; iaReset();
+      await reinicio(q);
+      const fr = await q.evaluate(() => { const ia = document.getElementById('ct-ia-franja'), gr = document.getElementById('ct-bn-grupos'), bt = document.getElementById('ct-ia-proponer');
+        return ia && gr ? { debajo: !!(gr.compareDocumentPosition(ia) & Node.DOCUMENT_POSITION_FOLLOWING), discreta: ia.classList.contains('ct-ia-discreta'), boton: bt ? bt.className : null, botonTxt: bt ? bt.textContent.trim() : null,
+          texto: ia.textContent.replace(/\s+/g, ' ').trim(), altoIA: Math.round(ia.getBoundingClientRect().height), principal: ia.querySelectorAll('.accion:not(.secundaria)').length } : null; });
+      ok('(cuarta vuelta) CON LA BANDEJA NUEVA, LA FRANJA DE LA IA DE ANTES VA DEBAJO DE «DECIDE POR GRUPO», en una línea discreta y en llano: sin botón principal (antes «Proponer ahora (N)» era el botón más grande de la página, lo primero que se veía), y sin el pie de «la rutina…» y «su interruptor, en Conexiones…»',
+        !!fr && fr.debajo && fr.discreta && fr.principal === 0 && /secundaria/.test(fr.boton || 'secundaria') && !/rutina|interruptor|Proponer ahora/.test(fr.texto) && /^IA ?La IA /.test(fr.texto) && fr.altoIA < 120, JSON.stringify(fr));
+      estado.c8 = false; iaReset();
+      await reinicio(q);
+    }
+
     await foto(q, 'f19-1280-bandeja');
 
     // -- (segunda vuelta) EL RECIBO QUE LLEGA DESPUÉS de registrar su cargo --
@@ -4689,8 +5042,8 @@ async function escenaF19(b, errs) {
       /se clasificó y después entró su ticket/.test(R57) && (await q.locator('.ct-rojo').count()) === 0 && (await q.locator('#ct-bj-lista .ct-mov').count()) > 0 && /Llegó el recibo de un cargo que ya estaba registrado, y el gasto está dos veces en el libro\. Toca «Casar otra vez»/.test(await plano(q, '#ct-bn-franja .ct-bn-recibo-falta'))
       && !/fn_banco|casar_con|duplicado/.test(await plano(q, '#ct-bn-franja')), (await plano(q, '#ct-bn-franja')).slice(0, 220));
     await ve(q, 'resumen');
-    ok('…y el Resumen tampoco: sigue pintando, y «Qué atender» lo dice en llano con su botón a la Bandeja («Llegó el recibo de un cargo que ya estaba registrado: ese gasto está dos veces en el libro hasta que digas si es su recibo o es otra compra…»)',
-      (await q.locator('.ct-rojo').count()) === 0 && (await q.locator('#conta-raiz .ct-ficha, #conta-raiz .ct-tb').count()) > 0 && /Llegó el recibo de un cargo que ya estaba registrado: ese gasto está dos veces en el libro hasta que digas si es su recibo o es otra compra\. Está arriba, en la Bandeja\./.test(await plano(q, '#conta-raiz')), (await plano(q, '#conta-raiz')).slice(0, 200));
+    ok('…y el Resumen tampoco: sigue pintando, y «Qué atender» lo dice en llano con su botón a la Bandeja; (cuarta vuelta) y CUENTA LOS CARGOS aunque la rutina de la Bandeja todavía no los haya mirado (los nombra el control del banco, uno por uno: antes decía «un cargo» con tres esperando): «Llegó el recibo de 3 cargos que ya estaban registrados: ese gasto está dos veces en el libro hasta que digas si es su recibo o es otra compra…»',
+      (R57.match(/el cargo [0-9a-f]{8}-/g) || []).length === 3 && (await q.locator('.ct-rojo').count()) === 0 && (await q.locator('#conta-raiz .ct-ficha, #conta-raiz .ct-tb').count()) > 0 && /Llegó el recibo de 3 cargos que ya estaban registrados: ese gasto está dos veces en el libro hasta que digas si es su recibo o es otra compra\. Está arriba, en la Bandeja\./.test(await plano(q, '#conta-raiz')), (await plano(q, '#conta-raiz')).match(/Llegó el recibo[^.]*\./) + '');
     await ve(q, 'movimientos');
     ok('…ni Movimientos: pinta lo suyo y lo avisa arriba, con su botón a la Bandeja («…Se contesta en la Bandeja, arriba.»)',
       (await q.locator('.ct-rojo').count()) === 0 && /Llegó el recibo de un cargo que ya estaba registrado: ese gasto está dos veces en el libro.*Se contesta en la Bandeja, arriba\./.test(await plano(q, '#ct-mov-recibo')) && (await q.locator('#ct-mov-ir-bandeja').count()) === 1, (await plano(q, '#conta-raiz')).slice(0, 200));
@@ -4778,9 +5131,24 @@ async function escenaF19(b, errs) {
       const largo = 'HOME DEPOT: 2 registrados por $334.47 · 2 se quedan (está dicho en el grupo) · recordado. Y este aviso sigue un poco más para medir lo que tarda en irse cuando es largo.';
       await q.evaluate(t => window.MXP_CONTA._estado.hooks.avisar(t), largo);
       await q.waitForTimeout(200);
-      const tt = await q.evaluate(() => { const t = document.getElementById('toast'), r = t.getBoundingClientRect(), cs = getComputedStyle(t); return { ancho: Math.round(r.width), ven: window.innerWidth, toques: cs.pointerEvents, alto: Math.round(r.height), izq: Math.round(r.left), der: Math.round(r.right) }; });
-      ok('(tercera vuelta) EL AVISO EN EL TELÉFONO sale a casi todo el ancho (antes, centrado con el ancho «al contenido», se quedaba en media pantalla y en diez renglones), dentro de la pantalla, y NO SE COME LOS TOQUES de lo que tapa',
-        tt.ancho >= tt.ven * 0.8 && tt.izq >= 0 && tt.der <= tt.ven && tt.toques === 'none' && tt.alto < 200, JSON.stringify(tt));
+      const tt = await q.evaluate(() => { const t = document.getElementById('toast'), r = t.getBoundingClientRect(), cs = getComputedStyle(t), nav = document.querySelector('.bottom-nav'), mb = document.querySelector('.membrete');
+        return { ancho: Math.round(r.width), ven: window.innerWidth, toques: cs.pointerEvents, alto: Math.round(r.height), izq: Math.round(r.left), der: Math.round(r.right), arriba: Math.round(r.top), abajo: Math.round(r.bottom), alturaVen: window.innerHeight,
+          membrete: mb ? Math.round(mb.getBoundingClientRect().bottom) : null, menu: nav ? Math.round(nav.getBoundingClientRect().top) : null }; });
+      ok('(tercera vuelta) EL AVISO EN EL TELÉFONO sale a casi todo el ancho (antes, centrado con el ancho «al contenido», se quedaba en media pantalla y en diez renglones) y dentro de la pantalla',
+        tt.ancho >= tt.ven * 0.8 && tt.izq >= 0 && tt.der <= tt.ven && tt.alto < 200, JSON.stringify(tt));
+      // (cuarta vuelta) EL AVISO NO DEJA PASAR LOS TOQUES NI TAPA LAS ACCIONES. En la tercera vuelta dejaba pasar el toque a lo que
+      // tapaba (pointer-events: none) y, en el teléfono, quedaba justo encima del menú, donde quedan «Así es» y «Así es para los N»:
+      // tocarlo (para quitarlo, o sin querer) pulsaba un botón que no se veía y REGISTRABA en el libro. Ahora: en el teléfono va
+      // ARRIBA (tapa el membrete, que no tiene acciones de la página), el toque se queda en él y tocarlo lo quita, y nada más
+      ok('(cuarta vuelta) EL AVISO, EN EL TELÉFONO, VA ARRIBA: tapa el membrete y no la zona de encima del menú, donde quedan los botones de la tarjeta o del grupo que se acaba de contestar («Así es», «Así es para los N»)',
+        tt.arriba >= 0 && tt.arriba <= 30 && tt.abajo < tt.alturaVen / 2 && (tt.menu == null || tt.abajo < tt.menu - 200), JSON.stringify(tt));
+      {
+        const r = await toqueEnAviso(q, 'ww1', true);
+        ok('(cuarta vuelta) UN TOQUE EN EL AVISO, CON UN «ASÍ ES» DEBAJO, NO REGISTRA NADA (teléfono): el toque se queda en el aviso (ya no es «pointer-events: none»), lo quita, y no llama a ninguna función de la base (antes pulsaba el botón tapado: fn_bandeja_hacer, y el cargo quedaba en el libro sin que Edgar viera el botón)',
+          r.pos.debajo && r.pos.arriba === 'toast' && r.pos.toques !== 'none' && r.tras.oculto === true && r.tras.dialogos === 0 && r.llamo.length === 0 && r.sigue, `${JSON.stringify(r.pos)} · ${JSON.stringify(r.tras)} · ${r.llamo.join(',')}`);
+        await q.evaluate(t => { window.scrollTo(0, 0); window.MXP_CONTA._estado.hooks.avisar(t); }, largo);
+        await q.waitForTimeout(200);
+      }
       await q.waitForTimeout(6300);
       const sigue = await q.evaluate(() => !document.getElementById('toast').hidden);
       await q.evaluate(() => window.MXP_CONTA._estado.hooks.avisar('Corto.'));
@@ -4832,6 +5200,37 @@ async function escenaF19(b, errs) {
     ok('(segunda vuelta) …y «Llegó su recibo»: las tres tarjetas arriba, cada una con sus dos botones de dedo (44 px o más), sin desplazar a los lados',
       a.doc <= a.ven + 1 && (await q.locator('[data-bn-recibo]').count()) === 3 && rb.length === 6 && rb.every(x => x >= 44), JSON.stringify({ a, rb }));
     await foto(q, 'f19-390-recibos');
+
+    // ============ (cuarta vuelta, 22-nov-2026) LO QUE ENCONTRÓ LA TERCERA REVISIÓN, en el teléfono ============
+    // -- (P4) EL RECIBO QUE LLEGA DESPUÉS, EN EL OTRO ORDEN: «es su recibo» en la PRIMERA de dos compras iguales --
+    await conGuion(q, 'recibos2', true);
+    {
+      const R2 = F19.guiones.recibos2, rs = p => R2.find(x => x.paso === p).despues.leer.recibos, n4 = llamadas.length;
+      await q.locator('[data-bn-recibo]').first().locator('[data-bn-recibo-op]:not([data-bn-recibo-otra])').tap(); await esperarLlamada(q, n4, 'fn_bandeja_leer'); await pintado(q); await q.waitForTimeout(300);
+      ok('(cuarta vuelta) DOS CARGOS IGUALES Y UN SOLO RECIBO, «Es su recibo: cámbialo» EN EL PRIMERO (el botón principal de la tarjeta de arriba; hasta ahora solo se probaba el otro orden): el segundo YA NO se queda arriba diciendo que su gasto está dos veces en el libro (ya no era verdad) con dos botones que fallaban con texto del banco. La base lo mira en esa misma llamada y la rutina de la Bandeja corre otra vez antes de releer (sin esperar sus 45 s): queda esperando SOLO la compra suelta',
+        rs('solo').length === 3 && rs('solo')[0].monto === rs('solo')[1].monto && rs('recibo').length === 1 && cuantas(n4, 'fn_bandeja_hacer') === 1 && cuantas(n4, 'fn_bandeja_solo') === 1
+        && desde(n4).findIndex(x => x.fn === 'fn_bandeja_solo') < desde(n4).findIndex(x => x.fn === 'fn_bandeja_leer') && (await q.locator('[data-bn-recibo]').count()) === 1
+        && (await q.locator('[data-bn-recibo]').first().getAttribute('data-bn-recibo')) === rs('recibo')[0].movimiento_id && (await q.locator('#ct-bn-recibos h3').textContent()).trim() === 'Llegó el recibo de un cargo que ya habías registrado'
+        && /^Cambiado por su recibo: el gasto queda una sola vez/.test(await tostada(q)) && (await q.locator('.ct-rojo').count()) === 0,
+        `${await q.locator('[data-bn-recibo]').count()} esperando · ${desde(n4).map(x => x.fn).filter(f => /bandeja_(hacer|solo|leer)/.test(f)).join(',')} · ${await tostada(q)}`);
+    }
+
+    // -- (P3) DESPUÉS DE DECIDIR UN GRUPO, LA PANTALLA SE QUEDA EN LOS GRUPOS --
+    await reinicio(q);
+    {
+      await fila(q, ID.zp1);       // una tarjeta abierta, mucho más abajo en la lista
+      await q.evaluate(() => document.getElementById('ct-bn-grupos').scrollIntoView({ block: 'start' }));
+      g = q.locator('[data-bn-grupo="M:cuota_prestamo"]');
+      await g.locator('summary').first().tap(); await q.waitForTimeout(200);
+      const antes = await q.evaluate(() => ({ y: Math.round(window.scrollY), abierta: (document.querySelector('.ct-mov.abierta') || { dataset: {} }).dataset.id || null }));
+      const n4 = llamadas.length;
+      await g.locator('[data-bn-g-asi]').tap(); await esperarLlamada(q, n4, 'fn_bandeja_grupo'); await pintado(q); await q.waitForTimeout(600);
+      const despues = await q.evaluate(() => { const gr = document.getElementById('ct-bn-grupos'), r = gr.getBoundingClientRect(), a2 = document.querySelector('.ct-mov.abierta');
+        return { y: Math.round(window.scrollY), top: Math.round(r.top), bottom: Math.round(r.bottom), alto: window.innerHeight, abierta: a2 ? a2.dataset.id : null, abiertaTop: a2 ? Math.round(a2.getBoundingClientRect().top) : null }; });
+      ok('(cuarta vuelta) DESPUÉS DE DECIDIR UN GRUPO, LA PANTALLA SE QUEDA EN LOS GRUPOS (390 px): con una tarjeta abierta más abajo en la lista, «Así es para los 2» ya NO salta a ella (antes bajaba miles de píxeles —2,971 en la revisión— y «Decide por grupo» quedaba muy arriba: había que volver a subir después de cada grupo). «Decide por grupo» sigue a la vista y la tarjeta que estaba abierta sigue abierta, donde estaba',
+        antes.abierta === ID.zp1 && despues.abierta === ID.zp1 && despues.abiertaTop > despues.alto && despues.top < despues.alto - 80 && despues.bottom > 80
+        && /^Cuotas de préstamos: 2 registrados por \$1,200\.00/.test(await tostada(q)) && (await q.locator('[data-bn-grupo="M:cuota_prestamo"]').count()) === 0, JSON.stringify({ antes, despues }));
+    }
     await cx.close();
   }
 
@@ -4891,9 +5290,28 @@ async function escenaF19(b, errs) {
       const csvTb = fs.readFileSync(await bajada.path(), 'utf8');
       ok('…«Descargar la balanza con sus líneas (CSV)»: un archivo en inglés (Account, Name, Category… «Form 1120 line», «Form 1125-A line») con cada cuenta y su línea',
         /^trial-balance-\d{4}-form-1120\.csv$/.test(bajada.suggestedFilename()) && /Account,Name,Category,Group,Beginning,Debits,Credits,Ending,Form 1120 line,Form 1125-A line,Name \(Spanish\)/.test(csvTb) && csvTb.includes(P.trial_balance[0].account + ',' + P.trial_balance[0].name), csvTb.slice(0, 160));
+      // (cuarta vuelta) LOS AVISOS DEL PAQUETE VIAJAN EN LOS DOS ARCHIVOS, arriba (es lo que el contador abre): antes la balanza no
+      // llevaba ninguno (ni el año parcial ni el formulario pendiente de confirmar) y el resumen solo el del año parcial
+      const csvFilas = t => t.replace(/^\uFEFF/, '').split(/\r?\n/).filter(Boolean);
+      const celdas = l => { const o = []; let c = '', q2 = false; for (let i = 0; i < l.length; i++) { const k = l[i]; if (q2) { if (k === '"' && l[i + 1] === '"') { c += '"'; i++; } else if (k === '"') q2 = false; else c += k; } else if (k === '"') q2 = true; else if (k === ',') { o.push(c); c = ''; } else c += k; } o.push(c); return o; };
+      {
+        const fs2 = csvFilas(csvTb).map(celdas), W = P.warnings, tot = P.trial_balance_totals;
+        ok('(cuarta vuelta) …LA BALANZA (CSV) LLEVA ARRIBA LOS AVISOS DEL PAQUETE (el año parcial, las comidas, «ENTITY TYPE PENDING CONFIRMATION…»), uno por renglón y con las mismas once columnas; y AL PIE SUS TOTALES (lo que suma 0: saldo inicial, debe = haber, saldo final), que antes no iban',
+          W.length >= 3 && W.every((w, i) => fs2[1 + i].length === 11 && fs2[1 + i][1] === w && fs2[1 + i][0] === '') && W.some(w => /^ENTITY TYPE PENDING CONFIRMATION/.test(w)) && fs2.every(f => f.length === 11)
+          && fs2[1 + W.length][0] === P.trial_balance[0].account && !!tot && tot.balanced === true && fs2[fs2.length - 1][1] === tot.label && Number(fs2[fs2.length - 1][7]) === Number(tot.ending) && Number(fs2[fs2.length - 1][5]) === Number(tot.debits) && Number(fs2[fs2.length - 1][6]) === Number(tot.credits)
+          && fs2.length === 1 + W.length + P.trial_balance.length + 1, `${fs2.length} renglones · ${JSON.stringify(fs2[1]).slice(0, 120)} · ${JSON.stringify(fs2[fs2.length - 1])}`);
+        ok('(cuarta vuelta) …y en la pantalla la balanza trae su renglón de totales («Totals», con su saldo final en cero) al pie',
+          (await q.locator('[data-fis="tb"] [data-fis-tb-total]').count()) === 1 && (await q.locator('[data-fis="tb"] [data-fis-tb-total] td').first().textContent()).trim() === tot.label && (await q.locator('[data-fis="tb"] tbody tr').count()) === P.trial_balance.length + 1);
+      }
       const [bajada2] = await Promise.all([q.waitForEvent('download', { timeout: 8000 }), q.locator('#ct-fis-csv-tax').click()]);
       const csvTax = fs.readFileSync(await bajada2.path(), 'utf8');
-      ok('…y «Descargar el resumen por línea (CSV)»: cada línea del formulario con su monto y las cuentas que la forman (y, en un año parcial, dicho también en el archivo: «PARTIAL YEAR: 2026-10-01 to 2026-12-31 only…»)', /^tax-lines-\d{4}-form-1120\.csv$/.test(bajada2.suggestedFilename()) && /Form,Line,Description,Account,Account name,Amount/.test(csvTax) && csvTax.includes('1a,Line 1a — Gross receipts or sales') && /PARTIAL YEAR: 2026-10-01 to 2026-12-31 only/.test(csvTax) && /M-2,M-2 1,/.test(csvTax), csvTax.slice(0, 260));
+      {
+        const fs3 = csvFilas(csvTax).map(celdas), W = P.warnings;
+        ok('…y «Descargar el resumen por línea (CSV)»: cada línea del formulario con su monto y las cuentas que la forman; (cuarta vuelta) y ARRIBA, TODOS LOS AVISOS DEL PAQUETE (antes solo el del año parcial: «PARTIAL YEAR…»; el del formulario pendiente de confirmar no iba), uno por renglón, en la columna de la descripción y con las mismas siete columnas',
+          /^tax-lines-\d{4}-form-1120\.csv$/.test(bajada2.suggestedFilename()) && /Form,Line,Description,Account,Account name,Amount/.test(csvTax) && csvTax.includes('1a,Line 1a — Gross receipts or sales') && /M-2,M-2 1,/.test(csvTax)
+          && W.every((w, i) => fs3[1 + i].length === 7 && fs3[1 + i][2] === w) && /^PARTIAL YEAR: /.test(fs3[1][2]) && fs3.filter(f => /^PARTIAL YEAR/.test(f[2])).length === 1 && fs3.some(f => /^ENTITY TYPE PENDING CONFIRMATION/.test(f[2])) && fs3.every(f => f.length === 7),
+          `${JSON.stringify(fs3[1]).slice(0, 140)} · ${fs3.filter(f => f.length !== 7).length} renglones con otras columnas`);
+      }
       // (tercera vuelta) LAS COMIDAS: en libros al 100 %, deducible la mitad. La base lo dice en la cuenta de su línea y en un aviso;
       // la pantalla lo enseña en ese renglón, y va también en el CSV (su columna «Note») y en la hoja de imprimir
       {
@@ -4938,6 +5356,27 @@ async function escenaF19(b, errs) {
       await q.locator('#ct-reintentar').click(); await pintado(q); await q.waitForTimeout(200);
       ok('…y, cuando el control vuelve a cuadrar, «Reintentar» lo pinta', (await q.locator('#ct-fis').count()) === 1 && (await q.locator('.ct-rojo').count()) === 0 && /Tax return lines — Form 1120-S/.test(await cuerpoTxt()));
       await foto(q, 'f19-1280-paquete');
+      // -- (cuarta vuelta) LA BALANZA DEL SEGUNDO EJERCICIO: el renglón que no es una cuenta, sus totales y los avisos, también en el CSV --
+      {
+        const PS = F19.fiscal.siguiente.paquete, comp = PS.trial_balance.filter(x => !x.account), tot = PS.trial_balance_totals;
+        await q.evaluate(a => { window.MXP_CONTA._estado.fis.anio = a; }, F19.fiscal.siguiente.anio);
+        n0 = llamadas.length;
+        await ve(q, 'estados', { sub: 'paquete' });
+        await q.locator('[data-fis="tb"] > summary').click(); await q.waitForTimeout(150);
+        const filaC = q.locator('[data-fis="tb"] tr[data-fis-comp]'), cuentas2 = PS.trial_balance.filter(x => x.account).reduce((s2, x) => s2 + Math.round(Number(x.ending) * 100), 0);
+        ok('(cuarta vuelta) LA BALANZA DEL SEGUNDO EJERCICIO CUADRA Y LO DICE: el libro no postea asientos de cierre, así que el resultado de los años anteriores va en un renglón aparte, que NO es una cuenta («Prior-year results not yet closed…», a su línea L25, con su nota). El paquete lo trae, la pantalla lo enseña (antes la balanza del paquete traía solo las cuentas y desde el segundo año no sumaba 0), y al pie van sus totales en cero; arriba, el aviso «NO CLOSING ENTRIES ARE POSTED…»',
+          ultima(n0, 'fn_fiscal_paquete').args.p_anio === F19.fiscal.siguiente.anio && comp.length === 1 && cuentas2 !== 0 && tot.balanced === true && Number(tot.ending) === 0 && (await filaC.count()) === 1
+          && (await filaC.locator('td').first().textContent()).includes(comp[0].name) && (await filaC.locator('[data-fis-nota]').textContent()).trim() === comp[0].note && (await filaC.locator('td').nth(1).textContent()).trim() === comp[0].tax_line
+          && (await q.locator('[data-fis="tb"] [data-fis-tb-total] td').first().textContent()).trim() === 'Totals' && /^\$?0\.00$/.test((await q.locator('[data-fis="tb"] [data-fis-tb-total] td').last().textContent()).trim())
+          && /NO CLOSING ENTRIES ARE POSTED/.test(await plano(q, '.ct-fis-w')) && (await q.locator('#ct-fis-no-cuadra').count()) === 0,
+          `${await plano(q, '[data-fis="tb"] tr[data-fis-comp]')} · ${await plano(q, '[data-fis="tb"] [data-fis-tb-total]')} · las cuentas solas suman ${cuentas2 / 100}`);
+        const [bajada3] = await Promise.all([q.waitForEvent('download', { timeout: 8000 }), q.locator('#ct-fis-csv-tb').click()]);
+        const f4 = csvFilas(fs.readFileSync(await bajada3.path(), 'utf8')).map(celdas), W = PS.warnings, rc = f4.find(f => f[1] === comp[0].name), suma = k => f4.slice(1 + W.length, -1).reduce((s2, f) => s2 + Math.round(Number(f[k]) * 100), 0);
+        ok('(cuarta vuelta) …y en el archivo que abre el contador (la balanza, CSV): ese renglón va sin código de cuenta, con su línea y su nota; los renglones suman 0 en el saldo inicial y en el final; al pie, los totales; y arriba, los avisos del paquete («NO CLOSING ENTRIES ARE POSTED…» entre ellos)',
+          !!rc && rc[0] === '' && rc[8] === comp[0].tax_line && rc[10] === comp[0].note && Number(rc[7]) === Number(comp[0].ending) && suma(4) === 0 && suma(7) === 0 && f4[f4.length - 1][1] === 'Totals' && Number(f4[f4.length - 1][7]) === 0
+          && W.every((w2, i) => f4[1 + i][1] === w2) && W.some(w2 => /^NO CLOSING ENTRIES ARE POSTED/.test(w2)) && f4.every(f => f.length === 11), `${JSON.stringify(rc).slice(0, 200)} · suman ${suma(4) / 100} y ${suma(7) / 100}`);
+        await q.evaluate(a => { window.MXP_CONTA._estado.fis.anio = a; }, F19.fiscal.anio);
+      }
     } else {
       const a = await q.evaluate(() => ({ doc: document.documentElement.scrollWidth, ven: window.innerWidth }));
       ok('En el teléfono (390 px), «Para el contador» cabe sin desplazar a los lados: el año, el formulario, el aviso del año parcial, el de «pendiente», las descargas y las tablas', a.doc <= a.ven + 1 && await q.locator('#ct-fis-pendiente').isVisible() && await q.locator('#ct-fis-parcial').isVisible() && await q.locator('#ct-fis-imprimir').isVisible(), JSON.stringify(a));
@@ -4945,6 +5384,13 @@ async function escenaF19(b, errs) {
       const a2 = await q.evaluate(() => ({ doc: document.documentElement.scrollWidth, ven: window.innerWidth }));
       ok('…y el estado de resultados en inglés, también (con sus períodos otra vez en la barra)', a2.doc <= a2.ven + 1 && (await cuerpoTxt()).includes(FL.secciones.costo) && (await q.locator('#ct-est-periodos [data-periodo]').count()) > 0 && (await q.locator('#ct-est-ctx').count()) === 1, JSON.stringify(a2));
       await foto(q, 'f19-390-paquete');
+      {
+        // (cuarta vuelta) los apartados de los Estados, en el teléfono, en dos renglones: «Para el contador» quedaba fuera de la fila
+        const sb = await q.evaluate(() => { const e = document.querySelector('.ct-est-subs'), p = e.querySelector('[data-sub="paquete"]').getBoundingClientRect(), tops = new Set([...e.querySelectorAll('.ct-chip')].map(x => Math.round(x.getBoundingClientRect().top)));
+          return { envuelve: getComputedStyle(e).flexWrap, sw: e.scrollWidth, cw: e.clientWidth, izq: Math.round(p.left), der: Math.round(p.right), ven: window.innerWidth, renglones: tops.size, n: e.querySelectorAll('.ct-chip').length }; });
+        ok('(cuarta vuelta) EN EL TELÉFONO (390 px) LOS APARTADOS DE LOS ESTADOS VAN EN DOS RENGLONES: «Para el contador» (el último) se ve entero sin deslizar la fila (antes quedaba fuera, a la derecha: había que saber que estaba ahí)',
+          sb.envuelve === 'wrap' && sb.sw <= sb.cw + 1 && sb.izq >= 0 && sb.der <= sb.ven && sb.renglones >= 2, JSON.stringify(sb));
+      }
     }
     await cx.close();
   }

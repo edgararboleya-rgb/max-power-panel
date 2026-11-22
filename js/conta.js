@@ -181,7 +181,11 @@
       // (tercera vuelta) las recomendaciones que faltan se piden por partes (toque: algo cambió mientras llegaba una; esa parte se pide otra
       // vez); lo que hay que poner al día por detrás después de contestar (los hermanos de lo contestado) y su reintento; los «Dímelo» que
       // esperan a la IA (cada uno ocupa SU tarjeta, no la Bandeja); y lo que un grupo dejó sin registrar, con su porqué
-      partes: { toque: 0, corriendo: false, err: null }, detras: { ids: new Set(), t: null, n: 0, vuelo: 0 }, pensando: new Set(), quedo: null },
+      // (cuarta vuelta) las tarjetas de una contraparte de la que Edgar acaba de decir algo, que se miran otra vez en el momento (n: la
+      // tanda; de: qué tanda pidió cada tarjeta, para no fundir lo de una tanda anterior); y si lo de detrás falló (se dice en la franja)
+      partes: { toque: 0, corriendo: false, err: null }, detras: { ids: new Set(), t: null, n: 0, vuelo: 0, mal: false }, pensando: new Set(), quedo: null,
+      // lec: cada lectura de fn_bandeja_leer lleva su número al SALIR; las listas de la franja solo se toman de la más nueva que haya llegado
+      mirando: { n: 0, de: new Map() }, lec: { n: 0, puesta: 0 } },
     plaid: null, plaidErr: null, mfa: null,
     // Stripe (p1): la fila de v_stripe_estado, por qué no se leyó, la salud de la función, los depósitos asentados (para la bandeja) y la pestaña
     stripe: null, stripeErr: null, stripeSalud: null, stripePayouts: null, cobros: null,
@@ -540,7 +544,9 @@
     const diasViejo = diasDesde(viejo);
     const bandejaRoja = diasViejo != null && diasViejo > 30;
     const atender = atenderDeHoy({ vis, viejo, bandejaRoja, suaves, stripeCtl, iaCtl, ronda, jornal });
-    if (reciboTarde) { const n = ((S.bn.datos && S.bn.datos.recibos) || []).length; atender.unshift({ txt: `Llegó el recibo de ${n > 1 ? `${n} cargos que ya estaban registrados` : "un cargo que ya estaba registrado"}: ese gasto está dos veces en el libro hasta que digas si es su recibo o es otra compra. Está arriba, en la Bandeja.`, ir: "bandeja" }); }
+    // (cuarta vuelta: cuántos son lo dice la Bandeja si su rutina ya los miró; si todavía no —se abre antes el Resumen—, el control
+    // del banco, que los nombra uno por uno en su detalle. Antes decía «un cargo» con tres esperando)
+    if (reciboTarde) { const n = ((S.bn.datos && S.bn.datos.recibos) || []).length || (String(reciboTarde.detalle || "").match(/el cargo [0-9a-f]{8}-[0-9a-f]{4}-/g) || []).length; atender.unshift({ txt: `Llegó el recibo de ${n > 1 ? `${n} cargos que ya estaban registrados` : "un cargo que ya estaba registrado"}: ese gasto está dos veces en el libro hasta que digas si es su recibo o es otra compra. Está arriba, en la Bandeja.`, ir: "bandeja" }); }
     const sub = `${plural(vis.length, "cuenta", "cuentas")} · ${pend ? `<b>${plural(pend, "movimiento espera", "movimientos esperan")}</b> en la bandeja` : "la bandeja está al día"} · hoy, ${fechaLarga(hoyMiami())}`;
     // (tablero, c16) EL TABLERO: lo que llegó de fn_tablero; lo que no alcanzó el tope por reloj se pide otra vez, solo eso
     if (tb.d) {
@@ -2429,6 +2435,9 @@
       return;
     }
     S.ocupado = false;
+    // (la Bandeja nueva, cuarta vuelta) lo que sigue lo puede llevar quien llamó (`despues`: si devuelve true, ni aviso ni repintar:
+    // la tarjeta nueva anota en la Bandeja lo que se registró por el camino de antes y sale sin repintar la página)
+    if (typeof o.despues === "function" && await o.despues(r) === true) return;
     const aviso = exito(r);
     S.hooks.avisar(...(Array.isArray(aviso) ? aviso : [aviso]));
     if (o.repintar === false) {
@@ -2834,6 +2843,7 @@
     catch (err) { return pintarError(err, pintarBandeja); }
     if (S.pagina !== "bandeja") return;
     bandejaPoner(leido);
+    S.bn.detras.mal = false;
     // (c17) una respuesta cuya contestación se perdió por el camino: ahora se sabe si llegó a guardarse
     bnDudaResuelta(S.bandeja);
     // (c17, tercera vuelta) las recomendaciones que a la base no le dio tiempo a pensar se piden por partes, sin frenar la pantalla
@@ -2941,11 +2951,16 @@
     const x = bandejaFiltros(filas);
     // (las franjas de la Bandeja nueva, sus grupos y la barra van cada una en su envoltorio, que no ocupa sitio: así se ponen al día
     // una a una después de cada respuesta, sin repintar la lista)
+    // (cuarta vuelta) CON LA BANDEJA NUEVA, LA FRANJA DE LA IA DE ANTES VA DEBAJO DE «DECIDE POR GRUPO», y discreta (franjaIAHTML):
+    // con la Bandeja llena era lo primero que Edgar veía en el teléfono, con el botón más grande de la página («Proponer ahora (352)»),
+    // y nada de la Bandeja nueva cabía en la primera pantalla. Sin c17, donde siempre
+    const iaArriba = S.ia && !bnViva() ? franjaIAHTML(S.ia) : "", iaAbajo = S.ia && bnViva() ? franjaIAHTML(S.ia) : "";
     main().innerHTML = cabPagina("Bandeja", bandejaSubHTML(filas),
         `<button type="button" class="accion secundaria" id="ct-casar">Casar otra vez</button>`) +
-      (S.ia ? franjaIAHTML(S.ia) : "") + (S.jr.instalado || S.jr.err ? `<div id="ct-jr-franja-env">${franjaJornalHTML(filas)}</div>` : "") +
+      iaArriba + (S.jr.instalado || S.jr.err ? `<div id="ct-jr-franja-env">${franjaJornalHTML(filas)}</div>` : "") +
       // (la Bandeja nueva, c17) lo que entró solo, lo contestado hace poco y lo recordado; y «Decide por grupo»
       `<div class="ct-env" id="ct-bn-franja-env">${bnFranjaHTML()}</div><div class="ct-env" id="ct-bn-grupos-env">${bnGruposHTML(filas)}</div>` +
+      iaAbajo +
       `<div class="ct-env" id="ct-bj-herr-env">${bandejaHerrHTML(filas, x)}</div>` +
       `<div id="ct-bj-lista"></div>`;
     $("ct-casar").addEventListener("click", async () => {
@@ -3131,12 +3146,14 @@
     // el «Dímelo» y «Más opciones» de todos eran decenas de miles de nodos, que además se repintaban después de cada respuesta
     const vacia = !!bn && !abierta;
     // lo de siempre: el texto del banco, sus avisos, la IA y sus botones (con la Bandeja nueva, detrás de «Más opciones»)
-    const viejo = () => `${jr ? jornalHTML(m, jr) : `${chq ? chequeHTML(chq, false) : ""}<p class="ct-texto">${esc(bn ? bnLlano(m.texto) : m.texto)}</p>${nomBandejaHTML(m)}${dichoNo ? `<p class="ct-jr-enlace ct-jr-dicho">Dijiste que no es de la cuadrilla: se clasifica como siempre. <button type="button" class="ct-jr-link" data-jr-quitar>Sí lo es</button></p><div class="ct-jr-res"></div>` : repartirLinkHTML(m)}`}
+    // (cuarta vuelta) en la tarjeta nueva los botones del banco ya no llaman directo a su puerta ni sale ninguno como botón principal
+    // (bnBotonBancoHTML), y arriba no van el tipo del banco («DEBIT») ni por dónde entró («entró por plaid»): a Edgar no le dicen nada
+    const viejo = () => `${jr ? jornalHTML(m, jr) : `${chq ? chequeHTML(chq, false) : ""}<p class="ct-texto">${esc(bn ? bnTextoBanco(m, bn) : m.texto)}</p>${nomBandejaHTML(m)}${dichoNo ? `<p class="ct-jr-enlace ct-jr-dicho">Dijiste que no es de la cuadrilla: se clasifica como siempre. <button type="button" class="ct-jr-link" data-jr-quitar>Sí lo es</button></p><div class="ct-jr-res"></div>` : repartirLinkHTML(m)}`}
         ${jr ? "" : `${m._esStripe ? `<p class="ct-aviso warn ct-aviso-dep">Depósito de Stripe: casa solo con su depósito en «Cobros en línea» (cuando Stripe mande su detalle${(m._stripe || []).length ? ", o con «Es el depósito…» aquí abajo" : ""}). No lo clasifiques ni lo registres aquí: el dinero entraría dos veces. Si es de antes de instalar los cobros en línea, sácalo allí con «Ya está en el libro» y vuelve aquí.</p>` : ""}
         ${m._stripeFuera ? `<p class="ct-aviso ct-aviso-dep">Depósito de Stripe de fuera de la app (${esc(m._stripeFuera.fuera_motivo || "ya está en el libro")}): regístralo aquí como siempre.</p>` : ""}
-        ${m.posible_duplicado_de ? `<p class="ct-aviso warn">Se parece al del ${fecha(m.duplicado_fecha)} «${esc(m.duplicado_descripcion)}»${m.duplicado_origen ? ` (entró por ${esc(m.duplicado_origen)})` : ""}.</p>` : ""}
+        ${m.posible_duplicado_de ? `<p class="ct-aviso warn">Se parece al del ${fecha(m.duplicado_fecha)} «${esc(m.duplicado_descripcion)}»${m.duplicado_origen && !bn ? ` (entró por ${esc(m.duplicado_origen)})` : ""}.</p>` : ""}
         ${chq ? "" : iaBloqueHTML(m)}
-        <div class="ct-acciones">${nomBotonHTML(m)}${(m._stripe || []).map(q => `<button type="button" class="accion" data-stripe-po="${esc(q.po)}">Es el depósito de Stripe del ${fechaLarga(q.llegada)}: casarlo</button>`).join("")}${ops.map((o, i) => `<button type="button" class="accion${i || (m._stripe || []).length ? " secundaria" : ""}" data-op="${i}">${esc(bn ? bnOpcionLlana(o.texto) : o.texto)}</button>`).join("")}
+        <div class="ct-acciones">${nomBotonHTML(m)}${(m._stripe || []).map(q => `<button type="button" class="accion" data-stripe-po="${esc(q.po)}">Es el depósito de Stripe del ${fechaLarga(q.llegada)}: casarlo</button>`).join("")}${ops.map((o, i) => bn ? bnBotonBancoHTML(o, i, bn) : `<button type="button" class="accion${i || (m._stripe || []).length ? " secundaria" : ""}" data-op="${i}">${esc(o.texto)}</button>`).join("")}
           ${m._esStripe ? "" : `<button type="button" class="accion secundaria ct-otra" data-otra>Otra cosa…</button>`}</div>
         <div class="ct-form" hidden></div>
         ${m._esStripe ? `<div class="ct-stripe-res"></div>` : ""}`}`;
@@ -3154,7 +3171,7 @@
         </span>
       </button>
       <div class="ct-mov-det" id="ct-det-${id}"${abierta ? "" : " hidden"}${vacia ? " data-bn-vacia" : ""}>${vacia ? "" : `
-        <div class="ct-meta"><span>hace ${plural(m.dias, "día", "días")}</span>${m.cheque ? `<span>cheque ${esc(m.cheque)}</span>` : ""}${m.tipo_banco ? `<span>${esc(m.tipo_banco)}</span>` : ""}${m.origen ? `<span>entró por ${esc(m.origen)}</span>` : ""}${obra ? pill("obra: " + obra) : ""}</div>
+        <div class="ct-meta"><span>hace ${plural(m.dias, "día", "días")}</span>${m.cheque ? `<span>cheque ${esc(m.cheque)}</span>` : ""}${m.tipo_banco && !bn ? `<span>${esc(m.tipo_banco)}</span>` : ""}${m.origen && !bn ? `<span>entró por ${esc(m.origen)}</span>` : ""}${obra ? pill("obra: " + obra) : ""}</div>
         ${bn ? `${bnHTML(m, bn)}${bnMasHTML(m, bn, viejo())}` : viejo()}
       `}</div>
     </article>`;
@@ -3300,7 +3317,12 @@
     apagados.forEach(b => { b.disabled = true; });
     try {
       const r = await DB._rpc(fn, args);
-      S.hooks.avisar(resumenHecho(r));
+      // (la Bandeja nueva, cuarta vuelta) lo registrado por el camino de antes dentro de «Más opciones» («Otra cosa…», una opción del
+      // banco cuya puerta no es de las de la Bandeja) queda ANOTADO en ella: sale en «Lo que contestaste estos días» con su «Deshacer»,
+      // el aviso lo dice en llano y la tarjeta sale como con cualquier «Así es». Si no quedó en el libro (se ignoró, sigue pendiente), se dice
+      const bn = bnDe(m);
+      if (bn && await bnAnotarViejo(m)) { card.classList.remove("ocupado"); return; }
+      S.hooks.avisar(bn ? bnHechoLlano(r) : resumenHecho(r));
       S.saldos = null;
       await pintarBandeja();
     } catch (err) {
@@ -3376,7 +3398,11 @@
     .replace(/\s*\(→\s*\d{4}(?:-\d+)?\)/g, "").replace(/\s·\s*\d{4}(?:-\d+)?(?![\d-])/g, "")
     .replace(/\bA \d{4}(?:-\d+)? \(([^()]+)\)/g, "A $1")
     .replace(/\(([a-z0-9]+(?:-[a-z0-9]+)+)\)/g, (todo, id) => { const p = (S.proyectos || []).find(x => x.id === id); return p && p.nombre ? `(${p.nombre})` : todo; })
-    .replace(/\s{2,}/g, " ").trim();
+    .replace(/\s{2,}/g, " ").trim().replace(BN_MONTO_SUELTO, bnMontoSuelto);
+  // (cuarta vuelta) un monto que el banco escribe sin formato («quedarían 650.75 por cobrar») sale como los demás («$650.75»); un
+  // por ciento no es un monto («el 2.99 %» se queda como está)
+  const BN_MONTO_SUELTO = /(^|[\s(«:])(-?)(\d+\.\d{2})(?=$|[\s).,;:»])(?!\s*%)/g;
+  const bnMontoSuelto = (todo, antes, menos, n) => `${antes}${menos ? "−" : ""}${fmt(n)}`;
   // el texto del banco sin lo que a Edgar no le dice nada: una orden de SQL entera («(desde el SQL Editor: select fn_x('…');)» —antes
   // se quitaba solo el nombre de la función y quedaba «select ('4456', 'el nombre');»—), los nombres de sus funciones («…
   // (fn_banco_clasificar)») y los de sus parámetros («(p_notas)»)
@@ -3391,26 +3417,88 @@
     // y la que va suelta, hasta su punto y coma
     return s.replace(/select\s+(?:public\.)?fn_[a-z0-9_]+\s*\((?:[^()']|'[^']*'|\([^()]*\))*\)\s*;?/gi, "");
   }
-  const bnLlano = t => bnSinSQL(t)
+  // (cuarta vuelta) y la jerga de su texto más frecuente (el del cargo sin recibo: «entra por su puente y casa sola», los códigos de
+  // cuenta de un Zelle a una persona), dicha en llano; y los montos sueltos, con su formato
+  const BN_JERGA = [
+    [/Sin ticket ni asiento que lo explique\./g, "No tiene recibo ni nada en el libro que lo explique."],
+    [/súbela: entra por su puente y casa sola\./g, "súbela a su obra: este cargo queda registrado solo con ella."],
+    [/, va a 3200 \(lo que saca el accionista\)/g, ", es dinero tuyo (lo que sacas de la empresa)"],
+    [/, a 5200 con su obra\./g, ", va a su obra."],
+    [/\s*La nómina \(5000\/5010\) entra solo por su journal\./g, ""]
+  ];
+  const bnLlano = t => BN_JERGA.reduce((x, [de, a]) => x.replace(de, a), bnSinSQL(t)
     .replace(/\s*\((?:[^()]*\s)?fn_[a-z0-9_]+[^()]*\)/g, "").replace(/\bfn_[a-z0-9_]+\b/g, "")
     .replace(/\s*\(p_[a-z_.]+\)/g, "").replace(/\bdesde el SQL Editor\b:?/gi, "")
-    .replace(/\(\s*\)/g, "").replace(/\s+([.,;:?])/g, "$1").replace(/\s{2,}/g, " ").trim();
+    .replace(/\(\s*\)/g, "").replace(/\s+([.,;:?])/g, "$1").replace(/\s{2,}/g, " ").trim()).replace(BN_MONTO_SUELTO, bnMontoSuelto);
   // un error de la base en llano: los de sus reglas ya vienen escritos para Edgar; uno técnico no se enseña tal cual. Si la señal se
   // cortó DESPUÉS de mandar algo que escribe, no se dice «no se guardó» (puede que sí): se dice que se comprueba. `leia`: era una lectura
   const bnError = (err, leia) => esFalloDeRed(err) || !navigator.onLine
       ? (leia ? "Sin señal: no se pudo leer. Vuelve a intentarlo cuando haya." : "Se cortó la señal y no sé si llegó a guardarse. Lo compruebo en cuanto vuelva: no lo repitas todavía.")
     : err.codigo === "MFA" || err.mfa ? "Falta el código del teléfono: sal y vuelve a entrar con él."
     : /^(MX\d+|22023|42501)$/.test(String(err.codigo || "")) ? err.message
-    : "La base contestó con un error que no es de las reglas de la Bandeja. Recarga la app; si sigue, avisa.";
+    // (cuarta vuelta) el corte por tiempo de la API (57014): la base deshace lo que iba haciendo. Antes salía el mensaje de abajo,
+    // que no dice lo que Edgar necesita saber: que NO se guardó y que puede tocarlo otra vez
+    : String(err.codigo || "") === "57014" || /statement timeout/i.test(String(err.message || "")) ? (leia ? "La base tardó demasiado en contestar. Inténtalo otra vez." : "No se guardó nada: la base tardó demasiado. Tócalo otra vez.")
+    : leia ? "La base contestó con un error que no es de las reglas de la Bandeja. Recarga la app; si sigue, avisa."
+    : "No se guardó nada: la base contestó con un error que no es de las reglas de la Bandeja. Recarga la app; si sigue, avisa.";
+
+  // ---------- «Más opciones → Lo que dice el banco», en la tarjeta nueva (cuarta vuelta) ----------
+  // LAS PUERTAS DEL BANCO QUE LA BANDEJA NUEVA SABE LLAMAR por su acción «banco» (las de fn_bandeja_puertas, en la base). Una opción
+  // del banco con una de ellas se registra POR LA BANDEJA (fn_bandeja_hacer con la huella de lo que se leyó): con el freno de esta
+  // capa (el depósito de un prestamista no se cobra como una factura), Proyectos al día, su rastro en «Lo que contestaste estos días»
+  // y su «Deshacer». Antes esos botones llamaban directo a la puerta, de un toque, y nada de eso pasaba
+  const BN_PUERTAS = ["fn_banco_clasificar", "fn_banco_cobrar", "fn_banco_casar_con", "fn_banco_transferencia", "fn_banco_pagar_proveedor", "fn_banco_duplicado", "fn_banco_devolver", "fn_prestamo_cuota"];
+  // lo que dice el banco de ese movimiento, sin jerga; y si la app SABE de quién es ese dinero (el banco mismo nombra a un
+  // prestamista, o dice que lo mandó Edgar: lo dice la base, `sabe`), eso en vez de la suposición del banco («¿es una parte de una
+  // factura…?»), que es justo lo que no es
+  const bnTextoBanco = (m, t) => t.sabe === "prestamista"
+      ? (num(m.monto) > 0 ? "El banco dice que este dinero lo deposita un prestamista: es una deuda, no el pago de un cliente. Si no es eso, elígelo arriba, en la lista." : "El banco dice que este dinero va a un prestamista: es la cuota de un préstamo. Si no es eso, elígelo arriba, en la lista.")
+    : t.sabe === "edgar" ? "El banco dice que este dinero lo mandaste tú: es dinero tuyo a la empresa, no el pago de un cliente. Si no es eso, elígelo arriba, en la lista."
+    : bnLlano(m.texto);
+  // un botón de lo que propone el banco: NINGUNO es el botón principal (la suposición del banco no es la respuesta: la respuesta va
+  // arriba, con su «Así es»); el que la Bandeja sabe registrar va por ella (data-bn-op) y los demás, por el camino de antes (data-op:
+  // lo que registren queda anotado después); y de un dinero que la app sabe que NO es de un cliente no se ofrece cobrarlo como tal
+  function bnBotonBancoHTML(o, i, t) {
+    if (!o || (t.sabe && o.llamar === "fn_banco_cobrar")) return "";
+    const porLaBandeja = BN_PUERTAS.includes(o.llamar) && Array.isArray(t.ops) && !!t.ops[i];
+    return `<button type="button" class="accion secundaria" ${porLaBandeja ? `data-bn-op="${i}"` : `data-op="${i}"`}>${esc(bnOpcionLlana(o.texto))}</button>`;
+  }
+  // lo que quedó después de una llamada por el camino de antes que NO dejó nada en el libro (se ignoró, es un repetido, sigue
+  // esperando), en llano (sin «casado», sin número de asiento)
+  const BN_ESTADO_LLANO = { casado: "quedó registrado", en_transito: "quedó registrado (su otro lado llegará solo)", ignorado: "quedó fuera del libro, con tu motivo", duplicado: "quedó como repetido: no cuenta", pendiente: "sigue en la Bandeja" };
+  const bnHechoLlano = r => `Hecho${r && r.estado && BN_ESTADO_LLANO[r.estado] ? `: ${BN_ESTADO_LLANO[r.estado]}` : ""}.`;
+  // LO QUE SE REGISTRÓ POR EL CAMINO DE ANTES dentro de «Más opciones» («Otra cosa…», «Según yo», el «Así es» de la IA de antes, una
+  // opción del banco cuya puerta no es de las de arriba): la Bandeja lo ANOTA (fn_bandeja_anotar con {fuente: "mas"}: no toca el
+  // libro) y entonces es como cualquier otro «Así es»: sale en «Lo que contestaste estos días» con su «Deshacer», el aviso lo dice en
+  // llano, se recuerda si Edgar lo marcó y su tarjeta sale sin repintar la página. Devuelve si quedó anotado
+  async function bnAnotarViejo(m, op) {
+    let a = null;
+    const ocupado = S.ocupado;
+    S.ocupado = true;
+    try { a = await DB._rpc("fn_bandeja_anotar", { p_movimiento: m.movimiento_id, p_opciones: Object.assign({ fuente: "mas" }, op || {}) }); }
+    catch { a = null; }
+    S.ocupado = ocupado;
+    if (!a || a.hecho !== true) return false;
+    S.iaCx = null; S.iaCxErr = null;
+    await bnHecho(a, m);
+    return true;
+  }
+  // (lo mismo para lo que registra la función «contador» dentro de «Más opciones» —el «Así es» de la IA de antes, «Según yo»—: es lo
+  // que accionFuncion hace después de que la función conteste. Fuera de la tarjeta nueva, nada: sigue como antes)
+  const bnDespuesViejo = (m, op) => (bnDe(m) ? () => bnAnotarViejo(m, op) : undefined);
+  // (y si no se pudo anotar, el aviso lo dice sin jerga: ya está en el libro, y dónde se deshace)
+  const BN_SIN_ANOTAR = "Registrado. No pude dejarlo anotado en «Lo que contestaste estos días»: si hay que deshacerlo, se hace en Banco → Movimientos.";
 
   // LO QUE LEE (fn_bandeja_leer, una llamada). Sin c17 la función no existe: se sabe una vez y la Bandeja es la de antes. Sin señal,
   // lanza (la página lo dice); otro error se apunta y la franja lo dice: las tarjetas salen como antes
   async function leerBandejaNueva() {
     if (S.bn.instalado === false) return null;
     try {
+      const lec = bnLec();
       const r = await DB._rpc("fn_bandeja_leer", { p: {} });
       if (!r || typeof r !== "object" || !r.version || !r.tarjetas || typeof r.tarjetas !== "object") { S.bn.instalado = false; S.bn.datos = null; S.bn.err = null; return null; }
       S.bn.instalado = true; S.bn.datos = r; S.bn.err = null;
+      S.bn.lec.puesta = Math.max(S.bn.lec.puesta, lec); S.bn.mirando.de.clear();
       // (lo que venga de una parte pedida antes de esta lectura ya no vale: se pide otra vez)
       S.bn.partes.toque += 1;
       return r;
@@ -3429,9 +3517,14 @@
   // recomiendan) y las listas de la franja, que vienen enteras en cada llamada.
   // UNA PARTE (fn_bandeja_leer con {ids}) fundida con lo que hay: las tarjetas pedidas (la que no viene y tampoco «falta» es que dejó de
   // estar pendiente), los grupos de esas tarjetas y, enteras, las listas de la franja. Devuelve si valía
-  function bnFundir(r, pedidos) {
+  // `lec`: el número con el que salió esta lectura (bnLec): si ya llegó otra que salió después, sus listas de la franja son más nuevas
+  // y las de esta no se toman (las tarjetas pedidas, sí)
+  const bnLec = () => ++S.bn.lec.n;
+  function bnFundir(r, pedidos, lec) {
     const d = S.bn.datos;
     if (!d || !r || typeof r !== "object" || !r.tarjetas || typeof r.tarjetas !== "object") return false;
+    const fresca = lec == null || lec > S.bn.lec.puesta;
+    if (fresca && lec != null) S.bn.lec.puesta = lec;
     const ped = new Set(pedidos || []), falt = new Set(Array.isArray(r.faltan) ? r.faltan : []);
     for (const id of ped) if (!r.tarjetas[id] && !falt.has(id)) delete d.tarjetas[id];
     Object.assign(d.tarjetas, r.tarjetas);
@@ -3453,7 +3546,7 @@
     // de un mismo pagador; entre iguales, como estaban)
     const tipo = g => (g.clase === "lote" ? 0 : g.uno_a_uno ? 2 : 1), cuantos = g => (Array.isArray(g.movimientos) ? g.movimientos.length : 0);
     d.grupos = grupos.map((g, i) => [g, i]).sort((a, b) => tipo(a[0]) - tipo(b[0]) || cuantos(b[0]) - cuantos(a[0]) || a[1] - b[1]).map(x => x[0]);
-    for (const k of ["config", "recibos", "solos", "recientes", "tandas", "memoria", "tarifas", "ia_abiertas", "ia_caducar", "control"]) if (k in r) d[k] = r[k];
+    if (fresca) for (const k of ["config", "recibos", "solos", "recientes", "tandas", "memoria", "tarifas", "ia_abiertas", "ia_caducar", "control"]) if (k in r) d[k] = r[k];
     // lo que sigue faltando: lo que faltaba y no se pidió ahora, y lo pedido que tampoco dio tiempo esta vez (en su orden)
     const sigue = (Array.isArray(d.faltan) ? d.faltan : []).filter(id => !ped.has(id)), ya = new Set(sigue);
     d.faltan = sigue.concat([...falt].filter(id => !ya.has(id)));
@@ -3478,8 +3571,9 @@
   async function bnLeerParte(ids) {
     const lista = bnConHermanos(ids);
     S.bn.partes.toque += 1;
+    const lec = bnLec();
     const r = await DB._rpc("fn_bandeja_leer", { p: { ids: lista } });
-    if (bnFundir(r, lista) && S.bn.datos.faltan.length) bnSeguir();
+    if (bnFundir(r, lista, lec) && S.bn.datos.faltan.length) bnSeguir();
     return lista;
   }
   // LO QUE FALTA POR RECOMENDAR se pide por partes, sin frenar la pantalla: cada parte pone al día sus tarjetas (la píldora de la fila,
@@ -3494,11 +3588,11 @@
       for (let i = 0; i < BN_PARTES && S.pagina === "bandeja"; i++) {
         const faltan = bnViva() && Array.isArray(S.bn.datos.faltan) ? S.bn.datos.faltan.slice() : [];
         if (!faltan.length || !navigator.onLine) break;
-        const toque = x.toque;
+        const toque = x.toque, lec = bnLec();
         const r = await DB._rpc("fn_bandeja_leer", { p: { ids: faltan } });
         if (!bnViva()) break;
         if (toque !== x.toque) continue;
-        if (!bnFundir(r, faltan)) break;
+        if (!bnFundir(r, faltan, lec)) break;
         const quedan = S.bn.datos.faltan.length;
         // (solo las filas de las tarjetas que llegaron en esta parte: las demás siguen como estaban)
         if (S.pagina === "bandeja") { bnRepintarGrupos(); bnRefrescarTarjetas(Object.keys(r.tarjetas)); }
@@ -3519,15 +3613,78 @@
     return !!r.querySelector('.ct-mov[data-tocada="1"], .ct-form:not([hidden]), [data-bn-grupo][open]');
   }
   // las tarjetas de unos movimientos, pintadas otra vez en su sitio con lo último (la que Edgar tiene a medias no se toca)
-  function bnRefrescarTarjetas(ids) {
+  // `avisar`: (cuarta vuelta) en la que tiene a medias y abierta, DECIRLE que ya hay una recomendación nueva, con un enlace para
+  // verla (lo que lleva escrito en «Dímelo» se conserva); antes esa tarjeta se quedaba con lo de antes hasta salir y volver
+  function bnRefrescarTarjetas(ids, avisar) {
     const cont = $("ct-bj-lista"); if (!cont || !ids || !ids.length) return;
     const quiero = new Set(ids), porId = new Map((S.bandeja || []).filter(f => quiero.has(f.movimiento_id)).map(f => [f.movimiento_id, f]));
     cont.querySelectorAll(".ct-mov").forEach(card => {
       const m = porId.get(card.dataset.id); if (!m) return;
       const det = card.querySelector(".ct-mov-det"), forma = card.querySelector(".ct-form");
-      if (card.dataset.tocada === "1" || (det && det.contains(document.activeElement)) || (forma && !forma.hidden)) return;
+      if (card.dataset.tocada === "1" || (det && det.contains(document.activeElement)) || (forma && !forma.hidden)) {
+        if (avisar) bnYaSe(card, m);
+        return;
+      }
       movRepintar(card, m);
     });
+  }
+  // «YA SÉ QUÉ ES LO DE X»: la nota que se pone arriba de una tarjeta abierta que Edgar tiene a medias cuando su recomendación cambió
+  // por algo que él acaba de decir. No se repinta debajo de su dedo: «Ver lo que te propongo» la pinta con lo nuevo (su frase sigue)
+  function bnYaSe(card, m) {
+    const t = bnDe(m), bl = card.querySelector("[data-bn]");
+    if (!t || !bl || t.pensando || bl.querySelector("[data-bn-ya]")) return;
+    // (lo que la tarjeta enseña sigue siendo verdad si no decía nada y sigue sin decir nada)
+    if (!(t.rec && (t.rec.accion || t.rec.aviso))) return;
+    bl.insertAdjacentHTML("afterbegin", `<p class="ct-nota ct-bn-ya" data-bn-ya role="status">Ya sé qué es lo de ${esc(t.nombre || "este comercio")} (me lo acabas de decir). <button type="button" class="ct-jr-link" data-bn-ya-ver>Ver lo que te propongo ahora</button></p>`);
+    bl.querySelector("[data-bn-ya-ver]").addEventListener("click", () => {
+      delete card.dataset.tocada;
+      const f = card.querySelector(".ct-form"); if (f) { f.hidden = true; f.innerHTML = ""; }
+      const nueva = movRepintar(card, m);
+      if (typeof nueva.scrollIntoView === "function") nueva.scrollIntoView({ block: "nearest" });
+    });
+  }
+  // LAS TARJETAS DE UNA CONTRAPARTE DE LA QUE EDGAR ACABA DE DECIR ALGO (cuarta vuelta). Lo recordado cambia lo que recomiendan, y la
+  // siguiente de la lista suele ser de ese mismo comercio. Antes se abría con lo de antes («Todavía no sé qué es», o la sugerencia por
+  // el nombre aunque él acabara de decir otra cosa) y cambiaba sola unos segundos después, cuando terminaba TODA la relectura por
+  // detrás, con el control del banco; y contestando seguido, cada respuesta tiraba la relectura anterior. Ahora, EN EL MOMENTO: esas
+  // tarjetas (y su grupo) dicen «Mirándolo…» —lo que recomendaban ya no vale— y se piden SOLO ellas (fn_bandeja_leer {ids}), sin
+  // esperar a nada más. Lo que llega se funde aunque Edgar haya contestado otra cosa mientras tanto: cada tanda lleva su número, y solo
+  // se deja de lado la tarjeta que se pidió otra vez después (o que ya se contestó). Las listas de la franja, solo si nada cambió
+  // desde que se pidió (si no, las trae la lectura de después). Si no se puede leer, quedan entre las que faltan (se piden por partes)
+  // `conGrupo`: su grupo también se mira otra vez (la respuesta salió de UNA tarjeta: lo que el grupo decía puede no valer); si la
+  // respuesta salió del grupo mismo, el grupo sigue diciendo lo que Edgar acaba de confirmar hasta que llegue lo nuevo
+  function bnMirar(ids, conGrupo) {
+    const d = S.bn.datos, x = S.bn.mirando;
+    if (!d || !ids || !ids.length || !navigator.onLine) return;
+    const n = ++x.n, mios = [], claves = new Set();
+    for (const id of ids) { const t = d.tarjetas[id]; if (!t) continue; if (t.clave) claves.add(t.clave); d.tarjetas[id] = { ...t, rec: null, pensando: true, mirando: true }; x.de.set(id, n); mios.push(id); }
+    if (!mios.length) return;
+    // (su grupo, igual: lo que decía salía de lo que decían sus tarjetas)
+    if (conGrupo) d.grupos = (d.grupos || []).map(g => (claves.has(g.clave) && !g.uno_a_uno && g.clase !== "lote" ? { ...g, rec: null, mixto: false, pendiente: true } : g));
+    const lec = bnLec();
+    const fallo = () => {
+      if (S.bn.datos !== d) return;
+      const sigo = mios.filter(id => x.de.get(id) === n && d.tarjetas[id]);
+      sigo.forEach(id => x.de.delete(id));
+      if (!sigo.length) return;
+      const ya = new Set(Array.isArray(d.faltan) ? d.faltan : []);
+      d.faltan = (Array.isArray(d.faltan) ? d.faltan : []).concat(sigo.filter(id => !ya.has(id))); d.parcial = true;
+      bnSeguir();
+    };
+    DB._rpc("fn_bandeja_leer", { p: { ids: mios } }).then(r => {
+      // (la Bandeja se leyó entera mientras tanto: lo suyo es más nuevo)
+      if (!bnViva() || S.bn.datos !== d) return;
+      if (!r || typeof r !== "object" || !r.tarjetas || typeof r.tarjetas !== "object") return fallo();
+      const sigo = mios.filter(id => x.de.get(id) === n && d.tarjetas[id]), quiero = new Set(sigo);
+      if (!sigo.length) return;
+      const parte = { ...r, tarjetas: {}, faltan: (Array.isArray(r.faltan) ? r.faltan : []).filter(id => quiero.has(id)) };
+      for (const id of sigo) if (r.tarjetas[id]) parte.tarjetas[id] = r.tarjetas[id];
+      if (!bnFundir(parte, sigo, lec)) return fallo();
+      sigo.forEach(id => { x.de.delete(id); S.bn.detras.ids.delete(id); });
+      if (d.faltan.length) bnSeguir();
+      if (S.pagina !== "bandeja") return;
+      bnRepintarGrupos(); bnRefrescarTarjetas(sigo, true); bnRepintarFranja();
+    }).catch(fallo);
   }
   // la franja de la Bandeja nueva, otra vez con lo último (`forzar`: aunque el foco esté dentro: acaba de cambiar algo ahí mismo)
   function bnRepintarFranja(forzar) {
@@ -3539,15 +3696,25 @@
   // pendientes eran segundos, y una veintena de peticiones, por respuesta). Sale su tarjeta, se abre la siguiente (`abrir`), y la cuenta
   // de arriba, la barra y los grupos se ponen al día con lo que ya se sabe. Por detrás (bnPorDetras) se releen las tarjetas de la misma
   // contraparte, las franjas y todo lo demás de la Bandeja. `antes`: lo que hay que esperar antes de leer por detrás (cerrar lo de la IA)
-  function bnContestado(ids, abrir, antes) {
+  // (Cuarta vuelta) `o`: { recordado: la respuesta dejó algo recordado de esa contraparte (sus demás tarjetas se miran otra vez EN EL
+  // MOMENTO: bnMirar); grupo: la respuesta salió de «Decide por grupo» (la pantalla se queda en los grupos; antes saltaba a la tarjeta
+  // que estuviera abierta en la lista, miles de píxeles más abajo, y había que volver a subir después de cada grupo); irA: aun así, ir a
+  // la tarjeta que se abre (del grupo quedó uno solo, y se dice) }
+  function bnContestado(ids, abrir, antes, o = {}) {
     const fuera = new Set(ids), d = S.bn.datos, x = S.bn.detras, tj = (d && d.tarjetas) || {};
     // los hermanos: los demás pendientes de esas contrapartes
-    bnConHermanos(ids).forEach(id => x.ids.add(id));
+    const hermanos = bnConHermanos(ids).filter(id => !fuera.has(id));
+    if (!o.recordado) hermanos.forEach(id => x.ids.add(id));
     S.bandeja = (S.bandeja || []).filter(f => !fuera.has(f.movimiento_id));
-    for (const id of ids) { S.bj.firmas.delete(id); x.ids.delete(id); delete tj[id]; S.bn.dim.delete(id); S.bn.frases.delete(id); S.bn.mas.delete(id); }
+    for (const id of ids) { S.bj.firmas.delete(id); x.ids.delete(id); delete tj[id]; S.bn.dim.delete(id); S.bn.frases.delete(id); S.bn.mas.delete(id); S.bn.mirando.de.delete(id); }
     S.bn.partes.toque += 1; S.bj.serie += 1; S.saldos = null;
+    // (cuarta vuelta) lo recordado cambia lo que recomiendan sus hermanos: «Mirándolo…» ya, y se piden solo ellos (antes de pintar:
+    // la siguiente tarjeta, que se abre ahora, no enseña la recomendación de antes)
+    if (o.recordado && hermanos.length) bnMirar(hermanos, !o.grupo);
     pintarBadge();
     if (S.pagina !== "bandeja") return;
+    // (sinMover: Edgar abrió OTRA tarjeta mientras esta respuesta estaba en camino: esa sigue abierta y la pantalla no se mueve)
+    const enGrupos = !!o.grupo && !o.irA, quieta = enGrupos || !!o.sinMover, abiertaAntes = S.bj.abierta;
     S.bj.abierta = abrir && S.bandeja.some(f => f.movimiento_id === abrir) ? abrir : null;
     const filtros = [S.filtroCuenta, S.bj.motivo, S.bj.grupo], fx = bandejaFiltros(S.bandeja);
     const sub = main().querySelector(".ct-pag-cab .ct-pag-sub"), herr = $("ct-bj-herr-env"), cont = $("ct-bj-lista");
@@ -3562,11 +3729,24 @@
     else {
       const n = $("ct-bj-n"), total = S.bandeja.length, quedan = cont.querySelectorAll(".ct-mov").length;
       if (n) n.textContent = quedan === total ? "" : `${quedan} de ${plural(total, "movimiento", "movimientos")}`;
-      if (S.bj.abierta) desplegar(S.bj.abierta);
+      // (la tarjeta que ya estaba abierta y sigue abierta no se «despliega» otra vez: desplegar lleva la pantalla a ella)
+      if (S.bj.abierta && !(quieta && S.bj.abierta === abiertaAntes)) desplegar(S.bj.abierta);
+      // (lo que se miraba otra vez —bnMirar— y sigue en la lista: su fila y, si está abierta y sin tocar, su cuerpo)
+      if (o.recordado && hermanos.length) bnRefrescarTarjetas(hermanos);
     }
     bnRepintarGrupos(true);
-    const c = S.bj.abierta ? main().querySelector(".ct-mov.abierta") : null;
-    if (c && typeof c.scrollIntoView === "function") c.scrollIntoView({ block: "center" });
+    if (o.sinMover) { /* nada: está leyendo otra tarjeta */ }
+    else if (enGrupos) {
+      // la decisión salió de un grupo: la pantalla se queda en los grupos (si con el repintado quedaron fuera de la vista, vuelve a ellos)
+      const g = $("ct-bn-grupos") || $("ct-bn-franja") || main().querySelector(".ct-pag-cab");
+      if (g && typeof g.getBoundingClientRect === "function") {
+        const r = g.getBoundingClientRect(), alto = window.innerHeight || document.documentElement.clientHeight || 0;
+        if ((r.bottom < 80 || r.top > alto - 80) && typeof g.scrollIntoView === "function") g.scrollIntoView({ block: "start" });
+      }
+    } else {
+      const c = S.bj.abierta ? main().querySelector(".ct-mov.abierta") : null;
+      if (c && typeof c.scrollIntoView === "function") c.scrollIntoView({ block: "center" });
+    }
     Promise.resolve(antes).catch(() => {}).then(() => bnPorDetras());
   }
   // POR DETRÁS, después de contestar: las tarjetas de los hermanos de lo contestado (y las listas de la franja) y todo lo demás que la
@@ -3581,18 +3761,28 @@
     clearTimeout(x.t); x.t = null;
     if (!reintento) x.n = 0;
     if (!bnViva() || S.pagina !== "bandeja" || !navigator.onLine) return;
-    const pedidos = bnConHermanos([...x.ids]);
+    const pedidos = bnConHermanos([...x.ids]), lec = bnLec();
     let leido, parte;
     // (vuelo: cuántas de estas lecturas están en camino)
     x.vuelo += 1;
     try { [leido, parte] = await Promise.all([leerBandeja(false), DB._rpc("fn_bandeja_leer", { p: { ids: pedidos } })]); }
     catch (err) {
       if (serie !== S.bj.serie || S.pagina !== "bandeja" || esFalloDeRed(err)) return;
-      return pintarError(err, pintarBandeja);
+      // (cuarta vuelta) SOLO UN CUADRE EN ROJO TAPA LA PÁGINA. Un fallo de esta relectura que no es un cuadre (un corte de la API, por
+      // ejemplo) cambiaba la página entera por el rojo «La base no contestó bien · canceling statement due to statement timeout»
+      // mientras Edgar ya escribía en la tarjeta siguiente, y lo contestado SÍ se había guardado. Ahora se dice en la franja y se
+      // intenta otra vez (unas pocas veces, espaciadas); la página sigue como está
+      if (err && err.control) return pintarError(err, pintarBandeja);
+      x.mal = true;
+      if (x.n < BN_RELEE_VECES) { x.n += 1; x.t = setTimeout(() => { x.t = null; bnPorDetras(true); }, BN_RELEE_MS); }
+      bnRepintarFranja();
+      return;
     }
     finally { x.vuelo -= 1; }
     if (serie !== S.bj.serie || S.pagina !== "bandeja" || !bnViva()) return;
-    if (bnFundir(parte, pedidos)) { pedidos.forEach(id => x.ids.delete(id)); if (S.bn.datos.faltan.length) bnSeguir(); }
+    const estabaMal = x.mal; x.mal = false;
+    if (bnFundir(parte, pedidos, lec)) { pedidos.forEach(id => x.ids.delete(id)); if (S.bn.datos.faltan.length) bnSeguir(); }
+    if (estabaMal) bnRepintarFranja(true);
     const filas = leido.filas, hay = S.bandeja || [];
     const igual = filas.length === hay.length && filas.every((f, i) => hay[i].movimiento_id === f.movimiento_id && S.bj.firmas.get(f.movimiento_id) === firmaMov(f));
     if (igual) {
@@ -3726,15 +3916,19 @@
   // que NO va a una obra (lo de una obra se propone cada vez: qué obra fue no lo sabe una regla, y de esas compras suele llegar el
   // recibo); y no se ofrece en un cargo que pasa del tope (ese no entraría nunca). La base lo comprueba otra vez
   function bnSoloVale(t, accion, cuenta, monto) {
-    if (!t || t.clase !== "comercio" || bnCfg().solo === false) return false;
+    if (!t || t.clase !== "comercio" || bnCfg().solo === false || t.sabe === "prestamista") return false;
     if (accion !== "personal" && !(accion === "gasto" && cuenta && reglaObra(cuenta) !== "obligatoria")) return false;
     return monto == null || Math.abs(num(monto) || 0) <= (num(bnCfg().solo_tope) || 0);
   }
   const bnSoloHTML = (nombre, marcado, apagado, enGrupo) => `<label class="ct-casilla ct-bn-solo"><input type="checkbox" ${enGrupo ? "data-bn-g-solo" : "data-bn-solo"}${marcado ? " checked" : ""}${apagado ? " disabled" : ""}> Y que lo siguiente de ${esc(nombre || "ese comercio")} entre solo (hasta ${esc(fmt(bnCfg().solo_tope))} cada cargo)</label>`;
   // «Recordarlo»: lo próximo de esa contraparte se PROPONE así (`marcada`: cómo sale la casilla; en lo que entendió el «Dímelo», como lo
   // sugirió la IA: quien lo decide es Edgar, y la base no recuerda nada que él no mande). Y, donde vale, que lo siguiente entre solo
+  // (Cuarta vuelta) Lo que SALE HACIA UN PRESTAMISTA (lo dice el banco: `sabe`) es la cuota de un préstamo: como un gasto, algo
+  // personal o un pago por trabajo solo entra con su porqué, de uno en uno, y la base no lo recuerda: no se ofrece
+  const BN_NO_A_PRESTAMISTA = ["gasto", "personal", "contratista", "cuadrilla"];
   function bnRecordarHTML(t, p, monto, marcada = true) {
     if (!t || !t.clave || !BN_CLASES_CLAVE.includes(t.clase) || !BN_RECORDABLES.includes(p.accion) || p.fuente === "memoria") return "";
+    if (t.sabe === "prestamista" && BN_NO_A_PRESTAMISTA.includes(p.accion)) return "";
     return `<div class="ct-bn-rc"><label class="ct-casilla ct-bn-recordar"><input type="checkbox" data-bn-recordar${marcada ? " checked" : ""}> Recordarlo: lo próximo de ${esc(t.nombre || "aquí")} te lo propongo así</label>
       ${bnSoloVale(t, p.accion, (p.datos || {}).cuenta, monto) ? bnSoloHTML(t.nombre, false, !marcada) : ""}</div>`;
   }
@@ -3783,7 +3977,9 @@
   function bnPillHTML(m, t) {
     const rec = t.rec || null, d = bnDimeloDe(m, t);
     const p = d && d.estado === "pendiente" && d.accion ? d : rec && rec.accion ? rec : null;
-    if (!p) return rec && rec.aviso ? pill(motivoLlano(m.motivo), m.motivo === "posible_duplicado" || m.motivo === "quitada" ? "warn" : "") : t.pensando ? pill("Mirándolo…", "") : pill("¿Qué es?", "warn");
+    // (cuarta vuelta) lo que la app reconoce pero pregunta cuál (`elige`: su palabra la dice la base); lo que Edgar deshizo y la app
+    // ya no le propone (`deshecha`): se pregunta
+    if (!p) return t.pensando ? pill("Mirándolo…", "") : rec && rec.pill ? pill(rec.pill, "cu bn") : rec && rec.aviso && !rec.deshecha ? pill(motivoLlano(m.motivo), m.motivo === "posible_duplicado" || m.motivo === "quitada" ? "warn" : "") : pill("¿Qué es?", "warn");
     const a = p.accion, cuenta = (p.datos || {}).cuenta;
     const txt = a === "gasto" || a === "ia" ? bnCuentaLlana(cuenta) : a === "banco" ? bnPillBanco(m, p)
       : ({ personal: "Personal", cobro: "Cobro de factura", anticipo: "Anticipo de obra", prestamo: "Préstamo", aporte: "Dinero tuyo", traspaso: "Entre tus cuentas", cuadrilla: "Cuadrilla", contratista: "Subcontrato", otro_ingreso: "Otro ingreso" })[a] || "¿Qué es?";
@@ -3832,16 +4028,24 @@
     // (piensa: su «Dímelo» está esperando a la IA; si la tarjeta se pinta otra vez mientras tanto, lo sigue diciendo)
     const rec = t.rec || null, d = bnDimeloDe(m, t), piensa = S.bn.pensando.has(m.movimiento_id), dis = mfaActivo() && !piensa ? "" : " disabled";
     const frase = S.bn.frases.has(m.movimiento_id) ? S.bn.frases.get(m.movimiento_id) : (d && d.frase) || "";
-    const arriba = rec && rec.accion ? bnRecHTML(t, rec, m)
-      : rec && rec.aviso ? `<p class="ct-bn-aviso" data-bn-aviso>${esc(rec.aviso)}</p>`
-      // (tercera vuelta) su recomendación todavía no llegó (la base las piensa por partes): se dice, y llega sola
-      : t.pensando ? `<p class="ct-bn-sin ct-bn-pensando" data-bn-pensando role="status">Todavía estoy mirando ${num(m.monto) > 0 ? "este depósito" : "este cargo"}: en un momento te digo qué creo que es. Si ya lo sabes, dímelo aquí abajo.</p>`
-      : `<p class="ct-bn-sin" data-bn-sin>Todavía no sé qué es ${num(m.monto) > 0 ? "este depósito" : "este cargo"}.</p>`;
+    const esto = num(m.monto) > 0 ? "este depósito" : "este cargo";
+    // (tercera vuelta) su recomendación todavía no llegó (la base las piensa por partes): se dice, y llega sola
+    // (cuarta vuelta) o Edgar ACABA de decir qué es lo de esa contraparte y lo de antes ya no vale: se mira otra vez (bnMirar)
+    const arriba = t.pensando ? `<p class="ct-bn-sin ct-bn-pensando" data-bn-pensando${t.mirando ? ` data-bn-mirando` : ""} role="status">${t.mirando ? `Me acabas de decir qué es lo de ${esc(t.nombre || "este comercio")}: estoy mirando si ${esto} es lo mismo. Te lo digo en un momento.` : `Todavía estoy mirando ${esto}: en un momento te digo qué creo que es. Si ya lo sabes, dímelo aquí abajo.`}</p>`
+      : rec && rec.accion ? bnRecHTML(t, rec, m)
+      // (cuarta vuelta) EL BANCO LO RECONOCE DE VARIAS FORMAS IGUAL DE VÁLIDAS (el pago de una tarjeta, con dos tarjetas): no se da
+      // por buena la primera; se pregunta cuál, y la elegida se enseña entera con su «Así es»
+      : rec && Array.isArray(rec.elige) && rec.elige.length ? `<div class="ct-bn-elige" data-bn-elige>
+          <p class="ct-bn-t" data-bn-elige-t>${esc(rec.aviso || "El banco reconoce este movimiento de varias formas. ¿Cuál es?")}</p>
+          <div class="ct-acciones ct-bn-elige-ops">${rec.elige.map((o, i) => `<button type="button" class="accion secundaria" data-bn-elige-op="${i}" aria-pressed="false">${esc(o.boton || o.texto || "Esta")}</button>`).join("")}</div>
+          <div class="ct-bn-elige-caja" data-bn-elige-caja></div></div>`
+      : rec && rec.aviso ? `<p class="ct-bn-aviso" data-bn-aviso${rec.deshecha ? " data-bn-deshecha" : ""}>${esc(rec.aviso)}</p>`
+      : `<p class="ct-bn-sin" data-bn-sin>Todavía no sé qué es ${esto}.</p>`;
     // (lo que el banco decía y la tarjeta nueva tapaba) de una compra para una obra suele haber recibo, y el recibo es quien dice la
     // obra: subirlo es mejor que contestarla aquí. Si se registra aquí y el recibo llega después, la Bandeja lo cambia o lo pregunta
     // (solo en la compra a un COMERCIO: de un Zelle a una persona o de un traspaso no hay recibo que subir)
     const sube = num(m.monto) < 0 && m.motivo === "sin_ticket" && t.clase === "comercio" && (!rec || (!rec.accion && !rec.aviso) || ((rec.accion === "gasto" || rec.accion === "ia") && reglaObra((rec.datos || {}).cuenta) === "obligatoria"));
-    return `<section class="ct-bn" data-bn>${t.deshecho ? `<p class="ct-nota ct-bn-deshecho" data-bn-deshecho>Deshiciste lo que se había registrado de este movimiento: ya no entra solo, te lo pregunto.</p>` : ""}${arriba}
+    return `<section class="ct-bn" data-bn>${t.deshecho && !(rec && rec.deshecha) ? `<p class="ct-nota ct-bn-deshecho" data-bn-deshecho>Deshiciste lo que se había registrado de este movimiento: ya no entra solo, te lo pregunto.</p>` : ""}${arriba}
       ${sube ? `<p class="ct-nota ct-bn-sube" data-bn-sube>¿Tienes la foto del recibo de esta compra? Súbela a su obra y este cargo se casa solo con ella. Si lo registras aquí y el recibo llega después, te aviso arriba para cambiarlo.</p>` : ""}
       ${bnCfg().dimelo === false ? "" : `<form class="ct-bn-dim" data-bn-dim novalidate>
         <label class="ct-campo">¿Qué es? Dímelo con tus palabras<textarea name="frase" data-bn-frase rows="2" maxlength="600" placeholder="${esc(num(m.monto) > 0 ? "Ej.: es el pago de la factura de la cocina de la obra de la calle Roble" : "Ej.: material para la obra de la calle Roble")}"${dis}>${esc(frase)}</textarea></label>
@@ -3912,8 +4116,7 @@
       // otra vez no avanza —lo dice la base, falta_obra—: entonces hay que elegir una para todos)
       const delDia = grupo && !(pre && pre.falta_obra);
       return `<label class="ct-campo">¿De qué obra?<select name="bn_obra"${delDia ? "" : ` required data-falta="${grupo ? "Elige la obra para todos, o contéstalos uno por uno." : "Falta la obra."}"`}>${opcionesObraBn(delDia ? "La del día de cada uno" : "Elige la obra…", "")}</select></label>
-      ${delDia ? `<p class="ct-nota ct-bn-obra-dia">«La del día»: la obra en la que estuvo la cuadrilla el día de cada compra. Si ese día no hubo una sola, ese se queda y te la pregunto.</p>`
-        : grupo ? `<p class="ct-nota ct-bn-obra-dia" data-bn-g-falta-obra>A estos les falta la obra: el día de cada compra la cuadrilla no estuvo en una sola. Elige una para todos, o contéstalos uno por uno.</p>` : ""}
+      ${delDia ? `<p class="ct-nota ct-bn-obra-dia">«La del día»: la obra en la que estuvo la cuadrilla el día de cada compra. Si ese día no hubo una sola, ese se queda y te la pregunto.</p>` : ""}
       ${pv.length ? `<label class="ct-campo">¿A qué subcontratista le pagaste?<select name="bn_proveedor" data-bn-proveedor><option value="">No está en la lista</option>${pv.map(p => `<option value="${esc(p.proveedor_id)}"${String(p.proveedor_id) === selPv ? " selected" : ""}>${esc(p.nombre || "")}</option>`).join("")}</select></label>
         <p class="ct-nota ct-bn-prov-n">Con su nombre, lo que le pagas en el año queda sumado para su 1099. Si no está en la lista, se registra sin nombre.</p>` : ""}`;
     }
@@ -4017,7 +4220,7 @@
     apagados.forEach(b => { b.disabled = true; });
     if (boton) { boton.classList.add("ct-girando"); boton.setAttribute("aria-busy", "true"); }
     caja.innerHTML = `<p class="ct-aviso ct-espera" role="status">${esc(espera || "Un momento…")}</p>`;
-    const soltar = () => { apagados.forEach(b => { b.disabled = false; }); if (boton) { boton.classList.remove("ct-girando"); boton.removeAttribute("aria-busy"); } };
+    const soltar = () => { apagados.forEach(b => { b.disabled = false; }); if (boton) { boton.classList.remove("ct-girando"); boton.removeAttribute("aria-busy"); } bnFinEspera(); };
     try {
       const r = await DB._rpc(fn, args);
       S.ocupado = false; soltar(); caja.innerHTML = "";
@@ -4029,6 +4232,9 @@
       return null;
     }
   }
+  // (cuarta vuelta) «Espera un momento: estoy terminando lo anterior» se quedaba escrito en la tarjeta cuando ya no había nada que
+  // esperar: al terminar la llamada que estaba en camino, esas notas se quitan (el botón ya se puede tocar)
+  const bnFinEspera = () => { main().querySelectorAll("[data-bn-espera]").forEach(p => p.remove()); };
   // LA CONTESTACIÓN QUE SE PERDIÓ: se apunta qué movimientos estaban en juego y la Bandeja se lee otra vez (sin señal, su página lo
   // dice y vuelve sola al volver la señal); al leerla, bnDudaResuelta dice si llegaron a guardarse
   function bnDudar(ids) {
@@ -4049,7 +4255,8 @@
   // lo que quedó registrado, en una línea para el aviso
   function bnResumen(r) {
     const fc = Array.isArray(r.facturas_cobradas) ? r.facturas_cobradas.length : 0, rc = r.recordado;
-    return `Registrado${r.texto ? `: ${String(r.texto).replace(/\.$/, "")}` : ""}${r.asiento ? ` · asiento ${r.asiento}` : ""}${fc ? ` · ${plural(fc, "factura quedó cobrada", "facturas quedaron cobradas")} en Proyectos` : ""}${rc ? ` · lo recordaré para ${rc.nombre}${rc.solo ? " (lo siguiente entra solo)" : ""}${rc.solo_no ? `. ${rc.solo_no}` : ""}` : ""}${r.nota ? ` · ${r.nota}` : ""}`;
+    // (cuarta vuelta: sin el número del asiento, que a Edgar no le dice nada; está en «Libro»)
+    return `Registrado${r.texto ? `: ${String(r.texto).replace(/\.$/, "")}` : ""}${fc ? ` · ${plural(fc, "factura quedó cobrada", "facturas quedaron cobradas")} en Proyectos` : ""}${rc ? ` · lo recordaré para ${rc.nombre}${rc.solo ? " (lo siguiente entra solo)" : ""}${rc.solo_no ? `. ${rc.solo_no}` : ""}` : ""}${r.nota ? ` · ${r.nota}` : ""}`;
   }
   // registrado: se dice, su tarjeta sale de la lista y se abre LA SIGUIENTE (se contesta una detrás de otra, sin volver a buscar por
   // dónde se iba); lo que la IA (c8) tenía abierto para ese movimiento se cierra y, por detrás, la Bandeja se pone al día (tercera
@@ -4058,7 +4265,10 @@
     S.hooks.avisar(bnResumen(r));
     let sig = null;
     if (m) { const l = filtrarBandeja(), i = l.findIndex(f => f.movimiento_id === m.movimiento_id); sig = i >= 0 ? l[i + 1] || l[i - 1] || null : null; }
-    bnContestado(m ? [m.movimiento_id] : [], sig ? sig.movimiento_id : null, bnCerrarIADe(r.propuestas_ia, r.propuestas_ia_iguales));
+    // (cuarta vuelta) si mientras esta respuesta estaba en camino Edgar abrió OTRA tarjeta, esa sigue abierta (antes se le cerraba
+    // para abrir «la siguiente») y la pantalla no se mueve
+    const otra = m && S.bj.abierta && S.bj.abierta !== m.movimiento_id && (S.bandeja || []).some(f => f.movimiento_id === S.bj.abierta) ? S.bj.abierta : null;
+    bnContestado(m ? [m.movimiento_id] : [], otra || (sig ? sig.movimiento_id : null), bnCerrarIADe(r.propuestas_ia, r.propuestas_ia_iguales), { recordado: !!r.recordado, sinMover: !!otra });
   }
   // NO REGISTRADO: la base dice por qué.
   //   · LA TARJETA YA NO ES LA QUE SE VE (casó sola con lo que ya estaba en el libro —resuelto—, lo que el banco proponía cambió
@@ -4081,6 +4291,9 @@
       c.hidden = false;
       // (lo que el banco mismo ya dice —el nombre del prestamista—: la respuesta viene escrita; Edgar la confirma o la cambia)
       if (r.sugerido && !String(ta.value || "").trim()) ta.value = r.sugerido;
+      // (cuarta vuelta) lo que Edgar dijo en «Dímelo» ANTES de leer este freno no es su respuesta al freno: la base lo devuelve
+      // como `ejemplo` y aquí va en gris, de recordatorio (antes salía ya escrito, y un segundo toque levantaba cualquier freno)
+      else if (r.ejemplo && !String(ta.value || "").trim()) { ta.placeholder = `Antes dijiste: «${r.ejemplo}». Si aun así es eso, escribe aquí por qué.`; ta.dataset.bnEjemplo = "1"; }
       ta.focus();
       if (fr && typeof fr.scrollIntoView === "function") fr.scrollIntoView({ block: "nearest" });
       return;
@@ -4101,6 +4314,51 @@
     await pintarBandeja();
     const c = S.bj.abierta && S.pagina === "bandeja" ? main().querySelector(".ct-mov.abierta") : null;
     if (c && typeof c.scrollIntoView === "function") c.scrollIntoView({ block: "center" });
+  }
+  // LA CAJA DE UNA OPCIÓN DEL BANCO YA ELEGIDA (cuarta vuelta: una de las de «¿cuál es?», o un botón de «Más opciones → Lo que dice
+  // el banco»): lo que se va a registrar, en llano, lo que esa opción pida (el capital y el interés de una cuota) y su «Así es», que
+  // la registra POR LA BANDEJA (fn_bandeja_hacer, acción «banco», con la huella de la opción que se leyó). Si la puerta frena, lo
+  // dice y pide el porqué, como en cualquier otra respuesta. `fuente`: «recomendacion» o «mas». `cerrar`: lo que hace «No es esa»
+  function bnOpcionCaja(cont, m, t, p, fuente, cerrar) {
+    cont.innerHTML = `<div class="ct-bn-rec ct-bn-op" data-bn-caja="op">${bnRespuestaHTML(t, p, "rec", m)}
+      <div class="ct-acciones"><button type="button" class="accion ct-bn-asi" data-bn-op-asi${mfaActivo() ? "" : " disabled"}>Así es</button><button type="button" class="accion secundaria" data-bn-op-no>${fuente === "mas" ? "Cancelar" : "No es esa"}</button></div></div>`;
+    const bl = cont.querySelector('[data-bn-caja="op"]'), btn = bl.querySelector("[data-bn-op-asi]");
+    bl.querySelector("[data-bn-op-no]").addEventListener("click", cerrar);
+    btn.addEventListener("click", async () => {
+      const v = bnLeerCaja(bl, p);
+      if (v.error) return bnErrorCaja(bl, v);
+      const datos = { ...p.datos }, op = { fuente };
+      if (Object.keys(v.campos).length) datos.campos = v.campos;
+      if (v.motivo) op.motivo = v.motivo;
+      if (v.visto) op.visto = v.visto;
+      const r = await bnRpc(bl, "fn_bandeja_hacer", { p_movimiento: m.movimiento_id, p_accion: "banco", p_datos: datos, p_opciones: op }, "Registrándolo en el libro…", btn, [m.movimiento_id]);
+      if (!r) return;
+      if (r.hecho !== true) return bnNoHecho(bl, r, m);
+      await bnHecho(r, m);
+    });
+    if (typeof bl.scrollIntoView === "function") bl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+  // UN BOTÓN DE «LO QUE DICE EL BANCO» (cuarta vuelta): el toque ya no registra nada. Le pregunta a la base qué es esa opción, en
+  // llano y con su monto (fn_bandeja_validar: solo lee; si lo que el banco proponía cambió desde que se pintó, lo dice y la tarjeta
+  // se pone al día), y lo enseña con su «Así es» en la forma de la tarjeta
+  async function bnAbrirOpcion(card, m, t, i) {
+    const f = card.querySelector(".ct-form"), huella = (t.ops || [])[i];
+    if (!f || !huella) return;
+    card.dataset.tocada = "1";
+    const cerrar = () => { f.hidden = true; f.innerHTML = ""; };
+    f.hidden = false;
+    f.innerHTML = `<p class="ct-aviso ct-espera" role="status">Un momento…</p>`;
+    let v;
+    try { v = await DB._rpc("fn_bandeja_validar", { p_movimiento: m.movimiento_id, p_accion: "banco", p_datos: { opcion: i, huella } }); }
+    catch (err) { if (f.isConnected) f.innerHTML = `<p class="ct-aviso bad" data-bn-no-hecho>${esc(bnError(err, true))}</p>`; return; }
+    if (!f.isConnected) return;
+    if (!v || v.ok !== true) {
+      if (v && v.cambio) return bnOtraVez({ cambio: true, por_que: v.falta }, m);
+      f.innerHTML = `<p class="ct-aviso warn" data-bn-no-hecho>${esc((v && v.falta) || "Eso ya no se puede registrar así: mira lo que dice ahora la tarjeta.")}</p>`;
+      return;
+    }
+    const pide = v.datos && Array.isArray(v.datos.pide) ? v.datos.pide : [];
+    bnOpcionCaja(f, m, t, { accion: "banco", datos: { opcion: i, huella }, texto: v.texto || bnOpcionLlana(((m.opciones || [])[i] || {}).texto), pide }, "mas", cerrar);
   }
   // «ASÍ ES» de la recomendación
   async function bnAsiRec(card, m, rec) {
@@ -4141,7 +4399,7 @@
     apagados.forEach(b => { b.disabled = true; });
     btn.classList.add("ct-girando"); btn.setAttribute("aria-busy", "true");
     caja.innerHTML = `<p class="ct-aviso ct-espera" role="status">Registrándolo en el libro…</p>`;
-    const soltar = () => { S.ocupado = false; apagados.forEach(b => { b.disabled = false; }); btn.classList.remove("ct-girando"); btn.removeAttribute("aria-busy"); };
+    const soltar = () => { S.ocupado = false; apagados.forEach(b => { b.disabled = false; }); btn.classList.remove("ct-girando"); btn.removeAttribute("aria-busy"); bnFinEspera(); };
     let r, a = null;
     try {
       const cuerpo = { accion: "aprobar", propuesta: rec.propuesta_ia, recordar: v.recordar !== false };
@@ -4276,6 +4534,21 @@
       bnAlCambiarObra(cajaRec, m, rec);
       cajaRec.querySelector("[data-bn-asi]").addEventListener("click", () => bnAsiRec(card, m, rec));
     }
+    // (cuarta vuelta) «¿CUÁL ES?»: cada opción entre las que el banco no sabe elegir; la tocada se enseña entera, con su «Así es»
+    const el = bl.querySelector("[data-bn-elige]");
+    if (el && t.rec && Array.isArray(t.rec.elige)) {
+      const caja = el.querySelector("[data-bn-elige-caja]"), bots = [...el.querySelectorAll("[data-bn-elige-op]")];
+      const soltar = () => { caja.innerHTML = ""; bots.forEach(x => x.setAttribute("aria-pressed", "false")); };
+      bots.forEach(b => b.addEventListener("click", () => {
+        const o = t.rec.elige[Number(b.dataset.bnEligeOp)]; if (!o) return;
+        const o6 = (Array.isArray(m.opciones) ? m.opciones : [])[Number(o.opcion)] || {};
+        tocar();
+        bots.forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+        bnOpcionCaja(caja, m, t, { accion: "banco", datos: { opcion: Number(o.opcion), huella: o.huella }, texto: o.texto || "", pide: Array.isArray(o6.pide) ? o6.pide : [] }, "recomendacion", soltar);
+      }));
+    }
+    // (cuarta vuelta) las opciones del banco de «Más opciones» que la Bandeja sabe registrar: por ella, enseñando antes qué se registra
+    card.querySelectorAll("[data-bn-op]").forEach(b => b.addEventListener("click", () => bnAbrirOpcion(card, m, t, Number(b.dataset.bnOp))));
     const fd = bl.querySelector("[data-bn-dim]");
     if (fd) {
       const ta = fd.querySelector("[data-bn-frase]");
@@ -4364,7 +4637,7 @@
   // nombre, cuántos y el total: no se veía si dentro había cosas distintas). `conRec`: además, lo que recomienda la tarjeta de cada uno
   function bnGrupoListaHTML(g, conRec) {
     const filas = g.ms.map(m => { const t = conRec ? bnDe(m) : null, rec = t && t.rec && t.rec.texto ? t.rec.texto : "";
-      return `<li><span class="ct-bn-gm-f ct-num">${esc(fecha(m.fecha))}</span><span class="ct-bn-gm-d">${esc(m.descripcion || "(sin descripción)")}${conRec ? `<small>${esc(rec || "Todavía no sé qué es: dímelo en su tarjeta.")}</small>` : ""}</span><span class="ct-num ${num(m.monto) < 0 ? "neg" : "pos"}">${num(m.monto) < 0 ? "−" : "+"}${fmtAbs(m.monto)}</span></li>`; }).join("");
+      return `<li><span class="ct-bn-gm-f ct-num">${esc(fecha(m.fecha))}</span><span class="ct-bn-gm-d">${esc(m.descripcion || "(sin descripción)")}${conRec ? `<small>${esc(rec || "Todavía no sé qué es: dímelo en su tarjeta.")}</small>` : `<small class="ct-bn-gm-obra" data-bn-gm-obra="${esc(m.movimiento_id)}" hidden></small>`}</span><span class="ct-num ${num(m.monto) < 0 ? "neg" : "pos"}">${num(m.monto) < 0 ? "−" : "+"}${fmtAbs(m.monto)}</span></li>`; }).join("");
     return `<details class="ct-bn-g-lista" data-bn-g-lista${conRec || g.ms.length <= 4 ? " open" : ""}><summary>${conRec ? "Los" : "Qué hay dentro: los"} ${g.ms.length} movimientos</summary><ul class="ct-bn-gm">${filas}</ul></details>`;
   }
   // «que lo siguiente entre solo», en un grupo: solo si la respuesta elegida puede (algo personal, o un gasto que no va a una obra)
@@ -4389,14 +4662,16 @@
       <summary class="ct-bn-g-cab"><span class="ct-bn-g-n"><b>${esc(g.nombre || "(sin nombre)")}</b><small>${plural(n, "movimiento", "movimientos")}${rec && rec.accion && !lote ? ` · ${esc(s ? (s.clave === "retiro" ? "Personal" : s.nombre) : "sin decidir")}` : lote ? " · el banco ya los reconoce" : g.pendiente ? " · mirándolos…" : g.mixto ? " · hay cosas distintas" : " · sin decidir"}</small></span>${monto}</summary>
       <div class="ct-bn-g-c">
         ${quedo ? `<p class="ct-aviso warn ct-bn-g-quedo" data-bn-g-quedo>${esc(quedo.texto)}</p>` : ""}
-        ${rec && rec.texto ? `<p class="ct-bn-t">${esc(rec.texto)}</p>`
+        ${rec && rec.texto ? `<p class="ct-bn-t" data-bn-g-t>${esc(rec.texto)}</p>`
           // (tercera vuelta) sus tarjetas todavía no se han mirado (la base las piensa por partes): se dice, y llega solo
-          : g.pendiente ? `<p class="ct-bn-sin" data-bn-g-pendiente role="status">Todavía los estoy mirando: en un momento te digo qué creo que son. Si ya lo sabes, elígelo abajo y vale para los ${n}.</p>`
-          : g.mixto ? `<p class="ct-bn-sin" data-bn-g-mixto>Aquí dentro hay cosas distintas: sus tarjetas no dicen todas lo mismo. Míralos abajo; si de verdad son lo mismo, dímelo y vale para los ${n}, y si no, «Verlos uno por uno».</p>`
-          : `<p class="ct-bn-sin">Todavía no sé qué son. Dímelo una vez y vale para los ${n}.</p>`}
+          : g.pendiente ? `<p class="ct-bn-sin" data-bn-g-t data-bn-g-pendiente role="status">Todavía los estoy mirando: en un momento te digo qué creo que son. Si ya lo sabes, elígelo abajo y vale para los ${n}.</p>`
+          // (cuarta vuelta: el grupo no tiene caja de «Dímelo»: lo que hay es la lista de abajo, y así se dice)
+          : g.mixto ? `<p class="ct-bn-sin" data-bn-g-t data-bn-g-mixto>Aquí dentro hay cosas distintas: sus tarjetas no dicen todas lo mismo. Míralos abajo; si de verdad son lo mismo, elígelo una vez en la lista y vale para los ${n}, y si no, «Verlos uno por uno».</p>`
+          : `<p class="ct-bn-sin" data-bn-g-t>Todavía no sé qué son. Elígelo una vez aquí abajo y vale para los ${n}.</p>`}
         ${bnGrupoListaHTML(g, false)}
-        ${lote ? "" : `<label class="ct-campo">Son…<select data-bn-g-cat${dis}>${bnCatOpciones(lado, cat, true, extra)}</select></label>
+        ${lote ? "" : `<label class="ct-campo">Son…<select data-bn-g-cat data-bn-g-cat0="${esc(cat)}"${dis}>${bnCatOpciones(lado, cat, true, extra)}</select></label>
           <div class="ct-bn-g-campos" data-bn-g-campos>${s ? bnCamposHTML(s, null, bnPreGrupo(g)) : ""}</div>
+          <p class="ct-nota ct-bn-g-obras" data-bn-g-obras hidden></p>
           <div data-bn-g-solo-c>${bnSoloGrupoHTML(g, s)}</div>`}
         <div class="ct-acciones"><button type="button" class="accion" data-bn-g-asi${dis}>Así es para los ${n}</button><button type="button" class="accion secundaria" data-bn-g-ver>Verlos uno por uno</button></div>
       </div></details>`;
@@ -4423,7 +4698,19 @@
     const g = gs.find(x => x.clave === card.dataset.bnGrupo); if (!g) return;
     card.addEventListener("toggle", () => { if (card.open) S.bn.grupoAbierto = g.clave; else if (S.bn.grupoAbierto === g.clave) S.bn.grupoAbierto = null; });
     const sel = card.querySelector("[data-bn-g-cat]"), campos = card.querySelector("[data-bn-g-campos]"), soloC = card.querySelector("[data-bn-g-solo-c]");
-    if (sel) sel.addEventListener("change", () => { const s = bnSub(sel.value); campos.innerHTML = s ? bnCamposHTML(s, null, bnPreGrupo(g)) : ""; if (soloC) soloC.innerHTML = bnSoloGrupoHTML(g, s); const c = card.querySelector(".ct-bn-res"); if (c) c.innerHTML = ""; });
+    // (cuarta vuelta) EL TITULAR SIGUE A LA LISTA: con otra cosa elegida que la que el grupo proponía, decía «Son «Material»…» y el
+    // botón registraba lo de la lista. Y LA OBRA DE CADA UNO, a la vista antes de confirmar (bnGrupoObras)
+    const tit = card.querySelector("[data-bn-g-t]"), tit0 = tit ? tit.textContent : "", sin0 = tit ? tit.classList.contains("ct-bn-sin") : false;
+    const titular = () => {
+      if (!tit || !sel) return;
+      const s = bnSub(sel.value), otra = !!s && sel.value !== (sel.dataset.bnGCat0 || "");
+      tit.textContent = otra ? `Vas a registrar los ${g.ms.length} como «${s.clave === "retiro" ? "Es mío, no de la empresa" : s.nombre}»: ${fmtAbs(g.suma)}.` : tit0;
+      tit.classList.toggle("ct-bn-sin", sin0 && !otra); tit.classList.toggle("ct-bn-t", !sin0 || otra);
+      if (otra) tit.dataset.bnGVas = "1"; else delete tit.dataset.bnGVas;
+    };
+    if (sel) sel.addEventListener("change", () => { const s = bnSub(sel.value); campos.innerHTML = s ? bnCamposHTML(s, null, bnPreGrupo(g)) : ""; if (soloC) soloC.innerHTML = bnSoloGrupoHTML(g, s); const c = card.querySelector(".ct-bn-res"); if (c) c.innerHTML = ""; titular(); bnGrupoObras(card, g); });
+    if (campos) campos.addEventListener("change", ev => { if (ev.target && ev.target.name === "bn_obra") bnGrupoObras(card, g); });
+    bnGrupoObras(card, g);
     // (el grupo en el que Edgar ya eligió algo no se repinta debajo de su dedo cuando llegan más recomendaciones)
     const tocar = () => { card.dataset.tocada = "1"; };
     card.addEventListener("input", tocar); card.addEventListener("change", tocar);
@@ -4435,6 +4722,32 @@
       pintarListaBandeja();
       const l = $("ct-bj-lista"); if (l && typeof l.scrollIntoView === "function") l.scrollIntoView({ behavior: "smooth", block: "start" });
     });
+  }
+  // A QUÉ OBRA VA CADA COMPRA DE UN GRUPO (cuarta vuelta): con «La del día de cada uno», cada compra se registraba en la obra donde
+  // estuvo la cuadrilla ese día sin que el grupo enseñara, compra por compra, cuál era. Ahora se dice antes de confirmar: junto a cada
+  // movimiento de la lista (la obra que le toca —la dice la base, `obra_dia`—, o que se queda porque ese día no hubo una sola) y, en
+  // una línea, cuántos van a cada obra y cuántos se quedan. Con una obra elegida para todos, esa
+  function bnGrupoObras(card, g) {
+    const sel = card.querySelector("[data-bn-g-cat]"), s = sel ? bnSub(sel.value) : null, ob = card.querySelector('[data-bn-g-campos] [name="bn_obra"]');
+    const lleva = !!s && !!ob && ((s.accion === "gasto" && !!s.obra) || s.accion === "contratista");
+    const elegida = lleva && ob.value ? ((S.proyectos || []).find(p => p.id === ob.value) || {}).nombre || "" : "", delDia = lleva && !ob.value && !ob.required;
+    const tj = (S.bn.datos && S.bn.datos.tarjetas) || {}, por = new Map();
+    let quedan = 0;
+    card.querySelectorAll("[data-bn-gm-obra]").forEach(el => {
+      const od = (tj[el.dataset.bnGmObra] || {}).obra_dia || "";
+      if (delDia) { if (od) por.set(od, (por.get(od) || 0) + 1); else quedan += 1; }
+      const txt = elegida ? `a ${elegida}` : delDia ? (od ? `a ${od} (donde estuvo la cuadrilla ese día)` : "se queda: ese día la cuadrilla no estuvo en una sola obra") : "";
+      el.textContent = txt; el.hidden = !txt;
+    });
+    const res = card.querySelector("[data-bn-g-obras]");
+    if (res) {
+      const partes = [...por.entries()].map(([o, k]) => `${k} a ${o}`);
+      res.textContent = delDia ? `Con «la del día»: ${partes.join(", ")}${quedan ? `${partes.length ? "; " : ""}${quedan === 1 ? "1 se queda" : `${quedan} se quedan`} (ese día la cuadrilla no estuvo en una sola obra) y te ${quedan === 1 ? "lo" : "los"} pregunto después` : ""}. Cada uno está en la lista de arriba.` : "";
+      res.hidden = !delDia;
+    }
+    // (con la obra de cada uno a la vista, la lista se abre: es lo que hay que mirar antes de confirmar)
+    const lista = card.querySelector("[data-bn-g-lista]");
+    if (lista && delDia && g.ms.length <= 12) lista.open = true;
   }
   // los grupos, otra vez con lo último (`forzar`: aunque Edgar esté dentro de uno: acaba de contestarlo)
   function bnRepintarGrupos(forzar) {
@@ -4451,10 +4764,11 @@
     const cuerpo = card.querySelector(".ct-bn-g-c"), caja = resCaja(cuerpo, "ct-bn-res"), btn = card.querySelector("[data-bn-g-asi]");
     const mal = (msg, foco) => { caja.innerHTML = `<p class="ct-aviso bad ct-error">${esc(msg)}</p>`; if (foco) foco.focus(); };
     const lote = g.clase === "lote", op = { movimientos: g.ms.map(m => m.movimiento_id) };
-    let accion = null, datos = {};
+    let accion = null, datos = {}, como = "";
     if (!lote) {
       const sel = card.querySelector("[data-bn-g-cat]"), s = bnSub(sel.value);
       if (!s) return mal("Elige antes qué son.", sel);
+      como = s.clave === "retiro" ? "Es mío, no de la empresa" : s.nombre || "";
       const falta = [...cuerpo.querySelectorAll("[data-bn-g-campos] [required]")].find(el => !String(el.value || "").trim());
       if (falta) return mal(falta.dataset.falta || "Falta un dato.", falta);
       const x = bnDatosCat(cuerpo, s, null);
@@ -4497,12 +4811,15 @@
     // El grupo sigue abierto con los que quedan; si a todos les falta la obra, su lista ya la pide en vez de «la del día». Si queda
     // uno solo ya no hay grupo: el aviso dice por qué se quedó y su tarjeta se abre
     const sigue = quedan.length > 0 && g.ms.length - registrados.length >= 2;
-    S.bn.quedo = sigue ? { clave: g.clave, texto: `${hechos ? `${plural(hechos, "quedó registrado", "quedaron registrados")}. ` : ""}${plural(quedan.length, "se quedó", "se quedaron")} sin registrar: ${porQue}. ${quedan.every(q => q.pide_obra) ? "Elige aquí abajo la obra para todos, o «Verlos uno por uno»." : quedan.some(q => q.pide_motivo) ? "El banco pide un porqué para cada uno: «Verlos uno por uno»." : "Míralos uno por uno."}` } : null;
+    // (cuarta vuelta: si lo que falta es la obra, lo dice UNA vez el titular del grupo —viene de la base— y aquí solo se cuenta)
+    S.bn.quedo = sigue ? { clave: g.clave, texto: `${hechos ? `${plural(hechos, "quedó registrado", "quedaron registrados")}. ` : ""}${quedan.every(q => q.pide_obra) ? `${plural(quedan.length, "se quedó", "se quedaron")} sin registrar: lo que ${quedan.length === 1 ? "le" : "les"} falta está aquí abajo.` : `${plural(quedan.length, "se quedó", "se quedaron")} sin registrar: ${porQue}. ${quedan.some(q => q.pide_motivo) ? "El banco pide un porqué para cada uno: «Verlos uno por uno»." : "Míralos uno por uno."}`}` } : null;
     S.bn.grupoAbierto = sigue ? g.clave : null;
-    S.hooks.avisar(`${g.nombre || "Grupo"}: ${hechos ? `${plural(hechos, "registrado", "registrados")} por ${fmtAbs(monto)}` : "ninguno se registró todavía"}${quedan.length ? (sigue ? ` · ${plural(quedan.length, "se queda", "se quedan")} (está dicho en el grupo)` : ` · ${plural(quedan.length, "se queda", "se quedan")} en la Bandeja (${porQue})`) : ""}${rec ? ` · recordado${rec.solo ? ": lo siguiente entra solo" : ""}${rec.solo_no ? `. ${rec.solo_no}` : ""}` : ""}${hechos > 1 && !quedan.length ? " · Se deshacen juntos en «Lo que contestaste estos días»." : ""}`, !hechos);
-    // (las tarjetas de los que quedan: lo recordado cambia lo que recomiendan)
-    g.ms.forEach(m => S.bn.detras.ids.add(m.movimiento_id));
-    bnContestado(registrados, !sigue && quedan.length === 1 ? quedan[0].movimiento_id : S.bj.abierta, bnCerrarIADe(ia, iaIguales));
+    S.hooks.avisar(`${g.nombre || "Grupo"}: ${hechos ? `${plural(hechos, "registrado", "registrados")} por ${fmtAbs(monto)}${como ? ` como «${como}»` : ""}` : "ninguno se registró todavía"}${quedan.length ? (sigue ? ` · ${plural(quedan.length, "se queda", "se quedan")} (está dicho en el grupo)` : ` · ${plural(quedan.length, "se queda", "se quedan")} en la Bandeja (${porQue})`) : ""}${rec ? ` · recordado${rec.solo ? ": lo siguiente entra solo" : ""}${rec.solo_no ? `. ${rec.solo_no}` : ""}` : ""}${hechos > 1 && !quedan.length ? " · Se deshacen juntos en «Lo que contestaste estos días»." : ""}`, !hechos);
+    // (las tarjetas de los que quedan: lo recordado cambia lo que recomiendan; si quedó recordado se miran ya —bnMirar—, y si no, por detrás)
+    if (!rec) g.ms.forEach(m => S.bn.detras.ids.add(m.movimiento_id));
+    // (cuarta vuelta) la pantalla se queda en los grupos; solo va a una tarjeta si del grupo quedó una sola (se abre, y el aviso lo dice)
+    const unoSolo = !sigue && quedan.length === 1;
+    bnContestado(registrados, unoSolo ? quedan[0].movimiento_id : S.bj.abierta, bnCerrarIADe(ia, iaIguales), { grupo: true, irA: unoSolo, recordado: !!rec });
   }
 
   // ---------- la franja: lo del control, «Llegó su recibo», «Registrado solo», lo contestado hace poco y «Lo que recuerdo» ----------
@@ -4518,7 +4835,7 @@
   const bnEsNuevo = r => S.bn.nuevos.has(r.hecho_id) || (!!S.bn.vistoSolos && (new Date(r.el || 0).getTime() || 0) > S.bn.vistoSolos);
   const bnHechoItHTML = r => `<article class="ct-bn-hecho${bnEsNuevo(r) ? " nuevo" : ""}" data-bn-hecho="${esc(r.hecho_id)}">
       <div class="ct-bn-hecho-cab"><b>${esc(r.descripcion || "(sin descripción)")}</b>${bnMontoHTML(r.monto)}</div>
-      <p class="ct-sub">${fechaLarga(r.fecha)} · ${esc(r.texto || "")}${r.asiento ? ` · asiento ${esc(r.asiento)}` : ""}</p>
+      <p class="ct-sub">${fechaLarga(r.fecha)} · ${esc(r.texto || "")}</p>
       <div class="ct-acciones"><button type="button" class="accion secundaria chica" data-bn-deshacer>Deshacer</button></div>
       <div class="ct-form" hidden></div>
     </article>`;
@@ -4575,6 +4892,8 @@
       nFaltan ? (S.bn.partes.corriendo
         ? `<p class="ct-nota ct-bn-parcial" data-bn-parcial="mirando" role="status">Todavía estoy mirando ${plural(nFaltan, "movimiento", "movimientos")}: su recomendación llega sola en un momento. Los demás ya se pueden contestar.</p>`
         : `<p class="ct-nota ct-bn-parcial" data-bn-parcial="falta">No pude terminar de mirar ${plural(nFaltan, "movimiento", "movimientos")}${navigator.onLine ? "" : " (no hay señal)"}. Se contestan igual, con «Dímelo» o con «Más opciones»; al abrir la Bandeja otra vez lo vuelvo a intentar.</p>`) : "",
+      // (cuarta vuelta) la relectura de detrás de una respuesta falló (no era un cuadre): se dice aquí, sin tapar la página
+      S.bn.detras.mal ? `<p class="ct-nota ct-bn-detras-mal" data-bn-detras-mal role="status">No pude poner la Bandeja al día (lo que contestaste sí se guardó). ${S.bn.detras.t ? "Lo intento otra vez en un momento." : "Toca «Casar otra vez», arriba, para leerla de nuevo."}</p>` : "",
       x.err ? `<p class="ct-aviso warn ct-bn-solo-mal">Lo que entra solo no contestó: ${esc(bnError(x.err, true))} No frena nada: cada movimiento tiene su «Así es».</p>` : "",
       ult && ult.error && !ctl.some(k => Number(k.orden) === 80) ? `<p class="ct-aviso warn ct-bn-rutina-mal">La tarea de la base que registra sola falló la última vez. No frena nada: lo que tenía que entrar entra al abrir la Bandeja.</p>` : "",
       x.sinCodigo && nSolo ? `<p class="ct-nota ct-bn-sin-codigo-f">Lo que entra solo espera a que entres con el código del teléfono (o a la tarea de la base, dos veces al día).</p>` : "",
@@ -4586,7 +4905,7 @@
       rec.length ? `<details class="ct-bn-lista ct-bn-recientes" id="ct-bn-recientes"${S.bn.abiertas.recientes ? " open" : ""}>
         <summary><b>Lo que contestaste estos días</b> · ${plural(rec.length, "movimiento", "movimientos")}</summary>
         <div class="ct-bn-hechos">${tandas.map(z => bnTandaHTML(z.t, z.suyos)).join("")}${sueltos.map(bnHechoItHTML).join("")}</div>
-        <p class="ct-nota">Si te equivocaste, «Deshacer»: lo registrado se reversa (no se borra) y el movimiento vuelve a la Bandeja. Lo que contestaste por grupo se deshace entero, con un solo porqué.</p>
+        <p class="ct-nota">Si te equivocaste, «Deshacer»: lo registrado se anula (queda escrito que se anuló) y el movimiento vuelve a la Bandeja. Lo que contestaste por grupo se deshace entero, con un solo porqué.</p>
       </details>` : "",
       mem.length || tar.length ? `<details class="ct-bn-lista ct-bn-mem" id="ct-bn-mem"${S.bn.abiertas.mem ? " open" : ""}>
         <summary><b>Lo que recuerdo</b>${mem.length ? ` · ${plural(mem.length, "comercio o persona", "comercios o personas")}` : " · lo que cobran los procesadores de tarjetas"}${nSolo ? (apagado ? ` · ninguno entra solo ahora (está apagado aquí dentro)` : ` · ${plural(nSolo, "entra solo", "entran solos")}`) : ""}</summary>
@@ -4606,6 +4925,8 @@
     ].filter(Boolean);
     return partes.length ? `<section class="ct-card ct-bn-franja" id="ct-bn-franja">${partes.join("")}</section>` : "";
   }
+  // «Y OLVIDA LO QUE TE DIJE DE X», en la forma de deshacer (sin marcar: lo que Edgar enseñó no se tira sin que él lo diga)
+  const bnOlvidaHTML = (recuerdo, nombre) => (recuerdo ? `<label class="ct-casilla ct-bn-olvida"><input type="checkbox" name="olvida" value="1" data-bn-olvida> Y olvida lo que te dije de ${esc(recuerdo.nombre || nombre || "ese comercio")}: lo próximo de ahí te lo vuelvo a preguntar</label>` : "");
   function wireBnFranja() {
     const fr = $("ct-bn-franja"); if (!fr || !bnViva()) return;
     const d = S.bn.datos;
@@ -4616,13 +4937,16 @@
       // puso—: al deshacerlo, la regla SE APAGA (lo hace la base), salvo que él desmarque la casilla. Antes solo se preguntaba en
       // «Registrado solo», y deshacer la respuesta que creó la regla la dejaba entrando sola con lo que acababa de decir que estaba mal)
       const regla = h.clave ? (d.memoria || []).find(r => r.clave === h.clave && r.solo) : null;
+      // (cuarta vuelta) lo que se recuerda de esa contraparte: quien deshace para corregir puede decir aquí mismo «y olvídalo» (si no,
+      // lo siguiente de ese comercio se le seguiría proponiendo con lo que acaba de decir que estaba mal, hasta que encontrara «Olvidar»)
+      const recuerdo = h.clave ? (d.memoria || []).find(r => r.clave === h.clave) : null;
       card.querySelector("[data-bn-deshacer]").addEventListener("click", () => {
         if (!mfaActivo()) { mostrarErrorForma(card, "Deshacer toca el libro: primero activa el código del teléfono (Conexiones y seguridad) y entra con él."); return; }
-        montarForma(card, formaHTML(`Deshacer lo registrado de «${esc(h.descripcion || "")}» (${esc(fmt(h.monto))}): su asiento se reversa (no se borra) y el movimiento vuelve a la Bandeja. Este ya no vuelve a entrar solo: te lo pregunto.`,
+        montarForma(card, formaHTML(`Deshacer lo registrado de «${esc(h.descripcion || "")}» (${esc(fmtNeg(h.monto))}): lo registrado se anula (queda escrito que se anuló) y el movimiento vuelve a la Bandeja. Este ya no vuelve a entrar solo: te lo pregunto.`,
           campoHTML("motivo", "Por qué (queda escrito)", "textarea", "required") +
-          (regla ? `<label class="ct-casilla ct-bn-deja-solo"><input type="checkbox" name="deja_solo" value="1" checked> Y que lo siguiente de ${esc(regla.nombre || h.nombre || "ese comercio")} deje de entrar solo (te lo propongo y tú tocas «Así es»)</label>` : ""), "Deshacer"), v => {
+          (regla ? `<label class="ct-casilla ct-bn-deja-solo"><input type="checkbox" name="deja_solo" value="1" checked> Y que lo siguiente de ${esc(regla.nombre || h.nombre || "ese comercio")} deje de entrar solo (te lo propongo y tú tocas «Así es»)</label>` : "") + bnOlvidaHTML(recuerdo, h.nombre), "Deshacer"), v => {
           if (String(v.motivo || "").length < 3) { mostrarErrorForma(card, "Di por qué en unas palabras (al menos tres letras)."); return; }
-          bnDeshacer(card, h, v.motivo, regla ? !!v.deja_solo : null);
+          bnDeshacer(card, h, v.motivo, regla ? !!v.deja_solo : null, !!(recuerdo && v.olvida));
         });
       });
     });
@@ -4631,13 +4955,14 @@
       const t = (d.tandas || []).find(x => x.tanda === card.dataset.bnTanda); if (!t) return;
       // (la regla «que entre solo» que esa decisión dejó puesta: se apaga al deshacerla, salvo que Edgar diga que siga)
       const regla = t.clave ? (d.memoria || []).find(r => r.clave === t.clave && r.solo) : null;
+      const recuerdo = t.clave ? (d.memoria || []).find(r => r.clave === t.clave) : null;
       card.querySelector("[data-bn-tanda-deshacer]").addEventListener("click", () => {
         if (!mfaActivo()) { mostrarErrorForma(card, "Deshacer toca el libro: primero activa el código del teléfono (Conexiones y seguridad) y entra con él."); return; }
-        montarForma(card, formaHTML(`Deshacer los ${nOk(t.n)} movimientos de ${esc(t.nombre || "ese grupo")} que contestaste de una vez (${esc(fmt(t.monto))}): sus asientos se reversan (no se borran) y vuelven todos a la Bandeja.`,
+        montarForma(card, formaHTML(`Deshacer los ${nOk(t.n)} movimientos de ${esc(t.nombre || "ese grupo")} que contestaste de una vez (${esc(fmtNeg(t.monto))}): lo registrado se anula (queda escrito que se anuló) y vuelven todos a la Bandeja.`,
           campoHTML("motivo", "Por qué (queda escrito)", "textarea", "required") +
-          (regla ? `<label class="ct-casilla ct-bn-deja-solo"><input type="checkbox" name="deja_solo" value="1" checked> Y que lo siguiente de ${esc(regla.nombre || t.nombre || "ese comercio")} deje de entrar solo (te lo propongo y tú tocas «Así es»)</label>` : ""), `Deshacer los ${nOk(t.n)}`), v => {
+          (regla ? `<label class="ct-casilla ct-bn-deja-solo"><input type="checkbox" name="deja_solo" value="1" checked> Y que lo siguiente de ${esc(regla.nombre || t.nombre || "ese comercio")} deje de entrar solo (te lo propongo y tú tocas «Así es»)</label>` : "") + bnOlvidaHTML(recuerdo, t.nombre), `Deshacer los ${nOk(t.n)}`), v => {
           if (String(v.motivo || "").length < 3) { mostrarErrorForma(card, "Di por qué en unas palabras (al menos tres letras)."); return; }
-          bnDeshacerTanda(card, t, v.motivo, regla ? !!v.deja_solo : null);
+          bnDeshacerTanda(card, t, v.motivo, regla ? !!v.deja_solo : null, !!(recuerdo && v.olvida));
         });
       });
     });
@@ -4674,14 +4999,17 @@
   // DESHACER lo que la Bandeja registró. `dejaSolo`: null si ese comercio no tiene una regla «que entre solo»; si la tiene, lo que
   // Edgar dejó en la casilla: true (de fábrica) la apaga —lo hace la base al deshacer—, false la deja encendida. Lo que la IA de antes
   // tenía aprobado con ese asiento se cierra (caduca) por su función
-  async function bnDeshacer(card, h, motivo, dejaSolo) {
+  // (Cuarta vuelta) `olvida`: además, lo recordado de esa contraparte se da de baja (lo hace la base, en la misma llamada). Y al
+  // volver, la pantalla va a la tarjeta que volvió (antes se quedaba arriba, con la tarjeta varias pantallas más abajo)
+  async function bnDeshacer(card, h, motivo, dejaSolo, olvida) {
     if (S.ocupado) { mostrarErrorForma(card, "Espera un momento: estoy terminando lo anterior."); return; }
     if (!navigator.onLine) { mostrarErrorForma(card, "Sin señal: no se hizo nada."); return; }
     S.ocupado = true;
     const apagados = [...card.querySelectorAll("button, textarea, input")].filter(b => !b.disabled);
     apagados.forEach(b => { b.disabled = true; });
     let r;
-    try { r = await DB._rpc("fn_bandeja_deshacer", dejaSolo === false ? { p_hecho: h.hecho_id, p_motivo: motivo, p_opciones: { deja_solo: false } } : { p_hecho: h.hecho_id, p_motivo: motivo }); }
+    const opc = Object.assign({}, dejaSolo === false ? { deja_solo: false } : null, olvida ? { olvida: true } : null);
+    try { r = await DB._rpc("fn_bandeja_deshacer", Object.keys(opc).length ? { p_hecho: h.hecho_id, p_motivo: motivo, p_opciones: opc } : { p_hecho: h.hecho_id, p_motivo: motivo }); }
     catch (err) {
       S.ocupado = false; apagados.forEach(b => { b.disabled = false; });
       mostrarErrorForma(card, bnError(err));
@@ -4692,10 +5020,16 @@
     S.ocupado = false; S.saldos = null;
     if (x.solo_apagado) S.bn.solo.el = 0;
     bnCerrarIA(x.ia_caducar, "caducar");
-    S.hooks.avisar(`Deshecho: el movimiento volvió a la Bandeja.${x.solo_apagado ? ` Y lo de ${x.solo_apagado} ya no entra solo: te lo propongo.` : dejaSolo === false ? " Lo de ese comercio sigue entrando solo, como dijiste." : ""}`);
-    // el movimiento vuelve a la Bandeja: su tarjeta queda abierta
+    if (x.olvidado) S.bn.solo.el = 0;
+    S.hooks.avisar(`Deshecho: el movimiento volvió a la Bandeja.${x.olvidado ? ` Y olvidé lo que me dijiste de ${x.olvidado}: te lo vuelvo a preguntar.` : x.solo_apagado ? ` Y lo de ${x.solo_apagado} ya no entra solo: te lo propongo.` : dejaSolo === false ? " Lo de ese comercio sigue entrando solo, como dijiste." : ""}`);
+    // el movimiento vuelve a la Bandeja: su tarjeta queda abierta, y la pantalla va a ella
     S.bj.abierta = h.movimiento_id || null;
-    if (S.pagina === "bandeja") await pintarBandeja();
+    if (S.pagina === "bandeja") { await pintarBandeja(); bnIrAAbierta(); }
+  }
+  // la pantalla, a la tarjeta abierta (después de pintar la página entera: si no, se queda arriba y la tarjeta puede estar muy abajo)
+  function bnIrAAbierta() {
+    const c = S.bj.abierta && S.pagina === "bandeja" ? main().querySelector(".ct-mov.abierta") : null;
+    if (c && typeof c.scrollIntoView === "function") c.scrollIntoView({ block: "center" });
   }
   // cómo va algo largo, dicho en la forma abierta de esa tarjeta
   function bnAvance(card, msg) {
@@ -4706,14 +5040,15 @@
   }
   // DESHACER UNA DECISIÓN POR GRUPO ENTERA (su tanda): la base deshace cada uno por su puerta; con muchos corta por reloj y dice
   // «sigue»: se la llama otra vez. Los que no se puedan (un mes ya cerrado) se quedan como están, y se dice por qué
-  async function bnDeshacerTanda(card, t, motivo, dejaSolo) {
+  async function bnDeshacerTanda(card, t, motivo, dejaSolo, olvida) {
     if (S.ocupado) { mostrarErrorForma(card, "Espera un momento: estoy terminando lo anterior."); return; }
     if (!navigator.onLine) { mostrarErrorForma(card, "Sin señal: no se hizo nada."); return; }
     S.ocupado = true;
     const apagados = [...card.querySelectorAll("button, textarea, input")].filter(b => !b.disabled);
     apagados.forEach(b => { b.disabled = true; });
-    const args = dejaSolo === false ? { p_tanda: t.tanda, p_motivo: motivo, p_opciones: { deja_solo: false } } : { p_tanda: t.tanda, p_motivo: motivo };
-    let n = 0, quedan = [], apagada = "";
+    const opc = Object.assign({}, dejaSolo === false ? { deja_solo: false } : null, olvida ? { olvida: true } : null);
+    const args = Object.keys(opc).length ? { p_tanda: t.tanda, p_motivo: motivo, p_opciones: opc } : { p_tanda: t.tanda, p_motivo: motivo };
+    let n = 0, quedan = [], apagada = "", olvidado = "";
     const ia = [];
     try {
       for (let i = 0; i < BN_TANDAS; i++) {
@@ -4721,6 +5056,7 @@
         const hechos = nOk(r && r.deshechos);
         n += hechos; quedan = r && Array.isArray(r.quedan) ? r.quedan : [];
         if (r && r.solo_apagado) apagada = r.solo_apagado;
+        if (r && r.olvidado) olvidado = r.olvidado;
         ia.push(...(r && Array.isArray(r.ia_caducar) ? r.ia_caducar : []));
         if (!r || !r.sigue || !hechos) break;
         bnAvance(card, `Deshaciendo… van ${n} de ${nOk(t.n)}.`);
@@ -4737,7 +5073,7 @@
     if (apagada) S.bn.solo.el = 0;
     bnCerrarIA(ia, "caducar");
     const porQue = quedan.length ? String(quedan[0].por_que || "no se pudo").replace(/\.$/, "") : "";
-    S.hooks.avisar(`${n ? `Deshechos ${n}: volvieron a la Bandeja` : "No se deshizo ninguno"}${quedan.length ? ` · ${plural(quedan.length, "se queda como estaba", "se quedan como estaban")} (${porQue})` : ""}.${n && apagada ? ` Y lo de ${apagada} ya no entra solo: te lo propongo.` : n && dejaSolo === false ? " Lo de ese comercio sigue entrando solo, como dijiste." : ""}`, !n);
+    S.hooks.avisar(`${n ? `Deshechos ${n}: volvieron a la Bandeja` : "No se deshizo ninguno"}${quedan.length ? ` · ${plural(quedan.length, "se queda como estaba", "se quedan como estaban")} (${porQue})` : ""}.${n && olvidado ? ` Y olvidé lo que me dijiste de ${olvidado}: te lo vuelvo a preguntar.` : n && apagada ? ` Y lo de ${apagada} ya no entra solo: te lo propongo.` : n && dejaSolo === false ? " Lo de ese comercio sigue entrando solo, como dijiste." : ""}`, !n);
     if (S.pagina === "bandeja") await pintarBandeja();
   }
   // «ES SU RECIBO: CÁMBIALO» / «ES OTRA COMPRA»: la opción que c6 le puso a ese cargo (por su huella: lo que se registra es lo que se
@@ -4757,10 +5093,14 @@
     if (!x) return;
     if (x.hecho !== true) {
       // (lo que el banco proponía cambió, o ya está resuelto: la Bandeja se lee otra vez)
-      if (x.cambio || x.resuelto || x.fuera) { S.hooks.avisar(x.por_que || "La Bandeja se puso al día.", true); S.saldos = null; return pintarBandeja(); }
+      if (x.cambio || x.resuelto || x.fuera) { S.hooks.avisar(x.por_que || "La Bandeja se puso al día.", true); S.saldos = null; S.bn.solo.el = 0; return pintarBandeja(); }
       return bnNoHecho(card, x, null);
     }
     S.saldos = null;
+    // (cuarta vuelta) de dos cargos iguales con UN recibo, «es su recibo» en el primero dejaba al segundo arriba diciendo que su gasto
+    // estaba dos veces (ya no era verdad) con dos botones que fallaban, hasta salir y volver pasados 45 s. La base ya lo mira en esa
+    // misma llamada; y la rutina de la Bandeja corre otra vez antes de leerla, sin esperar su turno
+    S.bn.solo.el = 0;
     S.hooks.avisar(otra ? "Anotado: es otra compra. El gasto queda dos veces a propósito, con tu porqué." : "Cambiado por su recibo: el gasto queda una sola vez, en la obra del recibo.");
     await pintarBandeja();
   }
@@ -5804,6 +6144,16 @@
     }
     const e = ia.estado, freno = frenoIA(ia), falta = nOk(e.pendientes_sin_propuesta), listas = nOk(e.propuestas_pendientes), conObra = nOk(e.propuestas_con_obra);
     const cerradas = nCerradas(ia), c = S.cadena, corre = !!(c && c.activa);
+    // (la Bandeja nueva, cuarta vuelta) con c17 viva la franja es UNA LÍNEA DISCRETA debajo de los grupos: en llano, con un botón chico
+    // y sin el pie de la rutina y del marcador (están en Conexiones y seguridad). Lo que la IA propone ya sale en cada tarjeta
+    if (bnViva()) return `<section class="ct-card ct-ia-franja ct-ia-discreta" id="ct-ia-franja">
+      <div class="ct-ia-f-txt">${pillIA()}<span id="ct-ia-cifras">${listas ? `La IA ya miró ${plural(listas, "cargo", "cargos")} (lo que propone está en su tarjeta)` : "La IA todavía no ha propuesto nada de lo que espera"}${falta ? ` · le ${falta === 1 ? "queda 1" : `quedan ${falta}`} por mirar` : ""} · este mes lleva <span class="ct-num">${usdCent(e.centavos_mes_contador)}</span> de <span class="ct-num">${usdCent(e.tope_mes_centavos)}</span></span>${e.aviso && !e.bloqueado ? pill(`cerca del tope (${nOk(e.aviso_pct)} %)`, "warn") : ""}</div>
+      ${falta || corre ? `<div class="ct-ia-f-acc"><button type="button" class="accion secundaria chica" id="ct-ia-proponer" data-proponer${freno || corre ? " disabled" : ""}${corre ? ` aria-busy="true"` : ""}>Que mire ${falta === 1 ? "el que queda" : `los ${falta} que quedan`}</button></div>` : ""}
+      ${corre ? cadenaHTML(c) : ""}
+      ${freno && !corre && freno.clase ? `<p class="ct-ia-freno ${freno.clase}">${esc(freno.txt)}</p>` : ""}
+      ${cerradas ? `<p class="ct-ia-freno warn" id="ct-ia-cerradas">${esc(plural(cerradas, "propuesta trae una obra que ya no está activa", "propuestas traen una obra que ya no está activa"))}: en su tarjeta, elige otra obra.</p>` : ""}
+      <div class="ct-ia-res">${c && !corre && c.fin ? `<p class="ct-aviso ${c.fin.clase}" role="status">${esc(c.fin.txt)}</p>` : ""}</div>
+    </section>`;
     return `<section class="ct-card ct-ia-franja" id="ct-ia-franja">
       <div class="ct-ia-f-txt">${pillIA()}<span id="ct-ia-cifras"><b>${plural(listas, "propuesta lista", "propuestas listas")}</b>${conObra ? ` (${conObra} con obra)` : ""} · ${falta} por proponer · este mes <span class="ct-num">${usdCent(e.centavos_mes_contador)}</span> de <span class="ct-num">${usdCent(e.tope_mes_centavos)}</span></span>${e.aviso && !e.bloqueado ? pill(`cerca del tope (${nOk(e.aviso_pct)} %)`, "warn") : ""}</div>
       <div class="ct-ia-f-acc"><button type="button" class="accion" id="ct-ia-proponer" data-proponer${freno || corre ? " disabled" : ""}${corre ? ` aria-busy="true"` : ""}>Proponer ahora (${falta})</button></div>
@@ -6040,7 +6390,7 @@
       // lo que queda en el selector es lo que entra (en toda línea cuya cuenta admite obra); vacío, las líneas como vienen
       const cuerpo = { accion: "aprobar", propuesta: viva.propuesta_id, recordar: true };
       if (obraIA && obraIA.value) cuerpo.proyecto_id = obraIA.value;
-      accionIA(bl, cuerpo, r => resumenClasificado(r, true), { boton: asi, espera: "Registrándolo en el libro…" });
+      accionIA(bl, cuerpo, r => (bnDe(m) ? BN_SIN_ANOTAR : resumenClasificado(r, true)), { boton: asi, espera: "Registrándolo en el libro…", despues: bnDespuesViejo(m) });
     });
     if (no && viva) no.addEventListener("click", () => accionIA(bl, { accion: "rechazar", propuesta: viva.propuesta_id, motivo: "No es eso (Edgar, desde la bandeja)" },
       () => { S.iaFoco = m.movimiento_id; return "Propuesta rechazada: dilo tú en «Según yo»"; }, { boton: no }));
@@ -6079,7 +6429,7 @@
       if (c && c.regla_obra === "obligatoria" && !pid) { errorIA(bl, `La ${c.codigo} (${c.nombre}) pide la obra: elígela.`); obra.focus(); return; }
       const motivo = String(form.ia_motivo.value || "").trim();
       accionIA(bl, { accion: "clasificar", movimiento: m.movimiento_id, lineas: [{ cuenta, proyecto_id: pid || null }], motivo: motivo || null, recordar: !!form.ia_recordar.checked },
-        r => resumenClasificado(r, false), { boton: btn, espera: "Registrándolo en el libro…" });
+        r => (bnDe(m) ? BN_SIN_ANOTAR : resumenClasificado(r, false)), { boton: btn, espera: "Registrándolo en el libro…", despues: bnDespuesViejo(m, { recordar: !!form.ia_recordar.checked }) });
     });
   }
   function errorIA(bl, msg) { const c = resCaja(bl, "ct-ia-res"); c.innerHTML = `<p class="ct-aviso bad ct-error">${esc(msg)}</p>`; }
@@ -6753,20 +7103,25 @@
       // (la nota que la base pone en una cuenta de su línea —las comidas: en libros al 100 %, deducible la mitad— va en su renglón)
       (Array.isArray(x.accounts) ? x.accounts : []).map(a => `<tr class="ct-fis-c"><td><span class="ct-num">${esc(a.account)}</span> ${esc(a.name || "")}${a.note ? `<small class="ct-fis-nota" data-fis-nota>${esc(a.note)}</small>` : ""}</td><td class="r ct-num">${fisNum(a.amount)}</td></tr>`).join(""));
     const estado = l => (Array.isArray(l) ? l : []).map(x => `<tr class="ct-fis-${esc(x.level || "line")}"><td>${x.account ? `<span class="ct-num">${esc(x.account)}</span> ` : ""}${esc(x.label || "")}</td><td class="r ct-num">${fisNum(x.amount)}</td></tr>`);
-    const tb = (p.trial_balance || []).map(x => `<tr><td><span class="ct-num">${esc(x.account)}</span> ${esc(x.name || "")}</td><td>${esc(x.tax_line || "")}${x.form_1125a_line ? ` · 1125-A ${esc(x.form_1125a_line)}` : ""}</td><td class="r ct-num">${fisNum(x.ending)}</td></tr>`);
+    // (cuarta vuelta) LA BALANZA ENTERA: el libro no postea asientos de cierre, así que desde el segundo ejercicio el resultado de los
+    // años anteriores va en un renglón aparte, que NO es una cuenta (la base lo trae con level «component», sin `account`, y con su
+    // nota). Sin él la balanza no sumaba 0. Y al pie, sus totales (trial_balance_totals): lo que el contador mira primero
+    const tbt = p.trial_balance_totals || null;
+    const tb = (p.trial_balance || []).map(x => `<tr${x.account ? "" : ` class="ct-fis-comp" data-fis-comp`}><td>${x.account ? `<span class="ct-num">${esc(x.account)}</span> ` : ""}${esc(x.name || "")}${!x.account && x.note ? `<small class="ct-fis-nota" data-fis-nota>${esc(x.note)}</small>` : ""}</td><td>${esc(x.tax_line || "")}${x.form_1125a_line ? ` · 1125-A ${esc(x.form_1125a_line)}` : ""}</td><td class="r ct-num">${fisNum(x.ending)}</td></tr>`)
+      .concat(tbt ? [`<tr class="ct-fis-total" data-fis-tb-total><td>${esc(tbt.label || "Total")}</td><td>${tbt.balanced === false ? "NOT BALANCED" : ""}</td><td class="r ct-num">${fisNum(tbt.ending)}</td></tr>`] : []);
     const det = (id, titulo, cuerpoHTML, abierto) => `<details class="ct-fis-d" data-fis="${id}"${abierto ? " open" : ""}><summary>${esc(titulo)}</summary>${cuerpoHTML}</details>`;
     // (segunda vuelta) LO QUE EDGAR TIENE QUE SABER ANTES DE MANDARLO, en español y arriba de las descargas: un año que la app no
     // lleva entero no se presenta como el año (el libro de la app empieza el 1-oct-2026: lo de antes está en QuickBooks), uno que no
     // lleva sale vacío, y si algo del paquete no cuadra (lo dice la base) no se manda todavía
     const parcial = p.partial_year === true, fuera = p.in_books === false, re = p.retained_earnings || {}, sl = p.schedule_l || {}, chk = p.form_1125a_check || {};
-    const noCuadra = sl.balanced === false || chk.matches === false || (p.balance_sheet || []).some(x => x.balanced === false);
+    const noCuadra = sl.balanced === false || chk.matches === false || (p.balance_sheet || []).some(x => x.balanced === false) || (tbt && tbt.balanced === false);
     const avisoAnio = fuera ? `<p class="ct-aviso bad" id="ct-fis-fuera" role="alert"><b>La app no lleva el libro de ${esc(String(p.fiscal_year || S.fis.anio))}.</b> Este paquete sale vacío: ${p.books_start ? `el libro de la app empieza el ${esc(fechaLarga(p.books_start))}, y ` : ""}ese año está en QuickBooks. No se lo mandes al contador.</p>`
       : parcial ? `<p class="ct-aviso warn" id="ct-fis-parcial" role="alert"><b>Este paquete NO es el año entero.</b> El libro de la app empieza el ${esc(fechaLarga(p.books_start || p.period_start))}: los resultados y las líneas del formulario traen solo del ${esc(fechaLarga(p.period_start))} al ${esc(fechaLarga(p.period_end))}. Lo de antes de esa fecha está en QuickBooks: el contador necesita las dos cosas para la declaración de ${esc(String(p.fiscal_year || S.fis.anio))}. El paquete lo dice arriba, en inglés.</p>` : "";
     cuerpo().innerHTML = `<section class="ct-card ct-fis" id="ct-fis">
       <div class="ct-cab"><h2>Paquete para el contador</h2>${pill(String(p.fiscal_year || S.fis.anio))}${parcial ? pill("año parcial", "warn") : ""}</div>
       <p class="ct-nota">Lo que se le manda al contador para la declaración${parcial || fuera ? "" : " del año"}: en inglés, con cada cuenta en su línea del formulario. No hace falta que lo entiendas: descárgalo y envíaselo.</p>
       ${avisoAnio}
-      ${noCuadra ? `<p class="ct-aviso bad" id="ct-fis-no-cuadra" role="alert"><b>Algo de este paquete no cuadra</b> (lo dice abajo, en inglés: el balance, las líneas del Schedule L o el costo del 1125-A). No lo mandes hasta que se revise.</p>` : ""}
+      ${noCuadra ? `<p class="ct-aviso bad" id="ct-fis-no-cuadra" role="alert"><b>Algo de este paquete no cuadra</b> (lo dice abajo, en inglés: el balance, la balanza, las líneas del Schedule L o el costo del 1125-A). No lo mandes hasta que se revise.</p>` : ""}
       <div class="ct-fis-aj">
         <label class="ct-campo">Año<select id="ct-fis-anio">${anios.map(a => `<option value="${a}"${a === S.fis.anio ? " selected" : ""}>${a}</option>`).join("")}</select></label>
         <label class="ct-campo">Formulario de la empresa<select id="ct-fis-forma">${Object.keys(FIS_FORMAS).map(k => `<option value="${k}"${k === forma ? " selected" : ""}>${esc(FIS_FORMAS[k])}</option>`).join("")}</select></label>
@@ -6805,15 +7160,23 @@
     selAnio.addEventListener("change", () => { S.fis.anio = Number(selAnio.value); pintarEstados(); });
     selForma.addEventListener("change", () => cambiar({ forma: selForma.value }, `El paquete sale ahora con el ${FIS_FORMAS[selForma.value] || selForma.value}. Queda pendiente de que el contador lo confirme.`, () => { selForma.value = forma; }));
     conf.addEventListener("change", () => { const si = conf.checked; cambiar({ confirmada: si }, si ? "Anotado: el contador confirmó el formulario." : "Anotado: el formulario vuelve a estar pendiente de confirmar.", () => { conf.checked = !si; }); });
+    // (cuarta vuelta) LOS AVISOS DEL PAQUETE VIAJAN EN LOS DOS ARCHIVOS, arriba (es lo que el contador abre): el año parcial, el
+    // formulario pendiente de confirmar, que el libro no postea asientos de cierre… Antes la balanza no llevaba ninguno y el resumen
+    // solo el del año parcial. Cada aviso, en un renglón con las mismas columnas que los demás (`col`: en cuál va el texto)
+    const avisos = Array.isArray(p.warnings) ? p.warnings.map(String).filter(Boolean) : [];
+    const filasAviso = (n, col) => avisos.map(w => { const f = new Array(n).fill(""); f[col] = w; return f; });
     $("ct-fis-csv-tb").addEventListener("click", () => {
       const filas = [["Account", "Name", "Category", "Group", "Beginning", "Debits", "Credits", "Ending", `Form ${forma} line`, "Form 1125-A line", "Name (Spanish)"]]
-        .concat((p.trial_balance || []).map(x => [x.account, x.name, x.category, x.group, x.beginning, x.debits, x.credits, x.ending, x.tax_line || "", x.form_1125a_line || "", x.name_es || ""]));
+        .concat(filasAviso(11, 1))
+        // (los renglones que no son cuentas —el resultado de años anteriores— van sin código, con su nota en la columna del nombre en español)
+        .concat((p.trial_balance || []).map(x => [x.account || "", x.name, x.category || "", x.group || "", x.beginning, x.debits, x.credits, x.ending, x.tax_line || "", x.form_1125a_line || "", x.account ? x.name_es || "" : x.note || x.name_es || ""]))
+        .concat(tbt ? [["", tbt.label || "Total", "", "", tbt.beginning, tbt.debits, tbt.credits, tbt.ending, "", "", tbt.balanced === false ? "NOT BALANCED" : ""]] : []);
       if (descargarTexto(csv(filas), `trial-balance-${p.fiscal_year || S.fis.anio}-form-${forma}.csv`)) S.hooks.avisar("Balanza descargada: mándasela al contador.");
     });
     $("ct-fis-csv-tax").addEventListener("click", () => {
-      const filas = [["Form", "Line", "Description", "Account", "Account name", "Amount", "Note"]];
-      // (el año parcial, dicho también en el archivo: es lo que el contador abre)
-      if (parcial) filas.push(["", "", `PARTIAL YEAR: ${p.period_start} to ${p.period_end} only (books in this system start on ${p.books_start || p.period_start}; earlier activity is in QuickBooks)`, "", "", "", ""]);
+      const filas = [["Form", "Line", "Description", "Account", "Account name", "Amount", "Note"]].concat(filasAviso(7, 2));
+      // (el año parcial, dicho también en el archivo aunque la base no lo trajera entre sus avisos)
+      if (parcial && !avisos.some(w => /^PARTIAL YEAR/.test(w))) filas.push(["", "", `PARTIAL YEAR: ${p.period_start} to ${p.period_end} only (books in this system start on ${p.books_start || p.period_start}; earlier activity is in QuickBooks)`, "", "", "", ""]);
       for (const l of (p.tax_lines || []).concat(p.form_1125a || []).concat(Array.isArray(re.rows) ? re.rows.map(x => ({ ...x, form: "M-2" })) : [])) {
         filas.push([l.form || forma, l.line, l.label, "", "", l.amount, ""]);
         for (const a of Array.isArray(l.accounts) ? l.accounts : []) filas.push([l.form || forma, l.line, "", a.account, a.name, a.amount, a.note || ""]);
@@ -6850,7 +7213,7 @@
       ${p.retained_earnings && Array.isArray(p.retained_earnings.rows) && p.retained_earnings.rows.length ? `<h2>Retained earnings, per books (Schedule M-2)</h2><table><tbody>${filasL(p.retained_earnings.rows)}</tbody></table>` : ""}
       <h2>Income Statement</h2><table><tbody>${filasE(p.income_statement)}</tbody></table>
       <h2>Balance Sheet</h2><table><tbody>${filasE(p.balance_sheet)}</tbody></table>
-      <h2>Trial Balance</h2><table><thead><tr><th>Account</th><th>Tax line</th><th class="r">Beginning</th><th class="r">Debits</th><th class="r">Credits</th><th class="r">Ending</th></tr></thead><tbody>${(p.trial_balance || []).map(x => `<tr><td>${esc(x.account)} ${esc(x.name || "")}</td><td>${esc(x.tax_line || "")}${x.form_1125a_line ? ` / 1125-A ${esc(x.form_1125a_line)}` : ""}</td><td class="r">${n(x.beginning)}</td><td class="r">${n(x.debits)}</td><td class="r">${n(x.credits)}</td><td class="r">${n(x.ending)}</td></tr>`).join("")}</tbody></table>
+      <h2>Trial Balance</h2><table><thead><tr><th>Account</th><th>Tax line</th><th class="r">Beginning</th><th class="r">Debits</th><th class="r">Credits</th><th class="r">Ending</th></tr></thead><tbody>${(p.trial_balance || []).map(x => `<tr><td>${x.account ? esc(x.account) + " " : ""}${esc(x.name || "")}${!x.account && x.note ? `<br><small>${esc(x.note)}</small>` : ""}</td><td>${esc(x.tax_line || "")}${x.form_1125a_line ? ` / 1125-A ${esc(x.form_1125a_line)}` : ""}</td><td class="r">${n(x.beginning)}</td><td class="r">${n(x.debits)}</td><td class="r">${n(x.credits)}</td><td class="r">${n(x.ending)}</td></tr>`).join("")}${p.trial_balance_totals ? `<tr class="total"><td>${esc(p.trial_balance_totals.label || "Total")}${p.trial_balance_totals.balanced === false ? " — NOT BALANCED" : ""}</td><td></td><td class="r">${n(p.trial_balance_totals.beginning)}</td><td class="r">${n(p.trial_balance_totals.debits)}</td><td class="r">${n(p.trial_balance_totals.credits)}</td><td class="r">${n(p.trial_balance_totals.ending)}</td></tr>` : ""}</tbody></table>
       <h2>Chart of accounts and tax-line mapping</h2><table><thead><tr><th>Account</th><th>Category</th><th>Form 1120</th><th>Form 1120-S</th></tr></thead><tbody>${(p.chart_of_accounts || []).map(x => `<tr><td>${esc(x.account)} ${esc(x.name || "")}</td><td>${esc(x.category || "")}${x.group ? " — " + esc(x.group) : ""}</td><td>${esc(x.form_1120_line || "")}</td><td>${esc(x.form_1120s_line || "")}</td></tr>`).join("")}</tbody></table>
       <p class="sub" style="margin-top:18px">Generated ${esc(String(p.generated_at || "").slice(0, 10))} from the company's books.</p>
     </body></html>`;
