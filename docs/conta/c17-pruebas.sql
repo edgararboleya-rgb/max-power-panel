@@ -1,6 +1,6 @@
 -- =====================================================================
 -- c17-pruebas.sql — la Bandeja nueva se prueba a sí misma
--- (c17-bandeja.sql). 22-nov-2026 (sexta vuelta: 83 pruebas).
+-- (c17-bandeja.sql). 22-nov-2026 (sexta vuelta y su segunda pasada, la 6b: 85 pruebas).
 --
 -- Se pega en el SQL Editor DESPUÉS de c17-bandeja.sql (o, en el banco:
 --   PGPASSWORD=editor_sql psql -h 127.0.0.1 -p 5433 -U editor_sql -d <bd> -1 \
@@ -203,7 +203,7 @@
 -- 80 la máscara no se come las sumas; la huella de un freno no trae el
 --    porqué; y la opción del banco que se quedó vieja se dice en llano;
 -- 81 nada queda, y los controles de c3, c6 y c8 siguen como estaban
---    (corre la última, después de la 82 y la 83);
+--    (corre la última, después de la 82, la 83, la 84 y la 85);
 -- 82 LA LÍNEA DE CRÉDITO, APARTE DEL PRÉSTAMO A PLAZO del mismo prestamista:
 --    con el descriptor ancho todo es «del préstamo»; la línea no se da de
 --    alta mientras choque; estrechado el del préstamo y dada de alta, la
@@ -211,7 +211,18 @@
 --    con sus intereses aparte;
 -- 83 LA PREGUNTA CON BOTONES IGUALES: un pago a un préstamo que no es su
 --    cuota dice cómo registrarlo, cada botón lo que lo distingue, y dos
---    opciones distintas no comparten huella.
+--    opciones distintas no comparten huella;
+-- (22-nov, 6b: lo que dejó la revisión de la sexta vuelta)
+-- 84 LA LÍNEA DE CRÉDITO, SEGUNDA PASADA: los intereses con coma decimal no
+--    se leen (se piden con punto); el pago de la línea por el «Dímelo» pide
+--    sus intereses y se aprueba con ellos; los cargos de una línea no se
+--    agrupan y su tarjeta dice que es de la línea y que no se recuerda; y lo
+--    que el banco escribe de otra forma de un prestamista que ya tiene algo
+--    dado de alta se avisa (también el depósito) y no se registra como
+--    dinero de un préstamo;
+-- 85 «CON LO QUE DICE SU ESTADO DE CUENTA»: lo registrado dice lo que entró
+--    (cuánto bajó la deuda y cuánto fueron intereses), y esos montos no se
+--    leen con coma decimal.
 -- =====================================================================
 create temp table if not exists _pruebas(n int, prueba text, esperado text, obtenido text, ok boolean);
 truncate _pruebas;
@@ -4638,7 +4649,7 @@ begin
                    and r->>'accion' = 'prestamo' and r->'datos' = '{"linea": true, "cuenta": "2510", "prestamista": "Zzlend"}'::jsonb
                    and r->>'texto' like 'Es dinero de tu línea de crédito de Zzlend: %Sube lo que debes en la línea; no es el pago de un cliente.'
                    and rec->>'accion' = 'prestamo' and rec->'pide' = '["p_interes"]'::jsonb and (rec->'datos'->>'linea')::boolean and rec->'datos'->>'cuenta' = '2510'
-                   and rec->>'texto' like 'Es un pago a tu línea de crédito de Zzlend: $1,000.82. Dime cuánto de este pago fueron intereses%'
+                   and rec->>'texto' like 'Es un pago a tu línea de crédito de Zzlend: $1,000.82. Pon abajo cuánto de este pago fueron intereses%'
                    and rec->>'texto' !~ '(2510|7100|fn_)' and rec->>'porque' like 'El banco lo escribe como lo de tu línea de crédito de Zzlend%'
               then 'estrechado y dada de alta: la cuota, del préstamo; el desembolso y el pago, de la línea (pide los intereses)'
               else 'NO: ' || left(coalesce(l::text, 'nulo'), 200) || ' / ' || left(coalesce(r2::text, 'nulo'), 250) || ' / ' || left(coalesce(r::text, 'nulo'), 250) || ' / ' || left(coalesce(rec::text, 'nulo'), 400) end;
@@ -4699,8 +4710,11 @@ begin
     mo := pg_temp.b17_mov('B17-82O', -412.82, 'ORIG CO NAME:ZZLEND CAPITAL 9 ORIG ID:9000018204 DESC DATE:BDIECISIETE CO ENTRY DESCR:PAYMENT SEC:CCD');
     r := pg_temp.b17_rec(mo);
     a := a || ' | ' || b || ' | ' || c || ' | ' || d || ' | ' || e || ' | ' || f || ' | ' || g || ' | ' || h || ' | ' || i || ' | '
-         || case when not (r ? 'accion') and r->>'aviso' like 'Parece la cuota de un préstamo de Zzlend que todavía no está dado de alta%'
-                      and fn_bandeja_prestamista('ORIG CO NAME ZZLEND CAPITAL 9 ORIG ID 9000018204') = '{"por": "marca", "cuenta": "2540", "conocido": false, "prestamista": "Zzlend"}'::jsonb
+         -- (6b: ese prestamista ya tiene un préstamo y una línea dados de alta: no es «un préstamo sin dar de alta»; la 84 lo mira entero)
+         || case when not (r ? 'accion') and not (r ? 'sin_alta')
+                      and r->>'aviso' like 'Zzlend tiene un préstamo y una línea de crédito dados de alta y el banco escribe este cargo de otra forma: no lo contestes%'
+                      and fn_bandeja_prestamista('ORIG CO NAME ZZLEND CAPITAL 9 ORIG ID 9000018204')
+                          = '{"por": "marca", "cuenta": "2540", "conocido": false, "prestamista": "Zzlend", "otra_forma": true, "tiene": "un préstamo y una línea de crédito dados de alta"}'::jsonb
                  then 'de una tercera forma: no se le supone a ninguno' else 'NO: ' || left(coalesce(r::text, 'nulo'), 300) end;
     -- (8) dada de baja (queda escrita), lo suyo deja de reconocerse como de la línea
     l := fn_bandeja_linea('{"nombre": "Zzlend", "activa": false}');
@@ -4774,7 +4788,201 @@ begin
   insert into _pruebas values (83, v_nom, v_esp, v_obt, v_obt = v_esp);
 end $$;
 
--- 81. Nada queda, y los demás controles siguen como estaban (corre la última: después de la 82 y la 83).
+-- 84. LA LÍNEA DE CRÉDITO, SEGUNDA PASADA (6b): la coma decimal, el «Dímelo», de uno en uno, y lo que el banco escribe de otra forma.
+do $$
+declare
+  v_obt text; v_p uuid; mp uuid; mq uuid; md uuid; mo uuid; mc uuid; rec jsonb; g jsonb; g2 jsonb; l jsonb; t jsonb; v jsonb; v2 jsonb; v3 jsonb;
+  r jsonb; r1 jsonb; r2 jsonb; r3 jsonb; r4 jsonb; r5 jsonb; p0 jsonb; p1 jsonb;
+  a text; b text; c text; d text; e text; f text; h text;
+  c_coma constant text := 'Escribe los centavos con punto, como 61.37.';
+  c_dep  constant text := 'Zzlend tiene un préstamo y una línea de crédito dados de alta y el banco escribe este depósito de otra forma: no lo contestes y avisa a quien te lleva la app.';
+  v_nom text := 'LA LÍNEA DE CRÉDITO, SEGUNDA PASADA (6b: lo que dejó la revisión de la sexta vuelta). (1) Los intereses escritos con COMA DECIMAL («6,50», «61,37», «6,5») no se leen: se piden con punto (antes «6,50» entraba como $650.00 de intereses); «1,000.00», «$61.37» y «61.37» siguen valiendo. (2) El pago de la línea POR EL «DÍMELO»: la propuesta dice qué pide (los intereses), también cuando la Bandeja se lee otra vez, y se aprueba con ellos (antes quedaba como una propuesta que no se podía aprobar). (3) Los cargos de una línea NO SE AGRUPAN en «Decide por grupo» (cada pago lleva sus intereses) y su tarjeta dice que es de una línea y que no se recuerda; nada de un movimiento de la línea se recuerda, tampoco lo que entra con su porqué. (4) Lo que el banco escribe DE OTRA FORMA de un prestamista que ya tiene algo dado de alta no se recomienda (tampoco el depósito: antes salía con «Así es» e iba a la cuenta de un préstamo), ni se registra como dinero de un préstamo aunque se elija en la lista o lo proponga la IA; el cargo dice lo mismo y el control no manda a dar de alta nada';
+  v_esp text := 'el monto escrito: con coma decimal no se lee; con comas de miles, con «$» y con punto, sí | '
+                'los intereses con coma decimal: no entra, y dice cómo escribirlos | «1,000.00», «$61.37» y «61.37»: valen | '
+                'por el «Dímelo»: la propuesta pide los intereses (también al leer otra vez) | sin ellos y con coma: no entra | '
+                'aprobada con ellos: 1010 -1000.84, 2510 939.47, 7100 61.37 | dos pagos de la línea esperando: ningún grupo, cada tarjeta dice que es de la línea y que no se recuerda | '
+                'nada recordado, tampoco de lo que entra con su porqué | solo con la línea dada de alta: «una línea de crédito dada de alta» | '
+                'el depósito de otra forma: se avisa, sin «Así es» | como dinero de un préstamo no se registra (ni eligiéndolo en la lista, ni por la IA) | '
+                'el cargo de otra forma: se avisa, frena como un gasto, y el control no manda a dar de alta nada';
+begin
+  if pg_temp.b17_omitir(84, v_nom, v_esp) then return; end if;
+  begin
+    perform pg_temp.b17_montar();
+    -- (0) lo que lee un monto escrito
+    a := case when fn_bandeja_monto_escrito('6,50') = 'coma' and fn_bandeja_monto_escrito('61,37') = 'coma' and fn_bandeja_monto_escrito('6,5') = 'coma'
+                   and fn_bandeja_monto_escrito('1,00') = 'coma' and fn_bandeja_monto_escrito('1,0000') = 'coma' and fn_bandeja_monto_escrito('1.000,50') = 'coma'
+                   and fn_bandeja_monto_escrito('1,000.00') = '1000.00' and fn_bandeja_monto_escrito(' $1,234,567.8 ') = '1234567.8'
+                   and fn_bandeja_monto_escrito('12,345') = '12345' and fn_bandeja_monto_escrito('$61.37') = '61.37' and fn_bandeja_monto_escrito('0') = '0'
+                   and fn_bandeja_monto_escrito('  ') is null and fn_bandeja_monto_escrito(null) is null
+              then 'el monto escrito: con coma decimal no se lee; con comas de miles, con «$» y con punto, sí' else 'NO LEE BIEN UN MONTO ESCRITO' end;
+    -- (la línea, sola; después el préstamo a plazo del mismo prestamista, ya con su descriptor estrecho)
+    perform fn_bandeja_linea('{"nombre": "Zzlend", "descriptor": "\\mZZLEND CAPITAL(47| 5)\\M"}');
+    p0 := fn_bandeja_prestamista('ORIG CO NAME ZZLEND CAPITAL 9 ORIG ID 9000018404');
+    v_p := (fn_prestamo_guardar(jsonb_build_object('prestamista', 'Zzlend / ZZ Banco Uno', 'descripcion', 'c17-pruebas: préstamo a plazo de prueba',
+              'principal', '9000.00', 'tasa_anual', '40.00', 'cuota', '312.84', 'primer_pago', (pg_temp.b17_d() + 7)::text, 'dia_pago', 15,
+              'plazo_meses', 39, 'frecuencia', 'semanal', 'cuenta', '2540', 'cuenta_largo', '2550',
+              'saldo_inicial', '9000.00', 'saldo_inicial_al', pg_temp.b17_d()::text, 'descriptor', '\mZZLEND CAPITAL31\M'))->>'id')::uuid;
+    p1 := fn_bandeja_prestamista('ORIG CO NAME ZZLEND CAPITAL 9 ORIG ID 9000018404');
+    mp := pg_temp.b17_mov('B17-84P', -1000.84, 'ORIG CO NAME:ZZLEND CAPITAL47 ORIG ID:9000018402 DESC DATE:BDIECISIETE CO ENTRY DESCR:PAYMENT SEC:CCD');
+    mq := pg_temp.b17_mov('B17-84Q', -500.84, 'ORIG CO NAME:ZZLEND CAPITAL47 ORIG ID:9000018402 DESC DATE:BDIECISIETE CO ENTRY DESCR:PAYMENT2 SEC:CCD');
+    -- (1) la coma decimal en la casilla de los intereses
+    rec := pg_temp.b17_rec(mp);
+    r1 := pg_temp.b17_hacer(mp, 'prestamo', rec->'datos' || '{"campos": {"p_interes": "6,50"}}');
+    r2 := pg_temp.b17_hacer(mp, 'prestamo', rec->'datos' || '{"campos": {"p_interes": "61,37"}}');
+    r3 := pg_temp.b17_hacer(mp, 'prestamo', rec->'datos' || '{"campos": {"p_interes": " 6,5"}}');
+    b := case when r1->>'hecho' = 'false' and r1->>'por_que' = c_coma and r2->>'hecho' = 'false' and r2->>'por_que' = c_coma
+                   and r3->>'hecho' = 'false' and r3->>'por_que' = c_coma
+                   and (select mb.estado = 'pendiente' and mb.asiento_id is null from movimientos_banco mb where mb.id = mp)
+              then 'los intereses con coma decimal: no entra, y dice cómo escribirlos'
+              else 'NO: ' || left(coalesce(r1::text, 'nulo'), 200) || ' / ' || left(coalesce(r2::text, 'nulo'), 200) || ' / ' || left(coalesce(r3::text, 'nulo'), 200) end;
+    perform pg_temp.b17_ser('dueno');
+    v := fn_bandeja_validar(mp, 'prestamo', rec->'datos' || '{"campos": {"p_interes": "1,000.00"}}');
+    v2 := fn_bandeja_validar(mp, 'prestamo', rec->'datos' || '{"campos": {"p_interes": "$61.37"}}');
+    v3 := fn_bandeja_validar(mp, 'prestamo', rec->'datos' || '{"campos": {"p_interes": "61.37"}}');
+    perform pg_temp.b17_ser('editor');
+    b := b || ' | ' || case when (v->>'ok')::boolean and v->'datos'->>'interes' = '1000.00' and (v2->>'ok')::boolean and v2->'datos'->>'interes' = '61.37'
+                                 and (v3->>'ok')::boolean and v3->'datos'->>'interes' = '61.37'
+                                 and v3->>'texto' = 'Es un pago a tu línea de crédito de Zzlend: $1,000.84 ($939.47 bajan lo que debes en la línea y $61.37 son intereses).'
+                            then '«1,000.00», «$61.37» y «61.37»: valen'
+                            else 'NO: ' || left(coalesce(v::text, 'nulo'), 200) || ' / ' || left(coalesce(v2::text, 'nulo'), 200) || ' / ' || left(coalesce(v3::text, 'nulo'), 200) end;
+    -- (2) por el «Dímelo»: la propuesta pide los intereses (y lo sigue diciendo cuando la Bandeja se lee otra vez)
+    g := pg_temp.b17_dimelo(mp, 'es el pago de la linea de credito', jsonb_build_object('accion', 'prestamo', 'prestamista', 'Zzlend',
+                                                                                     'explicacion', 'Dices que es el pago de la línea.'));
+    l := pg_temp.b17_leer(pg_temp.b17_entre('B17-84'));
+    t := l->'tarjetas'->(mp::text);
+    c := case when g->>'estado' = 'pendiente' and g->>'accion' = 'prestamo' and g->'pide' = '["p_interes"]'::jsonb
+                   and g->>'texto' like 'Es un pago a tu línea de crédito de Zzlend: $1,000.84. Pon abajo cuánto de este pago fueron intereses%'
+                   and g->>'texto' !~ 'Dime' and t->'dimelo'->'pide' = '["p_interes"]'::jsonb and t->'dimelo'->>'accion' = 'prestamo'
+                   and t->'rec'->'pide' = '["p_interes"]'::jsonb
+              then 'por el «Dímelo»: la propuesta pide los intereses (también al leer otra vez)'
+              else 'NO: ' || left(coalesce(g::text, 'nulo'), 400) || ' / ' || left(coalesce((t->'dimelo')::text, 'nulo'), 300) end;
+    -- (3) dos pagos de la línea esperando: ningún grupo; cada tarjeta dice que es de la línea y que no se recuerda
+    f := case when not exists (select 1 from jsonb_array_elements(l->'grupos') y where y->'movimientos' ?| array[mp::text, mq::text])
+                   and (t->>'linea')::boolean and (t->>'no_recordar')::boolean and t->>'sabe' = 'prestamista'
+                   and (l->'tarjetas'->(mq::text)->>'linea')::boolean and (l->'tarjetas'->(mq::text)->>'no_recordar')::boolean
+                   and l->'tarjetas'->(mq::text)->'rec'->>'accion' = 'prestamo'
+              then 'dos pagos de la línea esperando: ningún grupo, cada tarjeta dice que es de la línea y que no se recuerda'
+              else 'NO: ' || left(coalesce((l->'grupos')::text, 'nulo'), 400) || ' / ' || left(coalesce((t - 'rec' - 'dimelo')::text, 'nulo'), 300) end;
+    r1 := pg_temp.b17_aprobar((g->>'dimelo_id')::uuid);
+    r2 := pg_temp.b17_aprobar((g->>'dimelo_id')::uuid, '{"campos": {"p_interes": "61,37"}}');
+    c := c || ' | ' || case when r1->>'hecho' = 'false' and r1->'campos' = '["p_interes"]'::jsonb and r1->>'por_que' like 'Falta decir cuánto de este pago fueron intereses%'
+                                 and r2->>'hecho' = 'false' and r2->>'por_que' = c_coma
+                                 and (select q.estado = 'pendiente' from bandeja_dimelo q where q.id = (g->>'dimelo_id')::uuid)
+                            then 'sin ellos y con coma: no entra' else 'NO: ' || left(coalesce(r1::text, 'nulo'), 250) || ' / ' || left(coalesce(r2::text, 'nulo'), 250) end;
+    r3 := pg_temp.b17_aprobar((g->>'dimelo_id')::uuid, '{"campos": {"p_interes": "61.37"}, "recordar": true}');
+    c := c || ' | aprobada con ellos: '
+         || case when (r3->>'hecho')::boolean and r3->>'texto' = 'Es un pago a tu línea de crédito de Zzlend: $1,000.84 ($939.47 bajan lo que debes en la línea y $61.37 son intereses).'
+                      and (select q.estado = 'aprobada' from bandeja_dimelo q where q.id = (g->>'dimelo_id')::uuid)
+                 then pg_temp.b17_asiento((r3->>'asiento_id')::uuid) else 'NO: ' || left(coalesce(r3::text, 'nulo'), 300) end;
+    -- (un desembolso de la línea contestado como «otro ingreso», con su porqué leído y «recordar»: entra, y no se recuerda)
+    md := pg_temp.b17_mov('B17-84D', pg_temp.b17_mas_que_todo(300.84), 'ORIG CO NAME:ZZLEND CAPITAL 5 ORIG ID:9000018403 DESC DATE:BDIECISIETE CO ENTRY DESCR:DEPOSIT SEC:CCD');
+    r4 := pg_temp.b17_hacer(md, 'otro_ingreso', '{}', '{"recordar": true}');
+    r5 := pg_temp.b17_hacer(md, 'otro_ingreso', '{}', jsonb_build_object('visto', r4->>'freno', 'motivo', 'c17-pruebas: de verdad es otra cosa', 'recordar', true));
+    d := case when not (r3 ? 'recordado') and r4->>'hecho' = 'false' and (r4->>'propio')::boolean and (r5->>'hecho')::boolean and not (r5 ? 'recordado')
+                   and not exists (select 1 from bandeja_memoria bm where bm.nombre ~* 'ZZLEND' or bm.clave ~* 'ZZLEND')
+              then 'nada recordado, tampoco de lo que entra con su porqué'
+              else 'NO: ' || left(coalesce(r4::text, 'nulo'), 250) || ' / ' || left(coalesce(r5::text, 'nulo'), 250) || ' / '
+                   || coalesce((select string_agg(bm.texto, '; ') from bandeja_memoria bm where bm.nombre ~* 'ZZLEND' or bm.clave ~* 'ZZLEND'), 'sin memoria') end;
+    -- (4) lo que el banco escribe de OTRA forma de un prestamista que ya tiene algo dado de alta
+    e := case when p0 = '{"por": "marca", "cuenta": "2540", "conocido": false, "prestamista": "Zzlend", "otra_forma": true, "tiene": "una línea de crédito dada de alta"}'::jsonb
+              then 'solo con la línea dada de alta: «una línea de crédito dada de alta»' else 'NO: ' || coalesce(p0::text, 'nulo') end;
+    mo := pg_temp.b17_mov('B17-84O', pg_temp.b17_mas_que_todo(900.84), 'ORIG CO NAME:ZZLEND CAPITAL 9 ORIG ID:9000018404 DESC DATE:BDIECISIETE CO ENTRY DESCR:DEPOSIT SEC:CCD');
+    mc := pg_temp.b17_mov('B17-84C', -412.84, 'ORIG CO NAME:ZZLEND CAPITAL 9 ORIG ID:9000018404 DESC DATE:BDIECISIETE CO ENTRY DESCR:PAYMENT SEC:CCD');
+    r := pg_temp.b17_rec(mo);
+    e := e || ' | ' || case when not (r ? 'accion') and r->>'pill' = 'No lo contestes' and r->>'aviso' = c_dep || ' No es el pago de un cliente.'
+                                 and p1 = '{"por": "marca", "cuenta": "2540", "conocido": false, "prestamista": "Zzlend", "otra_forma": true, "tiene": "un préstamo y una línea de crédito dados de alta"}'::jsonb
+                            then 'el depósito de otra forma: se avisa, sin «Así es»' else 'NO: ' || left(coalesce(r::text, 'nulo'), 300) || ' / ' || coalesce(p1::text, 'nulo') end;
+    perform pg_temp.b17_ser('dueno');
+    v := fn_bandeja_validar(mo, 'prestamo', jsonb_build_object('prestamo_id', v_p));
+    perform pg_temp.b17_ser('editor');
+    r1 := pg_temp.b17_hacer(mo, 'prestamo', '{"prestamista": "Zzlend", "cuenta": "2540"}');
+    r2 := pg_temp.b17_hacer(mo, 'prestamo', jsonb_build_object('prestamo_id', v_p));
+    g2 := pg_temp.b17_dimelo(mo, 'es dinero del prestamo', jsonb_build_object('accion', 'prestamo', 'prestamo_id', v_p, 'explicacion', 'Dices que es del préstamo.'));
+    e := e || ' | ' || case when v->>'ok' = 'false' and v->>'falta' = c_dep and r1->>'hecho' = 'false' and r1->>'por_que' = c_dep
+                                 and r2->>'hecho' = 'false' and r2->>'por_que' = c_dep
+                                 and g2->>'estado' = 'sin_propuesta' and g2->>'falta' = c_dep and not (g2 ? 'accion')
+                                 and (select mb.estado = 'pendiente' and mb.asiento_id is null from movimientos_banco mb where mb.id = mo)
+                            then 'como dinero de un préstamo no se registra (ni eligiéndolo en la lista, ni por la IA)'
+                            else 'NO: ' || left(coalesce(v::text, 'nulo'), 250) || ' / ' || left(coalesce(r1::text, 'nulo'), 200) || ' / ' || left(coalesce(r2::text, 'nulo'), 200)
+                                 || ' / ' || left(coalesce(g2::text, 'nulo'), 250) end;
+    r := pg_temp.b17_rec(mc);
+    r1 := pg_temp.b17_hacer(mc, 'gasto', '{"cuenta": "7100"}');
+    l := pg_temp.b17_leer(pg_temp.b17_entre('B17-84'));
+    h := case when not (r ? 'accion') and not (r ? 'sin_alta') and r->>'pill' = 'No lo contestes'
+                   and r->>'aviso' = 'Zzlend tiene un préstamo y una línea de crédito dados de alta y el banco escribe este cargo de otra forma: no lo contestes y avisa a quien te lleva la app. No es un gasto entero.'
+                   and r1->>'hecho' = 'false' and (r1->>'propio')::boolean and (r1->>'pide_motivo')::boolean
+                   and r1->>'por_que' like 'El banco dice que este dinero va a Zzlend, un prestamista: es la cuota de un préstamo%no un gasto entero. Zzlend tiene un préstamo y una línea de crédito dados de alta, pero el banco escribe este cargo de otra forma: avisa a quien te lleva la app antes de contestarlo.%'
+                   and r1->>'por_que' !~ 'todavía no está dado de alta'
+                   and l->'tarjetas'->(mc::text)->>'sabe' = 'prestamista' and not (l->'tarjetas'->(mc::text) ? 'linea')
+                   and l->'tarjetas'->(mo::text)->'rec'->>'aviso' like 'Zzlend tiene un préstamo y una línea de crédito dados de alta%'
+                   and not exists (select 1 from jsonb_array_elements(l->'control') k where (k->>'orden')::int in (70, 75) and k->>'texto' ~* 'zzlend')
+              then 'el cargo de otra forma: se avisa, frena como un gasto, y el control no manda a dar de alta nada'
+              else 'NO: ' || left(coalesce(r::text, 'nulo'), 300) || ' / ' || left(coalesce(r1::text, 'nulo'), 400) || ' / ' || left(coalesce((l->'control')::text, 'nulo'), 300) end;
+    v_obt := a || ' | ' || b || ' | ' || c || ' | ' || f || ' | ' || d || ' | ' || e || ' | ' || h;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.b17_ser('editor');
+  insert into _pruebas values (84, v_nom, v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 85. «CON LO QUE DICE SU ESTADO DE CUENTA» (6b): lo registrado dice lo que entró, y sus montos no se leen con coma decimal.
+do $$
+declare
+  v_obt text; v_p uuid; m uuid; rec jsonb; v jsonb; r1 jsonb; r2 jsonb; r3 jsonb; hu text; n int; a text; b text; c text;
+  v_nom text := '«CON LO QUE DICE SU ESTADO DE CUENTA» (6b). Un pago a un préstamo por más que su cuota, contestado con el botón «Con lo que dice su estado de cuenta»: Edgar escribe cuánto bajó la deuda y cuánto fue de intereses. Antes lo que quedaba escrito («Registrado: …» y «Lo que contestaste estos días») era la PREGUNTA («…Dime cuánto bajó la deuda y cuánto fue de intereses…»); ahora dice lo que entró, con sus montos. Y esos dos montos se leen como los intereses de la línea: con coma decimal no se leen (se piden con punto), lo que no es un monto se dice, y «$1,400.00» vale';
+  v_esp text := 'sin los datos, la tarjeta pregunta | con coma decimal, o sin ser un monto: no entra y dice cómo escribirlo | '
+                'con «$1,400.00» y «100.85»: 1010 -1500.85, la deuda del préstamo 1400.00, 7100 100.85 | '
+                'lo registrado dice lo que entró: Es un pago a ZZ Capital Ochentaycinco: $1,500.85 ($1,400.00 bajan la deuda y $100.85 son intereses, según su estado de cuenta).';
+begin
+  if pg_temp.b17_omitir(85, v_nom, v_esp) then return; end if;
+  begin
+    perform pg_temp.b17_montar();
+    v_p := (fn_prestamo_guardar(jsonb_build_object('prestamista', 'ZZ Capital Ochentaycinco', 'descripcion', 'c17-pruebas: préstamo de prueba',
+              'principal', '20000.00', 'tasa_anual', '19.99', 'cuota', '300.85', 'primer_pago', (pg_temp.b17_d() + 7)::text, 'dia_pago', 15,
+              'plazo_meses', 80, 'frecuencia', 'semanal', 'cuenta', '2540', 'cuenta_largo', '2550',
+              'saldo_inicial', '20000.00', 'saldo_inicial_al', pg_temp.b17_d()::text, 'descriptor', 'ZZCAP85 PAGO'))->>'id')::uuid;
+    m := pg_temp.b17_mov('B17-85A', -1500.85, 'ACH ZZCAP85 PAGO BDIECISIETE');
+    rec := pg_temp.b17_rec(m);
+    select (e.x->>'opcion')::int, e.x->>'huella' into n, hu
+      from jsonb_array_elements(coalesce(rec->'elige', '[]'::jsonb)) as e(x) where e.x->>'boton' = 'Con lo que dice su estado de cuenta';
+    perform pg_temp.b17_ser('dueno');
+    v := fn_bandeja_validar(m, 'banco', jsonb_build_object('opcion', n, 'huella', hu));
+    perform pg_temp.b17_ser('editor');
+    a := case when (v->>'ok')::boolean and v->'datos'->'pide' ?& array['p_capital', 'p_interes']
+                   and v->>'texto' = 'Es un pago a ZZ Capital Ochentaycinco: $1,500.85. Dime cuánto bajó la deuda y cuánto fue de intereses (lo dice su estado de cuenta).'
+              then 'sin los datos, la tarjeta pregunta' else 'NO: ' || left(coalesce(v::text, 'nulo'), 400) || ' / ' || left(coalesce(rec::text, 'nulo'), 300) end;
+    r1 := pg_temp.b17_hacer(m, 'banco', jsonb_build_object('opcion', n, 'huella', hu, 'campos', '{"p_capital": "1400,00", "p_interes": "100.85"}'::jsonb));
+    r2 := pg_temp.b17_hacer(m, 'banco', jsonb_build_object('opcion', n, 'huella', hu, 'campos', '{"p_capital": "1400.00", "p_interes": "cien"}'::jsonb));
+    b := case when r1->>'hecho' = 'false' and r1->>'por_que' = 'Escribe los centavos con punto, como 61.37.'
+                   and r2->>'hecho' = 'false' and r2->>'por_que' = 'Eso no es un monto: escríbelo con números, como 61.37.'
+                   and (select mb.estado = 'pendiente' and mb.asiento_id is null from movimientos_banco mb where mb.id = m)
+              then 'con coma decimal, o sin ser un monto: no entra y dice cómo escribirlo'
+              else 'NO: ' || left(coalesce(r1::text, 'nulo'), 250) || ' / ' || left(coalesce(r2::text, 'nulo'), 250) end;
+    r3 := pg_temp.b17_hacer(m, 'banco', jsonb_build_object('opcion', n, 'huella', hu, 'campos', '{"p_capital": "$1,400.00", "p_interes": " 100.85 "}'::jsonb));
+    c := 'con «$1,400.00» y «100.85»: '
+         || case when (r3->>'hecho')::boolean
+                 then (select string_agg(y.c || ' ' || y.m, ', ' order by y.o, (y.c ~ '^[0-9]'), y.c)
+                         from (select case when l.cuenta in ('2540', '2550') then 'la deuda del préstamo' else l.cuenta end as c, sum(l.monto) as m,
+                                      min(case when l.cuenta = pg_temp.b17('banco') then 0 else 1 end) as o
+                                 from asiento_lineas l where l.asiento_id = (r3->>'asiento_id')::uuid group by 1) y)
+                 else 'NO: ' || left(coalesce(r3::text, 'nulo'), 300) end
+         || ' | lo registrado dice lo que entró: '
+         || case when r3->>'texto' = (select h.texto from bandeja_hechos h where h.id = (r3->>'hecho_id')::uuid) then coalesce(r3->>'texto', 'nulo')
+                 else 'NO ES LO QUE QUEDÓ ESCRITO: ' || coalesce(r3->>'texto', 'nulo') end;
+    v_obt := a || ' | ' || b || ' | ' || c;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.b17_ser('editor');
+  insert into _pruebas values (85, v_nom, v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 81. Nada queda, y los demás controles siguen como estaban (corre la última: después de la 82, la 83, la 84 y la 85).
 do $$
 declare
   v_obt text;

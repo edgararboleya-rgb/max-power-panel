@@ -1,7 +1,10 @@
 -- =====================================================================
 -- c17-bandeja.sql — LA BANDEJA NUEVA (Fase 7, «Dímelo con tus palabras»).
 -- 22-nov-2026 (sexta vuelta: la línea de crédito aparte del préstamo a plazo y
--- la pregunta con botones iguales; marca 2026112203).
+-- la pregunta con botones iguales; y su segunda pasada, la 6b: la coma
+-- decimal, el pago de la línea por el «Dímelo», lo que el banco escribe de
+-- una tercera forma, y los cargos de una línea de uno en uno; marca
+-- 2026112203).
 -- Se pega en el SQL Editor de Supabase DESPUÉS de c1…c16 (pide c1, c2, c3, c6 y c8;
 -- c10 y lo demás, si están, se usan). No cambia ninguna capa anterior: no
 -- toca sus tablas, sus funciones ni sus permisos; todo lo de aquí se llama
@@ -142,7 +145,13 @@
 --                 su estado de cuenta a su gasto (se piden en la tarjeta:
 --                 `pide: [p_interes]`; fn_banco_clasificar con una o dos
 --                 líneas). Una línea no es un préstamo a plazo: no va en
---                 la tabla prestamos de c6 ni tiene cuotas.
+--                 la tabla prestamos de c6 ni tiene cuotas. (6b) Lo que el
+--                 banco escribe de un prestamista que YA tiene algo dado de
+--                 alta (un préstamo, una línea) de una forma que no es la
+--                 de ninguno NO se registra por esta acción (ni eligiendo
+--                 el préstamo en la lista): se avisa, sin «Así es». Y un
+--                 monto escrito con coma decimal («61,37») no se lee: se
+--                 pide con punto (fn_bandeja_monto_escrito).
 --   aporte        dinero de Edgar a la empresa: préstamo del accionista
 --                 (2900) o aportación (3100), con su línea escrita.
 --   traspaso      dinero entre cuentas propias, o el pago de la tarjeta
@@ -1514,6 +1523,27 @@ revoke execute on function public.fn_bandeja_num(text) from public, anon, servic
 grant  execute on function public.fn_bandeja_num(text) to authenticated;
 comment on function public.fn_bandeja_num(text) is 'c17: un monto de un JSON (texto o número) a numeric con dos decimales; nulo si no es un monto.';
 
+-- (Sexta vuelta, 6b) UN MONTO ESCRITO POR EDGAR en una casilla de la Bandeja
+-- (los intereses de un pago de la línea; el capital y el interés de una
+-- cuota, según su estado de cuenta). «61.37», «$61.37» y «1,000.00» valen.
+-- Una coma que NO es de miles («61,37», «6,5») NO SE LEE: antes las comas se
+-- quitaban sin mirar, y «6,50» entraba como $650.00 de intereses. Devuelve
+-- el texto limpio (sin «$», sin espacios y sin las comas de miles), para
+-- fn_bandeja_num; «coma» si trae una coma que no es de miles; nulo si no hay
+-- nada escrito.
+create or replace function public.fn_bandeja_monto_escrito(p text) returns text
+language sql immutable
+set search_path = public, pg_temp
+as $$
+  select case when z.t = '' then null
+              when position(',' in z.t) > 0 and z.t !~ '^[0-9]{1,3}(,[0-9]{3})+(\.[0-9]{1,2})?$' then 'coma'
+              else replace(z.t, ',', '') end
+    from (select regexp_replace(coalesce(p, ''), '[$[:space:]]', '', 'g') as t) z
+$$;
+revoke execute on function public.fn_bandeja_monto_escrito(text) from public, anon, service_role;
+grant  execute on function public.fn_bandeja_monto_escrito(text) to authenticated;
+comment on function public.fn_bandeja_monto_escrito(text) is 'c17: un monto escrito por Edgar en una casilla de la Bandeja, limpio para leerlo («$1,000.00» → «1000.00»); «coma» si trae una coma que no es de miles («61,37»: no se lee, se pide con punto); nulo si está vacío.';
+
 -- LAS FACTURAS CON SALDO EN EL LIBRO (las que un depósito puede pagar: las
 -- del puente y las de antes del corte que entraron con la apertura), con su
 -- obra, su cliente y si Edgar ya la marcó cobrada en Proyectos.
@@ -1842,6 +1872,7 @@ declare
   m      text[];
   v_nom  text;
   v_n    int;
+  v_nl   int;
   v_id   uuid;
   l      record;
 begin
@@ -1881,15 +1912,26 @@ begin
       from prestamos p
      where regexp_replace(upper(coalesce(p.prestamista, '')), '[^[:alnum:]]+', '', 'g') like '%' || replace(m[1], ' ', '') || '%';
     -- (sexta vuelta) una línea de crédito de esa marca también es un producto de ese prestamista
-    v_n := v_n + (select count(*) from bandeja_config g cross join lateral jsonb_array_elements(g.lineas) y
-                   where g.id = 1 and coalesce(y->>'activa', 'true') = 'true'
-                     and regexp_replace(upper(coalesce(y->>'nombre', '')), '[^[:alnum:]]+', '', 'g') like '%' || replace(m[1], ' ', '') || '%');
-    if v_n = 1 and v_id is not null then
+    v_nl := (select count(*) from bandeja_config g cross join lateral jsonb_array_elements(g.lineas) y
+              where g.id = 1 and coalesce(y->>'activa', 'true') = 'true'
+                and regexp_replace(upper(coalesce(y->>'nombre', '')), '[^[:alnum:]]+', '', 'g') like '%' || replace(m[1], ' ', '') || '%');
+    if v_n = 1 and v_nl = 0 then
       return (select jsonb_build_object('prestamo_id', p.id, 'prestamista', p.prestamista, 'cuenta', p.cuenta, 'conocido', true, 'por', 'marca')
                 from prestamos p where p.id = v_id);
     end if;
-    return jsonb_build_object('prestamista', case when m[1] in ('ONDECK', 'ON DECK') then 'OnDeck' else initcap(m[1]) end,
-                              'cuenta', '2540', 'conocido', false, 'por', 'marca');
+    -- (6b) ESA MARCA YA TIENE ALGO DADO DE ALTA (un préstamo y una línea, dos préstamos, o solo una línea) y el banco escribe
+    -- este movimiento de una forma que no es la de ninguno: `otra_forma` (y `tiene`: lo que tiene, en llano). No se le supone a
+    -- ninguno ni se toma por «un préstamo sin dar de alta»: ni el cargo ni el depósito se recomiendan, y como dinero de un
+    -- préstamo no se registra desde la Bandeja (antes el depósito salía con su «Así es» e iba a la cuenta de los préstamos sin
+    -- alta, que puede ser la de un préstamo que sí lo está)
+    return jsonb_strip_nulls(jsonb_build_object(
+      'prestamista', case when m[1] in ('ONDECK', 'ON DECK') then 'OnDeck' else initcap(m[1]) end,
+      'cuenta', '2540', 'conocido', false, 'por', 'marca',
+      'otra_forma', case when v_n + v_nl > 0 then true end,
+      'tiene', case when v_n + v_nl > 0
+                    then concat_ws(' y ', case when v_n = 1 then 'un préstamo' when v_n > 1 then v_n || ' préstamos' end,
+                                          case when v_nl = 1 then 'una línea de crédito' when v_nl > 1 then v_nl || ' líneas de crédito' end)
+                         || case when v_n > 0 then ' dados de alta' when v_nl = 1 then ' dada de alta' else ' dadas de alta' end end));
   end if;
   m := regexp_match(v, '\m(SBAD TREAS|SBA EIDL|WORKING CAPITAL|LOAN PROCEEDS|LOAN FUNDING|LOAN DISBURSEMENT|LOAN ADVANCE|CAPITAL ADVANCE|MERCHANT CASH ADVANCE)\M');
   if m is not null then
@@ -1899,7 +1941,7 @@ begin
 end $$;
 revoke execute on function public.fn_bandeja_prestamista(text) from public, anon, service_role;
 grant  execute on function public.fn_bandeja_prestamista(text) to authenticated;
-comment on function public.fn_bandeja_prestamista(text) is 'c17: si la descripción del banco nombra a un prestamista (los dados de alta en prestamos, por su descriptor o su nombre entero; o las marcas corrientes de un préstamo de negocio): {prestamo_id, prestamista, cuenta, conocido, por} o nulo. Nunca por una palabra suelta ni en un Zelle.';
+comment on function public.fn_bandeja_prestamista(text) is 'c17: si la descripción del banco nombra a un prestamista (una línea de crédito dada de alta, por su descriptor; los dados de alta en prestamos, por su descriptor o su nombre entero; o las marcas corrientes de un préstamo de negocio): {prestamo_id, prestamista, cuenta, conocido, por, linea, otra_forma y tiene (esa marca ya tiene algo dado de alta y el banco escribe esto de otra forma)} o nulo. Nunca por una palabra suelta ni en un Zelle.';
 
 -- LOS PENDIENTES QUE PUEDEN SER DE UN PRESTAMISTA, de una vez: los que
 -- nombran una marca de préstamo, o casan con el descriptor o con el nombre
@@ -2558,16 +2600,21 @@ begin
         v_cta := pr->>'cuenta';
         v_cti := coalesce((select y->>'cuenta_interes' from bandeja_config g cross join lateral jsonb_array_elements(g.lineas) y
                             where g.id = 1 and y->>'nombre' = v_nom limit 1), '7100');
-        v_int := nullif(regexp_replace(coalesce(d->'campos'->>'p_interes', d->>'interes', ''), '[$,[:space:]]', '', 'g'), '');
-        v_m := fn_bandeja_num(v_int);
+        -- (6b) lo que Edgar escribió, leído con fn_bandeja_monto_escrito: una coma que no es de miles no se quita (ni se lee)
+        v_int := fn_bandeja_monto_escrito(coalesce(d->'campos'->>'p_interes', d->>'interes'));
+        v_m := case when v_int is distinct from 'coma' then fn_bandeja_num(v_int) end;
         o := jsonb_build_object('linea', true, 'prestamista', v_nom, 'cuenta', v_cta);
         if not exists (select 1 from cuentas c2 where c2.codigo = v_cta and c2.imputable)
            or not exists (select 1 from cuentas c2 where c2.codigo = v_cti and c2.imputable) then
           v_falta := 'La cuenta de esa línea de crédito no está en el plan de cuentas.';
         elsif v_int is null then
           o := o || jsonb_build_object('pide', jsonb_build_array('p_interes'));
-          v_texto := format('Es un pago a tu línea de crédito de %s: %s. Dime cuánto de este pago fueron intereses (lo dice su estado de '
+          -- (6b: «Pon abajo…», no «Dime…», que invitaba a contestarlo en la caja del «Dímelo»)
+          v_texto := format('Es un pago a tu línea de crédito de %s: %s. Pon abajo cuánto de este pago fueron intereses (lo dice su estado de '
                             'cuenta; si no hubo, pon 0): lo demás baja lo que debes en la línea.', v_nom, v_usd);
+        elsif v_int = 'coma' then
+          o := o || jsonb_build_object('pide', jsonb_build_array('p_interes'));
+          v_falta := 'Escribe los centavos con punto, como 61.37.';
         elsif v_m is null or v_m < 0 or v_m > abs(m.monto) then
           o := o || jsonb_build_object('pide', jsonb_build_array('p_interes'));
           v_falta := format('Los intereses de este pago son un monto entre 0 y %s (lo dice el estado de cuenta de la línea).', v_usd);
@@ -2589,6 +2636,14 @@ begin
           v_nom := pr->>'prestamista';
           v_cta := pr->>'cuenta';
           o := jsonb_build_object('linea', true);
+        elsif coalesce((pr->>'otra_forma')::boolean, false) then
+          -- (6b) ESE PRESTAMISTA YA TIENE ALGO DADO DE ALTA y el banco escribe este depósito de una forma que no es la de
+          -- ninguno: no se sabe de cuál es. No se registra como dinero de un préstamo desde la Bandeja, tampoco eligiendo el
+          -- préstamo en la lista ni si lo propone la IA (iría a la cuenta de un préstamo que lleva su saldo por sus cuotas)
+          v_nom := pr->>'prestamista';
+          v_cta := pr->>'cuenta';
+          v_falta := format('%s tiene %s y el banco escribe este depósito de otra forma: no lo contestes y avisa a quien te lleva la app.',
+                            pr->>'prestamista', pr->>'tiene');
         elsif coalesce(d->>'prestamo_id', '') ~ c_uuid then
           select p.prestamista, p.cuenta into v_nom, v_cta from prestamos p where p.id = (d->>'prestamo_id')::uuid;
           if v_nom is null then
@@ -2721,11 +2776,39 @@ begin
                              join facturas_cobro fc on fc.id = case when y->>'factura_id' ~ '^-?[0-9]{1,18}$' then (y->>'factura_id')::bigint end
                             where coalesce(fc.saldo_cxc, 0) + coalesce(fc.saldo_retencion, 0) <= 0 limit 1));
       else
+        -- (6b) LOS MONTOS QUE LA OPCIÓN PIDE y Edgar escribe (el capital y el interés de su estado de cuenta) se leen aquí, antes
+        -- de llegar a la puerta: con coma decimal no se leen (se pide con punto), y lo que entra a la puerta va limpio («1,000.00»
+        -- → «1000.00»)
+        c := case when jsonb_typeof(d->'campos') = 'object' then d->'campos' end;
+        if c is not null then
+          foreach v_id in array fn_bandeja_opcion_pide(v_op) loop
+            if v_id in ('p_capital', 'p_interes') and nullif(btrim(coalesce(c->>v_id, '')), '') is not null then
+              v_int := fn_bandeja_monto_escrito(c->>v_id);
+              if v_int = 'coma' then
+                v_falta := 'Escribe los centavos con punto, como 61.37.';
+              elsif fn_bandeja_num(v_int) is null or fn_bandeja_num(v_int) < 0 then
+                v_falta := coalesce(v_falta, 'Eso no es un monto: escríbelo con números, como 61.37.');
+              else
+                c := c || jsonb_build_object(v_id, v_int);
+              end if;
+            end if;
+          end loop;
+        end if;
         o := jsonb_strip_nulls(jsonb_build_object(
                'opcion', v_i, 'llamar', v_op->>'llamar', 'huella', fn_bandeja_opcion_huella(v_op),
                'pide', nullif(to_jsonb(fn_bandeja_opcion_pide(v_op)), '[]'::jsonb),
-               'campos', case when jsonb_typeof(d->'campos') = 'object' then d->'campos' end));
+               'campos', c));
         v_texto := fn_bandeja_opcion_texto(v_op, m.monto, m.id);
+        -- (6b) «CON LO QUE DICE SU ESTADO DE CUENTA», con los dos montos ya escritos: el texto dice LO QUE ENTRA (es lo que queda en
+        -- «Registrado: …» y en «Lo que contestaste estos días»), no la pregunta («Dime cuánto bajó la deuda…»)
+        if v_falta is null and v_op->>'llamar' = 'fn_prestamo_cuota' and v_op->'pide' ?& array['p_capital', 'p_interes']
+           and fn_bandeja_num(c->>'p_capital') is not null and fn_bandeja_num(c->>'p_interes') is not null then
+          v_texto := format('Es un pago a %s: %s (%s bajan la deuda y %s son intereses, según su estado de cuenta).',
+                            coalesce((select p.prestamista from prestamos p
+                                       where p.id = case when coalesce(v_op->'args'->>'p_prestamo', '') ~ c_uuid
+                                                         then (v_op->'args'->>'p_prestamo')::uuid end), 'un préstamo'),
+                            v_usd, fn_bandeja_usd(fn_bandeja_num(c->>'p_capital')), fn_bandeja_usd(fn_bandeja_num(c->>'p_interes')));
+        end if;
       end if;
     else
       raise exception using errcode = '22023',
@@ -2794,7 +2877,9 @@ begin
   end if;
   -- (sexta vuelta) ni lo de una línea de crédito dada de alta: la app ya la reconoce por cómo la escribe el banco, y la clave de
   -- su contraparte puede ser la misma que la de las cuotas de un préstamo a plazo del mismo prestamista
-  if p_accion = 'prestamo' and coalesce(p_datos->>'linea', '') = 'true' then
+  -- (6b: sea cual sea la respuesta —también la que entra con su porqué—: la tarjeta de una línea no ofrece «Recordarlo», y lo
+  -- dice fn_bandeja_leer con `no_recordar`)
+  if (p_accion = 'prestamo' and coalesce(p_datos->>'linea', '') = 'true') or fn_bandeja_prestamista(m.desc_norm)->>'por' = 'linea' then
     return null;
   end if;
   case p_accion
@@ -3391,6 +3476,10 @@ begin
                          case when (pr->>'conocido')::boolean then ' que ya tienes dado de alta' else '' end,
                          case p_accion when 'gasto' then 'un gasto entero' when 'personal' then 'algo tuyo' else 'un pago por trabajo' end,
                          case when (pr->>'conocido')::boolean then ''
+                              -- (6b) ese prestamista ya tiene algo dado de alta: no es «un préstamo sin dar de alta»
+                              when coalesce((pr->>'otra_forma')::boolean, false)
+                                then format(' %s tiene %s, pero el banco escribe este cargo de otra forma: avisa a quien te lleva la app '
+                                            'antes de contestarlo.', pr->>'prestamista', pr->>'tiene')
                               else ' Ese préstamo todavía no está dado de alta en la app: hay que darlo de alta una vez, con su contrato, y '
                                    'sus cuotas se reparten solas.' end);
     end if;
@@ -4244,6 +4333,12 @@ begin
       v_acc := 'banco'; v_dat := jsonb_build_object('opcion', 0); v_fte := 'banco';
     elsif v_mot = any (c_tr) and v_varias then
       return fn_bandeja_elige(m.id);
+    elsif coalesce((pr->>'otra_forma')::boolean, false) then
+      -- (6b) LO QUE EL BANCO ESCRIBE DE UNA TERCERA FORMA de un prestamista que ya tiene algo dado de alta: tampoco el depósito
+      -- se recomienda (antes salía «Es dinero de un préstamo de …» con su «Así es», e iba a la cuenta de un préstamo): se avisa
+      return jsonb_build_object('fuente', 'app', 'pill', 'No lo contestes',
+        'aviso', format('%s tiene %s y el banco escribe este depósito de otra forma: no lo contestes y avisa a quien te lleva la app. '
+                        'No es el pago de un cliente.', pr->>'prestamista', pr->>'tiene'));
     elsif pr is not null then
       -- UN PRÉSTAMO NO ES UN COBRO: antes que cualquier factura (si c6 lo tomaba por el pago de una, lo dirá al tocar «Así es»)
       v_acc := 'prestamo'; v_dat := pr - 'conocido' - 'por'; v_fte := 'app';
@@ -4415,6 +4510,12 @@ begin
       -- LO QUE COBRA EL PROCESADOR por los pagos con tarjeta (antes que lo recordado: no es la suscripción de QuickBooks)
       v_acc := 'gasto'; v_dat := jsonb_build_object('cuenta', '6130'); v_fte := 'app';
       v_por := 'Es lo que cobra el procesador de tarjetas por los pagos de tus clientes.';
+    elsif coalesce((pr->>'otra_forma')::boolean, false) then
+      -- (6b) y el CARGO de esa tercera forma: el mismo aviso (antes, «Parece la cuota de un préstamo de … que todavía no está
+      -- dado de alta», de un prestamista que sí tiene lo suyo dado de alta; y el control mandaba a darlo de alta)
+      return jsonb_build_object('fuente', 'app', 'pill', 'No lo contestes',
+        'aviso', format('%s tiene %s y el banco escribe este cargo de otra forma: no lo contestes y avisa a quien te lleva la app. '
+                        'No es un gasto entero.', pr->>'prestamista', pr->>'tiene'));
     elsif pr is not null then
       -- (cuarta vuelta: ANTES que lo recordado) LO QUE SALE HACIA UN PRESTAMISTA es la cuota de un préstamo. Si c6 la reconoce,
       -- salió arriba; si no (el préstamo no está dado de alta, o el banco lo escribe distinto), se avisa: nunca «es un gasto»
@@ -5285,6 +5386,13 @@ begin
                                  then format('Este dinero salió hacia la línea de crédito de %s, que está dada de alta: es un pago de la '
                                              'línea (baja lo que se debe; la parte de intereses la dice su estado de cuenta), no un gasto '
                                              'entero. Se registra con la recomendación de su tarjeta.', pr->>'prestamista')
+                                 -- (6b) de un prestamista que ya tiene algo dado de alta, escrito de otra forma
+                                 when coalesce((pr->>'otra_forma')::boolean, false)
+                                 then format('Este dinero %s %s, un prestamista que tiene %s en la app, pero el banco escribe este '
+                                             'movimiento de otra forma y no se sabe de cuál es: no se registra desde aquí hasta que lo '
+                                             'revise quien lleva la app. No es %s.',
+                                             case when m.monto > 0 then 'lo deposita' else 'salió hacia' end, pr->>'prestamista',
+                                             pr->>'tiene', case when m.monto > 0 then 'el pago de un cliente' else 'un gasto' end)
                                  when pr is not null and m.monto > 0
                                  then format('Lo deposita %s, un prestamista: es dinero de un préstamo (una deuda de la empresa), no el pago de '
                                              'un cliente.', pr->>'prestamista')
@@ -5486,9 +5594,11 @@ begin
     'porque', v_exp, 'falta', v_falta, 'falta_de_la_ia', case when v_de_ia then true end,
     'pide_obra', case when v_est = 'pendiente' then v->'pide_obra' end,
     -- (lo que el banco pide para esa opción y no es el motivo: el capital y el interés de una cuota; se mandan al aprobar)
-    'pide', case when v_est = 'pendiente' and v_acc = 'banco'
+    -- (6b) y los intereses del pago de una línea de crédito (acción «prestamo»): sin ellos esa propuesta no se podía aprobar
+    'pide', case when v_est = 'pendiente' and v_acc in ('banco', 'prestamo')
                  then (select nullif(jsonb_agg(e), '[]'::jsonb)
-                         from jsonb_array_elements_text(coalesce(v->'datos'->'pide', '[]'::jsonb)) e
+                         from jsonb_array_elements_text(case when jsonb_typeof(v->'datos'->'pide') = 'array' then v->'datos'->'pide'
+                                                             else '[]'::jsonb end) e
                         where e not in ('p_motivo', 'p_notas', 'p_partidas.motivo')) end,
     'pide_motivo', case when v_est = 'pendiente' and v_acc in ('aporte', 'otro_ingreso') then false end,
     'recordar', v_rec, 'centavos', coalesce(v_cent, 0), 'tope', fn_contador_tope()));
@@ -5534,7 +5644,9 @@ begin
   d := q.datos || case when nullif(btrim(coalesce(op->>'proyecto_id', '')), '') is not null
                             and q.accion in ('gasto', 'anticipo', 'contratista')
                        then jsonb_build_object('proyecto_id', btrim(op->>'proyecto_id')) else '{}'::jsonb end
-              || case when q.accion = 'banco' and jsonb_typeof(op->'campos') = 'object'
+              -- (6b) y a la propuesta del pago de una línea de crédito, sus intereses (`campos.p_interes`)
+              || case when (q.accion = 'banco' or (q.accion = 'prestamo' and coalesce(q.datos->>'linea', '') = 'true'))
+                           and jsonb_typeof(op->'campos') = 'object'
                       then jsonb_build_object('campos', op->'campos') else '{}'::jsonb end;
   -- (quinta vuelta) la frase que Edgar escribió ANTES de ver un freno no es su respuesta a ese freno: si la llamada trae la huella
   -- de un freno leído (`visto`), el porqué es el que él escriba, o ninguno (antes, con dinero suyo, otro ingreso o la devolución de
@@ -5625,9 +5737,11 @@ comment on function public.fn_bandeja_rechazar(uuid, text) is 'c17: «No, es otr
 --      c6, en su orden: con ella los botones del banco de «Más opciones» se
 --      registran por la acción «banco»), sabe (prestamista | edgar: lo que
 --      la app sabe de ese dinero; la pantalla no ofrece cobrarlo a un
---      cliente ni «que entre solo»), obra_dia (el nombre de la única obra
---      con horas de la cuadrilla el día de esa compra: lo que «la del día de
---      cada uno» le pondría)}} (rec puede ser {aviso, elige: [{opcion,
+--      cliente ni «que entre solo»), linea (6b: es de una línea de crédito
+--      dada de alta) y no_recordar (6b: de ese movimiento no se recuerda
+--      nada: la pantalla no ofrece «Recordarlo»), obra_dia (el nombre de
+--      la única obra con horas de la cuadrilla el día de esa compra: lo que
+--      «la del día de cada uno» le pondría)}} (rec puede ser {aviso, elige: [{opcion,
 --      huella, texto, boton}], pill}: el banco lo reconoce de varias formas
 --      y se pregunta cuál; o {aviso, deshecha}: es lo que Edgar deshizo),
 --      grupos: [{clave, nombre, clase, n, total, movimientos (por fecha),
@@ -5661,10 +5775,12 @@ comment on function public.fn_bandeja_rechazar(uuid, text) is 'c17: «No, es otr
 --     mismo corte), y la pantalla va pidiendo lo que falta.
 --     LOS GRUPOS son solo de CARGOS (un comercio, un Zelle a alguien): los
 --     depósitos de un mismo pagador se dan aparte (uno_a_uno: cada depósito
---     paga sus facturas; no se deciden de una vez). Y la recomendación de un
---     grupo es la de SUS TARJETAS cuando coinciden (todas las que tienen
---     una, y al menos seis de cada diez): si unas dicen una cosa y otras
---     otra (mixto), el grupo no propone nada. Antes salía del nombre, y un
+--     paga sus facturas; no se deciden de una vez). (6b) Y los cargos de una
+--     línea de crédito dada de alta no entran en ningún grupo: cada pago
+--     lleva sus intereses. Y la recomendación de un grupo es la de SUS
+--     TARJETAS cuando coinciden (todas las que tienen una, y al menos seis
+--     de cada diez): si unas dicen una cosa y otras otra (mixto), el grupo
+--     no propone nada. Antes salía del nombre, y un
 --     toque mandaba las comisiones del procesador a «Oficina y software».
 --     Solo lee; a quien no es el dueño no le devuelve nada.
 -- ---------------------------------------------------------------------
@@ -5769,6 +5885,14 @@ begin
     select coalesce(array_agg(distinct e::uuid), '{}') into v_uentre
       from jsonb_array_elements_text(v_entre) e where e ~ '^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$';
   end if;
+  -- (lo que las recomendaciones comparten: las facturas por cobrar, y qué pendientes pueden ser de un prestamista. 6b: va antes
+  -- de lo barato, que lo usa para saber qué es de una línea de crédito)
+  ctx := jsonb_build_object('facturas', fn_bandeja_facturas());
+  begin
+    ctx := ctx || jsonb_build_object('prest', fn_bandeja_prestamista_quiza(coalesce(v_uids, v_uentre)));
+  exception when others then
+    null;   -- sin eso, cada tarjeta lo mira por su cuenta (más lento, igual de bien)
+  end;
   -- 1. LO BARATO de cada pendiente: de quién es (la contraparte) y qué pensaba c6. Con ello se sabe qué GRUPO forma con otros.
   --    (Cuando la pantalla pide unas tarjetas —ids—, solo las de esas: las pide por unidades enteras, como vinieron en «faltan» o
   --    todas las de una misma contraparte; así lo que cuesta una llamada de seguir va con lo pedido y no con la Bandeja entera)
@@ -5779,18 +5903,14 @@ begin
                                     -- (cuarta vuelta) el día de la compra (para la obra del día) y la huella de cada opción de c6:
                                     -- con ella los botones de «Más opciones» registran por esta capa lo que Edgar leyó
                                     'fd', coalesce(mb.fecha_transaccion, mb.fecha),
+                                    -- (6b) lo que la app sabe del prestamista de ese movimiento (solo de los pocos que pueden
+                                    -- serlo): con ello la tarjeta dice `sabe` y `linea`, y lo de una línea no entra en un grupo
+                                    'pr', case when ctx ? 'prest' and ctx->'prest' ? mb.id::text then fn_bandeja_prestamista(mb.desc_norm) end,
                                     'ops', (select jsonb_agg(fn_bandeja_opcion_huella(t.o) order by t.n)
                                               from jsonb_array_elements(case when jsonb_typeof(mb.propuesta->'opciones') = 'array'
                                                                              then mb.propuesta->'opciones' end) with ordinality as t(o, n))) as x
             from movimientos_banco mb
            where mb.estado = 'pendiente' and (v_uids is null or mb.id = any (v_uids)) and (v_uentre is null or mb.id = any (v_uentre))) z;
-  -- (lo que las recomendaciones comparten: las facturas por cobrar, y qué pendientes pueden ser de un prestamista)
-  ctx := jsonb_build_object('facturas', fn_bandeja_facturas());
-  begin
-    ctx := ctx || jsonb_build_object('prest', fn_bandeja_prestamista_quiza(coalesce(v_uids, v_uentre)));
-  exception when others then
-    null;   -- sin eso, cada tarjeta lo mira por su cuenta (más lento, igual de bien)
-  end;
   -- (cuarta vuelta) LA OBRA DEL DÍA de cada fecha con cargos pendientes, una vez por llamada: la tarjeta la lleva (obra_dia) para
   -- que un grupo enseñe, compra por compra, a qué obra iría cada una con «la del día de cada uno» ANTES de confirmar
   select coalesce(jsonb_object_agg(d.f, o.nombre), '{}'::jsonb) into v_dias
@@ -5804,7 +5924,10 @@ begin
   --    pantalla pide unos (ids), las unidades de esos, en su orden. El reloj se mira entre unidad y unidad.
   for u in
     with b as (select t.x, t.n,
-                      case when t.x->>'motivo' = any (c_lote) then 'L:' || (t.x->>'motivo')
+                      -- (6b) LO DE UNA LÍNEA DE CRÉDITO dada de alta va SIEMPRE de uno en uno: cada pago lleva sus intereses (con
+                      -- dos pagos esperando salía un grupo «una respuesta vale para todos», que no podía registrar ninguno)
+                      case when t.x->'pr'->>'por' = 'linea' then 'M:' || (t.x->>'id')
+                           when t.x->>'motivo' = any (c_lote) then 'L:' || (t.x->>'motivo')
                            when t.x->'c'->>'clave' is not null and t.x->'c'->>'clase' in ('comercio', 'zelle_a')
                                 and (t.x->>'monto')::numeric < 0 and t.x->>'motivo' = any (c_libre) then 'G:' || (t.x->'c'->>'clave')
                            else 'M:' || (t.x->>'id') end as uk
@@ -5838,6 +5961,9 @@ begin
                                                   'texto', q.texto, 'porque', q.porque, 'falta', q.falta, 'recordar', q.recordar,
                                                   -- (lo que le falta lo escribió la IA, no la base: la tarjeta lo dice)
                                                   'falta_de_la_ia', case when q.uso->>'falta_de_la_ia' = 'true' then true end,
+                                                  -- (6b) el pago de una línea de crédito que entendió el «Dímelo»: pide sus intereses
+                                                  'pide', case when q.estado = 'pendiente' and q.accion = 'prestamo'
+                                                                    and jsonb_typeof(q.datos->'pide') = 'array' then q.datos->'pide' end,
                                                   'pide_obra', case when q.estado = 'pendiente' and q.falta is not null then true end))
         into dim
         from bandeja_dimelo q
@@ -5861,13 +5987,15 @@ begin
       -- (cuarta vuelta) LO QUE LA APP SABE de ese dinero, para «Más opciones»: el banco mismo nombra a un prestamista, o dice que
       -- lo manda el propio Edgar. Con ello la pantalla no pinta los botones del banco que lo cobrarían como el pago de un cliente
       v_sabe := case when (x->>'monto')::numeric > 0 and x->>'motivo' = 'aporte_edgar' then 'edgar'
-                     when ctx ? 'prest' and ctx->'prest' ? v_id::text
-                          and (select fn_bandeja_prestamista(mb.desc_norm) is not null from movimientos_banco mb where mb.id = v_id)
-                       then 'prestamista' end;
+                     when jsonb_typeof(x->'pr') = 'object' then 'prestamista' end;
       v_tk := v_tk || v_id::text;
       v_tv := v_tv || jsonb_strip_nulls(jsonb_build_object(
                   'clave', c->>'clave', 'nombre', c->>'nombre', 'clase', c->>'clase', 'rec', rec - 'sin_alta', 'dimelo', dim,
                   'ops', x->'ops', 'sabe', v_sabe,
+                  -- (6b) LO DE UNA LÍNEA DE CRÉDITO dada de alta se dice (`linea`: la pantalla no habla de «la cuota de un
+                  -- préstamo») y no se recuerda (`no_recordar`: la pantalla no ofrece la casilla; fn_bandeja_recordar no guarda nada)
+                  'linea', case when x->'pr'->>'por' = 'linea' then true end,
+                  'no_recordar', case when x->'pr'->>'por' = 'linea' then true end,
                   'obra_dia', case when (x->>'monto')::numeric < 0 and c->>'clase' in ('comercio', 'zelle_a') then v_dias->>(x->>'fd') end,
                   -- (pensando: su recomendación no dio tiempo en esta llamada; viene en la siguiente)
                   'pensando', case when v_corta then true end,
