@@ -3248,7 +3248,7 @@ function esFalloDeRed(err) {
     return p.hitos.find(h => h.estado !== "cobrado") || null;
   }
 
-  // (f10, c11) ¿Por dónde se factura hoy? v_emision_estado (solo la ve el dueño, que es quien tiene el 🧾): «app» desde el
+  // (f10, c11) ¿Por dónde se factura hoy? v_emision_estado (solo la ve el dueño, que es quien tiene el botón Facturar): «app» desde el
   // corte de la facturación (1-ene-2027, configurable en Contabilidad → Facturas → Ajustes); «quickbooks» antes. Sin c11 en
   // la base (la vista no existe: 404 / PGRST205 / 42P01): «quickbooks», como siempre, salvo que este teléfono ya haya visto
   // un corte que llegó (entonces c11 estaba y ya no contesta: «duda»). Sin señal («sin_senal») o sin el código del teléfono
@@ -7015,7 +7015,7 @@ function esFalloDeRed(err) {
     });
     $detalle.querySelectorAll(".hito-facturar").forEach(btn => {
       btn.addEventListener("click", async () => {
-        // (f10, c11) Desde el corte de la facturación (v_emision_estado.camino = «app») el 🧾 ya no va a QuickBooks:
+        // (f10, c11) Desde el corte de la facturación (v_emision_estado.camino = «app») el botón Facturar ya no va a QuickBooks:
         // abre Contabilidad → Facturas con el borrador de este hito. Antes del corte (o sin c11 en la base), como siempre.
         const camino = await caminoFactura();
         if (camino === "sin_senal") { avisar("Sin señal: no pude saber si se factura aquí o en QuickBooks. Vuelve a intentarlo con señal.", true); return; }
@@ -16109,6 +16109,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       conector_pendiente: !!(delChatOk && decProp.conector && decProp.conector.rondas_pendientes && (!prop.estado || prop.estado === "borrador")),
       // v252: la base del precio que Edgar ELIGIÓ para esta propuesta (null = la decide la regla)
       pricing_basis: alcBaseGuardada(prop),
+      // 26-nov (O-F6, Edgar): «¿El precio ya lleva el 2.99 % de tarjeta?» de esta propuesta (alcance_decisiones.tarjeta_en_precio; sin él, No)
+      tarjeta_en_precio: !!decProp.tarjeta_en_precio,
       respuestas: {}, contrato: null
     };
     // (§10.11) las correcciones que viajaron con ese armado son las de la propuesta («Así lo hice» las cita por su número)
@@ -17042,6 +17044,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
           ? `<div class="alc-rojo"><b>No lo bajé: hay algo que revisar.</b><ul>${C.problemas.map(p => `<li>${esc(p.texto)}</li>`).join("")}</ul></div>`
           : `<p class="lev-nota">Pasó el repaso: no quedó ningún hueco y cada monto del papel es uno de los que calculé yo.</p>`}
         ${(C.avisos || []).length ? `<div class="alc-ambar"><b>Lo llené yo (no te frena):</b><ul>${C.avisos.map(t => `<li>${esc(t)}</li>`).join("")}</ul></div>` : ""}
+        ${alcCajaTarjeta(A)}
         ${alcAvisosDelPapel(A)}
         ${alcCajaRevision()}
         <p class="alc-sub">La sección 9 quedó así:</p>
@@ -17360,6 +17363,10 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       A.contrato = null;   // el papel armado ya no dice lo mismo: hay que volver a armarlo
       alcCalcularSeguro(); pintarAlcance();
     });
+    // 26-nov (O-F6, Edgar): «¿El precio ya lleva el 2.99 % de tarjeta?» (pantalla del contrato) y el botón de sus pistas
+    const selTarjeta = $("alc-tarjeta");
+    if (selTarjeta) selTarjeta.addEventListener("change", () => alcPonerTarjeta(selTarjeta.value === "si"));
+    document.querySelectorAll("[data-tarjeta-si]").forEach(b => b.addEventListener("click", () => alcPonerTarjeta(true)));
     const bBajar = $("alc-bajar");
     if (bBajar) bBajar.addEventListener("click", alcBajar);
     const bImpr = $("alc-imprimir");
@@ -17726,6 +17733,9 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
   // Un arreglo concreto, con el valor que Edgar haya escrito si hacía falta
   function alcArreglar(a, valor) {
     const A = alcActivo;
+    // 26-nov (O-F6, Edgar): «Sí, el precio ya lo lleva» (la pista de la hoja o del estimado) enciende el interruptor de la tarjeta de esta
+    // propuesta; no escribe nada en la hoja
+    if (a && a.tipo === "tarjeta_en_precio") return alcPonerTarjeta(true);
     // 22-oct (Villanti Garage): con el armado de la IA vivo, el precio base que Edgar aprueba («Sí, usar el del estimado» o
     // el que escribe) no pasa por aquí: escribirlo en la hoja dejaba el armado «viejo» y el rojo «Falta el precio base» no se
     // iba nunca (ni dejaba seguir sin pagar otro armado). Va por alcPrecioEnArmado, que rehace el contrato sin la IA.
@@ -18007,7 +18017,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
           if (!estData) estData = d;
           // solo se vuelve a pintar si de verdad cambia algo (el estimado se hizo con planos y nadie eligió a mano)
           const est = ((estData && estData.estimados) || []).find(e => e && e.id === id);
-          if (alcActivo === A && est && est.modo === "planos" && !A.pricing_basis) { alcRecoger(); alcCalcularSeguro(); pintarAlcance(); }
+          // 26-nov (O-F6, Edgar): …o si su estimado lleva el recargo de la tarjeta dentro y el interruptor está apagado (sale la pista)
+          if (alcActivo === A && est && ((est.modo === "planos" && !A.pricing_basis) || (alcLineaTarjetaEstimado(est) && !A.tarjeta_en_precio))) { alcRecoger(); alcCalcularSeguro(); pintarAlcance(); }
         })
           .catch(() => { /* sin estimados, decide la regla de siempre */ });
       }
@@ -18017,10 +18028,108 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     return est ? String(est.modo || "") : "";
   }
   let alcPidioEst = false;
+
+  // ---------- 26-nov (O-F6, Edgar): «¿El precio ya lleva el 2.99 % de tarjeta?» ----------
+  // A veces Edgar mete el 2.99 % de la tarjeta dentro del precio (Blue Heron: la línea «Credit card processing factor (x1.0299…)» del
+  // estimado 65); entonces la frase fija de la §6 («…credit card payments are subject to a 2.99% processing surcharge.») lo cobraría dos
+  // veces. El interruptor es de la propuesta (alcance_decisiones.tarjeta_en_precio), lo decide solo Edgar y viaja al motor por
+  // alcAdminBase. La hoja y el estimado solo dan pistas: nunca lo encienden solos.
+  // ¿Esta línea del estimado es el recargo de la tarjeta metido en el precio? Nombra el cobro con tarjeta (no un lector, un terminal ni
+  // una «tarjeta de red») y su recargo, no lo niega («No credit card fee (ACH only)», «fee waived», «sin recargo») y no va en cero
+  function alcLineaTarjetaEstimado(est) {
+    const lineas = est && Array.isArray(est.lineas_material) ? est.lineas_material : [];
+    return lineas.find(l => { const t = String((l && l.desc) || "");
+      return Number(l && l.monto) !== 0
+        && /\b(?:credit|debit)\s*cards?\b|\bcard\s+(?:processing|fees?|surcharges?)\b|\btarjetas?\s+de\s+(?:cr[eé]dito|d[eé]bito)\b|\b(?:fee|recargo|cargo|comisi[oó]n)\s+(?:de|por)\s+(?:la\s+)?tarjeta\b/i.test(t)
+        && /2[.,]99|1\.0299|\bprocessing\b|\bfees?\b|\bfactor\b|\bsurcharges?\b|\brecargos?\b|\bcomisi[oó]n\b/i.test(t)
+        && !/\bno\b|\bnot\b|\bwaived?\b|\bsin\b|\bexent[oa]s?\b|\bonly\b|\bsolo\b|\breaders?\b|\bterminals?\b|\blector/i.test(t); }) || null;
+  }
+  // El estimado de esta propuesta (el que la creó; sin propuesta todavía, el que se le ofrece al precio). Solo dueño: estData solo lo baja él.
+  function alcEstimadoDeLaPropuesta(A) {
+    if (!A || !estData || !Array.isArray(estData.estimados)) return null;
+    const id = A.propuesta && A.propuesta.estimado_id;
+    if (id) return estData.estimados.find(e => e && e.id === id) || null;
+    return A.propuesta ? null : alcEstimadoDe(A.proyecto.id);
+  }
+  // La pista del estimado (ámbar, sin montos) mientras el interruptor siga apagado; con el botón que lo enciende. No sale si el papel no
+  // lleva la sección de pagos (formato ligero): ahí no hay recargo que cobrar dos veces
+  function alcAvisoTarjetaEstimado(A) {
+    if (!A || A.tarjeta_en_precio || !usuario.finanzas) return null;
+    if (A.decision && A.decision.bloques && A.decision.bloques.VARIANTE_B === false) return null;
+    const est = alcEstimadoDeLaPropuesta(A);
+    if (!est || !alcLineaTarjetaEstimado(est)) return null;
+    return { linea: 0, tarjeta_est: true,
+      texto: `El estimado EST-${est.id} lleva el recargo de la tarjeta (el 2.99 %) dentro del precio, pero el contrato cobra el recargo del 2.99 % al pagar con tarjeta. Si es así, pon «Sí» en «¿El precio ya lleva el 2.99 % de tarjeta?» (pantalla del contrato).`,
+      arreglos: [{ tipo: "tarjeta_en_precio", etiqueta: "Sí, el precio ya lo lleva", auto: false }] };
+  }
+  // La pone (o la quita) entre los avisos de la hoja leída, en el sitio (con el armado de la IA es la misma lista de su tarjeta)
+  function alcPonerAvisoTarjetaEstimado(A) {
+    const L = A && A.leido;
+    if (!L) return;
+    if (!Array.isArray(L.avisos)) L.avisos = [];
+    for (let k = L.avisos.length - 1; k >= 0; k--) if (L.avisos[k] && L.avisos[k].tarjeta_est) L.avisos.splice(k, 1);
+    const av = alcAvisoTarjetaEstimado(A);
+    if (av) L.avisos.unshift(av);
+  }
+  // Edgar mueve el interruptor (en la pantalla del contrato, o con el botón de una pista): se guarda ya en la propuesta sin borrar nada de
+  // alcance_decisiones (solo en borrador: una propuesta ya mandada o firmada no se toca, como «Guardar en la propuesta»), y el papel se
+  // vuelve a armar con o sin el recargo
+  function alcPonerTarjeta(si) {
+    const A = alcActivo;
+    if (!A || !usuario.finanzas) return false;
+    alcRecoger();
+    A.tarjeta_en_precio = !!si;
+    const borrador = !!A.propuesta && (!A.propuesta.estado || A.propuesta.estado === "borrador");
+    if (borrador) {
+      const dec = Object.assign({}, A.propuesta.alcance_decisiones || {}, { tarjeta_en_precio: A.tarjeta_en_precio });
+      A.propuesta.alcance_decisiones = dec;
+      DB.guardarAlcance(A.propuesta.id, { alcance_decisiones: dec }).catch(() => { /* va también con «Guardar en la propuesta» */ });
+    }
+    const yaMandada = !!A.propuesta && !borrador;
+    // el papel de antes dice lo contrario del interruptor: se quita YA (nadie lo baja ni lo sube al portal mientras se vuelve a armar,
+    // como con la base del precio) y se vuelve a armar; si no se puede, Edgar lo arma con el botón
+    const habiaPapel = !!A.contrato;
+    A.contrato = null; A.revision = null;
+    if (habiaPapel) {
+      pintarAlcance();
+      Promise.resolve(alcArmar()).catch(() => { /* alcArmar ya lo dijo */ });
+      if (yaMandada) avisar("Esta propuesta ya se mandó: el cambio vale para este papel, pero no la cambio. Si hace falta, haz otra propuesta.", true);
+      return true;
+    }
+    alcCalcularSeguro(); pintarAlcance();
+    if (yaMandada) avisar("Esta propuesta ya se mandó: el cambio vale para este papel, pero no la cambio. Si hace falta, haz otra propuesta.", true);
+    else avisar(A.tarjeta_en_precio ? "Apuntado: el precio ya lleva el 2.99 % de tarjeta. El contrato saldrá sin el recargo." : "Apuntado: el contrato cobra el 2.99 % con tarjeta.");
+    return true;
+  }
+  // El interruptor y sus pistas, en la pantalla del contrato
+  function alcCajaTarjeta(A) {
+    const C = A && A.contrato;
+    if (!C || !usuario.finanzas) return "";
+    const si = !!A.tarjeta_en_precio;
+    const op = (v, t) => `<option value="${v}"${(v === "si") === si ? " selected" : ""}>${t}</option>`;
+    const pistas = ((C.tarjeta && C.tarjeta.avisos) || []).map(a => ({ texto: a.texto, gris: !!a.informativo }));
+    const est = alcAvisoTarjetaEstimado(A);
+    if (est) pistas.push({ texto: est.texto, gris: false, boton: true });
+    const ambar = pistas.filter(p => !p.gris), gris = pistas.filter(p => p.gris);
+    // sin la sección de pagos (formato ligero) el papel no dice nada de la tarjeta, digas Sí o No
+    const conPagos = !(C.tarjeta && C.tarjeta.con_pagos === false);
+    return `<div class="alc-base alc-tarjeta">
+      <label for="alc-tarjeta"><b>¿El precio ya lleva el 2.99 % de tarjeta?</b></label>
+      <select id="alc-tarjeta">${op("no", "No")}${op("si", "Sí")}</select>
+      <p class="lev-nota">${!conPagos ? "Este papel no lleva la sección de pagos: no dice nada del recargo de la tarjeta."
+        : si ? "El contrato no cobra el recargo del 2.99 % con tarjeta: el precio ya lo lleva."
+        : "El contrato dice que pagar con tarjeta lleva un recargo del 2.99 % (lo normal)."}</p>
+      ${ambar.length ? `<div class="alc-ambar"><ul>${ambar.map(p => `<li>${esc(p.texto)}${p.boton || !si ? `<div class="alc-fixes"><button type="button" class="alc-op" data-tarjeta-si="1">Sí, el precio ya lo lleva</button></div>` : ""}</li>`).join("")}</ul></div>` : ""}
+      ${gris.length ? `<div class="alc-gris"><ul>${gris.map(p => `<li>${esc(p.texto)}</li>`).join("")}</ul></div>` : ""}
+    </div>`;
+  }
+
   // Lo que la regla necesita de la app para decidir la base del precio
   function alcAdminBase(A) {
     return { pricing_basis: A.pricing_basis || null, documento_plano: alcDocumentoPlano(A.proyecto.id), estimado_modo: alcModoEstimado(A),
              tipo_obra: alcTipoObra(A.proyecto),
+             // 26-nov (O-F6, Edgar): el interruptor de la tarjeta de esta propuesta (lo decide solo Edgar, en la pantalla del contrato)
+             tarjeta_en_precio: !!A.tarjeta_en_precio,
              // 14-oct (pliego §10.9): las cláusulas que Edgar devolvió al texto de la casa mandan sobre lo que adaptó la IA
              clausulas_casa: alcClausulasCasa(A),
              // 20-oct (pliego §12.4 C.3): quién firma por el contratista y su cargo, de su ficha (vacío si la ficha no lo trae o la
@@ -18090,6 +18199,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     A.cuenta = Alcance.cuentas(A.leido);
     A.decision = Alcance.decidirInterruptores(A.leido, A.cuenta, alcAdminBase(A));
     alcAvisosDeLaFicha();
+    alcPonerAvisoTarjetaEstimado(A);   // 26-nov (O-F6): la pista del estimado con el recargo de la tarjeta dentro
     // Los avisos del asistente se recalculan contra la lectura de reglas de ahora
     // mismo: ninguno frena, ninguno se aplica solo.
     if (A.lectura) {
@@ -18678,6 +18788,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     A.validado = Alcance.validarAlcance(L, alcAdminBase(A));
     A.cuenta = Alcance.cuentas(L);
     A.decision = Alcance.decidirInterruptores(L, A.cuenta, alcAdminBase(A));
+    alcPonerAvisoTarjetaEstimado(A);   // 26-nov (O-F6): la pista del estimado (en H.avisos, la misma lista)
     M.resumen = H.resumen; M.avisos = H.avisos; M.preguntas = H.preguntas; M.S = H.S;
     A.armado_preguntas = H.preguntas;
     return H;
@@ -19775,6 +19886,7 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
     A.cuenta = Alcance.cuentas(L);
     A.decision = Alcance.decidirInterruptores(L, A.cuenta, alcAdminBase(A));
     alcAvisosDeLaFicha();
+    alcPonerAvisoTarjetaEstimado(A);   // 26-nov (O-F6): como en alcCalcular
     alcAvisoLector("La lectura del asistente arrastraba una línea que no va en el contrato; para este paso usé las reglas");
     return { sirve: true, rojos: [], salida: S };
   }
@@ -19953,6 +20065,8 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
       const B = Alcance.barridoFinal(RP.html, permitidos, T.cuenta);
       A.contrato = { html: RP.html, numeroClausulas: out.numeroClausulas,
                      archivo: T.archivo, problemas: B.problemas, avisos: T.avisos || [], cuenta: T.cuenta,
+                     // 26-nov (O-F6, Edgar): el interruptor de la tarjeta con el que salió y las pistas de la hoja (alcCajaTarjeta)
+                     tarjeta: T.tarjeta || null,
                      // 13-oct (revisión): los hitos tal como salen en el papel (DISPARADOR): la ficha se cuadra con ellos
                      hitos: T.hitos,
                      // los montos que puede llevar el papel: los usa la charla para volver a pasar el barrido
@@ -24573,6 +24687,9 @@ Power done right the first time. ⚡`;  // emoji: sale fuera
         alcance_en: A.salida || null,
         alcance_decisiones: { bloques: dec.bloques, clausulas: dec.clausulas, nec: L.codigo, perdonadas: A.perdonadas || [],
                               pricing_basis: dec.pricing_basis || "quantities", pricing_basis_elegida: !!A.pricing_basis,
+                              // 26-nov (O-F6, Edgar): «¿El precio ya lleva el 2.99 % de tarjeta?» (este guardado rehace alcance_decisiones entero:
+                              // sin esta línea se perdería)
+                              tarjeta_en_precio: !!A.tarjeta_en_precio,
                               // 13-oct (pliego §7.2): lo decidido punto por punto, para la revisión siguiente
                               decididos: (Array.isArray(A.decididos) ? A.decididos : []).slice(-60),
                               // 13-oct, versión 3 (pliego §8.2): lo que la IA cambió en el papel, para volver a ponerlo

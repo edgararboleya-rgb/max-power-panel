@@ -1262,6 +1262,18 @@
         texto: `Los renglones del Alcance venían numerados ${conNum.map(i => i.escrito).join(", ")}; los tomo en el orden en que están (1 a ${R.items.length}) y el contrato los numera solo. Tu hoja no cambia.`,
         arreglos: [{ tipo: "renumerar", etiqueta: "Numerarlos seguidos en la hoja", auto: false }] });
     }
+    // 26-nov (O-F6, Edgar): las líneas que dicen que el precio ya lleva el 2.99 % de la tarjeta (se miran crudas, estén donde estén: en
+    // Pagos, en «Precio:», en Condiciones). El párrafo propio de la §6 que SOLO dice eso ya no sale al lado del recargo (si trae algo
+    // más, sale entero, como siempre); el resto de «Precio:» y la nota de «Pagos: 40/40/20 — …» nunca salieron. Esas quedan «fuera» y
+    // el aviso lo dice; el aviso lo dan validarAlcance (con el interruptor de la propuesta) y armarTodo
+    R.tarjeta_en_precio = lineasTarjetaEnPrecio(lineas);
+    if (R.tarjeta_en_precio.length) {
+      const deTarjeta = new Set(R.tarjeta_en_precio.map(x => x.linea));
+      const quitadas = new Set(R.pagos_propios.filter(p => p && deTarjeta.has(p.linea) && soloTarjetaEnPrecio(p.titulo, p.texto)).map(p => p.linea));
+      R.pagos_propios = R.pagos_propios.filter(p => !(p && quitadas.has(p.linea)));
+      R.tarjeta_en_precio.forEach(x => { x.fuera = quitadas.has(x.linea) || !!(R.precio && R.precio.linea === x.linea)
+        || !!(R.pagos && R.pagos.corto && (R.pagos.lineas || []).includes(x.linea)); });
+    }
     return R;
   }
 
@@ -1433,12 +1445,108 @@
   // El texto del pago único que paga al firmar (va al papel en inglés; el que paga al terminar usa DISPARADORES[1])
   const PAGO_UNICO_AL_FIRMAR = "Payment in full upon signing";
 
+  // 26-nov (O-F6, Edgar): ¿esta línea de la hoja dice que el precio YA lleva el 2.99 % de la tarjeta? Tiene que decir las tres cosas:
+  //   · el pago con tarjeta («credit card», «card payments», «card fee», «pagos con tarjeta», «fee de tarjeta»…);
+  //   · el cobro (fee, surcharge, recargo, cargo, processing, 2.99 %, 1.0299);
+  //   · que va DENTRO DEL PRECIO o que no hay recargo («included in the price», «price includes», «en el precio», «dentro del precio»,
+  //     «no surcharge», «sin recargo»). Un «incluido» o «dentro» suelto solo vale en la línea del precio («Precio: … (con el fee de
+  //     tarjeta del 2.99 % dentro)»).
+  // Nunca la frase de la plantilla («…are subject to a 2.99% processing surcharge»), ni la que lo niega o dice que se cobra aparte
+  // («not included», «a 2.99% surcharge applies», «including on the deposit», «en cada factura», «sin tarjeta», «ACH only»), ni un
+  // lector de tarjetas, una tarjeta de acceso o el terminal de cobro (revisión del 26-nov: con «tarjeta» + «incluido» a secas saltaba
+  // con «Card reader at the entry door — power included», y su botón quitaba un recargo que el cliente sí aceptó).
+  // Solo da una pista: nunca decide nada sola.
+  const RX_TARJETA_PAGO = /\b(?:credit|debit)\s+cards?\b|\bcard\s+(?:payments?|fees?|processing|surcharges?|charges?)\b|\b(?:pay|pays|paying|payments?|paid)\s+(?:by|with|via)\s+(?:a\s+)?(?:credit\s+)?card\b|\btarjetas?\s+de\s+(?:cr[eé]dito|d[eé]bito)\b|\b(?:pagos?|pagar|pagan?)\s+con\s+tarjeta\b|\b(?:fee|recargo|cargo|comisi[oó]n)\s+(?:de|por)\s+(?:la\s+)?tarjeta\b/i;
+  const RX_TARJETA_COBRO = /\b(?:fees?|surcharges?|recargos?|cargos?|comisi[oó]n(?:es)?|processing|procesamiento)\b|\b2[.,]99\s*(?:%|percent|por\s*ciento)|\b1\.0299\b/i;
+  const RX_TARJETA_EN_PRECIO = /\b(?:included|incluid[oa]s?|built|metid[oa]s?)\s+(?:in|into|en|dentro\s+del?)\s+(?:the\s+|our\s+|this\s+|el\s+)?(?:contract\s+|lump[-\s]sum\s+|proposal\s+|quoted\s+)?(?:price|lump\s+sum|quote|precio)\b|\b(?:price|lump\s+sum|quote|precio)\s+(?:already\s+|ya\s+)?(?:includes?|including|contains?|covers?|incluye|lleva|trae)\b|\b(?:in|en|dentro\s+del?)\s+(?:the\s+|el\s+)?(?:contract\s+|lump[-\s]sum\s+)?(?:price|precio)\b|\bno\s+(?:card\s+|credit\s+card\s+|processing\s+|additional\s+)?(?:surcharge|recargo)\b|\bsin\s+recargo\b|\bwithout\s+(?:a\s+|any\s+)?(?:card\s+)?surcharge\b|\bno\s+(?:card|processing|additional)\s+fee\b/i;
+  const RX_TARJETA_SUELTO = /\b(?:included|includes|incluid[oa]s?|incluye|dentro|inside)\b/i;
+  const RX_LINEA_DE_PRECIO = /^\s*(?:[-•]\s*)?(?:precio|price|contract\s+(?:price|sum|amount)|lump\s+sum|total|monto)\b[^:]{0,20}:/i;
+  const RX_TARJETA_NIEGA = new RegExp([
+    /\b(?:not|no)\s+(?:been\s+|yet\s+)?(?:included|incluid[oa]s?)\b/, /\bnot\s+in\s+the\s+(?:contract\s+)?(?:price|lump\s+sum|total)\b/,
+    /\bno\s+(?:est[aá]n?|va|van|viene|lleva|incluye|trae)\b/, /\bexclud(?:ed|es|ing)\b/, /\bfuera\s+del\s+precio\b/, /\baparte\b/,
+    /\bin\s+addition\s+to\b/, /\badded\s+(?:to|on)\b/, /\bse\s+(?:a[nñ]ade|suma|agrega|cobra)\b/,
+    // «a 2.99% surcharge applies» se cobra; «no surcharge applies» no (lo que va delante del «no» lo dice)
+    /(?<!\bno\s+(?:card\s+|credit\s+card\s+|processing\s+|additional\s+)?)\b(?:surcharges?|fees?|recargos?)\s+(?:applies|apply|will\s+apply|is\s+added|is\s+charged|aplica|se\s+aplica)\b/,
+    /\bincluding\s+on\b/, /\b(?:on|to|in)\s+(?:every|each|all)\s+invoices?\b/, /\ben\s+cada\s+factura\b/, /\bsubject\s+to\b/, /\bsujet[oa]s?\s+a\b/, /\bcarr(?:y|ies)\s+(?:a|an|the)\b/,
+    /\bsin\s+tarjeta\b/, /\b(?:ach|checks?|cheques?|transferencias?)\s+only\b/, /\bsolo\s+(?:ach|cheques?|transferencias?)\b/,
+    /\bno\s+(?:credit\s+)?cards?\b(?!\s+(?:fees?|surcharges?|processing|charges?))/, /\bcards?\s+(?:are\s+|is\s+)?not\s+accepted\b/,
+    /\bsin\s+(?:el\s+)?(?:fee|cargo|comisi[oó]n)\s+(?:de|por)\s+(?:la\s+)?tarjeta\s+en\s+el\s+precio\b/,
+    // un lector de tarjetas, una tarjeta de acceso o el terminal de cobro son material eléctrico, no el cobro con tarjeta
+    /\bcard\s+(?:readers?|access|swipes?|terminals?|keys?)\b/, /\bkey\s*cards?\b/, /\baccess\s+cards?\b/, /\blector(?:es)?\s+de\s+tarjetas?\b/, /\btarjetas?\s+de\s+(?:acceso|control|red|memoria)\b/
+  ].map(r => r.source).join("|"), "i");
+  // Frase por frase: las tres cosas en la MISMA frase («…el andamio como costo dentro del precio… El recargo de tarjeta como el
+  // precedente» son dos frases y no lo dice)
+  function tarjetaEnElPrecio(linea) {
+    return String(linea || "").replace(/[*_`]/g, " ").split(/(?<=[.!?])\s+(?=\S)/).some(t => {
+      if (!RX_TARJETA_PAGO.test(t) || !RX_TARJETA_COBRO.test(t) || RX_TARJETA_NIEGA.test(t)) return false;
+      return RX_TARJETA_EN_PRECIO.test(t) || (RX_LINEA_DE_PRECIO.test(t) && RX_TARJETA_SUELTO.test(t));
+    });
+  }
+  // Las líneas de la hoja (crudas, con su número desde 1) que lo dicen. «fuera»: la línea no sale aparte en el papel (lo apunta quien
+  // la quita: leerAlcance, armadoAHoja); el aviso solo dice «no sale aparte» de esas.
+  function lineasTarjetaEnPrecio(lineas) {
+    return (Array.isArray(lineas) ? lineas : []).map((l, k) => ({ linea: k + 1, texto: String(l || "").trim(), fuera: false }))
+      .filter(x => x.texto && tarjetaEnElPrecio(x.texto));
+  }
+  // Un párrafo propio (título y texto) que SOLO dice que el precio ya lleva la tarjeta: cada frase lo dice (con el título delante). Si
+  // trae algo más («Zelle: …», «Work stops if…»), sale entero como siempre (nada se pierde) y solo queda la pista.
+  function soloTarjetaEnPrecio(titulo, texto) {
+    const tt = String(titulo || "").trim(), frases = String(texto || "").split(/(?<=[.;])\s+/).map(f => f.trim()).filter(f => f.replace(/[.;:\s]/g, ""));
+    return frases.length > 0 && frases.every(f => tarjetaEnElPrecio((tt ? tt + ": " : "") + f));
+  }
+  // ¿Este papel lleva la sección de pagos (la §6, con la frase del recargo)? Solo el SOW con firma y sin «ligero»: lo mismo que decide
+  // VARIANTE_B en decidirInterruptores (validarAlcance lo necesita antes de decidir)
+  function papelConPagos(L, admin) {
+    const f = ((L && L.datos) || {}).firma;
+    return leerFirma(f) && !/\b(?:ligero|ligera|light|scope of work)\b/.test(norma(f || "")) && norma((admin || {}).formato || "") !== "ligero";
+  }
+  // El aviso para Edgar (sin montos). Con la §6 en el papel: apagado, ámbar con el botón que enciende el interruptor; encendido, gris.
+  // Sin la §6 (formato ligero), gris: ese papel no cobra la tarjeta. De las líneas que no salen aparte («fuera») se dice (nada se
+  // pierde sin decirlo); de las demás no se promete nada.
+  function avisoTarjetaEnPrecio(lineas, encendido, conPagos) {
+    const lista = (lineas || []).filter(Boolean);
+    const nums = xs => [...new Set(xs.map(x => x.linea).filter(n => Number.isInteger(n) && n > 0))].sort((a, b) => a - b);
+    const ns = nums(lista), nf = nums(lista.filter(x => x.fuera)), sinNumFuera = lista.some(x => x.fuera && !(x.linea > 0));
+    const dice = ns.length ? (ns.length === 1 ? `La línea ${ns[0]} de la hoja dice` : `Las líneas ${ns.join(", ")} de la hoja dicen`) : "La hoja dice";
+    const cabeza = `${dice} que el precio ya lleva el 2.99 % de la tarjeta`;
+    const fuera = nf.length ? (nf.length === 1 ? ` La línea ${nf[0]} no sale aparte en el contrato.` : ` Las líneas ${nf.join(", ")} no salen aparte en el contrato.`)
+      : (sinNumFuera ? " Su cláusula no sale aparte en el contrato." : "");
+    const linea = ns[0] || 0;
+    if (conPagos === false) return { linea, informativo: true, tarjeta: true,
+      texto: `${cabeza}. Este papel no lleva la sección de pagos (formato ligero): el recargo de la tarjeta no sale.${fuera}` };
+    if (encendido) return { linea, informativo: true, tarjeta: true,
+      texto: `${cabeza}: «¿El precio ya lleva el 2.99 % de tarjeta?» está en «Sí» y el recargo no sale.${fuera}` };
+    return { linea, tarjeta: true,
+      texto: `${cabeza}, pero el contrato cobra el recargo del 2.99 % al pagar con tarjeta. Si es así, pon «Sí» en «¿El precio ya lleva el 2.99 % de tarjeta?» (pantalla del contrato).${fuera}`,
+      arreglos: [{ tipo: "tarjeta_en_precio", etiqueta: "Sí, el precio ya lo lleva", auto: false }] };
+  }
+
   // "40/40/20" o "40% al firmar, 40% rough, 20% final"
   // 13-oct: «Pagos: 100», «Pagos: 100%» y «Pagos: pago único (al terminar)» son UN pago (pcts [100]); sin disparador propio
   // va el de la casa, «Upon completion of the work». «Pago único al firmar» paga por adelantado.
   function leerPagos(valor, linea, err) {
     const P = { pcts: [], disparadores: [], lineas: [linea] };
     if (/^\s*100\s*%?\s*$/.test(String(valor || ""))) { P.pcts.push(100); P.disparadores.push(null); P.corto = true; return P; }
+    // 26-nov (O-F6, Edgar): un porcentaje con decimales («2.99%», «1.5 %») nunca es un pago (antes el «99%» de «2.99%» salía como un pago
+    // del 99 %): se lee el valor con esos tapados y se devuelven tal cual en el texto de los disparadores. (Va aquí arriba y sin tocar el
+    // resto de leerPagos, para que el mismo trozo entre en el motor publicado.)
+    if (/\d\.\d+\s*%/.test(String(valor || ""))) {
+      const tapados = [];
+      const Q = leerPagos(String(valor).replace(/\d+\.\d+\s*%/g, m => { tapados.push(m); return "\uE000" + String.fromCharCode(0xE100 + tapados.length - 1); }), linea, err);
+      Q.disparadores = Q.disparadores.map(x => x == null ? x : String(x).replace(/\uE000([\uE100-\uEFFF])/g, (_, c) => tapados[c.charCodeAt(0) - 0xE100]));
+      return Q;
+    }
+    // 26-nov (O-F6, Edgar): «40/40/20 — price includes the 2.99% card processing fee»: el «40/40/20» del principio son los pagos y lo de
+    // detrás es una nota sin su propio «N %». Solo si suman 100 («1/3, 1/3, 1/3» o «3/4 - rest at final» son fracciones, no pagos:
+    // siguen como antes, con su pregunta)
+    {
+      const cc = String(valor || "").match(/^\s*(\d{1,3})\s*\/\s*(\d{1,3})(?:\s*\/\s*(\d{1,3}))?(?:\s*\/\s*(\d{1,3}))?\s*(?:[—–(;,:]|\s-\s)\s*(.*)$/);
+      const cps = cc ? cc.slice(1, 5).filter(x => x !== undefined).map(Number) : [];
+      if (cc && cps.reduce((a, b) => a + b, 0) === 100 && !/\d{1,3}\s*%/.test(cc[5] || "")) {
+        cps.forEach(x => { P.pcts.push(x); P.disparadores.push(null); });
+        P.corto = true; return P;
+      }
+    }
     {
       const n = norma(String(valor || "").replace(/["'«»“”‘’]/g, "")).trim();
       const unico = n.match(/^(?:(?:un|1)\s+)?(?:pago\s+unico|unico\s+pago|solo\s+pago|solo\s+un\s+pago|pago\s+completo|pago\s+total|single\s+payment|one\s+(?:single\s+)?payment|one-time\s+payment|payment\s+in\s+full|full\s+payment|pay\s+in\s+full)\b(.*)$/);
@@ -1686,6 +1794,17 @@
   function validarAlcance(L, admin) {
     const errores = L.errores.slice(), preguntas = L.preguntas.slice();
     const D = L.datos, conFirma = leerFirma(D.firma);
+
+    // 26-nov (O-F6, Edgar): la hoja dice que el precio ya lleva el 2.99 % de la tarjeta (leerAlcance o armadoAHoja apuntan las líneas): un
+    // aviso, nunca una decisión. Apagado, ámbar con el botón que enciende el interruptor; encendido, gris; sin la §6 (formato ligero), gris.
+    // No frena.
+    if ((L.tarjeta_en_precio || []).length) {
+      const av = avisoTarjetaEnPrecio(L.tarjeta_en_precio, !!(admin || {}).tarjeta_en_precio, papelConPagos(L, admin));
+      // (en el sitio: con el armado de la IA, la lista de avisos es la misma que enseña la tarjeta «Lo que la IA entendió»)
+      if (!Array.isArray(L.avisos)) L.avisos = [];
+      for (let k = L.avisos.length - 1; k >= 0; k--) if (L.avisos[k] && L.avisos[k].tarjeta) L.avisos.splice(k, 1);
+      L.avisos.push(av);
+    }
 
     if (!D.cliente) preguntas.push({ clave: "cliente", texto: "¿Quién es el cliente (quien paga y firma)?", libre: true });
     if (!D.direccion) preguntas.push({ clave: "direccion", texto: "¿Cuál es la dirección de la obra?", libre: true });
@@ -2872,6 +2991,10 @@
       && sinSociedad(d.inquilino) !== sinSociedad(clienteEfectivo || "") ? String(d.inquilino).trim() : "";
 
     const bloques = {
+      // 26-nov (O-F6, Edgar): «¿El precio ya lleva el 2.99 % de tarjeta?» (el interruptor de la propuesta, admin.tarjeta_en_precio; sin él,
+      // «No»): con «Sí» la §6 no cobra el recargo de la tarjeta (rellenarPlantilla; con las plantillas de hoy, sin marca, quita la cola de
+      // la frase fija). Nunca lo decide la hoja ni el estimado: solo Edgar.
+      SIN_RECARGO_TARJETA: !!(admin || {}).tarjeta_en_precio, RECARGO_TARJETA: !(admin || {}).tarjeta_en_precio,
       // 13-oct (tarde, CCB): «Formato: ligero» → SCOPE OF WORK (§1-§5); con firma, lleva el bloque corto de aceptación
       VARIANTE_B: conFirma && !ligero, VARIANTE_A: !conFirma || ligero, FIRMA_LIGERA: ligero && conFirma,
       DEFINICIONES: (ligero || !conFirma) && esGC,
@@ -3463,6 +3586,10 @@
     return html;
   }
 
+  // 26-nov (O-F6, Edgar): la frase fija de la §6 (plantillas v3.12 a v3.19, letra por letra) y cómo queda con el precio que ya lleva el
+  // 2.99 % de la tarjeta (la de Blue Heron, 24-nov)
+  const FRASE_RECARGO_TARJETA = "ACH / check preferred; credit card payments are subject to a 2.99% processing surcharge.";
+  const FRASE_SIN_RECARGO_TARJETA = "ACH / check preferred.";
   function rellenarPlantilla(plantilla, datos) {
     // datos: { bloques, clausulas, huecos, items, no_incluye, addons, hitos }
     let h = plantilla;
@@ -3474,7 +3601,14 @@
     // 17-oct (pliego §11.6.1): una plantilla sin el sitio de la exclusión general de la hoja (la v3.14 y las de antes) sale como antes con
     // la de los planos: la de la casa se queda (con su cola de lo existente) y la de la hoja va en su renglón
     if (bloquesSi.EXCL_FUERA_SOLO_PLANOS && !String(plantilla).includes("<!--@fila EXCL_FUERA_GENERAL-->")) bloquesSi = Object.assign({}, bloquesSi, { EXCL_FUERA_AREAS: true });
+    // 26-nov (O-F6, Edgar): el recargo del 2.99 % de la tarjeta sale salvo que digan lo contrario: sin la clave RECARGO_TARJETA (quien llame
+    // sin decidirInterruptores) se queda, así una plantilla con <!--@si RECARGO_TARJETA--> nunca lo pierde por descuido. Con el precio que
+    // ya lo lleva (SIN_RECARGO_TARJETA) y una plantilla sin esa marca (v3.12 a v3.19), se quita la cola de la frase fija de la §6, como
+    // unaEnVieja (abajo, después de aplicarSi)
+    if (!Object.prototype.hasOwnProperty.call(bloquesSi, "RECARGO_TARJETA")) bloquesSi = Object.assign({}, bloquesSi, { RECARGO_TARJETA: true });
+    const sinRecargoEnVieja = !!bloquesSi.SIN_RECARGO_TARJETA && !String(plantilla).includes("<!--@si RECARGO_TARJETA-->");
     h = aplicarSi(h, bloquesSi);
+    if (sinRecargoEnVieja) h = h.split(FRASE_RECARGO_TARJETA).join(FRASE_SIN_RECARGO_TARJETA);
     // 17-oct (revisión de la v3.14, v314-respaldo-1-phases): con la plantilla vieja la frase de las fases se cambia por la de UNA
     // movilización (antes salía «performed in 1 phases, and one (1) mobilization is included for each: one mobilization»);
     // el cobro de la de más («billed at $350.00 each by written change order») se queda como está
@@ -3543,6 +3677,16 @@
     const plano0 = visible.replace(/<style[\s\S]*?<\/style>/g, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
     const sinTitulo = plano0.match(/\b\d{1,2}\.\d{1,2} \.(?:\s|$)/);
     if (sinTitulo) problemas.push({ tipo: "formato", texto: "Una cláusula salió sin título («" + sinTitulo[0].trim() + "»): ponle uno en la hoja y vuelve a armar." });
+    // 26-nov (O-F6, Edgar): con «¿El precio ya lleva el 2.99 % de tarjeta?» en «Sí» (la cuenta lo apunta, armarTodo), el papel no puede cobrar
+    // la tarjeta otra vez: ninguna frase a la vista con «2.99 %» (también «2.99&nbsp;%», «2,99 %», «2.99 percent»), ni una que nombre la
+    // tarjeta y un recargo o un fee de cobro (una plantilla que lo dice con otras palabras se frena aquí). Un «surcharge» que no es de la
+    // tarjeta («Utility company fees, surcharges or deposits») no frena, ni la frase que dice que el precio ya lo lleva. Solo con el interruptor.
+    if (cuenta && cuenta.tarjeta_en_precio) {
+      const frases = plano0.replace(/&nbsp;|&#160;|&#xa0;|\u00a0/gi, " ").split(/(?<=[.;!?])\s+/);
+      const cobra = frases.find(f => !tarjetaEnElPrecio(f) && (/\b2[.,]99\s*(?:%|percent|por\s*ciento)/i.test(f)
+        || (/\b(?:credit|debit)\s+cards?\b|\bcards?\b|\btarjetas?\b/i.test(f) && /\bsurcharges?\b|\bprocessing\s+(?:fees?|charges?)\b|\bcard\s+(?:fees?|charges?)\b|\brecargos?\b|\bcargo\s+por\s+tarjeta\b/i.test(f))));
+      if (cobra) problemas.push({ tipo: "recargo", texto: `«¿El precio ya lleva el 2.99 % de tarjeta?» está en «Sí», pero el papel todavía cobra un recargo por pagar con tarjeta («${cobra.trim().replace(/\$\s?\d[\d,]*(?:\.\d+)?/g, "$…").slice(0, 120)}»): quítalo de la hoja o de la plantilla y vuelve a armar. Si el precio no lo lleva, pon «No».` });
+    }
 
     const permitidos = new Set([...(montosPermitidos || []), ...FIJOS]);
     const texto = visible.replace(/<style[\s\S]*?<\/style>/g, "").replace(/<[^>]+>/g, " ")
@@ -3798,6 +3942,9 @@
     if (!articulosNEC.length) avisosArmado.push("La hoja no trae artículos del código: en la sección 4 va una frase general. Si quieres artículos concretos, ponlos en «Código:» de la hoja.");
     if (!((S.proyecto_en && S.proyecto_en.en) || d.proyecto)) avisosArmado.push("La hoja no dice «Proyecto:»: usé el nombre de la obra en la app" + (admin.nombre ? ` («${admin.nombre}»)` : "") + ".");
     const cta = cuentas(L);
+    // 26-nov (O-F6, Edgar): el interruptor «El precio ya lleva el 2.99 %» queda apuntado en la cuenta: barridoFinal (con la cuenta) frena el
+    // papel que todavía cobre el recargo de la tarjeta. Apagado, la cuenta no cambia (ni una clave de más).
+    if (admin.tarjeta_en_precio) cta.tarjeta_en_precio = true;
     const dec = decidirInterruptores(L, cta, admin);
     const hoy = admin.fecha || new Date();
     const dosDig = n => String(n).padStart(2, "0");
@@ -4199,7 +4346,13 @@
     dec.bloques.FIRMA_CON_CARGO = !dec.bloques.CONSUMIDOR;
     const montosPermitidos = [dinero(cta.base), ...cta.addons.map(a => dinero(a.centavos)),
                               ...cta.hitos.map(h => dinero(h.centavos))];
-    return { cuenta: cta, decision: dec, huecos, items, no_incluye, addons, hitos, montosPermitidos,
+    // 26-nov (O-F6, Edgar): lo de la tarjeta para la pantalla del contrato (al lado del interruptor) y para la receta: si está encendido y
+    // qué líneas de la hoja dicen que el precio ya lo lleva, con su aviso (sin montos); con_pagos: el papel lleva la §6 (sin ella, formato
+    // ligero, la frase del recargo no sale digas lo que digas)
+    const lineasTarjeta = (L.tarjeta_en_precio || []).filter(x => x && x.linea > 0);
+    const tarjeta = { en_precio: !!admin.tarjeta_en_precio, con_pagos: !!dec.bloques.VARIANTE_B, lineas: lineasTarjeta,
+                      avisos: (L.tarjeta_en_precio || []).length ? [avisoTarjetaEnPrecio(L.tarjeta_en_precio, !!admin.tarjeta_en_precio, !!dec.bloques.VARIANTE_B)] : [] };
+    return { cuenta: cta, decision: dec, huecos, items, no_incluye, addons, hitos, montosPermitidos, tarjeta,
              propias, programa, pre, pagos, numero, codigo_grupos, avisos: avisosArmado,
              archivo: `MXP-${huecos.AAAA}-${huecos.MMDD}-${nombreCorto}.html` };
   }
@@ -5144,6 +5297,10 @@
     if (L.precio && L.precio.linea) lect.precio = { l: L.precio.linea };
     // en la forma corta («Pagos: 50/50») la única línea es la fila 1: así el juez sabe que esa línea es dinero
     if (L.pagos && L.pagos.lineas && L.pagos.lineas.length) lect.pagos = { forma: L.pagos.corto ? "corta" : "filas", filas: L.pagos.lineas.map((l, k) => ({ orden: k + 1, l })), propias: (L.pagos_propios || []).filter(p => p.linea).map(p => ({ l: p.linea, cita_titulo: citaDe(p.linea, p.titulo) })), notas: [] };
+    // 26-nov (O-F6, Edgar): el párrafo de pagos que solo decía que el precio ya lleva la tarjeta (leerAlcance lo quitó de la §6) sigue
+    // teniendo papel en la lectura: una nota de los pagos (sin pagos, una línea que no va al contrato)
+    (L.tarjeta_en_precio || []).filter(x => x && x.fuera && x.linea > 0 && !(L.precio && L.precio.linea === x.linea) && !((L.pagos && L.pagos.lineas) || []).includes(x.linea))
+      .forEach(x => { if (lect.pagos) lect.pagos.notas.push({ l: x.linea }); else lect.parrafos.push({ l: x.linea, l_hasta: null, destino: "ignorada", cita: null }); });
     // la prosa de la hoja (Hoy / Cambia / Falta / Notas) con su línea, y los encabezados de grupo
     Object.entries(L.prosa_lineas || {}).forEach(([destino, ls]) => (ls || []).forEach(l => lect.parrafos.push({ l, l_hasta: null, destino, cita: null })));
     (L.grupos_lineas || []).forEach(l => lect.grupos.push({ l, cita: null }));
@@ -8642,7 +8799,40 @@
     // 489.126, la garantía) no se repite con las palabras de la hoja: manda el de la plantilla, y se dice.
     const yaEnPlantilla = (p, lista) => { const t = String((p.titulo || {}).en || "") + ". " + String((p.texto || {}).en || "");
       const x = PLANTILLA_PAGOS.find(([rx, k]) => lista.includes(k) && rx.test(t)); return x ? x[1] : null; };
+    // 26-nov (O-F6, Edgar): las líneas de la hoja que dicen que el precio ya lleva el 2.99 % de la tarjeta (como en leerAlcance). Una
+    // cláusula propia de pagos que SOLO dice eso no sale (repetiría lo de la tarjeta al lado del recargo), pero NO con «va la de la
+    // plantilla»: el aviso de validarAlcance le dice a Edgar que lo encienda en el contrato (o que ya está encendido) y que esa línea
+    // no sale aparte. Una cláusula que lo junta con otra cosa (otra línea, otra frase) sale entera como siempre (nada se pierde) y solo
+    // queda la pista. La del recargo de siempre («a 2.99% surcharge applies…») sigue con «va la de la plantilla».
+    L.tarjeta_en_precio = lineasTarjetaEnPrecio(orig);
+    const deTarjeta = p => {
+      const de = unir2(p.titulo, p.texto), ya = new Set(L.tarjeta_en_precio.map(x => x.linea));
+      const tt = String((p.titulo || {}).en || ""), tx = String((p.texto || {}).en || "");
+      const loDice = tarjetaEnElPrecio(tt + ". " + tx) || soloTarjetaEnPrecio(tt, tx);
+      const cita = de.some(n => ya.has(n)), todasSuyas = de.length > 0 && de.every(n => ya.has(n));
+      if (!loDice && !cita) return null;
+      let quitar;
+      if (loDice) quitar = soloTarjetaEnPrecio(tt, tx) && (!cita || todasSuyas);
+      else {
+        // no lo dice con sus palabras, pero sale SOLO de las líneas que lo dicen y cada frase habla del cobro con tarjeta: es esa línea
+        // dicha a medias. Si no, lo de siempre (la pista ya sale por la línea)
+        const rxR = PLANTILLA_PAGOS.find(([, k]) => k === "recargo")[0];
+        const frases = tx.split(/(?<=[.;])\s+/).map(f => f.trim()).filter(Boolean);
+        quitar = todasSuyas && frases.length > 0 && frases.every(f => rxR.test(f));
+        if (!quitar) return null;
+      }
+      if (!quitar) {
+        // sale entera; si lo dice con otras palabras que su línea, entra en la pista sin número
+        if (!cita) L.tarjeta_en_precio.push({ linea: 0, texto: "", fuera: false });
+        return "dejar";
+      }
+      if (de.length) de.forEach(n => { const x = L.tarjeta_en_precio.find(y => y.linea === n); if (x) x.fuera = true; else L.tarjeta_en_precio.push({ linea: n, texto: o(n).trim(), fuera: true }); });
+      else L.tarjeta_en_precio.push({ linea: 0, texto: "", fuera: true });
+      return "quitar";
+    };
     const filtrar = (lista, k, cuales) => (Array.isArray(lista) ? lista : []).filter(p => {
+      const tj = cuales.includes("recargo") ? deTarjeta(p) : null;
+      if (tj) return tj === "dejar";
       const ya = yaEnPlantilla(p, cuales); if (!ya) return true;
       const de = unir2(p.titulo, p.texto);
       aviso(`La hoja trae su propia cláusula de ${NOMBRE_DE_PLANTILLA[ya] || ya} (línea ${de.join(", ") || "?"}): la plantilla ya la trae, así que va la de la plantilla.`, de[0] || 0, { informativo: true, clave: k });
@@ -8996,6 +9186,8 @@
   }
 
   const API = { leerAlcance, validarAlcance, cuentas, repartir, decidirBasePrecio, leerBasePrecio, esTituloDePlano, HITO2_PERMISO_CLIENTE, condicionesQueImportan, PARA_QUE, leerMonto, pareceDinero, hayDinero, pareceIngles, redactarDirecto,
+                // 26-nov (O-F6, Edgar): el precio que ya lleva el 2.99 % de la tarjeta (la pista de la hoja, su aviso y la frase fija de la §6)
+                tarjetaEnElPrecio, lineasTarjetaEnPrecio, soloTarjetaEnPrecio, avisoTarjetaEnPrecio, leerPagos, FRASE_RECARGO_TARJETA, FRASE_SIN_RECARGO_TARJETA,
                 decidirInterruptores, prepararEncargo, validarSalida,
                 rellenarPlantilla, aplicarSi, repetirFila, aplicarClausulas,
                 barridoFinal, avisosFinal, comprobarLista, normaPapel, papelEnTexto, marcasEmparejadas, armarTodo, aplicarArreglo, arreglarTodo, leerPermiso, leerFirma, leerVence, DISPARADORES, ORDEN_9, dinero, centavos, norma,

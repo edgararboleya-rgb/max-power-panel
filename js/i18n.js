@@ -680,6 +680,16 @@
       "porque el estimado se hizo con planos": "because the estimate was made from plans",
       "porque «Planos:» es lo que entregas; el precio sigue siendo por conteo": "because “Planos:” is what you deliver; the price is still by count",
       "Lo manda la hoja: bórralo de la hoja para elegir aquí.": "The sheet sets it: delete it from the sheet to choose here.",
+      // 26-nov (O-F6): el interruptor de la tarjeta en la pantalla del contrato
+      "¿El precio ya lleva el 2.99 % de tarjeta?": "Does the price already include the 2.99% card fee?",
+      "Sí, el precio ya lo lleva": "Yes, the price already includes it",
+      "El contrato no cobra el recargo del 2.99 % con tarjeta: el precio ya lo lleva.": "The contract doesn't charge the 2.99% card surcharge: the price already includes it.",
+      "El contrato dice que pagar con tarjeta lleva un recargo del 2.99 % (lo normal).": "The contract says card payments carry a 2.99% surcharge (the usual case).",
+      "Apuntado: el precio ya lleva el 2.99 % de tarjeta. El contrato saldrá sin el recargo.": "Noted: the price already includes the 2.99% card fee. The contract will go out without the surcharge.",
+      "Apuntado: el contrato cobra el 2.99 % con tarjeta.": "Noted: the contract charges the 2.99% for card payments.",
+      "Este papel no lleva la sección de pagos: no dice nada del recargo de la tarjeta.": "This paper has no payments section: it says nothing about the card surcharge.",
+      "Esta propuesta ya se mandó: el cambio vale para este papel, pero no la cambio. Si hace falta, haz otra propuesta.":
+        "This proposal was already sent: the change applies to this paper, but I don't change the proposal. If needed, make another proposal.",
       "Sí, firman las dos": "Yes, both sign", "No, es un solo firmante": "No, there's only one signer",
       "Sí": "Yes", "Otra": "Other",
       "¿Cómo se cobra?": "How do we bill it?",
@@ -898,6 +908,23 @@
         [/^«Base del precio: (.+)» habla de cantidades y de planos a la vez: no la tomo\. Escribe solo «cantidades» o «planos», o elígela en la ficha\.$/,
           "“Pricing basis: $1” talks about quantities and plans at the same time: I'm not using it. Write only “quantities” or “plans”, or choose it on the card."],
         [/^Fotos del panel: sí, lo dice el levantamiento de la obra \((.+)\)\.$/, "Panel photos: yes, the job's site survey says so ($1)."],
+        // 26-nov (O-F6): las pistas de la tarjeta (el precio que ya lleva el 2.99 %): la cabeza (qué líneas), lo que pasa (apagado,
+        // encendido o papel sin pagos) y, si la hay, la cola (qué línea no sale aparte)
+        [/^((?:La línea|Las líneas) [\d, ]+ de la hoja dicen?|La hoja dice) que el precio ya lleva el 2\.99 % de la tarjeta(, pero el contrato cobra el recargo del 2\.99 % al pagar con tarjeta\. Si es así, pon «Sí» en «¿El precio ya lleva el 2\.99 % de tarjeta\?» \(pantalla del contrato\)\.|: «¿El precio ya lleva el 2\.99 % de tarjeta\?» está en «Sí» y el recargo no sale\.|\. Este papel no lleva la sección de pagos \(formato ligero\): el recargo de la tarjeta no sale\.)( La línea \d+ no sale aparte en el contrato\.| Las líneas [\d, ]+ no salen aparte en el contrato\.| Su cláusula no sale aparte en el contrato\.)?$/, s => {
+          const m = s.match(/^((?:La línea|Las líneas) ([\d, ]+) de la hoja dicen?|La hoja dice) que el precio ya lleva el 2\.99 % de la tarjeta(, pero|:|\.)[\s\S]*?(?: (?:La línea|Las líneas) ([\d, ]+) no salen? aparte en el contrato\.| (Su cláusula) no sale aparte en el contrato\.)?$/);
+          const varias = /^Las líneas/.test(m[1]);
+          const cabeza = m[2] ? (varias ? `Sheet lines ${m[2]} say` : `Sheet line ${m[2]} says`) : "The sheet says";
+          const medio = m[3] === ", pero" ? ", but the contract charges the 2.99% surcharge for card payments. If so, set “Does the price already include the 2.99% card fee?” to “Yes” (contract screen)."
+            : m[3] === ":" ? ": “Does the price already include the 2.99% card fee?” is set to “Yes”, so the surcharge doesn't appear."
+            : ". This paper has no payments section (light format): the card surcharge doesn't appear.";
+          const cola = m[4] ? (/,/.test(m[4]) ? ` Lines ${m[4]} aren't printed separately in the contract.` : ` Line ${m[4]} isn't printed separately in the contract.`)
+            : m[5] ? " Its clause isn't printed separately in the contract." : "";
+          return `${cabeza} the price already includes the 2.99% card fee${medio}${cola}`;
+        }],
+        [/^El estimado (EST-\d+) lleva el recargo de la tarjeta \(el 2\.99 %\) dentro del precio, pero el contrato cobra el recargo del 2\.99 % al pagar con tarjeta\. Si es así, pon «Sí» en «¿El precio ya lleva el 2\.99 % de tarjeta\?» \(pantalla del contrato\)\.$/,
+          "Estimate $1 already has the card fee (the 2.99%) inside the price, but the contract charges the 2.99% surcharge for card payments. If so, set “Does the price already include the 2.99% card fee?” to “Yes” (contract screen)."],
+        [/^«¿El precio ya lleva el 2\.99 % de tarjeta\?» está en «Sí», pero el papel todavía cobra un recargo por pagar con tarjeta \(«([\s\S]*)»\): quítalo de la hoja o de la plantilla y vuelve a armar\. Si el precio no lo lleva, pon «No»\.$/,
+          "“Does the price already include the 2.99% card fee?” is set to “Yes”, but the paper still charges a card surcharge (“$1”): remove it from the sheet or the template and build it again. If the price doesn't include it, set it to “No”."],
         [/^Esto no es un rough-in de interior: hay trabajo bajo tierra \/ bonding antes\. El pago 2 dice «(.*)»; lo natural es «(.+)» \(los montos no cambian\)\. Si prefieres un hito aparte al aprobar el bonding \(40\/30\/20\/10\), escríbelo en Pagos\.$/,
           "This isn't an interior rough-in: there's underground / bonding work first. Payment 2 says “$1”; the natural trigger is “$2” (the amounts don't change). If you'd rather have a separate milestone when the bonding is approved (40/30/20/10), write it in Payments."],
         [/^"(.+)" ¿son dos personas que firman las dos\?$/, "\"$1\" — are these two people who both sign?"],
