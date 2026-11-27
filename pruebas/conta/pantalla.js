@@ -4017,6 +4017,30 @@ async function escenaF19(b, errs) {
     await ve(q, 'bancos'); await ve(q, 'bandeja');
     ok('…y la pantalla lo pregunta una sola vez por sesión (una llamada a la rutina de «entra solo», 404, y ninguna más a fn_bandeja_*)',
       desde(n0).filter(l => l.fn.startsWith('fn_bandeja_')).length === 1 && cuantas(n0, 'fn_bandeja_solo') === 1, desde(n0).filter(l => l.fn.startsWith('fn_bandeja_')).map(l => l.fn).join(','));
+    // (C-F2, 27-nov) LA FORMA DE ANTES CON MONTOS (la de una base sin la Bandeja nueva, y la de un botón del banco que no va por ella):
+    // una opción que pide el capital y el interés de la cuota. La fila de siempre lleva esa opción solo mientras dura la comprobación
+    {
+      const fA = T.v_banco_bandeja.find(f => f.movimiento_id === MOV.a), ops0 = fA.opciones;
+      const NO_ES = 'Eso no es un monto: escríbelo con números, como 61.37.', COMA = 'Escribe los centavos con punto, como 61.37.';
+      fA.opciones = [{ texto: 'Es la cuota del préstamo: con el capital y el interés de su estado de cuenta', llamar: 'fn_prestamo_cuota', pide: ['p_capital', 'p_interes'], args: { p_prestamo: '00000000-0000-4000-a000-0000000c0f02', p_movimiento: MOV.a } }];
+      try {
+        await ve(q, 'bancos'); await ve(q, 'bandeja');
+        const ca = await fila(q, MOV.a);
+        await ca.locator('[data-op="0"]').click(); await q.waitForTimeout(150);
+        // (si un monto mal escrito llegara a mandarse, la forma se cierra: se dice, y lo que falta por escribir ya no se escribe)
+        const pone = async (cap, int) => { const f = ca.locator('.ct-form input[name="p_capital"]'); if (!(await f.count())) return '(la forma ya no está: lo anterior se mandó)';
+          await f.fill(cap); await ca.locator('.ct-form input[name="p_interes"]').fill(int); await ca.locator('.ct-form button[type=submit]').click(); await q.waitForTimeout(250); await pintado(q);
+          return (await ca.locator('.ct-form .ct-error').count()) ? (await ca.locator('.ct-form .ct-error').first().textContent()).trim() : '(sin error)'; };
+        n0 = llamadas.length;
+        const f1 = await pone('1 00.00', '23.45'), f2 = await pone('100.00', '23\u00a045'), f3 = await pone('100,00', '23.45'), f4 = await pone('$', '23.45');
+        const sinLlamar = cuantas(n0, 'fn_prestamo_cuota') === 0;
+        await pone(' $ 1,000.00 ', '23.45 $'); await esperarLlamada(q, n0, 'fn_prestamo_cuota'); await pintado(q);
+        const lc = ultima(n0, 'fn_prestamo_cuota');
+        ok('(C-F2) LA FORMA DE ANTES CON MONTOS (una opción del banco que pide el capital y el interés de una cuota, por el camino de antes): con un espacio dentro del número («1 00.00»), con uno de no separación («23» + U+00A0 + «45») y con un «$» solo dice «Eso no es un monto: escríbelo con números, como 61.37.», y con coma decimal («100,00») «Escribe los centavos con punto, como 61.37.», sin llamar a la base; y con « $ 1,000.00 » y «23.45 $» manda a la puerta del banco los montos YA LIMPIOS («1000.00» y «23.45»: antes pasaban la comprobación y se mandaban tal cual, y la puerta, que no lee ni «$» ni comas de miles, contestaba que no era un monto)',
+          f1 === NO_ES && f2 === NO_ES && f3 === COMA && f4 === NO_ES && sinLlamar && !!lc && lc.args.p_capital === '1000.00' && lc.args.p_interes === '23.45' && lc.args.p_movimiento === MOV.a && cuantas(n0, 'fn_prestamo_cuota') === 1,
+          `${[...new Set([f1, f2, f4])].join(' · ')} · ${f3} · ${JSON.stringify(lc && lc.args)}`.slice(0, 420));
+      } finally { fA.opciones = ops0; }
+    }
     n0 = llamadas.length;
     await ve(q, 'estados', { periodo: '2026-10' });
     ok('Sin c18: los estados salen como siempre (en español, sin «Para el contador» ni el enlace del idioma), y se pregunta una vez',
@@ -5039,13 +5063,27 @@ async function escenaF19(b, errs) {
       const e2 = await error(rec1);
       ok('(6b) LOS INTERESES ESCRITOS CON COMA DECIMAL NO SE LEEN: con «61,37» y con «6,50» la tarjeta dice «Escribe los centavos con punto, como 61.37.» y no llama a la base (antes las comas se quitaban sin mirar: «6,50» entraba como $650.00 de intereses y «61,37» se rechazaba sin decir por qué); el pago sigue en la Bandeja',
         e1 === COMA && e2 === COMA && cuantas(n0, 'fn_bandeja_hacer') === 0 && (await q.locator(sel(p1.movimiento_id)).count()) === 1 && await rec1.locator('[data-bn-campo="p_interes"]').evaluate(e => e === document.activeElement), `${e1} · ${e2}`);
+      // (C-F2, 27-nov) UN BLANCO DENTRO DEL NÚMERO: un espacio, uno de no separación (U+00A0, U+2007, U+202F) o uno de ancho cero (U+200B, U+FEFF)
+      const NO_ES = 'Eso no es un monto: escríbelo con números, como 61.37.', eB = [];
+      // (si alguno llegara a mandarse a la base, se dice y los demás ya no se escriben)
+      for (const t of ['6 50', '61 .37', '$6 50', '6\u00a050', '6\u200750', '6\u202f50', '6\u200b50', '6\ufeff50']) {
+        const cas = rec1.locator('[data-bn-campo="p_interes"]');
+        if (!(await cas.count()) || cuantas(n0, 'fn_bandeja_hacer') > 0) { eB.push('(lo anterior se mandó a la base)'); break; }
+        await cas.fill(t); await tocar(q, rec1.locator('[data-bn-asi]')); eB.push(await error(rec1));
+      }
+      // (una marca de dirección NO es un blanco: U+202E delante de «05.6» lo enseña como «6.50». No se quita ni se manda: no es un monto)
+      let eD = '(no se escribió)';
+      if ((await rec1.locator('[data-bn-campo="p_interes"]').count()) && cuantas(n0, 'fn_bandeja_hacer') === 0) { await rec1.locator('[data-bn-campo="p_interes"]').fill('\u202e05.6'); await tocar(q, rec1.locator('[data-bn-asi]')); eD = await error(rec1); }
+      ok('(C-F2) UN MONTO ESCRITO CON UN ESPACIO DENTRO NO SE LEE: con «6 50», «61 .37» y «$6 50», y con un espacio de no separación (U+00A0, U+2007, U+202F) o de ancho cero (U+200B, U+FEFF) en medio, la tarjeta dice «Eso no es un monto: escríbelo con números, como 61.37.» y no llama a la base (antes todos los espacios se quitaban sin mirar: «6 50» entraba como $650.00 de intereses, sin avisar); con una marca de dirección delante (U+202E + «05.6», que se ve «6.50») tampoco se manda nada («Falta un monto…»); el pago sigue en la Bandeja y el foco vuelve a la casilla',
+        eB.length === 8 && eB.every(e => e === NO_ES) && /^Falta un monto \(como 123\.45\)/.test(eD) && cuantas(n0, 'fn_bandeja_hacer') === 0 && (await q.locator(sel(p1.movimiento_id)).count()) === 1 && await rec1.locator('[data-bn-campo="p_interes"]').evaluate(e => e === document.activeElement), `${[...new Set(eB)].join(' · ')} · ${eD}`);
       await c.locator('[data-bn-mas] > summary').click(); await q.waitForTimeout(150);
       const bancoP = await plano(q, `${sel(p1.movimiento_id)} .ct-bn-viejo .ct-texto`);
-      await rec1.locator('[data-bn-campo="p_interes"]').fill('61.37');
+      // (C-F2: los blancos de los extremos y los pegados al «$» sí se quitan; a la base va el monto limpio)
+      await rec1.locator('[data-bn-campo="p_interes"]').fill(' $ 61.37\u00a0');
       n0 = llamadas.length;
       await tocar(q, rec1.locator('[data-bn-asi]'));
       l = ultima(n0, 'fn_bandeja_hacer');
-      ok('…y con «61.37» entra: «Así es» manda el pago de la línea con sus intereses (acción «prestamo», campos.p_interes), sin «recordar», y el aviso dice lo que entró («Registrado: Es un pago a tu línea de crédito de ZZ Banco: $1,000.00 ($938.63 bajan lo que debes en la línea y $61.37 son intereses).»); en «Más opciones», lo que dice el banco de ese pago es «…es un pago de tu línea de crédito» (antes «es la cuota de un préstamo»)',
+      ok('…y con « $ 61.37 » (C-F2: un espacio delante, otro pegado al «$» y uno de no separación detrás; a la base va «61.37») entra: «Así es» manda el pago de la línea con sus intereses (acción «prestamo», campos.p_interes), sin «recordar», y el aviso dice lo que entró («Registrado: Es un pago a tu línea de crédito de ZZ Banco: $1,000.00 ($938.63 bajan lo que debes en la línea y $61.37 son intereses).»); en «Más opciones», lo que dice el banco de ese pago es «…es un pago de tu línea de crédito» (antes «es la cuota de un préstamo»)',
         !!l && l.args.p_accion === 'prestamo' && l.args.p_datos.campos.p_interes === '61.37' && l.args.p_datos.linea === true && !('recordar' in l.args.p_opciones) && cuantas(n0, 'fn_bandeja_hacer') === 1
         && (await tostada(q)) === `Registrado: ${LN[1].resp.texto.replace(/\.$/, '')}` && /\$938\.63 bajan lo que debes en la línea y \$61\.37 son intereses/.test(LN[1].resp.texto) && (await q.locator(sel(p1.movimiento_id)).count()) === 0
         && /^El banco lo escribe como lo de tu línea de crédito: es un pago de tu línea de crédito\./.test(bancoP) && !/cuota de un préstamo/.test(bancoP), `${await tostada(q)} · ${bancoP}`.slice(0, 400));

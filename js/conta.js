@@ -3193,10 +3193,23 @@
   };
   // (sexta vuelta, 6b) UN MONTO ESCRITO EN UNA CASILLA de la Bandeja (los intereses de un pago de la línea, el capital y el interés de
   // una cuota): «61.37», «$61.37» y «1,000.00» valen; una coma que NO es de miles («61,37», «6,5») no se lee (antes las comas se
-  // quitaban sin mirar: «6,50» entraba como $650.00 de intereses). Devuelve el texto limpio, o null si trae esa coma. La base lo
-  // comprueba otra vez (fn_bandeja_monto_escrito)
-  const montoEscrito = s => { const t = String(s == null ? "" : s).replace(/[$\s]/g, ""); return t.includes(",") && !/^\d{1,3}(,\d{3})+(\.\d{1,2})?$/.test(t) ? null : t.replace(/,/g, ""); };
+  // quitaban sin mirar: «6,50» entraba como $650.00 de intereses). La base lo comprueba otra vez (fn_bandeja_monto_escrito)
+  // (C-F2) UN BLANCO DENTRO DEL NÚMERO TAMPOCO SE LEE: antes se quitaban todos los espacios (y los «$») de donde estuvieran, y «6 50»
+  // entraba como $650.00. Ahora de dentro del número no se quita nada, salvo las comas de miles: solo los blancos de los extremos, un
+  // «$» delante o detrás y los blancos pegados a él («$ 61.37», « 61.37 », «61.37 $»). Blanco es lo mismo que en la base, escrito por
+  // su código: el espacio, el tabulador y los saltos de línea, los de no separación (U+00A0, U+2007, U+202F), los demás espacios de
+  // Unicode y los de ancho cero (U+200B, U+200C, U+200D, U+2060, U+FEFF). Lo demás que no se ve NO es un blanco y no se quita ni de
+  // los extremos (una marca de dirección como U+202E puede dar la vuelta a las cifras en la pantalla): con ello no es un número. No
+  // se admite signo. Devuelve { v: el texto limpio } o { error: qué decirle a Edgar }
   const MONTO_CON_PUNTO = "Escribe los centavos con punto, como 61.37.";
+  const MONTO_NO_ES = "Eso no es un monto: escríbelo con números, como 61.37.";
+  const MONTO_BLANCOS = /[\u0009-\u000d\u0085\u00a0\u1680\u2000-\u200d\u2028\u2029\u202f\u205f\u2060\u3000\ufeff]/g;
+  const montoEscrito = s => {
+    const t = String(s == null ? "" : s).replace(MONTO_BLANCOS, " ").trim().replace(/^[$] */, "").replace(/ *[$]$/, "");
+    if (t.includes(" ")) return { error: MONTO_NO_ES };
+    if (t.includes(",") && !/^[0-9]{1,3}(,[0-9]{3})+(\.[0-9]{1,2})?$/.test(t)) return { error: MONTO_CON_PUNTO };
+    return { v: t.replace(/,/g, "") };
+  };
   function campoHTML(nombre, etiqueta, tipo, extra = "") {
     const c = CAMPOS[nombre] || {};
     const et = etiqueta || c.etiqueta || nombre, t = tipo || c.tipo || "texto";
@@ -3236,8 +3249,16 @@
     if (!pide.length) return llamar(card, m, o.llamar, { ...(o.args || {}) });
     montarForma(card, formaHTML(esc(o.texto), pide.map(p => campoHTML(p, null, null, "required")), "Confirmar"), v => {
       const args = { ...(o.args || {}) };
-      // (6b) un monto con coma decimal no se manda: se pide con punto
-      if (pide.some(p => (CAMPOS[p] || {}).tipo === "monto" && montoEscrito(v[p]) == null)) return mostrarErrorForma(card, MONTO_CON_PUNTO);
+      // (6b) un monto con coma decimal no se manda: se pide con punto. (C-F2) Ni con un blanco dentro del número; y lo que se manda es
+      // el monto YA LIMPIO («$1,000.00» → «1000.00»): antes pasaba la comprobación y se mandaba tal cual, y la puerta del banco, que
+      // no lee ni «$» ni comas de miles, contestaba que no era un monto. (Un «$» solo no es un monto: limpio quedaría vacío, y la
+      // puerta tomaría el dato por no dado)
+      for (const p of pide) {
+        if ((CAMPOS[p] || {}).tipo !== "monto") continue;
+        const le = montoEscrito(v[p]);
+        if (le.error || !le.v) return mostrarErrorForma(card, le.error || MONTO_NO_ES);
+        v[p] = le.v;
+      }
       for (const p of pide) {
         if (p === "p_partidas.motivo") {
           const prev = args.p_partidas;
@@ -4047,9 +4068,9 @@
     if (pideMotivo && motivo.length < 3) return { error: "Escríbelo en unas palabras: queda escrito en el libro.", foco: ta };
     const campos = {};
     for (const el of bl.querySelectorAll("[data-bn-campo]")) {
-      const c = el.dataset.bnCampo, monto = (CAMPOS[c] || {}).tipo === "monto", v = monto ? montoEscrito(el.value) : String(el.value || "").trim();
-      // (6b) con coma decimal no se lee (ni se le quita la coma): se dice cómo escribirlo
-      if (monto && v == null) return { error: MONTO_CON_PUNTO, foco: el };
+      const c = el.dataset.bnCampo, monto = (CAMPOS[c] || {}).tipo === "monto", le = monto ? montoEscrito(el.value) : null, v = monto ? le.v : String(el.value || "").trim();
+      // (6b) con coma decimal no se lee (ni se le quita la coma): se dice cómo escribirlo. (C-F2) Ni con un blanco dentro del número
+      if (monto && le.error) return { error: le.error, foco: el };
       if (!v || (monto && !/^\d+(\.\d{1,2})?$/.test(v))) return { error: monto ? "Falta un monto (como 123.45): está en el statement del prestamista." : "Falta un dato.", foco: el };
       campos[c] = v;
     }
