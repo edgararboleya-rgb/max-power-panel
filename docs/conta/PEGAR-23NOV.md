@@ -18,7 +18,9 @@ El 22-nov estrenaste la Bandeja nueva. Dos cosas salieron ese día:
    dependen de lo que tu libro tenga.
 
 Antes de dártelo se revisó otra vez, y de esa revisión salieron unos retoques
-que ya van dentro (están abajo, en «Lo que vas a ver»).
+que ya van dentro (están abajo, en «Lo que vas a ver»). El 27-nov entró uno
+más: un monto escrito con un espacio dentro, como «6 50», ya no se toma por
+650. Por eso la marca de abajo es la `2026112204` y las pruebas son 86.
 
 No se toca nada de lo que ya contestaste. **No hay que volver a pegar c6 ni
 c18, ni desplegar la función `contador`.** Cambian `c17-bandeja.sql` y la
@@ -30,7 +32,7 @@ se le da a «Run». Todo se puede pegar dos veces.
 | # | Qué | Filas que salen |
 |---|---|---|
 | 1 | `docs/conta/c17-bandeja.sql` | **8**, todas empiezan por «ok:» |
-| 2 | `docs/conta/c17-pruebas.sql` | **85**, todas en `true` (u «omitida» con su porqué) |
+| 2 | `docs/conta/c17-pruebas.sql` | **86**, todas en `true` (u «omitida» con su porqué) |
 | 3 | El SQL de tu línea de crédito (**te lo paso por el chat**: nombra cosas tuyas y no va en el repositorio) | **7**, todas empiezan por «ok:» |
 
 **Hasta pegar el paso 3 y hasta que yo te diga que la app ya está publicada,
@@ -41,7 +43,7 @@ desembolsos): todavía dicen lo de antes.
 
 Lo mismo que el 22-nov, con dos cambios:
 
-- **`version`:** «ok: 2026112203».
+- **`version`:** «ok: 2026112204».
 - **`funciones`:** «ok: 60 funciones fn_bandeja_*, ninguna SECURITY DEFINER».
 
 La fila **`siguiente`** sigue diciendo «vuelve a desplegar la función
@@ -50,13 +52,13 @@ que desplegarla, y la app la publico yo.**
 
 ### 2. `c17-pruebas.sql`
 
-Salen 85 filas; la última columna tiene que ser `true` en todas. Las nuevas
+Salen 86 filas; la última columna tiene que ser `true` en todas. Las nuevas
 son la 82 (la línea de crédito, de punta a punta), la 83 (la pregunta con
-botones iguales), la 84 (los retoques de la línea) y la 85 (el pago
-registrado «con lo que dice su estado de cuenta»). Como siempre, montan lo
-suyo («BDIECISIETE…», un prestamista inventado que se llama «Zzlend») y lo
-deshacen: no queda nada (lo comprueba la fila 81). Si el SQL Editor deja de
-esperar:
+botones iguales), la 84 (los retoques de la línea), la 85 (el pago
+registrado «con lo que dice su estado de cuenta») y la 86 (un monto escrito
+con un espacio dentro). Como siempre, montan lo suyo («BDIECISIETE…», un
+prestamista inventado que se llama «Zzlend») y lo deshacen: no queda nada
+(lo comprueba la fila 81). Si el SQL Editor deja de esperar:
 
 ```sql
 select * from pruebas.c17_resultado order by n;
@@ -104,6 +106,10 @@ Si alguna fila empieza por «OJO:», cópiamela y no contestes esas tarjetas.
 - **Los centavos, con punto.** En esa casilla escribe «61.37», no «61,37». Si
   pones coma, la app no lo toma y te lo dice («Escribe los centavos con punto,
   como 61.37»). «1,000.00» y «$61.37» sí valen.
+- **Y sin espacios dentro del número.** Si se cuela un espacio en medio
+  («6 50»), la app no lo toma por 650: no lo registra y te lo dice («Eso no
+  es un monto: escríbelo con números, como 61.37»). Un espacio delante o
+  detrás, o entre el «$» y el número, no molesta.
 - **Cada pago de la línea se contesta por separado**, aunque haya varios
   esperando: cada uno lleva sus intereses. No salen juntos en «Decide por
   grupo», y su tarjeta no trae la casilla «Recordarlo» (la app ya los

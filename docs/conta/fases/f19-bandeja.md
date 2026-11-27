@@ -29,9 +29,11 @@ vuelta». La cuarta (22-nov, marca `2026112201`) arregló lo que encontró la
 tercera revisión: «La cuarta vuelta». La quinta (22-nov, marca `2026112202`
 en c17; c18 no cambió), lo que encontró la cuarta: «La quinta vuelta». La
 sexta (22-nov, marca `2026112203` en c17; c18 no cambió), lo que salió al
-estrenarla con la base de verdad: «La sexta vuelta».
+estrenarla con la base de verdad: «La sexta vuelta». El 27-nov (marca
+`2026112204` en c17; c18 no cambió), un punto de la lista de pendientes
+(C-F2): «El monto escrito con un espacio».
 
-### `docs/conta/c17-bandeja.sql` (marca 2026112203)
+### `docs/conta/c17-bandeja.sql` (marca 2026112204)
 
 Se pega después de c1…c16. Necesita c1, c2, c3, c6 y c8; c10 es opcional (sin
 él no hay «pago a la cuadrilla»). No cambia ninguna tabla ni función de otra
@@ -808,17 +810,77 @@ la pantalla (`js/conta.js`).
   como la cuota del préstamo a plazo, como un gasto, o se ignoró): antes daba
   «ok» y dejaba la deuda de la línea corta y la del préstamo larga.
 
+## El monto escrito con un espacio (C-F2, 27-nov, marca 2026112204)
+
+Lo dejó anotado la revisión de la 6b y quedó en la lista (`PENDIENTES.md`,
+C-F2). Cambian `c17-bandeja.sql` (la marca sube: se pega otra vez; siguen
+siendo 60 funciones), sus pruebas y la pantalla (`js/conta.js`: hay que
+publicar la app). `c6`, `c18` y la función `contador` no se tocan.
+
+- **Un monto con un espacio dentro no se lee.** Un monto que Edgar escribe en
+  una casilla de la Bandeja (los intereses de un pago de la línea; el capital
+  y el interés de una cuota «con lo que dice su estado de cuenta») se leía
+  quitándole todos los espacios, y los «$», de donde estuvieran: «6 50»
+  entraba como $650.00 de intereses, sin avisar. Ahora, en las dos capas
+  (`fn_bandeja_monto_escrito` en la base y `montoEscrito` en la pantalla), de
+  dentro del número no se quita nada, salvo las comas de miles. Se quitan
+  solo los blancos de los extremos, un «$» delante o detrás y los blancos
+  pegados a él. Si queda un blanco dentro, no se lee y se dice: «Eso no es un
+  monto: escríbelo con números, como 61.37.» (la frase que la 6b ya usaba
+  para lo que no es un número). «61.37», «$61.37», «$ 61.37», « 61.37 »,
+  «1,000.00» y «0» siguen valiendo; «6,50» se sigue pidiendo con punto. Un
+  «$» en medio («6$50») tampoco se quita ya: no es un número. No se admite
+  signo.
+- **Qué es un blanco.** El espacio, el tabulador y los saltos de línea; los
+  espacios de no separación (U+00A0, U+2007, U+202F) y los demás espacios de
+  Unicode; y los de ancho cero (U+200B, U+200C, U+200D, U+2060, U+FEFF). Van
+  escritos por su código, y son los mismos en la base y en la pantalla: lo
+  que `[[:space:]]` toma por espacio depende de cómo esté creada la base (en
+  el banco de pruebas, con `C.UTF-8`, no lo son ni U+00A0 ni los de ancho
+  cero). Lo demás que no se ve **no** es un blanco y no se quita ni de los
+  extremos: una marca de dirección como U+202E puede dar la vuelta a las
+  cifras en la pantalla («05.6» se vería «6.50»), y quitarla sería leer otro
+  monto que el que se ve. Con algo así el texto no es un número, y no se lee.
+- **Dónde se lee un monto escrito, y con qué.** En la base, en
+  `fn_bandeja_validar`: los intereses del pago de una línea (acción
+  `prestamo`; también cuando llegan por el «Dímelo», con `fn_bandeja_aprobar`)
+  y el capital y el interés de una opción del banco (acción `banco`). En la
+  pantalla, en `bnLeerCaja` (las casillas de la recomendación, de lo que
+  entendió el «Dímelo» y de una opción del banco elegida) y en `abrirOpcion`
+  (la forma de antes: la de una base sin la Bandeja nueva y la de un botón
+  del banco que no va por ella). Los cuatro usan esa misma lectura. «Anotado
+  por otro monto: corrígelo» no pide un monto, pide el porqué; y el «Dímelo»
+  no lee montos de la frase. Queda fuera, sin tocar, la otra casilla de
+  montos que se abre desde una tarjeta de la Bandeja, que es de la nómina
+  (c15: «decir a mano qué paga» un cargo de Gusto): sus montos llevan signo,
+  la pantalla les quita «$», comas y espacios, y su puerta comprueba que
+  sumen el cargo al centavo, así que un monto mal leído no entra: sale el
+  error de la puerta.
+- **La forma de antes manda el monto limpio.** `abrirOpcion` comprobaba el
+  monto con `montoEscrito` pero mandaba a la puerta del banco el texto tal
+  cual: «$1,000.00» pasaba la comprobación y la puerta, que no lee ni «$» ni
+  comas de miles, contestaba que no era un monto. Ahora manda lo que devuelve
+  la lectura («1000.00»). Un «$» solo se dice que no es un monto (limpio
+  quedaría vacío, y la puerta tomaría el dato por no dado).
+- **Hasta publicar la app**, la comprobación de la base no ve el espacio: la
+  pantalla publicada de antes quita los espacios antes de mandar (como pasó
+  con la coma en la 6b). Con la app nueva y la base de antes, la pantalla ya
+  lo frena sola.
+
 ## Las pruebas
 
-- `docs/conta/c17-pruebas.sql`: 85 filas (sobre la base limpia, con la semilla
+- `docs/conta/c17-pruebas.sql`: 86 filas (sobre la base limpia, con la semilla
   f19, con mil pendientes y —sexta vuelta— sobre un clon «como producción»:
   con un préstamo del prestamista de verdad dado de alta con descriptor ancho
   y saldo en su cuenta, y con él estrechado y la línea dada de alta). La 82 es
   la línea de crédito de punta a punta; la 83, la pregunta con botones
   iguales y las huellas; (6b) la 84, la segunda pasada de la línea (la coma
   decimal, el «Dímelo», de uno en uno y sin recordar, y lo que el banco
-  escribe de otra forma); la 85, «con lo que dice su estado de cuenta». La 81
-  («nada queda») corre la última.
+  escribe de otra forma); la 85, «con lo que dice su estado de cuenta»;
+  (C-F2, 27-nov) la 86, un monto escrito con un espacio dentro («6 50» no se
+  lee como 650.00: en los intereses de la línea, por la recomendación y por
+  el «Dímelo», y en los dos montos de una cuota). La 81 («nada queda») corre
+  la última.
 - `docs/conta/c18-pruebas.sql`: 15 filas.
 - `pruebas/conta/c17-volumen.sh`: la Bandeja con 400 y con 1,000 pendientes,
   como el dueño por la API, cada llamada por debajo de 0.8 s (el número de
@@ -838,10 +900,13 @@ la pantalla (`js/conta.js`).
   ejemplo del porqué; cuarta, el cargo hacia un prestamista; y, 6b, el pago de
   una línea de crédito por el «Dímelo»: la propuesta dice qué pide y se
   aprueba con sus intereses, nunca con coma decimal).
-- `pruebas/conta/pantalla.js`: 242 comprobaciones de esta escena (6b: seis
+- `pruebas/conta/pantalla.js`: 244 comprobaciones de esta escena (6b: seis
   más, las de la línea de crédito, con un guion nuevo de la base simulada:
   la casilla de los intereses y la coma decimal, sin «Recordarlo» y sin
-  grupo, el «Dímelo» con su casilla, y las frases fijas), con la base
+  grupo, el «Dímelo» con su casilla, y las frases fijas; C-F2, 27-nov: dos
+  más, el espacio dentro del monto en la casilla de los intereses —y lo que
+  va limpio a la base— y la forma de antes con el capital y el interés de
+  una cuota), con la base
   simulada sacada del banco (`f19-capturar.js` → `pantalla-f19.json`, semilla
   `f19-semilla.sql`; las lecturas por partes, con `f19-parte.js`, que el
   capturador comprueba contra la base). Solo esa escena:
