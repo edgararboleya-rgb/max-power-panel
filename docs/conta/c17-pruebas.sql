@@ -1,6 +1,7 @@
 -- =====================================================================
 -- c17-pruebas.sql — la Bandeja nueva se prueba a sí misma
 -- (c17-bandeja.sql). 22-nov-2026 (sexta vuelta y su segunda pasada, la 6b: 85 pruebas).
+-- 27-nov-2026 (C-F2, el monto escrito con un espacio dentro: 86 pruebas).
 --
 -- Se pega en el SQL Editor DESPUÉS de c17-bandeja.sql (o, en el banco:
 --   PGPASSWORD=editor_sql psql -h 127.0.0.1 -p 5433 -U editor_sql -d <bd> -1 \
@@ -203,7 +204,7 @@
 -- 80 la máscara no se come las sumas; la huella de un freno no trae el
 --    porqué; y la opción del banco que se quedó vieja se dice en llano;
 -- 81 nada queda, y los controles de c3, c6 y c8 siguen como estaban
---    (corre la última, después de la 82, la 83, la 84 y la 85);
+--    (corre la última, después de la 82, la 83, la 84, la 85 y la 86);
 -- 82 LA LÍNEA DE CRÉDITO, APARTE DEL PRÉSTAMO A PLAZO del mismo prestamista:
 --    con el descriptor ancho todo es «del préstamo»; la línea no se da de
 --    alta mientras choque; estrechado el del préstamo y dada de alta, la
@@ -222,7 +223,13 @@
 --    dinero de un préstamo;
 -- 85 «CON LO QUE DICE SU ESTADO DE CUENTA»: lo registrado dice lo que entró
 --    (cuánto bajó la deuda y cuánto fueron intereses), y esos montos no se
---    leen con coma decimal.
+--    leen con coma decimal;
+-- (27-nov, C-F2)
+-- 86 UN MONTO ESCRITO CON UN ESPACIO DENTRO («6 50») no se lee como 650.00:
+--    se dice que no es un monto, en los intereses de un pago de la línea
+--    (por la recomendación y por el «Dímelo») y en los dos montos de una
+--    cuota; los blancos de los extremos y los pegados al «$» se quitan, y
+--    la coma decimal se sigue pidiendo con punto.
 -- =====================================================================
 create temp table if not exists _pruebas(n int, prueba text, esperado text, obtenido text, ok boolean);
 truncate _pruebas;
@@ -532,7 +539,7 @@ do $$
 declare
   v_obt text;
   v_esp text := 'nada falta | 4 tablas con RLS | 1 vista | funciones sin comentario c17: ninguna | ninguna SECURITY DEFINER | '
-                'configuración: 1 fila | marca 2026112203';
+                'configuración: 1 fila | marca 2026112204';
 begin
   begin
     perform pg_temp.b17_ser('editor');
@@ -4982,7 +4989,136 @@ begin
   insert into _pruebas values (85, v_nom, v_esp, v_obt, v_obt = v_esp);
 end $$;
 
--- 81. Nada queda, y los demás controles siguen como estaban (corre la última: después de la 82, la 83, la 84 y la 85).
+-- 86. UN MONTO ESCRITO CON UN ESPACIO DENTRO (C-F2, 27-nov): «6 50» no se lee como 650.00.
+do $$
+declare
+  v_obt text; v_p uuid; mp uuid; m uuid; rec jsonb; g jsonb; v jsonb; v2 jsonb; v3 jsonb; r1 jsonb; r2 jsonb; r3 jsonb; r4 jsonb; r5 jsonb; r6 jsonb; r7 jsonb;
+  hu text; n int; a text; b text; c text; d text;
+  c_no   constant text := 'Eso no es un monto: escríbelo con números, como 61.37.';
+  c_coma constant text := 'Escribe los centavos con punto, como 61.37.';
+  v_nom text := 'UN MONTO ESCRITO CON UN ESPACIO DENTRO (C-F2, 27-nov). Un monto que Edgar escribe en una casilla de la Bandeja (los intereses de un pago de la línea; el capital y el interés de «con lo que dice su estado de cuenta») se leía quitándole TODOS los espacios (y los «$») de donde estuvieran: «6 50» entraba como $650.00 de intereses, sin avisar. Ahora de dentro del número no se quita nada, salvo las comas de miles: solo los blancos de los extremos, y un «$» delante o detrás con los blancos pegados a él. Con un blanco DENTRO —un espacio, un tabulador, un espacio de no separación (U+00A0, U+2007, U+202F) o uno de ancho cero (U+200B, U+200C, U+200D, U+2060, U+FEFF)— no se lee y se dice («Eso no es un monto: escríbelo con números, como 61.37.»): en los intereses de un pago de la línea (por la recomendación y por el «Dímelo») y en los dos montos de una cuota. «61.37», «$61.37», «$ 61.37», « 61.37 », «1,000.00» y «0» siguen valiendo, y «6,50» se sigue pidiendo con punto. Lo demás que no se ve NO es un blanco y no se quita ni de los extremos: una marca de dirección (U+202E) puede dar la vuelta a las cifras en la pantalla, y con ella el texto no es un número (tampoco con un «$» en medio, que antes se quitaba: «6$50» se leía 650)';
+  v_esp text := 'el monto escrito: con un blanco dentro no se lee; con blancos en los extremos o pegados al «$», sí; la coma decimal se sigue pidiendo con punto; con una marca de dirección o un «$» en medio no es un número | '
+                'los intereses de la línea con un blanco dentro (un espacio, uno de no separación, uno de ancho cero) o con una marca de dirección delante: no entra, lo dice y la casilla sigue | '
+                '«6,50»: con punto | «$ 61.37» y « 61.37 »: valen | por el «Dímelo» con «6 50»: no entra y sigue pendiente | '
+                'aprobada con «$ 61.37 »: 1010 -1000.86, 2510 939.49, 7100 61.37 | '
+                'el capital o el interés de una cuota con un blanco dentro: no entra y lo dice | '
+                'con «$ 1,400.00» y « 100.86 »: 1010 -1500.86, la deuda del préstamo 1400.00, 7100 100.86';
+begin
+  if pg_temp.b17_omitir(86, v_nom, v_esp) then return; end if;
+  begin
+    perform pg_temp.b17_montar();
+    -- (0) lo que lee un monto escrito: lo que se esperaba de cada texto y no salió (nada, si lee bien)
+    select coalesce(string_agg(format('%s → %s', t.que, coalesce(fn_bandeja_monto_escrito(t.x), 'nulo')), '; ' order by t.k), '') into a
+      from (values
+        -- un blanco DENTRO del número: no se lee
+        (1, '«6 50»', '6 50', 'espacio'), (2, '«61 .37»', '61 .37', 'espacio'), (3, '«61. 37»', '61. 37', 'espacio'),
+        (4, '«1 000.00»', '1 000.00', 'espacio'), (5, '«1, 000.00»', '1, 000.00', 'espacio'), (6, '«$6 50»', '$6 50', 'espacio'),
+        (7, '«6 50 $»', '6 50 $', 'espacio'), (8, '«6 ,50»', '6 ,50', 'espacio'), (9, '6 + tabulador + 50', '6' || chr(9) || '50', 'espacio'),
+        (10, '6 + U+00A0 + 50', '6' || chr(160) || '50', 'espacio'), (11, '6 + U+2007 + 50', '6' || chr(8199) || '50', 'espacio'),
+        (12, '6 + U+202F + 50', '6' || chr(8239) || '50', 'espacio'), (13, '6 + U+200B + 50', '6' || chr(8203) || '50', 'espacio'),
+        (14, '6 + U+200C + 50', '6' || chr(8204) || '50', 'espacio'), (15, '6 + U+200D + 50', '6' || chr(8205) || '50', 'espacio'),
+        (16, '6 + U+2060 + 50', '6' || chr(8288) || '50', 'espacio'), (17, '6 + U+FEFF + 50', '6' || chr(65279) || '50', 'espacio'),
+        -- los blancos de los extremos y los pegados al «$»: se quitan
+        (20, '«61.37»', '61.37', '61.37'), (21, '«$61.37»', '$61.37', '61.37'), (22, '«$ 61.37»', '$ 61.37', '61.37'),
+        (23, '« 61.37 »', ' 61.37 ', '61.37'), (24, '«61.37 $»', '61.37 $', '61.37'), (25, '«1,000.00»', '1,000.00', '1000.00'),
+        (26, '« $ 1,000.00 »', ' $ 1,000.00 ', '1000.00'), (27, '«0»', '0', '0'),
+        (28, 'U+00A0 + 61.37 + U+00A0', chr(160) || '61.37' || chr(160), '61.37'), (29, '$ + U+00A0 + 61.37', '$' || chr(160) || '61.37', '61.37'),
+        (30, 'U+200B + 61.37 + U+FEFF', chr(8203) || '61.37' || chr(65279), '61.37'), (31, 'tabulador + 61.37 + salto', chr(9) || '61.37' || chr(10), '61.37'),
+        -- la coma decimal: se sigue pidiendo con punto
+        (40, '«6,50»', '6,50', 'coma'), (41, '« 6,5 »', ' 6,5 ', 'coma'), (42, '«$ 61,37»', '$ 61,37', 'coma'),
+        -- un «$» en medio no se quita (antes «6$50» se leía 650), ni lo que no se ve y no es un blanco (una marca de dirección: U+202E
+        -- delante de «05.6» lo enseña como «6.50»; el guion blando): vuelve tal cual, y no es un número
+        (50, '«6$50»', '6$50', '6$50'), (51, 'U+202E + 05.6', chr(8238) || '05.6', chr(8238) || '05.6'),
+        (52, '61.37 + U+200E', '61.37' || chr(8206), '61.37' || chr(8206)), (53, '6 + U+00AD + 50', '6' || chr(173) || '50', '6' || chr(173) || '50'),
+        -- nada escrito
+        (60, 'vacío', '', null), (61, 'solo espacios', '   ', null), (62, 'solo «$»', '$', null), (63, 'nulo', null, null)) as t(k, que, x, e)
+     where fn_bandeja_monto_escrito(t.x) is distinct from t.e;
+    a := case when a = '' and not exists (select 1 from unnest(array['6$50', chr(8238) || '05.6', '61.37' || chr(8206), '6' || chr(173) || '50']) as u(x)
+                                           where fn_bandeja_num(fn_bandeja_monto_escrito(u.x)) is not null)
+              then 'el monto escrito: con un blanco dentro no se lee; con blancos en los extremos o pegados al «$», sí; la coma decimal se sigue pidiendo con punto; '
+                   'con una marca de dirección o un «$» en medio no es un número'
+              else 'NO LEE BIEN UN MONTO ESCRITO: ' || left(a, 600) end;
+    -- (1) los intereses de un pago de la línea, con un blanco dentro
+    perform fn_bandeja_linea('{"nombre": "Zzlend", "descriptor": "\\mZZLEND CAPITAL(47| 5)\\M"}');
+    mp := pg_temp.b17_mov('B17-86P', -1000.86, 'ORIG CO NAME:ZZLEND CAPITAL47 ORIG ID:9000018602 DESC DATE:BDIECISIETE CO ENTRY DESCR:PAYMENT SEC:CCD');
+    rec := pg_temp.b17_rec(mp);
+    perform pg_temp.b17_ser('dueno');
+    v := fn_bandeja_validar(mp, 'prestamo', rec->'datos' || '{"campos": {"p_interes": "$ 61.37"}}');
+    v2 := fn_bandeja_validar(mp, 'prestamo', rec->'datos' || '{"campos": {"p_interes": " 61.37 "}}');
+    v3 := fn_bandeja_validar(mp, 'prestamo', rec->'datos' || '{"campos": {"p_interes": "6 50"}}');
+    perform pg_temp.b17_ser('editor');
+    r1 := pg_temp.b17_hacer(mp, 'prestamo', rec->'datos' || '{"campos": {"p_interes": "6 50"}}');
+    if coalesce((r1->>'hecho')::boolean, false) then
+      -- (con la c17 de antes entraba, como $650.00 de intereses: se dice con su asiento, y lo demás de la prueba ya no tiene qué mirar)
+      v_obt := a || ' | «6 50» ENTRÓ COMO UN MONTO: ' || pg_temp.b17_asiento((r1->>'asiento_id')::uuid);
+      raise exception using errcode = 'MXT00';
+    end if;
+    r2 := pg_temp.b17_hacer(mp, 'prestamo', rec->'datos' || jsonb_build_object('campos', jsonb_build_object('p_interes', '61' || chr(160) || '.37')));
+    r3 := pg_temp.b17_hacer(mp, 'prestamo', rec->'datos' || jsonb_build_object('campos', jsonb_build_object('p_interes', '6' || chr(8203) || '50')));
+    r4 := pg_temp.b17_hacer(mp, 'prestamo', rec->'datos' || '{"campos": {"p_interes": "6,50"}}');
+    -- (U+202E delante de «05.6»: en la pantalla se ve «6.50». No se le quita: no es un monto, y dice entre qué va)
+    r7 := pg_temp.b17_hacer(mp, 'prestamo', rec->'datos' || jsonb_build_object('campos', jsonb_build_object('p_interes', chr(8238) || '05.6')));
+    b := case when rec->>'accion' = 'prestamo' and rec->'pide' = '["p_interes"]'::jsonb
+                   and r1->>'hecho' = 'false' and r1->>'por_que' = c_no and r2->>'hecho' = 'false' and r2->>'por_que' = c_no
+                   and r3->>'hecho' = 'false' and r3->>'por_que' = c_no
+                   and r7->>'hecho' = 'false' and r7->>'por_que' like 'Los intereses de este pago son un monto entre 0 y $1,000.86%'
+                   and v3->>'ok' = 'false' and v3->>'falta' = c_no and v3->'datos'->'pide' = '["p_interes"]'::jsonb
+                   and (select mb.estado = 'pendiente' and mb.asiento_id is null from movimientos_banco mb where mb.id = mp)
+              then 'los intereses de la línea con un blanco dentro (un espacio, uno de no separación, uno de ancho cero) o con una marca de dirección delante: no entra, lo dice y la casilla sigue'
+              else 'NO: ' || left(coalesce(r1::text, 'nulo'), 250) || ' / ' || left(coalesce(r2::text, 'nulo'), 200) || ' / ' || left(coalesce(r3::text, 'nulo'), 200)
+                   || ' / ' || left(coalesce(r7::text, 'nulo'), 200) || ' / ' || left(coalesce(v3::text, 'nulo'), 250) end
+         || ' | ' || case when r4->>'hecho' = 'false' and r4->>'por_que' = c_coma then '«6,50»: con punto' else 'NO: ' || left(coalesce(r4::text, 'nulo'), 250) end
+         || ' | ' || case when (v->>'ok')::boolean and v->'datos'->>'interes' = '61.37' and (v2->>'ok')::boolean and v2->'datos'->>'interes' = '61.37'
+                               and v->>'texto' = 'Es un pago a tu línea de crédito de Zzlend: $1,000.86 ($939.49 bajan lo que debes en la línea y $61.37 son intereses).'
+                          then '«$ 61.37» y « 61.37 »: valen' else 'NO: ' || left(coalesce(v::text, 'nulo'), 250) || ' / ' || left(coalesce(v2::text, 'nulo'), 250) end;
+    -- (2) por el «Dímelo»: la propuesta no se aprueba con un blanco dentro (sigue pendiente), y sí con el monto bien escrito
+    g := pg_temp.b17_dimelo(mp, 'es el pago de la linea de credito', jsonb_build_object('accion', 'prestamo', 'prestamista', 'Zzlend',
+                                                                                     'explicacion', 'Dices que es el pago de la línea.'));
+    r5 := pg_temp.b17_aprobar((g->>'dimelo_id')::uuid, '{"campos": {"p_interes": "6 50"}}');
+    c := case when g->>'estado' = 'pendiente' and r5->>'hecho' = 'false' and r5->>'por_que' = c_no
+                   and (select q.estado = 'pendiente' from bandeja_dimelo q where q.id = (g->>'dimelo_id')::uuid)
+                   and (select mb.estado = 'pendiente' and mb.asiento_id is null from movimientos_banco mb where mb.id = mp)
+              then 'por el «Dímelo» con «6 50»: no entra y sigue pendiente'
+              else 'NO: ' || left(coalesce(g::text, 'nulo'), 250) || ' / ' || left(coalesce(r5::text, 'nulo'), 250) end;
+    r6 := pg_temp.b17_aprobar((g->>'dimelo_id')::uuid, '{"campos": {"p_interes": "$ 61.37 "}}');
+    c := c || ' | aprobada con «$ 61.37 »: '
+         || case when (r6->>'hecho')::boolean and r6->>'texto' = 'Es un pago a tu línea de crédito de Zzlend: $1,000.86 ($939.49 bajan lo que debes en la línea y $61.37 son intereses).'
+                 then pg_temp.b17_asiento((r6->>'asiento_id')::uuid) else 'NO: ' || left(coalesce(r6::text, 'nulo'), 300) end;
+    -- (3) el capital y el interés de una cuota («con lo que dice su estado de cuenta»)
+    v_p := (fn_prestamo_guardar(jsonb_build_object('prestamista', 'ZZ Capital Ochentayseis', 'descripcion', 'c17-pruebas: préstamo de prueba',
+              'principal', '20000.00', 'tasa_anual', '19.99', 'cuota', '300.86', 'primer_pago', (pg_temp.b17_d() + 7)::text, 'dia_pago', 15,
+              'plazo_meses', 80, 'frecuencia', 'semanal', 'cuenta', '2540', 'cuenta_largo', '2550',
+              'saldo_inicial', '20000.00', 'saldo_inicial_al', pg_temp.b17_d()::text, 'descriptor', 'ZZCAP86 PAGO'))->>'id')::uuid;
+    m := pg_temp.b17_mov('B17-86A', -1500.86, 'ACH ZZCAP86 PAGO BDIECISIETE');
+    rec := pg_temp.b17_rec(m);
+    select (o.x->>'opcion')::int, o.x->>'huella' into n, hu
+      from jsonb_array_elements(coalesce(rec->'elige', '[]'::jsonb)) as o(x) where o.x->>'boton' = 'Con lo que dice su estado de cuenta';
+    r1 := pg_temp.b17_hacer(m, 'banco', jsonb_build_object('opcion', n, 'huella', hu, 'campos', '{"p_capital": "1 400.00", "p_interes": "100.86"}'::jsonb));
+    r2 := pg_temp.b17_hacer(m, 'banco', jsonb_build_object('opcion', n, 'huella', hu,
+                                                         'campos', jsonb_build_object('p_capital', '1400.00', 'p_interes', '100' || chr(8239) || '.86')));
+    d := case when r1->>'hecho' = 'false' and r1->>'por_que' = c_no and r2->>'hecho' = 'false' and r2->>'por_que' = c_no
+                   and (select mb.estado = 'pendiente' and mb.asiento_id is null from movimientos_banco mb where mb.id = m)
+              then 'el capital o el interés de una cuota con un blanco dentro: no entra y lo dice'
+              else 'NO: ' || left(coalesce(r1::text, 'nulo'), 250) || ' / ' || left(coalesce(r2::text, 'nulo'), 250) || ' / ' || left(coalesce(rec::text, 'nulo'), 200) end;
+    r3 := pg_temp.b17_hacer(m, 'banco', jsonb_build_object('opcion', n, 'huella', hu, 'campos', '{"p_capital": "$ 1,400.00", "p_interes": " 100.86 "}'::jsonb));
+    d := d || ' | con «$ 1,400.00» y « 100.86 »: '
+         || case when (r3->>'hecho')::boolean
+                 then (select string_agg(y.c || ' ' || y.m, ', ' order by y.o, (y.c ~ '^[0-9]'), y.c)
+                         from (select case when l.cuenta in ('2540', '2550') then 'la deuda del préstamo' else l.cuenta end as c, sum(l.monto) as m,
+                                      min(case when l.cuenta = pg_temp.b17('banco') then 0 else 1 end) as o
+                                 from asiento_lineas l where l.asiento_id = (r3->>'asiento_id')::uuid group by 1) y)
+                 else 'NO: ' || left(coalesce(r3::text, 'nulo'), 300) end;
+    v_obt := a || ' | ' || b || ' | ' || c || ' | ' || d;
+    raise exception using errcode = 'MXT00';
+  exception
+    when sqlstate 'MXT00' then null;
+    when others then v_obt := 'error ' || sqlstate || ': ' || sqlerrm;
+  end;
+  perform pg_temp.b17_ser('editor');
+  insert into _pruebas values (86, v_nom, v_esp, v_obt, v_obt = v_esp);
+end $$;
+
+-- 81. Nada queda, y los demás controles siguen como estaban (corre la última: después de la 82, la 83, la 84, la 85 y la 86).
 do $$
 declare
   v_obt text;

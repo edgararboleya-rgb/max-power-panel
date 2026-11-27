@@ -3,8 +3,9 @@
 -- 22-nov-2026 (sexta vuelta: la línea de crédito aparte del préstamo a plazo y
 -- la pregunta con botones iguales; y su segunda pasada, la 6b: la coma
 -- decimal, el pago de la línea por el «Dímelo», lo que el banco escribe de
--- una tercera forma, y los cargos de una línea de uno en uno; marca
--- 2026112203).
+-- una tercera forma, y los cargos de una línea de uno en uno).
+-- 27-nov-2026 (C-F2: un monto escrito con un espacio dentro, como «6 50», ya
+-- no se lee como 650.00: se dice que no es un monto; marca 2026112204).
 -- Se pega en el SQL Editor de Supabase DESPUÉS de c1…c16 (pide c1, c2, c3, c6 y c8;
 -- c10 y lo demás, si están, se usan). No cambia ninguna capa anterior: no
 -- toca sus tablas, sus funciones ni sus permisos; todo lo de aquí se llama
@@ -151,7 +152,9 @@
 --                 de ninguno NO se registra por esta acción (ni eligiendo
 --                 el préstamo en la lista): se avisa, sin «Así es». Y un
 --                 monto escrito con coma decimal («61,37») no se lee: se
---                 pide con punto (fn_bandeja_monto_escrito).
+--                 pide con punto (fn_bandeja_monto_escrito). (C-F2) Ni
+--                 con un espacio dentro del número («6 50»): se dice que
+--                 no es un monto.
 --   aporte        dinero de Edgar a la empresa: préstamo del accionista
 --                 (2900) o aportación (3100), con su línea escrita.
 --   traspaso      dinero entre cuentas propias, o el pago de la tarjeta
@@ -378,7 +381,7 @@ end $$;
 create or replace function public.fn_bandeja_version() returns bigint
 language sql immutable
 set search_path = public, pg_temp
-as $$ select 2026112203::bigint $$;
+as $$ select 2026112204::bigint $$;
 revoke execute on function public.fn_bandeja_version() from public, anon, service_role;
 grant  execute on function public.fn_bandeja_version() to authenticated;
 comment on function public.fn_bandeja_version() is 'c17: la marca de la versión pegada de c17-bandeja.sql.';
@@ -1527,22 +1530,39 @@ comment on function public.fn_bandeja_num(text) is 'c17: un monto de un JSON (te
 -- (los intereses de un pago de la línea; el capital y el interés de una
 -- cuota, según su estado de cuenta). «61.37», «$61.37» y «1,000.00» valen.
 -- Una coma que NO es de miles («61,37», «6,5») NO SE LEE: antes las comas se
--- quitaban sin mirar, y «6,50» entraba como $650.00 de intereses. Devuelve
--- el texto limpio (sin «$», sin espacios y sin las comas de miles), para
--- fn_bandeja_num; «coma» si trae una coma que no es de miles; nulo si no hay
--- nada escrito.
+-- quitaban sin mirar, y «6,50» entraba como $650.00 de intereses.
+-- (C-F2, 27-nov) UN BLANCO DENTRO DEL NÚMERO TAMPOCO SE LEE: antes se
+-- quitaban todos los espacios (y los «$») de donde estuvieran, y «6 50»
+-- entraba como $650.00. Ahora de dentro del número NO SE QUITA NADA, salvo
+-- las comas de miles: se quitan solo los blancos de los extremos, un «$»
+-- delante o detrás y los blancos pegados a él («61.37», «$61.37»,
+-- «$ 61.37», « 61.37 », «61.37 $»). Blanco es un espacio, un tabulador o un
+-- salto de línea, los espacios de no separación (U+00A0, U+2007, U+202F),
+-- los demás espacios de Unicode y los de ancho cero (U+200B, U+200C, U+200D,
+-- U+2060, U+FEFF). Van escritos por su código: lo que [[:space:]] toma por
+-- espacio depende de la base (con C.UTF-8 no lo son ni U+00A0 ni los de
+-- ancho cero). Lo demás que no se ve NO es un blanco y no se quita ni de los
+-- extremos (una marca de dirección como U+202E puede dar la vuelta a las
+-- cifras en la pantalla: se leería otro monto que el que se ve): con ello el
+-- texto no es un número. No se admite signo. Devuelve el texto limpio (sin
+-- «$», sin los blancos de los extremos y sin las comas de miles), para
+-- fn_bandeja_num; «coma» si trae una coma que no es de miles; «espacio» si
+-- queda un blanco dentro; nulo si no hay nada escrito.
 create or replace function public.fn_bandeja_monto_escrito(p text) returns text
 language sql immutable
 set search_path = public, pg_temp
 as $$
   select case when z.t = '' then null
+              when position(' ' in z.t) > 0 then 'espacio'
               when position(',' in z.t) > 0 and z.t !~ '^[0-9]{1,3}(,[0-9]{3})+(\.[0-9]{1,2})?$' then 'coma'
               else replace(z.t, ',', '') end
-    from (select regexp_replace(coalesce(p, ''), '[$[:space:]]', '', 'g') as t) z
+    from (select regexp_replace(regexp_replace(btrim(regexp_replace(coalesce(p, ''),
+                   '[\u0009-\u000D\u0085\u00A0\u1680\u2000-\u200D\u2028\u2029\u202F\u205F\u2060\u3000\uFEFF]', ' ', 'g')),
+                 '^[$] *', ''), ' *[$]$', '') as t) z
 $$;
 revoke execute on function public.fn_bandeja_monto_escrito(text) from public, anon, service_role;
 grant  execute on function public.fn_bandeja_monto_escrito(text) to authenticated;
-comment on function public.fn_bandeja_monto_escrito(text) is 'c17: un monto escrito por Edgar en una casilla de la Bandeja, limpio para leerlo («$1,000.00» → «1000.00»); «coma» si trae una coma que no es de miles («61,37»: no se lee, se pide con punto); nulo si está vacío.';
+comment on function public.fn_bandeja_monto_escrito(text) is 'c17: un monto escrito por Edgar en una casilla de la Bandeja, limpio para leerlo («$1,000.00» → «1000.00»; solo se quitan los blancos de los extremos, un «$» delante o detrás y las comas de miles); «coma» si trae una coma que no es de miles («61,37»: no se lee, se pide con punto); «espacio» si trae un blanco dentro del número («6 50»: no se lee, no es un monto); nulo si está vacío.';
 
 -- LAS FACTURAS CON SALDO EN EL LIBRO (las que un depósito puede pagar: las
 -- del puente y las de antes del corte que entraron con la apertura), con su
@@ -2601,8 +2621,9 @@ begin
         v_cti := coalesce((select y->>'cuenta_interes' from bandeja_config g cross join lateral jsonb_array_elements(g.lineas) y
                             where g.id = 1 and y->>'nombre' = v_nom limit 1), '7100');
         -- (6b) lo que Edgar escribió, leído con fn_bandeja_monto_escrito: una coma que no es de miles no se quita (ni se lee)
+        -- (C-F2) ni un blanco dentro del número («6 50» entraba como $650.00 de intereses)
         v_int := fn_bandeja_monto_escrito(coalesce(d->'campos'->>'p_interes', d->>'interes'));
-        v_m := case when v_int is distinct from 'coma' then fn_bandeja_num(v_int) end;
+        v_m := case when v_int is distinct from 'coma' and v_int is distinct from 'espacio' then fn_bandeja_num(v_int) end;
         o := jsonb_build_object('linea', true, 'prestamista', v_nom, 'cuenta', v_cta);
         if not exists (select 1 from cuentas c2 where c2.codigo = v_cta and c2.imputable)
            or not exists (select 1 from cuentas c2 where c2.codigo = v_cti and c2.imputable) then
@@ -2615,6 +2636,9 @@ begin
         elsif v_int = 'coma' then
           o := o || jsonb_build_object('pide', jsonb_build_array('p_interes'));
           v_falta := 'Escribe los centavos con punto, como 61.37.';
+        elsif v_int = 'espacio' then
+          o := o || jsonb_build_object('pide', jsonb_build_array('p_interes'));
+          v_falta := 'Eso no es un monto: escríbelo con números, como 61.37.';
         elsif v_m is null or v_m < 0 or v_m > abs(m.monto) then
           o := o || jsonb_build_object('pide', jsonb_build_array('p_interes'));
           v_falta := format('Los intereses de este pago son un monto entre 0 y %s (lo dice el estado de cuenta de la línea).', v_usd);
@@ -2778,7 +2802,7 @@ begin
       else
         -- (6b) LOS MONTOS QUE LA OPCIÓN PIDE y Edgar escribe (el capital y el interés de su estado de cuenta) se leen aquí, antes
         -- de llegar a la puerta: con coma decimal no se leen (se pide con punto), y lo que entra a la puerta va limpio («1,000.00»
-        -- → «1000.00»)
+        -- → «1000.00»). (C-F2) Con un blanco dentro del número («1 400.00») tampoco se leen: no es un monto
         c := case when jsonb_typeof(d->'campos') = 'object' then d->'campos' end;
         if c is not null then
           foreach v_id in array fn_bandeja_opcion_pide(v_op) loop
@@ -2786,7 +2810,7 @@ begin
               v_int := fn_bandeja_monto_escrito(c->>v_id);
               if v_int = 'coma' then
                 v_falta := 'Escribe los centavos con punto, como 61.37.';
-              elsif fn_bandeja_num(v_int) is null or fn_bandeja_num(v_int) < 0 then
+              elsif v_int = 'espacio' or fn_bandeja_num(v_int) is null or fn_bandeja_num(v_int) < 0 then
                 v_falta := coalesce(v_falta, 'Eso no es un monto: escríbelo con números, como 61.37.');
               else
                 c := c || jsonb_build_object(v_id, v_int);
