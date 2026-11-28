@@ -1,5 +1,19 @@
 # Cómo se publica la app — con DOS sesiones trabajando
 
+> **28-nov-2026 — LEE ESTO ANTES DE PUBLICAR (orden de Edgar, O-S1).** Este repositorio es público y la dirección de la app
+> entrega cualquier archivo de `main`. Por eso en `main` **solo va la app** (`index.html`, `cliente.html`, `gc.html`,
+> `verificar.html`, `manifest.webmanifest`, `sw.js`, `styles.css`, `css/`, `js/`, `assets/`), más `README.md` y estas cuatro
+> páginas de `docs/` (las tres políticas y esta). El 28-nov se quitaron de `main` 383 archivos (`docs/` de trabajo, `pruebas/`,
+> `supabase/`, `tools/` y `PENDIENTES.md`): **no se perdió nada**, siguen en el historial, en vuestras ramas y en una copia
+> privada. Lo que eso pide a cada sesión:
+> - Los papeles, las pruebas y las listas de pendientes se guardan en TU rama de desarrollo, nunca en `main`. Al publicar,
+>   copia a `main` solo los archivos de la app que tocaste.
+> - Al traer `main` a tu rama, git va a querer borrar esos archivos también en tu rama (o te dará un conflicto): **no los
+>   borres en tu rama**. Si se borraron, recupéralos de tu último commit de antes de traer `main`
+>   (`git checkout <ese commit> -- docs pruebas supabase tools PENDIENTES.md`) y guárdalos.
+> - Las pruebas del panel (`pruebas/e0.js`, `pruebas/e13.js`, `pruebas/conta/…`) ya no están en `main`: córrelas desde tu rama
+>   o desde tu copia, contra la app de `main`.
+
 Desde el 14 de septiembre hay **dos sesiones** que escriben en el mismo sitio público
 `edgararboleya-rgb/max-power-panel` (rama `main`, que es lo que abren los teléfonos):
 
