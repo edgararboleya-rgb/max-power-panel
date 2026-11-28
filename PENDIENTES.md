@@ -1,6 +1,6 @@
 # Pendientes de max-power-panel
 
-Última revisión: 27-nov-2026. Este archivo es la lista de trabajo de la app y se mantiene al día aquí.
+Última revisión: 28-nov-2026. Este archivo es la lista de trabajo de la app y se mantiene al día aquí.
 
 **Reglas:** el uso se reinicia el viernes, y para mejorar las apps se usa como máximo el 60 %. Cada viernes se propone el plan de la semana, empezando por fallas y prioridad alta. El jueves se proponen puntos chicos si sobra uso. Nada se cambia sin que Edgar apruebe. Al terminar cada punto, se marca hecho con la fecha y se explica en español sencillo. Los puntos se hacen en Opus cuando da el mismo resultado; Fable solo en el punto que lo necesite para salir bien, y antes de empezar se dice por qué. Nunca se baja la calidad ni la seguridad por ahorrar uso.
 
@@ -8,7 +8,6 @@
 
 ## a. Fallas
 
-- **C-F1**, alta, chico: pegar y confirmar lo de la línea de crédito; hasta entonces la app confunde sus pagos y retiros con las cuotas del préstamo, y sus tarjetas no se contestan.
 - **C-F3**, alta, mediano: si la Bandeja nueva no carga bien, vuelve el botón viejo de la IA, que puede anotar la cuota de un préstamo como si fuera un gasto.
 - **C-F4**, media, chico: cuando le cuentas con tus palabras un pago de la línea de crédito, la IA dice que hay que darla de alta, y ya lo está.
 - **C-F5**, media, mediano: la IA de antes no sabe de la nómina; si apruebas lo que propone para un cargo de Gusto, se salta la página de Nómina.
@@ -30,6 +29,7 @@
 - **C-F20**, baja, chico: algunas pruebas de la contabilidad salen en rojo ciertos días del mes sin que haya nada roto.
 - **C-F21**, baja, chico: uno de los archivos del banco que se pegan está casi en su tamaño máximo, y el próximo cambio podría partirlo mal.
 - **C-F22**, baja, mediano: la portada de Contabilidad carga a tiempo, pero justo; con más datos podría tardar.
+- **C-F24**, baja, chico: una prueba de la Bandeja (la 54) sale en rojo cuando tu calendario tiene visitas a una sola obra esos días; la app hace bien en proponer esa obra, es la prueba la que no lo tiene en cuenta.
 - **O-F1**, alta, chico: la tabla de horas estimadas de las obras quedó sin candado; cualquiera con una cuenta en la app, aunque esté dado de baja, las puede ver.
 - **O-F2**, alta, mediano: el repositorio público trae nombres de obras y clientes, montos de estimados y tus precios, y cualquiera en internet los puede leer (decides tú cómo sacarlos).
 - **O-F3**, alta, chico: la clave que manda los avisos al teléfono del equipo estuvo a la vista y no se ha cambiado; con ella alguien podría mandar avisos falsos.
@@ -120,8 +120,7 @@
 
 ## Lo tuyo, sin gastar uso
 
-- Pegar en Supabase, en orden, los 3 archivos de la línea de crédito (c17-bandeja.sql, c17-pruebas.sql y el SQL de tu base que te pasé por el chat), y después contestar sus tarjetas.
-- Buscar en el estado de cuenta del prestamista cuánto del pago de la línea del 18-nov fueron intereses.
+- Contestar en la Bandeja las tarjetas del prestamista: las 7 cuotas del préstamo y los 2 desembolsos de la línea («Así es»), y el pago de la línea del 18-nov, poniendo cuánto fueron intereses según su estado de cuenta. Después, decirme cuánto dice el prestamista que debes de la línea.
 - Contestar dos preguntas: con qué nombre llegó al banco el dinero del préstamo a plazo, y si la línea debía algo antes del 1 de octubre.
 - Darme los estados de cuenta al 31 de octubre y la balanza de QuickBooks al 30 de noviembre.
 - Preguntarle al CPA tres cosas: si el formulario es el 1120 o el 1120-S, cómo quiere que factures el avance de obra y dónde van las horas de diciembre que se pagan en enero.
@@ -136,9 +135,10 @@
 
 ## Hecho
 
-- 27-nov-2026 (C-F2): si escribes un monto con un espacio en medio, como «6 50» en vez de «6.50», la app ya no lo toma por 650. No registra nada y te avisa: «Eso no es un monto: escríbelo con números, como 61.37». Un espacio delante o detrás, o entre el «$» y el número, no molesta. Publicado en la app (v311); la parte de la base entra cuando pegues lo de la línea de crédito (C-F1).
+- 28-nov-2026 (C-F1): pegaste lo de la línea de crédito y quedó bien. La app ya no confunde las cuotas semanales del préstamo a plazo con los pagos y retiros de la línea de crédito: cada tarjeta dice cuál es, y el pago de la línea te pide sus intereses. Falta que contestes esas tarjetas (está en «Lo tuyo»).
+- 27-nov-2026 (C-F2): si escribes un monto con un espacio en medio, como «6 50» en vez de «6.50», la app ya no lo toma por 650. No registra nada y te avisa: «Eso no es un monto: escríbelo con números, como 61.37». Un espacio delante o detrás, o entre el «$» y el número, no molesta. Publicado en la app (v311), y en tu base desde el 28-nov.
 - 26-nov-2026: comprobado que el arreglo de permisos de la pestaña «Costos» ya estaba pegado; el cierre del mes ya no se frena por eso.
-- 22-nov-2026: la línea de crédito aparte del préstamo a plazo, publicada en la app (v309). La pregunta con dos botones iguales ya dice qué hace cada uno, y las pruebas de la Bandeja ya no dependen de los préstamos que tengas. Falta que lo pegues (C-F1).
+- 22-nov-2026: la línea de crédito aparte del préstamo a plazo, publicada en la app (v309). La pregunta con dos botones iguales ya dice qué hace cada uno, y las pruebas de la Bandeja ya no dependen de los préstamos que tengas. Pegado el 28-nov (C-F1).
 - 21/22-nov-2026: la Bandeja nueva, con una recomendación por tarjeta y «Dímelo con tus palabras», y las cuentas y reportes en inglés para el contador, pegadas y en uso.
 - 17-nov-2026: cuando falta el código del teléfono, la app ya lo dice claro en vez de dar un error confuso.
 - 15-nov-2026: los pagos por Zelle a la cuadrilla entran solos al libro, repartidos por sus horas.
@@ -151,7 +151,6 @@ Notas técnicas de cada punto y de dónde sale. Nada de datos reales aquí: el r
 
 ### Fallas
 
-- **C-F1**: c17 marca 2026112204 (`fn_bandeja_linea`, `bandeja_config.lineas`, y la lectura de C-F2) y el SQL de datos privado (fuera del repo, estrecha el descriptor del préstamo a plazo y da de alta la línea; exige la 2026112204). Guía: `docs/conta/PEGAR-23NOV.md`. Al 27-nov producción seguía en 2026112202.
 - **C-F3**: el freno a «Según la IA · ✓ Así es» en la cuota de un prestamista vive solo en la pantalla y depende de `sabe`. Si falla `fn_bandeja_leer`, vuelve a aparecer y registra por c8 sin el freno de c17. El candado de verdad va en la función contador o en c8. Fuente: `docs/conta/fases/f19-bandeja.md` (revisión de la quinta vuelta).
 - **C-F4**: la regla 7 de las instrucciones de «Dímelo» en `supabase/functions/contador`: con `prestamista.linea` debe contestar «prestamo». Pide volver a desplegar la función y comprobar `prompt_version`.
 - **C-F5**: c8 no conoce c15. Habría que excluir de la ráfaga de la IA los débitos de nómina, o mandarlos a Nómina. Fuente: `f11-nomina.md` (lo abierto de la 11b).
@@ -183,6 +182,7 @@ Notas técnicas de cada punto y de dónde sale. Nada de datos reales aquí: el r
 - **C-F21**: a `c6-banco-parte1.sql` le quedan unos 2 KB hasta el tope del partidor. Fuente: `f11-nomina.md`.
 - **C-F22**: la portada de Contabilidad cumple su tiempo con poco margen. Fuente: `tablero-c16.md`.
 - **C-F23**: `fn_banco_saldo_texto` (c6, «Saldo final del statement» de Conciliar, entre otros) lee «6 50» como 650.00 y «25 000.00» como 25000.00, y acepta la coma decimal («6,50» → 6.50), al revés que la Bandeja. Con U+00A0 dentro sí dice que no es un monto. Hay que darle la misma lectura que `fn_bandeja_monto_escrito`, con cuidado del tope de tamaño de c6 (C-F21). Fuente: revisión de C-F2, 27-nov.
+- **C-F24**: la 54 de c17-pruebas (el permiso pendiente) espera `pide_obra`, pero c6 (`fn_banco_obra_de`) propone la obra cuando `eventos` tiene visitas a una sola obra entre el día de la prueba menos 3 y ese día (`b17_d()` es hoy menos 3). En producción, el 28-nov, había visitas a una sola obra el 23 y el 24-nov, y la 54 dio «NO: … proyecto_id …» (85 de 86 en `true`; la 81, en `true`). Como la 19 y la de `obra_dia`, tiene que aceptar la obra que dicen los datos de verdad, o usar un día sin visitas. Solo cambia la prueba: la app hace bien. Fuente: el pegado de C-F1, 28-nov.
 - **O-F1**: `public.horas_estimadas_fase` tiene la política «leer horas_estimadas_fase» (`es_activo()`), pero RLS está apagado. `authenticated` tiene SELECT. Arreglo: `alter table … enable row level security`. Fuente: asesor de Supabase, 22 y 26-nov.
 - **O-F2**: el README dice que no hay datos de clientes, pero `docs/ESTIMADOR-ESTADO-2026-09.md`, `docs/MARINERS-PLAN.md`, `docs/sql/` (carga de un estimado real) y `docs/precios/*.csv` traen nombres, montos y precios. `docs/sql/` es de la sesión de Operaciones.
 - **O-F3**: E37 movió el secreto del cartero a Vault, pero su cambio por uno nuevo (E37b, desplegar `notificar`, E37c y la rutina de las 6 AM) no se hizo: al 26-nov solo existe `mxp_secreto_cartero`. `notificar` no verifica sesión. Fuente: `docs/sql/e37*.sql`.
